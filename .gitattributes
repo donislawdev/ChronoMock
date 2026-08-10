@@ -1,0 +1,9 @@
+# Normalise line endings so byte comparisons are stable across machines.
+* text=auto eol=lf
+
+# Binary assets - never touch line endings.
+*.png binary
+*.ico binary
+*.exe binary
+*.dll binary
+*.zip binary

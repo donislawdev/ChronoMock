@@ -1,0 +1,28 @@
+# === Owner's planning material - outside the repo by design ===
+# Polish-language working documents. Kept private; see the git-side table
+# in CLAUDE.md and docs/zasady/10-GIT-I-WYDANIE.md.
+/CLAUDE.md
+/chrono-mock.md
+/docs/
+/CHANGELOG-DEV.md
+
+# === Internal tooling: probes, measurement rigs - never shipped ===
+/tools/
+
+# === Build output ===
+# Rust
+/target/
+**/*.rs.bk
+# .NET
+[Bb]in/
+[Oo]bj/
+*.user
+*.suo
+
+# === OS / editor noise ===
+.DS_Store
+Thumbs.db
+.vs/
+.vscode/
+.idea/
+*.swp
