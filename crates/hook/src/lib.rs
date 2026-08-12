@@ -36,11 +36,20 @@ use chrono_ctl::{
 };
 use minhook::MinHook;
 use windows::core::{s, w, PCSTR};
-use windows::Win32::Foundation::{FILETIME, HMODULE, SYSTEMTIME};
-use windows::Win32::System::Diagnostics::Debug::OutputDebugStringA;
-use windows::Win32::System::LibraryLoader::{GetModuleHandleA, GetProcAddress};
-use windows::Win32::System::Memory::{MapViewOfFile, OpenFileMappingW, FILE_MAP_ALL_ACCESS};
+use windows::Win32::Foundation::{CloseHandle, FILETIME, HANDLE, HMODULE, SYSTEMTIME};
+use windows::Win32::System::Diagnostics::Debug::{OutputDebugStringA, WriteProcessMemory};
+use windows::Win32::System::LibraryLoader::{
+    GetModuleFileNameW, GetModuleHandleA, GetProcAddress,
+};
+use windows::Win32::System::Memory::{
+    MapViewOfFile, OpenFileMappingW, VirtualAllocEx, VirtualFreeEx, FILE_MAP_ALL_ACCESS,
+    MEM_COMMIT, MEM_RELEASE, MEM_RESERVE, PAGE_READWRITE,
+};
 use windows::Win32::System::SystemServices::DLL_PROCESS_ATTACH;
+use windows::Win32::System::Threading::{
+    CreateRemoteThread, ResumeThread, WaitForSingleObject, CREATE_SUSPENDED, INFINITE,
+    LPTHREAD_START_ROUTINE, PROCESS_INFORMATION,
+};
 use windows::Win32::System::Time::{
     FileTimeToSystemTime, DYNAMIC_TIME_ZONE_INFORMATION, TIME_ZONE_INFORMATION,
 };
@@ -53,6 +62,18 @@ type TziFn = unsafe extern "system" fn(*mut TIME_ZONE_INFORMATION) -> u32;
 type DtziFn = unsafe extern "system" fn(*mut DYNAMIC_TIME_ZONE_INFORMATION) -> u32;
 type TickFn = unsafe extern "system" fn() -> u64;
 type QuitFn = unsafe extern "system" fn(*mut u64) -> i32;
+type CpwFn = unsafe extern "system" fn(
+    *const u16,
+    *mut u16,
+    *const c_void,
+    *const c_void,
+    i32,
+    u32,
+    *const c_void,
+    *const u16,
+    *const c_void,
+    *mut PROCESS_INFORMATION,
+) -> i32;
 
 static CTL_PTR: OnceLock<usize> = OnceLock::new();
 static TZ_BIAS: OnceLock<i32> = OnceLock::new();
@@ -70,6 +91,11 @@ static O_QUIT: OnceLock<QuitFn> = OnceLock::new();
 // Duration-axis anchors, captured real (before hooking) at install time.
 static Q0: OnceLock<i64> = OnceLock::new();
 static C0_TICK: OnceLock<u64> = OnceLock::new();
+
+// Child inheritance (ADR-3): our own module handle (to inject the same DLL into a
+// child) and the CreateProcessW trampoline.
+static SELF_HMOD: OnceLock<usize> = OnceLock::new();
+static O_CPW: OnceLock<CpwFn> = OnceLock::new();
 
 fn ctl_ptr() -> Option<*mut Ctl> {
     CTL_PTR.get().map(|a| *a as *mut Ctl)
@@ -279,6 +305,83 @@ unsafe extern "system" fn h_quit(lp: *mut u64) -> i32 {
     1 // nonzero BOOL = success
 }
 
+// --- Child inheritance (ADR-3) --------------------------------------------------
+// Detour CreateProcessW so children join the session: create suspended, inject the
+// same DLL, then resume (unless the caller wanted it suspended). The child opens the
+// shared Ctl and hooks itself, so it sees the same wall clock as the parent.
+
+/// Inject this DLL into `hproc` by writing our own module path and running
+/// LoadLibraryW there. Best-effort: on failure the child simply runs uncovered.
+///
+/// # Safety
+/// `hproc` must be a valid process handle with injection rights.
+unsafe fn inject_self(hproc: HANDLE) {
+    let addr = *SELF_HMOD.get().unwrap_or(&0);
+    if addr == 0 {
+        return;
+    }
+    let hmod = HMODULE(addr as *mut c_void);
+    let mut buf = [0u16; 260];
+    let n = GetModuleFileNameW(Some(hmod), &mut buf);
+    if n == 0 {
+        return;
+    }
+    let bytes = (n as usize + 1) * 2; // include the NUL terminator
+    let remote = VirtualAllocEx(hproc, None, bytes, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+    if remote.is_null() {
+        return;
+    }
+    if WriteProcessMemory(hproc, remote, buf.as_ptr() as *const c_void, bytes, None).is_err() {
+        let _ = VirtualFreeEx(hproc, remote, 0, MEM_RELEASE);
+        return;
+    }
+    let k32 = match GetModuleHandleA(s!("kernel32.dll")) {
+        Ok(h) => h,
+        Err(_) => {
+            let _ = VirtualFreeEx(hproc, remote, 0, MEM_RELEASE);
+            return;
+        }
+    };
+    let loadlib = GetProcAddress(k32, s!("LoadLibraryW"));
+    let start: LPTHREAD_START_ROUTINE = std::mem::transmute(loadlib);
+    if let Ok(hthread) =
+        CreateRemoteThread(hproc, None, 0, start, Some(remote as *const c_void), 0, None)
+    {
+        WaitForSingleObject(hthread, INFINITE);
+        let _ = CloseHandle(hthread);
+    }
+    let _ = VirtualFreeEx(hproc, remote, 0, MEM_RELEASE);
+}
+
+#[allow(clippy::too_many_arguments)]
+unsafe extern "system" fn h_cpw(
+    app: *const u16,
+    cmd: *mut u16,
+    pa: *const c_void,
+    ta: *const c_void,
+    inherit: i32,
+    flags: u32,
+    env: *const c_void,
+    cwd: *const u16,
+    si: *const c_void,
+    pi: *mut PROCESS_INFORMATION,
+) -> i32 {
+    let o = match O_CPW.get() {
+        Some(o) => o,
+        None => return 0,
+    };
+    let want_suspended = (flags & CREATE_SUSPENDED.0) != 0;
+    let r = o(app, cmd, pa, ta, inherit, flags | CREATE_SUSPENDED.0, env, cwd, si, pi);
+    if r != 0 && !pi.is_null() {
+        let info = *pi;
+        inject_self(info.hProcess);
+        if !want_suspended {
+            let _ = ResumeThread(info.hThread);
+        }
+    }
+    r
+}
+
 /// Diagnostics only (stderr-equivalent for an injected DLL); never affects coverage.
 fn log(msg: &str) {
     if let Ok(c) = CString::new(msg) {
@@ -363,13 +466,29 @@ unsafe fn install() -> Result<(), String> {
         make_hook(ctl, k32, ntdll, IDX_QUIT, h_quit as *const () as *mut c_void, &O_QUIT);
     }
 
+    // Child inheritance (ADR-3): hook CreateProcessW so the whole process tree joins
+    // the session. Not a coverage channel - it is plumbing, not a time source.
+    if let Some(cpw) = GetProcAddress(k32, s!("CreateProcessW")) {
+        match MinHook::create_hook(
+            cpw as *const () as *mut c_void,
+            h_cpw as *const () as *mut c_void,
+        ) {
+            Ok(original) => {
+                let _ = O_CPW.set(std::mem::transmute::<*mut c_void, CpwFn>(original));
+            }
+            Err(e) => log(&format!("[chrono_hook] create_hook CreateProcessW failed: {e:?}")),
+        }
+    }
+
     MinHook::enable_all_hooks().map_err(|e| format!("enable_all_hooks: {e:?}"))?;
     Ok(())
 }
 
 #[no_mangle]
-pub extern "system" fn DllMain(_hinst: HMODULE, reason: u32, _reserved: *mut c_void) -> i32 {
+pub extern "system" fn DllMain(hinst: HMODULE, reason: u32, _reserved: *mut c_void) -> i32 {
     if reason == DLL_PROCESS_ATTACH {
+        // Remember our own module so we can inject the same DLL into children (ADR-3).
+        let _ = SELF_HMOD.set(hinst.0 as usize);
         unsafe {
             if let Err(e) = install() {
                 log(&format!("[chrono_hook] install failed: {e}"));
