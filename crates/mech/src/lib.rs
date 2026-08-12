@@ -133,6 +133,29 @@ impl Session {
         }
     }
 
+    fn ctl_mut(&self) -> *mut Ctl {
+        self.ctl_addr as *mut Ctl
+    }
+
+    /// Change the multiplier in flight, re-anchoring from the current clock so the
+    /// fake time is continuous across the change (ADR-5): the fake instant now becomes
+    /// the new fake anchor and the real clock now the new real anchor.
+    pub fn set_multiplier(&self, m: i64) {
+        let now = quit_now();
+        let (a_fake, a_real, cur_m) = unsafe { read_anchor(self.ctl()) };
+        let fake_now = a_fake.wrapping_add(now.wrapping_sub(a_real).wrapping_mul(cur_m));
+        unsafe { write_anchor(self.ctl_mut(), fake_now, now, m) };
+    }
+
+    /// Jump the wall clock to `to_ft` (UTC FILETIME), keeping the current multiplier.
+    /// The duration axis anchors separately in the hook, so it is not affected - a
+    /// backward jump never rewinds it (untouchable rule 3).
+    pub fn jump(&self, to_ft: i64) {
+        let now = quit_now();
+        let (_, _, cur_m) = unsafe { read_anchor(self.ctl()) };
+        unsafe { write_anchor(self.ctl_mut(), to_ft, now, cur_m) };
+    }
+
     /// Release our own handles. The target keeps its mapped view, so its hooks keep
     /// working after we detach (full residue cleanup is a later slice).
     pub fn end(self) {

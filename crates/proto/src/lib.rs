@@ -82,6 +82,19 @@ pub enum Command {
         id: u64,
         what: String,
     },
+    /// Change the speed in flight. The core re-anchors from its own clock, so the
+    /// payload carries only the new multiplier, never a timestamp.
+    SetMultiplier {
+        v: u32,
+        id: u64,
+        multiplier: i64,
+    },
+    /// Jump the wall clock to a new moment. The duration axis is left untouched.
+    Jump {
+        v: u32,
+        id: u64,
+        to: MomentSpec,
+    },
     End {
         v: u32,
         id: u64,
@@ -230,5 +243,30 @@ mod tests {
         };
         let line = ev.to_ndjson();
         assert!(!line.contains("\"id\""), "null id must be omitted, got {line}");
+    }
+
+    #[test]
+    fn set_multiplier_and_jump_round_trip() {
+        let sm = Command::SetMultiplier { v: 1, id: 7, multiplier: 120 };
+        let line = serde_json::to_string(&sm).unwrap();
+        assert!(line.contains(r#""type":"set_multiplier""#));
+        assert!(matches!(
+            parse_command(&line).unwrap(),
+            Command::SetMultiplier { multiplier: 120, .. }
+        ));
+
+        let jump = Command::Jump {
+            v: 1,
+            id: 8,
+            to: MomentSpec {
+                kind: "absolute".into(),
+                local: Some("2050-01-01T00:00:00".into()),
+                tz_bias_min: Some(0),
+                delta: None,
+            },
+        };
+        let line = serde_json::to_string(&jump).unwrap();
+        assert!(line.contains(r#""type":"jump""#));
+        assert!(matches!(parse_command(&line).unwrap(), Command::Jump { .. }));
     }
 }

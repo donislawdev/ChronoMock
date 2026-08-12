@@ -44,7 +44,7 @@ fn main() {
 }
 
 fn print_usage() {
-    eprintln!("usage: chrono run <target> [--at <local-moment>] [--zone <+HH:MM>] [--mode <flow|frozen|xN>] [--scale-duration] [--ticks N] [--args \"...\"] [--json]");
+    eprintln!("usage: chrono run <target> [--at <local-moment>] [--zone <+HH:MM>] [--mode <flow|frozen|xN>] [--scale-duration] [--ticks N] [--set-after T:M] [--jump-after T:moment] [--args \"...\"] [--json]");
 }
 
 fn this_bitness() -> &'static str {
@@ -71,6 +71,10 @@ struct RunArgs {
     /// How many `state` heartbeats to stream before ending. 0 = end right after the
     /// verdict (one-shot).
     ticks: u64,
+    /// After the Nth state heartbeat, send set_multiplier M (in-flight speed change).
+    set_after: Option<(u64, i64)>,
+    /// After the Nth state heartbeat, jump the wall clock to the given moment.
+    jump_after: Option<(u64, String)>,
     json: bool,
 }
 
@@ -105,6 +109,8 @@ fn parse_run_args(argv: &[String]) -> Result<RunArgs, String> {
     let mut multiplier: Option<i64> = None;
     let mut scale_duration = false;
     let mut ticks: u64 = 0;
+    let mut set_after: Option<(u64, i64)> = None;
+    let mut jump_after: Option<(u64, String)> = None;
     let mut json = false;
 
     let mut i = 0;
@@ -137,6 +143,25 @@ fn parse_run_args(argv: &[String]) -> Result<RunArgs, String> {
                 let raw = argv.get(i).ok_or("--ticks needs a value")?;
                 ticks = raw.parse().map_err(|_| format!("bad --ticks value '{raw}'"))?;
             }
+            "--set-after" => {
+                i += 1;
+                let raw = argv.get(i).ok_or("--set-after needs <tick>:<multiplier>")?;
+                let (t, m) = raw
+                    .split_once(':')
+                    .ok_or("--set-after must be <tick>:<multiplier>")?;
+                set_after = Some((
+                    t.parse().map_err(|_| format!("bad tick in '{raw}'"))?,
+                    m.parse().map_err(|_| format!("bad multiplier in '{raw}'"))?,
+                ));
+            }
+            "--jump-after" => {
+                i += 1;
+                let raw = argv.get(i).ok_or("--jump-after needs <tick>:<moment>")?;
+                let (t, mom) = raw
+                    .split_once(':')
+                    .ok_or("--jump-after must be <tick>:<moment>")?;
+                jump_after = Some((t.parse().map_err(|_| format!("bad tick in '{raw}'"))?, mom.to_string()));
+            }
             "--json" => json = true,
             other if other.starts_with("--") => {
                 return Err(format!("unknown flag '{other}'"));
@@ -161,6 +186,8 @@ fn parse_run_args(argv: &[String]) -> Result<RunArgs, String> {
         multiplier,
         scale_duration,
         ticks,
+        set_after,
+        jump_after,
         json,
     })
 }
@@ -186,8 +213,33 @@ fn parse_zone_to_bias(raw: &str) -> Result<i32, String> {
 
 /// Send an `end` command to the core over its stdin.
 fn send_end(stdin: &mut std::process::ChildStdin) {
-    let end = Command::End { v: PROTOCOL_VERSION, id: 2 };
-    if let Ok(line) = serde_json::to_string(&end) {
+    send_command(stdin, &Command::End { v: PROTOCOL_VERSION, id: 2 });
+}
+
+/// Send a `set_multiplier` command in flight.
+fn send_set_multiplier(stdin: &mut std::process::ChildStdin, m: i64) {
+    send_command(stdin, &Command::SetMultiplier { v: PROTOCOL_VERSION, id: 3, multiplier: m });
+}
+
+/// Send a `jump` command in flight (absolute moment in the session zone).
+fn send_jump(stdin: &mut std::process::ChildStdin, moment: &str, tz_bias_min: Option<i32>) {
+    send_command(
+        stdin,
+        &Command::Jump {
+            v: PROTOCOL_VERSION,
+            id: 4,
+            to: MomentSpec {
+                kind: "absolute".into(),
+                local: Some(moment.to_string()),
+                tz_bias_min,
+                delta: None,
+            },
+        },
+    );
+}
+
+fn send_command(stdin: &mut std::process::ChildStdin, cmd: &Command) {
+    if let Ok(line) = serde_json::to_string(cmd) {
         let _ = writeln!(stdin, "{line}");
         let _ = stdin.flush();
     }
@@ -285,6 +337,16 @@ fn driver_run(argv: &[String]) -> i32 {
                 }
                 Ok(Event::State { .. }) => {
                     states_seen += 1;
+                    if let Some((t, m)) = ra.set_after {
+                        if states_seen == t {
+                            send_set_multiplier(&mut stdin, m);
+                        }
+                    }
+                    if let Some((t, ref mom)) = ra.jump_after {
+                        if states_seen == t {
+                            send_jump(&mut stdin, mom, ra.zone_bias_min);
+                        }
+                    }
                     if ra.ticks > 0 && states_seen >= ra.ticks && !end_sent {
                         send_end(&mut stdin);
                         end_sent = true;
@@ -518,6 +580,25 @@ fn run_session(
                 emit(&state_event(&session));
                 emit(&Event::Ack { v: PROTOCOL_VERSION, id });
             }
+            Ok(Command::SetMultiplier { id, multiplier, .. }) => {
+                session.set_multiplier(multiplier);
+                emit(&Event::Ack { v: PROTOCOL_VERSION, id });
+                emit(&state_event(&session));
+            }
+            Ok(Command::Jump { id, to, .. }) => match moment_from_spec(&to) {
+                Ok(ft) => {
+                    session.jump(ft);
+                    emit(&Event::Ack { v: PROTOCOL_VERSION, id });
+                    emit(&state_event(&session));
+                }
+                Err(key) => emit(&Event::Error {
+                    v: PROTOCOL_VERSION,
+                    id: Some(id),
+                    code: 1,
+                    key: key.into(),
+                    origin: "core".into(),
+                }),
+            },
             Ok(_) => {} // Start or a not-yet-supported command: ignore
             Err(mpsc::RecvTimeoutError::Timeout) => {
                 emit(&state_event(&session));
@@ -539,6 +620,21 @@ fn run_session(
         target_exit_code: target_exit,
     });
     verdict.exit_code()
+}
+
+/// Resolve a `MomentSpec` to a UTC FILETIME for a jump. Absolute moments only here
+/// (relative delta is a later slice).
+fn moment_from_spec(spec: &MomentSpec) -> Result<i64, &'static str> {
+    match spec.kind.as_str() {
+        "absolute" => {
+            let m = Moment {
+                local: spec.local.clone().unwrap_or_default(),
+                tz_bias_min: spec.tz_bias_min,
+            };
+            chrono_core::moment_to_filetime_utc(&m).map_err(|_| "moment.invalid")
+        }
+        _ => Err("moment.unsupported_kind"),
+    }
 }
 
 /// Build a `state` event from the session's current clocks.
