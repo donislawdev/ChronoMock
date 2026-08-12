@@ -42,7 +42,7 @@ fn main() {
 }
 
 fn print_usage() {
-    eprintln!("usage: chrono run <target> [--at <local-moment>] [--zone <+HH:MM>] [--mode <flow|frozen|xN>] [--args \"...\"] [--json]");
+    eprintln!("usage: chrono run <target> [--at <local-moment>] [--zone <+HH:MM>] [--mode <flow|frozen|xN>] [--scale-duration] [--args \"...\"] [--json]");
 }
 
 fn this_bitness() -> &'static str {
@@ -65,6 +65,7 @@ struct RunArgs {
     /// Wire mode token: "flow", "frozen", or "multiplier".
     mode: String,
     multiplier: Option<i64>,
+    scale_duration: bool,
     json: bool,
 }
 
@@ -97,6 +98,7 @@ fn parse_run_args(argv: &[String]) -> Result<RunArgs, String> {
     let mut zone_bias_min: Option<i32> = None;
     let mut mode = String::from("flow");
     let mut multiplier: Option<i64> = None;
+    let mut scale_duration = false;
     let mut json = false;
 
     let mut i = 0;
@@ -123,6 +125,7 @@ fn parse_run_args(argv: &[String]) -> Result<RunArgs, String> {
                 let raw = argv.get(i).ok_or("--args needs a value")?;
                 args = raw.split_whitespace().map(str::to_string).collect();
             }
+            "--scale-duration" => scale_duration = true,
             "--json" => json = true,
             other if other.starts_with("--") => {
                 return Err(format!("unknown flag '{other}'"));
@@ -145,6 +148,7 @@ fn parse_run_args(argv: &[String]) -> Result<RunArgs, String> {
         zone_bias_min,
         mode,
         multiplier,
+        scale_duration,
         json,
     })
 }
@@ -219,7 +223,7 @@ fn driver_run(argv: &[String]) -> i32 {
             },
             mode: ra.mode.clone(),
             multiplier: ra.multiplier,
-            scale_duration: false,
+            scale_duration: ra.scale_duration,
         },
     };
     {

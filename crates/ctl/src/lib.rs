@@ -44,6 +44,10 @@ pub const CH_NTQST: u32 = 1 << 4;
 pub const CH_GTZI: u32 = 1 << 5;
 /// Coverage bit: `GetDynamicTimeZoneInformation` is hooked (session zone).
 pub const CH_GDTZI: u32 = 1 << 6;
+/// Coverage bit: `GetTickCount64` is hooked (duration axis, opt-in).
+pub const CH_GTC64: u32 = 1 << 7;
+/// Coverage bit: `QueryUnbiasedInterruptTime` is hooked (duration axis, opt-in).
+pub const CH_QUIT: u32 = 1 << 8;
 
 /// Index of each channel into the `calls` array (== its position in `CHANNELS`).
 pub const IDX_GSTAFT: usize = 0;
@@ -53,9 +57,11 @@ pub const IDX_GLT: usize = 3;
 pub const IDX_NTQST: usize = 4;
 pub const IDX_GTZI: usize = 5;
 pub const IDX_GDTZI: usize = 6;
+pub const IDX_GTC64: usize = 7;
+pub const IDX_QUIT: usize = 8;
 
-/// Number of time channels tracked (wall-clock plus session zone).
-pub const CHANNEL_COUNT: usize = 7;
+/// Number of time channels tracked (wall-clock, session zone, duration axis).
+pub const CHANNEL_COUNT: usize = 9;
 
 /// Which system module exports a channel (the hook resolves it there).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -64,26 +70,38 @@ pub enum ChannelModule {
     Ntdll,
 }
 
-/// One time channel: its coverage bit, the exported symbol the hook detours, and the
-/// module that exports it. Single source of truth so the mechanism reports exactly the
-/// channels the hook installs.
+/// What kind of time a channel carries. The duration axis is opt-in (scale_duration),
+/// so the mechanism only expects `Duration` channels when the session asked for it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ChannelCategory {
+    Wall,
+    Zone,
+    Duration,
+}
+
+/// One time channel: its coverage bit, the exported symbol the hook detours, the
+/// module that exports it, and its category. Single source of truth so the mechanism
+/// reports exactly the channels the hook installs.
 #[derive(Debug, Clone, Copy)]
 pub struct ChannelDef {
     pub bit: u32,
     pub name: &'static str,
     pub module: ChannelModule,
+    pub category: ChannelCategory,
 }
 
-/// All time channels, ordered by their `calls` index (IDX_*): the wall-clock set
-/// followed by the session-zone functions.
+/// All time channels, ordered by their `calls` index (IDX_*): the wall-clock set, the
+/// session-zone functions, then the opt-in duration axis.
 pub const CHANNELS: [ChannelDef; CHANNEL_COUNT] = [
-    ChannelDef { bit: CH_GSTAFT, name: "GetSystemTimeAsFileTime", module: ChannelModule::Kernel32 },
-    ChannelDef { bit: CH_GSTPAFT, name: "GetSystemTimePreciseAsFileTime", module: ChannelModule::Kernel32 },
-    ChannelDef { bit: CH_GST, name: "GetSystemTime", module: ChannelModule::Kernel32 },
-    ChannelDef { bit: CH_GLT, name: "GetLocalTime", module: ChannelModule::Kernel32 },
-    ChannelDef { bit: CH_NTQST, name: "NtQuerySystemTime", module: ChannelModule::Ntdll },
-    ChannelDef { bit: CH_GTZI, name: "GetTimeZoneInformation", module: ChannelModule::Kernel32 },
-    ChannelDef { bit: CH_GDTZI, name: "GetDynamicTimeZoneInformation", module: ChannelModule::Kernel32 },
+    ChannelDef { bit: CH_GSTAFT, name: "GetSystemTimeAsFileTime", module: ChannelModule::Kernel32, category: ChannelCategory::Wall },
+    ChannelDef { bit: CH_GSTPAFT, name: "GetSystemTimePreciseAsFileTime", module: ChannelModule::Kernel32, category: ChannelCategory::Wall },
+    ChannelDef { bit: CH_GST, name: "GetSystemTime", module: ChannelModule::Kernel32, category: ChannelCategory::Wall },
+    ChannelDef { bit: CH_GLT, name: "GetLocalTime", module: ChannelModule::Kernel32, category: ChannelCategory::Wall },
+    ChannelDef { bit: CH_NTQST, name: "NtQuerySystemTime", module: ChannelModule::Ntdll, category: ChannelCategory::Wall },
+    ChannelDef { bit: CH_GTZI, name: "GetTimeZoneInformation", module: ChannelModule::Kernel32, category: ChannelCategory::Zone },
+    ChannelDef { bit: CH_GDTZI, name: "GetDynamicTimeZoneInformation", module: ChannelModule::Kernel32, category: ChannelCategory::Zone },
+    ChannelDef { bit: CH_GTC64, name: "GetTickCount64", module: ChannelModule::Kernel32, category: ChannelCategory::Duration },
+    ChannelDef { bit: CH_QUIT, name: "QueryUnbiasedInterruptTime", module: ChannelModule::Kernel32, category: ChannelCategory::Duration },
 ];
 
 /// Shared control block. `#[repr(C)]` so both processes agree on the layout.
@@ -101,7 +119,9 @@ pub struct Ctl {
     pub multiplier: i64,
     /// Bitmask of channels the hook installed (written by the hook).
     pub installed_channels: u32,
-    pub _pad1: u32,
+    /// 1 = also scale the duration axis by the multiplier (the scale_duration opt-in).
+    /// Stable per session: written once by the mechanism, read once by the hook.
+    pub scale_dur: u32,
     /// Per-channel call counters, indexed by IDX_* (written by the hook).
     pub calls: [u64; CHANNEL_COUNT],
 }
@@ -166,6 +186,22 @@ pub unsafe fn read_tz_bias(p: *const Ctl) -> i32 {
     read_volatile(addr_of!((*p).tz_bias))
 }
 
+/// Write the scale-duration flag (stable field, outside the seqlock). Mechanism side.
+///
+/// # Safety
+/// `p` must point to a live, correctly aligned `Ctl`.
+pub unsafe fn write_scale_dur(p: *mut Ctl, on: bool) {
+    write_volatile(addr_of_mut!((*p).scale_dur), on as u32);
+}
+
+/// Read the scale-duration flag (hook side).
+///
+/// # Safety
+/// `p` must point to a live, correctly aligned `Ctl`.
+pub unsafe fn read_scale_dur(p: *const Ctl) -> bool {
+    read_volatile(addr_of!((*p).scale_dur)) != 0
+}
+
 /// Mark a channel as installed (hook side). OR-in, so several channels accumulate.
 ///
 /// # Safety
@@ -214,7 +250,7 @@ mod tests {
             a_real: 0,
             multiplier: 0,
             installed_channels: 0,
-            _pad1: 0,
+            scale_dur: 0,
             calls: [0; CHANNEL_COUNT],
         }
     }
@@ -241,6 +277,17 @@ mod tests {
         unsafe {
             write_tz_bias(p, -120);
             assert_eq!(read_tz_bias(p), -120);
+        }
+    }
+
+    #[test]
+    fn scale_dur_round_trips() {
+        let mut ctl = zeroed();
+        let p = &mut ctl as *mut Ctl;
+        unsafe {
+            assert!(!read_scale_dur(p));
+            write_scale_dur(p, true);
+            assert!(read_scale_dur(p));
         }
     }
 
@@ -276,6 +323,8 @@ mod tests {
             (IDX_NTQST, CH_NTQST),
             (IDX_GTZI, CH_GTZI),
             (IDX_GDTZI, CH_GDTZI),
+            (IDX_GTC64, CH_GTC64),
+            (IDX_QUIT, CH_QUIT),
         ];
         assert_eq!(CHANNELS.len(), CHANNEL_COUNT);
         for (idx, bit) in expected {

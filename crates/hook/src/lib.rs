@@ -1,23 +1,28 @@
-//! Chrono Mock injected hook (Stage 4): substitute the full set of wall-clock
-//! channels and the session zone, consistently.
+//! Chrono Mock injected hook (Stage 6): substitute the full set of wall-clock
+//! channels, report the session zone, and optionally scale the duration axis.
 //!
 //! On `DLL_PROCESS_ATTACH` this opens the session control memory (`Local\ChronoCtl`),
 //! installs a MinHook detour on every time export listed in `chrono_ctl::CHANNELS`,
 //! and records each covered channel in the control block. The wall detours return
-//! `a_fake + (quit_now - a_real) * multiplier` (multiplier 1 here), anchored on
-//! `QueryUnbiasedInterruptTime` (ADR-5). The UTC channels return that instant
+//! `a_fake + (quit_now - a_real) * multiplier` (multiplier from the anchor), anchored
+//! on `QueryUnbiasedInterruptTime` (ADR-5). The UTC channels return that instant
 //! directly, `GetLocalTime` shifts it back into the session zone by `tz_bias`, and
 //! the zone detours report the session zone (`Bias = tz_bias`, no DST) so a target
 //! that asks its offset agrees with `GetLocalTime`.
+//!
+//! The duration axis (`GetTickCount64` and `QueryUnbiasedInterruptTime`) is scaled by
+//! the multiplier only when scale_duration is set, and never below real speed - so the
+//! monotonic clock keeps advancing even when the wall clock is frozen (untouchable
+//! rule 3). `QueryPerformanceCounter` and `timeGetTime` are deliberately left real
+//! (ADR-2). Once QUIT is hooked, the anchor math reads it through the trampoline so the
+//! scaled output never feeds back.
 //!
 //! ABSOLUTE, not delta: a detour computes the fake instant from the anchor and never
 //! calls another channel's original. So there is no cross-channel re-entrancy and no
 //! double-shift, and hence no thread-local re-entrancy guard - the spike's E2 guard
 //! was an artifact of an earlier delta design (`original + delta`) and does not apply.
 //!
-//! Out of scope here (later slices): the duration axis - `GetTickCount64` and `QUIT`
-//! scaling, with `QueryPerformanceCounter` deliberately excluded per ADR-2 - and
-//! child-process inheritance (`CreateProcessW`).
+//! Out of scope here (later slices): child-process inheritance (`CreateProcessW`).
 
 #![allow(non_snake_case)]
 
@@ -25,8 +30,9 @@ use std::ffi::{c_void, CString};
 use std::sync::OnceLock;
 
 use chrono_ctl::{
-    bump_calls, mark_channel_installed, read_anchor, read_tz_bias, ChannelModule, Ctl, CHANNELS,
-    IDX_GDTZI, IDX_GLT, IDX_GST, IDX_GSTAFT, IDX_GSTPAFT, IDX_GTZI, IDX_NTQST,
+    bump_calls, mark_channel_installed, read_anchor, read_scale_dur, read_tz_bias, ChannelModule,
+    Ctl, CHANNELS, IDX_GDTZI, IDX_GLT, IDX_GST, IDX_GSTAFT, IDX_GSTPAFT, IDX_GTC64, IDX_GTZI,
+    IDX_NTQST, IDX_QUIT,
 };
 use minhook::MinHook;
 use windows::core::{s, w, PCSTR};
@@ -45,6 +51,8 @@ type StFn = unsafe extern "system" fn(*mut SYSTEMTIME);
 type NtqstFn = unsafe extern "system" fn(*mut i64) -> i32;
 type TziFn = unsafe extern "system" fn(*mut TIME_ZONE_INFORMATION) -> u32;
 type DtziFn = unsafe extern "system" fn(*mut DYNAMIC_TIME_ZONE_INFORMATION) -> u32;
+type TickFn = unsafe extern "system" fn() -> u64;
+type QuitFn = unsafe extern "system" fn(*mut u64) -> i32;
 
 static CTL_PTR: OnceLock<usize> = OnceLock::new();
 static TZ_BIAS: OnceLock<i32> = OnceLock::new();
@@ -56,19 +64,32 @@ static O_GLT: OnceLock<StFn> = OnceLock::new();
 static O_NTQST: OnceLock<NtqstFn> = OnceLock::new();
 static O_GTZI: OnceLock<TziFn> = OnceLock::new();
 static O_GDTZI: OnceLock<DtziFn> = OnceLock::new();
+static O_TICK: OnceLock<TickFn> = OnceLock::new();
+static O_QUIT: OnceLock<QuitFn> = OnceLock::new();
+
+// Duration-axis anchors, captured real (before hooking) at install time.
+static Q0: OnceLock<i64> = OnceLock::new();
+static C0_TICK: OnceLock<u64> = OnceLock::new();
 
 fn ctl_ptr() -> Option<*mut Ctl> {
     CTL_PTR.get().map(|a| *a as *mut Ctl)
 }
 
-/// Real (unbiased) monotonic anchor base - ADR-5. QUIT is not hooked in this slice,
-/// so calling it directly yields the real value.
+/// Real (unbiased) monotonic anchor base - ADR-5. QUIT may be hooked for the duration
+/// axis, so prefer the trampoline (the real value) to keep our scaled output from
+/// feeding back into the anchor math. Before QUIT is hooked, call it directly.
 fn real_quit() -> i64 {
-    let mut t: u64 = 0;
-    unsafe {
-        let _ = QueryUnbiasedInterruptTime(&mut t);
+    if let Some(o) = O_QUIT.get() {
+        let mut t: u64 = 0;
+        unsafe { o(&mut t) };
+        t as i64
+    } else {
+        let mut t: u64 = 0;
+        unsafe {
+            let _ = QueryUnbiasedInterruptTime(&mut t);
+        }
+        t as i64
     }
-    t as i64
 }
 
 fn compute_fake() -> Option<i64> {
@@ -80,6 +101,21 @@ fn compute_fake() -> Option<i64> {
 
 fn cur_tz_bias() -> i32 {
     *TZ_BIAS.get().unwrap_or(&0)
+}
+
+/// Current multiplier from the anchor (the wall-clock speed factor).
+fn cur_m() -> i64 {
+    match ctl_ptr() {
+        Some(p) => unsafe { read_anchor(p as *const Ctl).2 },
+        None => 1,
+    }
+}
+
+/// Duration multiplier: never below 1, so the monotonic clock keeps advancing even
+/// when the wall clock is frozen (M = 0) - untouchable rule 3 (duration is monotonic
+/// unconditionally).
+fn dur_multiplier() -> i64 {
+    cur_m().max(1)
 }
 
 fn i64_to_ft(t: i64) -> FILETIME {
@@ -220,6 +256,29 @@ unsafe extern "system" fn h_gdtzi(lp: *mut DYNAMIC_TIME_ZONE_INFORMATION) -> u32
     O_GDTZI.get().map(|o| o(lp)).unwrap_or(TIME_ZONE_ID_INVALID)
 }
 
+// --- Duration axis (opt-in) ----------------------------------------------------
+// Only installed when scale_duration is set. Elapsed since the real anchor Q0 is
+// scaled by dur_multiplier() (>= 1) off the trampoline QUIT. Monotonic by
+// construction. QPC and timeGetTime are left real (ADR-2).
+
+unsafe extern "system" fn h_tick() -> u64 {
+    bump(IDX_GTC64);
+    let q0 = *Q0.get().unwrap_or(&0);
+    let dq = real_quit().wrapping_sub(q0); // 100 ns
+    let dms = dq.wrapping_mul(dur_multiplier()) / 10_000; // scale before /10000 (100ns -> ms)
+    C0_TICK.get().copied().unwrap_or(0).wrapping_add(dms as u64)
+}
+
+unsafe extern "system" fn h_quit(lp: *mut u64) -> i32 {
+    bump(IDX_QUIT);
+    if !lp.is_null() {
+        let q0 = *Q0.get().unwrap_or(&0);
+        let dq = real_quit().wrapping_sub(q0);
+        *lp = q0.wrapping_add(dq.wrapping_mul(dur_multiplier())) as u64;
+    }
+    1 // nonzero BOOL = success
+}
+
 /// Diagnostics only (stderr-equivalent for an injected DLL); never affects coverage.
 fn log(msg: &str) {
     if let Ok(c) = CString::new(msg) {
@@ -290,6 +349,19 @@ unsafe fn install() -> Result<(), String> {
     make_hook(ctl, k32, ntdll, IDX_NTQST, h_ntqst as *const () as *mut c_void, &O_NTQST);
     make_hook(ctl, k32, ntdll, IDX_GTZI, h_gtzi as *const () as *mut c_void, &O_GTZI);
     make_hook(ctl, k32, ntdll, IDX_GDTZI, h_gdtzi as *const () as *mut c_void, &O_GDTZI);
+
+    // Duration axis (opt-in). Capture the real anchors BEFORE creating the hooks:
+    // O_QUIT is still unset so real_quit() reads the real value, and GetTickCount64 is
+    // not patched until enable_all_hooks(). QPC / timeGetTime stay real (ADR-2).
+    if read_scale_dur(ctl as *const Ctl) {
+        let _ = Q0.set(real_quit());
+        if let Some(tick0) = GetProcAddress(k32, s!("GetTickCount64")) {
+            let tick_fn: TickFn = std::mem::transmute(tick0);
+            let _ = C0_TICK.set(tick_fn());
+        }
+        make_hook(ctl, k32, ntdll, IDX_GTC64, h_tick as *const () as *mut c_void, &O_TICK);
+        make_hook(ctl, k32, ntdll, IDX_QUIT, h_quit as *const () as *mut c_void, &O_QUIT);
+    }
 
     MinHook::enable_all_hooks().map_err(|e| format!("enable_all_hooks: {e:?}"))?;
     Ok(())

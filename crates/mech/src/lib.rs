@@ -16,7 +16,10 @@ use std::os::windows::ffi::OsStrExt;
 use std::path::Path;
 
 use chrono_core::{ChannelCoverage, Coverage, SessionSpec, TimeMode};
-use chrono_ctl::{ctl_size, read_calls, read_installed, write_anchor, write_tz_bias, Ctl, CHANNELS};
+use chrono_ctl::{
+    ctl_size, read_calls, read_installed, write_anchor, write_scale_dur, write_tz_bias,
+    ChannelCategory, Ctl, CHANNELS,
+};
 use windows::core::{s, PCWSTR, PWSTR};
 use windows::Win32::Foundation::{CloseHandle, HANDLE, INVALID_HANDLE_VALUE};
 use windows::Win32::System::Diagnostics::Debug::WriteProcessMemory;
@@ -75,9 +78,14 @@ fn quit_now() -> i64 {
 ///
 /// # Safety
 /// `ctl` must point to a live, correctly aligned `Ctl`.
-unsafe fn gather_coverage(ctl: *const Ctl, installed: u32) -> Coverage {
+unsafe fn gather_coverage(ctl: *const Ctl, installed: u32, scale_duration: bool) -> Coverage {
     let mut cov = Coverage::default();
     for (idx, ch) in CHANNELS.iter().enumerate() {
+        // The duration axis is opt-in: with scale_duration off, its channels are not
+        // expected, so they count as neither covered nor uncovered.
+        if ch.category == ChannelCategory::Duration && !scale_duration {
+            continue;
+        }
         if installed & ch.bit != 0 {
             cov.covered.push(ChannelCoverage {
                 channel: ch.name.to_string(),
@@ -120,6 +128,7 @@ pub fn prepare(spec: &SessionSpec, target: &Target, hook_dll: &Path) -> Result<P
         let ctl = view.Value as *mut Ctl;
         write_anchor(ctl, a_fake, quit_now(), multiplier);
         write_tz_bias(ctl, tz_bias);
+        write_scale_dur(ctl, spec.scale_duration);
 
         // 2. Launch SUSPENDED so the hook lands before the first instruction.
         let mut app = to_wide(target.path);
@@ -166,7 +175,7 @@ pub fn prepare(spec: &SessionSpec, target: &Target, hook_dll: &Path) -> Result<P
         // 5. Resume, then sample per-channel call counters as live evidence.
         let _ = ResumeThread(pi.hThread);
         std::thread::sleep(std::time::Duration::from_millis(300));
-        let coverage = gather_coverage(ctl as *const Ctl, installed);
+        let coverage = gather_coverage(ctl as *const Ctl, installed, spec.scale_duration);
 
         let pid = pi.dwProcessId;
         let _ = CloseHandle(pi.hThread);
