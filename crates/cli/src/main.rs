@@ -211,6 +211,42 @@ fn parse_zone_to_bias(raw: &str) -> Result<i32, String> {
     Ok(-offset)
 }
 
+/// Real UTC now as FILETIME ticks (100 ns since 1601), via std - the driver is not
+/// hooked, so this is genuine.
+fn now_filetime_utc() -> i64 {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let d = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default();
+    const DAYS_1601_TO_1970: i64 = 134_774;
+    (DAYS_1601_TO_1970 * 86_400 + d.as_secs() as i64) * 10_000_000 + (d.subsec_nanos() as i64 / 100)
+}
+
+/// Resolve the `--at` value. A leading `+`/`-` marks a relative moment (now + delta)
+/// with a fixed-length unit s/m/h/d/w; the driver resolves it to an absolute wall
+/// string so the core only ever sees an absolute moment. Months, years, and business
+/// days are the calculator's job (later) and are rejected here. Anything else passes
+/// through as an absolute moment.
+fn resolve_at(raw: &str, tz_bias_min: Option<i32>) -> Result<String, String> {
+    let first = raw.as_bytes().first().copied();
+    if first == Some(b'+') || first == Some(b'-') {
+        let split = raw.len().saturating_sub(1);
+        let (num, unit) = raw.split_at(split);
+        let unit_secs: i64 = match unit {
+            "s" => 1,
+            "m" => 60,
+            "h" => 3600,
+            "d" => 86_400,
+            "w" => 604_800,
+            _ => return Err(format!("relative --at must end in s/m/h/d/w, got '{raw}'")),
+        };
+        let n: i64 = num
+            .parse()
+            .map_err(|_| format!("bad number in relative --at '{raw}'"))?;
+        let target = now_filetime_utc() + n * unit_secs * 10_000_000;
+        return Ok(filetime_utc_to_wall(target, tz_bias_min.unwrap_or(0)));
+    }
+    Ok(raw.to_string())
+}
+
 /// Send an `end` command to the core over its stdin.
 fn send_end(stdin: &mut std::process::ChildStdin) {
     send_command(stdin, &Command::End { v: PROTOCOL_VERSION, id: 2 });
@@ -255,6 +291,19 @@ fn driver_run(argv: &[String]) -> i32 {
         }
     };
 
+    // Resolve a relative --at (now + delta) to an absolute moment before we spawn.
+    let resolved_at = match &ra.at {
+        Some(raw) => match resolve_at(raw, ra.zone_bias_min) {
+            Ok(s) => Some(s),
+            Err(e) => {
+                eprintln!("chrono: {e}");
+                print_usage();
+                return 1;
+            }
+        },
+        None => None,
+    };
+
     let exe = match std::env::current_exe() {
         Ok(p) => p,
         Err(e) => {
@@ -289,7 +338,7 @@ fn driver_run(argv: &[String]) -> i32 {
         time: TimeSpec {
             moment: MomentSpec {
                 kind: "absolute".into(),
-                local: ra.at.clone(),
+                local: resolved_at.clone(),
                 tz_bias_min: ra.zone_bias_min,
                 delta: None,
             },
@@ -727,5 +776,27 @@ mod tests {
         assert!(parse_mode("x0").is_err());
         assert!(parse_mode("x-5").is_err());
         assert!(parse_mode("xabc").is_err());
+    }
+
+    #[test]
+    fn at_absolute_passes_through() {
+        assert_eq!(
+            resolve_at("2038-01-19T03:14:07", Some(0)).unwrap(),
+            "2038-01-19T03:14:07"
+        );
+    }
+
+    #[test]
+    fn at_relative_resolves_to_absolute_wall() {
+        // Value is now-dependent, but a valid delta must produce a wall string.
+        let s = resolve_at("+1d", Some(0)).unwrap();
+        assert!(s.contains('T') && s.len() == 19, "unexpected wall string: {s}");
+    }
+
+    #[test]
+    fn at_relative_rejects_bad_unit_and_number() {
+        assert!(resolve_at("+1x", None).is_err());
+        assert!(resolve_at("+abcd", None).is_err());
+        assert!(resolve_at("-y", None).is_err());
     }
 }
