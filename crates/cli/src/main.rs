@@ -497,6 +497,22 @@ fn core_mode() -> i32 {
                 uncovered: prepared.coverage.uncovered.clone(),
                 warning_keys: vec![],
             });
+
+            // Single-instance vanish (ADR-4): the target exited within the guard
+            // window right after injection. Report it honestly with exit 12 rather
+            // than trusting the install bits into a false verdict.
+            if let Some(lived_ms) = prepared.vanished_lived_ms {
+                emit(&Event::Vanished {
+                    v: PROTOCOL_VERSION,
+                    pid: prepared.session.pid,
+                    reason_key: "target.single_instance_suspected".into(),
+                    lived_ms,
+                });
+                prepared.session.end();
+                emit(&ended_clean());
+                return 12;
+            }
+
             let reason_key = match verdict {
                 Verdict::Works => "coverage.time_channels_covered",
                 Verdict::Partial => "coverage.time_channels_partial",

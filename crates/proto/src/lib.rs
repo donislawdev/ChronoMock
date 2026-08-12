@@ -146,6 +146,14 @@ pub enum Event {
         elapsed_fake_ms: i64,
         elapsed_real_ms: i64,
     },
+    /// The target vanished right after injection - a suspected single-instance app
+    /// (ADR-4). Spontaneous, no id; the tool exits with code 12.
+    Vanished {
+        v: u32,
+        pid: u32,
+        reason_key: String,
+        lived_ms: u64,
+    },
     Ended {
         v: u32,
         clean: bool,

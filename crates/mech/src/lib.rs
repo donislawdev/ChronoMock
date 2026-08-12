@@ -14,6 +14,7 @@
 use std::ffi::{c_void, OsStr};
 use std::os::windows::ffi::OsStrExt;
 use std::path::Path;
+use std::time::Instant;
 
 use chrono_core::{ChannelCoverage, Coverage, SessionSpec, TimeMode};
 use chrono_ctl::{
@@ -61,6 +62,9 @@ pub struct Prepared {
     pub coverage: Coverage,
     /// The running session: read its clocks, check the target, end it.
     pub session: Session,
+    /// Set when the target exited within the guard window right after injection - a
+    /// suspected single-instance vanish (ADR-4). Carries how long it lived, in ms.
+    pub vanished_lived_ms: Option<u64>,
 }
 
 /// A live, running session. Keeps the control memory mapped and the target handle
@@ -88,6 +92,10 @@ pub struct SessionState {
 }
 
 const STILL_ACTIVE_CODE: u32 = 259;
+
+/// Window after resume within which a target exit is read as a single-instance vanish
+/// (ADR-4). Reuses the coverage sample window, so a healthy target pays no extra wait.
+const GUARD_MS: u32 = 300;
 
 fn real_system_filetime() -> i64 {
     // windows 0.62: GetSystemTimeAsFileTime takes no argument and returns FILETIME.
@@ -282,10 +290,19 @@ pub fn prepare(spec: &SessionSpec, target: &Target, hook_dll: &Path) -> Result<P
         // 4. Read the install bitmask set in DllMain (deterministic before resume).
         let installed = read_installed(ctl);
 
-        // 5. Resume, then sample per-channel call counters as live evidence.
+        // 5. Resume, then wait up to the guard window. WaitForSingleObject returns
+        // early if the target exits - the single-instance vanish signal (ADR-4). The
+        // install bits are already set in DllMain, so without this a target that
+        // vanished right after injection would look like a false "works".
+        let t0 = Instant::now();
         let _ = ResumeThread(pi.hThread);
-        std::thread::sleep(std::time::Duration::from_millis(300));
+        let waited = WaitForSingleObject(pi.hProcess, GUARD_MS);
         let coverage = gather_coverage(ctl as *const Ctl, installed, spec.scale_duration);
+        let vanished_lived_ms = if waited == WAIT_TIMEOUT {
+            None
+        } else {
+            Some(t0.elapsed().as_millis() as u64)
+        };
 
         // 6. Hand back a live session. We keep the section mapped and the process
         // handle open - only the thread handle is released here. Session::end releases
@@ -300,7 +317,7 @@ pub fn prepare(spec: &SessionSpec, target: &Target, hook_dll: &Path) -> Result<P
             start_fake: a_fake,
             tz_bias,
         };
-        Ok(Prepared { coverage, session })
+        Ok(Prepared { coverage, session, vanished_lived_ms })
     }
 }
 
