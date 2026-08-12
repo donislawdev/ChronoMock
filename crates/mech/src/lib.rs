@@ -95,8 +95,9 @@ pub fn prepare(spec: &SessionSpec, target: &Target, hook_dll: &Path) -> Result<P
     let a_fake = chrono_core::moment_to_filetime_utc(&spec.moment).map_err(PrepareError::Moment)?;
     let tz_bias = spec.moment.tz_bias_min.unwrap_or(0);
     let multiplier = match spec.mode {
+        TimeMode::Flow => 1,
+        TimeMode::Frozen => 0, // M = 0 holds the wall clock at a_fake
         TimeMode::Multiplier(m) => m,
-        _ => 1, // Stage 3: offset only (flow / frozen refinement is a later slice)
     };
     let dll_wide = to_wide(&hook_dll.to_string_lossy());
 

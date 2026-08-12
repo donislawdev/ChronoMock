@@ -42,7 +42,7 @@ fn main() {
 }
 
 fn print_usage() {
-    eprintln!("usage: chrono run <target> [--at <local-moment>] [--zone <+HH:MM>] [--args \"...\"] [--json]");
+    eprintln!("usage: chrono run <target> [--at <local-moment>] [--zone <+HH:MM>] [--mode <flow|frozen|xN>] [--args \"...\"] [--json]");
 }
 
 fn this_bitness() -> &'static str {
@@ -62,7 +62,32 @@ struct RunArgs {
     args: Vec<String>,
     at: Option<String>,
     zone_bias_min: Option<i32>,
+    /// Wire mode token: "flow", "frozen", or "multiplier".
+    mode: String,
+    multiplier: Option<i64>,
     json: bool,
+}
+
+/// Parse `--mode` into a wire mode token and optional multiplier.
+/// `flow` = real speed, `frozen` = held, `xN` = accelerated N times (N >= 1).
+fn parse_mode(raw: &str) -> Result<(String, Option<i64>), String> {
+    match raw {
+        "flow" => Ok(("flow".into(), None)),
+        "frozen" => Ok(("frozen".into(), None)),
+        _ => {
+            let n = raw
+                .strip_prefix('x')
+                .or_else(|| raw.strip_prefix('X'))
+                .ok_or_else(|| format!("mode must be flow, frozen, or xN like x60, got '{raw}'"))?;
+            let m: i64 = n
+                .parse()
+                .map_err(|_| format!("bad multiplier in mode '{raw}'"))?;
+            if m < 1 {
+                return Err(format!("multiplier must be >= 1, got '{raw}'"));
+            }
+            Ok(("multiplier".into(), Some(m)))
+        }
+    }
 }
 
 fn parse_run_args(argv: &[String]) -> Result<RunArgs, String> {
@@ -70,6 +95,8 @@ fn parse_run_args(argv: &[String]) -> Result<RunArgs, String> {
     let mut args: Vec<String> = Vec::new();
     let mut at: Option<String> = None;
     let mut zone_bias_min: Option<i32> = None;
+    let mut mode = String::from("flow");
+    let mut multiplier: Option<i64> = None;
     let mut json = false;
 
     let mut i = 0;
@@ -83,6 +110,13 @@ fn parse_run_args(argv: &[String]) -> Result<RunArgs, String> {
                 i += 1;
                 let raw = argv.get(i).ok_or("--zone needs a value like +02:00")?;
                 zone_bias_min = Some(parse_zone_to_bias(raw)?);
+            }
+            "--mode" => {
+                i += 1;
+                let raw = argv.get(i).ok_or("--mode needs a value like x60")?;
+                let (m, mult) = parse_mode(raw)?;
+                mode = m;
+                multiplier = mult;
             }
             "--args" => {
                 i += 1;
@@ -109,6 +143,8 @@ fn parse_run_args(argv: &[String]) -> Result<RunArgs, String> {
         args,
         at,
         zone_bias_min,
+        mode,
+        multiplier,
         json,
     })
 }
@@ -181,8 +217,8 @@ fn driver_run(argv: &[String]) -> i32 {
                 tz_bias_min: ra.zone_bias_min,
                 delta: None,
             },
-            mode: "flow".into(),
-            multiplier: None,
+            mode: ra.mode.clone(),
+            multiplier: ra.multiplier,
             scale_duration: false,
         },
     };
@@ -426,5 +462,30 @@ fn map_prepare_error(e: chrono_mech::PrepareError) -> (i32, &'static str, &'stat
         P::Control(m) => (3, "session.control_failed", "mechanism", m),
         P::Launch(m) => (2, "target.launch_failed", "mechanism", m),
         P::Inject(m) => (2, "target.inject_failed", "mechanism", m),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn mode_flow_and_frozen_carry_no_multiplier() {
+        assert_eq!(parse_mode("flow").unwrap(), ("flow".to_string(), None));
+        assert_eq!(parse_mode("frozen").unwrap(), ("frozen".to_string(), None));
+    }
+
+    #[test]
+    fn mode_accepts_xn_either_case() {
+        assert_eq!(parse_mode("x60").unwrap(), ("multiplier".to_string(), Some(60)));
+        assert_eq!(parse_mode("X1440").unwrap(), ("multiplier".to_string(), Some(1440)));
+    }
+
+    #[test]
+    fn mode_rejects_unknown_and_nonpositive() {
+        assert!(parse_mode("fast").is_err());
+        assert!(parse_mode("x0").is_err());
+        assert!(parse_mode("x-5").is_err());
+        assert!(parse_mode("xabc").is_err());
     }
 }
