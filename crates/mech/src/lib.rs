@@ -2,11 +2,11 @@
 //! process. This is the rewrite of the throwaway spike injector/hook plumbing as
 //! product code.
 //!
-//! Stage 3: substitute the full set of wall-clock channels. `prepare` creates the
-//! session control memory, computes the fake anchor and the session zone bias from
-//! the moment, launches the target SUSPENDED (so the hook is installed before the
-//! target's first instruction - no race), injects the hook DLL, reads back which
-//! channels were covered, then resumes.
+//! Stage 4: substitute the full set of wall-clock channels and report the session
+//! zone. `prepare` creates the session control memory, computes the fake anchor and
+//! the session zone bias from the moment, launches the target SUSPENDED (so the hook
+//! is installed before the target's first instruction - no race), injects the hook
+//! DLL, reads back which channels were covered, then resumes.
 //!
 //! The tool injects its OWN probes on the host; injecting into third-party or system
 //! processes stays on the VM or requires explicit consent.

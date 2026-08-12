@@ -355,9 +355,9 @@ fn core_mode() -> i32 {
                 warning_keys: vec![],
             });
             let reason_key = match verdict {
-                Verdict::Works => "coverage.wall_channels_covered",
-                Verdict::Partial => "coverage.wall_channels_partial",
-                Verdict::Fails => "coverage.wall_channels_uncovered",
+                Verdict::Works => "coverage.time_channels_covered",
+                Verdict::Partial => "coverage.time_channels_partial",
+                Verdict::Fails => "coverage.time_channels_uncovered",
                 Verdict::Undetermined => "coverage.undetermined",
             };
             emit(&Event::Verdict {

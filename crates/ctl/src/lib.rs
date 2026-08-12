@@ -11,7 +11,7 @@
 //! - The COVERAGE fields (`installed_channels`, `calls`) are written only by the
 //!   hook and read by the mechanism. One writer per word, aligned, monotonic - a
 //!   plain volatile access is enough. (A `calls` increment is a volatile RMW, so
-//!   concurrent target threads hitting the SAME channel may lose a bump; that only
+//!   concurrent target threads hitting the SAME channel may lose a bump - that only
 //!   ever UNDER-counts live evidence, never fabricates coverage.)
 //!
 //! Fake wall time is `a_fake + (quit_now - a_real) * multiplier`, in 100 ns units,
@@ -40,6 +40,10 @@ pub const CH_GST: u32 = 1 << 2;
 pub const CH_GLT: u32 = 1 << 3;
 /// Coverage bit: `NtQuerySystemTime` is hooked.
 pub const CH_NTQST: u32 = 1 << 4;
+/// Coverage bit: `GetTimeZoneInformation` is hooked (session zone).
+pub const CH_GTZI: u32 = 1 << 5;
+/// Coverage bit: `GetDynamicTimeZoneInformation` is hooked (session zone).
+pub const CH_GDTZI: u32 = 1 << 6;
 
 /// Index of each channel into the `calls` array (== its position in `CHANNELS`).
 pub const IDX_GSTAFT: usize = 0;
@@ -47,9 +51,11 @@ pub const IDX_GSTPAFT: usize = 1;
 pub const IDX_GST: usize = 2;
 pub const IDX_GLT: usize = 3;
 pub const IDX_NTQST: usize = 4;
+pub const IDX_GTZI: usize = 5;
+pub const IDX_GDTZI: usize = 6;
 
-/// Number of wall-clock channels tracked.
-pub const CHANNEL_COUNT: usize = 5;
+/// Number of time channels tracked (wall-clock plus session zone).
+pub const CHANNEL_COUNT: usize = 7;
 
 /// Which system module exports a channel (the hook resolves it there).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -58,9 +64,9 @@ pub enum ChannelModule {
     Ntdll,
 }
 
-/// One wall-clock channel: its coverage bit, the exported symbol the hook detours,
-/// and the module that exports it. Single source of truth so the mechanism reports
-/// exactly the channels the hook installs.
+/// One time channel: its coverage bit, the exported symbol the hook detours, and the
+/// module that exports it. Single source of truth so the mechanism reports exactly the
+/// channels the hook installs.
 #[derive(Debug, Clone, Copy)]
 pub struct ChannelDef {
     pub bit: u32,
@@ -68,13 +74,16 @@ pub struct ChannelDef {
     pub module: ChannelModule,
 }
 
-/// All wall-clock channels, ordered by their `calls` index (IDX_*).
+/// All time channels, ordered by their `calls` index (IDX_*): the wall-clock set
+/// followed by the session-zone functions.
 pub const CHANNELS: [ChannelDef; CHANNEL_COUNT] = [
     ChannelDef { bit: CH_GSTAFT, name: "GetSystemTimeAsFileTime", module: ChannelModule::Kernel32 },
     ChannelDef { bit: CH_GSTPAFT, name: "GetSystemTimePreciseAsFileTime", module: ChannelModule::Kernel32 },
     ChannelDef { bit: CH_GST, name: "GetSystemTime", module: ChannelModule::Kernel32 },
     ChannelDef { bit: CH_GLT, name: "GetLocalTime", module: ChannelModule::Kernel32 },
     ChannelDef { bit: CH_NTQST, name: "NtQuerySystemTime", module: ChannelModule::Ntdll },
+    ChannelDef { bit: CH_GTZI, name: "GetTimeZoneInformation", module: ChannelModule::Kernel32 },
+    ChannelDef { bit: CH_GDTZI, name: "GetDynamicTimeZoneInformation", module: ChannelModule::Kernel32 },
 ];
 
 /// Shared control block. `#[repr(C)]` so both processes agree on the layout.
@@ -265,6 +274,8 @@ mod tests {
             (IDX_GST, CH_GST),
             (IDX_GLT, CH_GLT),
             (IDX_NTQST, CH_NTQST),
+            (IDX_GTZI, CH_GTZI),
+            (IDX_GDTZI, CH_GDTZI),
         ];
         assert_eq!(CHANNELS.len(), CHANNEL_COUNT);
         for (idx, bit) in expected {
