@@ -90,6 +90,25 @@ pub struct ChannelDef {
     pub category: ChannelCategory,
 }
 
+// --- Coverage audit against chrono-mock.md 9.1 ---------------------------------
+// COVERED (the CHANNELS table below): the Win32 wall clock (GetSystemTime,
+// GetSystemTimeAsFileTime, GetSystemTimePreciseAsFileTime, GetLocalTime), the session
+// zone (GetTimeZoneInformation, GetDynamicTimeZoneInformation), NtQuerySystemTime, and
+// the opt-in duration axis (GetTickCount64, QueryUnbiasedInterruptTime). CRT time /
+// _time64 ride the hooked Win32 exports, so they follow for free.
+//
+// DELIBERATELY EXCLUDED (ADR-2 - scaling them destabilizes the target): the performance
+// counter (QueryPerformanceCounter, NtQueryPerformanceCounter) and timeGetTime.
+//
+// UNHOOKABLE BY NATURE (chrono-mock.md 9.2 - the verifier warns, it does not hide):
+// direct KUSER_SHARED_DATA reads, direct syscalls, and out-of-process or network time.
+//
+// KNOWN GAPS, not yet covered (the verifier should report these honestly): GetTickCount
+// (32-bit), SystemTimeToTzSpecificLocalTime, GetFileTime, NtQuerySystemInformation, the
+// waitable/settable timers that need timeout scaling under acceleration, and process
+// creation other than CreateProcessW (CreateProcessA, NtCreateUserProcess) for child
+// inheritance.
+
 /// All time channels, ordered by their `calls` index (IDX_*): the wall-clock set, the
 /// session-zone functions, then the opt-in duration axis.
 pub const CHANNELS: [ChannelDef; CHANNEL_COUNT] = [
