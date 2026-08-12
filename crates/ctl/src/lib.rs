@@ -124,6 +124,10 @@ pub struct Ctl {
     pub scale_dur: u32,
     /// Per-channel call counters, indexed by IDX_* (written by the hook).
     pub calls: [u64; CHANNEL_COUNT],
+    /// PID of the core process, so the hook can watch it and revert the target to
+    /// real time when the core vanishes (clean end, crash, or kill -9). Stable.
+    pub core_pid: u32,
+    pub _pad2: u32,
 }
 
 /// Size of the control block, for CreateFileMapping.
@@ -202,6 +206,22 @@ pub unsafe fn read_scale_dur(p: *const Ctl) -> bool {
     read_volatile(addr_of!((*p).scale_dur)) != 0
 }
 
+/// Write the core PID (stable field, outside the seqlock). Mechanism side.
+///
+/// # Safety
+/// `p` must point to a live, correctly aligned `Ctl`.
+pub unsafe fn write_core_pid(p: *mut Ctl, pid: u32) {
+    write_volatile(addr_of_mut!((*p).core_pid), pid);
+}
+
+/// Read the core PID (hook side).
+///
+/// # Safety
+/// `p` must point to a live, correctly aligned `Ctl`.
+pub unsafe fn read_core_pid(p: *const Ctl) -> u32 {
+    read_volatile(addr_of!((*p).core_pid))
+}
+
 /// Mark a channel as installed (hook side). OR-in, so several channels accumulate.
 ///
 /// # Safety
@@ -252,6 +272,8 @@ mod tests {
             installed_channels: 0,
             scale_dur: 0,
             calls: [0; CHANNEL_COUNT],
+            core_pid: 0,
+            _pad2: 0,
         }
     }
 

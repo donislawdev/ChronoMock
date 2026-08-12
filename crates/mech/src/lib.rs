@@ -18,8 +18,8 @@ use std::time::Instant;
 
 use chrono_core::{ChannelCoverage, Coverage, SessionSpec, TimeMode};
 use chrono_ctl::{
-    ctl_size, read_anchor, read_calls, read_installed, write_anchor, write_scale_dur,
-    write_tz_bias, ChannelCategory, Ctl, CHANNELS,
+    ctl_size, read_anchor, read_calls, read_installed, write_anchor, write_core_pid,
+    write_scale_dur, write_tz_bias, ChannelCategory, Ctl, CHANNELS,
 };
 use windows::core::{s, PCWSTR, PWSTR};
 use windows::Win32::Foundation::{CloseHandle, HANDLE, INVALID_HANDLE_VALUE, WAIT_TIMEOUT};
@@ -32,8 +32,9 @@ use windows::Win32::System::Memory::{
 };
 use windows::Win32::System::SystemInformation::GetSystemTimeAsFileTime;
 use windows::Win32::System::Threading::{
-    CreateProcessW, CreateRemoteThread, GetExitCodeProcess, ResumeThread, WaitForSingleObject,
-    CREATE_SUSPENDED, INFINITE, LPTHREAD_START_ROUTINE, PROCESS_INFORMATION, STARTUPINFOW,
+    CreateProcessW, CreateRemoteThread, GetCurrentProcessId, GetExitCodeProcess, ResumeThread,
+    WaitForSingleObject, CREATE_SUSPENDED, INFINITE, LPTHREAD_START_ROUTINE, PROCESS_INFORMATION,
+    STARTUPINFOW,
 };
 use windows::Win32::System::WindowsProgramming::QueryUnbiasedInterruptTime;
 
@@ -247,6 +248,7 @@ pub fn prepare(spec: &SessionSpec, target: &Target, hook_dll: &Path) -> Result<P
         write_anchor(ctl, a_fake, start_real, multiplier);
         write_tz_bias(ctl, tz_bias);
         write_scale_dur(ctl, spec.scale_duration);
+        write_core_pid(ctl, GetCurrentProcessId());
 
         // 2. Launch SUSPENDED so the hook lands before the first instruction.
         let mut app = to_wide(target.path);

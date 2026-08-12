@@ -27,12 +27,13 @@
 #![allow(non_snake_case)]
 
 use std::ffi::{c_void, CString};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::OnceLock;
 
 use chrono_ctl::{
-    bump_calls, mark_channel_installed, read_anchor, read_scale_dur, read_tz_bias, ChannelModule,
-    Ctl, CHANNELS, IDX_GDTZI, IDX_GLT, IDX_GST, IDX_GSTAFT, IDX_GSTPAFT, IDX_GTC64, IDX_GTZI,
-    IDX_NTQST, IDX_QUIT,
+    bump_calls, mark_channel_installed, read_anchor, read_core_pid, read_scale_dur, read_tz_bias,
+    ChannelModule, Ctl, CHANNELS, IDX_GDTZI, IDX_GLT, IDX_GST, IDX_GSTAFT, IDX_GSTPAFT, IDX_GTC64,
+    IDX_GTZI, IDX_NTQST, IDX_QUIT,
 };
 use minhook::MinHook;
 use windows::core::{s, w, PCSTR};
@@ -47,8 +48,9 @@ use windows::Win32::System::Memory::{
 };
 use windows::Win32::System::SystemServices::DLL_PROCESS_ATTACH;
 use windows::Win32::System::Threading::{
-    CreateRemoteThread, ResumeThread, WaitForSingleObject, CREATE_SUSPENDED, INFINITE,
-    LPTHREAD_START_ROUTINE, PROCESS_INFORMATION,
+    CreateRemoteThread, CreateThread, OpenProcess, ResumeThread, WaitForSingleObject,
+    CREATE_SUSPENDED, INFINITE, LPTHREAD_START_ROUTINE, PROCESS_INFORMATION, PROCESS_SYNCHRONIZE,
+    THREAD_CREATION_FLAGS,
 };
 use windows::Win32::System::Time::{
     FileTimeToSystemTime, DYNAMIC_TIME_ZONE_INFORMATION, TIME_ZONE_INFORMATION,
@@ -97,8 +99,51 @@ static C0_TICK: OnceLock<u64> = OnceLock::new();
 static SELF_HMOD: OnceLock<usize> = OnceLock::new();
 static O_CPW: OnceLock<CpwFn> = OnceLock::new();
 
+// Self-detach: a SYNCHRONIZE handle to the core process, and the flag a watcher flips
+// when the core vanishes so every detour reverts to real time.
+static CORE_HANDLE: OnceLock<usize> = OnceLock::new();
+static DETACHED: AtomicBool = AtomicBool::new(false);
+static WATCHER_STARTED: AtomicBool = AtomicBool::new(false);
+
 fn ctl_ptr() -> Option<*mut Ctl> {
     CTL_PTR.get().map(|a| *a as *mut Ctl)
+}
+
+// --- Self-detach: revert to real time when the core vanishes --------------------
+// The core writes its PID into the control block; we open a SYNCHRONIZE handle to it.
+// On the first time call we spawn a watcher that blocks on that handle. When the core
+// dies (clean end, crash, or kill -9) the OS signals it, we flip DETACHED, and every
+// detour falls through to the original - the target's clock returns to real time.
+
+unsafe extern "system" fn watcher_proc(_p: *mut c_void) -> u32 {
+    if let Some(&h) = CORE_HANDLE.get() {
+        WaitForSingleObject(HANDLE(h as *mut c_void), INFINITE);
+    }
+    DETACHED.store(true, Ordering::SeqCst);
+    0
+}
+
+/// Spawn the watcher once, lazily - NOT from DllMain, to stay clear of the loader lock.
+fn ensure_watcher() {
+    if CORE_HANDLE.get().is_some()
+        && WATCHER_STARTED
+            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+            .is_ok()
+    {
+        unsafe {
+            if let Ok(h) =
+                CreateThread(None, 0, Some(watcher_proc), None, THREAD_CREATION_FLAGS(0), None)
+            {
+                let _ = CloseHandle(h);
+            }
+        }
+    }
+}
+
+/// Has the core vanished? Also lazily starts the watcher on the first call.
+fn detached() -> bool {
+    ensure_watcher();
+    DETACHED.load(Ordering::SeqCst)
 }
 
 /// Real (unbiased) monotonic anchor base - ADR-5. QUIT may be hooked for the duration
@@ -119,6 +164,9 @@ fn real_quit() -> i64 {
 }
 
 fn compute_fake() -> Option<i64> {
+    if detached() {
+        return None; // core gone: wall detours fall through to the real value
+    }
     let p = ctl_ptr()? as *const Ctl;
     let (a_fake, a_real, m) = unsafe { read_anchor(p) };
     let dq = real_quit().wrapping_sub(a_real);
@@ -261,6 +309,9 @@ fn set_wide(dst: &mut [u16], s: &str) {
 
 unsafe extern "system" fn h_gtzi(lp: *mut TIME_ZONE_INFORMATION) -> u32 {
     bump(IDX_GTZI);
+    if detached() {
+        return O_GTZI.get().map(|o| o(lp)).unwrap_or(TIME_ZONE_ID_INVALID);
+    }
     if !lp.is_null() {
         let mut tzi = TIME_ZONE_INFORMATION { Bias: cur_tz_bias(), ..Default::default() };
         set_wide(&mut tzi.StandardName, SESSION_ZONE_NAME);
@@ -272,6 +323,9 @@ unsafe extern "system" fn h_gtzi(lp: *mut TIME_ZONE_INFORMATION) -> u32 {
 
 unsafe extern "system" fn h_gdtzi(lp: *mut DYNAMIC_TIME_ZONE_INFORMATION) -> u32 {
     bump(IDX_GDTZI);
+    if detached() {
+        return O_GDTZI.get().map(|o| o(lp)).unwrap_or(TIME_ZONE_ID_INVALID);
+    }
     if !lp.is_null() {
         let mut d = DYNAMIC_TIME_ZONE_INFORMATION { Bias: cur_tz_bias(), ..Default::default() };
         set_wide(&mut d.StandardName, SESSION_ZONE_NAME);
@@ -289,6 +343,9 @@ unsafe extern "system" fn h_gdtzi(lp: *mut DYNAMIC_TIME_ZONE_INFORMATION) -> u32
 
 unsafe extern "system" fn h_tick() -> u64 {
     bump(IDX_GTC64);
+    if detached() {
+        return O_TICK.get().map(|o| o()).unwrap_or(0);
+    }
     let q0 = *Q0.get().unwrap_or(&0);
     let dq = real_quit().wrapping_sub(q0); // 100 ns
     let dms = dq.wrapping_mul(dur_multiplier()) / 10_000; // scale before /10000 (100ns -> ms)
@@ -297,6 +354,9 @@ unsafe extern "system" fn h_tick() -> u64 {
 
 unsafe extern "system" fn h_quit(lp: *mut u64) -> i32 {
     bump(IDX_QUIT);
+    if detached() {
+        return O_QUIT.get().map(|o| o(lp)).unwrap_or(0);
+    }
     if !lp.is_null() {
         let q0 = *Q0.get().unwrap_or(&0);
         let dq = real_quit().wrapping_sub(q0);
@@ -441,6 +501,14 @@ unsafe fn install() -> Result<(), String> {
     let ctl = view.Value as *mut Ctl;
     let _ = CTL_PTR.set(view.Value as usize);
     let _ = TZ_BIAS.set(read_tz_bias(ctl as *const Ctl));
+
+    // Watch the core process so the target reverts to real time if the core vanishes.
+    let core_pid = read_core_pid(ctl as *const Ctl);
+    if core_pid != 0 {
+        if let Ok(h) = OpenProcess(PROCESS_SYNCHRONIZE, false, core_pid) {
+            let _ = CORE_HANDLE.set(h.0 as usize);
+        }
+    }
 
     let k32 = GetModuleHandleA(s!("kernel32.dll")).map_err(|e| format!("{e:?}"))?;
     let ntdll = GetModuleHandleA(s!("ntdll.dll")).map_err(|e| format!("{e:?}"))?;

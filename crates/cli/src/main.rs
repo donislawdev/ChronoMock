@@ -330,10 +330,10 @@ fn driver_run(argv: &[String]) -> i32 {
             match chrono_proto::parse_event(&line) {
                 Ok(Event::Verdict { verdict, reason_key, .. }) => {
                     verdict_line = Some((verdict, reason_key));
-                    if ra.ticks == 0 && !end_sent {
-                        send_end(&mut stdin);
-                        end_sent = true;
-                    }
+                    // ticks == 0: stay attached until the target exits. Detaching
+                    // early would revert it to real time (self-detach), so a run with
+                    // no tick budget keeps the substitution for the target's whole
+                    // life. ticks > 0 ends after that many state heartbeats.
                 }
                 Ok(Event::State { .. }) => {
                     states_seen += 1;
