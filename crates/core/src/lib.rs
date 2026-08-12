@@ -160,6 +160,36 @@ pub fn moment_to_filetime_utc(moment: &Moment) -> Result<i64, String> {
     Ok((utc_secs + DAYS_1601_TO_1970 * 86_400) * 10_000_000)
 }
 
+/// Civil date `(year, month, day)` from a day count since 1970-01-01 (Howard
+/// Hinnant's inverse of `days_from_civil`).
+fn civil_from_days(z: i64) -> (i64, i64, i64) {
+    let z = z + 719_468;
+    let era = (if z >= 0 { z } else { z - 146_096 }) / 146_097;
+    let doe = z - era * 146_097; // [0, 146096]
+    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365; // [0, 399]
+    let y = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100); // [0, 365]
+    let mp = (5 * doy + 2) / 153; // [0, 11]
+    let d = doy - (153 * mp + 2) / 5 + 1; // [1, 31]
+    let m = if mp < 10 { mp + 3 } else { mp - 9 }; // [1, 12]
+    (if m <= 2 { y + 1 } else { y }, m, d)
+}
+
+/// Format a UTC FILETIME (100 ns ticks since 1601) as a session-zone wall-clock
+/// string "YYYY-MM-DDTHH:MM:SS". Inverse of `moment_to_filetime_utc` (no DST).
+pub fn filetime_utc_to_wall(ft_utc: i64, tz_bias_min: i32) -> String {
+    // Session-local = UTC - bias (UTC = local + bias).
+    let local_ticks = ft_utc - (tz_bias_min as i64) * 60 * 10_000_000;
+    const DAYS_1601_TO_1970: i64 = 134_774;
+    let secs_1601 = local_ticks.div_euclid(10_000_000);
+    let secs_1970 = secs_1601 - DAYS_1601_TO_1970 * 86_400;
+    let days = secs_1970.div_euclid(86_400);
+    let tod = secs_1970.rem_euclid(86_400);
+    let (y, mo, d) = civil_from_days(days);
+    let (hh, mi, ss) = (tod / 3600, (tod % 3600) / 60, tod % 60);
+    format!("{y:04}-{mo:02}-{d:02}T{hh:02}:{mi:02}:{ss:02}")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -185,6 +215,19 @@ mod tests {
         let with_bias = moment_to_filetime_utc(&moment("2038-01-19T03:14:07", Some(300))).unwrap();
         let as_utc = moment_to_filetime_utc(&moment("2038-01-19T08:14:07", Some(0))).unwrap();
         assert_eq!(with_bias, as_utc);
+    }
+
+    #[test]
+    fn wall_round_trips_through_filetime() {
+        for (s, bias) in [
+            ("2038-01-19T03:14:07", 0),
+            ("1970-01-01T00:00:00", 0),
+            ("2000-02-29T12:00:00", 300),
+            ("2026-08-12T20:30:00", -120),
+        ] {
+            let ft = moment_to_filetime_utc(&moment(s, Some(bias))).unwrap();
+            assert_eq!(filetime_utc_to_wall(ft, bias), s);
+        }
     }
 
     #[test]

@@ -57,6 +57,15 @@ pub struct CoveredChannel {
     pub calls: u64,
 }
 
+/// One clock reading: the wall-clock text plus the session zone it is expressed in.
+/// Both the fake and the real clock in a `state` event carry their zone (two legal
+/// views of the same fact).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Clock {
+    pub wall: String,
+    pub zone_bias_min: i32,
+}
+
 /// Commands: interface -> core (on the core's stdin).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -66,6 +75,12 @@ pub enum Command {
         id: u64,
         target: TargetSpec,
         time: TimeSpec,
+    },
+    /// Ask for an immediate `state` snapshot (`what` is a stable key, e.g. "state").
+    Query {
+        v: u32,
+        id: u64,
+        what: String,
     },
     End {
         v: u32,
@@ -102,6 +117,21 @@ pub enum Event {
         verdict: String,
         refuse_start: bool,
         reason_key: String,
+    },
+    /// Solicited reply that a command was applied (reflects the command's `id`).
+    Ack {
+        v: u32,
+        id: u64,
+    },
+    /// The two clocks side by side, emitted as a ~1 s heartbeat and on `query`.
+    /// Spontaneous heartbeats carry no `id`; coalesceable (newest wins).
+    State {
+        v: u32,
+        fake: Clock,
+        real: Clock,
+        multiplier: i64,
+        elapsed_fake_ms: i64,
+        elapsed_real_ms: i64,
     },
     Ended {
         v: u32,

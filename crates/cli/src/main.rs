@@ -14,10 +14,12 @@
 
 use std::io::{BufRead, BufReader, Write};
 use std::process::{Command as PCommand, Stdio};
+use std::sync::mpsc;
+use std::time::{Duration, Instant};
 
-use chrono_core::{verdict_from_coverage, Moment, SessionSpec, TimeMode, Verdict};
+use chrono_core::{filetime_utc_to_wall, verdict_from_coverage, Moment, SessionSpec, TimeMode, Verdict};
 use chrono_proto::{
-    parse_command, Command, CoveredChannel, Event, MomentSpec, TargetSpec, TimeSpec,
+    parse_command, Clock, Command, CoveredChannel, Event, MomentSpec, TargetSpec, TimeSpec,
     PROTOCOL_VERSION,
 };
 
@@ -42,7 +44,7 @@ fn main() {
 }
 
 fn print_usage() {
-    eprintln!("usage: chrono run <target> [--at <local-moment>] [--zone <+HH:MM>] [--mode <flow|frozen|xN>] [--scale-duration] [--args \"...\"] [--json]");
+    eprintln!("usage: chrono run <target> [--at <local-moment>] [--zone <+HH:MM>] [--mode <flow|frozen|xN>] [--scale-duration] [--ticks N] [--args \"...\"] [--json]");
 }
 
 fn this_bitness() -> &'static str {
@@ -66,6 +68,9 @@ struct RunArgs {
     mode: String,
     multiplier: Option<i64>,
     scale_duration: bool,
+    /// How many `state` heartbeats to stream before ending. 0 = end right after the
+    /// verdict (one-shot).
+    ticks: u64,
     json: bool,
 }
 
@@ -99,6 +104,7 @@ fn parse_run_args(argv: &[String]) -> Result<RunArgs, String> {
     let mut mode = String::from("flow");
     let mut multiplier: Option<i64> = None;
     let mut scale_duration = false;
+    let mut ticks: u64 = 0;
     let mut json = false;
 
     let mut i = 0;
@@ -126,6 +132,11 @@ fn parse_run_args(argv: &[String]) -> Result<RunArgs, String> {
                 args = raw.split_whitespace().map(str::to_string).collect();
             }
             "--scale-duration" => scale_duration = true,
+            "--ticks" => {
+                i += 1;
+                let raw = argv.get(i).ok_or("--ticks needs a value")?;
+                ticks = raw.parse().map_err(|_| format!("bad --ticks value '{raw}'"))?;
+            }
             "--json" => json = true,
             other if other.starts_with("--") => {
                 return Err(format!("unknown flag '{other}'"));
@@ -149,6 +160,7 @@ fn parse_run_args(argv: &[String]) -> Result<RunArgs, String> {
         mode,
         multiplier,
         scale_duration,
+        ticks,
         json,
     })
 }
@@ -170,6 +182,15 @@ fn parse_zone_to_bias(raw: &str) -> Result<i32, String> {
     let mins: i32 = m.parse().map_err(|_| format!("bad zone minutes in '{raw}'"))?;
     let offset = sign * (hours * 60 + mins);
     Ok(-offset)
+}
+
+/// Send an `end` command to the core over its stdin.
+fn send_end(stdin: &mut std::process::ChildStdin) {
+    let end = Command::End { v: PROTOCOL_VERSION, id: 2 };
+    if let Ok(line) = serde_json::to_string(&end) {
+        let _ = writeln!(stdin, "{line}");
+        let _ = stdin.flush();
+    }
 }
 
 fn driver_run(argv: &[String]) -> i32 {
@@ -204,8 +225,7 @@ fn driver_run(argv: &[String]) -> i32 {
         }
     };
 
-    // Build and send the `start` command, then close stdin (no further commands
-    // in Stage 1). Closing stdin signals the core there is no more input.
+    // Send `start` and keep stdin open so we can send `end` when we are done.
     let start = Command::Start {
         v: PROTOCOL_VERSION,
         id: 1,
@@ -226,19 +246,22 @@ fn driver_run(argv: &[String]) -> i32 {
             scale_duration: ra.scale_duration,
         },
     };
+    let mut stdin = child.stdin.take().expect("piped stdin");
     {
-        let mut stdin = child.stdin.take().expect("piped stdin");
         let line = serde_json::to_string(&start).expect("serialize start");
         if writeln!(stdin, "{line}").is_err() {
             eprintln!("chrono: core closed its input before start");
             let _ = child.wait();
             return 3;
         }
-        // stdin dropped here -> EOF for the core.
+        let _ = stdin.flush();
     }
 
-    // Read protocol events until the core closes stdout.
+    // Stream events. Send `end` after `--ticks` state heartbeats, or right after the
+    // verdict when ticks is 0 (one-shot), then read through to `ended`.
     let mut verdict_line: Option<(String, String)> = None; // (verdict, reason_key)
+    let mut states_seen: u64 = 0;
+    let mut end_sent = false;
     if let Some(stdout) = child.stdout.take() {
         let reader = BufReader::new(stdout);
         for line in reader.lines() {
@@ -252,11 +275,27 @@ fn driver_run(argv: &[String]) -> i32 {
             if ra.json {
                 println!("{line}");
             }
-            if let Ok(Event::Verdict { verdict, reason_key, .. }) = chrono_proto::parse_event(&line) {
-                verdict_line = Some((verdict, reason_key));
+            match chrono_proto::parse_event(&line) {
+                Ok(Event::Verdict { verdict, reason_key, .. }) => {
+                    verdict_line = Some((verdict, reason_key));
+                    if ra.ticks == 0 && !end_sent {
+                        send_end(&mut stdin);
+                        end_sent = true;
+                    }
+                }
+                Ok(Event::State { .. }) => {
+                    states_seen += 1;
+                    if ra.ticks > 0 && states_seen >= ra.ticks && !end_sent {
+                        send_end(&mut stdin);
+                        end_sent = true;
+                    }
+                }
+                Ok(Event::Ended { .. }) => break,
+                _ => {}
             }
         }
     }
+    drop(stdin);
 
     let status = child.wait();
 
@@ -290,9 +329,11 @@ fn emit(ev: &Event) {
 }
 
 fn core_mode() -> i32 {
-    // Read exactly one command line (the `start`).
+    // Read the first command (`start`) from a reader we hand to the session loop
+    // afterwards, so it can keep reading subsequent commands (query, end).
+    let mut reader = BufReader::new(std::io::stdin());
     let mut line = String::new();
-    let n = std::io::stdin().lock().read_line(&mut line).unwrap_or(0);
+    let n = reader.read_line(&mut line).unwrap_or(0);
     if n == 0 {
         emit(&Event::Error {
             v: PROTOCOL_VERSION,
@@ -320,7 +361,7 @@ fn core_mode() -> i32 {
 
     let (target, time) = match cmd {
         Command::Start { target, time, .. } => (target, time),
-        Command::End { .. } => {
+        _ => {
             emit(&Event::Error {
                 v: PROTOCOL_VERSION,
                 id: None,
@@ -389,7 +430,7 @@ fn core_mode() -> i32 {
                 .collect();
             emit(&Event::Coverage {
                 v: PROTOCOL_VERSION,
-                pid: prepared.pid,
+                pid: prepared.session.pid,
                 covered,
                 uncovered: prepared.coverage.uncovered.clone(),
                 warning_keys: vec![],
@@ -407,8 +448,9 @@ fn core_mode() -> i32 {
                 refuse_start: false,
                 reason_key: reason_key.into(),
             });
-            emit(&ended_clean());
-            verdict.exit_code()
+            // Enter the running session: heartbeat, answer queries, end on command,
+            // EOF, or target exit.
+            run_session(prepared.session, verdict, reader)
         }
         Err(e) => {
             let (code, key, origin, detail) = map_prepare_error(e);
@@ -433,6 +475,88 @@ fn ended_clean() -> Event {
         clean: true,
         residue_keys: vec![],
         target_exit_code: None,
+    }
+}
+
+/// Drive a running session: emit a ~1 s `state` heartbeat, answer `query`, and stop
+/// on `end`, on stdin EOF, or when the target exits. Returns the verdict's exit code.
+fn run_session(
+    session: chrono_mech::Session,
+    verdict: Verdict,
+    reader: BufReader<std::io::Stdin>,
+) -> i32 {
+    // A reader thread turns stdin lines into commands so the main thread can beat the
+    // heartbeat and watch the target without blocking on read_line.
+    let (tx, rx) = mpsc::channel::<Command>();
+    std::thread::spawn(move || {
+        let mut reader = reader;
+        let mut line = String::new();
+        loop {
+            line.clear();
+            match reader.read_line(&mut line) {
+                Ok(0) | Err(_) => break, // EOF or error: dropping tx signals Disconnected
+                Ok(_) => {
+                    if let Ok(cmd) = parse_command(line.trim_end()) {
+                        if tx.send(cmd).is_err() {
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+    });
+
+    let heartbeat = Duration::from_secs(1);
+    let mut deadline = Instant::now() + heartbeat;
+    let mut target_exit: Option<i32> = None;
+
+    loop {
+        let wait = deadline.saturating_duration_since(Instant::now());
+        match rx.recv_timeout(wait) {
+            Ok(Command::End { .. }) => break,
+            Ok(Command::Query { id, .. }) => {
+                emit(&state_event(&session));
+                emit(&Event::Ack { v: PROTOCOL_VERSION, id });
+            }
+            Ok(_) => {} // Start or a not-yet-supported command: ignore
+            Err(mpsc::RecvTimeoutError::Timeout) => {
+                emit(&state_event(&session));
+                if !session.is_alive() {
+                    target_exit = session.exit_code();
+                    break;
+                }
+                deadline = Instant::now() + heartbeat;
+            }
+            Err(mpsc::RecvTimeoutError::Disconnected) => break, // stdin closed
+        }
+    }
+
+    session.end();
+    emit(&Event::Ended {
+        v: PROTOCOL_VERSION,
+        clean: true,
+        residue_keys: vec![],
+        target_exit_code: target_exit,
+    });
+    verdict.exit_code()
+}
+
+/// Build a `state` event from the session's current clocks.
+fn state_event(session: &chrono_mech::Session) -> Event {
+    let s = session.state();
+    Event::State {
+        v: PROTOCOL_VERSION,
+        fake: Clock {
+            wall: filetime_utc_to_wall(s.fake_ft, s.tz_bias),
+            zone_bias_min: s.tz_bias,
+        },
+        real: Clock {
+            wall: filetime_utc_to_wall(s.real_ft, s.tz_bias),
+            zone_bias_min: s.tz_bias,
+        },
+        multiplier: s.multiplier,
+        elapsed_fake_ms: s.elapsed_fake_ms,
+        elapsed_real_ms: s.elapsed_real_ms,
     }
 }
 

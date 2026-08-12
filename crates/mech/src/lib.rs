@@ -17,20 +17,22 @@ use std::path::Path;
 
 use chrono_core::{ChannelCoverage, Coverage, SessionSpec, TimeMode};
 use chrono_ctl::{
-    ctl_size, read_calls, read_installed, write_anchor, write_scale_dur, write_tz_bias,
-    ChannelCategory, Ctl, CHANNELS,
+    ctl_size, read_anchor, read_calls, read_installed, write_anchor, write_scale_dur,
+    write_tz_bias, ChannelCategory, Ctl, CHANNELS,
 };
 use windows::core::{s, PCWSTR, PWSTR};
-use windows::Win32::Foundation::{CloseHandle, HANDLE, INVALID_HANDLE_VALUE};
+use windows::Win32::Foundation::{CloseHandle, HANDLE, INVALID_HANDLE_VALUE, WAIT_TIMEOUT};
 use windows::Win32::System::Diagnostics::Debug::WriteProcessMemory;
 use windows::Win32::System::LibraryLoader::{GetModuleHandleA, GetProcAddress};
 use windows::Win32::System::Memory::{
-    CreateFileMappingW, MapViewOfFile, VirtualAllocEx, VirtualFreeEx, FILE_MAP_ALL_ACCESS,
-    MEM_COMMIT, MEM_RELEASE, MEM_RESERVE, PAGE_READWRITE,
+    CreateFileMappingW, MapViewOfFile, UnmapViewOfFile, VirtualAllocEx, VirtualFreeEx,
+    FILE_MAP_ALL_ACCESS, MEMORY_MAPPED_VIEW_ADDRESS, MEM_COMMIT, MEM_RELEASE, MEM_RESERVE,
+    PAGE_READWRITE,
 };
+use windows::Win32::System::SystemInformation::GetSystemTimeAsFileTime;
 use windows::Win32::System::Threading::{
-    CreateProcessW, CreateRemoteThread, ResumeThread, WaitForSingleObject, CREATE_SUSPENDED,
-    INFINITE, LPTHREAD_START_ROUTINE, PROCESS_INFORMATION, STARTUPINFOW,
+    CreateProcessW, CreateRemoteThread, GetExitCodeProcess, ResumeThread, WaitForSingleObject,
+    CREATE_SUSPENDED, INFINITE, LPTHREAD_START_ROUTINE, PROCESS_INFORMATION, STARTUPINFOW,
 };
 use windows::Win32::System::WindowsProgramming::QueryUnbiasedInterruptTime;
 
@@ -51,13 +53,97 @@ pub enum PrepareError {
     Inject(String),
 }
 
-/// A prepared (running) session.
+/// The outcome of `prepare`: the audit coverage plus the live session to drive.
 pub struct Prepared {
-    pub pid: u32,
     /// Which channels were covered, each with a live call count sampled shortly after
     /// resume - evidence the substitution is actually being served, on top of the
     /// install flag.
     pub coverage: Coverage,
+    /// The running session: read its clocks, check the target, end it.
+    pub session: Session,
+}
+
+/// A live, running session. Keeps the control memory mapped and the target handle
+/// open so the core can read state (and later re-anchor) until the session ends.
+pub struct Session {
+    pub pid: u32,
+    ctl_addr: usize,
+    hmap: HANDLE,
+    hprocess: HANDLE,
+    /// Real (QUIT) and fake anchors captured at session start, so elapsed_* stays
+    /// measured from the start even after a later re-anchor.
+    start_real: i64,
+    start_fake: i64,
+    tz_bias: i32,
+}
+
+/// Both clocks at one instant, in raw UTC FILETIME ticks. The core formats them.
+pub struct SessionState {
+    pub fake_ft: i64,
+    pub real_ft: i64,
+    pub multiplier: i64,
+    pub tz_bias: i32,
+    pub elapsed_fake_ms: i64,
+    pub elapsed_real_ms: i64,
+}
+
+const STILL_ACTIVE_CODE: u32 = 259;
+
+fn real_system_filetime() -> i64 {
+    // windows 0.62: GetSystemTimeAsFileTime takes no argument and returns FILETIME.
+    let ft = unsafe { GetSystemTimeAsFileTime() };
+    (((ft.dwHighDateTime as u64) << 32) | ft.dwLowDateTime as u64) as i64
+}
+
+impl Session {
+    fn ctl(&self) -> *const Ctl {
+        self.ctl_addr as *const Ctl
+    }
+
+    /// Read both clocks now. Fake = the anchor projected by the real elapsed time,
+    /// real = the actual system time (the core is not hooked, so this is genuine).
+    pub fn state(&self) -> SessionState {
+        let (a_fake, a_real, m) = unsafe { read_anchor(self.ctl()) };
+        let now_real = quit_now();
+        let fake_ft = a_fake.wrapping_add(now_real.wrapping_sub(a_real).wrapping_mul(m));
+        SessionState {
+            fake_ft,
+            real_ft: real_system_filetime(),
+            multiplier: m,
+            tz_bias: self.tz_bias,
+            elapsed_fake_ms: fake_ft.wrapping_sub(self.start_fake) / 10_000,
+            elapsed_real_ms: now_real.wrapping_sub(self.start_real) / 10_000,
+        }
+    }
+
+    /// Whether the target process is still running.
+    pub fn is_alive(&self) -> bool {
+        unsafe { WaitForSingleObject(self.hprocess, 0) == WAIT_TIMEOUT }
+    }
+
+    /// The target's exit code, once it has exited.
+    pub fn exit_code(&self) -> Option<i32> {
+        let mut code: u32 = 0;
+        unsafe {
+            if GetExitCodeProcess(self.hprocess, &mut code).is_ok() && code != STILL_ACTIVE_CODE {
+                Some(code as i32)
+            } else {
+                None
+            }
+        }
+    }
+
+    /// Release our own handles. The target keeps its mapped view, so its hooks keep
+    /// working after we detach (full residue cleanup is a later slice).
+    pub fn end(self) {
+        unsafe {
+            let _ = UnmapViewOfFile(MEMORY_MAPPED_VIEW_ADDRESS {
+                Value: self.ctl_addr as *mut c_void,
+            });
+            let _ = CloseHandle(self.hmap);
+            let _ = CloseHandle(self.hprocess);
+        }
+    }
 }
 
 fn to_wide(s: &str) -> Vec<u16> {
@@ -126,7 +212,8 @@ pub fn prepare(spec: &SessionSpec, target: &Target, hook_dll: &Path) -> Result<P
             return Err(PrepareError::Control("MapViewOfFile returned null".into()));
         }
         let ctl = view.Value as *mut Ctl;
-        write_anchor(ctl, a_fake, quit_now(), multiplier);
+        let start_real = quit_now();
+        write_anchor(ctl, a_fake, start_real, multiplier);
         write_tz_bias(ctl, tz_bias);
         write_scale_dur(ctl, spec.scale_duration);
 
@@ -177,14 +264,20 @@ pub fn prepare(spec: &SessionSpec, target: &Target, hook_dll: &Path) -> Result<P
         std::thread::sleep(std::time::Duration::from_millis(300));
         let coverage = gather_coverage(ctl as *const Ctl, installed, spec.scale_duration);
 
-        let pid = pi.dwProcessId;
+        // 6. Hand back a live session. We keep the section mapped and the process
+        // handle open - only the thread handle is released here. Session::end releases
+        // the rest; the target's own mapped view keeps the section alive regardless.
         let _ = CloseHandle(pi.hThread);
-        let _ = CloseHandle(pi.hProcess);
-        // Our handle to the section is closed here; the target's mapped view keeps
-        // the section alive, so the hook keeps reading a valid anchor after we exit.
-        let _ = CloseHandle(hmap);
-
-        Ok(Prepared { pid, coverage })
+        let session = Session {
+            pid: pi.dwProcessId,
+            ctl_addr: view.Value as usize,
+            hmap,
+            hprocess: pi.hProcess,
+            start_real,
+            start_fake: a_fake,
+            tz_bias,
+        };
+        Ok(Prepared { coverage, session })
     }
 }
 
