@@ -31,26 +31,28 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::OnceLock;
 
 use chrono_ctl::{
-    bump_calls, mark_channel_installed, read_anchor, read_core_pid, read_scale_dur, read_tz_bias,
-    ChannelModule, Ctl, CHANNELS, IDX_GDTZI, IDX_GLT, IDX_GST, IDX_GSTAFT, IDX_GSTPAFT, IDX_GTC64,
-    IDX_GTZI, IDX_NTQST, IDX_QUIT,
+    bump_calls, cov_section_name, cov_size, mark_channel_installed, read_anchor, read_core_pid,
+    read_scale_dur, read_tz_bias, register_pid, ChannelModule, Cov, Ctl, CHANNELS, IDX_GDTZI,
+    IDX_GLT, IDX_GST, IDX_GSTAFT, IDX_GSTPAFT, IDX_GTC64, IDX_GTZI, IDX_NTQST, IDX_QUIT,
 };
 use minhook::MinHook;
-use windows::core::{s, w, PCSTR};
-use windows::Win32::Foundation::{CloseHandle, FILETIME, HANDLE, HMODULE, SYSTEMTIME};
+use windows::core::{s, w, PCSTR, PCWSTR};
+use windows::Win32::Foundation::{
+    CloseHandle, FILETIME, HANDLE, HMODULE, INVALID_HANDLE_VALUE, SYSTEMTIME,
+};
 use windows::Win32::System::Diagnostics::Debug::{OutputDebugStringA, WriteProcessMemory};
 use windows::Win32::System::LibraryLoader::{
     GetModuleFileNameW, GetModuleHandleA, GetProcAddress,
 };
 use windows::Win32::System::Memory::{
-    MapViewOfFile, OpenFileMappingW, VirtualAllocEx, VirtualFreeEx, FILE_MAP_ALL_ACCESS,
-    MEM_COMMIT, MEM_RELEASE, MEM_RESERVE, PAGE_READWRITE,
+    CreateFileMappingW, MapViewOfFile, OpenFileMappingW, VirtualAllocEx, VirtualFreeEx,
+    FILE_MAP_ALL_ACCESS, MEM_COMMIT, MEM_RELEASE, MEM_RESERVE, PAGE_READWRITE,
 };
 use windows::Win32::System::SystemServices::DLL_PROCESS_ATTACH;
 use windows::Win32::System::Threading::{
-    CreateRemoteThread, CreateThread, OpenProcess, ResumeThread, WaitForSingleObject,
-    CREATE_SUSPENDED, INFINITE, LPTHREAD_START_ROUTINE, PROCESS_INFORMATION, PROCESS_SYNCHRONIZE,
-    THREAD_CREATION_FLAGS,
+    CreateRemoteThread, CreateThread, GetCurrentProcessId, OpenProcess, ResumeThread,
+    WaitForSingleObject, CREATE_SUSPENDED, INFINITE, LPTHREAD_START_ROUTINE, PROCESS_INFORMATION,
+    PROCESS_SYNCHRONIZE, THREAD_CREATION_FLAGS,
 };
 use windows::Win32::System::Time::{
     FileTimeToSystemTime, DYNAMIC_TIME_ZONE_INFORMATION, TIME_ZONE_INFORMATION,
@@ -78,6 +80,7 @@ type CpwFn = unsafe extern "system" fn(
 ) -> i32;
 
 static CTL_PTR: OnceLock<usize> = OnceLock::new();
+static COV_PTR: OnceLock<usize> = OnceLock::new();
 static TZ_BIAS: OnceLock<i32> = OnceLock::new();
 
 static O_GSTAFT: OnceLock<FtFn> = OnceLock::new();
@@ -107,6 +110,16 @@ static WATCHER_STARTED: AtomicBool = AtomicBool::new(false);
 
 fn ctl_ptr() -> Option<*mut Ctl> {
     CTL_PTR.get().map(|a| *a as *mut Ctl)
+}
+
+fn cov_ptr() -> Option<*mut Cov> {
+    COV_PTR.get().map(|a| *a as *mut Cov)
+}
+
+/// UTF-16, NUL-terminated - for a section name built at runtime (the pid varies, so
+/// the compile-time `w!` macro used for the fixed `ChronoCtl` name cannot serve here).
+fn to_wide(s: &str) -> Vec<u16> {
+    s.encode_utf16().chain(std::iter::once(0)).collect()
 }
 
 // --- Self-detach: revert to real time when the core vanishes --------------------
@@ -200,7 +213,7 @@ fn i64_to_ft(t: i64) -> FILETIME {
 }
 
 fn bump(idx: usize) {
-    if let Some(p) = ctl_ptr() {
+    if let Some(p) = cov_ptr() {
         unsafe { bump_calls(p, idx) }
     }
 }
@@ -451,12 +464,14 @@ fn log(msg: &str) {
 
 /// Resolve, create, and record one channel's detour. Best-effort: a missing export
 /// or a failed hook logs and leaves the bit unset (honest partial), never aborts the
-/// rest. The export name and module come from `CHANNELS[idx]` - single source.
+/// rest. The export name and module come from `CHANNELS[idx]` - single source. The
+/// installed bit is marked in this process's own `Cov`; with no coverage section
+/// (`cov` is None) the detour is still installed, it just goes unreported.
 ///
 /// # Safety
-/// `ctl` must point to a live `Ctl`; `detour` must be the correct detour for `slot`.
+/// `cov`, when Some, must point to a live `Cov`; `detour` must be correct for `slot`.
 unsafe fn make_hook<T: Copy>(
-    ctl: *mut Ctl,
+    cov: Option<*mut Cov>,
     k32: HMODULE,
     ntdll: HMODULE,
     idx: usize,
@@ -485,7 +500,9 @@ unsafe fn make_hook<T: Copy>(
     match MinHook::create_hook(target as *const () as *mut c_void, detour) {
         Ok(original) => {
             let _ = slot.set(std::mem::transmute_copy::<*mut c_void, T>(&original));
-            mark_channel_installed(ctl, ch.bit);
+            if let Some(c) = cov {
+                mark_channel_installed(c, ch.bit);
+            }
         }
         Err(e) => log(&format!("[chrono_hook] create_hook {} failed: {e:?}", ch.name)),
     }
@@ -510,16 +527,50 @@ unsafe fn install() -> Result<(), String> {
         }
     }
 
+    // This process's OWN coverage section (Local\ChronoCov.<pid>), so its calls are
+    // attributed to it and never summed into the parent's report. Best-effort: on
+    // failure the detours still substitute time (they read the shared anchor via
+    // CTL_PTR), but this process reports no coverage and does not register its PID -
+    // the mechanism simply never sees it, it never fabricates coverage.
+    let pid = GetCurrentProcessId();
+    let cov: Option<*mut Cov> = {
+        let name = to_wide(&cov_section_name(pid));
+        match CreateFileMappingW(
+            INVALID_HANDLE_VALUE,
+            None,
+            PAGE_READWRITE,
+            0,
+            cov_size() as u32,
+            PCWSTR(name.as_ptr()),
+        ) {
+            Ok(hmap_cov) => {
+                let cview = MapViewOfFile(hmap_cov, FILE_MAP_ALL_ACCESS, 0, 0, cov_size());
+                if cview.Value.is_null() {
+                    log("[chrono_hook] MapViewOfFile(cov) returned null");
+                    None
+                } else {
+                    let cptr = cview.Value as usize;
+                    let _ = COV_PTR.set(cptr);
+                    Some(cptr as *mut Cov)
+                }
+            }
+            Err(e) => {
+                log(&format!("[chrono_hook] CreateFileMapping(cov) failed: {e:?}"));
+                None
+            }
+        }
+    };
+
     let k32 = GetModuleHandleA(s!("kernel32.dll")).map_err(|e| format!("{e:?}"))?;
     let ntdll = GetModuleHandleA(s!("ntdll.dll")).map_err(|e| format!("{e:?}"))?;
 
-    make_hook(ctl, k32, ntdll, IDX_GSTAFT, h_gstaft as *const () as *mut c_void, &O_GSTAFT);
-    make_hook(ctl, k32, ntdll, IDX_GSTPAFT, h_gstpaft as *const () as *mut c_void, &O_GSTPAFT);
-    make_hook(ctl, k32, ntdll, IDX_GST, h_gst as *const () as *mut c_void, &O_GST);
-    make_hook(ctl, k32, ntdll, IDX_GLT, h_glt as *const () as *mut c_void, &O_GLT);
-    make_hook(ctl, k32, ntdll, IDX_NTQST, h_ntqst as *const () as *mut c_void, &O_NTQST);
-    make_hook(ctl, k32, ntdll, IDX_GTZI, h_gtzi as *const () as *mut c_void, &O_GTZI);
-    make_hook(ctl, k32, ntdll, IDX_GDTZI, h_gdtzi as *const () as *mut c_void, &O_GDTZI);
+    make_hook(cov, k32, ntdll, IDX_GSTAFT, h_gstaft as *const () as *mut c_void, &O_GSTAFT);
+    make_hook(cov, k32, ntdll, IDX_GSTPAFT, h_gstpaft as *const () as *mut c_void, &O_GSTPAFT);
+    make_hook(cov, k32, ntdll, IDX_GST, h_gst as *const () as *mut c_void, &O_GST);
+    make_hook(cov, k32, ntdll, IDX_GLT, h_glt as *const () as *mut c_void, &O_GLT);
+    make_hook(cov, k32, ntdll, IDX_NTQST, h_ntqst as *const () as *mut c_void, &O_NTQST);
+    make_hook(cov, k32, ntdll, IDX_GTZI, h_gtzi as *const () as *mut c_void, &O_GTZI);
+    make_hook(cov, k32, ntdll, IDX_GDTZI, h_gdtzi as *const () as *mut c_void, &O_GDTZI);
 
     // Duration axis (opt-in). Capture the real anchors BEFORE creating the hooks:
     // O_QUIT is still unset so real_quit() reads the real value, and GetTickCount64 is
@@ -530,8 +581,8 @@ unsafe fn install() -> Result<(), String> {
             let tick_fn: TickFn = std::mem::transmute(tick0);
             let _ = C0_TICK.set(tick_fn());
         }
-        make_hook(ctl, k32, ntdll, IDX_GTC64, h_tick as *const () as *mut c_void, &O_TICK);
-        make_hook(ctl, k32, ntdll, IDX_QUIT, h_quit as *const () as *mut c_void, &O_QUIT);
+        make_hook(cov, k32, ntdll, IDX_GTC64, h_tick as *const () as *mut c_void, &O_TICK);
+        make_hook(cov, k32, ntdll, IDX_QUIT, h_quit as *const () as *mut c_void, &O_QUIT);
     }
 
     // Child inheritance (ADR-3): hook CreateProcessW so the whole process tree joins
@@ -549,6 +600,13 @@ unsafe fn install() -> Result<(), String> {
     }
 
     MinHook::enable_all_hooks().map_err(|e| format!("enable_all_hooks: {e:?}"))?;
+
+    // Publish our PID LAST - after the coverage section exists and the hooks are
+    // installed - so the mechanism never reads a pid whose ChronoCov.<pid> is not yet
+    // ready. Only if we actually have a section to report (best-effort above).
+    if cov.is_some() && !register_pid(ctl, pid) {
+        log("[chrono_hook] PID registry full - this process runs uncovered in the audit");
+    }
     Ok(())
 }
 

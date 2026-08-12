@@ -18,17 +18,18 @@ use std::time::Instant;
 
 use chrono_core::{ChannelCoverage, Coverage, SessionSpec, TimeMode};
 use chrono_ctl::{
-    ctl_size, read_anchor, read_calls, read_installed, write_anchor, write_core_pid,
-    write_scale_dur, write_tz_bias, ChannelCategory, Ctl, CHANNELS,
+    cov_section_name, cov_size, ctl_size, read_anchor, read_calls, read_installed, read_pid,
+    write_anchor, write_core_pid, write_scale_dur, write_tz_bias, ChannelCategory, Cov, Ctl,
+    CHANNELS, MAX_COV_PIDS,
 };
 use windows::core::{s, PCWSTR, PWSTR};
 use windows::Win32::Foundation::{CloseHandle, HANDLE, INVALID_HANDLE_VALUE, WAIT_TIMEOUT};
 use windows::Win32::System::Diagnostics::Debug::WriteProcessMemory;
 use windows::Win32::System::LibraryLoader::{GetModuleHandleA, GetProcAddress};
 use windows::Win32::System::Memory::{
-    CreateFileMappingW, MapViewOfFile, UnmapViewOfFile, VirtualAllocEx, VirtualFreeEx,
-    FILE_MAP_ALL_ACCESS, MEMORY_MAPPED_VIEW_ADDRESS, MEM_COMMIT, MEM_RELEASE, MEM_RESERVE,
-    PAGE_READWRITE,
+    CreateFileMappingW, MapViewOfFile, OpenFileMappingW, UnmapViewOfFile, VirtualAllocEx,
+    VirtualFreeEx, FILE_MAP_ALL_ACCESS, MEMORY_MAPPED_VIEW_ADDRESS, MEM_COMMIT, MEM_RELEASE,
+    MEM_RESERVE, PAGE_READWRITE,
 };
 use windows::Win32::System::SystemInformation::GetSystemTimeAsFileTime;
 use windows::Win32::System::Threading::{
@@ -55,17 +56,26 @@ pub enum PrepareError {
     Inject(String),
 }
 
-/// The outcome of `prepare`: the audit coverage plus the live session to drive.
+/// The outcome of `prepare`: the parent's audit coverage plus the live session.
 pub struct Prepared {
-    /// Which channels were covered, each with a live call count sampled shortly after
-    /// resume - evidence the substitution is actually being served, on top of the
-    /// install flag.
+    /// The PARENT process's coverage (its pid is `session.pid`), each covered channel
+    /// with a live call count sampled shortly after resume. Children that join later
+    /// (ADR-3) are reported separately via `Session::poll_new_coverage`, each with its
+    /// OWN pid and counts - never summed into this one.
     pub coverage: Coverage,
-    /// The running session: read its clocks, check the target, end it.
+    /// The running session: read its clocks, poll child coverage, check the target, end it.
     pub session: Session,
     /// Set when the target exited within the guard window right after injection - a
     /// suspected single-instance vanish (ADR-4). Carries how long it lived, in ms.
     pub vanished_lived_ms: Option<u64>,
+}
+
+/// One process's mapped coverage section, kept open for the session's lifetime so the
+/// section survives even if that process exits (full-family audit).
+struct CovMap {
+    pid: u32,
+    hmap: HANDLE,
+    view_addr: usize,
 }
 
 /// A live, running session. Keeps the control memory mapped and the target handle
@@ -80,6 +90,13 @@ pub struct Session {
     start_real: i64,
     start_fake: i64,
     tz_bias: i32,
+    /// The duration axis is opt-in; coverage gathering needs it to know whether the
+    /// Duration channels are expected.
+    scale_duration: bool,
+    /// Per-process coverage sections (parent + children), kept mapped for the whole
+    /// session so a child's evidence survives its exit. Also the record of which PIDs
+    /// have been reported, so `poll_new_coverage` emits each process exactly once.
+    cov_maps: Vec<CovMap>,
 }
 
 /// Both clocks at one instant, in raw UTC FILETIME ticks. The core formats them.
@@ -165,10 +182,43 @@ impl Session {
         unsafe { write_anchor(self.ctl_mut(), to_ft, now, cur_m) };
     }
 
-    /// Release our own handles. The target keeps its mapped view, so its hooks keep
-    /// working after we detach (full residue cleanup is a later slice).
+    /// Scan the PID registry for processes not yet reported (children that joined the
+    /// session after `prepare`, ADR-3) and return each one's OWN coverage. Each new
+    /// section is mapped and kept for the session, so a child's evidence survives even
+    /// if it exits. Idempotent: a pid is returned exactly once across calls.
+    pub fn poll_new_coverage(&mut self) -> Vec<(u32, Coverage)> {
+        let mut out = Vec::new();
+        unsafe {
+            for i in 0..MAX_COV_PIDS {
+                let pid = read_pid(self.ctl(), i);
+                // 0 = empty or reserved-but-not-yet-published; skip and retry later.
+                if pid == 0 || self.cov_maps.iter().any(|c| c.pid == pid) {
+                    continue;
+                }
+                if let Some((hmap, addr)) = open_cov(pid) {
+                    let cov = addr as *const Cov;
+                    let coverage = gather_coverage(cov, read_installed(cov), self.scale_duration);
+                    self.cov_maps.push(CovMap { pid, hmap, view_addr: addr });
+                    out.push((pid, coverage));
+                }
+                // Not openable yet (section not published, or process gone before we
+                // looked): leave it unseen so a later poll can still pick it up.
+            }
+        }
+        out
+    }
+
+    /// Release our own handles, including every mapped coverage section. The target
+    /// keeps its own mapped views, so its hooks keep working after we detach (full
+    /// residue cleanup is a later slice).
     pub fn end(self) {
         unsafe {
+            for cm in &self.cov_maps {
+                let _ = UnmapViewOfFile(MEMORY_MAPPED_VIEW_ADDRESS {
+                    Value: cm.view_addr as *mut c_void,
+                });
+                let _ = CloseHandle(cm.hmap);
+            }
             let _ = UnmapViewOfFile(MEMORY_MAPPED_VIEW_ADDRESS {
                 Value: self.ctl_addr as *mut c_void,
             });
@@ -190,14 +240,14 @@ fn quit_now() -> i64 {
     t as i64
 }
 
-/// Build coverage from the install bitmask and the live per-channel call counters.
-/// Iterates the single-source `CHANNELS` table so the report names exactly what the
-/// hook installs.
+/// Build one process's coverage from its `Cov` section: the install bitmask and the
+/// live per-channel call counters. Iterates the single-source `CHANNELS` table so the
+/// report names exactly what the hook installs.
 ///
 /// # Safety
-/// `ctl` must point to a live, correctly aligned `Ctl`.
-unsafe fn gather_coverage(ctl: *const Ctl, installed: u32, scale_duration: bool) -> Coverage {
-    let mut cov = Coverage::default();
+/// `cov` must point to a live, correctly aligned `Cov`.
+unsafe fn gather_coverage(cov: *const Cov, installed: u32, scale_duration: bool) -> Coverage {
+    let mut out = Coverage::default();
     for (idx, ch) in CHANNELS.iter().enumerate() {
         // The duration axis is opt-in: with scale_duration off, its channels are not
         // expected, so they count as neither covered nor uncovered.
@@ -205,15 +255,35 @@ unsafe fn gather_coverage(ctl: *const Ctl, installed: u32, scale_duration: bool)
             continue;
         }
         if installed & ch.bit != 0 {
-            cov.covered.push(ChannelCoverage {
+            out.covered.push(ChannelCoverage {
                 channel: ch.name.to_string(),
-                calls: read_calls(ctl, idx),
+                calls: read_calls(cov, idx),
             });
         } else {
-            cov.uncovered.push(ch.name.to_string());
+            out.uncovered.push(ch.name.to_string());
         }
     }
-    cov
+    out
+}
+
+/// Open a process's coverage section (`Local\ChronoCov.<pid>`) and map it. The caller
+/// keeps the handle+view for the session's lifetime so the section outlives the
+/// process. Returns None if the section is not published yet or the process is gone.
+///
+/// # Safety
+/// The returned view must be unmapped and the handle closed exactly once.
+unsafe fn open_cov(pid: u32) -> Option<(HANDLE, usize)> {
+    let name: Vec<u16> = cov_section_name(pid)
+        .encode_utf16()
+        .chain(std::iter::once(0))
+        .collect();
+    let hmap = OpenFileMappingW(FILE_MAP_ALL_ACCESS.0, false, PCWSTR(name.as_ptr())).ok()?;
+    let view = MapViewOfFile(hmap, FILE_MAP_ALL_ACCESS, 0, 0, cov_size());
+    if view.Value.is_null() {
+        let _ = CloseHandle(hmap);
+        return None;
+    }
+    Some((hmap, view.Value as usize))
 }
 
 /// Prepare and start a session on `target` using `spec`, injecting `hook_dll`.
@@ -289,8 +359,16 @@ pub fn prepare(spec: &SessionSpec, target: &Target, hook_dll: &Path) -> Result<P
             return Err(e);
         }
 
-        // 4. Read the install bitmask set in DllMain (deterministic before resume).
-        let installed = read_installed(ctl);
+        // 4. Open the parent's OWN coverage section (its pid is known) and read the
+        // install bitmask set in DllMain (deterministic before resume). If the hook
+        // could not publish a section (best-effort failure in the target), report no
+        // coverage rather than guessing - honest.
+        let parent_pid = pi.dwProcessId;
+        let parent_cov = open_cov(parent_pid);
+        let installed = match parent_cov {
+            Some((_, addr)) => read_installed(addr as *const Cov),
+            None => 0,
+        };
 
         // 5. Resume, then wait up to the guard window. WaitForSingleObject returns
         // early if the target exits - the single-instance vanish signal (ADR-4). The
@@ -299,25 +377,35 @@ pub fn prepare(spec: &SessionSpec, target: &Target, hook_dll: &Path) -> Result<P
         let t0 = Instant::now();
         let _ = ResumeThread(pi.hThread);
         let waited = WaitForSingleObject(pi.hProcess, GUARD_MS);
-        let coverage = gather_coverage(ctl as *const Ctl, installed, spec.scale_duration);
+        let coverage = match parent_cov {
+            Some((_, addr)) => gather_coverage(addr as *const Cov, installed, spec.scale_duration),
+            None => Coverage::default(),
+        };
         let vanished_lived_ms = if waited == WAIT_TIMEOUT {
             None
         } else {
             Some(t0.elapsed().as_millis() as u64)
         };
 
-        // 6. Hand back a live session. We keep the section mapped and the process
-        // handle open - only the thread handle is released here. Session::end releases
-        // the rest; the target's own mapped view keeps the section alive regardless.
+        // 6. Hand back a live session. We keep the control section mapped, the process
+        // handle open, and the parent's coverage section mapped - only the thread
+        // handle is released here. Session::end releases the rest; the target's own
+        // mapped views keep the sections alive regardless.
         let _ = CloseHandle(pi.hThread);
+        let mut cov_maps = Vec::new();
+        if let Some((hmap_cov, addr)) = parent_cov {
+            cov_maps.push(CovMap { pid: parent_pid, hmap: hmap_cov, view_addr: addr });
+        }
         let session = Session {
-            pid: pi.dwProcessId,
+            pid: parent_pid,
             ctl_addr: view.Value as usize,
             hmap,
             hprocess: pi.hProcess,
             start_real,
             start_fake: a_fake,
             tz_bias,
+            scale_duration: spec.scale_duration,
+            cov_maps,
         };
         Ok(Prepared { coverage, session, vanished_lived_ms })
     }

@@ -439,6 +439,23 @@ fn emit(ev: &Event) {
     let _ = lock.flush();
 }
 
+/// Emit a `coverage` event for one process (parent or a child), tagged with its pid.
+/// Coverage is reliable (never coalesced) - one event per process, never summed.
+fn emit_coverage(pid: u32, cov: &chrono_core::Coverage) {
+    let covered: Vec<CoveredChannel> = cov
+        .covered
+        .iter()
+        .map(|c| CoveredChannel { channel: c.channel.clone(), calls: c.calls })
+        .collect();
+    emit(&Event::Coverage {
+        v: PROTOCOL_VERSION,
+        pid,
+        covered,
+        uncovered: cov.uncovered.clone(),
+        warning_keys: vec![],
+    });
+}
+
 fn core_mode() -> i32 {
     // Read the first command (`start`) from a reader we hand to the session loop
     // afterwards, so it can keep reading subsequent commands (query, end).
@@ -533,19 +550,9 @@ fn core_mode() -> i32 {
     match chrono_mech::prepare(&spec, &m_target, &hook) {
         Ok(prepared) => {
             let verdict = verdict_from_coverage(&prepared.coverage);
-            let covered: Vec<CoveredChannel> = prepared
-                .coverage
-                .covered
-                .iter()
-                .map(|c| CoveredChannel { channel: c.channel.clone(), calls: c.calls })
-                .collect();
-            emit(&Event::Coverage {
-                v: PROTOCOL_VERSION,
-                pid: prepared.session.pid,
-                covered,
-                uncovered: prepared.coverage.uncovered.clone(),
-                warning_keys: vec![],
-            });
+            // The parent's own coverage (its pid). Children that join later report
+            // separately from run_session, each with its own pid and counts.
+            emit_coverage(prepared.session.pid, &prepared.coverage);
 
             // Single-instance vanish (ADR-4): the target exited within the guard
             // window right after injection. Report it honestly with exit 12 rather
@@ -608,7 +615,7 @@ fn ended_clean() -> Event {
 /// Drive a running session: emit a ~1 s `state` heartbeat, answer `query`, and stop
 /// on `end`, on stdin EOF, or when the target exits. Returns the verdict's exit code.
 fn run_session(
-    session: chrono_mech::Session,
+    mut session: chrono_mech::Session,
     verdict: Verdict,
     reader: BufReader<std::io::Stdin>,
 ) -> i32 {
@@ -632,6 +639,12 @@ fn run_session(
             }
         }
     });
+
+    // Report any child that already joined during the guard window, before the first
+    // heartbeat, so a fast child does not wait a whole second to appear.
+    for (pid, cov) in session.poll_new_coverage() {
+        emit_coverage(pid, &cov);
+    }
 
     let heartbeat = Duration::from_secs(1);
     let mut deadline = Instant::now() + heartbeat;
@@ -667,6 +680,9 @@ fn run_session(
             Ok(_) => {} // Start or a not-yet-supported command: ignore
             Err(mpsc::RecvTimeoutError::Timeout) => {
                 emit(&state_event(&session));
+                for (pid, cov) in session.poll_new_coverage() {
+                    emit_coverage(pid, &cov);
+                }
                 if !session.is_alive() {
                     target_exit = session.exit_code();
                     break;

@@ -1,29 +1,51 @@
 //! Control-memory contract shared by the mechanism (chrono-mech) and the injected
-//! hook (chrono-hook). Both processes map the SAME `#[repr(C)]` layout into a named
-//! shared section, so it is defined in exactly one place.
+//! hook (chrono-hook). Both processes map the SAME `#[repr(C)]` layouts into named
+//! shared sections, so they are defined in exactly one place.
 //!
-//! - The ANCHOR fields (`a_fake`, `a_real`, `multiplier`) are written by the
-//!   mechanism under a seqlock and read by the hook. A seqlock keeps the three
-//!   fields mutually consistent without blocking the hot path.
-//! - `tz_bias` is a STABLE config field: the mechanism writes it once before the
-//!   target exists, the hook reads it once at install. It never changes during a
-//!   session, so it lives outside the seqlock.
-//! - The COVERAGE fields (`installed_channels`, `calls`) are written only by the
-//!   hook and read by the mechanism. One writer per word, aligned, monotonic - a
-//!   plain volatile access is enough. (A `calls` increment is a volatile RMW, so
-//!   concurrent target threads hitting the SAME channel may lose a bump - that only
-//!   ever UNDER-counts live evidence, never fabricates coverage.)
+//! Two sections, separated by lifetime and writer (per-pid coverage):
+//!
+//! - `Ctl` in `Local\ChronoCtl` is the SESSION-WIDE control block. The ANCHOR fields
+//!   (`a_fake`, `a_real`, `multiplier`) are written by the mechanism under a seqlock
+//!   and read by every hook (parent and children share ONE fake clock - ADR-3). The
+//!   stable config fields (`tz_bias`, `scale_dur`, `core_pid`) are written once before
+//!   the target exists. The PID REGISTRY (`pid_count`, `pids`) lets each hooked process
+//!   publish its own PID so the mechanism can find its per-process coverage section.
+//!
+//! - `Cov` in `Local\ChronoCov.<pid>` is PER-PROCESS coverage, written only by that
+//!   process's hook and read by the mechanism. One writer, so plain volatile access is
+//!   enough. (A `calls` increment is a volatile RMW, so concurrent target threads
+//!   hitting the SAME channel may lose a bump - that only ever UNDER-counts live
+//!   evidence, never fabricates coverage.) Splitting coverage out of `Ctl` is what
+//!   stops a child's calls from being summed into the parent's report.
+//!
+//! Registering a PID, by contrast, uses a REAL atomic slot reservation, not a volatile
+//! RMW: a lost registry write would drop a whole child from the audit, not just
+//! under-count it.
 //!
 //! Fake wall time is `a_fake + (quit_now - a_real) * multiplier`, in 100 ns units,
-//! anchored on `QueryUnbiasedInterruptTime` (ADR-5). UTC channels return that
-//! instant directly; `GetLocalTime` returns it shifted back into the session zone
-//! by `tz_bias`.
+//! anchored on `QueryUnbiasedInterruptTime` (ADR-5). UTC channels return that instant
+//! directly; `GetLocalTime` returns it shifted back into the session zone by `tz_bias`.
 
 use std::ptr::{addr_of, addr_of_mut, read_volatile, write_volatile};
-use std::sync::atomic::{compiler_fence, Ordering};
+use std::sync::atomic::{compiler_fence, AtomicU32, Ordering};
 
 /// Named shared section for a session's control memory (per interactive session).
 pub const CTL_SECTION_NAME: &str = "Local\\ChronoCtl";
+
+/// Prefix of a process's coverage section; the full name is `Local\ChronoCov.<pid>`.
+pub const COV_SECTION_PREFIX: &str = "Local\\ChronoCov.";
+
+/// Maximum number of processes (parent + children) whose coverage a session tracks.
+/// Installers can spawn dozens of helpers (docs/07 open item 2); 256 leaves headroom.
+/// Beyond it, `register_pid` returns false and that process runs uncovered in the
+/// audit - an honest partial, never a silent overwrite.
+pub const MAX_COV_PIDS: usize = 256;
+
+/// Full coverage-section name for a process id. Single source, used by both the hook
+/// (its own pid) and the mechanism (each registered pid).
+pub fn cov_section_name(pid: u32) -> String {
+    format!("{COV_SECTION_PREFIX}{pid}")
+}
 
 // --- Wall-clock channels -------------------------------------------------------
 //
@@ -123,7 +145,8 @@ pub const CHANNELS: [ChannelDef; CHANNEL_COUNT] = [
     ChannelDef { bit: CH_QUIT, name: "QueryUnbiasedInterruptTime", module: ChannelModule::Kernel32, category: ChannelCategory::Duration },
 ];
 
-/// Shared control block. `#[repr(C)]` so both processes agree on the layout.
+/// Session-wide control block in `Local\ChronoCtl`. `#[repr(C)]` so both processes
+/// agree on the layout. Coverage is NOT here - it lives per-process in `Cov`.
 #[repr(C)]
 pub struct Ctl {
     /// Seqlock counter for the anchor fields (odd = write in progress).
@@ -136,22 +159,41 @@ pub struct Ctl {
     pub a_real: i64,
     /// Time multiplier. Stage 3 uses 1 (offset only).
     pub multiplier: i64,
-    /// Bitmask of channels the hook installed (written by the hook).
-    pub installed_channels: u32,
     /// 1 = also scale the duration axis by the multiplier (the scale_duration opt-in).
     /// Stable per session: written once by the mechanism, read once by the hook.
     pub scale_dur: u32,
-    /// Per-channel call counters, indexed by IDX_* (written by the hook).
-    pub calls: [u64; CHANNEL_COUNT],
     /// PID of the core process, so the hook can watch it and revert the target to
     /// real time when the core vanishes (clean end, crash, or kill -9). Stable.
     pub core_pid: u32,
-    pub _pad2: u32,
+    /// PID registry slot counter, reserved atomically by `register_pid`. Only ever
+    /// increases; the mechanism does not read it - it scans `pids` for nonzero entries.
+    pub pid_count: u32,
+    pub _pad: u32,
+    /// Registered PIDs (parent + children). A hook writes its own PID here after its
+    /// coverage section exists; the mechanism opens `Local\ChronoCov.<pid>` for each.
+    pub pids: [u32; MAX_COV_PIDS],
 }
 
-/// Size of the control block, for CreateFileMapping.
+/// Per-process coverage block in `Local\ChronoCov.<pid>`. `#[repr(C)]`; written only by
+/// the owning process's hook, read by the mechanism. Separated from `Ctl` so each
+/// process's evidence is attributed to it and never summed with the rest of the tree.
+#[repr(C)]
+pub struct Cov {
+    /// Bitmask of channels this process's hook installed.
+    pub installed_channels: u32,
+    pub _pad: u32,
+    /// Per-channel call counters for this process, indexed by IDX_*.
+    pub calls: [u64; CHANNEL_COUNT],
+}
+
+/// Size of the session control block, for CreateFileMapping.
 pub const fn ctl_size() -> usize {
     core::mem::size_of::<Ctl>()
+}
+
+/// Size of a per-process coverage block, for CreateFileMapping.
+pub const fn cov_size() -> usize {
+    core::mem::size_of::<Cov>()
 }
 
 /// Write the anchor triple under the seqlock. Caller guarantees `p` is a valid,
@@ -241,38 +283,73 @@ pub unsafe fn read_core_pid(p: *const Ctl) -> u32 {
     read_volatile(addr_of!((*p).core_pid))
 }
 
-/// Mark a channel as installed (hook side). OR-in, so several channels accumulate.
+/// Register this process's PID in the session registry (hook side), so the mechanism
+/// can find its `Local\ChronoCov.<pid>` section. Reserves a slot atomically - several
+/// children may register concurrently. Returns false if the registry is full (the
+/// process then runs uncovered in the audit, an honest partial). Call AFTER the
+/// process's coverage section exists, so a reader never sees a pid without its section.
 ///
 /// # Safety
 /// `p` must point to a live, correctly aligned `Ctl`.
-pub unsafe fn mark_channel_installed(p: *mut Ctl, channel: u32) {
+pub unsafe fn register_pid(p: *mut Ctl, pid: u32) -> bool {
+    // Atomic reservation: a volatile RMW could hand two children the same slot and
+    // lose one from the audit entirely (worse than the calls under-count).
+    let counter = &*(addr_of!((*p).pid_count) as *const AtomicU32);
+    let slot = counter.fetch_add(1, Ordering::SeqCst) as usize;
+    if slot >= MAX_COV_PIDS {
+        return false;
+    }
+    let slotp = (addr_of_mut!((*p).pids) as *mut u32).add(slot);
+    write_volatile(slotp, pid);
+    true
+}
+
+/// Read one PID registry slot (mechanism side). `i` must be < MAX_COV_PIDS. A zero
+/// means "empty or not yet published" - the mechanism scans all slots and skips zeros,
+/// so a slot reserved but not yet written is simply picked up on the next refresh.
+///
+/// # Safety
+/// `p` must point to a live, correctly aligned `Ctl`, and `i < MAX_COV_PIDS`.
+pub unsafe fn read_pid(p: *const Ctl, i: usize) -> u32 {
+    let slotp = (addr_of!((*p).pids) as *const u32).add(i);
+    read_volatile(slotp)
+}
+
+/// Mark a channel as installed (hook side, per-process `Cov`). OR-in, so several
+/// channels accumulate.
+///
+/// # Safety
+/// `p` must point to a live, correctly aligned `Cov`.
+pub unsafe fn mark_channel_installed(p: *mut Cov, channel: u32) {
     let cur = read_volatile(addr_of!((*p).installed_channels));
     write_volatile(addr_of_mut!((*p).installed_channels), cur | channel);
 }
 
-/// Read the installed-channels bitmask (mechanism side).
+/// Read the installed-channels bitmask (mechanism side, per-process `Cov`).
 ///
 /// # Safety
-/// `p` must point to a live, correctly aligned `Ctl`.
-pub unsafe fn read_installed(p: *const Ctl) -> u32 {
+/// `p` must point to a live, correctly aligned `Cov`.
+pub unsafe fn read_installed(p: *const Cov) -> u32 {
     read_volatile(addr_of!((*p).installed_channels))
 }
 
-/// Increment a channel's call counter (hook side). `idx` must be < CHANNEL_COUNT.
+/// Increment a channel's call counter (hook side, per-process `Cov`). `idx` must be
+/// < CHANNEL_COUNT.
 ///
 /// # Safety
-/// `p` must point to a live, correctly aligned `Ctl`, and `idx < CHANNEL_COUNT`.
-pub unsafe fn bump_calls(p: *mut Ctl, idx: usize) {
+/// `p` must point to a live, correctly aligned `Cov`, and `idx < CHANNEL_COUNT`.
+pub unsafe fn bump_calls(p: *mut Cov, idx: usize) {
     let slot = (addr_of_mut!((*p).calls) as *mut u64).add(idx);
     let cur = read_volatile(slot);
     write_volatile(slot, cur.wrapping_add(1));
 }
 
-/// Read a channel's call counter (mechanism side). `idx` must be < CHANNEL_COUNT.
+/// Read a channel's call counter (mechanism side, per-process `Cov`). `idx` must be
+/// < CHANNEL_COUNT.
 ///
 /// # Safety
-/// `p` must point to a live, correctly aligned `Ctl`, and `idx < CHANNEL_COUNT`.
-pub unsafe fn read_calls(p: *const Ctl, idx: usize) -> u64 {
+/// `p` must point to a live, correctly aligned `Cov`, and `idx < CHANNEL_COUNT`.
+pub unsafe fn read_calls(p: *const Cov, idx: usize) -> u64 {
     let slot = (addr_of!((*p).calls) as *const u64).add(idx);
     read_volatile(slot)
 }
@@ -281,24 +358,28 @@ pub unsafe fn read_calls(p: *const Ctl, idx: usize) -> u64 {
 mod tests {
     use super::*;
 
-    fn zeroed() -> Ctl {
+    fn zeroed_ctl() -> Ctl {
         Ctl {
             seq: 0,
             tz_bias: 0,
             a_fake: 0,
             a_real: 0,
             multiplier: 0,
-            installed_channels: 0,
             scale_dur: 0,
-            calls: [0; CHANNEL_COUNT],
             core_pid: 0,
-            _pad2: 0,
+            pid_count: 0,
+            _pad: 0,
+            pids: [0; MAX_COV_PIDS],
         }
+    }
+
+    fn zeroed_cov() -> Cov {
+        Cov { installed_channels: 0, _pad: 0, calls: [0; CHANNEL_COUNT] }
     }
 
     #[test]
     fn anchor_round_trips() {
-        let mut ctl = zeroed();
+        let mut ctl = zeroed_ctl();
         let p = &mut ctl as *mut Ctl;
         unsafe {
             write_anchor(p, 134_000_000_000_000_000, 42, 1);
@@ -313,7 +394,7 @@ mod tests {
 
     #[test]
     fn tz_bias_round_trips() {
-        let mut ctl = zeroed();
+        let mut ctl = zeroed_ctl();
         let p = &mut ctl as *mut Ctl;
         unsafe {
             write_tz_bias(p, -120);
@@ -323,7 +404,7 @@ mod tests {
 
     #[test]
     fn scale_dur_round_trips() {
-        let mut ctl = zeroed();
+        let mut ctl = zeroed_ctl();
         let p = &mut ctl as *mut Ctl;
         unsafe {
             assert!(!read_scale_dur(p));
@@ -333,9 +414,40 @@ mod tests {
     }
 
     #[test]
-    fn channels_accumulate_and_count_per_index() {
-        let mut ctl = zeroed();
+    fn pid_registry_assigns_distinct_slots_and_reads_back() {
+        let mut ctl = zeroed_ctl();
         let p = &mut ctl as *mut Ctl;
+        unsafe {
+            assert!(register_pid(p, 1111));
+            assert!(register_pid(p, 2222));
+            assert!(register_pid(p, 3333));
+            // Three distinct slots, in order, readable back; the rest stay zero.
+            assert_eq!(read_pid(p, 0), 1111);
+            assert_eq!(read_pid(p, 1), 2222);
+            assert_eq!(read_pid(p, 2), 3333);
+            assert_eq!(read_pid(p, 3), 0);
+        }
+    }
+
+    #[test]
+    fn pid_registry_reports_full_instead_of_overwriting() {
+        let mut ctl = zeroed_ctl();
+        let p = &mut ctl as *mut Ctl;
+        unsafe {
+            for i in 0..MAX_COV_PIDS {
+                assert!(register_pid(p, (i as u32) + 1), "slot {i} should fit");
+            }
+            // One past the end: honest false, no overwrite of a live slot.
+            assert!(!register_pid(p, 999_999));
+            assert_eq!(read_pid(p, 0), 1);
+            assert_eq!(read_pid(p, MAX_COV_PIDS - 1), MAX_COV_PIDS as u32);
+        }
+    }
+
+    #[test]
+    fn channels_accumulate_and_count_per_index() {
+        let mut cov = zeroed_cov();
+        let p = &mut cov as *mut Cov;
         unsafe {
             assert_eq!(read_installed(p), 0);
             mark_channel_installed(p, CH_GSTAFT);
@@ -378,5 +490,10 @@ mod tests {
             assert_eq!(seen & ch.bit, 0, "duplicate bit for {}", ch.name);
             seen |= ch.bit;
         }
+    }
+
+    #[test]
+    fn cov_section_name_is_pid_suffixed() {
+        assert_eq!(cov_section_name(1234), "Local\\ChronoCov.1234");
     }
 }
