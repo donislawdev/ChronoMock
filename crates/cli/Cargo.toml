@@ -1,0 +1,22 @@
+[package]
+name = "chrono-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+# The friendly driver AND the hidden core mode live in one binary. `chrono run`
+# spawns `chrono __core` and talks NDJSON over stdio (ADR-6). The CLI is the
+# outermost consumer, so depending on all inner layers is correct.
+[[bin]]
+name = "chrono"
+path = "src/main.rs"
+
+[dependencies]
+chrono-core = { workspace = true }
+chrono-mech = { workspace = true }
+chrono-proto = { workspace = true }
+serde_json = { workspace = true }
+
+# Only for the Rule 16 architecture guard test (reads chrono-core's manifest).
+[dev-dependencies]
+toml = "0.8"

@@ -1,0 +1,15 @@
+[package]
+name = "chrono-mech"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+name = "chrono_mech"
+
+# The mechanism layer is the ONLY place that touches the OS and the target process.
+# It may depend on the logical core (inward) but never on an interface layer.
+[dependencies]
+chrono-core = { workspace = true }
+chrono-ctl = { workspace = true }
+windows = { workspace = true }

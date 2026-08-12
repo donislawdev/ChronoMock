@@ -1,0 +1,16 @@
+[package]
+name = "chrono-hook"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+# The injected library. Built for both bitnesses; the mechanism picks the DLL that
+# matches the target. Rewrite of the throwaway spike hook as product code.
+[lib]
+name = "chrono_hook"
+crate-type = ["cdylib"]
+
+[dependencies]
+chrono-ctl = { workspace = true }
+minhook = { workspace = true }
+windows = { workspace = true }

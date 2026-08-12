@@ -1,0 +1,7 @@
+# Static CRT for portable .exe/.dll without VCRUNTIME140 (ADR-1).
+# Applied to both supported targets so injection-side bitness stays consistent.
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]
+
+[target.i686-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]

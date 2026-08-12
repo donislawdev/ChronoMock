@@ -1,0 +1,204 @@
+//! Chrono Mock machine protocol (ADR-6, docs/08) - NDJSON over a byte stream.
+//!
+//! One JSON object per line. The core writes events on its stdout, reads commands
+//! on its stdin. `stdout` is protocol only, `stderr` is human diagnostics.
+//!
+//! Stage 1 defines the messages the walking skeleton needs: `start`/`end` commands
+//! and `ready`/`verdict`/`ended`/`error` events. Later slices add `set_multiplier`,
+//! `jump`, `query`, `ack`, `coverage`, `state`, `warning`, `vanished`.
+//!
+//! `v` is repeated per message on purpose - a flat, unambiguous wire shape beats a
+//! clever envelope that trips serde's flatten + internal-tag edge cases.
+
+use serde::{Deserialize, Serialize};
+
+/// Wire protocol version carried in every message envelope.
+pub const PROTOCOL_VERSION: u32 = 1;
+
+/// What to run, as it appears on the wire.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TargetSpec {
+    pub path: String,
+    #[serde(default)]
+    pub args: Vec<String>,
+    #[serde(default)]
+    pub cwd: Option<String>,
+}
+
+/// The target moment (session-zone semantics, docs/01 section 4).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MomentSpec {
+    /// "absolute" or "relative".
+    pub kind: String,
+    #[serde(default)]
+    pub local: Option<String>,
+    #[serde(default)]
+    pub tz_bias_min: Option<i32>,
+    #[serde(default)]
+    pub delta: Option<String>,
+}
+
+/// Time flow selection.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TimeSpec {
+    pub moment: MomentSpec,
+    /// "flow" | "frozen" | "multiplier".
+    pub mode: String,
+    #[serde(default)]
+    pub multiplier: Option<i64>,
+    #[serde(default)]
+    pub scale_duration: bool,
+}
+
+/// One covered channel and how many times the target has called it so far.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CoveredChannel {
+    pub channel: String,
+    pub calls: u64,
+}
+
+/// Commands: interface -> core (on the core's stdin).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum Command {
+    Start {
+        v: u32,
+        id: u64,
+        target: TargetSpec,
+        time: TimeSpec,
+    },
+    End {
+        v: u32,
+        id: u64,
+    },
+}
+
+/// Events: core -> interface (on the core's stdout).
+///
+/// The core emits translation KEYS and structured data, never translated prose
+/// (untouchable rules 15 and 16). `reason_key`, `key` are stable keys the consumer
+/// renders in the user's language.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum Event {
+    Ready {
+        v: u32,
+        protocol: u32,
+        core_version: String,
+        bitness: String,
+        capabilities: Vec<String>,
+    },
+    Coverage {
+        v: u32,
+        pid: u32,
+        covered: Vec<CoveredChannel>,
+        uncovered: Vec<String>,
+        warning_keys: Vec<String>,
+    },
+    Verdict {
+        v: u32,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        id: Option<u64>,
+        verdict: String,
+        refuse_start: bool,
+        reason_key: String,
+    },
+    Ended {
+        v: u32,
+        clean: bool,
+        residue_keys: Vec<String>,
+        target_exit_code: Option<i32>,
+    },
+    Error {
+        v: u32,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        id: Option<u64>,
+        code: i32,
+        key: String,
+        origin: String,
+    },
+}
+
+impl Event {
+    /// Serialize to a single NDJSON line (no trailing newline). Defensive fallback
+    /// keeps the stream valid even if serialization somehow fails.
+    pub fn to_ndjson(&self) -> String {
+        serde_json::to_string(self).unwrap_or_else(|_| {
+            String::from(
+                r#"{"type":"error","v":1,"code":3,"key":"proto.serialize_failed","origin":"proto"}"#,
+            )
+        })
+    }
+}
+
+/// Parse one NDJSON line into an event (used by the interface side).
+pub fn parse_event(line: &str) -> Result<Event, serde_json::Error> {
+    serde_json::from_str(line)
+}
+
+/// Parse one NDJSON line into a command (used by the core side).
+pub fn parse_command(line: &str) -> Result<Command, serde_json::Error> {
+    serde_json::from_str(line)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn command_start_round_trips() {
+        let cmd = Command::Start {
+            v: PROTOCOL_VERSION,
+            id: 1,
+            target: TargetSpec { path: "C:/app.exe".into(), args: vec!["--x".into()], cwd: None },
+            time: TimeSpec {
+                moment: MomentSpec {
+                    kind: "absolute".into(),
+                    local: Some("2038-01-19T03:14:07".into()),
+                    tz_bias_min: Some(-120),
+                    delta: None,
+                },
+                mode: "multiplier".into(),
+                multiplier: Some(60),
+                scale_duration: false,
+            },
+        };
+        let line = serde_json::to_string(&cmd).unwrap();
+        assert!(line.contains(r#""type":"start""#));
+        let back = parse_command(&line).unwrap();
+        match back {
+            Command::Start { id, time, .. } => {
+                assert_eq!(id, 1);
+                assert_eq!(time.multiplier, Some(60));
+            }
+            _ => panic!("wrong command variant"),
+        }
+    }
+
+    #[test]
+    fn event_ready_has_type_tag() {
+        let ev = Event::Ready {
+            v: PROTOCOL_VERSION,
+            protocol: PROTOCOL_VERSION,
+            core_version: "0.1.0".into(),
+            bitness: "x64".into(),
+            capabilities: vec![],
+        };
+        let line = ev.to_ndjson();
+        assert!(line.starts_with(r#"{"type":"ready""#));
+        assert!(parse_event(&line).is_ok());
+    }
+
+    #[test]
+    fn verdict_omits_null_id() {
+        let ev = Event::Verdict {
+            v: PROTOCOL_VERSION,
+            id: None,
+            verdict: "undetermined".into(),
+            refuse_start: false,
+            reason_key: "mechanism.not_implemented".into(),
+        };
+        let line = ev.to_ndjson();
+        assert!(!line.contains("\"id\""), "null id must be omitted, got {line}");
+    }
+}

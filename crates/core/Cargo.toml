@@ -1,0 +1,13 @@
+[package]
+name = "chrono-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+name = "chrono_core"
+
+# Rule 16: this crate must depend on NOTHING from the interface layers
+# (chrono-proto, chrono-mech, chrono-cli) or any UI/IO library.
+# The architecture guard test enforces an empty forbidden set here.
+[dependencies]
