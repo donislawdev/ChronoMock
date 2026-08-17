@@ -17,6 +17,12 @@
 //! (ADR-2). Once QUIT is hooked, the anchor math reads it through the trampoline so the
 //! scaled output never feeds back.
 //!
+//! Under the SAME scale_duration flag the wait axis is scaled too (ADR-7): `Sleep`'s
+//! timeout is divided by the multiplier (real wait = requested / M), so a thread that
+//! blocks on time wakes in lockstep with the scaled clock it reads. `INFINITE` and 0 pass
+//! through untouched. Only `Sleep` is covered so far (ADR-7 class A) - SleepEx,
+//! NtDelayExecution, and the object waits are later slices.
+//!
 //! ABSOLUTE, not delta: a detour computes the fake instant from the anchor and never
 //! calls another channel's original. So there is no cross-channel re-entrancy and no
 //! double-shift, and hence no thread-local re-entrancy guard - the spike's E2 guard
@@ -33,9 +39,9 @@ use std::sync::OnceLock;
 
 use chrono_ctl::{
     bump_calls, cov_section_name, cov_size, mark_channel_installed, read_anchor, read_core_pid,
-    read_scale_dur, read_tz_bias, register_pid, ChannelModule, Cov, Ctl, CHANNELS, IDX_GDTZI,
-    IDX_GLT, IDX_GST, IDX_GSTAFT, IDX_GSTPAFT, IDX_GTC, IDX_GTC64, IDX_GTZI, IDX_NTQST, IDX_QUIT,
-    IDX_STSL, IDX_STSLEX, IDX_FTLFT, IDX_LFTFT, IDX_TLTST, IDX_TLTSTEX,
+    read_scale_dur, read_tz_bias, register_pid, scale_wait, ChannelModule, Cov, Ctl, CHANNELS,
+    IDX_GDTZI, IDX_GLT, IDX_GST, IDX_GSTAFT, IDX_GSTPAFT, IDX_GTC, IDX_GTC64, IDX_GTZI, IDX_NTQST,
+    IDX_QUIT, IDX_SLEEP, IDX_STSL, IDX_STSLEX, IDX_FTLFT, IDX_LFTFT, IDX_TLTST, IDX_TLTSTEX,
 };
 use minhook::MinHook;
 use windows::core::{s, w, PCSTR, PCWSTR};
@@ -72,6 +78,7 @@ type FtConvFn = unsafe extern "system" fn(*const FILETIME, *mut FILETIME) -> i32
 type TickFn = unsafe extern "system" fn() -> u64;
 type Tick32Fn = unsafe extern "system" fn() -> u32;
 type QuitFn = unsafe extern "system" fn(*mut u64) -> i32;
+type SleepFn = unsafe extern "system" fn(u32);
 type CpwFn = unsafe extern "system" fn(
     *const u16,
     *mut u16,
@@ -119,6 +126,7 @@ static O_TLTSTEX: OnceLock<StslexFn> = OnceLock::new();
 static O_TICK: OnceLock<TickFn> = OnceLock::new();
 static O_TICK32: OnceLock<Tick32Fn> = OnceLock::new();
 static O_QUIT: OnceLock<QuitFn> = OnceLock::new();
+static O_SLEEP: OnceLock<SleepFn> = OnceLock::new();
 
 // Duration-axis anchors, captured real (before hooking) at install time.
 static Q0: OnceLock<i64> = OnceLock::new();
@@ -577,6 +585,24 @@ unsafe extern "system" fn h_quit(lp: *mut u64) -> i32 {
     1 // nonzero BOOL = success
 }
 
+// Sleep (ADR-7 class A): divide the requested timeout by the duration multiplier so a
+// thread that blocks on time wakes in lockstep with the scaled clock it reads. INFINITE
+// and 0 pass through (scale_wait). Only Sleep for now - SleepEx / NtDelayExecution and the
+// object waits are later slices, and they need a re-entrancy guard this single hook does not
+// (a relative detour calls the original, which may re-enter another hooked wait export).
+unsafe extern "system" fn h_sleep(ms: u32) {
+    bump(IDX_SLEEP);
+    let o = match O_SLEEP.get() {
+        Some(o) => o,
+        None => return,
+    };
+    if detached() {
+        o(ms);
+    } else {
+        o(scale_wait(ms, dur_multiplier()));
+    }
+}
+
 // --- Child inheritance (ADR-3) --------------------------------------------------
 // Detour CreateProcessW so children join the session: create suspended, inject the
 // same DLL, then resume (unless the caller wanted it suspended). The child opens the
@@ -825,6 +851,7 @@ unsafe fn install() -> Result<(), String> {
         make_hook(cov, k32, ntdll, IDX_GTC64, h_tick as *const () as *mut c_void, &O_TICK);
         make_hook(cov, k32, ntdll, IDX_GTC, h_tick32 as *const () as *mut c_void, &O_TICK32);
         make_hook(cov, k32, ntdll, IDX_QUIT, h_quit as *const () as *mut c_void, &O_QUIT);
+        make_hook(cov, k32, ntdll, IDX_SLEEP, h_sleep as *const () as *mut c_void, &O_SLEEP);
     }
 
     // Child inheritance (ADR-3): hook CreateProcessW and CreateProcessA so the whole

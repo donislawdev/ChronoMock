@@ -84,6 +84,8 @@ pub const CH_LFTFT: u32 = 1 << 13;
 pub const CH_TLTST: u32 = 1 << 14;
 /// Coverage bit: `TzSpecificLocalTimeToSystemTimeEx` is hooked (session zone, local->UTC).
 pub const CH_TLTSTEX: u32 = 1 << 15;
+/// Coverage bit: `Sleep` is hooked (duration axis / wait-length scaling, opt-in, ADR-7).
+pub const CH_SLEEP: u32 = 1 << 16;
 
 /// Index of each channel into the `calls` array (== its position in `CHANNELS`).
 pub const IDX_GSTAFT: usize = 0;
@@ -102,9 +104,10 @@ pub const IDX_FTLFT: usize = 12;
 pub const IDX_LFTFT: usize = 13;
 pub const IDX_TLTST: usize = 14;
 pub const IDX_TLTSTEX: usize = 15;
+pub const IDX_SLEEP: usize = 16;
 
 /// Number of time channels tracked (wall-clock, session zone, duration axis).
-pub const CHANNEL_COUNT: usize = 16;
+pub const CHANNEL_COUNT: usize = 17;
 
 /// Which system module exports a channel (the hook resolves it there).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -139,8 +142,9 @@ pub struct ChannelDef {
 // zone (GetTimeZoneInformation, GetDynamicTimeZoneInformation) plus the explicit zone
 // conversions (SystemTimeToTzSpecificLocalTime/Ex, FileTimeToLocalFileTime,
 // LocalFileTimeToFileTime, TzSpecificLocalTimeToSystemTime/Ex), NtQuerySystemTime, and
-// the opt-in duration axis (GetTickCount, GetTickCount64, QueryUnbiasedInterruptTime). CRT time /
-// _time64 ride the hooked Win32 exports, so they follow for free.
+// the opt-in duration axis (GetTickCount, GetTickCount64, QueryUnbiasedInterruptTime), and
+// wait-length scaling (Sleep - ADR-7 class A). CRT time / _time64 ride the hooked Win32
+// exports, so they follow for free.
 //
 // DELIBERATELY EXCLUDED (ADR-2 - scaling them destabilizes the target): the performance
 // counter (QueryPerformanceCounter, NtQueryPerformanceCounter) and timeGetTime.
@@ -149,9 +153,10 @@ pub struct ChannelDef {
 // direct KUSER_SHARED_DATA reads, direct syscalls, and out-of-process or network time.
 //
 // KNOWN GAPS, not yet covered (the verifier should report these honestly): GetFileTime,
-// NtQuerySystemInformation, the
-// waitable/settable timers that need timeout scaling under acceleration, and process
-// creation other than CreateProcessW/A (NtCreateUserProcess) for child inheritance.
+// NtQuerySystemInformation, the rest of the ADR-7 wait/timeout surface (SleepEx and
+// NtDelayExecution, the object waits WaitForSingleObject / WaitForMultipleObjects, the
+// settable timers SetWaitableTimer / SetTimer), and process creation other than
+// CreateProcessW/A (NtCreateUserProcess) for child inheritance.
 
 /// All time channels, ordered by their `calls` index (IDX_*): the wall-clock set, the
 /// session-zone functions, then the opt-in duration axis.
@@ -172,6 +177,7 @@ pub const CHANNELS: [ChannelDef; CHANNEL_COUNT] = [
     ChannelDef { bit: CH_LFTFT, name: "LocalFileTimeToFileTime", module: ChannelModule::Kernel32, category: ChannelCategory::Zone },
     ChannelDef { bit: CH_TLTST, name: "TzSpecificLocalTimeToSystemTime", module: ChannelModule::Kernel32, category: ChannelCategory::Zone },
     ChannelDef { bit: CH_TLTSTEX, name: "TzSpecificLocalTimeToSystemTimeEx", module: ChannelModule::Kernel32, category: ChannelCategory::Zone },
+    ChannelDef { bit: CH_SLEEP, name: "Sleep", module: ChannelModule::Kernel32, category: ChannelCategory::Duration },
 ];
 
 /// Session-wide control block in `Local\ChronoCtl`. `#[repr(C)]` so both processes
@@ -383,6 +389,21 @@ pub unsafe fn read_calls(p: *const Cov, idx: usize) -> u64 {
     read_volatile(slot)
 }
 
+/// Scale a wait timeout in milliseconds by the duration multiplier: real wait =
+/// requested / M (ADR-7). `INFINITE` (0xFFFFFFFF) and 0 pass through untouched - never
+/// turn "wait forever" into a finite wait, never lengthen a poll. `m` is clamped to >= 1,
+/// so frozen (M=0) and slow motion (0<M<1) leave waits at real length, symmetric to the
+/// duration axis (untouchable rule 3). Integer division truncates: a sub-M timeout
+/// collapses to a yield, the honest coarse behavior under heavy acceleration.
+pub fn scale_wait(ms: u32, m: i64) -> u32 {
+    const INFINITE_MS: u32 = 0xFFFF_FFFF;
+    if ms == 0 || ms == INFINITE_MS {
+        return ms;
+    }
+    let m = m.max(1) as u64;
+    (ms as u64 / m) as u32
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -514,6 +535,7 @@ mod tests {
             (IDX_LFTFT, CH_LFTFT),
             (IDX_TLTST, CH_TLTST),
             (IDX_TLTSTEX, CH_TLTSTEX),
+            (IDX_SLEEP, CH_SLEEP),
         ];
         assert_eq!(CHANNELS.len(), CHANNEL_COUNT);
         for (idx, bit) in expected {
@@ -531,5 +553,20 @@ mod tests {
     #[test]
     fn cov_section_name_is_pid_suffixed() {
         assert_eq!(cov_section_name(1234), "Local\\ChronoCov.1234");
+    }
+
+    #[test]
+    fn scale_wait_divides_and_guards_edges() {
+        // INFINITE and 0 are untouched - never a finite wait, never a lengthened poll.
+        assert_eq!(scale_wait(0xFFFF_FFFF, 60), 0xFFFF_FFFF);
+        assert_eq!(scale_wait(0, 60), 0);
+        // Real wait = requested / M.
+        assert_eq!(scale_wait(6000, 60), 100);
+        assert_eq!(scale_wait(6000, 1), 6000);
+        // Frozen (0) and slow motion clamp to real length (>= 1) - rule 3.
+        assert_eq!(scale_wait(6000, 0), 6000);
+        assert_eq!(scale_wait(6000, -5), 6000);
+        // Truncation: a sub-M timeout collapses to a yield (honest coarseness).
+        assert_eq!(scale_wait(30, 60), 0);
     }
 }
