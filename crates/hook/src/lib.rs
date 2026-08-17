@@ -22,7 +22,8 @@
 //! double-shift, and hence no thread-local re-entrancy guard - the spike's E2 guard
 //! was an artifact of an earlier delta design (`original + delta`) and does not apply.
 //!
-//! Out of scope here (later slices): child-process inheritance (`CreateProcessW`).
+//! Child processes inherit the session via `CreateProcessW` / `CreateProcessA` detours
+//! (ADR-3). `NtCreateUserProcess` is not covered yet.
 
 #![allow(non_snake_case)]
 
@@ -79,6 +80,20 @@ type CpwFn = unsafe extern "system" fn(
     *const c_void,
     *mut PROCESS_INFORMATION,
 ) -> i32;
+// CreateProcessA: same ABI shape as CreateProcessW, only the string params are ANSI. We
+// forward them opaquely (never read them), so u8 pointers are enough.
+type CpaFn = unsafe extern "system" fn(
+    *const u8,
+    *mut u8,
+    *const c_void,
+    *const c_void,
+    i32,
+    u32,
+    *const c_void,
+    *const u8,
+    *const c_void,
+    *mut PROCESS_INFORMATION,
+) -> i32;
 
 static CTL_PTR: OnceLock<usize> = OnceLock::new();
 static COV_PTR: OnceLock<usize> = OnceLock::new();
@@ -103,6 +118,7 @@ static C0_TICK: OnceLock<u64> = OnceLock::new();
 // child) and the CreateProcessW trampoline.
 static SELF_HMOD: OnceLock<usize> = OnceLock::new();
 static O_CPW: OnceLock<CpwFn> = OnceLock::new();
+static O_CPA: OnceLock<CpaFn> = OnceLock::new();
 
 // Self-detach: a SYNCHRONIZE handle to the core process, and the flag a watcher flips
 // when the core vanishes so every detour reverts to real time.
@@ -443,6 +459,22 @@ unsafe fn inject_self(hproc: HANDLE) {
     let _ = VirtualFreeEx(hproc, remote, 0, MEM_RELEASE);
 }
 
+/// After a create call we forced to CREATE_SUSPENDED returns, inject the hook into the
+/// new child so it joins the session, then resume it unless the caller originally asked
+/// for a suspended child. Shared by the CreateProcessW and CreateProcessA detours.
+///
+/// # Safety
+/// `pi`, when non-null, must point to a PROCESS_INFORMATION filled by a successful create.
+unsafe fn inherit_into_child(r: i32, pi: *mut PROCESS_INFORMATION, want_suspended: bool) {
+    if r != 0 && !pi.is_null() {
+        let info = *pi;
+        inject_self(info.hProcess);
+        if !want_suspended {
+            let _ = ResumeThread(info.hThread);
+        }
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 unsafe extern "system" fn h_cpw(
     app: *const u16,
@@ -462,13 +494,33 @@ unsafe extern "system" fn h_cpw(
     };
     let want_suspended = (flags & CREATE_SUSPENDED.0) != 0;
     let r = o(app, cmd, pa, ta, inherit, flags | CREATE_SUSPENDED.0, env, cwd, si, pi);
-    if r != 0 && !pi.is_null() {
-        let info = *pi;
-        inject_self(info.hProcess);
-        if !want_suspended {
-            let _ = ResumeThread(info.hThread);
-        }
-    }
+    inherit_into_child(r, pi, want_suspended);
+    r
+}
+
+// CreateProcessA bypasses the CreateProcessW export (it funnels through the internal
+// CreateProcessInternalW), so a parent spawning with the ANSI API would escape the
+// session unless we hook A too. Mirror of h_cpw with ANSI string params.
+#[allow(clippy::too_many_arguments)]
+unsafe extern "system" fn h_cpa(
+    app: *const u8,
+    cmd: *mut u8,
+    pa: *const c_void,
+    ta: *const c_void,
+    inherit: i32,
+    flags: u32,
+    env: *const c_void,
+    cwd: *const u8,
+    si: *const c_void,
+    pi: *mut PROCESS_INFORMATION,
+) -> i32 {
+    let o = match O_CPA.get() {
+        Some(o) => o,
+        None => return 0,
+    };
+    let want_suspended = (flags & CREATE_SUSPENDED.0) != 0;
+    let r = o(app, cmd, pa, ta, inherit, flags | CREATE_SUSPENDED.0, env, cwd, si, pi);
+    inherit_into_child(r, pi, want_suspended);
     r
 }
 
@@ -603,8 +655,10 @@ unsafe fn install() -> Result<(), String> {
         make_hook(cov, k32, ntdll, IDX_QUIT, h_quit as *const () as *mut c_void, &O_QUIT);
     }
 
-    // Child inheritance (ADR-3): hook CreateProcessW so the whole process tree joins
-    // the session. Not a coverage channel - it is plumbing, not a time source.
+    // Child inheritance (ADR-3): hook CreateProcessW and CreateProcessA so the whole
+    // process tree joins the session whichever spawn API the parent uses. Not coverage
+    // channels - plumbing, not time sources. (CreateProcessA funnels through the internal
+    // CreateProcessInternalW, not the W export, so the two detours never re-enter.)
     if let Some(cpw) = GetProcAddress(k32, s!("CreateProcessW")) {
         match MinHook::create_hook(
             cpw as *const () as *mut c_void,
@@ -614,6 +668,17 @@ unsafe fn install() -> Result<(), String> {
                 let _ = O_CPW.set(std::mem::transmute::<*mut c_void, CpwFn>(original));
             }
             Err(e) => log(&format!("[chrono_hook] create_hook CreateProcessW failed: {e:?}")),
+        }
+    }
+    if let Some(cpa) = GetProcAddress(k32, s!("CreateProcessA")) {
+        match MinHook::create_hook(
+            cpa as *const () as *mut c_void,
+            h_cpa as *const () as *mut c_void,
+        ) {
+            Ok(original) => {
+                let _ = O_CPA.set(std::mem::transmute::<*mut c_void, CpaFn>(original));
+            }
+            Err(e) => log(&format!("[chrono_hook] create_hook CreateProcessA failed: {e:?}")),
         }
     }
 

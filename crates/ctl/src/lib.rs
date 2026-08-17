@@ -131,8 +131,7 @@ pub struct ChannelDef {
 // KNOWN GAPS, not yet covered (the verifier should report these honestly):
 // SystemTimeToTzSpecificLocalTime, GetFileTime, NtQuerySystemInformation, the
 // waitable/settable timers that need timeout scaling under acceleration, and process
-// creation other than CreateProcessW (CreateProcessA, NtCreateUserProcess) for child
-// inheritance.
+// creation other than CreateProcessW/A (NtCreateUserProcess) for child inheritance.
 
 /// All time channels, ordered by their `calls` index (IDX_*): the wall-clock set, the
 /// session-zone functions, then the opt-in duration axis.
