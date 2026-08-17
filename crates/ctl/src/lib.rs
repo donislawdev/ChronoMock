@@ -70,6 +70,8 @@ pub const CH_GDTZI: u32 = 1 << 6;
 pub const CH_GTC64: u32 = 1 << 7;
 /// Coverage bit: `QueryUnbiasedInterruptTime` is hooked (duration axis, opt-in).
 pub const CH_QUIT: u32 = 1 << 8;
+/// Coverage bit: `GetTickCount` (32-bit) is hooked (duration axis, opt-in).
+pub const CH_GTC: u32 = 1 << 9;
 
 /// Index of each channel into the `calls` array (== its position in `CHANNELS`).
 pub const IDX_GSTAFT: usize = 0;
@@ -81,9 +83,10 @@ pub const IDX_GTZI: usize = 5;
 pub const IDX_GDTZI: usize = 6;
 pub const IDX_GTC64: usize = 7;
 pub const IDX_QUIT: usize = 8;
+pub const IDX_GTC: usize = 9;
 
 /// Number of time channels tracked (wall-clock, session zone, duration axis).
-pub const CHANNEL_COUNT: usize = 9;
+pub const CHANNEL_COUNT: usize = 10;
 
 /// Which system module exports a channel (the hook resolves it there).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -116,7 +119,7 @@ pub struct ChannelDef {
 // COVERED (the CHANNELS table below): the Win32 wall clock (GetSystemTime,
 // GetSystemTimeAsFileTime, GetSystemTimePreciseAsFileTime, GetLocalTime), the session
 // zone (GetTimeZoneInformation, GetDynamicTimeZoneInformation), NtQuerySystemTime, and
-// the opt-in duration axis (GetTickCount64, QueryUnbiasedInterruptTime). CRT time /
+// the opt-in duration axis (GetTickCount, GetTickCount64, QueryUnbiasedInterruptTime). CRT time /
 // _time64 ride the hooked Win32 exports, so they follow for free.
 //
 // DELIBERATELY EXCLUDED (ADR-2 - scaling them destabilizes the target): the performance
@@ -125,8 +128,8 @@ pub struct ChannelDef {
 // UNHOOKABLE BY NATURE (chrono-mock.md 9.2 - the verifier warns, it does not hide):
 // direct KUSER_SHARED_DATA reads, direct syscalls, and out-of-process or network time.
 //
-// KNOWN GAPS, not yet covered (the verifier should report these honestly): GetTickCount
-// (32-bit), SystemTimeToTzSpecificLocalTime, GetFileTime, NtQuerySystemInformation, the
+// KNOWN GAPS, not yet covered (the verifier should report these honestly):
+// SystemTimeToTzSpecificLocalTime, GetFileTime, NtQuerySystemInformation, the
 // waitable/settable timers that need timeout scaling under acceleration, and process
 // creation other than CreateProcessW (CreateProcessA, NtCreateUserProcess) for child
 // inheritance.
@@ -143,6 +146,7 @@ pub const CHANNELS: [ChannelDef; CHANNEL_COUNT] = [
     ChannelDef { bit: CH_GDTZI, name: "GetDynamicTimeZoneInformation", module: ChannelModule::Kernel32, category: ChannelCategory::Zone },
     ChannelDef { bit: CH_GTC64, name: "GetTickCount64", module: ChannelModule::Kernel32, category: ChannelCategory::Duration },
     ChannelDef { bit: CH_QUIT, name: "QueryUnbiasedInterruptTime", module: ChannelModule::Kernel32, category: ChannelCategory::Duration },
+    ChannelDef { bit: CH_GTC, name: "GetTickCount", module: ChannelModule::Kernel32, category: ChannelCategory::Duration },
 ];
 
 /// Session-wide control block in `Local\ChronoCtl`. `#[repr(C)]` so both processes
@@ -478,6 +482,7 @@ mod tests {
             (IDX_GDTZI, CH_GDTZI),
             (IDX_GTC64, CH_GTC64),
             (IDX_QUIT, CH_QUIT),
+            (IDX_GTC, CH_GTC),
         ];
         assert_eq!(CHANNELS.len(), CHANNEL_COUNT);
         for (idx, bit) in expected {

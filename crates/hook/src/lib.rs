@@ -10,8 +10,8 @@
 //! the zone detours report the session zone (`Bias = tz_bias`, no DST) so a target
 //! that asks its offset agrees with `GetLocalTime`.
 //!
-//! The duration axis (`GetTickCount64` and `QueryUnbiasedInterruptTime`) is scaled by
-//! the multiplier only when scale_duration is set, and never below real speed - so the
+//! The duration axis (`GetTickCount`, `GetTickCount64`, `QueryUnbiasedInterruptTime`) is
+//! scaled by the multiplier only when scale_duration is set, and never below real speed - so the
 //! monotonic clock keeps advancing even when the wall clock is frozen (untouchable
 //! rule 3). `QueryPerformanceCounter` and `timeGetTime` are deliberately left real
 //! (ADR-2). Once QUIT is hooked, the anchor math reads it through the trampoline so the
@@ -33,7 +33,7 @@ use std::sync::OnceLock;
 use chrono_ctl::{
     bump_calls, cov_section_name, cov_size, mark_channel_installed, read_anchor, read_core_pid,
     read_scale_dur, read_tz_bias, register_pid, ChannelModule, Cov, Ctl, CHANNELS, IDX_GDTZI,
-    IDX_GLT, IDX_GST, IDX_GSTAFT, IDX_GSTPAFT, IDX_GTC64, IDX_GTZI, IDX_NTQST, IDX_QUIT,
+    IDX_GLT, IDX_GST, IDX_GSTAFT, IDX_GSTPAFT, IDX_GTC, IDX_GTC64, IDX_GTZI, IDX_NTQST, IDX_QUIT,
 };
 use minhook::MinHook;
 use windows::core::{s, w, PCSTR, PCWSTR};
@@ -65,6 +65,7 @@ type NtqstFn = unsafe extern "system" fn(*mut i64) -> i32;
 type TziFn = unsafe extern "system" fn(*mut TIME_ZONE_INFORMATION) -> u32;
 type DtziFn = unsafe extern "system" fn(*mut DYNAMIC_TIME_ZONE_INFORMATION) -> u32;
 type TickFn = unsafe extern "system" fn() -> u64;
+type Tick32Fn = unsafe extern "system" fn() -> u32;
 type QuitFn = unsafe extern "system" fn(*mut u64) -> i32;
 type CpwFn = unsafe extern "system" fn(
     *const u16,
@@ -91,6 +92,7 @@ static O_NTQST: OnceLock<NtqstFn> = OnceLock::new();
 static O_GTZI: OnceLock<TziFn> = OnceLock::new();
 static O_GDTZI: OnceLock<DtziFn> = OnceLock::new();
 static O_TICK: OnceLock<TickFn> = OnceLock::new();
+static O_TICK32: OnceLock<Tick32Fn> = OnceLock::new();
 static O_QUIT: OnceLock<QuitFn> = OnceLock::new();
 
 // Duration-axis anchors, captured real (before hooking) at install time.
@@ -365,6 +367,21 @@ unsafe extern "system" fn h_tick() -> u64 {
     C0_TICK.get().copied().unwrap_or(0).wrapping_add(dms as u64)
 }
 
+// GetTickCount (32-bit): the low 32 bits of the SAME scaled millisecond count as
+// GetTickCount64 (shares the C0_TICK base), so a target comparing the two sees them
+// agree. Wraps at 2^32 ms like the real one - and sooner under acceleration - which is the
+// honest behavior of a fast 32-bit counter; callers handle the wrap with unsigned deltas.
+unsafe extern "system" fn h_tick32() -> u32 {
+    bump(IDX_GTC);
+    if detached() {
+        return O_TICK32.get().map(|o| o()).unwrap_or(0);
+    }
+    let q0 = *Q0.get().unwrap_or(&0);
+    let dq = real_quit().wrapping_sub(q0); // 100 ns
+    let dms = dq.wrapping_mul(dur_multiplier()) / 10_000; // scale before /10000 (100ns -> ms)
+    C0_TICK.get().copied().unwrap_or(0).wrapping_add(dms as u64) as u32
+}
+
 unsafe extern "system" fn h_quit(lp: *mut u64) -> i32 {
     bump(IDX_QUIT);
     if detached() {
@@ -582,6 +599,7 @@ unsafe fn install() -> Result<(), String> {
             let _ = C0_TICK.set(tick_fn());
         }
         make_hook(cov, k32, ntdll, IDX_GTC64, h_tick as *const () as *mut c_void, &O_TICK);
+        make_hook(cov, k32, ntdll, IDX_GTC, h_tick32 as *const () as *mut c_void, &O_TICK32);
         make_hook(cov, k32, ntdll, IDX_QUIT, h_quit as *const () as *mut c_void, &O_QUIT);
     }
 
