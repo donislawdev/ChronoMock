@@ -17,11 +17,12 @@
 //! (ADR-2). Once QUIT is hooked, the anchor math reads it through the trampoline so the
 //! scaled output never feeds back.
 //!
-//! Under the SAME scale_duration flag the wait axis is scaled too (ADR-7): `Sleep`'s
+//! Under the SAME scale_duration flag the wait axis is scaled too (ADR-7): a wait's
 //! timeout is divided by the multiplier (real wait = requested / M), so a thread that
 //! blocks on time wakes in lockstep with the scaled clock it reads. `INFINITE` and 0 pass
-//! through untouched. Only `Sleep` is covered so far (ADR-7 class A) - SleepEx,
-//! NtDelayExecution, and the object waits are later slices.
+//! through untouched. `Sleep` and `SleepEx` are covered (ADR-7 class A) - a thread-local
+//! guard scales an internal cascade (one hooked wait re-entering another) exactly once.
+//! NtDelayExecution, the object waits, and the settable timers are later slices.
 //!
 //! ABSOLUTE, not delta: a detour computes the fake instant from the anchor and never
 //! calls another channel's original. So there is no cross-channel re-entrancy and no
@@ -33,6 +34,7 @@
 
 #![allow(non_snake_case)]
 
+use std::cell::Cell;
 use std::ffi::{c_void, CString};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::OnceLock;
@@ -41,7 +43,8 @@ use chrono_ctl::{
     bump_calls, cov_section_name, cov_size, mark_channel_installed, read_anchor, read_core_pid,
     read_scale_dur, read_tz_bias, register_pid, scale_wait, ChannelModule, Cov, Ctl, CHANNELS,
     IDX_GDTZI, IDX_GLT, IDX_GST, IDX_GSTAFT, IDX_GSTPAFT, IDX_GTC, IDX_GTC64, IDX_GTZI, IDX_NTQST,
-    IDX_QUIT, IDX_SLEEP, IDX_STSL, IDX_STSLEX, IDX_FTLFT, IDX_LFTFT, IDX_TLTST, IDX_TLTSTEX,
+    IDX_QUIT, IDX_SLEEP, IDX_SLEEPEX, IDX_STSL, IDX_STSLEX, IDX_FTLFT, IDX_LFTFT, IDX_TLTST,
+    IDX_TLTSTEX,
 };
 use minhook::MinHook;
 use windows::core::{s, w, PCSTR, PCWSTR};
@@ -79,6 +82,7 @@ type TickFn = unsafe extern "system" fn() -> u64;
 type Tick32Fn = unsafe extern "system" fn() -> u32;
 type QuitFn = unsafe extern "system" fn(*mut u64) -> i32;
 type SleepFn = unsafe extern "system" fn(u32);
+type SleepExFn = unsafe extern "system" fn(u32, i32) -> u32;
 type CpwFn = unsafe extern "system" fn(
     *const u16,
     *mut u16,
@@ -127,6 +131,7 @@ static O_TICK: OnceLock<TickFn> = OnceLock::new();
 static O_TICK32: OnceLock<Tick32Fn> = OnceLock::new();
 static O_QUIT: OnceLock<QuitFn> = OnceLock::new();
 static O_SLEEP: OnceLock<SleepFn> = OnceLock::new();
+static O_SLEEPEX: OnceLock<SleepExFn> = OnceLock::new();
 
 // Duration-axis anchors, captured real (before hooking) at install time.
 static Q0: OnceLock<i64> = OnceLock::new();
@@ -585,21 +590,64 @@ unsafe extern "system" fn h_quit(lp: *mut u64) -> i32 {
     1 // nonzero BOOL = success
 }
 
-// Sleep (ADR-7 class A): divide the requested timeout by the duration multiplier so a
-// thread that blocks on time wakes in lockstep with the scaled clock it reads. INFINITE
-// and 0 pass through (scale_wait). Only Sleep for now - SleepEx / NtDelayExecution and the
-// object waits are later slices, and they need a re-entrancy guard this single hook does not
-// (a relative detour calls the original, which may re-enter another hooked wait export).
+// Wait axis (ADR-7 class A): divide a blocking wait's timeout by the duration multiplier so
+// a thread that blocks on time wakes in lockstep with the scaled clock it reads. INFINITE and
+// 0 pass through (scale_wait). Unlike the absolute wall detours, a wait detour is RELATIVE - it
+// calls the original with a modified argument, and the original may re-enter another hooked wait
+// export on the same thread. A thread-local guard makes each app-level wait scale exactly once
+// and be counted against the export the app actually called, never an internal cascade. Measured
+// on Win11 26200: Sleep does not reach the exported SleepEx (it takes an internal path), so this
+// cascade first bites once the shared funnel NtDelayExecution is hooked (a later slice).
+
+thread_local! {
+    static SCALING_WAIT: Cell<bool> = const { Cell::new(false) };
+}
+
+/// Clears the re-entrancy flag when the top-level wait detour returns.
+struct WaitGuard;
+impl Drop for WaitGuard {
+    fn drop(&mut self) {
+        SCALING_WAIT.set(false);
+    }
+}
+
+/// Decide whether this wait call is the top-level app call we should scale. Returns the
+/// duration multiplier and a guard (held across the original call, so an inner cascade sees the
+/// flag set and passes through) when it is; None when this is an internal cascade (pass the
+/// original through, uncounted) or the core has detached (fall through to real time). Bumps
+/// coverage only for a top-level app call, so the audit counts what the app called, not what
+/// Windows re-entered.
+fn try_enter_wait(idx: usize) -> Option<(i64, WaitGuard)> {
+    if SCALING_WAIT.get() {
+        return None; // internal cascade: pass through, do not bump
+    }
+    bump(idx);
+    if detached() {
+        return None; // core gone: real time
+    }
+    SCALING_WAIT.set(true);
+    Some((dur_multiplier(), WaitGuard))
+}
+
 unsafe extern "system" fn h_sleep(ms: u32) {
-    bump(IDX_SLEEP);
     let o = match O_SLEEP.get() {
         Some(o) => o,
         None => return,
     };
-    if detached() {
-        o(ms);
-    } else {
-        o(scale_wait(ms, dur_multiplier()));
+    match try_enter_wait(IDX_SLEEP) {
+        Some((m, _guard)) => o(scale_wait(ms, m)),
+        None => o(ms),
+    }
+}
+
+unsafe extern "system" fn h_sleepex(ms: u32, alertable: i32) -> u32 {
+    let o = match O_SLEEPEX.get() {
+        Some(o) => o,
+        None => return 0,
+    };
+    match try_enter_wait(IDX_SLEEPEX) {
+        Some((m, _guard)) => o(scale_wait(ms, m), alertable),
+        None => o(ms, alertable),
     }
 }
 
@@ -852,6 +900,7 @@ unsafe fn install() -> Result<(), String> {
         make_hook(cov, k32, ntdll, IDX_GTC, h_tick32 as *const () as *mut c_void, &O_TICK32);
         make_hook(cov, k32, ntdll, IDX_QUIT, h_quit as *const () as *mut c_void, &O_QUIT);
         make_hook(cov, k32, ntdll, IDX_SLEEP, h_sleep as *const () as *mut c_void, &O_SLEEP);
+        make_hook(cov, k32, ntdll, IDX_SLEEPEX, h_sleepex as *const () as *mut c_void, &O_SLEEPEX);
     }
 
     // Child inheritance (ADR-3): hook CreateProcessW and CreateProcessA so the whole

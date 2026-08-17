@@ -86,6 +86,8 @@ pub const CH_TLTST: u32 = 1 << 14;
 pub const CH_TLTSTEX: u32 = 1 << 15;
 /// Coverage bit: `Sleep` is hooked (duration axis / wait-length scaling, opt-in, ADR-7).
 pub const CH_SLEEP: u32 = 1 << 16;
+/// Coverage bit: `SleepEx` is hooked (duration axis / wait-length scaling, opt-in, ADR-7).
+pub const CH_SLEEPEX: u32 = 1 << 17;
 
 /// Index of each channel into the `calls` array (== its position in `CHANNELS`).
 pub const IDX_GSTAFT: usize = 0;
@@ -105,9 +107,10 @@ pub const IDX_LFTFT: usize = 13;
 pub const IDX_TLTST: usize = 14;
 pub const IDX_TLTSTEX: usize = 15;
 pub const IDX_SLEEP: usize = 16;
+pub const IDX_SLEEPEX: usize = 17;
 
 /// Number of time channels tracked (wall-clock, session zone, duration axis).
-pub const CHANNEL_COUNT: usize = 17;
+pub const CHANNEL_COUNT: usize = 18;
 
 /// Which system module exports a channel (the hook resolves it there).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -143,7 +146,7 @@ pub struct ChannelDef {
 // conversions (SystemTimeToTzSpecificLocalTime/Ex, FileTimeToLocalFileTime,
 // LocalFileTimeToFileTime, TzSpecificLocalTimeToSystemTime/Ex), NtQuerySystemTime, and
 // the opt-in duration axis (GetTickCount, GetTickCount64, QueryUnbiasedInterruptTime), and
-// wait-length scaling (Sleep - ADR-7 class A). CRT time / _time64 ride the hooked Win32
+// wait-length scaling (Sleep, SleepEx - ADR-7 class A). CRT time / _time64 ride the hooked Win32
 // exports, so they follow for free.
 //
 // DELIBERATELY EXCLUDED (ADR-2 - scaling them destabilizes the target): the performance
@@ -153,9 +156,9 @@ pub struct ChannelDef {
 // direct KUSER_SHARED_DATA reads, direct syscalls, and out-of-process or network time.
 //
 // KNOWN GAPS, not yet covered (the verifier should report these honestly): GetFileTime,
-// NtQuerySystemInformation, the rest of the ADR-7 wait/timeout surface (SleepEx and
-// NtDelayExecution, the object waits WaitForSingleObject / WaitForMultipleObjects, the
-// settable timers SetWaitableTimer / SetTimer), and process creation other than
+// NtQuerySystemInformation, the rest of the ADR-7 wait/timeout surface (NtDelayExecution,
+// the object waits WaitForSingleObject / WaitForMultipleObjects, the settable timers
+// SetWaitableTimer / SetTimer), and process creation other than
 // CreateProcessW/A (NtCreateUserProcess) for child inheritance.
 
 /// All time channels, ordered by their `calls` index (IDX_*): the wall-clock set, the
@@ -178,6 +181,7 @@ pub const CHANNELS: [ChannelDef; CHANNEL_COUNT] = [
     ChannelDef { bit: CH_TLTST, name: "TzSpecificLocalTimeToSystemTime", module: ChannelModule::Kernel32, category: ChannelCategory::Zone },
     ChannelDef { bit: CH_TLTSTEX, name: "TzSpecificLocalTimeToSystemTimeEx", module: ChannelModule::Kernel32, category: ChannelCategory::Zone },
     ChannelDef { bit: CH_SLEEP, name: "Sleep", module: ChannelModule::Kernel32, category: ChannelCategory::Duration },
+    ChannelDef { bit: CH_SLEEPEX, name: "SleepEx", module: ChannelModule::Kernel32, category: ChannelCategory::Duration },
 ];
 
 /// Session-wide control block in `Local\ChronoCtl`. `#[repr(C)]` so both processes
@@ -536,6 +540,7 @@ mod tests {
             (IDX_TLTST, CH_TLTST),
             (IDX_TLTSTEX, CH_TLTSTEX),
             (IDX_SLEEP, CH_SLEEP),
+            (IDX_SLEEPEX, CH_SLEEPEX),
         ];
         assert_eq!(CHANNELS.len(), CHANNEL_COUNT);
         for (idx, bit) in expected {
