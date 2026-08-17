@@ -76,6 +76,14 @@ pub const CH_GTC: u32 = 1 << 9;
 pub const CH_STSL: u32 = 1 << 10;
 /// Coverage bit: `SystemTimeToTzSpecificLocalTimeEx` is hooked (session zone).
 pub const CH_STSLEX: u32 = 1 << 11;
+/// Coverage bit: `FileTimeToLocalFileTime` is hooked (session zone, UTC->local FILETIME).
+pub const CH_FTLFT: u32 = 1 << 12;
+/// Coverage bit: `LocalFileTimeToFileTime` is hooked (session zone, local->UTC FILETIME).
+pub const CH_LFTFT: u32 = 1 << 13;
+/// Coverage bit: `TzSpecificLocalTimeToSystemTime` is hooked (session zone, local->UTC).
+pub const CH_TLTST: u32 = 1 << 14;
+/// Coverage bit: `TzSpecificLocalTimeToSystemTimeEx` is hooked (session zone, local->UTC).
+pub const CH_TLTSTEX: u32 = 1 << 15;
 
 /// Index of each channel into the `calls` array (== its position in `CHANNELS`).
 pub const IDX_GSTAFT: usize = 0;
@@ -90,9 +98,13 @@ pub const IDX_QUIT: usize = 8;
 pub const IDX_GTC: usize = 9;
 pub const IDX_STSL: usize = 10;
 pub const IDX_STSLEX: usize = 11;
+pub const IDX_FTLFT: usize = 12;
+pub const IDX_LFTFT: usize = 13;
+pub const IDX_TLTST: usize = 14;
+pub const IDX_TLTSTEX: usize = 15;
 
 /// Number of time channels tracked (wall-clock, session zone, duration axis).
-pub const CHANNEL_COUNT: usize = 12;
+pub const CHANNEL_COUNT: usize = 16;
 
 /// Which system module exports a channel (the hook resolves it there).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -124,8 +136,9 @@ pub struct ChannelDef {
 // --- Coverage audit against chrono-mock.md 9.1 ---------------------------------
 // COVERED (the CHANNELS table below): the Win32 wall clock (GetSystemTime,
 // GetSystemTimeAsFileTime, GetSystemTimePreciseAsFileTime, GetLocalTime), the session
-// zone (GetTimeZoneInformation, GetDynamicTimeZoneInformation, SystemTimeToTzSpecificLocalTime + Ex),
-// NtQuerySystemTime, and
+// zone (GetTimeZoneInformation, GetDynamicTimeZoneInformation) plus the explicit zone
+// conversions (SystemTimeToTzSpecificLocalTime/Ex, FileTimeToLocalFileTime,
+// LocalFileTimeToFileTime, TzSpecificLocalTimeToSystemTime/Ex), NtQuerySystemTime, and
 // the opt-in duration axis (GetTickCount, GetTickCount64, QueryUnbiasedInterruptTime). CRT time /
 // _time64 ride the hooked Win32 exports, so they follow for free.
 //
@@ -135,9 +148,8 @@ pub struct ChannelDef {
 // UNHOOKABLE BY NATURE (chrono-mock.md 9.2 - the verifier warns, it does not hide):
 // direct KUSER_SHARED_DATA reads, direct syscalls, and out-of-process or network time.
 //
-// KNOWN GAPS, not yet covered (the verifier should report these honestly):
-// GetFileTime, FileTimeToLocalFileTime, the reverse local->UTC conversions
-// (TzSpecificLocalTimeToSystemTime), NtQuerySystemInformation, the
+// KNOWN GAPS, not yet covered (the verifier should report these honestly): GetFileTime,
+// NtQuerySystemInformation, the
 // waitable/settable timers that need timeout scaling under acceleration, and process
 // creation other than CreateProcessW/A (NtCreateUserProcess) for child inheritance.
 
@@ -156,6 +168,10 @@ pub const CHANNELS: [ChannelDef; CHANNEL_COUNT] = [
     ChannelDef { bit: CH_GTC, name: "GetTickCount", module: ChannelModule::Kernel32, category: ChannelCategory::Duration },
     ChannelDef { bit: CH_STSL, name: "SystemTimeToTzSpecificLocalTime", module: ChannelModule::Kernel32, category: ChannelCategory::Zone },
     ChannelDef { bit: CH_STSLEX, name: "SystemTimeToTzSpecificLocalTimeEx", module: ChannelModule::Kernel32, category: ChannelCategory::Zone },
+    ChannelDef { bit: CH_FTLFT, name: "FileTimeToLocalFileTime", module: ChannelModule::Kernel32, category: ChannelCategory::Zone },
+    ChannelDef { bit: CH_LFTFT, name: "LocalFileTimeToFileTime", module: ChannelModule::Kernel32, category: ChannelCategory::Zone },
+    ChannelDef { bit: CH_TLTST, name: "TzSpecificLocalTimeToSystemTime", module: ChannelModule::Kernel32, category: ChannelCategory::Zone },
+    ChannelDef { bit: CH_TLTSTEX, name: "TzSpecificLocalTimeToSystemTimeEx", module: ChannelModule::Kernel32, category: ChannelCategory::Zone },
 ];
 
 /// Session-wide control block in `Local\ChronoCtl`. `#[repr(C)]` so both processes
@@ -494,6 +510,10 @@ mod tests {
             (IDX_GTC, CH_GTC),
             (IDX_STSL, CH_STSL),
             (IDX_STSLEX, CH_STSLEX),
+            (IDX_FTLFT, CH_FTLFT),
+            (IDX_LFTFT, CH_LFTFT),
+            (IDX_TLTST, CH_TLTST),
+            (IDX_TLTSTEX, CH_TLTSTEX),
         ];
         assert_eq!(CHANNELS.len(), CHANNEL_COUNT);
         for (idx, bit) in expected {

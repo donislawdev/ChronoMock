@@ -35,7 +35,7 @@ use chrono_ctl::{
     bump_calls, cov_section_name, cov_size, mark_channel_installed, read_anchor, read_core_pid,
     read_scale_dur, read_tz_bias, register_pid, ChannelModule, Cov, Ctl, CHANNELS, IDX_GDTZI,
     IDX_GLT, IDX_GST, IDX_GSTAFT, IDX_GSTPAFT, IDX_GTC, IDX_GTC64, IDX_GTZI, IDX_NTQST, IDX_QUIT,
-    IDX_STSL, IDX_STSLEX,
+    IDX_STSL, IDX_STSLEX, IDX_FTLFT, IDX_LFTFT, IDX_TLTST, IDX_TLTSTEX,
 };
 use minhook::MinHook;
 use windows::core::{s, w, PCSTR, PCWSTR};
@@ -68,6 +68,7 @@ type TziFn = unsafe extern "system" fn(*mut TIME_ZONE_INFORMATION) -> u32;
 type DtziFn = unsafe extern "system" fn(*mut DYNAMIC_TIME_ZONE_INFORMATION) -> u32;
 type StslFn = unsafe extern "system" fn(*const TIME_ZONE_INFORMATION, *const SYSTEMTIME, *mut SYSTEMTIME) -> i32;
 type StslexFn = unsafe extern "system" fn(*const DYNAMIC_TIME_ZONE_INFORMATION, *const SYSTEMTIME, *mut SYSTEMTIME) -> i32;
+type FtConvFn = unsafe extern "system" fn(*const FILETIME, *mut FILETIME) -> i32;
 type TickFn = unsafe extern "system" fn() -> u64;
 type Tick32Fn = unsafe extern "system" fn() -> u32;
 type QuitFn = unsafe extern "system" fn(*mut u64) -> i32;
@@ -111,6 +112,10 @@ static O_GTZI: OnceLock<TziFn> = OnceLock::new();
 static O_GDTZI: OnceLock<DtziFn> = OnceLock::new();
 static O_STSL: OnceLock<StslFn> = OnceLock::new();
 static O_STSLEX: OnceLock<StslexFn> = OnceLock::new();
+static O_FTLFT: OnceLock<FtConvFn> = OnceLock::new();
+static O_LFTFT: OnceLock<FtConvFn> = OnceLock::new();
+static O_TLTST: OnceLock<StslFn> = OnceLock::new();
+static O_TLTSTEX: OnceLock<StslexFn> = OnceLock::new();
 static O_TICK: OnceLock<TickFn> = OnceLock::new();
 static O_TICK32: OnceLock<Tick32Fn> = OnceLock::new();
 static O_QUIT: OnceLock<QuitFn> = OnceLock::new();
@@ -233,6 +238,10 @@ fn i64_to_ft(t: i64) -> FILETIME {
         dwLowDateTime: (t as u64 & 0xFFFF_FFFF) as u32,
         dwHighDateTime: ((t as u64) >> 32) as u32,
     }
+}
+
+fn ft_to_i64(ft: FILETIME) -> i64 {
+    (((ft.dwHighDateTime as u64) << 32) | ft.dwLowDateTime as u64) as i64
 }
 
 fn bump(idx: usize) {
@@ -390,10 +399,98 @@ unsafe fn write_session_local(utc: *const SYSTEMTIME, local: *mut SYSTEMTIME) ->
     if SystemTimeToFileTime(utc, &mut ft).is_err() {
         return false;
     }
-    let ticks = (((ft.dwHighDateTime as u64) << 32) | ft.dwLowDateTime as u64) as i64;
     let bias_100ns = cur_tz_bias() as i64 * 60 * 10_000_000;
-    write_systemtime(local, ticks - bias_100ns);
+    write_systemtime(local, ft_to_i64(ft) - bias_100ns);
     true
+}
+
+/// Convert a caller-supplied local SYSTEMTIME to session-UTC (local + tz_bias, the inverse
+/// of write_session_local) and write it to `utc`. Returns false if the local time could not
+/// be converted. Shared by the TzSpecificLocalTimeToSystemTime detours.
+///
+/// # Safety
+/// `local` must point to a valid SYSTEMTIME and `utc` to a valid writable SYSTEMTIME.
+unsafe fn write_session_utc(local: *const SYSTEMTIME, utc: *mut SYSTEMTIME) -> bool {
+    let mut ft = FILETIME::default();
+    if SystemTimeToFileTime(local, &mut ft).is_err() {
+        return false;
+    }
+    let bias_100ns = cur_tz_bias() as i64 * 60 * 10_000_000;
+    write_systemtime(utc, ft_to_i64(ft) + bias_100ns);
+    true
+}
+
+/// Shift a FILETIME by the session bias: `add` for local->UTC (utc = local + bias), clear for
+/// UTC->local (local = utc - bias). The FILETIME conversions carry no zone argument, so they
+/// always mean the active zone, which we replace with the flat session zone.
+///
+/// # Safety
+/// `src` and `dst` must be valid, non-null FILETIME pointers.
+unsafe fn shift_filetime(src: *const FILETIME, dst: *mut FILETIME, add: bool) -> i32 {
+    let bias_100ns = cur_tz_bias() as i64 * 60 * 10_000_000;
+    let ticks = ft_to_i64(*src);
+    *dst = i64_to_ft(if add { ticks + bias_100ns } else { ticks - bias_100ns });
+    1
+}
+
+// FileTimeToLocalFileTime (UTC -> local) and LocalFileTimeToFileTime (local -> UTC) take no
+// zone argument, so they always mean the active zone - always substitute the session zone.
+unsafe extern "system" fn h_ftlft(utc: *const FILETIME, local: *mut FILETIME) -> i32 {
+    bump(IDX_FTLFT);
+    if detached() || utc.is_null() || local.is_null() {
+        return O_FTLFT.get().map(|o| o(utc, local)).unwrap_or(0);
+    }
+    shift_filetime(utc, local, false)
+}
+
+unsafe extern "system" fn h_lftft(local: *const FILETIME, utc: *mut FILETIME) -> i32 {
+    bump(IDX_LFTFT);
+    if detached() || local.is_null() || utc.is_null() {
+        return O_LFTFT.get().map(|o| o(local, utc)).unwrap_or(0);
+    }
+    shift_filetime(local, utc, true)
+}
+
+// TzSpecificLocalTimeToSystemTime (+Ex): reverse of the STtSLT detours (local -> UTC). A NULL
+// zone means the active zone -> session zone (utc = local + tz_bias). A named zone passes through.
+unsafe extern "system" fn h_tltst(
+    tzi: *const TIME_ZONE_INFORMATION,
+    local: *const SYSTEMTIME,
+    utc: *mut SYSTEMTIME,
+) -> i32 {
+    bump(IDX_TLTST);
+    let o = match O_TLTST.get() {
+        Some(o) => o,
+        None => return 0,
+    };
+    if detached() || !tzi.is_null() || local.is_null() || utc.is_null() {
+        return o(tzi, local, utc);
+    }
+    if write_session_utc(local, utc) {
+        1
+    } else {
+        o(tzi, local, utc)
+    }
+}
+
+unsafe extern "system" fn h_tltstex(
+    tzi: *const DYNAMIC_TIME_ZONE_INFORMATION,
+    local: *const SYSTEMTIME,
+    utc: *mut SYSTEMTIME,
+) -> i32 {
+    bump(IDX_TLTSTEX);
+    let o = match O_TLTSTEX.get() {
+        Some(o) => o,
+        None => return 0,
+    };
+    if detached() || !tzi.is_null() || local.is_null() || utc.is_null() {
+        return o(tzi, local, utc);
+    }
+    if write_session_utc(local, utc) {
+        1
+    } else {
+        o(tzi, local, utc)
+    }
 }
 
 unsafe extern "system" fn h_stsl(
@@ -711,6 +808,10 @@ unsafe fn install() -> Result<(), String> {
     make_hook(cov, k32, ntdll, IDX_GDTZI, h_gdtzi as *const () as *mut c_void, &O_GDTZI);
     make_hook(cov, k32, ntdll, IDX_STSL, h_stsl as *const () as *mut c_void, &O_STSL);
     make_hook(cov, k32, ntdll, IDX_STSLEX, h_stslex as *const () as *mut c_void, &O_STSLEX);
+    make_hook(cov, k32, ntdll, IDX_FTLFT, h_ftlft as *const () as *mut c_void, &O_FTLFT);
+    make_hook(cov, k32, ntdll, IDX_LFTFT, h_lftft as *const () as *mut c_void, &O_LFTFT);
+    make_hook(cov, k32, ntdll, IDX_TLTST, h_tltst as *const () as *mut c_void, &O_TLTST);
+    make_hook(cov, k32, ntdll, IDX_TLTSTEX, h_tltstex as *const () as *mut c_void, &O_TLTSTEX);
 
     // Duration axis (opt-in). Capture the real anchors BEFORE creating the hooks:
     // O_QUIT is still unset so real_quit() reads the real value, and GetTickCount64 is
