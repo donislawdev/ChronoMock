@@ -35,6 +35,7 @@ use chrono_ctl::{
     bump_calls, cov_section_name, cov_size, mark_channel_installed, read_anchor, read_core_pid,
     read_scale_dur, read_tz_bias, register_pid, ChannelModule, Cov, Ctl, CHANNELS, IDX_GDTZI,
     IDX_GLT, IDX_GST, IDX_GSTAFT, IDX_GSTPAFT, IDX_GTC, IDX_GTC64, IDX_GTZI, IDX_NTQST, IDX_QUIT,
+    IDX_STSL, IDX_STSLEX,
 };
 use minhook::MinHook;
 use windows::core::{s, w, PCSTR, PCWSTR};
@@ -56,7 +57,7 @@ use windows::Win32::System::Threading::{
     PROCESS_SYNCHRONIZE, THREAD_CREATION_FLAGS,
 };
 use windows::Win32::System::Time::{
-    FileTimeToSystemTime, DYNAMIC_TIME_ZONE_INFORMATION, TIME_ZONE_INFORMATION,
+    FileTimeToSystemTime, SystemTimeToFileTime, DYNAMIC_TIME_ZONE_INFORMATION, TIME_ZONE_INFORMATION,
 };
 use windows::Win32::System::WindowsProgramming::QueryUnbiasedInterruptTime;
 
@@ -65,6 +66,8 @@ type StFn = unsafe extern "system" fn(*mut SYSTEMTIME);
 type NtqstFn = unsafe extern "system" fn(*mut i64) -> i32;
 type TziFn = unsafe extern "system" fn(*mut TIME_ZONE_INFORMATION) -> u32;
 type DtziFn = unsafe extern "system" fn(*mut DYNAMIC_TIME_ZONE_INFORMATION) -> u32;
+type StslFn = unsafe extern "system" fn(*const TIME_ZONE_INFORMATION, *const SYSTEMTIME, *mut SYSTEMTIME) -> i32;
+type StslexFn = unsafe extern "system" fn(*const DYNAMIC_TIME_ZONE_INFORMATION, *const SYSTEMTIME, *mut SYSTEMTIME) -> i32;
 type TickFn = unsafe extern "system" fn() -> u64;
 type Tick32Fn = unsafe extern "system" fn() -> u32;
 type QuitFn = unsafe extern "system" fn(*mut u64) -> i32;
@@ -106,6 +109,8 @@ static O_GLT: OnceLock<StFn> = OnceLock::new();
 static O_NTQST: OnceLock<NtqstFn> = OnceLock::new();
 static O_GTZI: OnceLock<TziFn> = OnceLock::new();
 static O_GDTZI: OnceLock<DtziFn> = OnceLock::new();
+static O_STSL: OnceLock<StslFn> = OnceLock::new();
+static O_STSLEX: OnceLock<StslexFn> = OnceLock::new();
 static O_TICK: OnceLock<TickFn> = OnceLock::new();
 static O_TICK32: OnceLock<Tick32Fn> = OnceLock::new();
 static O_QUIT: OnceLock<QuitFn> = OnceLock::new();
@@ -365,6 +370,70 @@ unsafe extern "system" fn h_gdtzi(lp: *mut DYNAMIC_TIME_ZONE_INFORMATION) -> u32
         return 0; // TIME_ZONE_ID_UNKNOWN - the session zone has no DST
     }
     O_GDTZI.get().map(|o| o(lp)).unwrap_or(TIME_ZONE_ID_INVALID)
+}
+
+// SystemTimeToTzSpecificLocalTime converts a caller-supplied UTC to local. A NULL zone
+// means "the currently active zone" (MS Learn, timezoneapi.h). We substitute the session
+// zone (result agrees with GetLocalTime) and pass an explicitly named zone through. For the
+// substituted case we compute session-local directly (utc - tz_bias, flat, no DST - the same
+// math as GetLocalTime) rather than re-enter the OS. A constructed Ex zone struct made the
+// original STtSLTEx fail (measured), so direct math sidesteps the OS zone machinery entirely.
+
+/// Convert a caller-supplied UTC SYSTEMTIME to session-local (utc - tz_bias, flat, no DST)
+/// and write it to `local`. Returns false if the UTC could not be converted, so the caller
+/// can defer to the original. Shared by the STtSLT and STtSLTEx detours.
+///
+/// # Safety
+/// `utc` must point to a valid SYSTEMTIME and `local` to a valid writable SYSTEMTIME.
+unsafe fn write_session_local(utc: *const SYSTEMTIME, local: *mut SYSTEMTIME) -> bool {
+    let mut ft = FILETIME::default();
+    if SystemTimeToFileTime(utc, &mut ft).is_err() {
+        return false;
+    }
+    let ticks = (((ft.dwHighDateTime as u64) << 32) | ft.dwLowDateTime as u64) as i64;
+    let bias_100ns = cur_tz_bias() as i64 * 60 * 10_000_000;
+    write_systemtime(local, ticks - bias_100ns);
+    true
+}
+
+unsafe extern "system" fn h_stsl(
+    tzi: *const TIME_ZONE_INFORMATION,
+    utc: *const SYSTEMTIME,
+    local: *mut SYSTEMTIME,
+) -> i32 {
+    bump(IDX_STSL);
+    let o = match O_STSL.get() {
+        Some(o) => o,
+        None => return 0,
+    };
+    if detached() || !tzi.is_null() || utc.is_null() || local.is_null() {
+        return o(tzi, utc, local);
+    }
+    if write_session_local(utc, local) {
+        1
+    } else {
+        o(tzi, utc, local)
+    }
+}
+
+unsafe extern "system" fn h_stslex(
+    tzi: *const DYNAMIC_TIME_ZONE_INFORMATION,
+    utc: *const SYSTEMTIME,
+    local: *mut SYSTEMTIME,
+) -> i32 {
+    bump(IDX_STSLEX);
+    let o = match O_STSLEX.get() {
+        Some(o) => o,
+        None => return 0,
+    };
+    if detached() || !tzi.is_null() || utc.is_null() || local.is_null() {
+        return o(tzi, utc, local);
+    }
+    if write_session_local(utc, local) {
+        1
+    } else {
+        o(tzi, utc, local)
+    }
 }
 
 // --- Duration axis (opt-in) ----------------------------------------------------
@@ -640,6 +709,8 @@ unsafe fn install() -> Result<(), String> {
     make_hook(cov, k32, ntdll, IDX_NTQST, h_ntqst as *const () as *mut c_void, &O_NTQST);
     make_hook(cov, k32, ntdll, IDX_GTZI, h_gtzi as *const () as *mut c_void, &O_GTZI);
     make_hook(cov, k32, ntdll, IDX_GDTZI, h_gdtzi as *const () as *mut c_void, &O_GDTZI);
+    make_hook(cov, k32, ntdll, IDX_STSL, h_stsl as *const () as *mut c_void, &O_STSL);
+    make_hook(cov, k32, ntdll, IDX_STSLEX, h_stslex as *const () as *mut c_void, &O_STSLEX);
 
     // Duration axis (opt-in). Capture the real anchors BEFORE creating the hooks:
     // O_QUIT is still unset so real_quit() reads the real value, and GetTickCount64 is

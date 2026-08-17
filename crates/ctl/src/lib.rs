@@ -72,6 +72,10 @@ pub const CH_GTC64: u32 = 1 << 7;
 pub const CH_QUIT: u32 = 1 << 8;
 /// Coverage bit: `GetTickCount` (32-bit) is hooked (duration axis, opt-in).
 pub const CH_GTC: u32 = 1 << 9;
+/// Coverage bit: `SystemTimeToTzSpecificLocalTime` is hooked (session zone).
+pub const CH_STSL: u32 = 1 << 10;
+/// Coverage bit: `SystemTimeToTzSpecificLocalTimeEx` is hooked (session zone).
+pub const CH_STSLEX: u32 = 1 << 11;
 
 /// Index of each channel into the `calls` array (== its position in `CHANNELS`).
 pub const IDX_GSTAFT: usize = 0;
@@ -84,9 +88,11 @@ pub const IDX_GDTZI: usize = 6;
 pub const IDX_GTC64: usize = 7;
 pub const IDX_QUIT: usize = 8;
 pub const IDX_GTC: usize = 9;
+pub const IDX_STSL: usize = 10;
+pub const IDX_STSLEX: usize = 11;
 
 /// Number of time channels tracked (wall-clock, session zone, duration axis).
-pub const CHANNEL_COUNT: usize = 10;
+pub const CHANNEL_COUNT: usize = 12;
 
 /// Which system module exports a channel (the hook resolves it there).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -118,7 +124,8 @@ pub struct ChannelDef {
 // --- Coverage audit against chrono-mock.md 9.1 ---------------------------------
 // COVERED (the CHANNELS table below): the Win32 wall clock (GetSystemTime,
 // GetSystemTimeAsFileTime, GetSystemTimePreciseAsFileTime, GetLocalTime), the session
-// zone (GetTimeZoneInformation, GetDynamicTimeZoneInformation), NtQuerySystemTime, and
+// zone (GetTimeZoneInformation, GetDynamicTimeZoneInformation, SystemTimeToTzSpecificLocalTime + Ex),
+// NtQuerySystemTime, and
 // the opt-in duration axis (GetTickCount, GetTickCount64, QueryUnbiasedInterruptTime). CRT time /
 // _time64 ride the hooked Win32 exports, so they follow for free.
 //
@@ -129,7 +136,8 @@ pub struct ChannelDef {
 // direct KUSER_SHARED_DATA reads, direct syscalls, and out-of-process or network time.
 //
 // KNOWN GAPS, not yet covered (the verifier should report these honestly):
-// SystemTimeToTzSpecificLocalTime, GetFileTime, NtQuerySystemInformation, the
+// GetFileTime, FileTimeToLocalFileTime, the reverse local->UTC conversions
+// (TzSpecificLocalTimeToSystemTime), NtQuerySystemInformation, the
 // waitable/settable timers that need timeout scaling under acceleration, and process
 // creation other than CreateProcessW/A (NtCreateUserProcess) for child inheritance.
 
@@ -146,6 +154,8 @@ pub const CHANNELS: [ChannelDef; CHANNEL_COUNT] = [
     ChannelDef { bit: CH_GTC64, name: "GetTickCount64", module: ChannelModule::Kernel32, category: ChannelCategory::Duration },
     ChannelDef { bit: CH_QUIT, name: "QueryUnbiasedInterruptTime", module: ChannelModule::Kernel32, category: ChannelCategory::Duration },
     ChannelDef { bit: CH_GTC, name: "GetTickCount", module: ChannelModule::Kernel32, category: ChannelCategory::Duration },
+    ChannelDef { bit: CH_STSL, name: "SystemTimeToTzSpecificLocalTime", module: ChannelModule::Kernel32, category: ChannelCategory::Zone },
+    ChannelDef { bit: CH_STSLEX, name: "SystemTimeToTzSpecificLocalTimeEx", module: ChannelModule::Kernel32, category: ChannelCategory::Zone },
 ];
 
 /// Session-wide control block in `Local\ChronoCtl`. `#[repr(C)]` so both processes
@@ -482,6 +492,8 @@ mod tests {
             (IDX_GTC64, CH_GTC64),
             (IDX_QUIT, CH_QUIT),
             (IDX_GTC, CH_GTC),
+            (IDX_STSL, CH_STSL),
+            (IDX_STSLEX, CH_STSLEX),
         ];
         assert_eq!(CHANNELS.len(), CHANNEL_COUNT);
         for (idx, bit) in expected {
