@@ -158,13 +158,18 @@ pub struct ChannelDef {
 // NtDelayExecution - ADR-7 class A). CRT time / _time64 ride the hooked Win32 exports, so they
 // follow for free.
 //
-// DELIBERATELY EXCLUDED (ADR-2 - scaling them destabilizes the target): the performance
-// counter (QueryPerformanceCounter, NtQueryPerformanceCounter) and timeGetTime.
+// DELIBERATELY EXCLUDED, for two different reasons:
+//   - ADR-2 (scaling them destabilizes the target): the performance counter
+//     (QueryPerformanceCounter, NtQueryPerformanceCounter) and timeGetTime.
+//   - not a "now" clock at all: GetFileTime returns a file's stored creation / last-access /
+//     last-write timestamps (MS Learn, fileapi.h), not the current time. Shifting them would
+//     falsify filesystem metadata, never advance a clock - the target must read real file times
+//     (a file written in 2026 was written in 2026, even under a fake 2038 wall clock).
 //
 // UNHOOKABLE BY NATURE (chrono-mock.md 9.2 - the verifier warns, it does not hide):
 // direct KUSER_SHARED_DATA reads, direct syscalls, and out-of-process or network time.
 //
-// KNOWN GAPS, not yet covered (the verifier should report these honestly): GetFileTime,
+// KNOWN GAPS, not yet covered (the verifier should report these honestly):
 // the rest of the ADR-7 wait/timeout surface (the object waits
 // WaitForSingleObject / WaitForMultipleObjects, the settable timers SetWaitableTimer /
 // SetTimer), and process creation other than
