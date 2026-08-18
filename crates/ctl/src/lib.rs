@@ -110,6 +110,8 @@ pub const CH_MWFMOEX: u32 = 1 << 26;
 pub const CH_SWT: u32 = 1 << 27;
 /// Coverage bit: `SetWaitableTimerEx` is hooked (settable timer, due-time + period scaled, ADR-7 class C).
 pub const CH_SWTEX: u32 = 1 << 28;
+/// Coverage bit: `SetTimer` is hooked (user32 message timer, uElapse scaled, ADR-7 class C).
+pub const CH_SETTIMER: u32 = 1 << 29;
 
 /// Index of each channel into the `calls` array (== its position in `CHANNELS`).
 pub const IDX_GSTAFT: usize = 0;
@@ -141,10 +143,11 @@ pub const IDX_MWFMO: usize = 25;
 pub const IDX_MWFMOEX: usize = 26;
 pub const IDX_SWT: usize = 27;
 pub const IDX_SWTEX: usize = 28;
+pub const IDX_SETTIMER: usize = 29;
 
 /// Number of time channels tracked (wall-clock, session zone, duration axis, object/message waits,
 /// settable timers).
-pub const CHANNEL_COUNT: usize = 29;
+pub const CHANNEL_COUNT: usize = 30;
 
 /// Which system module exports a channel (the hook resolves it there).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -197,6 +200,9 @@ pub struct ChannelDef {
 // like a wait, and an ABSOLUTE (positive) due-time - a fake wall-clock instant the app computed
 // from the substituted clock - is converted to a scaled relative interval (scale_timer_due), so the
 // kernel (which reads the real clock for absolute timers) fires it when the FAKE clock reaches it.
+// SetTimer (user32, ADR-7 class C) joins them: its uElapse interval is scaled by M (scale_timer_elapse)
+// so WM_TIMER arrives in step with the fake clock - Windows clamps a scaled interval below
+// USER_TIMER_MINIMUM (10 ms) up to it, a documented floor under heavy acceleration.
 // CRT time / _time64 ride the hooked Win32 exports, so they follow for free.
 //
 // DELIBERATELY EXCLUDED, for two different reasons:
@@ -220,10 +226,9 @@ pub struct ChannelDef {
 // double-counted. This is the wait-axis analog of ADR-2's QPC exclusion, except we still hook it to
 // count and warn honestly.
 //
-// KNOWN GAPS, not yet covered (the verifier should report these honestly): the remaining settable
-// timers (SetTimer/WM_TIMER in user32, timeSetEvent in winmm), thread-pool timers
-// (CreateThreadpoolTimer), and process creation other than CreateProcessW/A (NtCreateUserProcess)
-// for child inheritance.
+// KNOWN GAPS, not yet covered (the verifier should report these honestly): the multimedia timer
+// timeSetEvent (winmm), thread-pool timers (CreateThreadpoolTimer), and process creation other than
+// CreateProcessW/A (NtCreateUserProcess) for child inheritance.
 
 /// All time channels, ordered by their `calls` index (IDX_*): the wall-clock set, the
 /// session-zone functions, then the opt-in duration axis.
@@ -257,6 +262,7 @@ pub const CHANNELS: [ChannelDef; CHANNEL_COUNT] = [
     ChannelDef { bit: CH_MWFMOEX, name: "MsgWaitForMultipleObjectsEx", module: ChannelModule::User32, category: ChannelCategory::WaitObserved },
     ChannelDef { bit: CH_SWT, name: "SetWaitableTimer", module: ChannelModule::Kernel32, category: ChannelCategory::Duration },
     ChannelDef { bit: CH_SWTEX, name: "SetWaitableTimerEx", module: ChannelModule::Kernel32, category: ChannelCategory::Duration },
+    ChannelDef { bit: CH_SETTIMER, name: "SetTimer", module: ChannelModule::User32, category: ChannelCategory::Duration },
 ];
 
 /// Session-wide control block in `Local\ChronoCtl`. `#[repr(C)]` so both processes
@@ -536,6 +542,16 @@ pub fn scale_timer_period(period_ms: i32, m: i64) -> i32 {
     (period_ms as i64 / m.max(1)).max(1) as i32
 }
 
+/// Scale a `SetTimer`/WM_TIMER interval (milliseconds) by the duration multiplier: real interval =
+/// uElapse / M. `SetTimer` has no INFINITE and no absolute form - every value is a relative interval -
+/// so, unlike `scale_wait`, there is no 0xFFFFFFFF guard. A 0 (or a sub-M value that truncates to 0)
+/// is left as is: Windows clamps any interval below USER_TIMER_MINIMUM (10 ms) up to it, so under a
+/// large M the timer cannot beat that 10 ms floor (documented limit, the WM_TIMER analog of
+/// `scale_wait`'s truncation). `m` clamped to >= 1 (rule 3, frozen/slow leave it real).
+pub fn scale_timer_elapse(elapse_ms: u32, m: i64) -> u32 {
+    (elapse_ms as u64 / m.max(1) as u64) as u32
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -680,6 +696,7 @@ mod tests {
             (IDX_MWFMOEX, CH_MWFMOEX),
             (IDX_SWT, CH_SWT),
             (IDX_SWTEX, CH_SWTEX),
+            (IDX_SETTIMER, CH_SETTIMER),
         ];
         assert_eq!(CHANNELS.len(), CHANNEL_COUNT);
         for (idx, bit) in expected {
@@ -759,5 +776,19 @@ mod tests {
         // Frozen and slow motion clamp to real length (>= 1) - rule 3.
         assert_eq!(scale_timer_period(6000, 0), 6000);
         assert_eq!(scale_timer_period(6000, -5), 6000);
+    }
+
+    #[test]
+    fn scale_timer_elapse_divides_by_multiplier() {
+        // Real interval = uElapse / M.
+        assert_eq!(scale_timer_elapse(6000, 60), 100);
+        assert_eq!(scale_timer_elapse(6000, 1), 6000);
+        // Sub-M truncates toward 0; Windows then clamps up to USER_TIMER_MINIMUM (not our job).
+        assert_eq!(scale_timer_elapse(30, 60), 0);
+        // No INFINITE guard, unlike scale_wait: a huge interval still scales.
+        assert_eq!(scale_timer_elapse(0xFFFF_FFFF, 60), 0xFFFF_FFFF / 60);
+        // Frozen and slow motion clamp to real length (>= 1) - rule 3.
+        assert_eq!(scale_timer_elapse(6000, 0), 6000);
+        assert_eq!(scale_timer_elapse(6000, -5), 6000);
     }
 }
