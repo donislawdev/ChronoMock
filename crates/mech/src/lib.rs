@@ -18,12 +18,14 @@ use std::time::Instant;
 
 use chrono_core::{ChannelCoverage, Coverage, SessionSpec, TimeMode};
 use chrono_ctl::{
-    cov_section_name, cov_size, ctl_size, read_anchor, read_calls, read_installed, read_pid,
-    write_anchor, write_core_pid, write_scale_dur, write_tz_bias, ChannelCategory, Cov, Ctl,
-    CHANNELS, MAX_COV_PIDS,
+    cov_section_name, cov_size, ctl_size, read_anchor, read_calls, read_core_pid, read_installed,
+    read_pid, write_anchor, write_core_pid, write_scale_dur, write_tz_bias, ChannelCategory, Cov,
+    Ctl, CHANNELS, MAX_COV_PIDS,
 };
 use windows::core::{s, PCWSTR, PWSTR};
-use windows::Win32::Foundation::{CloseHandle, HANDLE, INVALID_HANDLE_VALUE, WAIT_TIMEOUT};
+use windows::Win32::Foundation::{
+    CloseHandle, GetLastError, ERROR_ALREADY_EXISTS, HANDLE, INVALID_HANDLE_VALUE, WAIT_TIMEOUT,
+};
 use windows::Win32::System::Diagnostics::Debug::WriteProcessMemory;
 use windows::Win32::System::LibraryLoader::{GetModuleHandleA, GetProcAddress};
 use windows::Win32::System::Memory::{
@@ -33,9 +35,9 @@ use windows::Win32::System::Memory::{
 };
 use windows::Win32::System::SystemInformation::GetSystemTimeAsFileTime;
 use windows::Win32::System::Threading::{
-    CreateProcessW, CreateRemoteThread, GetCurrentProcessId, GetExitCodeProcess, ResumeThread,
-    WaitForSingleObject, CREATE_SUSPENDED, INFINITE, LPTHREAD_START_ROUTINE, PROCESS_INFORMATION,
-    STARTUPINFOW,
+    CreateProcessW, CreateRemoteThread, GetCurrentProcessId, GetExitCodeProcess, OpenProcess,
+    ResumeThread, WaitForSingleObject, CREATE_SUSPENDED, INFINITE, LPTHREAD_START_ROUTINE,
+    PROCESS_INFORMATION, PROCESS_SYNCHRONIZE, STARTUPINFOW,
 };
 use windows::Win32::System::WindowsProgramming::QueryUnbiasedInterruptTime;
 
@@ -54,6 +56,9 @@ pub enum PrepareError {
     Control(String),
     Launch(String),
     Inject(String),
+    /// Another session's core (this pid) is already running - single-session limit (fixed section
+    /// name). The caller refuses rather than sharing one control block between two sessions.
+    SessionActive(u32),
 }
 
 /// The outcome of `prepare`: the parent's audit coverage plus the live session.
@@ -68,6 +73,9 @@ pub struct Prepared {
     /// Set when the target exited within the guard window right after injection - a
     /// suspected single-instance vanish (ADR-4). Carries how long it lived, in ms.
     pub vanished_lived_ms: Option<u64>,
+    /// An orphaned control block from a dead core was found at startup and reclaimed (its target
+    /// had self-detached to real time). The caller surfaces this so the reclaim is not silent.
+    pub orphan_reclaimed: bool,
 }
 
 /// One process's mapped coverage section, kept open for the session's lifetime so the
@@ -250,6 +258,23 @@ fn quit_now() -> i64 {
     t as i64
 }
 
+/// Whether a prior session's core (this pid) is still running. Cannot open, or already signaled,
+/// means gone. PID reuse is a small hazard: a reused pid reads as alive and we refuse rather than
+/// reclaim - the safe direction (refuse), never a wrong reclaim of a live session.
+///
+/// # Safety
+/// Calls the Win32 process APIs; `pid` is otherwise unconstrained.
+unsafe fn core_is_alive(pid: u32) -> bool {
+    match OpenProcess(PROCESS_SYNCHRONIZE, false, pid) {
+        Ok(h) => {
+            let alive = WaitForSingleObject(h, 0) == WAIT_TIMEOUT;
+            let _ = CloseHandle(h);
+            alive
+        }
+        Err(_) => false,
+    }
+}
+
 /// Build one process's coverage from its `Cov` section: the install bitmask and the
 /// live per-channel call counters. Iterates the single-source `CHANNELS` table so the
 /// report names exactly what the hook installs.
@@ -337,12 +362,32 @@ pub fn prepare(spec: &SessionSpec, target: &Target, hook_dll: &Path) -> Result<P
             windows::core::w!("Local\\ChronoCtl"),
         )
         .map_err(|e| PrepareError::Control(format!("CreateFileMappingW: {e:?}")))?;
+        // The section name is fixed, so it may survive a prior session. GetLastError right after the
+        // create says whether it pre-existed - read it before anything else can reset it.
+        let already_existed = GetLastError() == ERROR_ALREADY_EXISTS;
         let view = MapViewOfFile(hmap, FILE_MAP_ALL_ACCESS, 0, 0, ctl_size());
         if view.Value.is_null() {
             let _ = CloseHandle(hmap);
             return Err(PrepareError::Control("MapViewOfFile returned null".into()));
         }
         let ctl = view.Value as *mut Ctl;
+
+        // Concurrent-session vs orphan. A surviving section whose core is alive is a real second
+        // session - refuse (one session at a time, fixed name). A surviving section whose core is
+        // dead is an orphan from a killed core (its target self-detached to real time); reclaim it
+        // by zeroing the whole block so no stale PID registry or anchor leaks into the new session.
+        let mut orphan_reclaimed = false;
+        if already_existed {
+            let prev_core = read_core_pid(ctl as *const Ctl);
+            if prev_core != 0 && core_is_alive(prev_core) {
+                let _ = UnmapViewOfFile(MEMORY_MAPPED_VIEW_ADDRESS { Value: view.Value });
+                let _ = CloseHandle(hmap);
+                return Err(PrepareError::SessionActive(prev_core));
+            }
+            std::ptr::write_bytes(ctl as *mut u8, 0, ctl_size());
+            orphan_reclaimed = true;
+        }
+
         let start_real = quit_now();
         write_anchor(ctl, a_fake, start_real, multiplier);
         write_tz_bias(ctl, tz_bias);
@@ -436,7 +481,7 @@ pub fn prepare(spec: &SessionSpec, target: &Target, hook_dll: &Path) -> Result<P
             scale_duration: spec.scale_duration,
             cov_maps,
         };
-        Ok(Prepared { coverage, session, vanished_lived_ms })
+        Ok(Prepared { coverage, session, vanished_lived_ms, orphan_reclaimed })
     }
 }
 

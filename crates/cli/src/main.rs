@@ -532,6 +532,11 @@ fn core_mode() -> i32 {
 
     match chrono_mech::prepare(&spec, &m_target, &hook) {
         Ok(prepared) => {
+            // Surface an orphan reclaim so it is not silent (a prior core had died and left its
+            // control block behind). Human diagnostic on stderr, never on the protocol stdout.
+            if prepared.orphan_reclaimed {
+                eprintln!("chrono core: reclaimed an orphaned session (a previous core had died)");
+            }
             let verdict = verdict_from_coverage(&prepared.coverage);
             // The parent's own coverage (its pid). Children that join later report
             // separately from run_session, each with its own pid and counts.
@@ -763,6 +768,12 @@ fn map_prepare_error(e: chrono_mech::PrepareError) -> (i32, &'static str, &'stat
         P::Control(m) => (3, "session.control_failed", "mechanism", m),
         P::Launch(m) => (2, "target.launch_failed", "mechanism", m),
         P::Inject(m) => (2, "target.inject_failed", "mechanism", m),
+        P::SessionActive(pid) => (
+            3,
+            "session.already_active",
+            "mechanism",
+            format!("another session's core (pid {pid}) is running - one session at a time"),
+        ),
     }
 }
 
