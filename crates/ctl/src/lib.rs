@@ -53,67 +53,67 @@ pub fn cov_section_name(pid: u32) -> String {
 // are three views of the same list and MUST stay in sync. A unit test guards it.
 
 /// Coverage bit: `GetSystemTimeAsFileTime` is hooked.
-pub const CH_GSTAFT: u32 = 1 << 0;
+pub const CH_GSTAFT: u64 = 1 << 0;
 /// Coverage bit: `GetSystemTimePreciseAsFileTime` is hooked.
-pub const CH_GSTPAFT: u32 = 1 << 1;
+pub const CH_GSTPAFT: u64 = 1 << 1;
 /// Coverage bit: `GetSystemTime` is hooked.
-pub const CH_GST: u32 = 1 << 2;
+pub const CH_GST: u64 = 1 << 2;
 /// Coverage bit: `GetLocalTime` is hooked.
-pub const CH_GLT: u32 = 1 << 3;
+pub const CH_GLT: u64 = 1 << 3;
 /// Coverage bit: `NtQuerySystemTime` is hooked.
-pub const CH_NTQST: u32 = 1 << 4;
+pub const CH_NTQST: u64 = 1 << 4;
 /// Coverage bit: `GetTimeZoneInformation` is hooked (session zone).
-pub const CH_GTZI: u32 = 1 << 5;
+pub const CH_GTZI: u64 = 1 << 5;
 /// Coverage bit: `GetDynamicTimeZoneInformation` is hooked (session zone).
-pub const CH_GDTZI: u32 = 1 << 6;
+pub const CH_GDTZI: u64 = 1 << 6;
 /// Coverage bit: `GetTickCount64` is hooked (duration axis, opt-in).
-pub const CH_GTC64: u32 = 1 << 7;
+pub const CH_GTC64: u64 = 1 << 7;
 /// Coverage bit: `QueryUnbiasedInterruptTime` is hooked (duration axis, opt-in).
-pub const CH_QUIT: u32 = 1 << 8;
+pub const CH_QUIT: u64 = 1 << 8;
 /// Coverage bit: `GetTickCount` (32-bit) is hooked (duration axis, opt-in).
-pub const CH_GTC: u32 = 1 << 9;
+pub const CH_GTC: u64 = 1 << 9;
 /// Coverage bit: `SystemTimeToTzSpecificLocalTime` is hooked (session zone).
-pub const CH_STSL: u32 = 1 << 10;
+pub const CH_STSL: u64 = 1 << 10;
 /// Coverage bit: `SystemTimeToTzSpecificLocalTimeEx` is hooked (session zone).
-pub const CH_STSLEX: u32 = 1 << 11;
+pub const CH_STSLEX: u64 = 1 << 11;
 /// Coverage bit: `FileTimeToLocalFileTime` is hooked (session zone, UTC->local FILETIME).
-pub const CH_FTLFT: u32 = 1 << 12;
+pub const CH_FTLFT: u64 = 1 << 12;
 /// Coverage bit: `LocalFileTimeToFileTime` is hooked (session zone, local->UTC FILETIME).
-pub const CH_LFTFT: u32 = 1 << 13;
+pub const CH_LFTFT: u64 = 1 << 13;
 /// Coverage bit: `TzSpecificLocalTimeToSystemTime` is hooked (session zone, local->UTC).
-pub const CH_TLTST: u32 = 1 << 14;
+pub const CH_TLTST: u64 = 1 << 14;
 /// Coverage bit: `TzSpecificLocalTimeToSystemTimeEx` is hooked (session zone, local->UTC).
-pub const CH_TLTSTEX: u32 = 1 << 15;
+pub const CH_TLTSTEX: u64 = 1 << 15;
 /// Coverage bit: `Sleep` is hooked (duration axis / wait-length scaling, opt-in, ADR-7).
-pub const CH_SLEEP: u32 = 1 << 16;
+pub const CH_SLEEP: u64 = 1 << 16;
 /// Coverage bit: `SleepEx` is hooked (duration axis / wait-length scaling, opt-in, ADR-7).
-pub const CH_SLEEPEX: u32 = 1 << 17;
+pub const CH_SLEEPEX: u64 = 1 << 17;
 /// Coverage bit: `NtDelayExecution` is hooked (duration axis / wait-length scaling, opt-in, ADR-7).
-pub const CH_NTDELAY: u32 = 1 << 18;
+pub const CH_NTDELAY: u64 = 1 << 18;
 /// Coverage bit: `NtQuerySystemInformation(SystemTimeOfDayInformation)` is hooked (wall clock, ntdll).
-pub const CH_NTQSI: u32 = 1 << 19;
+pub const CH_NTQSI: u64 = 1 << 19;
 /// Coverage bit: `WaitForSingleObject` is hooked (object wait, observed not scaled, ADR-7 class B).
-pub const CH_WFSO: u32 = 1 << 20;
+pub const CH_WFSO: u64 = 1 << 20;
 /// Coverage bit: `WaitForSingleObjectEx` is hooked (object wait, observed not scaled, ADR-7 class B).
-pub const CH_WFSOEX: u32 = 1 << 21;
+pub const CH_WFSOEX: u64 = 1 << 21;
 /// Coverage bit: `WaitForMultipleObjects` is hooked (object wait, observed not scaled, ADR-7 class B).
-pub const CH_WFMO: u32 = 1 << 22;
+pub const CH_WFMO: u64 = 1 << 22;
 /// Coverage bit: `WaitForMultipleObjectsEx` is hooked (object wait, observed not scaled, ADR-7 class B).
-pub const CH_WFMOEX: u32 = 1 << 23;
+pub const CH_WFMOEX: u64 = 1 << 23;
 /// Coverage bit: `SignalObjectAndWait` is hooked (object wait, observed not scaled, ADR-7 class B).
-pub const CH_SOAW: u32 = 1 << 24;
+pub const CH_SOAW: u64 = 1 << 24;
 /// Coverage bit: `MsgWaitForMultipleObjects` is hooked (message wait, observed not scaled, ADR-7 class B).
-pub const CH_MWFMO: u32 = 1 << 25;
+pub const CH_MWFMO: u64 = 1 << 25;
 /// Coverage bit: `MsgWaitForMultipleObjectsEx` is hooked (message wait, observed not scaled, ADR-7 class B).
-pub const CH_MWFMOEX: u32 = 1 << 26;
+pub const CH_MWFMOEX: u64 = 1 << 26;
 /// Coverage bit: `SetWaitableTimer` is hooked (settable timer, due-time + period scaled, ADR-7 class C).
-pub const CH_SWT: u32 = 1 << 27;
+pub const CH_SWT: u64 = 1 << 27;
 /// Coverage bit: `SetWaitableTimerEx` is hooked (settable timer, due-time + period scaled, ADR-7 class C).
-pub const CH_SWTEX: u32 = 1 << 28;
+pub const CH_SWTEX: u64 = 1 << 28;
 /// Coverage bit: `SetTimer` is hooked (user32 message timer, uElapse scaled, ADR-7 class C).
-pub const CH_SETTIMER: u32 = 1 << 29;
+pub const CH_SETTIMER: u64 = 1 << 29;
 /// Coverage bit: `timeSetEvent` is hooked (winmm multimedia timer, observed not scaled, ADR-7 class C).
-pub const CH_TIMESETEVENT: u32 = 1 << 30;
+pub const CH_TIMESETEVENT: u64 = 1 << 30;
 
 /// Index of each channel into the `calls` array (== its position in `CHANNELS`).
 pub const IDX_GSTAFT: usize = 0;
@@ -191,7 +191,7 @@ pub enum ChannelCategory {
 /// reports exactly the channels the hook installs.
 #[derive(Debug, Clone, Copy)]
 pub struct ChannelDef {
-    pub bit: u32,
+    pub bit: u64,
     pub name: &'static str,
     pub module: ChannelModule,
     pub category: ChannelCategory,
@@ -315,9 +315,11 @@ pub struct Ctl {
 /// process's evidence is attributed to it and never summed with the rest of the tree.
 #[repr(C)]
 pub struct Cov {
-    /// Bitmask of channels this process's hook installed.
-    pub installed_channels: u32,
-    pub _pad: u32,
+    /// Bitmask of channels this process's hook installed. u64 (63 usable bits) so the channel set can
+    /// grow past 32 without a layout break; the low bits still hold channels 0..N as before. Being u64
+    /// also aligns `calls` to 8 bytes with no explicit padding (the old u32 + u32 pad was the same 8
+    /// bytes, so the section size is unchanged).
+    pub installed_channels: u64,
     /// Per-channel call counters for this process, indexed by IDX_*.
     pub calls: [u64; CHANNEL_COUNT],
 }
@@ -456,7 +458,7 @@ pub unsafe fn read_pid(p: *const Ctl, i: usize) -> u32 {
 ///
 /// # Safety
 /// `p` must point to a live, correctly aligned `Cov`.
-pub unsafe fn mark_channel_installed(p: *mut Cov, channel: u32) {
+pub unsafe fn mark_channel_installed(p: *mut Cov, channel: u64) {
     let cur = read_volatile(addr_of!((*p).installed_channels));
     write_volatile(addr_of_mut!((*p).installed_channels), cur | channel);
 }
@@ -465,7 +467,7 @@ pub unsafe fn mark_channel_installed(p: *mut Cov, channel: u32) {
 ///
 /// # Safety
 /// `p` must point to a live, correctly aligned `Cov`.
-pub unsafe fn read_installed(p: *const Cov) -> u32 {
+pub unsafe fn read_installed(p: *const Cov) -> u64 {
     read_volatile(addr_of!((*p).installed_channels))
 }
 
@@ -588,7 +590,7 @@ mod tests {
     }
 
     fn zeroed_cov() -> Cov {
-        Cov { installed_channels: 0, _pad: 0, calls: [0; CHANNEL_COUNT] }
+        Cov { installed_channels: 0, calls: [0; CHANNEL_COUNT] }
     }
 
     #[test]
@@ -720,7 +722,7 @@ mod tests {
             assert_eq!(CHANNELS[idx].bit, bit, "bit mismatch at index {idx}");
         }
         // Bits are distinct and non-zero.
-        let mut seen = 0u32;
+        let mut seen = 0u64;
         for ch in CHANNELS {
             assert_ne!(ch.bit, 0);
             assert_eq!(seen & ch.bit, 0, "duplicate bit for {}", ch.name);

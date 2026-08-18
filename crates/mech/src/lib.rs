@@ -281,7 +281,7 @@ unsafe fn core_is_alive(pid: u32) -> bool {
 ///
 /// # Safety
 /// `cov` must point to a live, correctly aligned `Cov`.
-unsafe fn gather_coverage(cov: *const Cov, installed: u32, scale_duration: bool) -> Coverage {
+unsafe fn gather_coverage(cov: *const Cov, installed: u64, scale_duration: bool) -> Coverage {
     let mut out = Coverage::default();
     // Track which KIND of observed channel actually ran, so the audit names the right reason: an
     // object wait left real (class B) vs a multimedia timer left real (class C, winmm/ADR-2).
