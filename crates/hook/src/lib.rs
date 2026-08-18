@@ -28,6 +28,10 @@
 //! calls another channel's original. So there is no cross-channel re-entrancy and no
 //! double-shift, and hence no thread-local re-entrancy guard - the spike's E2 guard
 //! was an artifact of an earlier delta design (`original + delta`) and does not apply.
+//! The one wall exception is `NtQuerySystemInformation(SystemTimeOfDayInformation)`: a syscall
+//! stub returns the real time from the kernel, so its detour wraps its OWN original and patches
+//! only the CurrentTime field (the other fields stay real). It still calls no other channel's
+//! original, so the invariant holds.
 //!
 //! Child processes inherit the session via `CreateProcessW` / `CreateProcessA` detours
 //! (ADR-3). `NtCreateUserProcess` is not covered yet.
@@ -43,8 +47,8 @@ use chrono_ctl::{
     bump_calls, cov_section_name, cov_size, mark_channel_installed, read_anchor, read_core_pid,
     read_scale_dur, read_tz_bias, register_pid, scale_delay_interval, scale_wait, ChannelModule,
     Cov, Ctl, CHANNELS, IDX_GDTZI, IDX_GLT, IDX_GST, IDX_GSTAFT, IDX_GSTPAFT, IDX_GTC, IDX_GTC64,
-    IDX_GTZI, IDX_NTDELAY, IDX_NTQST, IDX_QUIT, IDX_SLEEP, IDX_SLEEPEX, IDX_STSL, IDX_STSLEX,
-    IDX_FTLFT, IDX_LFTFT, IDX_TLTST, IDX_TLTSTEX,
+    IDX_GTZI, IDX_NTDELAY, IDX_NTQSI, IDX_NTQST, IDX_QUIT, IDX_SLEEP, IDX_SLEEPEX, IDX_STSL,
+    IDX_STSLEX, IDX_FTLFT, IDX_LFTFT, IDX_TLTST, IDX_TLTSTEX,
 };
 use minhook::MinHook;
 use windows::core::{s, w, PCSTR, PCWSTR};
@@ -86,6 +90,9 @@ type SleepExFn = unsafe extern "system" fn(u32, i32) -> u32;
 // NtDelayExecution(BOOLEAN Alertable, PLARGE_INTEGER Interval) -> NTSTATUS. Interval is 100 ns:
 // negative = relative delay (scaled), positive = absolute deadline (passed through).
 type NtDelayFn = unsafe extern "system" fn(u8, *const i64) -> i32;
+// NtQuerySystemInformation(SystemInformationClass, SystemInformation, SystemInformationLength,
+// ReturnLength) -> NTSTATUS. A multiplexer; we only touch class SystemTimeOfDayInformation.
+type NtQsiFn = unsafe extern "system" fn(i32, *mut c_void, u32, *mut u32) -> i32;
 type CpwFn = unsafe extern "system" fn(
     *const u16,
     *mut u16,
@@ -122,6 +129,7 @@ static O_GSTPAFT: OnceLock<FtFn> = OnceLock::new();
 static O_GST: OnceLock<StFn> = OnceLock::new();
 static O_GLT: OnceLock<StFn> = OnceLock::new();
 static O_NTQST: OnceLock<NtqstFn> = OnceLock::new();
+static O_NTQSI: OnceLock<NtQsiFn> = OnceLock::new();
 static O_GTZI: OnceLock<TziFn> = OnceLock::new();
 static O_GDTZI: OnceLock<DtziFn> = OnceLock::new();
 static O_STSL: OnceLock<StslFn> = OnceLock::new();
@@ -345,6 +353,45 @@ unsafe extern "system" fn h_ntqst(lp: *mut i64) -> i32 {
         Some(_) => 0,
         None => O_NTQST.get().map(|o| o(lp)).unwrap_or(0),
     }
+}
+
+// NtQuerySystemInformation is a syscall stub, so class SystemTimeOfDayInformation returns the REAL
+// system time straight from the kernel, bypassing every user-mode wall detour above. Unlike those,
+// this detour is WRAP-AND-PATCH: it calls its OWN original (which fills the whole struct), then
+// overwrites only the CurrentTime field with the fake instant - the other fields (BootTime,
+// TimeZoneBias, ...) stay real. It calls no other channel's original, so the no-cross-channel
+// re-entrancy invariant holds, and the original is a MinHook trampoline, so it does not re-enter here.
+//
+// SystemTimeOfDayInformation = 3: winternl.h (Windows SDK) - source. CurrentTime at byte offset 8
+// (LARGE_INTEGER, 100 ns UTC since 1601, the same clock as NtQuerySystemTime): the SDK and MS Learn
+// both declare SYSTEM_TIMEOFDAY_INFORMATION opaque (BYTE Reserved1[48]), so the offset is the
+// long-stable community/RE layout (BootTime@0, CurrentTime@8, ...), corroborated by the 48-byte size
+// and verified empirically by the p1 baseline (CurrentTime == NtQuerySystemTime). Assessment, not
+// source (zasady/03 section 4).
+const SYSTEM_TIME_OF_DAY_INFORMATION: i32 = 3;
+const TOD_CURRENTTIME_OFFSET: usize = 8;
+
+unsafe extern "system" fn h_ntqsi(class: i32, info: *mut c_void, len: u32, retlen: *mut u32) -> i32 {
+    let o = match O_NTQSI.get() {
+        Some(o) => o,
+        None => return 0, // unreachable: O_NTQSI is set before enable_all_hooks
+    };
+    let status = o(class, info, len, retlen); // always call the original: it fills the whole struct
+    if class == SYSTEM_TIME_OF_DAY_INFORMATION {
+        // Count only time-of-day queries - NtQuerySystemInformation is a multiplexer, so bumping on
+        // every class would inflate the audit's notion of how often the app reads time (rule 4).
+        bump(IDX_NTQSI);
+        // NT_SUCCESS(status) == status >= 0; the length guard keeps the [8, 16) write in bounds when a
+        // caller passes a truncated buffer (honest partial: leave it, never write past its end).
+        if status >= 0 && !info.is_null() && len as usize >= TOD_CURRENTTIME_OFFSET + 8 {
+            if let Some(fake) = compute_fake() {
+                // None when the core detached - then leave the real CurrentTime the original wrote.
+                let p = (info as *mut u8).add(TOD_CURRENTTIME_OFFSET) as *mut i64;
+                core::ptr::write_unaligned(p, fake);
+            }
+        }
+    }
+    status
 }
 
 // --- Session zone -------------------------------------------------------------
@@ -905,6 +952,7 @@ unsafe fn install() -> Result<(), String> {
     make_hook(cov, k32, ntdll, IDX_GST, h_gst as *const () as *mut c_void, &O_GST);
     make_hook(cov, k32, ntdll, IDX_GLT, h_glt as *const () as *mut c_void, &O_GLT);
     make_hook(cov, k32, ntdll, IDX_NTQST, h_ntqst as *const () as *mut c_void, &O_NTQST);
+    make_hook(cov, k32, ntdll, IDX_NTQSI, h_ntqsi as *const () as *mut c_void, &O_NTQSI);
     make_hook(cov, k32, ntdll, IDX_GTZI, h_gtzi as *const () as *mut c_void, &O_GTZI);
     make_hook(cov, k32, ntdll, IDX_GDTZI, h_gdtzi as *const () as *mut c_void, &O_GDTZI);
     make_hook(cov, k32, ntdll, IDX_STSL, h_stsl as *const () as *mut c_void, &O_STSL);

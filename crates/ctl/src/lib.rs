@@ -90,6 +90,8 @@ pub const CH_SLEEP: u32 = 1 << 16;
 pub const CH_SLEEPEX: u32 = 1 << 17;
 /// Coverage bit: `NtDelayExecution` is hooked (duration axis / wait-length scaling, opt-in, ADR-7).
 pub const CH_NTDELAY: u32 = 1 << 18;
+/// Coverage bit: `NtQuerySystemInformation(SystemTimeOfDayInformation)` is hooked (wall clock, ntdll).
+pub const CH_NTQSI: u32 = 1 << 19;
 
 /// Index of each channel into the `calls` array (== its position in `CHANNELS`).
 pub const IDX_GSTAFT: usize = 0;
@@ -111,9 +113,10 @@ pub const IDX_TLTSTEX: usize = 15;
 pub const IDX_SLEEP: usize = 16;
 pub const IDX_SLEEPEX: usize = 17;
 pub const IDX_NTDELAY: usize = 18;
+pub const IDX_NTQSI: usize = 19;
 
 /// Number of time channels tracked (wall-clock, session zone, duration axis).
-pub const CHANNEL_COUNT: usize = 19;
+pub const CHANNEL_COUNT: usize = 20;
 
 /// Which system module exports a channel (the hook resolves it there).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -147,10 +150,13 @@ pub struct ChannelDef {
 // GetSystemTimeAsFileTime, GetSystemTimePreciseAsFileTime, GetLocalTime), the session
 // zone (GetTimeZoneInformation, GetDynamicTimeZoneInformation) plus the explicit zone
 // conversions (SystemTimeToTzSpecificLocalTime/Ex, FileTimeToLocalFileTime,
-// LocalFileTimeToFileTime, TzSpecificLocalTimeToSystemTime/Ex), NtQuerySystemTime, and
-// the opt-in duration axis (GetTickCount, GetTickCount64, QueryUnbiasedInterruptTime), and
-// wait-length scaling (Sleep, SleepEx, NtDelayExecution - ADR-7 class A). CRT time / _time64 ride the hooked Win32
-// exports, so they follow for free.
+// LocalFileTimeToFileTime, TzSpecificLocalTimeToSystemTime/Ex), NtQuerySystemTime,
+// NtQuerySystemInformation(SystemTimeOfDayInformation) (wrap-and-patch: its CurrentTime field
+// overwritten over the real call - the SDK struct is opaque BYTE[48], so the offset is an
+// assessment verified empirically, see the hook), and the opt-in duration axis (GetTickCount,
+// GetTickCount64, QueryUnbiasedInterruptTime), and wait-length scaling (Sleep, SleepEx,
+// NtDelayExecution - ADR-7 class A). CRT time / _time64 ride the hooked Win32 exports, so they
+// follow for free.
 //
 // DELIBERATELY EXCLUDED (ADR-2 - scaling them destabilizes the target): the performance
 // counter (QueryPerformanceCounter, NtQueryPerformanceCounter) and timeGetTime.
@@ -159,7 +165,7 @@ pub struct ChannelDef {
 // direct KUSER_SHARED_DATA reads, direct syscalls, and out-of-process or network time.
 //
 // KNOWN GAPS, not yet covered (the verifier should report these honestly): GetFileTime,
-// NtQuerySystemInformation, the rest of the ADR-7 wait/timeout surface (the object waits
+// the rest of the ADR-7 wait/timeout surface (the object waits
 // WaitForSingleObject / WaitForMultipleObjects, the settable timers SetWaitableTimer /
 // SetTimer), and process creation other than
 // CreateProcessW/A (NtCreateUserProcess) for child inheritance.
@@ -186,6 +192,7 @@ pub const CHANNELS: [ChannelDef; CHANNEL_COUNT] = [
     ChannelDef { bit: CH_SLEEP, name: "Sleep", module: ChannelModule::Kernel32, category: ChannelCategory::Duration },
     ChannelDef { bit: CH_SLEEPEX, name: "SleepEx", module: ChannelModule::Kernel32, category: ChannelCategory::Duration },
     ChannelDef { bit: CH_NTDELAY, name: "NtDelayExecution", module: ChannelModule::Ntdll, category: ChannelCategory::Duration },
+    ChannelDef { bit: CH_NTQSI, name: "NtQuerySystemInformation", module: ChannelModule::Ntdll, category: ChannelCategory::Wall },
 ];
 
 /// Session-wide control block in `Local\ChronoCtl`. `#[repr(C)]` so both processes
@@ -558,6 +565,7 @@ mod tests {
             (IDX_SLEEP, CH_SLEEP),
             (IDX_SLEEPEX, CH_SLEEPEX),
             (IDX_NTDELAY, CH_NTDELAY),
+            (IDX_NTQSI, CH_NTQSI),
         ];
         assert_eq!(CHANNELS.len(), CHANNEL_COUNT);
         for (idx, bit) in expected {
