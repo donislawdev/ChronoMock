@@ -284,12 +284,15 @@ unsafe fn core_is_alive(pid: u32) -> bool {
 unsafe fn gather_coverage(cov: *const Cov, installed: u64, scale_duration: bool) -> Coverage {
     let mut out = Coverage::default();
     // Track which KIND of observed channel actually ran, so the audit names the right reason: an
-    // object wait left real (class B) vs a multimedia timer left real (class C, winmm/ADR-2).
+    // object wait left real (class B), a multimedia timer left real (class C, winmm/ADR-2), or a
+    // direct NtCreateUserProcess left un-injected (ADR-3).
     let mut any_wait_observed = false;
     let mut any_timer_observed = false;
+    let mut any_spawn_observed = false;
     for (idx, ch) in CHANNELS.iter().enumerate() {
-        // The duration axis and the observed channels are opt-in: with scale_duration off, their
-        // channels are not expected, so they count as nothing.
+        // The duration axis and the TIME observers are opt-in: with scale_duration off, their channels
+        // are not expected. The spawn observer (NtCreateUserProcess) is NOT opt-in - process creation
+        // is watched regardless - so it is absent from this gate.
         if matches!(
             ch.category,
             ChannelCategory::Duration | ChannelCategory::WaitObserved | ChannelCategory::TimerObserved
@@ -297,16 +300,20 @@ unsafe fn gather_coverage(cov: *const Cov, installed: u64, scale_duration: bool)
         {
             continue;
         }
-        // Observed channels (ADR-7 class B object waits + class C multimedia timer) are counted but
-        // never scaled: their own bucket, so they never sway the verdict. A failed install just means
-        // we are not observing it - not a verdict-affecting gap, so it goes nowhere.
-        if matches!(ch.category, ChannelCategory::WaitObserved | ChannelCategory::TimerObserved) {
+        // Observed channels (class B object waits, class C multimedia timer, direct NtCreateUserProcess)
+        // are counted but never modified: their own bucket, so they never sway the verdict. A failed
+        // install just means we are not observing it - not a verdict-affecting gap, so it goes nowhere.
+        if matches!(
+            ch.category,
+            ChannelCategory::WaitObserved | ChannelCategory::TimerObserved | ChannelCategory::SpawnObserved
+        ) {
             if installed & ch.bit != 0 {
                 let calls = read_calls(cov, idx);
                 if calls > 0 {
                     match ch.category {
                         ChannelCategory::WaitObserved => any_wait_observed = true,
                         ChannelCategory::TimerObserved => any_timer_observed = true,
+                        ChannelCategory::SpawnObserved => any_spawn_observed = true,
                         _ => {}
                     }
                 }
@@ -343,6 +350,12 @@ unsafe fn gather_coverage(cov: *const Cov, installed: u64, scale_duration: bool)
     }
     if any_timer_observed {
         out.warning_keys.push("timer.multimedia_not_scaled".to_string());
+    }
+    // A direct NtCreateUserProcess ran: its child was NOT injected (ADR-3, observed), so warn that the
+    // child may run with real time - honest, since real targets spawn through the covered CreateProcess*.
+    if any_spawn_observed {
+        out.warning_keys
+            .push("inheritance.ntcreateuserprocess_child_maybe_uncovered".to_string());
     }
     out
 }

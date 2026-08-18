@@ -48,7 +48,10 @@
 //! original, so the invariant holds.
 //!
 //! Child processes inherit the session via `CreateProcessW` / `CreateProcessA` detours
-//! (ADR-3). `NtCreateUserProcess` is not covered yet.
+//! (ADR-3). A DIRECT `NtCreateUserProcess` (bypassing CreateProcess*) is OBSERVED, not injected:
+//! counted and warned (its child may be uncovered), never self-injected - that would mean
+//! manipulating undocumented native structures for near-zero real value. A thread-local guard keeps
+//! the CreateProcess* funnel to NtCreateUserProcess from counting as a direct spawn.
 
 #![allow(non_snake_case)]
 
@@ -65,7 +68,7 @@ use chrono_ctl::{
     IDX_GTZI, IDX_NTDELAY, IDX_NTQSI, IDX_NTQST, IDX_QUIT, IDX_SLEEP, IDX_SLEEPEX, IDX_STSL,
     IDX_STSLEX, IDX_FTLFT, IDX_LFTFT, IDX_TLTST, IDX_TLTSTEX, IDX_WFSO, IDX_WFSOEX, IDX_WFMO,
     IDX_WFMOEX, IDX_SOAW, IDX_MWFMO, IDX_MWFMOEX, IDX_SWT, IDX_SWTEX, IDX_SETTIMER, IDX_TIMESETEVENT,
-    IDX_TPTIMER, IDX_TPTIMEREX,
+    IDX_TPTIMER, IDX_TPTIMEREX, IDX_NTCUP,
 };
 use minhook::MinHook;
 use windows::core::{s, w, PCSTR, PCWSTR};
@@ -146,6 +149,24 @@ type TimeSetEventFn = unsafe extern "system" fn(u32, u32, *const c_void, usize, 
 // msPeriod + msWindowLength scaled by M, exactly like SetWaitableTimer. pti is opaque (never touched).
 type SetTpTimerFn = unsafe extern "system" fn(*mut c_void, *const FILETIME, u32, u32);
 type SetTpTimerExFn = unsafe extern "system" fn(*mut c_void, *const FILETIME, u32, u32) -> i32;
+// NtCreateUserProcess (ntdll, ADR-3): the funnel under CreateProcessInternalW. Undocumented - the
+// 11-param signature is the stable RE community layout (phnt), an assessment not a source (zasady/03
+// section 4). We only OBSERVE it (count a direct call, forward every arg untouched), so a wrong field
+// never matters - only the arg count and ABI do. ACCESS_MASK/ULONG are 32-bit on x86 and x64; the rest
+// are opaque pointers we never dereference.
+type NtcupFn = unsafe extern "system" fn(
+    *mut c_void,
+    *mut c_void,
+    u32,
+    u32,
+    *mut c_void,
+    *mut c_void,
+    u32,
+    u32,
+    *mut c_void,
+    *mut c_void,
+    *mut c_void,
+) -> i32;
 type CpwFn = unsafe extern "system" fn(
     *const u16,
     *mut u16,
@@ -210,6 +231,7 @@ static O_SETTIMER: OnceLock<SetTimerFn> = OnceLock::new();
 static O_TIMESETEVENT: OnceLock<TimeSetEventFn> = OnceLock::new();
 static O_TPTIMER: OnceLock<SetTpTimerFn> = OnceLock::new();
 static O_TPTIMEREX: OnceLock<SetTpTimerExFn> = OnceLock::new();
+static O_NTCUP: OnceLock<NtcupFn> = OnceLock::new();
 
 // Duration-axis anchors, captured real (before hooking) at install time.
 static Q0: OnceLock<i64> = OnceLock::new();
@@ -1130,6 +1152,77 @@ unsafe extern "system" fn h_set_tp_timer_ex(
     }
 }
 
+// --- Direct process creation (ADR-3, observed) ---------------------------------
+// NtCreateUserProcess is the funnel under CreateProcessInternalW, so a hooked CreateProcessW/A reaches
+// it. We count only a DIRECT NtCreateUserProcess (a child spawned bypassing CreateProcess*), because
+// the CreateProcess* detours already inherit the session into their child. SPAWNING is a thread-local
+// flag those detours raise around their original call (which funnels here on the same thread); when it
+// is set, this detour just forwards, uncounted. A direct call finds it clear, counts, and warns - we
+// deliberately do NOT self-inject (that means manipulating undocumented native structures, a crash
+// risk for near-zero value, since real targets spawn through the covered CreateProcess*).
+
+/// NTSTATUS failure returned if the NtCreateUserProcess detour is somehow entered before its
+/// trampoline is set (unreachable). Negative NTSTATUS = failure, so the caller does not treat an
+/// un-created process as a success.
+const STATUS_UNSUCCESSFUL: i32 = 0xC000_0001u32 as i32;
+
+thread_local! {
+    static SPAWNING: Cell<bool> = const { Cell::new(false) };
+}
+
+/// Raised for the duration of a CreateProcess* original call, so the NtCreateUserProcess it funnels
+/// into is not counted as a direct spawn. Cleared on drop, even if the original unwinds.
+struct SpawningGuard;
+impl Drop for SpawningGuard {
+    fn drop(&mut self) {
+        SPAWNING.set(false);
+    }
+}
+fn enter_spawning() -> SpawningGuard {
+    SPAWNING.set(true);
+    SpawningGuard
+}
+
+#[allow(clippy::too_many_arguments)]
+unsafe extern "system" fn h_ntcup(
+    process_handle: *mut c_void,
+    thread_handle: *mut c_void,
+    process_access: u32,
+    thread_access: u32,
+    process_obj_attr: *mut c_void,
+    thread_obj_attr: *mut c_void,
+    process_flags: u32,
+    thread_flags: u32,
+    process_params: *mut c_void,
+    create_info: *mut c_void,
+    attr_list: *mut c_void,
+) -> i32 {
+    let o = match O_NTCUP.get() {
+        Some(o) => o,
+        // Unreachable (O_NTCUP is set before enable_all_hooks), but unlike a wait detour, returning
+        // STATUS_SUCCESS (0) here would be a FAKE spawn success - the caller would use uninitialized
+        // handles and crash. Fail loudly with STATUS_UNSUCCESSFUL instead.
+        None => return STATUS_UNSUCCESSFUL,
+    };
+    // Count only a direct call, not the CreateProcess* funnel (already inherited). Never inject.
+    if !SPAWNING.get() {
+        bump(IDX_NTCUP);
+    }
+    o(
+        process_handle,
+        thread_handle,
+        process_access,
+        thread_access,
+        process_obj_attr,
+        thread_obj_attr,
+        process_flags,
+        thread_flags,
+        process_params,
+        create_info,
+        attr_list,
+    )
+}
+
 // --- Child inheritance (ADR-3) --------------------------------------------------
 // Detour CreateProcessW so children join the session: create suspended, inject the
 // same DLL, then resume (unless the caller wanted it suspended). The child opens the
@@ -1212,7 +1305,12 @@ unsafe extern "system" fn h_cpw(
         None => return 0,
     };
     let want_suspended = (flags & CREATE_SUSPENDED.0) != 0;
-    let r = o(app, cmd, pa, ta, inherit, flags | CREATE_SUSPENDED.0, env, cwd, si, pi);
+    // SPAWNING held across the original: the NtCreateUserProcess it funnels into is not counted as a
+    // direct spawn (this child is already being inherited below). Cleared before inherit_into_child.
+    let r = {
+        let _g = enter_spawning();
+        o(app, cmd, pa, ta, inherit, flags | CREATE_SUSPENDED.0, env, cwd, si, pi)
+    };
     inherit_into_child(r, pi, want_suspended);
     r
 }
@@ -1238,7 +1336,10 @@ unsafe extern "system" fn h_cpa(
         None => return 0,
     };
     let want_suspended = (flags & CREATE_SUSPENDED.0) != 0;
-    let r = o(app, cmd, pa, ta, inherit, flags | CREATE_SUSPENDED.0, env, cwd, si, pi);
+    let r = {
+        let _g = enter_spawning();
+        o(app, cmd, pa, ta, inherit, flags | CREATE_SUSPENDED.0, env, cwd, si, pi)
+    };
     inherit_into_child(r, pi, want_suspended);
     r
 }
@@ -1414,6 +1515,11 @@ unsafe fn install() -> Result<(), String> {
         make_hook(cov, k32, ntdll, IDX_TPTIMER, h_set_tp_timer as *const () as *mut c_void, &O_TPTIMER);
         make_hook(cov, k32, ntdll, IDX_TPTIMEREX, h_set_tp_timer_ex as *const () as *mut c_void, &O_TPTIMEREX);
     }
+
+    // Direct process creation (ADR-3, observed): hook NtCreateUserProcess ALWAYS - not gated by
+    // scale_duration, since process creation is watched regardless. It only counts a direct call and
+    // forwards untouched; the SPAWNING guard keeps the CreateProcess* funnel from counting here.
+    make_hook(cov, k32, ntdll, IDX_NTCUP, h_ntcup as *const () as *mut c_void, &O_NTCUP);
 
     // Child inheritance (ADR-3): hook CreateProcessW and CreateProcessA so the whole
     // process tree joins the session whichever spawn API the parent uses. Not coverage

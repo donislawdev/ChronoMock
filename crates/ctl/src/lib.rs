@@ -118,6 +118,8 @@ pub const CH_TIMESETEVENT: u64 = 1 << 30;
 pub const CH_TPTIMER: u64 = 1 << 31;
 /// Coverage bit: `SetThreadpoolTimerEx` is hooked (thread-pool timer, due-time + period scaled, ADR-7 class C).
 pub const CH_TPTIMEREX: u64 = 1 << 32;
+/// Coverage bit: `NtCreateUserProcess` is hooked (direct process creation, observed not injected, ADR-3).
+pub const CH_NTCUP: u64 = 1 << 33;
 
 /// Index of each channel into the `calls` array (== its position in `CHANNELS`).
 pub const IDX_GSTAFT: usize = 0;
@@ -153,10 +155,11 @@ pub const IDX_SETTIMER: usize = 29;
 pub const IDX_TIMESETEVENT: usize = 30;
 pub const IDX_TPTIMER: usize = 31;
 pub const IDX_TPTIMEREX: usize = 32;
+pub const IDX_NTCUP: usize = 33;
 
-/// Number of time channels tracked (wall-clock, session zone, duration axis, object/message waits,
-/// settable timers, multimedia timer, thread-pool timers).
-pub const CHANNEL_COUNT: usize = 33;
+/// Number of channels tracked (wall-clock, session zone, duration axis, object/message waits,
+/// settable timers, multimedia timer, thread-pool timers, direct process creation).
+pub const CHANNEL_COUNT: usize = 34;
 
 /// Which system module exports a channel (the hook resolves it there).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -190,6 +193,13 @@ pub enum ChannelCategory {
     /// timeGetTime), so it is left real. A separate category only so the audit can name the right
     /// reason (multimedia timer, not an object wait).
     TimerObserved,
+    /// Hooked and counted, but deliberately never injected into (ADR-3, observed): a DIRECT
+    /// NtCreateUserProcess (a child spawned bypassing CreateProcessW/A). Self-injecting there means
+    /// manipulating undocumented native structures, a crash risk for near-zero real value (real QA
+    /// targets spawn through CreateProcess*). So we count the direct call and warn that the child may
+    /// be uncovered, an honest audit (rule 4) without the risk. NOT opt-in (unlike the time observers):
+    /// process creation is watched regardless of scale_duration.
+    SpawnObserved,
 }
 
 /// One time channel: its coverage bit, the exported symbol the hook detours, the
@@ -248,10 +258,16 @@ pub struct ChannelDef {
 // count and warn honestly. The multimedia timer timeSetEvent (winmm, ADR-7 class C) joins the same
 // observed bucket under its own warning (timer.multimedia_not_scaled): scaling its uDelay would shift
 // audio/MIDI timing - the winmm cost ADR-2 avoids, like timeGetTime - so it is hooked, counted, and
-// left real, never scaled.
+// left real, never scaled. A DIRECT NtCreateUserProcess (ntdll, ADR-3) - a child spawned bypassing
+// CreateProcessW/A - joins the observed bucket under inheritance.ntcreateuserprocess_child_maybe_uncovered:
+// self-injecting there means manipulating undocumented native structures, a crash risk for near-zero
+// value (real targets spawn through CreateProcess*, which we do inject), so we count the direct call
+// and warn that its child may be uncovered, an honest audit (rule 4) without the risk. A guard makes
+// the CreateProcess* funnel to NtCreateUserProcess NOT count (the child is already inherited).
 //
-// KNOWN GAPS, not yet covered (the verifier should report these honestly): process creation other
-// than CreateProcessW/A (NtCreateUserProcess) for child inheritance.
+// KNOWN GAPS, not yet covered (the verifier should report these honestly): none of the major time or
+// spawn surfaces remain; residual exotica (SetThreadpoolWait timeouts, RtlCreateUserProcess legacy
+// path) are out of scope and would be reported honestly if a target hit them.
 
 /// All time channels, ordered by their `calls` index (IDX_*): the wall-clock set, the
 /// session-zone functions, then the opt-in duration axis.
@@ -289,6 +305,7 @@ pub const CHANNELS: [ChannelDef; CHANNEL_COUNT] = [
     ChannelDef { bit: CH_TIMESETEVENT, name: "timeSetEvent", module: ChannelModule::Winmm, category: ChannelCategory::TimerObserved },
     ChannelDef { bit: CH_TPTIMER, name: "SetThreadpoolTimer", module: ChannelModule::Kernel32, category: ChannelCategory::Duration },
     ChannelDef { bit: CH_TPTIMEREX, name: "SetThreadpoolTimerEx", module: ChannelModule::Kernel32, category: ChannelCategory::Duration },
+    ChannelDef { bit: CH_NTCUP, name: "NtCreateUserProcess", module: ChannelModule::Ntdll, category: ChannelCategory::SpawnObserved },
 ];
 
 /// Session-wide control block in `Local\ChronoCtl`. `#[repr(C)]` so both processes
@@ -740,6 +757,7 @@ mod tests {
             (IDX_TIMESETEVENT, CH_TIMESETEVENT),
             (IDX_TPTIMER, CH_TPTIMER),
             (IDX_TPTIMEREX, CH_TPTIMEREX),
+            (IDX_NTCUP, CH_NTCUP),
         ];
         assert_eq!(CHANNELS.len(), CHANNEL_COUNT);
         for (idx, bit) in expected {
