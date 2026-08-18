@@ -26,7 +26,8 @@
 //! `WaitForMultipleObjects(Ex)`, `SignalObjectAndWait`, ADR-7 class B) are COUNTED but deliberately
 //! NOT scaled - shortening a wait on real I/O would fake a timeout, so they ride their own `observed`
 //! bucket with an audit warning, and a separate thread-local guard counts each app-level wait once.
-//! The user32 message waits (`MsgWaitForMultipleObjects(Ex)`) and the settable timers are later slices.
+//! The user32 message waits (`MsgWaitForMultipleObjects(Ex)`) join them on the same guard when the
+//! target has user32 loaded (resolved lazily, honest partial if absent). The settable timers are a later slice.
 //!
 //! ABSOLUTE, not delta: a detour computes the fake instant from the anchor and never
 //! calls another channel's original. So there is no cross-channel re-entrancy and no
@@ -53,7 +54,7 @@ use chrono_ctl::{
     Cov, Ctl, CHANNELS, IDX_GDTZI, IDX_GLT, IDX_GST, IDX_GSTAFT, IDX_GSTPAFT, IDX_GTC, IDX_GTC64,
     IDX_GTZI, IDX_NTDELAY, IDX_NTQSI, IDX_NTQST, IDX_QUIT, IDX_SLEEP, IDX_SLEEPEX, IDX_STSL,
     IDX_STSLEX, IDX_FTLFT, IDX_LFTFT, IDX_TLTST, IDX_TLTSTEX, IDX_WFSO, IDX_WFSOEX, IDX_WFMO,
-    IDX_WFMOEX, IDX_SOAW,
+    IDX_WFMOEX, IDX_SOAW, IDX_MWFMO, IDX_MWFMOEX,
 };
 use minhook::MinHook;
 use windows::core::{s, w, PCSTR, PCWSTR};
@@ -106,6 +107,11 @@ type WfsoexFn = unsafe extern "system" fn(HANDLE, u32, i32) -> u32;
 type WfmoFn = unsafe extern "system" fn(u32, *const HANDLE, i32, u32) -> u32;
 type WfmoexFn = unsafe extern "system" fn(u32, *const HANDLE, i32, u32, i32) -> u32;
 type SoawFn = unsafe extern "system" fn(HANDLE, HANDLE, u32, i32) -> u32;
+// MsgWaitForMultipleObjects(nCount, pHandles, fWaitAll, dwMilliseconds, dwWakeMask) -> DWORD.
+// MsgWaitForMultipleObjectsEx(nCount, pHandles, dwMilliseconds, dwWakeMask, dwFlags) -> DWORD - no
+// fWaitAll, args reordered (MS Learn, winuser.h). Both user32, counted but never scaled.
+type MwfmoFn = unsafe extern "system" fn(u32, *const HANDLE, i32, u32, u32) -> u32;
+type MwfmoexFn = unsafe extern "system" fn(u32, *const HANDLE, u32, u32, u32) -> u32;
 type CpwFn = unsafe extern "system" fn(
     *const u16,
     *mut u16,
@@ -162,6 +168,8 @@ static O_WFSOEX: OnceLock<WfsoexFn> = OnceLock::new();
 static O_WFMO: OnceLock<WfmoFn> = OnceLock::new();
 static O_WFMOEX: OnceLock<WfmoexFn> = OnceLock::new();
 static O_SOAW: OnceLock<SoawFn> = OnceLock::new();
+static O_MWFMO: OnceLock<MwfmoFn> = OnceLock::new();
+static O_MWFMOEX: OnceLock<MwfmoexFn> = OnceLock::new();
 
 // Duration-axis anchors, captured real (before hooking) at install time.
 static Q0: OnceLock<i64> = OnceLock::new();
@@ -849,6 +857,39 @@ unsafe extern "system" fn h_soaw(signal: HANDLE, wait: HANDLE, ms: u32, alertabl
     o(signal, wait, ms, alertable)
 }
 
+// The message waits live in user32. Same class-B story (count, never scale, forward untouched), and
+// the same counting guard - MsgWaitForMultipleObjects may internally reach ...Ex. The Ex form drops
+// fWaitAll and reorders its args (see the fn types).
+unsafe extern "system" fn h_mwfmo(
+    count: u32,
+    handles: *const HANDLE,
+    wait_all: i32,
+    ms: u32,
+    wake_mask: u32,
+) -> u32 {
+    let o = match O_MWFMO.get() {
+        Some(o) => o,
+        None => return 0,
+    };
+    let _g = enter_observed_wait(IDX_MWFMO);
+    o(count, handles, wait_all, ms, wake_mask)
+}
+
+unsafe extern "system" fn h_mwfmoex(
+    count: u32,
+    handles: *const HANDLE,
+    ms: u32,
+    wake_mask: u32,
+    flags: u32,
+) -> u32 {
+    let o = match O_MWFMOEX.get() {
+        Some(o) => o,
+        None => return 0,
+    };
+    let _g = enter_observed_wait(IDX_MWFMOEX);
+    o(count, handles, ms, wake_mask, flags)
+}
+
 // --- Child inheritance (ADR-3) --------------------------------------------------
 // Detour CreateProcessW so children join the session: create suspended, inject the
 // same DLL, then resume (unless the caller wanted it suspended). The child opens the
@@ -989,6 +1030,15 @@ unsafe fn make_hook<T: Copy>(
     let module = match ch.module {
         ChannelModule::Kernel32 => k32,
         ChannelModule::Ntdll => ntdll,
+        // user32 may be absent in a console/service target; resolve it here rather than force-load it
+        // (forcing a DLL the target never needed would change its behavior). Absent -> honest partial.
+        ChannelModule::User32 => match GetModuleHandleA(s!("user32.dll")) {
+            Ok(h) => h,
+            Err(_) => {
+                log(&format!("[chrono_hook] user32 not loaded, skipping: {}", ch.name));
+                return;
+            }
+        },
     };
     let cname = match CString::new(ch.name) {
         Ok(c) => c,
@@ -1106,6 +1156,8 @@ unsafe fn install() -> Result<(), String> {
         make_hook(cov, k32, ntdll, IDX_WFMO, h_wfmo as *const () as *mut c_void, &O_WFMO);
         make_hook(cov, k32, ntdll, IDX_WFMOEX, h_wfmoex as *const () as *mut c_void, &O_WFMOEX);
         make_hook(cov, k32, ntdll, IDX_SOAW, h_soaw as *const () as *mut c_void, &O_SOAW);
+        make_hook(cov, k32, ntdll, IDX_MWFMO, h_mwfmo as *const () as *mut c_void, &O_MWFMO);
+        make_hook(cov, k32, ntdll, IDX_MWFMOEX, h_mwfmoex as *const () as *mut c_void, &O_MWFMOEX);
     }
 
     // Child inheritance (ADR-3): hook CreateProcessW and CreateProcessA so the whole

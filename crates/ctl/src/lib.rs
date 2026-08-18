@@ -102,6 +102,10 @@ pub const CH_WFMO: u32 = 1 << 22;
 pub const CH_WFMOEX: u32 = 1 << 23;
 /// Coverage bit: `SignalObjectAndWait` is hooked (object wait, observed not scaled, ADR-7 class B).
 pub const CH_SOAW: u32 = 1 << 24;
+/// Coverage bit: `MsgWaitForMultipleObjects` is hooked (message wait, observed not scaled, ADR-7 class B).
+pub const CH_MWFMO: u32 = 1 << 25;
+/// Coverage bit: `MsgWaitForMultipleObjectsEx` is hooked (message wait, observed not scaled, ADR-7 class B).
+pub const CH_MWFMOEX: u32 = 1 << 26;
 
 /// Index of each channel into the `calls` array (== its position in `CHANNELS`).
 pub const IDX_GSTAFT: usize = 0;
@@ -129,15 +133,20 @@ pub const IDX_WFSOEX: usize = 21;
 pub const IDX_WFMO: usize = 22;
 pub const IDX_WFMOEX: usize = 23;
 pub const IDX_SOAW: usize = 24;
+pub const IDX_MWFMO: usize = 25;
+pub const IDX_MWFMOEX: usize = 26;
 
-/// Number of time channels tracked (wall-clock, session zone, duration axis, object waits).
-pub const CHANNEL_COUNT: usize = 25;
+/// Number of time channels tracked (wall-clock, session zone, duration axis, object/message waits).
+pub const CHANNEL_COUNT: usize = 27;
 
 /// Which system module exports a channel (the hook resolves it there).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ChannelModule {
     Kernel32,
     Ntdll,
+    /// user32.dll - the message waits. May be absent in a console/service target that never
+    /// loads it; the hook then leaves the channel uninstalled (honest partial), never forces it.
+    User32,
 }
 
 /// What kind of time a channel carries. The duration axis and the object-wait observation
@@ -191,17 +200,18 @@ pub struct ChannelDef {
 // direct KUSER_SHARED_DATA reads, direct syscalls, and out-of-process or network time.
 //
 // OBSERVED, counted and warned but deliberately NOT scaled (ADR-7 class B, option b): the object
-// waits WaitForSingleObject, WaitForSingleObjectEx, WaitForMultipleObjects(Ex), and
-// SignalObjectAndWait. Shortening their timeout would fake a timeout on a real I/O / hardware / IPC
+// waits WaitForSingleObject, WaitForSingleObjectEx, WaitForMultipleObjects(Ex), SignalObjectAndWait,
+// and the message waits MsgWaitForMultipleObjects(Ex) (user32, hooked only when the target has
+// user32 loaded). Shortening their timeout would fake a timeout on a real I/O / hardware / IPC
 // handle, so we leave the wait real, count it in its own `observed` bucket (never the verdict), and
 // the audit raises a warning. A thread-local guard counts each app-level wait once, attributed to
 // the export the app called, so an internal cascade (e.g. WaitForSingleObject -> ...Ex) is not
 // double-counted. This is the wait-axis analog of ADR-2's QPC exclusion, except we still hook it to
 // count and warn honestly.
 //
-// KNOWN GAPS, not yet covered (the verifier should report these honestly): the message waits
-// MsgWaitForMultipleObjects(Ex) (user32), the settable timers (SetWaitableTimer, SetTimer), and
-// process creation other than CreateProcessW/A (NtCreateUserProcess) for child inheritance.
+// KNOWN GAPS, not yet covered (the verifier should report these honestly): the settable timers
+// (SetWaitableTimer, SetTimer), and process creation other than CreateProcessW/A
+// (NtCreateUserProcess) for child inheritance.
 
 /// All time channels, ordered by their `calls` index (IDX_*): the wall-clock set, the
 /// session-zone functions, then the opt-in duration axis.
@@ -231,6 +241,8 @@ pub const CHANNELS: [ChannelDef; CHANNEL_COUNT] = [
     ChannelDef { bit: CH_WFMO, name: "WaitForMultipleObjects", module: ChannelModule::Kernel32, category: ChannelCategory::WaitObserved },
     ChannelDef { bit: CH_WFMOEX, name: "WaitForMultipleObjectsEx", module: ChannelModule::Kernel32, category: ChannelCategory::WaitObserved },
     ChannelDef { bit: CH_SOAW, name: "SignalObjectAndWait", module: ChannelModule::Kernel32, category: ChannelCategory::WaitObserved },
+    ChannelDef { bit: CH_MWFMO, name: "MsgWaitForMultipleObjects", module: ChannelModule::User32, category: ChannelCategory::WaitObserved },
+    ChannelDef { bit: CH_MWFMOEX, name: "MsgWaitForMultipleObjectsEx", module: ChannelModule::User32, category: ChannelCategory::WaitObserved },
 ];
 
 /// Session-wide control block in `Local\ChronoCtl`. `#[repr(C)]` so both processes
@@ -609,6 +621,8 @@ mod tests {
             (IDX_WFMO, CH_WFMO),
             (IDX_WFMOEX, CH_WFMOEX),
             (IDX_SOAW, CH_SOAW),
+            (IDX_MWFMO, CH_MWFMO),
+            (IDX_MWFMOEX, CH_MWFMOEX),
         ];
         assert_eq!(CHANNELS.len(), CHANNEL_COUNT);
         for (idx, bit) in expected {
