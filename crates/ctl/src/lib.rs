@@ -112,6 +112,8 @@ pub const CH_SWT: u32 = 1 << 27;
 pub const CH_SWTEX: u32 = 1 << 28;
 /// Coverage bit: `SetTimer` is hooked (user32 message timer, uElapse scaled, ADR-7 class C).
 pub const CH_SETTIMER: u32 = 1 << 29;
+/// Coverage bit: `timeSetEvent` is hooked (winmm multimedia timer, observed not scaled, ADR-7 class C).
+pub const CH_TIMESETEVENT: u32 = 1 << 30;
 
 /// Index of each channel into the `calls` array (== its position in `CHANNELS`).
 pub const IDX_GSTAFT: usize = 0;
@@ -144,10 +146,11 @@ pub const IDX_MWFMOEX: usize = 26;
 pub const IDX_SWT: usize = 27;
 pub const IDX_SWTEX: usize = 28;
 pub const IDX_SETTIMER: usize = 29;
+pub const IDX_TIMESETEVENT: usize = 30;
 
 /// Number of time channels tracked (wall-clock, session zone, duration axis, object/message waits,
-/// settable timers).
-pub const CHANNEL_COUNT: usize = 30;
+/// settable timers, multimedia timer).
+pub const CHANNEL_COUNT: usize = 31;
 
 /// Which system module exports a channel (the hook resolves it there).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -157,6 +160,9 @@ pub enum ChannelModule {
     /// user32.dll - the message waits. May be absent in a console/service target that never
     /// loads it; the hook then leaves the channel uninstalled (honest partial), never forces it.
     User32,
+    /// winmm.dll - the multimedia timer timeSetEvent. Often absent (a console/service target rarely
+    /// loads winmm); resolved lazily like User32, honest partial if absent, never force-loaded.
+    Winmm,
 }
 
 /// What kind of time a channel carries. The duration axis and the object-wait observation
@@ -172,6 +178,12 @@ pub enum ChannelCategory {
     /// IPC handle, so the wait is left real, reported in its own `observed` bucket, and the
     /// audit warns. Not `Duration` (that gets scaled), not a gap (we do hook and count it).
     WaitObserved,
+    /// Hooked and counted, but deliberately never scaled (ADR-7 class C, observed): the multimedia
+    /// timer timeSetEvent (winmm). It shares the `observed` bucket with `WaitObserved`, but its own
+    /// warning key - scaling it would shift audio/MIDI timing, the winmm cost ADR-2 avoids (like
+    /// timeGetTime), so it is left real. A separate category only so the audit can name the right
+    /// reason (multimedia timer, not an object wait).
+    TimerObserved,
 }
 
 /// One time channel: its coverage bit, the exported symbol the hook detours, the
@@ -224,11 +236,14 @@ pub struct ChannelDef {
 // the audit raises a warning. A thread-local guard counts each app-level wait once, attributed to
 // the export the app called, so an internal cascade (e.g. WaitForSingleObject -> ...Ex) is not
 // double-counted. This is the wait-axis analog of ADR-2's QPC exclusion, except we still hook it to
-// count and warn honestly.
+// count and warn honestly. The multimedia timer timeSetEvent (winmm, ADR-7 class C) joins the same
+// observed bucket under its own warning (timer.multimedia_not_scaled): scaling its uDelay would shift
+// audio/MIDI timing - the winmm cost ADR-2 avoids, like timeGetTime - so it is hooked, counted, and
+// left real, never scaled.
 //
-// KNOWN GAPS, not yet covered (the verifier should report these honestly): the multimedia timer
-// timeSetEvent (winmm), thread-pool timers (CreateThreadpoolTimer), and process creation other than
-// CreateProcessW/A (NtCreateUserProcess) for child inheritance.
+// KNOWN GAPS, not yet covered (the verifier should report these honestly): thread-pool timers
+// (CreateThreadpoolTimer) and process creation other than CreateProcessW/A (NtCreateUserProcess) for
+// child inheritance.
 
 /// All time channels, ordered by their `calls` index (IDX_*): the wall-clock set, the
 /// session-zone functions, then the opt-in duration axis.
@@ -263,6 +278,7 @@ pub const CHANNELS: [ChannelDef; CHANNEL_COUNT] = [
     ChannelDef { bit: CH_SWT, name: "SetWaitableTimer", module: ChannelModule::Kernel32, category: ChannelCategory::Duration },
     ChannelDef { bit: CH_SWTEX, name: "SetWaitableTimerEx", module: ChannelModule::Kernel32, category: ChannelCategory::Duration },
     ChannelDef { bit: CH_SETTIMER, name: "SetTimer", module: ChannelModule::User32, category: ChannelCategory::Duration },
+    ChannelDef { bit: CH_TIMESETEVENT, name: "timeSetEvent", module: ChannelModule::Winmm, category: ChannelCategory::TimerObserved },
 ];
 
 /// Session-wide control block in `Local\ChronoCtl`. `#[repr(C)]` so both processes
@@ -697,6 +713,7 @@ mod tests {
             (IDX_SWT, CH_SWT),
             (IDX_SWTEX, CH_SWTEX),
             (IDX_SETTIMER, CH_SETTIMER),
+            (IDX_TIMESETEVENT, CH_TIMESETEVENT),
         ];
         assert_eq!(CHANNELS.len(), CHANNEL_COUNT);
         for (idx, bit) in expected {

@@ -32,7 +32,8 @@
 //! divide by M, and an absolute due-time is converted to a scaled relative interval - on their own
 //! thread-local guard. `SetTimer` (user32, ADR-7 class C) scales its uElapse interval so WM_TIMER
 //! keeps step with the fake clock (no guard - it does not cascade onto another hooked export).
-//! `timeSetEvent` (winmm) is a later slice.
+//! `timeSetEvent` (winmm, ADR-7 class C) is OBSERVED, not scaled - counted with its own audit warning
+//! but left real, because scaling it would shift audio/MIDI timing (the winmm cost ADR-2 avoids).
 //!
 //! ABSOLUTE, not delta: a detour computes the fake instant from the anchor and never
 //! calls another channel's original. So there is no cross-channel re-entrancy and no
@@ -60,7 +61,7 @@ use chrono_ctl::{
     IDX_GLT, IDX_GST, IDX_GSTAFT, IDX_GSTPAFT, IDX_GTC, IDX_GTC64, IDX_GTZI, IDX_NTDELAY, IDX_NTQSI,
     IDX_NTQST, IDX_QUIT, IDX_SLEEP, IDX_SLEEPEX, IDX_STSL, IDX_STSLEX, IDX_FTLFT, IDX_LFTFT,
     IDX_TLTST, IDX_TLTSTEX, IDX_WFSO, IDX_WFSOEX, IDX_WFMO, IDX_WFMOEX, IDX_SOAW, IDX_MWFMO,
-    IDX_MWFMOEX, IDX_SWT, IDX_SWTEX, IDX_SETTIMER,
+    IDX_MWFMOEX, IDX_SWT, IDX_SWTEX, IDX_SETTIMER, IDX_TIMESETEVENT,
 };
 use minhook::MinHook;
 use windows::core::{s, w, PCSTR, PCWSTR};
@@ -130,6 +131,11 @@ type SwtexFn =
 // in ms (no absolute form, no INFINITE); the HWND, timer id, and TIMERPROC are forwarded opaquely.
 // ADR-7 class C: uElapse scaled by M so WM_TIMER arrives in step with the fake clock.
 type SetTimerFn = unsafe extern "system" fn(*mut c_void, usize, u32, *const c_void) -> usize;
+// timeSetEvent(uDelay, uResolution, lpTimeProc, dwUser, fuEvent) -> MMRESULT (winmm). ADR-7 class C,
+// OBSERVED not scaled: uDelay is a relative delay in ms, but scaling it would shift audio/MIDI timing
+// (the winmm cost ADR-2 avoids, like timeGetTime), so the detour only counts and forwards untouched.
+// All args are opaque to us (lpTimeProc is a callback or an event handle depending on fuEvent).
+type TimeSetEventFn = unsafe extern "system" fn(u32, u32, *const c_void, usize, u32) -> u32;
 type CpwFn = unsafe extern "system" fn(
     *const u16,
     *mut u16,
@@ -191,6 +197,7 @@ static O_MWFMOEX: OnceLock<MwfmoexFn> = OnceLock::new();
 static O_SWT: OnceLock<SwtFn> = OnceLock::new();
 static O_SWTEX: OnceLock<SwtexFn> = OnceLock::new();
 static O_SETTIMER: OnceLock<SetTimerFn> = OnceLock::new();
+static O_TIMESETEVENT: OnceLock<TimeSetEventFn> = OnceLock::new();
 
 // Duration-axis anchors, captured real (before hooking) at install time.
 static Q0: OnceLock<i64> = OnceLock::new();
@@ -1033,6 +1040,26 @@ unsafe extern "system" fn h_settimer(
     o(hwnd, id, scale_timer_elapse(elapse, dur_multiplier()), timer_proc)
 }
 
+// timeSetEvent (winmm, ADR-7 class C, OBSERVED): count the multimedia timer but never scale its
+// uDelay - scaling would shift audio/MIDI timing, the winmm cost ADR-2 avoids (like timeGetTime), so
+// the audit warns instead (timer.multimedia_not_scaled). No re-entrancy guard (it does not cascade
+// onto another hooked export) and no detached check (we never modify the call, so detached state is
+// irrelevant, like the class-B object waits). Every argument is forwarded untouched.
+unsafe extern "system" fn h_timesetevent(
+    delay: u32,
+    resolution: u32,
+    time_proc: *const c_void,
+    user: usize,
+    event: u32,
+) -> u32 {
+    let o = match O_TIMESETEVENT.get() {
+        Some(o) => o,
+        None => return 0,
+    };
+    bump(IDX_TIMESETEVENT);
+    o(delay, resolution, time_proc, user, event)
+}
+
 // --- Child inheritance (ADR-3) --------------------------------------------------
 // Detour CreateProcessW so children join the session: create suspended, inject the
 // same DLL, then resume (unless the caller wanted it suspended). The child opens the
@@ -1182,6 +1209,15 @@ unsafe fn make_hook<T: Copy>(
                 return;
             }
         },
+        // winmm may be absent in a console/service target; resolve it here rather than force-load it
+        // (forcing a DLL the target never needed would change its behavior). Absent -> honest partial.
+        ChannelModule::Winmm => match GetModuleHandleA(s!("winmm.dll")) {
+            Ok(h) => h,
+            Err(_) => {
+                log(&format!("[chrono_hook] winmm not loaded, skipping: {}", ch.name));
+                return;
+            }
+        },
     };
     let cname = match CString::new(ch.name) {
         Ok(c) => c,
@@ -1304,6 +1340,7 @@ unsafe fn install() -> Result<(), String> {
         make_hook(cov, k32, ntdll, IDX_SWT, h_swt as *const () as *mut c_void, &O_SWT);
         make_hook(cov, k32, ntdll, IDX_SWTEX, h_swtex as *const () as *mut c_void, &O_SWTEX);
         make_hook(cov, k32, ntdll, IDX_SETTIMER, h_settimer as *const () as *mut c_void, &O_SETTIMER);
+        make_hook(cov, k32, ntdll, IDX_TIMESETEVENT, h_timesetevent as *const () as *mut c_void, &O_TIMESETEVENT);
     }
 
     // Child inheritance (ADR-3): hook CreateProcessW and CreateProcessA so the whole

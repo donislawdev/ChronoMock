@@ -283,23 +283,34 @@ unsafe fn core_is_alive(pid: u32) -> bool {
 /// `cov` must point to a live, correctly aligned `Cov`.
 unsafe fn gather_coverage(cov: *const Cov, installed: u32, scale_duration: bool) -> Coverage {
     let mut out = Coverage::default();
+    // Track which KIND of observed channel actually ran, so the audit names the right reason: an
+    // object wait left real (class B) vs a multimedia timer left real (class C, winmm/ADR-2).
+    let mut any_wait_observed = false;
+    let mut any_timer_observed = false;
     for (idx, ch) in CHANNELS.iter().enumerate() {
-        // The duration axis and the object-wait observation are opt-in: with scale_duration
-        // off, their channels are not expected, so they count as nothing.
-        if matches!(ch.category, ChannelCategory::Duration | ChannelCategory::WaitObserved)
-            && !scale_duration
+        // The duration axis and the observed channels are opt-in: with scale_duration off, their
+        // channels are not expected, so they count as nothing.
+        if matches!(
+            ch.category,
+            ChannelCategory::Duration | ChannelCategory::WaitObserved | ChannelCategory::TimerObserved
+        ) && !scale_duration
         {
             continue;
         }
-        // Object waits are counted but never scaled (ADR-7 class B, option b): their own bucket,
-        // so they never sway the verdict. A failed install just means we are not observing it -
-        // not a verdict-affecting gap, so it goes nowhere rather than into `uncovered`.
-        if ch.category == ChannelCategory::WaitObserved {
+        // Observed channels (ADR-7 class B object waits + class C multimedia timer) are counted but
+        // never scaled: their own bucket, so they never sway the verdict. A failed install just means
+        // we are not observing it - not a verdict-affecting gap, so it goes nowhere.
+        if matches!(ch.category, ChannelCategory::WaitObserved | ChannelCategory::TimerObserved) {
             if installed & ch.bit != 0 {
-                out.observed.push(ChannelCoverage {
-                    channel: ch.name.to_string(),
-                    calls: read_calls(cov, idx),
-                });
+                let calls = read_calls(cov, idx);
+                if calls > 0 {
+                    match ch.category {
+                        ChannelCategory::WaitObserved => any_wait_observed = true,
+                        ChannelCategory::TimerObserved => any_timer_observed = true,
+                        _ => {}
+                    }
+                }
+                out.observed.push(ChannelCoverage { channel: ch.name.to_string(), calls });
             }
             continue;
         }
@@ -312,10 +323,14 @@ unsafe fn gather_coverage(cov: *const Cov, installed: u32, scale_duration: bool)
             out.uncovered.push(ch.name.to_string());
         }
     }
-    // An object wait that actually ran under acceleration was left real, not shortened - warn, so
-    // the tester knows a time-based object wait did not accelerate (ADR-7 class B, honest gap).
-    if out.observed.iter().any(|c| c.calls > 0) {
+    // Separate warnings by observed kind, so the tester knows WHICH time source ran real: an object
+    // wait (a real timeout left intact, class B) or a multimedia timer (winmm/audio left unscaled per
+    // ADR-2, class C). Each fires only when that kind actually ran under acceleration (calls > 0).
+    if any_wait_observed {
         out.warning_keys.push("wait.object_waits_not_scaled".to_string());
+    }
+    if any_timer_observed {
+        out.warning_keys.push("timer.multimedia_not_scaled".to_string());
     }
     out
 }
