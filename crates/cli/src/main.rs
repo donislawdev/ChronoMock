@@ -442,17 +442,18 @@ fn emit(ev: &Event) {
 /// Emit a `coverage` event for one process (parent or a child), tagged with its pid.
 /// Coverage is reliable (never coalesced) - one event per process, never summed.
 fn emit_coverage(pid: u32, cov: &chrono_core::Coverage) {
-    let covered: Vec<CoveredChannel> = cov
-        .covered
-        .iter()
-        .map(|c| CoveredChannel { channel: c.channel.clone(), calls: c.calls })
-        .collect();
+    let to_wire = |cs: &[chrono_core::ChannelCoverage]| -> Vec<CoveredChannel> {
+        cs.iter()
+            .map(|c| CoveredChannel { channel: c.channel.clone(), calls: c.calls })
+            .collect()
+    };
     emit(&Event::Coverage {
         v: PROTOCOL_VERSION,
         pid,
-        covered,
+        covered: to_wire(&cov.covered),
+        observed: to_wire(&cov.observed),
         uncovered: cov.uncovered.clone(),
-        warning_keys: vec![],
+        warning_keys: cov.warning_keys.clone(),
     });
 }
 

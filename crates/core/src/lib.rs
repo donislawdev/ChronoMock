@@ -80,12 +80,14 @@ pub struct ChannelCoverage {
     pub calls: u64,
 }
 
-/// Audit result: which channels were covered, which were queried but not, and any
-/// warning keys. Gathering (mechanism layer) is separated from evaluation here
+/// Audit result: channels `covered` (time substituted), `observed` (hooked and counted but
+/// deliberately left real - ADR-7 class B object waits), `uncovered` (queried but not covered),
+/// and any warning keys. Gathering (mechanism layer) is separated from evaluation here
 /// (zasady/06 section 14).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Coverage {
     pub covered: Vec<ChannelCoverage>,
+    pub observed: Vec<ChannelCoverage>,
     pub uncovered: Vec<String>,
     pub warning_keys: Vec<String>,
 }
@@ -94,7 +96,9 @@ pub struct Coverage {
 ///
 /// An uncovered-but-queried channel is the CAUSE of a `Partial` verdict - it does
 /// not have a separate exit code (docs/08 section 8). No evidence at all yields
-/// `Undetermined`, never a fake `Works`.
+/// `Undetermined`, never a fake `Works`. `observed` channels (ADR-7 class B, hooked
+/// but deliberately left real) never sway the verdict - they are an honest side-channel
+/// carried by their own warning, so an object wait left real neither makes nor breaks `works`.
 pub fn verdict_from_coverage(cov: &Coverage) -> Verdict {
     let has_covered = !cov.covered.is_empty();
     let has_uncovered = !cov.uncovered.is_empty();
@@ -286,6 +290,21 @@ mod tests {
     fn only_uncovered_is_fails() {
         let cov = Coverage { uncovered: vec!["KUSER_SHARED_DATA".to_string()], ..Default::default() };
         assert_eq!(verdict_from_coverage(&cov), Verdict::Fails);
+    }
+
+    #[test]
+    fn observed_does_not_sway_verdict() {
+        // ADR-7 class B: an object wait left real is counted in `observed`, never covered/uncovered.
+        // With the full wall set covered, an observed WaitForSingleObject must not change `works`...
+        let works = Coverage {
+            covered: vec![ch("GetSystemTimeAsFileTime")],
+            observed: vec![ch("WaitForSingleObject")],
+            ..Default::default()
+        };
+        assert_eq!(verdict_from_coverage(&works), Verdict::Works);
+        // ...and observed alone (no covered, no uncovered) is not evidence of substitution.
+        let observed_only = Coverage { observed: vec![ch("WaitForSingleObject")], ..Default::default() };
+        assert_eq!(verdict_from_coverage(&observed_only), Verdict::Undetermined);
     }
 
     #[test]

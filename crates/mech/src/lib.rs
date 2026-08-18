@@ -249,9 +249,23 @@ fn quit_now() -> i64 {
 unsafe fn gather_coverage(cov: *const Cov, installed: u32, scale_duration: bool) -> Coverage {
     let mut out = Coverage::default();
     for (idx, ch) in CHANNELS.iter().enumerate() {
-        // The duration axis is opt-in: with scale_duration off, its channels are not
-        // expected, so they count as neither covered nor uncovered.
-        if ch.category == ChannelCategory::Duration && !scale_duration {
+        // The duration axis and the object-wait observation are opt-in: with scale_duration
+        // off, their channels are not expected, so they count as nothing.
+        if matches!(ch.category, ChannelCategory::Duration | ChannelCategory::WaitObserved)
+            && !scale_duration
+        {
+            continue;
+        }
+        // Object waits are counted but never scaled (ADR-7 class B, option b): their own bucket,
+        // so they never sway the verdict. A failed install just means we are not observing it -
+        // not a verdict-affecting gap, so it goes nowhere rather than into `uncovered`.
+        if ch.category == ChannelCategory::WaitObserved {
+            if installed & ch.bit != 0 {
+                out.observed.push(ChannelCoverage {
+                    channel: ch.name.to_string(),
+                    calls: read_calls(cov, idx),
+                });
+            }
             continue;
         }
         if installed & ch.bit != 0 {
@@ -262,6 +276,11 @@ unsafe fn gather_coverage(cov: *const Cov, installed: u32, scale_duration: bool)
         } else {
             out.uncovered.push(ch.name.to_string());
         }
+    }
+    // An object wait that actually ran under acceleration was left real, not shortened - warn, so
+    // the tester knows a time-based object wait did not accelerate (ADR-7 class B, honest gap).
+    if out.observed.iter().any(|c| c.calls > 0) {
+        out.warning_keys.push("wait.object_waits_not_scaled".to_string());
     }
     out
 }

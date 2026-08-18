@@ -92,6 +92,8 @@ pub const CH_SLEEPEX: u32 = 1 << 17;
 pub const CH_NTDELAY: u32 = 1 << 18;
 /// Coverage bit: `NtQuerySystemInformation(SystemTimeOfDayInformation)` is hooked (wall clock, ntdll).
 pub const CH_NTQSI: u32 = 1 << 19;
+/// Coverage bit: `WaitForSingleObject` is hooked (object wait, observed not scaled, ADR-7 class B).
+pub const CH_WFSO: u32 = 1 << 20;
 
 /// Index of each channel into the `calls` array (== its position in `CHANNELS`).
 pub const IDX_GSTAFT: usize = 0;
@@ -114,9 +116,10 @@ pub const IDX_SLEEP: usize = 16;
 pub const IDX_SLEEPEX: usize = 17;
 pub const IDX_NTDELAY: usize = 18;
 pub const IDX_NTQSI: usize = 19;
+pub const IDX_WFSO: usize = 20;
 
-/// Number of time channels tracked (wall-clock, session zone, duration axis).
-pub const CHANNEL_COUNT: usize = 20;
+/// Number of time channels tracked (wall-clock, session zone, duration axis, object waits).
+pub const CHANNEL_COUNT: usize = 21;
 
 /// Which system module exports a channel (the hook resolves it there).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -125,13 +128,19 @@ pub enum ChannelModule {
     Ntdll,
 }
 
-/// What kind of time a channel carries. The duration axis is opt-in (scale_duration),
-/// so the mechanism only expects `Duration` channels when the session asked for it.
+/// What kind of time a channel carries. The duration axis and the object-wait observation
+/// are opt-in (scale_duration), so the mechanism only expects `Duration` and `WaitObserved`
+/// channels when the session asked for it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ChannelCategory {
     Wall,
     Zone,
     Duration,
+    /// Hooked and counted, but deliberately never modified (ADR-7 class B, option b): the
+    /// object waits. Shortening their timeout could fake a timeout on a real I/O / hardware /
+    /// IPC handle, so the wait is left real, reported in its own `observed` bucket, and the
+    /// audit warns. Not `Duration` (that gets scaled), not a gap (we do hook and count it).
+    WaitObserved,
 }
 
 /// One time channel: its coverage bit, the exported symbol the hook detours, the
@@ -169,11 +178,17 @@ pub struct ChannelDef {
 // UNHOOKABLE BY NATURE (chrono-mock.md 9.2 - the verifier warns, it does not hide):
 // direct KUSER_SHARED_DATA reads, direct syscalls, and out-of-process or network time.
 //
-// KNOWN GAPS, not yet covered (the verifier should report these honestly):
-// the rest of the ADR-7 wait/timeout surface (the object waits
-// WaitForSingleObject / WaitForMultipleObjects, the settable timers SetWaitableTimer /
-// SetTimer), and process creation other than
-// CreateProcessW/A (NtCreateUserProcess) for child inheritance.
+// OBSERVED, counted and warned but deliberately NOT scaled (ADR-7 class B, option b): the object
+// wait WaitForSingleObject. Shortening its timeout would fake a timeout on a real I/O / hardware /
+// IPC handle, so we leave the wait real, count it in its own `observed` bucket (never the verdict),
+// and the audit raises a warning. This is the wait-axis analog of ADR-2's QPC exclusion, except we
+// still hook it to count and warn honestly.
+//
+// KNOWN GAPS, not yet covered (the verifier should report these honestly): the rest of the
+// object-wait family (WaitForSingleObjectEx, WaitForMultipleObjects(Ex),
+// MsgWaitForMultipleObjects(Ex), SignalObjectAndWait), the settable timers (SetWaitableTimer,
+// SetTimer), and process creation other than CreateProcessW/A (NtCreateUserProcess) for child
+// inheritance.
 
 /// All time channels, ordered by their `calls` index (IDX_*): the wall-clock set, the
 /// session-zone functions, then the opt-in duration axis.
@@ -198,6 +213,7 @@ pub const CHANNELS: [ChannelDef; CHANNEL_COUNT] = [
     ChannelDef { bit: CH_SLEEPEX, name: "SleepEx", module: ChannelModule::Kernel32, category: ChannelCategory::Duration },
     ChannelDef { bit: CH_NTDELAY, name: "NtDelayExecution", module: ChannelModule::Ntdll, category: ChannelCategory::Duration },
     ChannelDef { bit: CH_NTQSI, name: "NtQuerySystemInformation", module: ChannelModule::Ntdll, category: ChannelCategory::Wall },
+    ChannelDef { bit: CH_WFSO, name: "WaitForSingleObject", module: ChannelModule::Kernel32, category: ChannelCategory::WaitObserved },
 ];
 
 /// Session-wide control block in `Local\ChronoCtl`. `#[repr(C)]` so both processes
@@ -571,6 +587,7 @@ mod tests {
             (IDX_SLEEPEX, CH_SLEEPEX),
             (IDX_NTDELAY, CH_NTDELAY),
             (IDX_NTQSI, CH_NTQSI),
+            (IDX_WFSO, CH_WFSO),
         ];
         assert_eq!(CHANNELS.len(), CHANNEL_COUNT);
         for (idx, bit) in expected {

@@ -120,6 +120,11 @@ pub enum Event {
         v: u32,
         pid: u32,
         covered: Vec<CoveredChannel>,
+        /// Hooked and counted but deliberately left real (ADR-7 class B object waits). Its own
+        /// bucket so the consumer never confuses it with substituted channels. `#[serde(default)]`
+        /// keeps coverage messages from before this field existed parseable (additive evolution).
+        #[serde(default)]
+        observed: Vec<CoveredChannel>,
         uncovered: Vec<String>,
         warning_keys: Vec<String>,
     },
@@ -251,6 +256,35 @@ mod tests {
         };
         let line = ev.to_ndjson();
         assert!(!line.contains("\"id\""), "null id must be omitted, got {line}");
+    }
+
+    #[test]
+    fn coverage_observed_round_trips_and_defaults() {
+        let ev = Event::Coverage {
+            v: PROTOCOL_VERSION,
+            pid: 42,
+            covered: vec![CoveredChannel { channel: "GetSystemTime".into(), calls: 3 }],
+            observed: vec![CoveredChannel { channel: "WaitForSingleObject".into(), calls: 5 }],
+            uncovered: vec![],
+            warning_keys: vec!["wait.object_waits_not_scaled".into()],
+        };
+        let line = ev.to_ndjson();
+        assert!(line.contains(r#""observed""#), "observed must serialize, got {line}");
+        match parse_event(&line).unwrap() {
+            Event::Coverage { observed, warning_keys, .. } => {
+                assert_eq!(observed.len(), 1);
+                assert_eq!(observed[0].channel, "WaitForSingleObject");
+                assert_eq!(observed[0].calls, 5);
+                assert_eq!(warning_keys, vec!["wait.object_waits_not_scaled".to_string()]);
+            }
+            _ => panic!("wrong event variant"),
+        }
+        // A coverage message from before `observed` existed still parses (serde default).
+        let old = r#"{"type":"coverage","v":1,"pid":42,"covered":[],"uncovered":[],"warning_keys":[]}"#;
+        match parse_event(old).unwrap() {
+            Event::Coverage { observed, .. } => assert!(observed.is_empty()),
+            _ => panic!("wrong event variant"),
+        }
     }
 
     #[test]
