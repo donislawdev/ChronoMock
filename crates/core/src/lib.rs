@@ -194,6 +194,29 @@ pub fn filetime_utc_to_wall(ft_utc: i64, tz_bias_min: i32) -> String {
     format!("{y:04}-{mo:02}-{d:02}T{hh:02}:{mi:02}:{ss:02}")
 }
 
+/// Parse a relative delta like "+2h" / "-30m" into signed FILETIME ticks (100 ns). Units are
+/// fixed-length s/m/h/d/w. Shared by a relative `--at` (now + delta, resolved in the driver) and a
+/// relative `jump` (current fake + delta, resolved in the core) so the two never drift. Overflow is
+/// reported, not wrapped.
+pub fn parse_relative_delta(raw: &str) -> Result<i64, String> {
+    let split = raw.len().saturating_sub(1);
+    let (num, unit) = raw.split_at(split);
+    let unit_secs: i64 = match unit {
+        "s" => 1,
+        "m" => 60,
+        "h" => 3600,
+        "d" => 86_400,
+        "w" => 604_800,
+        _ => return Err(format!("relative delta must end in s/m/h/d/w, got '{raw}'")),
+    };
+    let n: i64 = num
+        .parse()
+        .map_err(|_| format!("bad number in relative delta '{raw}'"))?;
+    n.checked_mul(unit_secs)
+        .and_then(|s| s.checked_mul(10_000_000))
+        .ok_or_else(|| format!("relative delta too large: '{raw}'"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -305,6 +328,18 @@ mod tests {
         // ...and observed alone (no covered, no uncovered) is not evidence of substitution.
         let observed_only = Coverage { observed: vec![ch("WaitForSingleObject")], ..Default::default() };
         assert_eq!(verdict_from_coverage(&observed_only), Verdict::Undetermined);
+    }
+
+    #[test]
+    fn relative_delta_parses_signed_units() {
+        assert_eq!(parse_relative_delta("+2h").unwrap(), 2 * 3600 * 10_000_000);
+        assert_eq!(parse_relative_delta("-30m").unwrap(), -30 * 60 * 10_000_000);
+        assert_eq!(parse_relative_delta("+1d").unwrap(), 86_400 * 10_000_000);
+        assert_eq!(parse_relative_delta("+1w").unwrap(), 604_800 * 10_000_000);
+        assert!(parse_relative_delta("+1x").is_err()); // bad unit
+        assert!(parse_relative_delta("-y").is_err()); // no number
+        assert!(parse_relative_delta("+abcd").is_err()); // bad number
+        assert!(parse_relative_delta("+99999999999999w").is_err()); // overflow, reported not wrapped
     }
 
     #[test]

@@ -228,20 +228,7 @@ fn now_filetime_utc() -> i64 {
 fn resolve_at(raw: &str, tz_bias_min: Option<i32>) -> Result<String, String> {
     let first = raw.as_bytes().first().copied();
     if first == Some(b'+') || first == Some(b'-') {
-        let split = raw.len().saturating_sub(1);
-        let (num, unit) = raw.split_at(split);
-        let unit_secs: i64 = match unit {
-            "s" => 1,
-            "m" => 60,
-            "h" => 3600,
-            "d" => 86_400,
-            "w" => 604_800,
-            _ => return Err(format!("relative --at must end in s/m/h/d/w, got '{raw}'")),
-        };
-        let n: i64 = num
-            .parse()
-            .map_err(|_| format!("bad number in relative --at '{raw}'"))?;
-        let target = now_filetime_utc() + n * unit_secs * 10_000_000;
+        let target = now_filetime_utc() + chrono_core::parse_relative_delta(raw)?;
         return Ok(filetime_utc_to_wall(target, tz_bias_min.unwrap_or(0)));
     }
     Ok(raw.to_string())
@@ -257,21 +244,16 @@ fn send_set_multiplier(stdin: &mut std::process::ChildStdin, m: i64) {
     send_command(stdin, &Command::SetMultiplier { v: PROTOCOL_VERSION, id: 3, multiplier: m });
 }
 
-/// Send a `jump` command in flight (absolute moment in the session zone).
+/// Send a `jump` command in flight. A leading +/- marks a relative jump (current fake + delta),
+/// carried in `delta`; anything else is an absolute moment in the session zone, carried in `local`.
 fn send_jump(stdin: &mut std::process::ChildStdin, moment: &str, tz_bias_min: Option<i32>) {
-    send_command(
-        stdin,
-        &Command::Jump {
-            v: PROTOCOL_VERSION,
-            id: 4,
-            to: MomentSpec {
-                kind: "absolute".into(),
-                local: Some(moment.to_string()),
-                tz_bias_min,
-                delta: None,
-            },
-        },
-    );
+    let first = moment.as_bytes().first().copied();
+    let to = if first == Some(b'+') || first == Some(b'-') {
+        MomentSpec { kind: "relative".into(), local: None, tz_bias_min, delta: Some(moment.to_string()) }
+    } else {
+        MomentSpec { kind: "absolute".into(), local: Some(moment.to_string()), tz_bias_min, delta: None }
+    };
+    send_command(stdin, &Command::Jump { v: PROTOCOL_VERSION, id: 4, to });
 }
 
 fn send_command(stdin: &mut std::process::ChildStdin, cmd: &Command) {
@@ -664,20 +646,33 @@ fn run_session(
                 emit(&Event::Ack { v: PROTOCOL_VERSION, id });
                 emit(&state_event(&session));
             }
-            Ok(Command::Jump { id, to, .. }) => match moment_from_spec(&to) {
-                Ok(ft) => {
-                    session.jump(ft);
-                    emit(&Event::Ack { v: PROTOCOL_VERSION, id });
-                    emit(&state_event(&session));
+            Ok(Command::Jump { id, to, .. }) => {
+                // Relative jump (current fake + delta) resolves in the core, which alone knows the
+                // live fake clock; absolute resolves through moment_from_spec. Both re-anchor.
+                let resolved: Result<(), &str> = if to.kind == "relative" {
+                    match to.delta.as_deref() {
+                        Some(d) => chrono_core::parse_relative_delta(d)
+                            .map(|delta| session.jump_relative(delta))
+                            .map_err(|_| "moment.invalid"),
+                        None => Err("moment.invalid"),
+                    }
+                } else {
+                    moment_from_spec(&to).map(|ft| session.jump(ft))
+                };
+                match resolved {
+                    Ok(()) => {
+                        emit(&Event::Ack { v: PROTOCOL_VERSION, id });
+                        emit(&state_event(&session));
+                    }
+                    Err(key) => emit(&Event::Error {
+                        v: PROTOCOL_VERSION,
+                        id: Some(id),
+                        code: 1,
+                        key: key.into(),
+                        origin: "core".into(),
+                    }),
                 }
-                Err(key) => emit(&Event::Error {
-                    v: PROTOCOL_VERSION,
-                    id: Some(id),
-                    code: 1,
-                    key: key.into(),
-                    origin: "core".into(),
-                }),
-            },
+            }
             Ok(_) => {} // Start or a not-yet-supported command: ignore
             Err(mpsc::RecvTimeoutError::Timeout) => {
                 emit(&state_event(&session));

@@ -182,6 +182,16 @@ impl Session {
         unsafe { write_anchor(self.ctl_mut(), to_ft, now, cur_m) };
     }
 
+    /// Jump the wall clock by `delta` ticks (100 ns) from its CURRENT fake value, keeping the
+    /// multiplier. Relative jump semantics: "advance the session clock by delta", computed
+    /// atomically under one anchor read so no real time leaks between reading and re-anchoring.
+    pub fn jump_relative(&self, delta: i64) {
+        let now = quit_now();
+        let (a_fake, a_real, cur_m) = unsafe { read_anchor(self.ctl()) };
+        let fake_now = a_fake.wrapping_add(now.wrapping_sub(a_real).wrapping_mul(cur_m));
+        unsafe { write_anchor(self.ctl_mut(), fake_now.wrapping_add(delta), now, cur_m) };
+    }
+
     /// Scan the PID registry for processes not yet reported (children that joined the
     /// session after `prepare`, ADR-3) and return each one's OWN coverage. Each new
     /// section is mapped and kept for the session, so a child's evidence survives even
