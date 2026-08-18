@@ -114,6 +114,10 @@ pub const CH_SWTEX: u64 = 1 << 28;
 pub const CH_SETTIMER: u64 = 1 << 29;
 /// Coverage bit: `timeSetEvent` is hooked (winmm multimedia timer, observed not scaled, ADR-7 class C).
 pub const CH_TIMESETEVENT: u64 = 1 << 30;
+/// Coverage bit: `SetThreadpoolTimer` is hooked (thread-pool timer, due-time + period scaled, ADR-7 class C).
+pub const CH_TPTIMER: u64 = 1 << 31;
+/// Coverage bit: `SetThreadpoolTimerEx` is hooked (thread-pool timer, due-time + period scaled, ADR-7 class C).
+pub const CH_TPTIMEREX: u64 = 1 << 32;
 
 /// Index of each channel into the `calls` array (== its position in `CHANNELS`).
 pub const IDX_GSTAFT: usize = 0;
@@ -147,10 +151,12 @@ pub const IDX_SWT: usize = 27;
 pub const IDX_SWTEX: usize = 28;
 pub const IDX_SETTIMER: usize = 29;
 pub const IDX_TIMESETEVENT: usize = 30;
+pub const IDX_TPTIMER: usize = 31;
+pub const IDX_TPTIMEREX: usize = 32;
 
 /// Number of time channels tracked (wall-clock, session zone, duration axis, object/message waits,
-/// settable timers, multimedia timer).
-pub const CHANNEL_COUNT: usize = 31;
+/// settable timers, multimedia timer, thread-pool timers).
+pub const CHANNEL_COUNT: usize = 33;
 
 /// Which system module exports a channel (the hook resolves it there).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -214,8 +220,11 @@ pub struct ChannelDef {
 // kernel (which reads the real clock for absolute timers) fires it when the FAKE clock reaches it.
 // SetTimer (user32, ADR-7 class C) joins them: its uElapse interval is scaled by M (scale_timer_elapse)
 // so WM_TIMER arrives in step with the fake clock - Windows clamps a scaled interval below
-// USER_TIMER_MINIMUM (10 ms) up to it, a documented floor under heavy acceleration.
-// CRT time / _time64 ride the hooked Win32 exports, so they follow for free.
+// USER_TIMER_MINIMUM (10 ms) up to it, a documented floor under heavy acceleration. The thread-pool
+// timers SetThreadpoolTimer / SetThreadpoolTimerEx (kernel32) scale the same way as SetWaitableTimer:
+// their FILETIME due-time (absolute converted to a scaled relative interval, relative scaled) and
+// their msPeriod / msWindowLength divide by M. CRT time / _time64 ride the hooked Win32 exports, so
+// they follow for free.
 //
 // DELIBERATELY EXCLUDED, for two different reasons:
 //   - ADR-2 (scaling them destabilizes the target): the performance counter
@@ -241,9 +250,8 @@ pub struct ChannelDef {
 // audio/MIDI timing - the winmm cost ADR-2 avoids, like timeGetTime - so it is hooked, counted, and
 // left real, never scaled.
 //
-// KNOWN GAPS, not yet covered (the verifier should report these honestly): thread-pool timers
-// (CreateThreadpoolTimer) and process creation other than CreateProcessW/A (NtCreateUserProcess) for
-// child inheritance.
+// KNOWN GAPS, not yet covered (the verifier should report these honestly): process creation other
+// than CreateProcessW/A (NtCreateUserProcess) for child inheritance.
 
 /// All time channels, ordered by their `calls` index (IDX_*): the wall-clock set, the
 /// session-zone functions, then the opt-in duration axis.
@@ -279,6 +287,8 @@ pub const CHANNELS: [ChannelDef; CHANNEL_COUNT] = [
     ChannelDef { bit: CH_SWTEX, name: "SetWaitableTimerEx", module: ChannelModule::Kernel32, category: ChannelCategory::Duration },
     ChannelDef { bit: CH_SETTIMER, name: "SetTimer", module: ChannelModule::User32, category: ChannelCategory::Duration },
     ChannelDef { bit: CH_TIMESETEVENT, name: "timeSetEvent", module: ChannelModule::Winmm, category: ChannelCategory::TimerObserved },
+    ChannelDef { bit: CH_TPTIMER, name: "SetThreadpoolTimer", module: ChannelModule::Kernel32, category: ChannelCategory::Duration },
+    ChannelDef { bit: CH_TPTIMEREX, name: "SetThreadpoolTimerEx", module: ChannelModule::Kernel32, category: ChannelCategory::Duration },
 ];
 
 /// Session-wide control block in `Local\ChronoCtl`. `#[repr(C)]` so both processes
@@ -570,6 +580,18 @@ pub fn scale_timer_elapse(elapse_ms: u32, m: i64) -> u32 {
     (elapse_ms as u64 / m.max(1) as u64) as u32
 }
 
+/// Scale a thread-pool timer period (milliseconds, DWORD) by the duration multiplier: real period =
+/// period / M, clamped to >= 1 so a positive period never collapses to 0 (0 = one-shot, which would
+/// silently turn a periodic timer into a one-shot). A 0 period (one-shot) stays 0. Unlike
+/// `scale_timer_period` this takes a u32, because SetThreadpoolTimer's msPeriod is a DWORD, not the
+/// signed LONG lPeriod of SetWaitableTimer. `m` clamped to >= 1 (rule 3, frozen/slow leave it real).
+pub fn scale_timer_period_ms(period_ms: u32, m: i64) -> u32 {
+    if period_ms == 0 {
+        return 0; // one-shot
+    }
+    (period_ms as u64 / m.max(1) as u64).max(1) as u32
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -716,6 +738,8 @@ mod tests {
             (IDX_SWTEX, CH_SWTEX),
             (IDX_SETTIMER, CH_SETTIMER),
             (IDX_TIMESETEVENT, CH_TIMESETEVENT),
+            (IDX_TPTIMER, CH_TPTIMER),
+            (IDX_TPTIMEREX, CH_TPTIMEREX),
         ];
         assert_eq!(CHANNELS.len(), CHANNEL_COUNT);
         for (idx, bit) in expected {
@@ -795,6 +819,20 @@ mod tests {
         // Frozen and slow motion clamp to real length (>= 1) - rule 3.
         assert_eq!(scale_timer_period(6000, 0), 6000);
         assert_eq!(scale_timer_period(6000, -5), 6000);
+    }
+
+    #[test]
+    fn scale_timer_period_ms_scales_and_guards() {
+        // Positive period scaled by M (u32 variant for SetThreadpoolTimer's DWORD msPeriod).
+        assert_eq!(scale_timer_period_ms(6000, 60), 100);
+        assert_eq!(scale_timer_period_ms(6000, 1), 6000);
+        // A >0 period never collapses to 0 (would turn a periodic timer one-shot).
+        assert_eq!(scale_timer_period_ms(30, 60), 1);
+        // 0 = one-shot stays 0.
+        assert_eq!(scale_timer_period_ms(0, 60), 0);
+        // Frozen and slow motion clamp to real length (>= 1) - rule 3.
+        assert_eq!(scale_timer_period_ms(6000, 0), 6000);
+        assert_eq!(scale_timer_period_ms(6000, -5), 6000);
     }
 
     #[test]

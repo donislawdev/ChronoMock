@@ -19,8 +19,8 @@ use std::time::Instant;
 use chrono_core::{ChannelCoverage, Coverage, SessionSpec, TimeMode};
 use chrono_ctl::{
     cov_section_name, cov_size, ctl_size, read_anchor, read_calls, read_core_pid, read_installed,
-    read_pid, write_anchor, write_core_pid, write_scale_dur, write_tz_bias, ChannelCategory, Cov,
-    Ctl, CHANNELS, MAX_COV_PIDS,
+    read_pid, write_anchor, write_core_pid, write_scale_dur, write_tz_bias, ChannelCategory,
+    ChannelModule, Cov, Ctl, CHANNELS, MAX_COV_PIDS,
 };
 use windows::core::{s, PCWSTR, PWSTR};
 use windows::Win32::Foundation::{
@@ -320,7 +320,19 @@ unsafe fn gather_coverage(cov: *const Cov, installed: u64, scale_duration: bool)
                 calls: read_calls(cov, idx),
             });
         } else {
-            out.uncovered.push(ch.name.to_string());
+            // Failed install. A channel in an ALWAYS-present module (kernel32/ntdll) is a real
+            // coverage gap -> uncovered. A channel in an OPTIONAL module (user32/winmm) most likely
+            // just is not loaded in this process (a console app or service never loaded user32), so
+            // the app cannot call it at all - not a gap, so it goes nowhere rather than faking a
+            // partial verdict (rule 4: never claim a gap the target could not hit). Static imports,
+            // the common case, are already loaded in our DllMain; only a target that loads the module
+            // dynamically after startup and then uses the channel would slip past here (documented).
+            match ch.module {
+                ChannelModule::Kernel32 | ChannelModule::Ntdll => {
+                    out.uncovered.push(ch.name.to_string())
+                }
+                ChannelModule::User32 | ChannelModule::Winmm => {}
+            }
         }
     }
     // Separate warnings by observed kind, so the tester knows WHICH time source ran real: an object

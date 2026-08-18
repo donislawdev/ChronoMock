@@ -33,7 +33,10 @@
 //! thread-local guard. `SetTimer` (user32, ADR-7 class C) scales its uElapse interval so WM_TIMER
 //! keeps step with the fake clock (no guard - it does not cascade onto another hooked export).
 //! `timeSetEvent` (winmm, ADR-7 class C) is OBSERVED, not scaled - counted with its own audit warning
-//! but left real, because scaling it would shift audio/MIDI timing (the winmm cost ADR-2 avoids).
+//! but left real, because scaling it would shift audio/MIDI timing (the winmm cost ADR-2 avoids). The
+//! thread-pool timers `SetThreadpoolTimer` / `SetThreadpoolTimerEx` (kernel32, ADR-7 class C) scale
+//! like `SetWaitableTimer` (FILETIME due + msPeriod + msWindowLength by M); their detour is stateless,
+//! which keeps it correct under the thread pool's own worker threads and callback re-arms.
 //!
 //! ABSOLUTE, not delta: a detour computes the fake instant from the anchor and never
 //! calls another channel's original. So there is no cross-channel re-entrancy and no
@@ -57,11 +60,12 @@ use std::sync::OnceLock;
 use chrono_ctl::{
     bump_calls, cov_section_name, cov_size, mark_channel_installed, read_anchor, read_core_pid,
     read_scale_dur, read_tz_bias, register_pid, scale_delay_interval, scale_timer_due,
-    scale_timer_elapse, scale_timer_period, scale_wait, ChannelModule, Cov, Ctl, CHANNELS, IDX_GDTZI,
-    IDX_GLT, IDX_GST, IDX_GSTAFT, IDX_GSTPAFT, IDX_GTC, IDX_GTC64, IDX_GTZI, IDX_NTDELAY, IDX_NTQSI,
-    IDX_NTQST, IDX_QUIT, IDX_SLEEP, IDX_SLEEPEX, IDX_STSL, IDX_STSLEX, IDX_FTLFT, IDX_LFTFT,
-    IDX_TLTST, IDX_TLTSTEX, IDX_WFSO, IDX_WFSOEX, IDX_WFMO, IDX_WFMOEX, IDX_SOAW, IDX_MWFMO,
-    IDX_MWFMOEX, IDX_SWT, IDX_SWTEX, IDX_SETTIMER, IDX_TIMESETEVENT,
+    scale_timer_elapse, scale_timer_period, scale_timer_period_ms, scale_wait, ChannelModule, Cov,
+    Ctl, CHANNELS, IDX_GDTZI, IDX_GLT, IDX_GST, IDX_GSTAFT, IDX_GSTPAFT, IDX_GTC, IDX_GTC64,
+    IDX_GTZI, IDX_NTDELAY, IDX_NTQSI, IDX_NTQST, IDX_QUIT, IDX_SLEEP, IDX_SLEEPEX, IDX_STSL,
+    IDX_STSLEX, IDX_FTLFT, IDX_LFTFT, IDX_TLTST, IDX_TLTSTEX, IDX_WFSO, IDX_WFSOEX, IDX_WFMO,
+    IDX_WFMOEX, IDX_SOAW, IDX_MWFMO, IDX_MWFMOEX, IDX_SWT, IDX_SWTEX, IDX_SETTIMER, IDX_TIMESETEVENT,
+    IDX_TPTIMER, IDX_TPTIMEREX,
 };
 use minhook::MinHook;
 use windows::core::{s, w, PCSTR, PCWSTR};
@@ -136,6 +140,12 @@ type SetTimerFn = unsafe extern "system" fn(*mut c_void, usize, u32, *const c_vo
 // (the winmm cost ADR-2 avoids, like timeGetTime), so the detour only counts and forwards untouched.
 // All args are opaque to us (lpTimeProc is a callback or an event handle depending on fuEvent).
 type TimeSetEventFn = unsafe extern "system" fn(u32, u32, *const c_void, usize, u32) -> u32;
+// SetThreadpoolTimer(pti, pftDueTime, msPeriod, msWindowLength) -> VOID, and SetThreadpoolTimerEx ->
+// BOOL (kernel32, threadpoolapiset). pftDueTime is a FILETIME* (same 64 bits as SetWaitableTimer's
+// LARGE_INTEGER*): positive/zero = absolute, negative = relative, NULL = cancel. ADR-7 class C: due +
+// msPeriod + msWindowLength scaled by M, exactly like SetWaitableTimer. pti is opaque (never touched).
+type SetTpTimerFn = unsafe extern "system" fn(*mut c_void, *const FILETIME, u32, u32);
+type SetTpTimerExFn = unsafe extern "system" fn(*mut c_void, *const FILETIME, u32, u32) -> i32;
 type CpwFn = unsafe extern "system" fn(
     *const u16,
     *mut u16,
@@ -198,6 +208,8 @@ static O_SWT: OnceLock<SwtFn> = OnceLock::new();
 static O_SWTEX: OnceLock<SwtexFn> = OnceLock::new();
 static O_SETTIMER: OnceLock<SetTimerFn> = OnceLock::new();
 static O_TIMESETEVENT: OnceLock<TimeSetEventFn> = OnceLock::new();
+static O_TPTIMER: OnceLock<SetTpTimerFn> = OnceLock::new();
+static O_TPTIMEREX: OnceLock<SetTpTimerExFn> = OnceLock::new();
 
 // Duration-axis anchors, captured real (before hooking) at install time.
 static Q0: OnceLock<i64> = OnceLock::new();
@@ -1060,6 +1072,64 @@ unsafe extern "system" fn h_timesetevent(
     o(delay, resolution, time_proc, user, event)
 }
 
+// Thread-pool timers (kernel32, ADR-7 class C): SetThreadpoolTimer / SetThreadpoolTimerEx share the
+// time structure of SetWaitableTimer - a FILETIME due (absolute converted to a scaled relative
+// interval, relative scaled), an msPeriod, and an msWindowLength - so they scale the same way. The
+// detour is STATELESS (no per-timer state), which is what makes it safe under the thread pool's
+// concurrency: SetThreadpoolTimer may be called from many threads, and a callback (running on a
+// worker thread) may re-arm the timer, but each call just reads the shared anchor (seqlock) and
+// scales. The class-C thread-local guard SCALING_TIMER counts each app-level call once and handles a
+// Set -> ...Ex cascade; being thread-local, a worker-thread re-arm gets its own fresh guard.
+
+/// Scale a thread-pool timer's FILETIME due, msPeriod, and msWindowLength for a top-level app call.
+/// Returns the scaled `(due_ft, period, window)` to forward, or None to forward the originals
+/// unchanged (NULL due = cancel, or the core detached mid-call). Shared by both detours.
+///
+/// # Safety
+/// `pft`, when non-null, must point to a valid FILETIME.
+unsafe fn scale_tp_timer(pft: *const FILETIME, period: u32, window: u32, m: i64) -> Option<(FILETIME, u32, u32)> {
+    if pft.is_null() {
+        return None; // NULL = cancel: forward untouched
+    }
+    let fake_now = compute_fake()?; // detached: forward untouched
+    let scaled_due = scale_timer_due(ft_to_i64(*pft), fake_now, m);
+    Some((i64_to_ft(scaled_due), scale_timer_period_ms(period, m), scale_timer_elapse(window, m)))
+}
+
+unsafe extern "system" fn h_set_tp_timer(pti: *mut c_void, pft: *const FILETIME, period: u32, window: u32) {
+    let o = match O_TPTIMER.get() {
+        Some(o) => o,
+        None => return,
+    };
+    match try_enter_timer(IDX_TPTIMER) {
+        // _guard held across the whole original call, so a Set -> ...Ex cascade passes through once.
+        Some((m, _guard)) => match scale_tp_timer(pft, period, window, m) {
+            Some((ft, p, w)) => o(pti, &ft as *const FILETIME, p, w),
+            None => o(pti, pft, period, window),
+        },
+        None => o(pti, pft, period, window),
+    }
+}
+
+unsafe extern "system" fn h_set_tp_timer_ex(
+    pti: *mut c_void,
+    pft: *const FILETIME,
+    period: u32,
+    window: u32,
+) -> i32 {
+    let o = match O_TPTIMEREX.get() {
+        Some(o) => o,
+        None => return 0,
+    };
+    match try_enter_timer(IDX_TPTIMEREX) {
+        Some((m, _guard)) => match scale_tp_timer(pft, period, window, m) {
+            Some((ft, p, w)) => o(pti, &ft as *const FILETIME, p, w),
+            None => o(pti, pft, period, window),
+        },
+        None => o(pti, pft, period, window),
+    }
+}
+
 // --- Child inheritance (ADR-3) --------------------------------------------------
 // Detour CreateProcessW so children join the session: create suspended, inject the
 // same DLL, then resume (unless the caller wanted it suspended). The child opens the
@@ -1341,6 +1411,8 @@ unsafe fn install() -> Result<(), String> {
         make_hook(cov, k32, ntdll, IDX_SWTEX, h_swtex as *const () as *mut c_void, &O_SWTEX);
         make_hook(cov, k32, ntdll, IDX_SETTIMER, h_settimer as *const () as *mut c_void, &O_SETTIMER);
         make_hook(cov, k32, ntdll, IDX_TIMESETEVENT, h_timesetevent as *const () as *mut c_void, &O_TIMESETEVENT);
+        make_hook(cov, k32, ntdll, IDX_TPTIMER, h_set_tp_timer as *const () as *mut c_void, &O_TPTIMER);
+        make_hook(cov, k32, ntdll, IDX_TPTIMEREX, h_set_tp_timer_ex as *const () as *mut c_void, &O_TPTIMEREX);
     }
 
     // Child inheritance (ADR-3): hook CreateProcessW and CreateProcessA so the whole
