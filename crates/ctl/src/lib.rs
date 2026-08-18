@@ -106,6 +106,10 @@ pub const CH_SOAW: u32 = 1 << 24;
 pub const CH_MWFMO: u32 = 1 << 25;
 /// Coverage bit: `MsgWaitForMultipleObjectsEx` is hooked (message wait, observed not scaled, ADR-7 class B).
 pub const CH_MWFMOEX: u32 = 1 << 26;
+/// Coverage bit: `SetWaitableTimer` is hooked (settable timer, due-time + period scaled, ADR-7 class C).
+pub const CH_SWT: u32 = 1 << 27;
+/// Coverage bit: `SetWaitableTimerEx` is hooked (settable timer, due-time + period scaled, ADR-7 class C).
+pub const CH_SWTEX: u32 = 1 << 28;
 
 /// Index of each channel into the `calls` array (== its position in `CHANNELS`).
 pub const IDX_GSTAFT: usize = 0;
@@ -135,9 +139,12 @@ pub const IDX_WFMOEX: usize = 23;
 pub const IDX_SOAW: usize = 24;
 pub const IDX_MWFMO: usize = 25;
 pub const IDX_MWFMOEX: usize = 26;
+pub const IDX_SWT: usize = 27;
+pub const IDX_SWTEX: usize = 28;
 
-/// Number of time channels tracked (wall-clock, session zone, duration axis, object/message waits).
-pub const CHANNEL_COUNT: usize = 27;
+/// Number of time channels tracked (wall-clock, session zone, duration axis, object/message waits,
+/// settable timers).
+pub const CHANNEL_COUNT: usize = 29;
 
 /// Which system module exports a channel (the hook resolves it there).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -184,9 +191,13 @@ pub struct ChannelDef {
 // NtQuerySystemInformation(SystemTimeOfDayInformation) (wrap-and-patch: its CurrentTime field
 // overwritten over the real call - the SDK struct is opaque BYTE[48], so the offset is an
 // assessment verified empirically, see the hook), and the opt-in duration axis (GetTickCount,
-// GetTickCount64, QueryUnbiasedInterruptTime), and wait-length scaling (Sleep, SleepEx,
-// NtDelayExecution - ADR-7 class A). CRT time / _time64 ride the hooked Win32 exports, so they
-// follow for free.
+// GetTickCount64, QueryUnbiasedInterruptTime), wait-length scaling (Sleep, SleepEx,
+// NtDelayExecution - ADR-7 class A), and the settable waitable timers (SetWaitableTimer,
+// SetWaitableTimerEx - ADR-7 class C): a relative due-time and a periodic lPeriod are scaled by M
+// like a wait, and an ABSOLUTE (positive) due-time - a fake wall-clock instant the app computed
+// from the substituted clock - is converted to a scaled relative interval (scale_timer_due), so the
+// kernel (which reads the real clock for absolute timers) fires it when the FAKE clock reaches it.
+// CRT time / _time64 ride the hooked Win32 exports, so they follow for free.
 //
 // DELIBERATELY EXCLUDED, for two different reasons:
 //   - ADR-2 (scaling them destabilizes the target): the performance counter
@@ -209,9 +220,10 @@ pub struct ChannelDef {
 // double-counted. This is the wait-axis analog of ADR-2's QPC exclusion, except we still hook it to
 // count and warn honestly.
 //
-// KNOWN GAPS, not yet covered (the verifier should report these honestly): the settable timers
-// (SetWaitableTimer, SetTimer), and process creation other than CreateProcessW/A
-// (NtCreateUserProcess) for child inheritance.
+// KNOWN GAPS, not yet covered (the verifier should report these honestly): the remaining settable
+// timers (SetTimer/WM_TIMER in user32, timeSetEvent in winmm), thread-pool timers
+// (CreateThreadpoolTimer), and process creation other than CreateProcessW/A (NtCreateUserProcess)
+// for child inheritance.
 
 /// All time channels, ordered by their `calls` index (IDX_*): the wall-clock set, the
 /// session-zone functions, then the opt-in duration axis.
@@ -243,6 +255,8 @@ pub const CHANNELS: [ChannelDef; CHANNEL_COUNT] = [
     ChannelDef { bit: CH_SOAW, name: "SignalObjectAndWait", module: ChannelModule::Kernel32, category: ChannelCategory::WaitObserved },
     ChannelDef { bit: CH_MWFMO, name: "MsgWaitForMultipleObjects", module: ChannelModule::User32, category: ChannelCategory::WaitObserved },
     ChannelDef { bit: CH_MWFMOEX, name: "MsgWaitForMultipleObjectsEx", module: ChannelModule::User32, category: ChannelCategory::WaitObserved },
+    ChannelDef { bit: CH_SWT, name: "SetWaitableTimer", module: ChannelModule::Kernel32, category: ChannelCategory::Duration },
+    ChannelDef { bit: CH_SWTEX, name: "SetWaitableTimerEx", module: ChannelModule::Kernel32, category: ChannelCategory::Duration },
 ];
 
 /// Session-wide control block in `Local\ChronoCtl`. `#[repr(C)]` so both processes
@@ -481,6 +495,47 @@ pub fn scale_delay_interval(interval: i64, m: i64) -> i64 {
     }
 }
 
+/// Scale a waitable-timer due time (100 ns, FILETIME convention) into a RELATIVE real interval,
+/// always negative so the hook forwards one uniform shape to the kernel (ADR-7 class C).
+///
+/// A NEGATIVE due is already relative: scale its magnitude toward zero, like `scale_delay_interval`.
+/// A POSITIVE due is an ABSOLUTE fake wall-clock instant (the app computed it from the substituted
+/// clock): convert it to the real delay until the fake clock reaches it - `(due - fake_now) / M` -
+/// returned negative. Unlike `NtDelayExecution`, a positive due here is NOT passed through: the
+/// kernel reads the REAL clock for an absolute timer, so an unconverted fake instant would fire
+/// years off. An absolute due already at or before `fake_now` fires immediately (`-1`).
+///
+/// `m` is clamped to >= 1, so frozen (M=0) and slow motion (0<M<1) leave the timer at real length,
+/// symmetric to the duration axis (untouchable rule 3). One consequence: an ABSOLUTE timer under
+/// frozen fires as if M=1 - a frozen wall clock never reaches a future absolute due on its own, so
+/// there is no "correct" wait to shorten. Documented limit, not a silent choice.
+pub fn scale_timer_due(due: i64, fake_now: i64, m: i64) -> i64 {
+    let m = m.max(1);
+    if due < 0 {
+        // Already relative: magnitude scaled toward zero, stays negative.
+        due / m
+    } else {
+        // Absolute fake instant -> relative real interval until the fake clock reaches it.
+        let delta_fake = due - fake_now;
+        if delta_fake <= 0 {
+            -1 // fake clock already at/past the due time: fire now
+        } else {
+            -(delta_fake / m)
+        }
+    }
+}
+
+/// Scale a periodic waitable-timer period (milliseconds) by the duration multiplier: real period =
+/// period / M. A POSITIVE period never collapses to 0 (that would silently turn a periodic timer
+/// into a one-shot), so it is clamped to >= 1. A 0 period (one-shot) stays 0, and a negative period
+/// (the API rejects it) passes through unchanged. `m` clamped to >= 1 (rule 3, like `scale_wait`).
+pub fn scale_timer_period(period_ms: i32, m: i64) -> i32 {
+    if period_ms <= 0 {
+        return period_ms; // 0 = one-shot, negative = API error: leave both untouched
+    }
+    (period_ms as i64 / m.max(1)).max(1) as i32
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -623,6 +678,8 @@ mod tests {
             (IDX_SOAW, CH_SOAW),
             (IDX_MWFMO, CH_MWFMO),
             (IDX_MWFMOEX, CH_MWFMOEX),
+            (IDX_SWT, CH_SWT),
+            (IDX_SWTEX, CH_SWTEX),
         ];
         assert_eq!(CHANNELS.len(), CHANNEL_COUNT);
         for (idx, bit) in expected {
@@ -668,5 +725,39 @@ mod tests {
         // Frozen and slow motion clamp to real length (>= 1) - rule 3.
         assert_eq!(scale_delay_interval(-6_000_000, 0), -6_000_000);
         assert_eq!(scale_delay_interval(-6_000_000, -5), -6_000_000);
+    }
+
+    #[test]
+    fn scale_timer_due_handles_relative_and_absolute() {
+        // Relative (negative) due: magnitude scaled toward zero, stays relative. -0.6s at x60 -> -0.01s.
+        assert_eq!(scale_timer_due(-6_000_000, 0, 60), -100_000);
+        assert_eq!(scale_timer_due(-6_000_000, 0, 1), -6_000_000);
+        // Absolute (positive) fake instant -> relative real interval until the fake clock reaches it.
+        // due = fake_now + 6s (60_000_000 ticks) ahead; at x60 the real wait is 0.1s (1_000_000 ticks).
+        let fake_now = 1_000_000_000;
+        assert_eq!(scale_timer_due(fake_now + 60_000_000, fake_now, 60), -1_000_000);
+        // Absolute already at or before fake_now: fire immediately.
+        assert_eq!(scale_timer_due(fake_now - 5, fake_now, 60), -1);
+        assert_eq!(scale_timer_due(fake_now, fake_now, 60), -1);
+        // Frozen and slow motion clamp to real length (>= 1): a relative due stays real...
+        assert_eq!(scale_timer_due(-6_000_000, 0, 0), -6_000_000);
+        assert_eq!(scale_timer_due(-6_000_000, 0, -5), -6_000_000);
+        // ...and an absolute due under frozen behaves as M=1 (documented limit).
+        assert_eq!(scale_timer_due(fake_now + 60_000_000, fake_now, 0), -60_000_000);
+    }
+
+    #[test]
+    fn scale_timer_period_scales_and_guards_edges() {
+        // Positive period scaled by M.
+        assert_eq!(scale_timer_period(6000, 60), 100);
+        assert_eq!(scale_timer_period(6000, 1), 6000);
+        // A >0 period never collapses to 0 (that would turn a periodic timer one-shot).
+        assert_eq!(scale_timer_period(30, 60), 1);
+        // 0 = one-shot stays 0; negative (API error) passes through untouched.
+        assert_eq!(scale_timer_period(0, 60), 0);
+        assert_eq!(scale_timer_period(-5, 60), -5);
+        // Frozen and slow motion clamp to real length (>= 1) - rule 3.
+        assert_eq!(scale_timer_period(6000, 0), 6000);
+        assert_eq!(scale_timer_period(6000, -5), 6000);
     }
 }

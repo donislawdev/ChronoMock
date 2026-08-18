@@ -27,7 +27,10 @@
 //! NOT scaled - shortening a wait on real I/O would fake a timeout, so they ride their own `observed`
 //! bucket with an audit warning, and a separate thread-local guard counts each app-level wait once.
 //! The user32 message waits (`MsgWaitForMultipleObjects(Ex)`) join them on the same guard when the
-//! target has user32 loaded (resolved lazily, honest partial if absent). The settable timers are a later slice.
+//! target has user32 loaded (resolved lazily, honest partial if absent). The settable waitable timers
+//! (`SetWaitableTimer(Ex)`, ADR-7 class C) ARE scaled - a relative due-time and a periodic lPeriod
+//! divide by M, and an absolute due-time is converted to a scaled relative interval - on their own
+//! thread-local guard. `SetTimer` (user32) and `timeSetEvent` (winmm) are later slices.
 //!
 //! ABSOLUTE, not delta: a detour computes the fake instant from the anchor and never
 //! calls another channel's original. So there is no cross-channel re-entrancy and no
@@ -50,11 +53,12 @@ use std::sync::OnceLock;
 
 use chrono_ctl::{
     bump_calls, cov_section_name, cov_size, mark_channel_installed, read_anchor, read_core_pid,
-    read_scale_dur, read_tz_bias, register_pid, scale_delay_interval, scale_wait, ChannelModule,
-    Cov, Ctl, CHANNELS, IDX_GDTZI, IDX_GLT, IDX_GST, IDX_GSTAFT, IDX_GSTPAFT, IDX_GTC, IDX_GTC64,
-    IDX_GTZI, IDX_NTDELAY, IDX_NTQSI, IDX_NTQST, IDX_QUIT, IDX_SLEEP, IDX_SLEEPEX, IDX_STSL,
-    IDX_STSLEX, IDX_FTLFT, IDX_LFTFT, IDX_TLTST, IDX_TLTSTEX, IDX_WFSO, IDX_WFSOEX, IDX_WFMO,
-    IDX_WFMOEX, IDX_SOAW, IDX_MWFMO, IDX_MWFMOEX,
+    read_scale_dur, read_tz_bias, register_pid, scale_delay_interval, scale_timer_due,
+    scale_timer_period, scale_wait, ChannelModule, Cov, Ctl, CHANNELS, IDX_GDTZI, IDX_GLT, IDX_GST,
+    IDX_GSTAFT, IDX_GSTPAFT, IDX_GTC, IDX_GTC64, IDX_GTZI, IDX_NTDELAY, IDX_NTQSI, IDX_NTQST,
+    IDX_QUIT, IDX_SLEEP, IDX_SLEEPEX, IDX_STSL, IDX_STSLEX, IDX_FTLFT, IDX_LFTFT, IDX_TLTST,
+    IDX_TLTSTEX, IDX_WFSO, IDX_WFSOEX, IDX_WFMO, IDX_WFMOEX, IDX_SOAW, IDX_MWFMO, IDX_MWFMOEX,
+    IDX_SWT, IDX_SWTEX,
 };
 use minhook::MinHook;
 use windows::core::{s, w, PCSTR, PCWSTR};
@@ -112,6 +116,14 @@ type SoawFn = unsafe extern "system" fn(HANDLE, HANDLE, u32, i32) -> u32;
 // fWaitAll, args reordered (MS Learn, winuser.h). Both user32, counted but never scaled.
 type MwfmoFn = unsafe extern "system" fn(u32, *const HANDLE, i32, u32, u32) -> u32;
 type MwfmoexFn = unsafe extern "system" fn(u32, *const HANDLE, u32, u32, u32) -> u32;
+// SetWaitableTimer(hTimer, *lpDueTime, lPeriod, pfnCompletionRoutine, lpArg, fResume) -> BOOL. The
+// due time is a 100 ns LARGE_INTEGER (positive = absolute FILETIME instant, negative = relative);
+// lPeriod is milliseconds (0 = one-shot). SetWaitableTimerEx drops fResume and adds a REASON_CONTEXT
+// and a ULONG TolerableDelay (MS Learn, synchapi.h). We forward the callback/arg/context opaquely
+// (never read them), so c_void pointers are enough. ADR-7 class C: due-time + period scaled.
+type SwtFn = unsafe extern "system" fn(HANDLE, *const i64, i32, *const c_void, *const c_void, i32) -> i32;
+type SwtexFn =
+    unsafe extern "system" fn(HANDLE, *const i64, i32, *const c_void, *const c_void, *const c_void, u32) -> i32;
 type CpwFn = unsafe extern "system" fn(
     *const u16,
     *mut u16,
@@ -170,6 +182,8 @@ static O_WFMOEX: OnceLock<WfmoexFn> = OnceLock::new();
 static O_SOAW: OnceLock<SoawFn> = OnceLock::new();
 static O_MWFMO: OnceLock<MwfmoFn> = OnceLock::new();
 static O_MWFMOEX: OnceLock<MwfmoexFn> = OnceLock::new();
+static O_SWT: OnceLock<SwtFn> = OnceLock::new();
+static O_SWTEX: OnceLock<SwtexFn> = OnceLock::new();
 
 // Duration-axis anchors, captured real (before hooking) at install time.
 static Q0: OnceLock<i64> = OnceLock::new();
@@ -890,6 +904,106 @@ unsafe extern "system" fn h_mwfmoex(
     o(count, handles, ms, wake_mask, flags)
 }
 
+// --- Settable timers (ADR-7 class C) -------------------------------------------
+// SetWaitableTimer(Ex) ask the kernel to signal a timer after a delay or at an instant. Unlike the
+// object waits (class B, left real), a timer is pure time-keeping, so under scale_duration we SCALE
+// it like class A: a relative due-time and a periodic lPeriod divide by M (scale_timer_due /
+// scale_timer_period). The subtlety is the ABSOLUTE (positive) due-time: the app computed it from
+// the FAKE wall clock, but the kernel reads the REAL clock for absolute timers, so we convert it to
+// the real interval until the fake clock reaches it and forward it as a scaled RELATIVE due
+// (scale_timer_due). One thread-local guard makes each app-level call scale exactly once and be
+// counted against the export the app called: SetWaitableTimer may internally reach
+// SetWaitableTimerEx, and double-scaling a due (due/M/M) would fire the timer far too early. This
+// guard is separate from class A's (Sleep) and class B's (object waits) - the three families never
+// cross-nest. Measured on Win11 26200 (psleep, x64+x86): SetWaitableTimer's coverage counts exactly
+// the app's calls (2 via SetWaitableTimer, 1 via SetWaitableTimerEx) and the real wait scales once
+// (~M, not ~M^2), so the internal path does NOT reach the exported ...Ex partner here (like Sleep ->
+// SleepEx in class A) - the guard is correct policy, not yet load-bearing, protecting other Windows
+// versions and direct ...Ex callers (zasady/03 section 4: measured, not assumed).
+
+thread_local! {
+    static SCALING_TIMER: Cell<bool> = const { Cell::new(false) };
+}
+
+/// Clears the class-C re-entrancy flag when the top-level timer detour returns.
+struct TimerGuard;
+impl Drop for TimerGuard {
+    fn drop(&mut self) {
+        SCALING_TIMER.set(false);
+    }
+}
+
+/// Decide whether this settable-timer call is the top-level app call we should scale. Returns the
+/// duration multiplier and a guard (held across the original call, so an inner cascade to the Ex
+/// partner sees the flag set and passes through) when it is; None on an internal cascade (pass
+/// through, uncounted) or when the core has detached (real time). Mirrors try_enter_wait on its own
+/// flag. Bumps coverage only for a top-level app call (rule 4).
+fn try_enter_timer(idx: usize) -> Option<(i64, TimerGuard)> {
+    if SCALING_TIMER.get() {
+        return None; // internal cascade: pass through, do not bump
+    }
+    bump(idx);
+    if detached() {
+        return None; // core gone: real time
+    }
+    SCALING_TIMER.set(true);
+    Some((dur_multiplier(), TimerGuard))
+}
+
+unsafe extern "system" fn h_swt(
+    timer: HANDLE,
+    due: *const i64,
+    period: i32,
+    pfn: *const c_void,
+    arg: *const c_void,
+    resume: i32,
+) -> i32 {
+    let o = match O_SWT.get() {
+        Some(o) => o,
+        None => return 0,
+    };
+    match try_enter_timer(IDX_SWT) {
+        // _guard held across the whole original call, so an internal cascade to SetWaitableTimerEx
+        // passes through uncounted and unscaled. A null due (the API would reject it) or a detach
+        // mid-call falls through to the original untouched.
+        Some((m, _guard)) => match (due.is_null(), compute_fake()) {
+            (false, Some(fake_now)) => {
+                let scaled_due = scale_timer_due(*due, fake_now, m);
+                let scaled_period = scale_timer_period(period, m);
+                o(timer, &scaled_due as *const i64, scaled_period, pfn, arg, resume)
+            }
+            _ => o(timer, due, period, pfn, arg, resume),
+        },
+        None => o(timer, due, period, pfn, arg, resume),
+    }
+}
+
+unsafe extern "system" fn h_swtex(
+    timer: HANDLE,
+    due: *const i64,
+    period: i32,
+    pfn: *const c_void,
+    arg: *const c_void,
+    wake_context: *const c_void,
+    tolerable_delay: u32,
+) -> i32 {
+    let o = match O_SWTEX.get() {
+        Some(o) => o,
+        None => return 0,
+    };
+    match try_enter_timer(IDX_SWTEX) {
+        Some((m, _guard)) => match (due.is_null(), compute_fake()) {
+            (false, Some(fake_now)) => {
+                let scaled_due = scale_timer_due(*due, fake_now, m);
+                let scaled_period = scale_timer_period(period, m);
+                o(timer, &scaled_due as *const i64, scaled_period, pfn, arg, wake_context, tolerable_delay)
+            }
+            _ => o(timer, due, period, pfn, arg, wake_context, tolerable_delay),
+        },
+        None => o(timer, due, period, pfn, arg, wake_context, tolerable_delay),
+    }
+}
+
 // --- Child inheritance (ADR-3) --------------------------------------------------
 // Detour CreateProcessW so children join the session: create suspended, inject the
 // same DLL, then resume (unless the caller wanted it suspended). The child opens the
@@ -1158,6 +1272,8 @@ unsafe fn install() -> Result<(), String> {
         make_hook(cov, k32, ntdll, IDX_SOAW, h_soaw as *const () as *mut c_void, &O_SOAW);
         make_hook(cov, k32, ntdll, IDX_MWFMO, h_mwfmo as *const () as *mut c_void, &O_MWFMO);
         make_hook(cov, k32, ntdll, IDX_MWFMOEX, h_mwfmoex as *const () as *mut c_void, &O_MWFMOEX);
+        make_hook(cov, k32, ntdll, IDX_SWT, h_swt as *const () as *mut c_void, &O_SWT);
+        make_hook(cov, k32, ntdll, IDX_SWTEX, h_swtex as *const () as *mut c_void, &O_SWTEX);
     }
 
     // Child inheritance (ADR-3): hook CreateProcessW and CreateProcessA so the whole
