@@ -22,9 +22,11 @@
 //! blocks on time wakes in lockstep with the scaled clock it reads. `INFINITE` and 0 pass
 //! through untouched. `Sleep`, `SleepEx`, and the shared funnel `NtDelayExecution` are covered
 //! (ADR-7 class A) - a thread-local guard scales an internal cascade (Sleep or SleepEx bottoming
-//! out on NtDelayExecution) exactly once. Object waits (`WaitForSingleObject`, ADR-7 class B) are
-//! COUNTED but deliberately NOT scaled - shortening a wait on real I/O would fake a timeout, so they
-//! ride their own `observed` bucket with an audit warning. The settable timers are a later slice.
+//! out on NtDelayExecution) exactly once. The kernel32 object waits (`WaitForSingleObject(Ex)`,
+//! `WaitForMultipleObjects(Ex)`, `SignalObjectAndWait`, ADR-7 class B) are COUNTED but deliberately
+//! NOT scaled - shortening a wait on real I/O would fake a timeout, so they ride their own `observed`
+//! bucket with an audit warning, and a separate thread-local guard counts each app-level wait once.
+//! The user32 message waits (`MsgWaitForMultipleObjects(Ex)`) and the settable timers are later slices.
 //!
 //! ABSOLUTE, not delta: a detour computes the fake instant from the anchor and never
 //! calls another channel's original. So there is no cross-channel re-entrancy and no
@@ -50,7 +52,8 @@ use chrono_ctl::{
     read_scale_dur, read_tz_bias, register_pid, scale_delay_interval, scale_wait, ChannelModule,
     Cov, Ctl, CHANNELS, IDX_GDTZI, IDX_GLT, IDX_GST, IDX_GSTAFT, IDX_GSTPAFT, IDX_GTC, IDX_GTC64,
     IDX_GTZI, IDX_NTDELAY, IDX_NTQSI, IDX_NTQST, IDX_QUIT, IDX_SLEEP, IDX_SLEEPEX, IDX_STSL,
-    IDX_STSLEX, IDX_FTLFT, IDX_LFTFT, IDX_TLTST, IDX_TLTSTEX, IDX_WFSO,
+    IDX_STSLEX, IDX_FTLFT, IDX_LFTFT, IDX_TLTST, IDX_TLTSTEX, IDX_WFSO, IDX_WFSOEX, IDX_WFMO,
+    IDX_WFMOEX, IDX_SOAW,
 };
 use minhook::MinHook;
 use windows::core::{s, w, PCSTR, PCWSTR};
@@ -96,8 +99,13 @@ type NtDelayFn = unsafe extern "system" fn(u8, *const i64) -> i32;
 // ReturnLength) -> NTSTATUS. A multiplexer; we only touch class SystemTimeOfDayInformation.
 type NtQsiFn = unsafe extern "system" fn(i32, *mut c_void, u32, *mut u32) -> i32;
 // WaitForSingleObject(HANDLE, DWORD dwMilliseconds) -> DWORD. Object wait (ADR-7 class B):
-// counted but never scaled, so the signature is only used to forward the call untouched.
+// counted but never scaled, so the signature is only used to forward the call untouched. The
+// rest of the object-wait family (below) is the same story with different argument shapes.
 type WfsoFn = unsafe extern "system" fn(HANDLE, u32) -> u32;
+type WfsoexFn = unsafe extern "system" fn(HANDLE, u32, i32) -> u32;
+type WfmoFn = unsafe extern "system" fn(u32, *const HANDLE, i32, u32) -> u32;
+type WfmoexFn = unsafe extern "system" fn(u32, *const HANDLE, i32, u32, i32) -> u32;
+type SoawFn = unsafe extern "system" fn(HANDLE, HANDLE, u32, i32) -> u32;
 type CpwFn = unsafe extern "system" fn(
     *const u16,
     *mut u16,
@@ -150,6 +158,10 @@ static O_SLEEP: OnceLock<SleepFn> = OnceLock::new();
 static O_SLEEPEX: OnceLock<SleepExFn> = OnceLock::new();
 static O_NTDELAY: OnceLock<NtDelayFn> = OnceLock::new();
 static O_WFSO: OnceLock<WfsoFn> = OnceLock::new();
+static O_WFSOEX: OnceLock<WfsoexFn> = OnceLock::new();
+static O_WFMO: OnceLock<WfmoFn> = OnceLock::new();
+static O_WFMOEX: OnceLock<WfmoexFn> = OnceLock::new();
+static O_SOAW: OnceLock<SoawFn> = OnceLock::new();
 
 // Duration-axis anchors, captured real (before hooking) at install time.
 static Q0: OnceLock<i64> = OnceLock::new();
@@ -750,16 +762,91 @@ unsafe extern "system" fn h_ntdelay(alertable: u8, interval: *const i64) -> i32 
 }
 
 // Wait axis class B (ADR-7, option b): object waits are COUNTED but deliberately NOT scaled.
-// Shortening a wait on a real I/O / hardware / IPC handle would fake a timeout, so the timeout
-// passes through untouched and the audit warns instead. Just bump and forward - not scaling means
-// no re-entrancy guard is needed (we never divide), and one hooked export cannot double-count a
-// single app call. Detached state is irrelevant here: we never modify the wait either way.
-unsafe extern "system" fn h_wfso(handle: HANDLE, ms: u32) -> u32 {
-    bump(IDX_WFSO);
-    match O_WFSO.get() {
-        Some(o) => o(handle, ms),
-        None => 0, // unreachable: O_WFSO is set before enable_all_hooks
+// Shortening a wait on a real I/O / hardware / IPC handle would fake a timeout, so each detour
+// forwards the timeout untouched and the audit warns instead. The only subtlety is COUNTING: an
+// object-wait export may internally reach another hooked one (WaitForSingleObject -> ...Ex,
+// WaitForMultipleObjects -> ...Ex), so a thread-local guard counts each app-level wait once,
+// attributed to the export the app actually called - an internal cascade passes through uncounted.
+// This guard gates only counting (class B never divides), separate from class A's scaling guard;
+// the two wait families never cross-nest (Sleep/NtDelay do not call WaitForX and vice versa).
+// Measured on Win11 26200 (guard on vs off, psleep): the cascades take an INTERNAL path and do not
+// reach the exported partner (like Sleep -> SleepEx in class A), so the guard is a correct policy
+// here, not yet load-bearing - it protects other Windows versions and direct ...Ex callers.
+// Detached state is irrelevant: we never modify the wait either way.
+
+thread_local! {
+    static OBSERVING_WAIT: Cell<bool> = const { Cell::new(false) };
+}
+
+/// Clears the class-B counting-reentrancy flag when the top-level object-wait detour returns.
+struct ObservedWaitGuard;
+impl Drop for ObservedWaitGuard {
+    fn drop(&mut self) {
+        OBSERVING_WAIT.set(false);
     }
+}
+
+/// Count an app-level object wait once, unless this is an internal cascade from another hooked
+/// object-wait export (then the outer call already counted it). When this is the top-level call it
+/// returns a guard, held across the forwarded original so the cascade sees the flag set.
+fn enter_observed_wait(idx: usize) -> Option<ObservedWaitGuard> {
+    if OBSERVING_WAIT.get() {
+        return None; // internal cascade: counted at the top level already
+    }
+    bump(idx);
+    OBSERVING_WAIT.set(true);
+    Some(ObservedWaitGuard)
+}
+
+unsafe extern "system" fn h_wfso(handle: HANDLE, ms: u32) -> u32 {
+    let o = match O_WFSO.get() {
+        Some(o) => o,
+        None => return 0, // unreachable: O_WFSO is set before enable_all_hooks
+    };
+    let _g = enter_observed_wait(IDX_WFSO);
+    o(handle, ms)
+}
+
+unsafe extern "system" fn h_wfsoex(handle: HANDLE, ms: u32, alertable: i32) -> u32 {
+    let o = match O_WFSOEX.get() {
+        Some(o) => o,
+        None => return 0,
+    };
+    let _g = enter_observed_wait(IDX_WFSOEX);
+    o(handle, ms, alertable)
+}
+
+unsafe extern "system" fn h_wfmo(count: u32, handles: *const HANDLE, wait_all: i32, ms: u32) -> u32 {
+    let o = match O_WFMO.get() {
+        Some(o) => o,
+        None => return 0,
+    };
+    let _g = enter_observed_wait(IDX_WFMO);
+    o(count, handles, wait_all, ms)
+}
+
+unsafe extern "system" fn h_wfmoex(
+    count: u32,
+    handles: *const HANDLE,
+    wait_all: i32,
+    ms: u32,
+    alertable: i32,
+) -> u32 {
+    let o = match O_WFMOEX.get() {
+        Some(o) => o,
+        None => return 0,
+    };
+    let _g = enter_observed_wait(IDX_WFMOEX);
+    o(count, handles, wait_all, ms, alertable)
+}
+
+unsafe extern "system" fn h_soaw(signal: HANDLE, wait: HANDLE, ms: u32, alertable: i32) -> u32 {
+    let o = match O_SOAW.get() {
+        Some(o) => o,
+        None => return 0,
+    };
+    let _g = enter_observed_wait(IDX_SOAW);
+    o(signal, wait, ms, alertable)
 }
 
 // --- Child inheritance (ADR-3) --------------------------------------------------
@@ -1015,6 +1102,10 @@ unsafe fn install() -> Result<(), String> {
         make_hook(cov, k32, ntdll, IDX_SLEEPEX, h_sleepex as *const () as *mut c_void, &O_SLEEPEX);
         make_hook(cov, k32, ntdll, IDX_NTDELAY, h_ntdelay as *const () as *mut c_void, &O_NTDELAY);
         make_hook(cov, k32, ntdll, IDX_WFSO, h_wfso as *const () as *mut c_void, &O_WFSO);
+        make_hook(cov, k32, ntdll, IDX_WFSOEX, h_wfsoex as *const () as *mut c_void, &O_WFSOEX);
+        make_hook(cov, k32, ntdll, IDX_WFMO, h_wfmo as *const () as *mut c_void, &O_WFMO);
+        make_hook(cov, k32, ntdll, IDX_WFMOEX, h_wfmoex as *const () as *mut c_void, &O_WFMOEX);
+        make_hook(cov, k32, ntdll, IDX_SOAW, h_soaw as *const () as *mut c_void, &O_SOAW);
     }
 
     // Child inheritance (ADR-3): hook CreateProcessW and CreateProcessA so the whole
