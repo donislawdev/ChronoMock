@@ -12,6 +12,7 @@
 //! `mechanism.not_implemented`. The full input->output path exists and never
 //! fakes success.
 
+use std::collections::HashSet;
 use std::io::{BufRead, BufReader, Write};
 use std::process::{Command as PCommand, Stdio};
 use std::sync::mpsc;
@@ -629,10 +630,11 @@ fn run_session(
     });
 
     // Report any child that already joined during the guard window, before the first
-    // heartbeat, so a fast child does not wait a whole second to appear.
-    for (pid, cov) in session.poll_new_coverage() {
-        emit_coverage(pid, &cov);
-    }
+    // heartbeat, so a fast child does not wait a whole second to appear. Seed the family
+    // roll-up with the parent verdict, then fold each child's verdict as it joins.
+    let mut family = verdict;
+    let mut family_pids: HashSet<u32> = HashSet::new();
+    fold_children(&mut session, &mut family, &mut family_pids);
 
     let heartbeat = Duration::from_secs(1);
     let mut deadline = Instant::now() + heartbeat;
@@ -681,9 +683,7 @@ fn run_session(
             Ok(_) => {} // Start or a not-yet-supported command: ignore
             Err(mpsc::RecvTimeoutError::Timeout) => {
                 emit(&state_event(&session));
-                for (pid, cov) in session.poll_new_coverage() {
-                    emit_coverage(pid, &cov);
-                }
+                fold_children(&mut session, &mut family, &mut family_pids);
                 if !session.is_alive() {
                     target_exit = session.exit_code();
                     break;
@@ -694,14 +694,47 @@ fn run_session(
         }
     }
 
+    // Final fold so a child that joined since the last heartbeat still counts in the family.
+    fold_children(&mut session, &mut family, &mut family_pids);
     session.end();
+    emit(&Event::SessionVerdict {
+        v: PROTOCOL_VERSION,
+        verdict: family.wire().into(),
+        reason_key: session_reason_key(family).into(),
+        process_count: 1 + family_pids.len() as u32,
+    });
     emit(&Event::Ended {
         v: PROTOCOL_VERSION,
         clean: true,
         residue_keys: vec![],
         target_exit_code: target_exit,
     });
-    verdict.exit_code()
+    family.exit_code()
+}
+
+/// Poll for children that joined, emit each one's coverage, and fold their verdicts into the
+/// running family verdict (tracking distinct pids for the family size). Called at every poll
+/// point so the family roll-up sees every process - parent and children alike.
+fn fold_children(
+    session: &mut chrono_mech::Session,
+    family: &mut Verdict,
+    pids: &mut HashSet<u32>,
+) {
+    for (pid, cov) in session.poll_new_coverage() {
+        emit_coverage(pid, &cov);
+        *family = family.combine(verdict_from_coverage(&cov));
+        pids.insert(pid);
+    }
+}
+
+/// Stable reason key for the family (session) verdict, scoped to the whole family.
+fn session_reason_key(v: Verdict) -> &'static str {
+    match v {
+        Verdict::Works => "session.family_covered",
+        Verdict::Partial => "session.family_partial",
+        Verdict::Fails => "session.family_uncovered",
+        Verdict::Undetermined => "session.family_undetermined",
+    }
 }
 
 /// Resolve a `MomentSpec` to a UTC FILETIME for a jump. Absolute moments only here

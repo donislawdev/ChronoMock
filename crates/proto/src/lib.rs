@@ -159,6 +159,18 @@ pub enum Event {
         reason_key: String,
         lived_ms: u64,
     },
+    /// The family-wide session verdict: the honest roll-up of the parent and every child
+    /// process, emitted once at session end just before `ended`. The per-process `verdict`
+    /// (parent, at start) gates refuse_start; this aggregates the whole family, so a launcher
+    /// whose child does the timekeeping is judged by the family, not the parent alone
+    /// (untouchable rule 4 at the session level). `process_count` is the family size (parent
+    /// plus distinct children). Additive event (docs/08).
+    SessionVerdict {
+        v: u32,
+        verdict: String,
+        reason_key: String,
+        process_count: u32,
+    },
     Ended {
         v: u32,
         clean: bool,
@@ -310,5 +322,24 @@ mod tests {
         let line = serde_json::to_string(&jump).unwrap();
         assert!(line.contains(r#""type":"jump""#));
         assert!(matches!(parse_command(&line).unwrap(), Command::Jump { .. }));
+    }
+
+    #[test]
+    fn session_verdict_round_trips() {
+        let ev = Event::SessionVerdict {
+            v: PROTOCOL_VERSION,
+            verdict: "works".into(),
+            reason_key: "session.family_covered".into(),
+            process_count: 2,
+        };
+        let line = ev.to_ndjson();
+        assert!(line.starts_with(r#"{"type":"session_verdict""#), "got {line}");
+        match parse_event(&line).unwrap() {
+            Event::SessionVerdict { verdict, process_count, .. } => {
+                assert_eq!(verdict, "works");
+                assert_eq!(process_count, 2);
+            }
+            _ => panic!("wrong event variant"),
+        }
     }
 }

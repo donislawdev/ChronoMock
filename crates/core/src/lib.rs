@@ -71,6 +71,40 @@ impl Verdict {
             Verdict::Undetermined => 4,
         }
     }
+
+    /// Combine two verdicts into the family (session-wide) verdict. Each verdict encodes
+    /// exactly the pair `(has_covered, has_uncovered)`; the family ORs those bits across
+    /// processes, so the family `works` only when something is covered and nothing is left
+    /// uncovered anywhere (untouchable rule 4 at the session level). This aggregates
+    /// JUDGMENTS, never call counts - per-process reports stay separate (plasterek 11). OR
+    /// is commutative and associative, so accumulation order does not matter, and coverage
+    /// only grows, so the fold is monotonic.
+    pub fn combine(self, other: Verdict) -> Verdict {
+        let (c1, u1) = self.coverage_bits();
+        let (c2, u2) = other.coverage_bits();
+        Verdict::from_coverage_bits(c1 || c2, u1 || u2)
+    }
+
+    /// The `(has_covered, has_uncovered)` pair this verdict encodes.
+    fn coverage_bits(self) -> (bool, bool) {
+        match self {
+            Verdict::Undetermined => (false, false),
+            Verdict::Works => (true, false),
+            Verdict::Fails => (false, true),
+            Verdict::Partial => (true, true),
+        }
+    }
+
+    /// The verdict for a coverage-flag pair - the single source of the coverage->verdict
+    /// table, shared by `verdict_from_coverage` and the family fold (`combine`).
+    fn from_coverage_bits(has_covered: bool, has_uncovered: bool) -> Verdict {
+        match (has_covered, has_uncovered) {
+            (false, false) => Verdict::Undetermined,
+            (true, false) => Verdict::Works,
+            (false, true) => Verdict::Fails,
+            (true, true) => Verdict::Partial,
+        }
+    }
 }
 
 /// One time channel's coverage under a session.
@@ -100,14 +134,7 @@ pub struct Coverage {
 /// but deliberately left real) never sway the verdict - they are an honest side-channel
 /// carried by their own warning, so an object wait left real neither makes nor breaks `works`.
 pub fn verdict_from_coverage(cov: &Coverage) -> Verdict {
-    let has_covered = !cov.covered.is_empty();
-    let has_uncovered = !cov.uncovered.is_empty();
-    match (has_covered, has_uncovered) {
-        (false, false) => Verdict::Undetermined,
-        (true, false) => Verdict::Works,
-        (false, true) => Verdict::Fails,
-        (true, true) => Verdict::Partial,
-    }
+    Verdict::from_coverage_bits(!cov.covered.is_empty(), !cov.uncovered.is_empty())
 }
 
 // --- Anchor math: a session moment -> UTC FILETIME (100 ns ticks since 1601) ---
@@ -313,6 +340,29 @@ mod tests {
     fn only_uncovered_is_fails() {
         let cov = Coverage { uncovered: vec!["KUSER_SHARED_DATA".to_string()], ..Default::default() };
         assert_eq!(verdict_from_coverage(&cov), Verdict::Fails);
+    }
+
+    #[test]
+    fn combine_rolls_up_the_family_verdict() {
+        use Verdict::*;
+        // Undetermined (a process that touched nothing) is the identity - a launcher whose
+        // child does the timekeeping is judged by the child: the family works.
+        assert_eq!(Undetermined.combine(Works), Works);
+        assert_eq!(Works.combine(Undetermined), Works);
+        assert_eq!(Undetermined.combine(Undetermined), Undetermined);
+        // Any uncovered anywhere drags a covered family down to partial (rule 4, honest).
+        assert_eq!(Works.combine(Fails), Partial);
+        assert_eq!(Works.combine(Partial), Partial);
+        assert_eq!(Works.combine(Works), Works);
+        // Nothing covered anywhere but something queried -> the family fails.
+        assert_eq!(Fails.combine(Fails), Fails);
+        assert_eq!(Fails.combine(Undetermined), Fails);
+        // Commutative and associative, so accumulation order never matters.
+        assert_eq!(Fails.combine(Works), Works.combine(Fails));
+        assert_eq!(
+            Undetermined.combine(Works).combine(Fails),
+            Undetermined.combine(Works.combine(Fails))
+        );
     }
 
     #[test]
