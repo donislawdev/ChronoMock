@@ -120,6 +120,8 @@ pub const CH_TPTIMER: u64 = 1 << 31;
 pub const CH_TPTIMEREX: u64 = 1 << 32;
 /// Coverage bit: `NtCreateUserProcess` is hooked (direct process creation, observed not injected, ADR-3).
 pub const CH_NTCUP: u64 = 1 << 33;
+/// Coverage bit: `connect` is hooked (ws2_32 network connection, observed - a suspected server time source).
+pub const CH_CONNECT: u64 = 1 << 34;
 
 /// Index of each channel into the `calls` array (== its position in `CHANNELS`).
 pub const IDX_GSTAFT: usize = 0;
@@ -156,10 +158,11 @@ pub const IDX_TIMESETEVENT: usize = 30;
 pub const IDX_TPTIMER: usize = 31;
 pub const IDX_TPTIMEREX: usize = 32;
 pub const IDX_NTCUP: usize = 33;
+pub const IDX_CONNECT: usize = 34;
 
 /// Number of channels tracked (wall-clock, session zone, duration axis, object/message waits,
-/// settable timers, multimedia timer, thread-pool timers, direct process creation).
-pub const CHANNEL_COUNT: usize = 34;
+/// settable timers, multimedia timer, thread-pool timers, direct process creation, network connect).
+pub const CHANNEL_COUNT: usize = 35;
 
 /// Which system module exports a channel (the hook resolves it there).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -172,6 +175,9 @@ pub enum ChannelModule {
     /// winmm.dll - the multimedia timer timeSetEvent. Often absent (a console/service target rarely
     /// loads winmm); resolved lazily like User32, honest partial if absent, never force-loaded.
     Winmm,
+    /// ws2_32.dll - the sockets `connect`. Often absent (a target that never touches the network never
+    /// loads it); resolved lazily like Winmm, honest partial if absent, never force-loaded.
+    Ws2_32,
 }
 
 /// What kind of time a channel carries. The duration axis and the object-wait observation
@@ -200,6 +206,12 @@ pub enum ChannelCategory {
     /// be uncovered, an honest audit (rule 4) without the risk. NOT opt-in (unlike the time observers):
     /// process creation is watched regardless of scale_duration.
     SpawnObserved,
+    /// Hooked and counted, but never modified: a network `connect` (ws2_32). A target that opens a
+    /// network connection may read the time from a SERVER, which no local hook can cover - so we observe
+    /// it and warn (source.network_at_start), an honest audit (rule 4) of a time source we cannot
+    /// substitute. Like SpawnObserved, NOT opt-in: the network is watched regardless of scale_duration,
+    /// and it never sways the local-coverage verdict.
+    SourceObserved,
 }
 
 /// One time channel: its coverage bit, the exported symbol the hook detours, the
@@ -306,6 +318,7 @@ pub const CHANNELS: [ChannelDef; CHANNEL_COUNT] = [
     ChannelDef { bit: CH_TPTIMER, name: "SetThreadpoolTimer", module: ChannelModule::Kernel32, category: ChannelCategory::Duration },
     ChannelDef { bit: CH_TPTIMEREX, name: "SetThreadpoolTimerEx", module: ChannelModule::Kernel32, category: ChannelCategory::Duration },
     ChannelDef { bit: CH_NTCUP, name: "NtCreateUserProcess", module: ChannelModule::Ntdll, category: ChannelCategory::SpawnObserved },
+    ChannelDef { bit: CH_CONNECT, name: "connect", module: ChannelModule::Ws2_32, category: ChannelCategory::SourceObserved },
 ];
 
 /// Session-wide control block in `Local\ChronoCtl`. `#[repr(C)]` so both processes

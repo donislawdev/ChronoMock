@@ -289,6 +289,7 @@ unsafe fn gather_coverage(cov: *const Cov, installed: u64, scale_duration: bool)
     let mut any_wait_observed = false;
     let mut any_timer_observed = false;
     let mut any_spawn_observed = false;
+    let mut any_source_observed = false;
     for (idx, ch) in CHANNELS.iter().enumerate() {
         // The duration axis and the TIME observers are opt-in: with scale_duration off, their channels
         // are not expected. The spawn observer (NtCreateUserProcess) is NOT opt-in - process creation
@@ -305,7 +306,7 @@ unsafe fn gather_coverage(cov: *const Cov, installed: u64, scale_duration: bool)
         // install just means we are not observing it - not a verdict-affecting gap, so it goes nowhere.
         if matches!(
             ch.category,
-            ChannelCategory::WaitObserved | ChannelCategory::TimerObserved | ChannelCategory::SpawnObserved
+            ChannelCategory::WaitObserved | ChannelCategory::TimerObserved | ChannelCategory::SpawnObserved | ChannelCategory::SourceObserved
         ) {
             if installed & ch.bit != 0 {
                 let calls = read_calls(cov, idx);
@@ -314,6 +315,7 @@ unsafe fn gather_coverage(cov: *const Cov, installed: u64, scale_duration: bool)
                         ChannelCategory::WaitObserved => any_wait_observed = true,
                         ChannelCategory::TimerObserved => any_timer_observed = true,
                         ChannelCategory::SpawnObserved => any_spawn_observed = true,
+                        ChannelCategory::SourceObserved => any_source_observed = true,
                         _ => {}
                     }
                 }
@@ -338,7 +340,7 @@ unsafe fn gather_coverage(cov: *const Cov, installed: u64, scale_duration: bool)
                 ChannelModule::Kernel32 | ChannelModule::Ntdll => {
                     out.uncovered.push(ch.name.to_string())
                 }
-                ChannelModule::User32 | ChannelModule::Winmm => {}
+                ChannelModule::User32 | ChannelModule::Winmm | ChannelModule::Ws2_32 => {}
             }
         }
     }
@@ -356,6 +358,12 @@ unsafe fn gather_coverage(cov: *const Cov, installed: u64, scale_duration: bool)
     if any_spawn_observed {
         out.warning_keys
             .push("inheritance.ntcreateuserprocess_child_maybe_uncovered".to_string());
+    }
+    // A network connection ran: the target may read time from a SERVER, which no local hook covers. Warn
+    // honestly (rule 4) - the local-coverage verdict can be `works` while the real time source is remote
+    // and unsubstituted.
+    if any_source_observed {
+        out.warning_keys.push("source.network_at_start".to_string());
     }
     out
 }

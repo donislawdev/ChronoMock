@@ -68,7 +68,7 @@ use chrono_ctl::{
     IDX_GTZI, IDX_NTDELAY, IDX_NTQSI, IDX_NTQST, IDX_QUIT, IDX_SLEEP, IDX_SLEEPEX, IDX_STSL,
     IDX_STSLEX, IDX_FTLFT, IDX_LFTFT, IDX_TLTST, IDX_TLTSTEX, IDX_WFSO, IDX_WFSOEX, IDX_WFMO,
     IDX_WFMOEX, IDX_SOAW, IDX_MWFMO, IDX_MWFMOEX, IDX_SWT, IDX_SWTEX, IDX_SETTIMER, IDX_TIMESETEVENT,
-    IDX_TPTIMER, IDX_TPTIMEREX, IDX_NTCUP,
+    IDX_TPTIMER, IDX_TPTIMEREX, IDX_NTCUP, IDX_CONNECT,
 };
 use minhook::MinHook;
 use windows::core::{s, w, PCSTR, PCWSTR};
@@ -143,6 +143,10 @@ type SetTimerFn = unsafe extern "system" fn(*mut c_void, usize, u32, *const c_vo
 // (the winmm cost ADR-2 avoids, like timeGetTime), so the detour only counts and forwards untouched.
 // All args are opaque to us (lpTimeProc is a callback or an event handle depending on fuEvent).
 type TimeSetEventFn = unsafe extern "system" fn(u32, u32, *const c_void, usize, u32) -> u32;
+// connect(SOCKET s, const sockaddr *name, int namelen) -> int (ws2_32). SourceObserved: we only COUNT a
+// network connection (a suspected server time source) and forward every arg untouched. SOCKET is a
+// UINT_PTR (usize), the sockaddr* is opaque (never dereferenced), namelen is int (i32).
+type ConnectFn = unsafe extern "system" fn(usize, *const c_void, i32) -> i32;
 // SetThreadpoolTimer(pti, pftDueTime, msPeriod, msWindowLength) -> VOID, and SetThreadpoolTimerEx ->
 // BOOL (kernel32, threadpoolapiset). pftDueTime is a FILETIME* (same 64 bits as SetWaitableTimer's
 // LARGE_INTEGER*): positive/zero = absolute, negative = relative, NULL = cancel. ADR-7 class C: due +
@@ -232,6 +236,7 @@ static O_TIMESETEVENT: OnceLock<TimeSetEventFn> = OnceLock::new();
 static O_TPTIMER: OnceLock<SetTpTimerFn> = OnceLock::new();
 static O_TPTIMEREX: OnceLock<SetTpTimerExFn> = OnceLock::new();
 static O_NTCUP: OnceLock<NtcupFn> = OnceLock::new();
+static O_CONNECT: OnceLock<ConnectFn> = OnceLock::new();
 
 // Duration-axis anchors, captured real (before hooking) at install time.
 static Q0: OnceLock<i64> = OnceLock::new();
@@ -1094,6 +1099,19 @@ unsafe extern "system" fn h_timesetevent(
     o(delay, resolution, time_proc, user, event)
 }
 
+// connect (ws2_32, SourceObserved): a network connection is a suspected SERVER time source, which no
+// local hook can cover. We only COUNT it and forward untouched (never modify the connection) - the audit
+// then warns source.network_at_start. Like timeSetEvent: no guard, no detached check (we never change the
+// call). The unreachable None path returns SOCKET_ERROR (-1) so an un-hooked call never fakes success.
+unsafe extern "system" fn h_connect(s: usize, name: *const c_void, namelen: i32) -> i32 {
+    let o = match O_CONNECT.get() {
+        Some(o) => o,
+        None => return -1,
+    };
+    bump(IDX_CONNECT);
+    o(s, name, namelen)
+}
+
 // Thread-pool timers (kernel32, ADR-7 class C): SetThreadpoolTimer / SetThreadpoolTimerEx share the
 // time structure of SetWaitableTimer - a FILETIME due (absolute converted to a scaled relative
 // interval, relative scaled), an msPeriod, and an msWindowLength - so they scale the same way. The
@@ -1389,6 +1407,15 @@ unsafe fn make_hook<T: Copy>(
                 return;
             }
         },
+        // ws2_32 may be absent in a target that never touches the network; resolve it here rather than
+        // force-load it (forcing a DLL the target never needed would change its behavior). Absent -> honest partial.
+        ChannelModule::Ws2_32 => match GetModuleHandleA(s!("ws2_32.dll")) {
+            Ok(h) => h,
+            Err(_) => {
+                log(&format!("[chrono_hook] ws2_32 not loaded, skipping: {}", ch.name));
+                return;
+            }
+        },
     };
     let cname = match CString::new(ch.name) {
         Ok(c) => c,
@@ -1520,6 +1547,11 @@ unsafe fn install() -> Result<(), String> {
     // scale_duration, since process creation is watched regardless. It only counts a direct call and
     // forwards untouched; the SPAWNING guard keeps the CreateProcess* funnel from counting here.
     make_hook(cov, k32, ntdll, IDX_NTCUP, h_ntcup as *const () as *mut c_void, &O_NTCUP);
+
+    // Suspected time source (Etap 2, observed): hook ws2_32 connect ALWAYS - the network is watched
+    // regardless of scale_duration. It only counts a connection (a suspected server time source we cannot
+    // cover) and forwards untouched; the audit warns source.network_at_start.
+    make_hook(cov, k32, ntdll, IDX_CONNECT, h_connect as *const () as *mut c_void, &O_CONNECT);
 
     // Child inheritance (ADR-3): hook CreateProcessW and CreateProcessA so the whole
     // process tree joins the session whichever spawn API the parent uses. Not coverage

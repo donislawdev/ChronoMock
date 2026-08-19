@@ -495,6 +495,9 @@ fn describe_warning(key: &str) -> String {
         "inheritance.ntcreateuserprocess_child_maybe_uncovered" => {
             "a child spawned directly via NtCreateUserProcess may not be covered"
         }
+        "source.network_at_start" => {
+            "the target opened a network connection - it may read time from a server, which no local hook can cover"
+        }
         _ => "",
     };
     if text.is_empty() {
