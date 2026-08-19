@@ -343,7 +343,11 @@ fn driver_run(argv: &[String]) -> i32 {
 
     // Stream events. Send `end` after `--ticks` state heartbeats, or right after the
     // verdict when ticks is 0 (one-shot), then read through to `ended`.
-    let mut verdict_line: Option<(String, String)> = None; // (verdict, reason_key)
+    let mut verdict_line: Option<(String, String)> = None; // parent (start) verdict, fallback
+    let mut session_line: Option<(String, String, u32)> = None; // family: (verdict, reason_key, count)
+    let mut vanished: Option<(String, u64)> = None; // (reason_key, lived_ms)
+    let mut warnings: Vec<String> = Vec::new();
+    let mut uncovered: Vec<(u32, String)> = Vec::new(); // (pid, channel) - the honest gaps
     let mut states_seen: u64 = 0;
     let mut end_sent = false;
     if let Some(stdout) = child.stdout.take() {
@@ -384,6 +388,22 @@ fn driver_run(argv: &[String]) -> i32 {
                         end_sent = true;
                     }
                 }
+                Ok(Event::SessionVerdict { verdict, reason_key, process_count, .. }) => {
+                    session_line = Some((verdict, reason_key, process_count));
+                }
+                Ok(Event::Vanished { reason_key, lived_ms, .. }) => {
+                    vanished = Some((reason_key, lived_ms));
+                }
+                Ok(Event::Coverage { pid, uncovered: unc, warning_keys, .. }) => {
+                    for k in warning_keys {
+                        if !warnings.contains(&k) {
+                            warnings.push(k);
+                        }
+                    }
+                    for ch in unc {
+                        uncovered.push((pid, ch));
+                    }
+                }
                 Ok(Event::Ended { .. }) => break,
                 _ => {}
             }
@@ -394,11 +414,15 @@ fn driver_run(argv: &[String]) -> i32 {
     let status = child.wait();
 
     if !ra.json {
-        println!("target:  {}", ra.target);
-        match &verdict_line {
-            Some((v, key)) => println!("verdict: {v} ({key})"),
-            None => println!("verdict: <no verdict emitted>"),
-        }
+        let report = SessionReport {
+            target: ra.target.clone(),
+            session_verdict: session_line,
+            parent_verdict: verdict_line,
+            vanished,
+            warnings,
+            uncovered,
+        };
+        print!("{}", render_report(&report));
     }
 
     // The tool's exit code is the session verdict, carried by the core's exit code
@@ -407,6 +431,125 @@ fn driver_run(argv: &[String]) -> i32 {
         Ok(s) => s.code().unwrap_or(3),
         Err(_) => 3,
     }
+}
+
+/// The captured outcome of a `chrono run` session, rendered as a human report in the
+/// non-json path. The core emits stable KEYS; this consumer renders English prose (rule 15:
+/// the CLI is English-only, so the key->text table lives here, never in the core - rule 16).
+/// The Stage 2 verifier is exactly this: a view over what the core already emits, one that
+/// makes a NON-effect as legible as an effect.
+struct SessionReport {
+    target: String,
+    /// Family verdict (verdict token, reason key, process count) - the headline.
+    session_verdict: Option<(String, String, u32)>,
+    /// Parent/start verdict, used only if no session_verdict arrived (e.g. an older core).
+    parent_verdict: Option<(String, String)>,
+    /// The target vanished right after injection - an honest non-effect (ADR-4).
+    vanished: Option<(String, u64)>,
+    warnings: Vec<String>,
+    /// Channels queried but not covered, tagged with the pid that queried them (never summed
+    /// across processes - untouchable rule 4).
+    uncovered: Vec<(u32, String)>,
+}
+
+/// One-line English headline for a verdict wire token. Upper-case so success and failure are
+/// scannable at a glance.
+fn verdict_headline(verdict: &str) -> &'static str {
+    match verdict {
+        "works" => "WORKS - time substitution took effect",
+        "partial" => "PARTIAL - time substitution took effect only in part",
+        "fails" => "DID NOT TAKE EFFECT - time was queried but no channel was covered",
+        "undetermined" => "UNDETERMINED - coverage could not be established",
+        _ => "UNKNOWN",
+    }
+}
+
+/// English gloss for a reason key. An unknown key yields "" and the caller falls back to the
+/// raw key - we never invent an explanation the core did not send.
+fn describe_reason(key: &str) -> &'static str {
+    match key {
+        "session.family_covered" | "coverage.time_channels_covered" => {
+            "every process that read time saw the session clock"
+        }
+        "session.family_partial" | "coverage.time_channels_partial" => {
+            "some time channels were covered, some were queried but not covered"
+        }
+        "session.family_uncovered" | "coverage.time_channels_uncovered" => {
+            "time was queried but no channel was covered"
+        }
+        "session.family_undetermined" | "coverage.undetermined" => {
+            "no process read a covered time channel"
+        }
+        _ => "",
+    }
+}
+
+/// English gloss for a warning key, with the key appended for traceability. An unknown key is
+/// shown verbatim (honest fallback).
+fn describe_warning(key: &str) -> String {
+    let text = match key {
+        "wait.object_waits_not_scaled" => {
+            "object waits are hooked but left real - an I/O or hardware timeout is not shortened"
+        }
+        "timer.multimedia_not_scaled" => "the multimedia timer (timeSetEvent) is observed but not scaled",
+        "inheritance.ntcreateuserprocess_child_maybe_uncovered" => {
+            "a child spawned directly via NtCreateUserProcess may not be covered"
+        }
+        _ => "",
+    };
+    if text.is_empty() {
+        key.to_string()
+    } else {
+        format!("{text} ({key})")
+    }
+}
+
+/// Render the session outcome as a human report (English). Failure and non-effect are the
+/// point: the Stage 2 gate is recognising when substitution did NOT take effect.
+fn render_report(r: &SessionReport) -> String {
+    let mut out = String::from("Chrono Mock - session report\n");
+    out.push_str(&format!("  target:   {}\n", r.target));
+
+    // Headline priority: a vanish is an honest non-effect, then the family verdict, then the
+    // parent verdict as a fallback for an older core, then nothing.
+    if let Some((reason_key, lived_ms)) = &r.vanished {
+        out.push_str("  verdict:  DID NOT TAKE EFFECT - the target vanished right after injection\n");
+        out.push_str(&format!(
+            "            (suspected single-instance app: {reason_key}; lived {lived_ms} ms)\n"
+        ));
+    } else if let Some((verdict, reason_key, count)) = &r.session_verdict {
+        out.push_str(&format!(
+            "  verdict:  {}  (processes: {count})\n",
+            verdict_headline(verdict)
+        ));
+        let why = describe_reason(reason_key);
+        if why.is_empty() {
+            out.push_str(&format!("            reason: {reason_key}\n"));
+        } else {
+            out.push_str(&format!("            {why}\n"));
+        }
+    } else if let Some((verdict, reason_key)) = &r.parent_verdict {
+        out.push_str(&format!("  verdict:  {}\n", verdict_headline(verdict)));
+        out.push_str(&format!("            reason: {reason_key}\n"));
+    } else {
+        out.push_str("  verdict:  <no verdict emitted>\n");
+    }
+
+    if !r.uncovered.is_empty() {
+        out.push_str("  uncovered channels (queried but not covered):\n");
+        for (pid, ch) in &r.uncovered {
+            out.push_str(&format!("            - pid {pid}: {ch}\n"));
+        }
+    }
+
+    if !r.warnings.is_empty() {
+        out.push_str("  warnings:\n");
+        for w in &r.warnings {
+            out.push_str(&format!("            - {}\n", describe_warning(w)));
+        }
+    }
+
+    out
 }
 
 // ---------------------------------------------------------------------------
@@ -854,5 +997,55 @@ mod tests {
         assert!(resolve_at("+1x", None).is_err());
         assert!(resolve_at("+abcd", None).is_err());
         assert!(resolve_at("-y", None).is_err());
+    }
+
+    fn empty_report() -> SessionReport {
+        SessionReport {
+            target: "app.exe".into(),
+            session_verdict: None,
+            parent_verdict: None,
+            vanished: None,
+            warnings: vec![],
+            uncovered: vec![],
+        }
+    }
+
+    #[test]
+    fn works_headline_is_scannable() {
+        let r = SessionReport {
+            session_verdict: Some(("works".into(), "session.family_covered".into(), 2)),
+            ..empty_report()
+        };
+        let out = render_report(&r);
+        assert!(out.contains("WORKS"), "got:\n{out}");
+        assert!(out.contains("processes: 2"), "got:\n{out}");
+        assert!(out.contains("saw the session clock"), "got:\n{out}");
+    }
+
+    #[test]
+    fn vanish_reads_as_not_taking_effect() {
+        let r = SessionReport {
+            vanished: Some(("target.single_instance_suspected".into(), 1500)),
+            ..empty_report()
+        };
+        let out = render_report(&r);
+        assert!(out.contains("DID NOT TAKE EFFECT"), "got:\n{out}");
+        assert!(out.contains("vanished"), "got:\n{out}");
+    }
+
+    #[test]
+    fn uncovered_and_warnings_are_surfaced_unknown_key_verbatim() {
+        let r = SessionReport {
+            session_verdict: Some(("partial".into(), "session.family_partial".into(), 1)),
+            uncovered: vec![(1234, "KUSER_SHARED_DATA".into())],
+            warnings: vec!["wait.object_waits_not_scaled".into(), "some.unknown_key".into()],
+            ..empty_report()
+        };
+        let out = render_report(&r);
+        assert!(out.contains("PARTIAL"), "got:\n{out}");
+        assert!(out.contains("pid 1234: KUSER_SHARED_DATA"), "got:\n{out}");
+        assert!(out.contains("object waits are hooked"), "got:\n{out}");
+        // An unknown warning key is shown verbatim - we never invent an explanation.
+        assert!(out.contains("some.unknown_key"), "got:\n{out}");
     }
 }
