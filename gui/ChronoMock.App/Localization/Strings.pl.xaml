@@ -39,4 +39,11 @@
   <sys:String x:Key="verdict.fails.meaning">Podmiana nie objęła kluczowych kanałów - sesja odrzucona jako niewiarygodna.</sys:String>
   <sys:String x:Key="verdict.undetermined.meaning">Nie dało się ustalić pokrycia - traktowane jako niepotwierdzone, nigdy jako działające.</sys:String>
 
+  <!-- Pokrycie / podgląd audytu (chrono-mock 7.2). Nazwy kanałów to surowe identyfikatory API, nietłumaczone. -->
+  <sys:String x:Key="coverage.covered">Objęte kanały</sys:String>
+  <sys:String x:Key="coverage.observed">Obserwowane (podpięte, pozostawione realne)</sys:String>
+  <sys:String x:Key="coverage.uncovered">Nieobjęte kanały</sys:String>
+  <sys:String x:Key="coverage.warnings">Ostrzeżenia</sys:String>
+  <sys:String x:Key="coverage.family_note">Sesja rodziny - pokazano pokrycie procesu rodzica.</sys:String>
+
 </ResourceDictionary>

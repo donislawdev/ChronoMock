@@ -34,6 +34,12 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     private bool _verdictHasReason;
     private bool _verdictHasMeaning;
     private int _processCount;
+    private bool _coverageKnown;
+    private bool _coverageCaptured;
+    private IReadOnlyList<string> _covered = [];
+    private IReadOnlyList<string> _observed = [];
+    private IReadOnlyList<string> _uncovered = [];
+    private IReadOnlyList<string> _warnings = [];
 
     public ClockView Fake { get; } = new("clock.fake");
 
@@ -88,6 +94,45 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     /// <summary>True when the session spanned more than one process (the verdict is the family aggregate).</summary>
     public bool IsFamily => _processCount > 1;
 
+    /// <summary>True once a coverage report has arrived - the audit block stays hidden until then.</summary>
+    public bool CoverageKnown { get => _coverageKnown; private set => Set(ref _coverageKnown, value); }
+
+    /// <summary>Covered channels, formatted "channel  xN", from the parent process (never summed, rule 4).</summary>
+    public IReadOnlyList<string> Covered
+    {
+        get => _covered;
+        private set { if (Set(ref _covered, value)) { RaisePropertyChanged(nameof(HasCovered)); } }
+    }
+
+    /// <summary>Channels hooked but deliberately left real (e.g. QPC-based waits, ADR-2), formatted "channel  xN".</summary>
+    public IReadOnlyList<string> Observed
+    {
+        get => _observed;
+        private set { if (Set(ref _observed, value)) { RaisePropertyChanged(nameof(HasObserved)); } }
+    }
+
+    /// <summary>Uncovered channel identifiers (raw API names, not translation keys) - the partial verdict's evidence.</summary>
+    public IReadOnlyList<string> Uncovered
+    {
+        get => _uncovered;
+        private set { if (Set(ref _uncovered, value)) { RaisePropertyChanged(nameof(HasUncovered)); } }
+    }
+
+    /// <summary>Warning translation keys the core raised for this process (rendered in the current language).</summary>
+    public IReadOnlyList<string> Warnings
+    {
+        get => _warnings;
+        private set { if (Set(ref _warnings, value)) { RaisePropertyChanged(nameof(HasWarnings)); } }
+    }
+
+    public bool HasCovered => _covered.Count > 0;
+
+    public bool HasObserved => _observed.Count > 0;
+
+    public bool HasUncovered => _uncovered.Count > 0;
+
+    public bool HasWarnings => _warnings.Count > 0;
+
     /// <summary>
     /// Fold one event into the view state. Pure and synchronous (no I/O, no threading) so the mapping is
     /// unit-testable; the live loop marshals each call onto the UI thread. A late <c>state</c> after a
@@ -123,8 +168,18 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
                 ProcessCount = sv.ProcessCount;
                 SetVerdict(VerdictKinds.Parse(sv.Verdict), sv.ReasonKey);
                 break;
+            case CoverageEvent c when !_coverageCaptured:
+                // Show the PARENT's coverage (the first event). Children's coverage is never summed into it
+                // (untouchable rule 4); a per-process family breakdown is a later slice.
+                _coverageCaptured = true;
+                Covered = c.Covered.Select(FormatChannel).ToList();
+                Observed = c.Observed.Select(FormatChannel).ToList();
+                Uncovered = [.. c.Uncovered];
+                Warnings = [.. c.WarningKeys];
+                CoverageKnown = true;
+                break;
             default:
-                // ready, coverage, ack do not change the panel here (coverage detail is slice 3.2-IV).
+                // ready and ack do not change the panel.
                 break;
         }
     }
@@ -260,7 +315,16 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
         VerdictMeaningKey = string.Empty;
         VerdictHasMeaning = false;
         ProcessCount = 0;
+
+        CoverageKnown = false;
+        _coverageCaptured = false;
+        Covered = [];
+        Observed = [];
+        Uncovered = [];
+        Warnings = [];
     }
+
+    private static string FormatChannel(CoveredChannel channel) => $"{channel.Channel}  ×{channel.Calls}";
 
     private void SetStatus(string key, SessionStatusKind kind)
     {

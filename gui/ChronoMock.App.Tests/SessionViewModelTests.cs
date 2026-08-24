@@ -142,10 +142,54 @@ public class SessionViewModelTests
         Assert.True(vm.IsFamily);
     }
 
+    [Fact]
+    public void Coverage_event_fills_the_lists_with_counts()
+    {
+        var vm = new SessionViewModel();
+
+        vm.Apply(new CoverageEvent
+        {
+            V = ProtocolJson.ProtocolVersion,
+            Pid = 100,
+            Covered = [new CoveredChannel { Channel = "GetSystemTimeAsFileTime", Calls = 842 }],
+            Observed = [new CoveredChannel { Channel = "QueryPerformanceCounter", Calls = 5 }],
+            Uncovered = ["KUSER_SHARED_DATA"],
+            WarningKeys = ["source.network_at_start"],
+        });
+
+        Assert.True(vm.CoverageKnown);
+        Assert.True(vm.HasCovered);
+        Assert.Contains("GetSystemTimeAsFileTime", vm.Covered[0], StringComparison.Ordinal);
+        Assert.Contains("842", vm.Covered[0], StringComparison.Ordinal);
+        Assert.True(vm.HasObserved);
+        Assert.Contains("QueryPerformanceCounter", vm.Observed[0], StringComparison.Ordinal);
+        Assert.Equal("KUSER_SHARED_DATA", Assert.Single(vm.Uncovered));
+        Assert.Equal("source.network_at_start", Assert.Single(vm.Warnings));
+    }
+
+    [Fact]
+    public void A_child_coverage_never_replaces_or_sums_the_parent_coverage()
+    {
+        var vm = new SessionViewModel();
+
+        vm.Apply(Coverage(pid: 100, "GetSystemTimeAsFileTime", 842)); // parent, first
+        vm.Apply(Coverage(pid: 200, "GetSystemTimeAsFileTime", 5));   // a child - must be ignored here
+
+        // Still the parent's single channel and its own count (untouchable rule 4: never sum processes).
+        Assert.Equal("GetSystemTimeAsFileTime  ×842", Assert.Single(vm.Covered));
+    }
+
     private static VerdictEvent Verdict(string verdict, string reasonKey) => new()
     {
         V = ProtocolJson.ProtocolVersion,
         Verdict = verdict,
         ReasonKey = reasonKey,
+    };
+
+    private static CoverageEvent Coverage(int pid, string channel, long calls) => new()
+    {
+        V = ProtocolJson.ProtocolVersion,
+        Pid = pid,
+        Covered = [new CoveredChannel { Channel = channel, Calls = calls }],
     };
 }

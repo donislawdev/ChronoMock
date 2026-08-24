@@ -22,8 +22,9 @@
 
     <Grid Grid.Row="1" Margin="{StaticResource SpaceXl}">
       <Grid.RowDefinitions>
-        <RowDefinition Height="*" />
         <RowDefinition Height="Auto" />
+        <RowDefinition Height="Auto" />
+        <RowDefinition Height="*" />
         <RowDefinition Height="Auto" />
         <RowDefinition Height="Auto" />
       </Grid.RowDefinitions>
@@ -68,8 +69,89 @@
                    Visibility="{Binding VerdictHasMeaning, Converter={StaticResource BoolToVis}}" />
       </StackPanel>
 
+      <!-- Coverage detail (chrono-mock 7.2 audit preview), visible once a coverage report arrives. Section
+           headers carry a synthesized count (zasady/13 10). Uncovered channels wear the partial colour. -->
+      <ScrollViewer Grid.Row="2"
+                    VerticalScrollBarVisibility="Auto"
+                    Visibility="{Binding CoverageKnown, Converter={StaticResource BoolToVis}}">
+        <StackPanel>
+          <TextBlock Margin="{StaticResource SpaceXs}"
+                     Text="{DynamicResource coverage.family_note}"
+                     TextAlignment="Center"
+                     TextWrapping="Wrap"
+                     FontSize="{StaticResource FontSizeCaption}"
+                     Foreground="{DynamicResource BrushTextSecondary}"
+                     Visibility="{Binding IsFamily, Converter={StaticResource BoolToVis}}" />
+
+          <StackPanel Margin="{StaticResource SpaceXs}"
+                      Visibility="{Binding HasCovered, Converter={StaticResource BoolToVis}}">
+            <TextBlock FontSize="{StaticResource FontSizeCaption}" Foreground="{DynamicResource BrushTextSecondary}">
+              <Run Text="{DynamicResource coverage.covered}" /><Run Text="{Binding Covered.Count, StringFormat=' ({0})', Mode=OneWay}" />
+            </TextBlock>
+            <ItemsControl ItemsSource="{Binding Covered}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                  <TextBlock Text="{Binding}"
+                             FontSize="{StaticResource FontSizeBody}"
+                             Foreground="{DynamicResource BrushTextPrimary}" />
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </StackPanel>
+
+          <StackPanel Margin="{StaticResource SpaceXs}"
+                      Visibility="{Binding HasObserved, Converter={StaticResource BoolToVis}}">
+            <TextBlock FontSize="{StaticResource FontSizeCaption}" Foreground="{DynamicResource BrushTextSecondary}">
+              <Run Text="{DynamicResource coverage.observed}" /><Run Text="{Binding Observed.Count, StringFormat=' ({0})', Mode=OneWay}" />
+            </TextBlock>
+            <ItemsControl ItemsSource="{Binding Observed}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                  <TextBlock Text="{Binding}"
+                             FontSize="{StaticResource FontSizeBody}"
+                             Foreground="{DynamicResource BrushTextSecondary}" />
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </StackPanel>
+
+          <StackPanel Margin="{StaticResource SpaceXs}"
+                      Visibility="{Binding HasUncovered, Converter={StaticResource BoolToVis}}">
+            <TextBlock FontSize="{StaticResource FontSizeCaption}" Foreground="{DynamicResource BrushStatusPartial}">
+              <Run Text="{DynamicResource coverage.uncovered}" /><Run Text="{Binding Uncovered.Count, StringFormat=' ({0})', Mode=OneWay}" />
+            </TextBlock>
+            <ItemsControl ItemsSource="{Binding Uncovered}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                  <TextBlock Text="{Binding}"
+                             FontSize="{StaticResource FontSizeBody}"
+                             Foreground="{DynamicResource BrushTextPrimary}" />
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </StackPanel>
+
+          <StackPanel Margin="{StaticResource SpaceXs}"
+                      Visibility="{Binding HasWarnings, Converter={StaticResource BoolToVis}}">
+            <TextBlock FontSize="{StaticResource FontSizeCaption}" Foreground="{DynamicResource BrushStatusPartial}">
+              <Run Text="{DynamicResource coverage.warnings}" /><Run Text="{Binding Warnings.Count, StringFormat=' ({0})', Mode=OneWay}" />
+            </TextBlock>
+            <ItemsControl ItemsSource="{Binding Warnings}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                  <TextBlock Text="{Binding Converter={StaticResource KeyToText}}"
+                             TextWrapping="Wrap"
+                             FontSize="{StaticResource FontSizeBody}"
+                             Foreground="{DynamicResource BrushTextPrimary}" />
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </StackPanel>
+        </StackPanel>
+      </ScrollViewer>
+
       <!-- Status and rate. The meaning is carried by the translated label, not by colour (zasady/13 9). -->
-      <StackPanel Grid.Row="2" Margin="{StaticResource SpaceMd}" HorizontalAlignment="Center">
+      <StackPanel Grid.Row="3" Margin="{StaticResource SpaceMd}" HorizontalAlignment="Center">
         <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
           <TextBlock Text="{Binding StatusKey, Converter={StaticResource KeyToText}}"
                      FontSize="{StaticResource FontSizeBody}"
@@ -86,7 +168,7 @@
                    TextWrapping="Wrap" />
       </StackPanel>
 
-      <Button Grid.Row="3"
+      <Button Grid.Row="4"
               Margin="{StaticResource SpaceSm}"
               HorizontalAlignment="Center"
               Content="{DynamicResource action.start}"

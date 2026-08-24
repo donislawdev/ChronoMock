@@ -40,4 +40,11 @@
   <sys:String x:Key="verdict.fails.meaning">The swap did not cover the key channels - the session was refused as unreliable.</sys:String>
   <sys:String x:Key="verdict.undetermined.meaning">Coverage could not be determined - treated as unproven, never as working.</sys:String>
 
+  <!-- Coverage / audit preview (chrono-mock 7.2). Channel names are raw API identifiers, not translated. -->
+  <sys:String x:Key="coverage.covered">Covered channels</sys:String>
+  <sys:String x:Key="coverage.observed">Observed (hooked, left real)</sys:String>
+  <sys:String x:Key="coverage.uncovered">Uncovered channels</sys:String>
+  <sys:String x:Key="coverage.warnings">Warnings</sys:String>
+  <sys:String x:Key="coverage.family_note">Family session - showing the parent process coverage.</sys:String>
+
 </ResourceDictionary>
