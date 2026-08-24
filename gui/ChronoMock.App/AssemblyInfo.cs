@@ -1,4 +1,8 @@
+using System.Runtime.CompilerServices;
 using System.Windows;
+
+// The test assembly checks internal helpers (e.g. the moment-to-wire time building).
+[assembly: InternalsVisibleTo("ChronoMock.App.Tests")]
 
 [assembly: ThemeInfo(
     ResourceDictionaryLocation.None,            //where theme specific resource dictionaries are located

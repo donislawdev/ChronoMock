@@ -94,6 +94,56 @@ public class SessionViewModelTests
     }
 
     [Fact]
+    public void Defaults_the_zone_and_mode_to_the_shipped_values()
+    {
+        var vm = new SessionViewModel();
+
+        Assert.Equal(-120, vm.SelectedZone.BiasMinutes); // UTC+02:00
+        Assert.Equal("multiplier", vm.SelectedMode.Mode);
+        Assert.Equal(60, vm.SelectedMode.Multiplier);
+        Assert.True(vm.MomentValid);
+    }
+
+    [Theory]
+    [InlineData("2038-01-19T03:14:07", true)]
+    [InlineData("2038-01-19 03:14:07", true)]   // a space separator is accepted too
+    [InlineData("2038-02-29T00:00:00", false)]  // 2038 is not a leap year
+    [InlineData("not a date", false)]
+    [InlineData("", false)]
+    public void Moment_validity_follows_the_text(string text, bool valid)
+        => Assert.Equal(valid, new SessionViewModel { MomentText = text }.MomentValid);
+
+    [Fact]
+    public void An_invalid_moment_disables_start_even_with_a_target()
+    {
+        var vm = new SessionViewModel();
+        vm.SetTarget(@"C:\apps\Ledger.exe");
+        Assert.True(vm.CanStart);
+
+        vm.MomentText = "nonsense";
+
+        Assert.False(vm.MomentValid);
+        Assert.False(vm.CanStart);
+    }
+
+    [Fact]
+    public void Build_time_maps_the_inputs_to_the_wire()
+    {
+        var vm = new SessionViewModel { MomentText = "2040-06-15 08:30:00" };
+        vm.SelectedZone = vm.Zones.First(z => z.BiasMinutes == 300); // UTC-05:00
+        vm.SelectedMode = vm.Modes.First(m => m.Mode == "frozen");
+
+        var time = vm.BuildTime();
+
+        Assert.Equal("absolute", time.Moment.Kind);
+        Assert.Equal("2040-06-15T08:30:00", time.Moment.Local); // canonicalised to the 'T' form
+        Assert.Equal(300, time.Moment.TzBiasMin);
+        Assert.Equal("frozen", time.Mode);
+        Assert.Null(time.Multiplier);
+        Assert.False(time.ScaleDuration);
+    }
+
+    [Fact]
     public void Works_verdict_shows_the_label_without_a_caveat()
     {
         var vm = new SessionViewModel();

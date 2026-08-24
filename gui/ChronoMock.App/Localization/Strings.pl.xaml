@@ -14,6 +14,17 @@
   <sys:String x:Key="target.dialog_title">Wybierz cel</sys:String>
   <sys:String x:Key="target.dialog_filter">Pliki wykonywalne (*.exe)|*.exe|Wszystkie pliki (*.*)|*.*</sys:String>
 
+  <!-- Wejścia czasu (chrono-mock 7.1). Moment to czas lokalny w strefie sesji (reguła 2). -->
+  <sys:String x:Key="moment.label">Moment:</sys:String>
+  <sys:String x:Key="moment.invalid">Wpisz moment w formie 2038-01-19T03:14:07 (data i godzina).</sys:String>
+  <sys:String x:Key="zone.label">Strefa:</sys:String>
+  <sys:String x:Key="mode.label">Tryb:</sys:String>
+  <sys:String x:Key="mode.flow">Płynący</sys:String>
+  <sys:String x:Key="mode.frozen">Zamrożony</sys:String>
+  <sys:String x:Key="mode.x10">×10</sys:String>
+  <sys:String x:Key="mode.x60">×60</sys:String>
+  <sys:String x:Key="mode.x1440">×1440</sys:String>
+
   <!-- Actions. -->
   <sys:String x:Key="action.start">Start</sys:String>
   <sys:String x:Key="action.choose_target">Wybierz…</sys:String>

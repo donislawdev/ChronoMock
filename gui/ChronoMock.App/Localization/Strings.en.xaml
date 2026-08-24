@@ -15,6 +15,17 @@
   <sys:String x:Key="target.dialog_title">Choose target</sys:String>
   <sys:String x:Key="target.dialog_filter">Executables (*.exe)|*.exe|All files (*.*)|*.*</sys:String>
 
+  <!-- Time inputs (chrono-mock 7.1). The moment is the local time in the session zone (rule 2). -->
+  <sys:String x:Key="moment.label">At:</sys:String>
+  <sys:String x:Key="moment.invalid">Enter a moment like 2038-01-19T03:14:07 (date and time).</sys:String>
+  <sys:String x:Key="zone.label">Zone:</sys:String>
+  <sys:String x:Key="mode.label">Mode:</sys:String>
+  <sys:String x:Key="mode.flow">Flowing</sys:String>
+  <sys:String x:Key="mode.frozen">Frozen</sys:String>
+  <sys:String x:Key="mode.x10">×10</sys:String>
+  <sys:String x:Key="mode.x60">×60</sys:String>
+  <sys:String x:Key="mode.x1440">×1440</sys:String>
+
   <!-- Actions. -->
   <sys:String x:Key="action.start">Start</sys:String>
   <sys:String x:Key="action.choose_target">Choose…</sys:String>

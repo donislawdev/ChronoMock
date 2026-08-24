@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.IO; // The WPF SDK trims System.IO from implicit usings (Path collides with Shapes.Path).
 using ChronoMock.Protocol;
 
@@ -27,6 +28,16 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     private string _lastError = string.Empty;
     private bool _idle = true;
     private string? _targetPath;
+    private string _momentText = "2038-01-19T03:14:07";
+    private ZoneOption _selectedZone;
+    private ModeOption _selectedMode;
+
+    public SessionViewModel()
+    {
+        // Defaults match the moment/mode the panel shipped with before these inputs existed.
+        _selectedZone = TimeInputs.Zones.First(z => z.BiasMinutes == -120); // UTC+02:00
+        _selectedMode = TimeInputs.Modes.First(m => m.Multiplier == 60);    // x60
+    }
     private bool _verdictKnown;
     private VerdictKind _verdictKind = VerdictKind.Unknown;
     private string _verdictLabelKey = "verdict.unknown";
@@ -78,17 +89,60 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     /// <summary>True once a target has been chosen - Start stays disabled until then.</summary>
     public bool HasTarget => _targetPath is not null;
 
-    /// <summary>True when a session may be started: nothing is running and a target has been chosen.</summary>
-    public bool CanStart => _idle && HasTarget;
+    /// <summary>The moment the target should see, entered in the session zone (rule 2, chrono-mock 9.5).</summary>
+    public string MomentText
+    {
+        get => _momentText;
+        set
+        {
+            if (Set(ref _momentText, value))
+            {
+                RaisePropertyChanged(nameof(MomentValid));
+                RaisePropertyChanged(nameof(MomentInvalid));
+                RaisePropertyChanged(nameof(CanStart));
+            }
+        }
+    }
+
+    /// <summary>True when the entered moment parses as a well-formed date and time. The core does the deep
+    /// validation (DST gap, non-leap Feb 29, range) and reports it as an error (docs/08 section 5).</summary>
+    public bool MomentValid => TryParseMoment(_momentText, out _);
+
+    /// <summary>Convenience for showing the input hint - the inverse of <see cref="MomentValid"/>.</summary>
+    public bool MomentInvalid => !MomentValid;
+
+    /// <summary>The session-zone options (fixed offsets, MVP markets).</summary>
+    public IReadOnlyList<ZoneOption> Zones => TimeInputs.Zones;
+
+    /// <summary>The time-mode options (flowing, frozen, xN).</summary>
+    public IReadOnlyList<ModeOption> Modes => TimeInputs.Modes;
+
+    public ZoneOption SelectedZone { get => _selectedZone; set => Set(ref _selectedZone, value); }
+
+    public ModeOption SelectedMode { get => _selectedMode; set => Set(ref _selectedMode, value); }
+
+    /// <summary>True when a session may be started: nothing is running, a target is chosen, moment is valid.</summary>
+    public bool CanStart => _idle && HasTarget && MomentValid;
 
     /// <summary>Choose the target executable to run (from the picker, or the dev default).</summary>
     public void SetTarget(string path) => TargetPath = path;
 
-    /// <summary>Backs <see cref="CanStart"/>: true when no session is running.</summary>
+    /// <summary>True when no session is running - the setup inputs bind their enabled state to this, so the
+    /// user can still fix an invalid moment (which disables Start but not the fields).</summary>
+    public bool IsIdle => _idle;
+
+    /// <summary>Backs <see cref="CanStart"/> and <see cref="IsIdle"/>: true when no session is running.</summary>
     private bool Idle
     {
         get => _idle;
-        set { if (Set(ref _idle, value)) { RaisePropertyChanged(nameof(CanStart)); } }
+        set
+        {
+            if (Set(ref _idle, value))
+            {
+                RaisePropertyChanged(nameof(CanStart));
+                RaisePropertyChanged(nameof(IsIdle));
+            }
+        }
     }
 
     /// <summary>True once a verdict has arrived - the indicator stays hidden until then.</summary>
@@ -236,8 +290,8 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
         CoreClient? client = null;
         try
         {
-            var demo = DemoSession.ForTarget(TargetPath!);
-            client = CoreClient.Connect(demo.CorePath);
+            var plan = SessionPlan.Build(TargetPath!, BuildTime());
+            client = CoreClient.Connect(plan.CorePath);
             _client = client;
 
             var ready = await ReadReadyAsync(client, ReadyTimeout);
@@ -247,7 +301,7 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
                 return;
             }
 
-            var gate = HandshakeGate.Check(ready, ProtocolJson.ProtocolVersion, demo.Machine);
+            var gate = HandshakeGate.Check(ready, ProtocolJson.ProtocolVersion, plan.Machine);
             if (!gate.IsOk)
             {
                 // Refuse before the target is ever launched (docs/08 section 3, zasady/13 section 11).
@@ -255,7 +309,7 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
                 return;
             }
 
-            client.Send(demo.Start);
+            client.Send(plan.Start);
             SetStatus("status.running", SessionStatusKind.Running);
 
             await foreach (var evt in client.Events.ReadAllAsync())
@@ -357,6 +411,37 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     }
 
     private static string FormatChannel(CoveredChannel channel) => $"{channel.Channel}  ×{channel.Calls}";
+
+    /// <summary>Build the wire time from the inputs. The moment is the local time in the session zone
+    /// (rule 2, chrono-mock 9.5); the core turns it into UTC and validates it (docs/08 section 5).</summary>
+    internal TimeSpec BuildTime()
+    {
+        TryParseMoment(_momentText, out var canonical);
+        return new TimeSpec
+        {
+            Moment = new MomentSpec { Kind = "absolute", Local = canonical, TzBiasMin = SelectedZone.BiasMinutes },
+            Mode = SelectedMode.Mode,
+            Multiplier = SelectedMode.Multiplier,
+            ScaleDuration = false,
+        };
+    }
+
+    // Accept an ISO moment with a 'T' or a space separator. This is a well-formed-ness check only - the
+    // deep validation (DST gap, non-leap Feb 29, range) belongs to the core (docs/08 section 5).
+    private static readonly string[] MomentFormats = ["yyyy-MM-ddTHH:mm:ss", "yyyy-MM-dd HH:mm:ss"];
+
+    private static bool TryParseMoment(string? text, out string canonical)
+    {
+        canonical = string.Empty;
+        if (DateTime.TryParseExact(
+                text?.Trim(), MomentFormats, CultureInfo.InvariantCulture, DateTimeStyles.None, out var moment))
+        {
+            canonical = moment.ToString("yyyy-MM-ddTHH:mm:ss", CultureInfo.InvariantCulture);
+            return true;
+        }
+
+        return false;
+    }
 
     private void SetStatus(string key, SessionStatusKind kind)
     {

@@ -15,7 +15,7 @@ public partial class MainWindow : FluentWindow
 
         // Dev convenience: pre-select the bundled sample target so the panel is usable at once. The user
         // can pick any executable instead - this default is dev scaffolding (DemoSession.DefaultTargetPath).
-        var sample = DemoSession.DefaultTargetPath();
+        var sample = SessionPlan.DefaultTargetPath();
         if (sample is not null)
         {
             _session.SetTarget(sample);
