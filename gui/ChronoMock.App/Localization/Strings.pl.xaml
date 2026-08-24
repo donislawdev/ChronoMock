@@ -21,6 +21,7 @@
   <sys:String x:Key="mode.label">Tryb:</sys:String>
   <sys:String x:Key="mode.flow">Płynący</sys:String>
   <sys:String x:Key="mode.frozen">Zamrożony</sys:String>
+  <sys:String x:Key="mode.x1">×1</sys:String>
   <sys:String x:Key="mode.x10">×10</sys:String>
   <sys:String x:Key="mode.x60">×60</sys:String>
   <sys:String x:Key="mode.x1440">×1440</sys:String>
@@ -28,6 +29,7 @@
   <!-- Actions. -->
   <sys:String x:Key="action.start">Start</sys:String>
   <sys:String x:Key="action.choose_target">Wybierz…</sys:String>
+  <sys:String x:Key="action.freeze">Zamroź</sys:String>
 
   <!-- Session status. -->
   <sys:String x:Key="status.idle">Nie uruchomiono</sys:String>

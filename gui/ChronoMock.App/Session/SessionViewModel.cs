@@ -22,6 +22,7 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     private static readonly TimeSpan ReadyTimeout = TimeSpan.FromSeconds(10);
 
     private CoreClient? _client;
+    private long _nextCommandId = 10; // start commands use low ids; in-flight commands take the rest
     private string _statusKey = "status.idle";
     private SessionStatusKind _statusKind = SessionStatusKind.Idle;
     private string _multiplierText = string.Empty;
@@ -60,7 +61,14 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     /// <summary>Translation key for the current status label (the view renders it in the user's language).</summary>
     public string StatusKey { get => _statusKey; private set => Set(ref _statusKey, value); }
 
-    public SessionStatusKind StatusKind { get => _statusKind; private set => Set(ref _statusKind, value); }
+    public SessionStatusKind StatusKind
+    {
+        get => _statusKind;
+        private set { if (Set(ref _statusKind, value)) { RaisePropertyChanged(nameof(IsRunning)); } }
+    }
+
+    /// <summary>True while the session is live - the in-flight controls bind their visibility to this.</summary>
+    public bool IsRunning => _statusKind == SessionStatusKind.Running;
 
     /// <summary>The current rate as data, e.g. "x60" - empty until the first heartbeat.</summary>
     public string MultiplierText { get => _multiplierText; private set => Set(ref _multiplierText, value); }
@@ -126,6 +134,29 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
 
     /// <summary>Choose the target executable to run (from the picker, or the dev default).</summary>
     public void SetTarget(string path) => TargetPath = path;
+
+    /// <summary>
+    /// Change the multiplier in flight (0 freezes, N resumes at N times). The core re-anchors from the
+    /// current clock so the fake time is continuous across the change (ADR-5). No-op unless a session is
+    /// running - the controls are only shown then, but the guard keeps a stray call safe.
+    /// </summary>
+    public void SendMultiplier(long multiplier)
+    {
+        var client = _client;
+        if (client is null || !IsRunning)
+        {
+            return;
+        }
+
+        try
+        {
+            client.Send(new SetMultiplierCommand { Id = _nextCommandId++, Multiplier = multiplier });
+        }
+        catch (IOException)
+        {
+            // The core is already gone - the read loop will surface the end; nothing to do here.
+        }
+    }
 
     /// <summary>True when no session is running - the setup inputs bind their enabled state to this, so the
     /// user can still fix an invalid moment (which disables Start but not the fields).</summary>

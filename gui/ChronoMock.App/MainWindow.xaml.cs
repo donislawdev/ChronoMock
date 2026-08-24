@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Windows;
 using Microsoft.Win32;
 using Wpf.Ui.Controls;
@@ -42,6 +43,16 @@ public partial class MainWindow : FluentWindow
     }
 
     private async void OnStartClick(object sender, RoutedEventArgs e) => await _session.StartAsync();
+
+    // In-flight speed control: each button carries its multiplier in Tag ("0" = freeze).
+    private void OnSpeedClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement { Tag: string tag }
+            && long.TryParse(tag, NumberStyles.Integer, CultureInfo.InvariantCulture, out var multiplier))
+        {
+            _session.SendMultiplier(multiplier);
+        }
+    }
 
     // Resolve a translation key to text for a native dialog (rule 15); falls back to the raw key if missing.
     private static string Text(string key) => Application.Current?.TryFindResource(key) as string ?? key;

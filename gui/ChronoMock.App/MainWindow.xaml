@@ -28,6 +28,7 @@
         <RowDefinition Height="Auto" />
         <RowDefinition Height="*" />
         <RowDefinition Height="Auto" />
+        <RowDefinition Height="Auto" />
       </Grid.RowDefinitions>
 
       <!-- Setup: what to run (target), when (moment in the session zone), how fast (mode). chrono-mock 7.1.
@@ -196,8 +197,19 @@
         </StackPanel>
       </ScrollViewer>
 
+      <!-- In-flight speed control (chrono-mock 7.2), shown only while a session runs. Each button carries
+           its multiplier in Tag; Freeze is set_multiplier(0). The core re-anchors continuously (ADR-5). -->
+      <StackPanel Grid.Row="5" Orientation="Horizontal" HorizontalAlignment="Center" Margin="{StaticResource SpaceSm}"
+                  Visibility="{Binding IsRunning, Converter={StaticResource BoolToVis}}">
+        <Button Content="{DynamicResource mode.x1}" Tag="1" Margin="{StaticResource SpaceXs}" Click="OnSpeedClick" />
+        <Button Content="{DynamicResource mode.x10}" Tag="10" Margin="{StaticResource SpaceXs}" Click="OnSpeedClick" />
+        <Button Content="{DynamicResource mode.x60}" Tag="60" Margin="{StaticResource SpaceXs}" Click="OnSpeedClick" />
+        <Button Content="{DynamicResource mode.x1440}" Tag="1440" Margin="{StaticResource SpaceXs}" Click="OnSpeedClick" />
+        <Button Content="{DynamicResource action.freeze}" Tag="0" Margin="{StaticResource SpaceSm}" Click="OnSpeedClick" />
+      </StackPanel>
+
       <!-- Status and rate. The meaning is carried by the translated label, not by colour (zasady/13 9). -->
-      <StackPanel Grid.Row="5" Margin="{StaticResource SpaceMd}" HorizontalAlignment="Center">
+      <StackPanel Grid.Row="6" Margin="{StaticResource SpaceMd}" HorizontalAlignment="Center">
         <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
           <TextBlock Text="{Binding StatusKey, Converter={StaticResource KeyToText}}"
                      FontSize="{StaticResource FontSizeBody}"

@@ -22,6 +22,7 @@
   <sys:String x:Key="mode.label">Mode:</sys:String>
   <sys:String x:Key="mode.flow">Flowing</sys:String>
   <sys:String x:Key="mode.frozen">Frozen</sys:String>
+  <sys:String x:Key="mode.x1">×1</sys:String>
   <sys:String x:Key="mode.x10">×10</sys:String>
   <sys:String x:Key="mode.x60">×60</sys:String>
   <sys:String x:Key="mode.x1440">×1440</sys:String>
@@ -29,6 +30,7 @@
   <!-- Actions. -->
   <sys:String x:Key="action.start">Start</sys:String>
   <sys:String x:Key="action.choose_target">Choose…</sys:String>
+  <sys:String x:Key="action.freeze">Freeze</sys:String>
 
   <!-- Session status. Meaning is carried by this label, never by colour alone. -->
   <sys:String x:Key="status.idle">Not started</sys:String>

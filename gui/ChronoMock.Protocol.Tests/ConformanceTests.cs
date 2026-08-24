@@ -86,6 +86,25 @@ public class ConformanceTests
         _ = await ReadUntilAsync(client, e => e.Any(x => x is EndedEvent), ReadTimeout);
     }
 
+    [Fact]
+    public async Task Set_multiplier_in_flight_changes_the_rate()
+    {
+        var (core, target) = Fixture();
+        await using var client = CoreClient.Launch(core, StartAt(target, mode: "multiplier", multiplier: 60));
+
+        // Let the fast rate run, then slow it to real time in flight (the control the GUI's buttons send).
+        _ = await ReadUntilAsync(client, e => e.OfType<StateEvent>().Count() >= 2, ReadTimeout);
+        client.Send(new SetMultiplierCommand { Id = 50, Multiplier = 1 });
+
+        // The core acks and re-emits state, so a later state reports the new multiplier.
+        var after = await ReadUntilAsync(
+            client, e => e.OfType<StateEvent>().Any(s => s.Multiplier == 1), ReadTimeout);
+        Assert.Contains(after.OfType<StateEvent>(), s => s.Multiplier == 1);
+
+        client.Send(new EndCommand { Id = 99 });
+        _ = await ReadUntilAsync(client, e => e.Any(x => x is EndedEvent), ReadTimeout);
+    }
+
     private static (string core, string target) Fixture()
     {
         var repo = RepoPaths.RepoRoot();

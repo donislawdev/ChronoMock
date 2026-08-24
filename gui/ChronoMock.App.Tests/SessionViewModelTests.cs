@@ -243,6 +243,29 @@ public class SessionViewModelTests
         Assert.Equal("GetSystemTimeAsFileTime  ×842", Assert.Single(vm.Covered));
     }
 
+    [Fact]
+    public void Is_running_follows_the_status()
+    {
+        var vm = new SessionViewModel();
+        Assert.False(vm.IsRunning);
+
+        vm.Apply(State("2038-01-19T03:14:07", "2026-08-25T00:00:00", bias: 0, multiplier: 60));
+        Assert.True(vm.IsRunning);
+
+        vm.Apply(new EndedEvent { V = ProtocolJson.ProtocolVersion, Clean = true });
+        Assert.False(vm.IsRunning);
+    }
+
+    [Fact]
+    public void Send_multiplier_is_a_safe_no_op_when_no_session_runs()
+    {
+        var vm = new SessionViewModel();
+
+        vm.SendMultiplier(0); // idle, no client - must not throw
+
+        Assert.False(vm.IsRunning);
+    }
+
     private static VerdictEvent Verdict(string verdict, string reasonKey) => new()
     {
         V = ProtocolJson.ProtocolVersion,
