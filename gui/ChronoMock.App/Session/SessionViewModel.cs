@@ -25,7 +25,8 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     private SessionStatusKind _statusKind = SessionStatusKind.Idle;
     private string _multiplierText = string.Empty;
     private string _lastError = string.Empty;
-    private bool _canStart = true;
+    private bool _idle = true;
+    private string? _targetPath;
     private bool _verdictKnown;
     private VerdictKind _verdictKind = VerdictKind.Unknown;
     private string _verdictLabelKey = "verdict.unknown";
@@ -56,8 +57,39 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     /// <summary>The raw failure detail when something went wrong - shown verbatim so a failure is never silent.</summary>
     public string LastError { get => _lastError; private set => Set(ref _lastError, value); }
 
-    /// <summary>True when a new session may be started (no session is currently running).</summary>
-    public bool CanStart { get => _canStart; private set => Set(ref _canStart, value); }
+    /// <summary>Path to the target executable to run, chosen by the user (or a bundled default in dev).</summary>
+    public string? TargetPath
+    {
+        get => _targetPath;
+        private set
+        {
+            if (Set(ref _targetPath, value))
+            {
+                RaisePropertyChanged(nameof(TargetName));
+                RaisePropertyChanged(nameof(HasTarget));
+                RaisePropertyChanged(nameof(CanStart));
+            }
+        }
+    }
+
+    /// <summary>The chosen target's file name for display, empty when none is chosen.</summary>
+    public string TargetName => _targetPath is null ? string.Empty : Path.GetFileName(_targetPath);
+
+    /// <summary>True once a target has been chosen - Start stays disabled until then.</summary>
+    public bool HasTarget => _targetPath is not null;
+
+    /// <summary>True when a session may be started: nothing is running and a target has been chosen.</summary>
+    public bool CanStart => _idle && HasTarget;
+
+    /// <summary>Choose the target executable to run (from the picker, or the dev default).</summary>
+    public void SetTarget(string path) => TargetPath = path;
+
+    /// <summary>Backs <see cref="CanStart"/>: true when no session is running.</summary>
+    private bool Idle
+    {
+        get => _idle;
+        set { if (Set(ref _idle, value)) { RaisePropertyChanged(nameof(CanStart)); } }
+    }
 
     /// <summary>True once a verdict has arrived - the indicator stays hidden until then.</summary>
     public bool VerdictKnown { get => _verdictKnown; private set => Set(ref _verdictKnown, value); }
@@ -196,7 +228,7 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
             return;
         }
 
-        CanStart = false;
+        Idle = false;
         LastError = string.Empty;
         ResetSession();
         SetStatus("status.connecting", SessionStatusKind.Connecting);
@@ -204,7 +236,7 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
         CoreClient? client = null;
         try
         {
-            var demo = DemoSession.Resolve();
+            var demo = DemoSession.ForTarget(TargetPath!);
             client = CoreClient.Connect(demo.CorePath);
             _client = client;
 
@@ -263,7 +295,7 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
                 }
             }
 
-            CanStart = true;
+            Idle = true;
         }
     }
 

@@ -9,8 +9,14 @@
   <sys:String x:Key="clock.fake">Zegar fałszywy</sys:String>
   <sys:String x:Key="clock.real">Zegar rzeczywisty</sys:String>
 
+  <!-- Wybór celu (chrono-mock 7.1). Teksty dialogu też jako klucze (reguła 15). -->
+  <sys:String x:Key="target.label">Cel:</sys:String>
+  <sys:String x:Key="target.dialog_title">Wybierz cel</sys:String>
+  <sys:String x:Key="target.dialog_filter">Pliki wykonywalne (*.exe)|*.exe|Wszystkie pliki (*.*)|*.*</sys:String>
+
   <!-- Actions. -->
   <sys:String x:Key="action.start">Start</sys:String>
+  <sys:String x:Key="action.choose_target">Wybierz…</sys:String>
 
   <!-- Session status. -->
   <sys:String x:Key="status.idle">Nie uruchomiono</sys:String>

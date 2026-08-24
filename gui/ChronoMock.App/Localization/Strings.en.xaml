@@ -10,8 +10,14 @@
   <sys:String x:Key="clock.fake">Fake clock</sys:String>
   <sys:String x:Key="clock.real">Real clock</sys:String>
 
+  <!-- Target selection (chrono-mock 7.1). The dialog strings are keyed too (rule 15). -->
+  <sys:String x:Key="target.label">Target:</sys:String>
+  <sys:String x:Key="target.dialog_title">Choose target</sys:String>
+  <sys:String x:Key="target.dialog_filter">Executables (*.exe)|*.exe|All files (*.*)|*.*</sys:String>
+
   <!-- Actions. -->
   <sys:String x:Key="action.start">Start</sys:String>
+  <sys:String x:Key="action.choose_target">Choose…</sys:String>
 
   <!-- Session status. Meaning is carried by this label, never by colour alone. -->
   <sys:String x:Key="status.idle">Not started</sys:String>

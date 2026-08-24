@@ -68,15 +68,29 @@ public class SessionViewModelTests
     }
 
     [Fact]
-    public void Starts_idle_before_any_event()
+    public void Starts_idle_with_no_target_chosen()
     {
         var vm = new SessionViewModel();
 
         Assert.Equal(SessionStatusKind.Idle, vm.StatusKind);
-        Assert.True(vm.CanStart);
+        Assert.False(vm.HasTarget);   // nothing chosen yet
+        Assert.False(vm.CanStart);    // Start stays disabled until a target is chosen (chrono-mock 7.1, zasady/13 11)
         Assert.False(vm.VerdictKnown);
         Assert.Equal("clock.fake", vm.Fake.RoleKey);
         Assert.Equal("clock.real", vm.Real.RoleKey);
+    }
+
+    [Fact]
+    public void Choosing_a_target_enables_start_and_shows_its_file_name()
+    {
+        var vm = new SessionViewModel();
+        Assert.False(vm.CanStart);
+
+        vm.SetTarget(@"C:\apps\Ledger.exe");
+
+        Assert.True(vm.HasTarget);
+        Assert.Equal("Ledger.exe", vm.TargetName);
+        Assert.True(vm.CanStart);
     }
 
     [Fact]

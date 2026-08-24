@@ -5,7 +5,7 @@
                  xmlns:controls="clr-namespace:ChronoMock.App.Controls"
                  Title="{DynamicResource app.title}"
                  Width="720"
-                 Height="540"
+                 Height="580"
                  MinWidth="480"
                  MinHeight="360"
                  Background="{DynamicResource BrushBgBase}"
@@ -24,13 +24,31 @@
       <Grid.RowDefinitions>
         <RowDefinition Height="Auto" />
         <RowDefinition Height="Auto" />
+        <RowDefinition Height="Auto" />
         <RowDefinition Height="*" />
         <RowDefinition Height="Auto" />
         <RowDefinition Height="Auto" />
       </Grid.RowDefinitions>
 
+      <!-- Target (chrono-mock 7.1: the target sits at the top, its bitness detected automatically). A dev
+           sample is pre-selected; the user picks any executable. Start stays disabled until one is chosen. -->
+      <StackPanel Grid.Row="0" Orientation="Horizontal" HorizontalAlignment="Center" Margin="{StaticResource SpaceSm}">
+        <TextBlock Text="{DynamicResource target.label}"
+                   VerticalAlignment="Center"
+                   FontSize="{StaticResource FontSizeBody}"
+                   Foreground="{DynamicResource BrushTextSecondary}" />
+        <TextBlock Text="{Binding TargetName}"
+                   Margin="{StaticResource SpaceXs}"
+                   VerticalAlignment="Center"
+                   FontSize="{StaticResource FontSizeBody}"
+                   Foreground="{DynamicResource BrushTextPrimary}" />
+        <Button Margin="{StaticResource SpaceSm}"
+                Content="{DynamicResource action.choose_target}"
+                Click="OnChooseTargetClick" />
+      </StackPanel>
+
       <!-- The two clocks: fake and real, each from the same tile template, each with its explicit zone. -->
-      <Grid Grid.Row="0" VerticalAlignment="Center">
+      <Grid Grid.Row="1" VerticalAlignment="Center">
         <Grid.ColumnDefinitions>
           <ColumnDefinition Width="*" />
           <ColumnDefinition Width="*" />
@@ -42,7 +60,7 @@
       <!-- Verdict indicator (chrono-mock 7.1), visible once a verdict arrives. The verdict is told apart
            by the glyph and the label, not by colour alone (zasady/13 9); the colour reinforces it. The
            reason and the plain-language meaning show only for a non-works verdict. -->
-      <StackPanel Grid.Row="1"
+      <StackPanel Grid.Row="2"
                   Margin="{StaticResource SpaceMd}"
                   Visibility="{Binding VerdictKnown, Converter={StaticResource BoolToVis}}">
         <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
@@ -71,7 +89,7 @@
 
       <!-- Coverage detail (chrono-mock 7.2 audit preview), visible once a coverage report arrives. Section
            headers carry a synthesized count (zasady/13 10). Uncovered channels wear the partial colour. -->
-      <ScrollViewer Grid.Row="2"
+      <ScrollViewer Grid.Row="3"
                     VerticalScrollBarVisibility="Auto"
                     Visibility="{Binding CoverageKnown, Converter={StaticResource BoolToVis}}">
         <StackPanel>
@@ -151,7 +169,7 @@
       </ScrollViewer>
 
       <!-- Status and rate. The meaning is carried by the translated label, not by colour (zasady/13 9). -->
-      <StackPanel Grid.Row="3" Margin="{StaticResource SpaceMd}" HorizontalAlignment="Center">
+      <StackPanel Grid.Row="4" Margin="{StaticResource SpaceMd}" HorizontalAlignment="Center">
         <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
           <TextBlock Text="{Binding StatusKey, Converter={StaticResource KeyToText}}"
                      FontSize="{StaticResource FontSizeBody}"
@@ -168,7 +186,7 @@
                    TextWrapping="Wrap" />
       </StackPanel>
 
-      <Button Grid.Row="4"
+      <Button Grid.Row="5"
               Margin="{StaticResource SpaceSm}"
               HorizontalAlignment="Center"
               Content="{DynamicResource action.start}"
