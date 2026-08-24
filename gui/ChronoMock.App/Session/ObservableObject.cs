@@ -20,7 +20,11 @@ public abstract class ObservableObject : INotifyPropertyChanged
         }
 
         field = value;
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
+        RaisePropertyChanged(name);
         return true;
     }
+
+    /// <summary>Raise <see cref="PropertyChanged"/> for a property, e.g. a computed one that depends on another.</summary>
+    protected void RaisePropertyChanged(string? name)
+        => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
 }

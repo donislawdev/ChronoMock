@@ -26,6 +26,14 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     private string _multiplierText = string.Empty;
     private string _lastError = string.Empty;
     private bool _canStart = true;
+    private bool _verdictKnown;
+    private VerdictKind _verdictKind = VerdictKind.Unknown;
+    private string _verdictLabelKey = "verdict.unknown";
+    private string _verdictReasonKey = string.Empty;
+    private string _verdictMeaningKey = string.Empty;
+    private bool _verdictHasReason;
+    private bool _verdictHasMeaning;
+    private int _processCount;
 
     public ClockView Fake { get; } = new("clock.fake");
 
@@ -44,6 +52,41 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
 
     /// <summary>True when a new session may be started (no session is currently running).</summary>
     public bool CanStart { get => _canStart; private set => Set(ref _canStart, value); }
+
+    /// <summary>True once a verdict has arrived - the indicator stays hidden until then.</summary>
+    public bool VerdictKnown { get => _verdictKnown; private set => Set(ref _verdictKnown, value); }
+
+    /// <summary>The verdict kind, driving the indicator's glyph and colour (chrono-mock 7.1).</summary>
+    public VerdictKind VerdictKind { get => _verdictKind; private set => Set(ref _verdictKind, value); }
+
+    /// <summary>Translation key for the verdict label ("verdict.works" etc.).</summary>
+    public string VerdictLabelKey { get => _verdictLabelKey; private set => Set(ref _verdictLabelKey, value); }
+
+    /// <summary>The core's specific reason key (rendered raw if untranslated), shown for a non-works verdict.</summary>
+    public string VerdictReasonKey { get => _verdictReasonKey; private set => Set(ref _verdictReasonKey, value); }
+
+    /// <summary>The plain-language "what this means for the test" key, shown for a non-works verdict.</summary>
+    public string VerdictMeaningKey { get => _verdictMeaningKey; private set => Set(ref _verdictMeaningKey, value); }
+
+    public bool VerdictHasReason { get => _verdictHasReason; private set => Set(ref _verdictHasReason, value); }
+
+    public bool VerdictHasMeaning { get => _verdictHasMeaning; private set => Set(ref _verdictHasMeaning, value); }
+
+    /// <summary>Size of the process family the session verdict covers (parent plus children).</summary>
+    public int ProcessCount
+    {
+        get => _processCount;
+        private set
+        {
+            if (Set(ref _processCount, value))
+            {
+                RaisePropertyChanged(nameof(IsFamily));
+            }
+        }
+    }
+
+    /// <summary>True when the session spanned more than one process (the verdict is the family aggregate).</summary>
+    public bool IsFamily => _processCount > 1;
 
     /// <summary>
     /// Fold one event into the view state. Pure and synchronous (no I/O, no threading) so the mapping is
@@ -71,8 +114,17 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
             case ErrorEvent:
                 SetStatus("status.error", SessionStatusKind.Error);
                 break;
+            case VerdictEvent v:
+                // The per-process verdict, at start. It gates refuse_start and is the first indicator shown.
+                SetVerdict(VerdictKinds.Parse(v.Verdict), v.ReasonKey);
+                break;
+            case SessionVerdictEvent sv:
+                // The family aggregate, at end - it overrides the per-process verdict on the indicator.
+                ProcessCount = sv.ProcessCount;
+                SetVerdict(VerdictKinds.Parse(sv.Verdict), sv.ReasonKey);
+                break;
             default:
-                // ready, coverage, verdict, ack, session_verdict do not change the two-clock panel here.
+                // ready, coverage, ack do not change the panel here (coverage detail is slice 3.2-IV).
                 break;
         }
     }
@@ -91,7 +143,7 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
 
         CanStart = false;
         LastError = string.Empty;
-        ResetClocks();
+        ResetSession();
         SetStatus("status.connecting", SessionStatusKind.Connecting);
 
         CoreClient? client = null;
@@ -192,19 +244,43 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
         return null; // the stream ended before ready arrived
     }
 
-    private void ResetClocks()
+    private void ResetSession()
     {
         Fake.Wall = "-";
         Fake.Zone = string.Empty;
         Real.Wall = "-";
         Real.Zone = string.Empty;
         MultiplierText = string.Empty;
+
+        VerdictKnown = false;
+        VerdictKind = VerdictKind.Unknown;
+        VerdictLabelKey = "verdict.unknown";
+        VerdictReasonKey = string.Empty;
+        VerdictHasReason = false;
+        VerdictMeaningKey = string.Empty;
+        VerdictHasMeaning = false;
+        ProcessCount = 0;
     }
 
     private void SetStatus(string key, SessionStatusKind kind)
     {
         StatusKey = key;
         StatusKind = kind;
+    }
+
+    private void SetVerdict(VerdictKind kind, string reasonKey)
+    {
+        VerdictKind = kind;
+        VerdictLabelKey = VerdictKinds.LabelKey(kind);
+
+        // The specific reason and the plain-language meaning are shown only for a non-works verdict - a
+        // clean "works" needs no caveat. The core stays authoritative for the reason key (rules 15/16).
+        var nonWorks = kind != VerdictKind.Works;
+        VerdictReasonKey = reasonKey;
+        VerdictHasReason = nonWorks && !string.IsNullOrEmpty(reasonKey);
+        VerdictMeaningKey = VerdictKinds.MeaningKey(kind);
+        VerdictHasMeaning = VerdictMeaningKey.Length > 0;
+        VerdictKnown = true;
     }
 
     private static bool IsTerminal(SessionStatusKind kind) => kind

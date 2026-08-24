@@ -27,4 +27,16 @@
   <sys:String x:Key="handshake.protocol_mismatch">Niezgodna wersja protokołu - nie uruchomiono</sys:String>
   <sys:String x:Key="handshake.bitness_mismatch">Niezgodna bitowość rdzenia - nie uruchomiono</sys:String>
 
+  <!-- Werdykt weryfikatora (chrono-mock 7.1). Etykieta w parze z glifem i kolorem. -->
+  <sys:String x:Key="verdict.works">Działa</sys:String>
+  <sys:String x:Key="verdict.partial">Częściowo</sys:String>
+  <sys:String x:Key="verdict.fails">Nie działa</sys:String>
+  <sys:String x:Key="verdict.undetermined">Nieokreślony</sys:String>
+  <sys:String x:Key="verdict.unknown">Nieznany</sys:String>
+
+  <!-- Jedno zdanie „co to znaczy dla testu" dla werdyktu innego niż działa. -->
+  <sys:String x:Key="verdict.partial.meaning">Część kanałów czasu nie została objęta - ich odczyty są prawdziwe, więc test może być niewiarygodny.</sys:String>
+  <sys:String x:Key="verdict.fails.meaning">Podmiana nie objęła kluczowych kanałów - sesja odrzucona jako niewiarygodna.</sys:String>
+  <sys:String x:Key="verdict.undetermined.meaning">Nie dało się ustalić pokrycia - traktowane jako niepotwierdzone, nigdy jako działające.</sys:String>
+
 </ResourceDictionary>

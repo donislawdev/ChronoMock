@@ -5,9 +5,9 @@
                  xmlns:controls="clr-namespace:ChronoMock.App.Controls"
                  Title="{DynamicResource app.title}"
                  Width="720"
-                 Height="480"
+                 Height="540"
                  MinWidth="480"
-                 MinHeight="320"
+                 MinHeight="360"
                  Background="{DynamicResource BrushBgBase}"
                  ExtendsContentIntoTitleBar="True"
                  WindowBackdropType="None"
@@ -25,6 +25,7 @@
         <RowDefinition Height="*" />
         <RowDefinition Height="Auto" />
         <RowDefinition Height="Auto" />
+        <RowDefinition Height="Auto" />
       </Grid.RowDefinitions>
 
       <!-- The two clocks: fake and real, each from the same tile template, each with its explicit zone. -->
@@ -37,8 +38,38 @@
         <controls:ClockTile Grid.Column="1" Margin="{StaticResource SpaceSm}" DataContext="{Binding Real}" />
       </Grid>
 
+      <!-- Verdict indicator (chrono-mock 7.1), visible once a verdict arrives. The verdict is told apart
+           by the glyph and the label, not by colour alone (zasady/13 9); the colour reinforces it. The
+           reason and the plain-language meaning show only for a non-works verdict. -->
+      <StackPanel Grid.Row="1"
+                  Margin="{StaticResource SpaceMd}"
+                  Visibility="{Binding VerdictKnown, Converter={StaticResource BoolToVis}}">
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+          <TextBlock Text="{Binding VerdictKind, Converter={StaticResource VerdictGlyph}}"
+                     FontSize="{StaticResource FontSizeSubtitle}"
+                     Foreground="{Binding VerdictKind, Converter={StaticResource VerdictBrush}}" />
+          <TextBlock Text="{Binding VerdictLabelKey, Converter={StaticResource KeyToText}}"
+                     Margin="{StaticResource SpaceXs}"
+                     FontSize="{StaticResource FontSizeSubtitle}"
+                     FontWeight="SemiBold"
+                     Foreground="{Binding VerdictKind, Converter={StaticResource VerdictBrush}}" />
+        </StackPanel>
+        <TextBlock Text="{Binding VerdictReasonKey, Converter={StaticResource KeyToText}}"
+                   TextAlignment="Center"
+                   FontSize="{StaticResource FontSizeCaption}"
+                   Foreground="{DynamicResource BrushTextSecondary}"
+                   Visibility="{Binding VerdictHasReason, Converter={StaticResource BoolToVis}}" />
+        <TextBlock Text="{Binding VerdictMeaningKey, Converter={StaticResource KeyToText}}"
+                   Margin="{StaticResource SpaceXs}"
+                   TextAlignment="Center"
+                   TextWrapping="Wrap"
+                   FontSize="{StaticResource FontSizeCaption}"
+                   Foreground="{DynamicResource BrushTextSecondary}"
+                   Visibility="{Binding VerdictHasMeaning, Converter={StaticResource BoolToVis}}" />
+      </StackPanel>
+
       <!-- Status and rate. The meaning is carried by the translated label, not by colour (zasady/13 9). -->
-      <StackPanel Grid.Row="1" Margin="{StaticResource SpaceMd}" HorizontalAlignment="Center">
+      <StackPanel Grid.Row="2" Margin="{StaticResource SpaceMd}" HorizontalAlignment="Center">
         <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
           <TextBlock Text="{Binding StatusKey, Converter={StaticResource KeyToText}}"
                      FontSize="{StaticResource FontSizeBody}"
@@ -55,7 +86,7 @@
                    TextWrapping="Wrap" />
       </StackPanel>
 
-      <Button Grid.Row="2"
+      <Button Grid.Row="3"
               Margin="{StaticResource SpaceSm}"
               HorizontalAlignment="Center"
               Content="{DynamicResource action.start}"

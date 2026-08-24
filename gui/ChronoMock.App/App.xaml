@@ -22,6 +22,11 @@
       <!-- App-wide so both the window and the clock tiles resolve it. Renders a translation key (as the
            core and the VM emit) to text in the current language (untouchable rules 15/16). -->
       <local:TranslationKeyConverter x:Key="KeyToText" />
+
+      <!-- Verdict indicator: the glyph and colour come from the verdict kind, colour from the named palette. -->
+      <local:VerdictGlyphConverter x:Key="VerdictGlyph" />
+      <local:VerdictBrushConverter x:Key="VerdictBrush" />
+      <BooleanToVisibilityConverter x:Key="BoolToVis" />
     </ResourceDictionary>
   </Application.Resources>
 </Application>

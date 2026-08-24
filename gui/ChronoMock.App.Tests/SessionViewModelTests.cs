@@ -74,7 +74,78 @@ public class SessionViewModelTests
 
         Assert.Equal(SessionStatusKind.Idle, vm.StatusKind);
         Assert.True(vm.CanStart);
+        Assert.False(vm.VerdictKnown);
         Assert.Equal("clock.fake", vm.Fake.RoleKey);
         Assert.Equal("clock.real", vm.Real.RoleKey);
     }
+
+    [Fact]
+    public void Works_verdict_shows_the_label_without_a_caveat()
+    {
+        var vm = new SessionViewModel();
+
+        vm.Apply(Verdict("works", "verdict.works.covered"));
+
+        Assert.True(vm.VerdictKnown);
+        Assert.Equal(VerdictKind.Works, vm.VerdictKind);
+        Assert.Equal("verdict.works", vm.VerdictLabelKey);
+        Assert.False(vm.VerdictHasReason);  // a clean works needs no reason or meaning
+        Assert.False(vm.VerdictHasMeaning);
+    }
+
+    [Theory]
+    [InlineData("partial", VerdictKind.Partial, "verdict.partial", "verdict.partial.meaning")]
+    [InlineData("fails", VerdictKind.Fails, "verdict.fails", "verdict.fails.meaning")]
+    [InlineData("undetermined", VerdictKind.Undetermined, "verdict.undetermined", "verdict.undetermined.meaning")]
+    public void Non_works_verdict_shows_reason_and_meaning(
+        string wire, VerdictKind kind, string labelKey, string meaningKey)
+    {
+        var vm = new SessionViewModel();
+
+        vm.Apply(Verdict(wire, "verdict.some.reason"));
+
+        Assert.Equal(kind, vm.VerdictKind);
+        Assert.Equal(labelKey, vm.VerdictLabelKey);
+        Assert.True(vm.VerdictHasReason);
+        Assert.Equal("verdict.some.reason", vm.VerdictReasonKey);
+        Assert.True(vm.VerdictHasMeaning);
+        Assert.Equal(meaningKey, vm.VerdictMeaningKey);
+    }
+
+    [Fact]
+    public void An_unrecognised_verdict_is_undetermined_never_works()
+    {
+        var vm = new SessionViewModel();
+
+        vm.Apply(Verdict("something_new", "verdict.some.reason"));
+
+        Assert.Equal(VerdictKind.Undetermined, vm.VerdictKind);
+    }
+
+    [Fact]
+    public void Session_verdict_overrides_the_per_process_verdict_and_reports_the_family_size()
+    {
+        var vm = new SessionViewModel();
+        vm.Apply(Verdict("works", "verdict.works.covered")); // per-process, at start
+        Assert.Equal(VerdictKind.Works, vm.VerdictKind);
+
+        vm.Apply(new SessionVerdictEvent
+        {
+            V = ProtocolJson.ProtocolVersion,
+            Verdict = "partial",
+            ReasonKey = "verdict.partial.family",
+            ProcessCount = 2,
+        });
+
+        Assert.Equal(VerdictKind.Partial, vm.VerdictKind); // the family aggregate wins
+        Assert.Equal(2, vm.ProcessCount);
+        Assert.True(vm.IsFamily);
+    }
+
+    private static VerdictEvent Verdict(string verdict, string reasonKey) => new()
+    {
+        V = ProtocolJson.ProtocolVersion,
+        Verdict = verdict,
+        ReasonKey = reasonKey,
+    };
 }

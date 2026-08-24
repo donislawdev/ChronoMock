@@ -28,4 +28,16 @@
   <sys:String x:Key="handshake.protocol_mismatch">Protocol version mismatch - not started</sys:String>
   <sys:String x:Key="handshake.bitness_mismatch">Core bitness mismatch - not started</sys:String>
 
+  <!-- Verifier verdict (chrono-mock 7.1). The label is paired with a glyph and a colour. -->
+  <sys:String x:Key="verdict.works">Works</sys:String>
+  <sys:String x:Key="verdict.partial">Partial</sys:String>
+  <sys:String x:Key="verdict.fails">Fails</sys:String>
+  <sys:String x:Key="verdict.undetermined">Undetermined</sys:String>
+  <sys:String x:Key="verdict.unknown">Unknown</sys:String>
+
+  <!-- One-sentence "what this means for the test" for a non-works verdict. -->
+  <sys:String x:Key="verdict.partial.meaning">Some time channels were not covered - their readings are real, so the test may be unreliable.</sys:String>
+  <sys:String x:Key="verdict.fails.meaning">The swap did not cover the key channels - the session was refused as unreliable.</sys:String>
+  <sys:String x:Key="verdict.undetermined.meaning">Coverage could not be determined - treated as unproven, never as working.</sys:String>
+
 </ResourceDictionary>
