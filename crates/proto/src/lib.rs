@@ -176,6 +176,15 @@ pub enum Event {
         clean: bool,
         residue_keys: Vec<String>,
         target_exit_code: Option<i32>,
+        /// Session duration - real and fake milliseconds elapsed - and the fake wall clock reached
+        /// at end. Additive (serde default), so a report can state how long the session ran and how
+        /// far the fake clock advanced reliably, even for a session too short to emit a heartbeat.
+        #[serde(default)]
+        elapsed_real_ms: i64,
+        #[serde(default)]
+        elapsed_fake_ms: i64,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        fake_end_wall: Option<String>,
     },
     Error {
         v: u32,
@@ -338,6 +347,31 @@ mod tests {
             Event::SessionVerdict { verdict, process_count, .. } => {
                 assert_eq!(verdict, "works");
                 assert_eq!(process_count, 2);
+            }
+            _ => panic!("wrong event variant"),
+        }
+    }
+
+    #[test]
+    fn ended_carries_timing_and_defaults_when_absent() {
+        let ev = Event::Ended {
+            v: PROTOCOL_VERSION,
+            clean: true,
+            residue_keys: vec![],
+            target_exit_code: Some(0),
+            elapsed_real_ms: 1500,
+            elapsed_fake_ms: 90000,
+            fake_end_wall: Some("2038-01-19 03:15:07".into()),
+        };
+        let line = ev.to_ndjson();
+        assert!(line.contains(r#""elapsed_real_ms":1500"#), "got {line}");
+        assert!(line.contains(r#""fake_end_wall":"2038-01-19 03:15:07""#), "got {line}");
+        // An older ended line without the timing fields still parses (serde default).
+        let old = r#"{"type":"ended","v":1,"clean":true,"residue_keys":[],"target_exit_code":null}"#;
+        match parse_event(old).unwrap() {
+            Event::Ended { elapsed_real_ms, fake_end_wall, .. } => {
+                assert_eq!(elapsed_real_ms, 0);
+                assert!(fake_end_wall.is_none());
             }
             _ => panic!("wrong event variant"),
         }

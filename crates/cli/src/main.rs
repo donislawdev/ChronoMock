@@ -358,7 +358,7 @@ fn driver_run(argv: &[String]) -> i32 {
     let mut uncovered: Vec<(u32, String)> = Vec::new(); // (pid, channel) - the honest gaps
     let mut covered: Vec<(u32, String, u64)> = Vec::new(); // (pid, channel, calls) - what took effect
     let mut observed: Vec<(u32, String, u64)> = Vec::new(); // (pid, channel, calls) - hooked, left real
-    let mut last_state: Option<(String, i64, i64)> = None; // (fake wall, elapsed_real_ms, elapsed_fake_ms)
+    let mut timing: Option<(String, i64, i64)> = None; // (fake wall reached, real ms, fake ms) from `ended`
     let mut states_seen: u64 = 0;
     let mut end_sent = false;
     if let Some(stdout) = child.stdout.take() {
@@ -382,9 +382,8 @@ fn driver_run(argv: &[String]) -> i32 {
                     // no tick budget keeps the substitution for the target's whole
                     // life. ticks > 0 ends after that many state heartbeats.
                 }
-                Ok(Event::State { fake, elapsed_real_ms, elapsed_fake_ms, .. }) => {
+                Ok(Event::State { .. }) => {
                     states_seen += 1;
-                    last_state = Some((fake.wall, elapsed_real_ms, elapsed_fake_ms));
                     if let Some((t, m)) = ra.set_after {
                         if states_seen == t {
                             send_set_multiplier(&mut stdin, m);
@@ -422,7 +421,12 @@ fn driver_run(argv: &[String]) -> i32 {
                         uncovered.push((pid, ch));
                     }
                 }
-                Ok(Event::Ended { .. }) => break,
+                Ok(Event::Ended { elapsed_real_ms, elapsed_fake_ms, fake_end_wall, .. }) => {
+                    if let Some(wall) = fake_end_wall {
+                        timing = Some((wall, elapsed_real_ms, elapsed_fake_ms));
+                    }
+                    break;
+                }
                 _ => {}
             }
         }
@@ -440,7 +444,7 @@ fn driver_run(argv: &[String]) -> i32 {
         uncovered,
         covered,
         observed,
-        timing: last_state,
+        timing,
     };
     if let Some(path) = &ra.report {
         let params = EvidenceParams {
@@ -873,6 +877,9 @@ fn ended_clean() -> Event {
         clean: true,
         residue_keys: vec![],
         target_exit_code: None,
+        elapsed_real_ms: 0,
+        elapsed_fake_ms: 0,
+        fake_end_wall: None,
     }
 }
 
@@ -971,6 +978,9 @@ fn run_session(
 
     // Final fold so a child that joined since the last heartbeat still counts in the family.
     fold_children(&mut session, &mut family, &mut family_pids);
+    // Capture the session clocks before ending so `ended` can state the duration and the fake wall
+    // clock reached - reliably, even for a session too short to have emitted a heartbeat.
+    let final_state = session.state();
     session.end();
     emit(&Event::SessionVerdict {
         v: PROTOCOL_VERSION,
@@ -983,6 +993,9 @@ fn run_session(
         clean: true,
         residue_keys: vec![],
         target_exit_code: target_exit,
+        elapsed_real_ms: final_state.elapsed_real_ms,
+        elapsed_fake_ms: final_state.elapsed_fake_ms,
+        fake_end_wall: Some(filetime_utc_to_wall(final_state.fake_ft, final_state.tz_bias)),
     });
     family.exit_code()
 }
@@ -1245,7 +1258,7 @@ mod tests {
     }
 
     #[test]
-    fn session_timing_shows_elapsed_when_a_heartbeat_was_seen() {
+    fn session_timing_section_shows_reached_clock_and_elapsed() {
         let r = SessionReport {
             session_verdict: Some(("works".into(), "session.family_covered".into(), 1)),
             timing: Some(("2038-01-19 03:15:07".into(), 1500, 90000)),
