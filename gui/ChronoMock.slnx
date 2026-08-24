@@ -1,0 +1,5 @@
+<Solution>
+  <Project Path="ChronoMock.Protocol.Tests/ChronoMock.Protocol.Tests.csproj" />
+  <Project Path="ChronoMock.Protocol/ChronoMock.Protocol.csproj" />
+  <Project Path="ChronoMock.TestTarget/ChronoMock.TestTarget.csproj" />
+</Solution>

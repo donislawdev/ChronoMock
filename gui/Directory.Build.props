@@ -1,0 +1,17 @@
+<Project>
+  <!--
+    Shared conventions for every gui/ project. Single source of truth: a copy in an
+    individual .csproj silently wins and gives you two sources of one setting, so these
+    live here and are not repeated per project (method from the betterwindowsservices
+    project). RuntimeIdentifier deliberately does NOT live here - it belongs to publish,
+    and forced into shared props it breaks the test host.
+  -->
+  <PropertyGroup>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+    <NeutralLanguage>en</NeutralLanguage>
+  </PropertyGroup>
+</Project>

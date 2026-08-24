@@ -19,6 +19,11 @@
 *.user
 *.suo
 
+# The user's GLOBAL gitignore (~/.gitignore, a Unity template) ignores *.csproj and *.sln.
+# Re-include our C# project files so the build definition is actually tracked. We use .slnx,
+# which the global *.sln pattern does not match, so the solution needs no negation.
+!*.csproj
+
 # === OS / editor noise ===
 .DS_Store
 Thumbs.db

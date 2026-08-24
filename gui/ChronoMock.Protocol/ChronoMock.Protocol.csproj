@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The C# side of the machine protocol (ADR-6): wire DTOs plus the client that drives
+    a core process. No UI, no WPF - a portable net10.0 library, deliberately AnyCPU. The
+    GUI is a CLIENT of the protocol, not FFI, so it launches the matching-bitness core as
+    a child process and never needs to match the target's bitness itself.
+    Zero shipped third-party dependencies: System.Text.Json and System.Threading.Channels
+    are in-box (rule 8 - a new dependency needs justification and the licence sieve).
+  -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+</Project>

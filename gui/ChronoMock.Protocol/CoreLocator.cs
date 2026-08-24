@@ -1,0 +1,37 @@
+namespace ChronoMock.Protocol;
+
+/// <summary>
+/// Resolves which core executable to launch for a given target, by the target's PE bitness. The
+/// base-directory strategy is pluggable so a dev checkout (cargo target dirs) and a shipped portable
+/// layout (both cores side by side) differ only here.
+/// </summary>
+public sealed class CoreLocator
+{
+    private readonly Func<PeReader.Machine, string> _resolveCorePath;
+
+    public CoreLocator(Func<PeReader.Machine, string> resolveCorePath)
+        => _resolveCorePath = resolveCorePath;
+
+    /// <summary>
+    /// Path to the core executable whose bitness matches the target at <paramref name="targetExePath"/>.
+    /// Throws when the target's bitness cannot be read - an honest error, never a guessed default.
+    /// </summary>
+    public string CoreForTarget(string targetExePath)
+    {
+        var machine = PeReader.ReadMachine(targetExePath);
+        if (machine is PeReader.Machine.Unknown)
+        {
+            throw new InvalidOperationException($"cannot determine the bitness of '{targetExePath}'");
+        }
+
+        return _resolveCorePath(machine);
+    }
+
+    /// <summary>Dev-checkout factory: the cores are the cargo build outputs under <paramref name="repoRoot"/>.</summary>
+    public static CoreLocator ForRepo(string repoRoot) => new(machine => machine switch
+    {
+        PeReader.Machine.X64 => Path.Combine(repoRoot, "target", "release", "chrono.exe"),
+        PeReader.Machine.X86 => Path.Combine(repoRoot, "target", "i686-pc-windows-msvc", "release", "chrono.exe"),
+        _ => throw new InvalidOperationException($"unsupported bitness {machine}"),
+    });
+}
