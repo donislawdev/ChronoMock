@@ -348,6 +348,8 @@ fn driver_run(argv: &[String]) -> i32 {
     let mut vanished: Option<(String, u64)> = None; // (reason_key, lived_ms)
     let mut warnings: Vec<String> = Vec::new();
     let mut uncovered: Vec<(u32, String)> = Vec::new(); // (pid, channel) - the honest gaps
+    let mut covered: Vec<(u32, String, u64)> = Vec::new(); // (pid, channel, calls) - what took effect
+    let mut observed: Vec<(u32, String, u64)> = Vec::new(); // (pid, channel, calls) - hooked, left real
     let mut states_seen: u64 = 0;
     let mut end_sent = false;
     if let Some(stdout) = child.stdout.take() {
@@ -394,11 +396,17 @@ fn driver_run(argv: &[String]) -> i32 {
                 Ok(Event::Vanished { reason_key, lived_ms, .. }) => {
                     vanished = Some((reason_key, lived_ms));
                 }
-                Ok(Event::Coverage { pid, uncovered: unc, warning_keys, .. }) => {
+                Ok(Event::Coverage { pid, covered: cov, observed: obs, uncovered: unc, warning_keys, .. }) => {
                     for k in warning_keys {
                         if !warnings.contains(&k) {
                             warnings.push(k);
                         }
+                    }
+                    for ch in cov {
+                        covered.push((pid, ch.channel, ch.calls));
+                    }
+                    for ch in obs {
+                        observed.push((pid, ch.channel, ch.calls));
                     }
                     for ch in unc {
                         uncovered.push((pid, ch));
@@ -421,6 +429,8 @@ fn driver_run(argv: &[String]) -> i32 {
             vanished,
             warnings,
             uncovered,
+            covered,
+            observed,
         };
         print!("{}", render_report(&report));
     }
@@ -450,6 +460,12 @@ struct SessionReport {
     /// Channels queried but not covered, tagged with the pid that queried them (never summed
     /// across processes - untouchable rule 4).
     uncovered: Vec<(u32, String)>,
+    /// Channels covered (substituted), tagged with the pid and the call count. Per-pid, never
+    /// summed across processes (untouchable rule 4).
+    covered: Vec<(u32, String, u64)>,
+    /// Channels hooked but deliberately left real (waits, network, multimedia timers) - their own
+    /// bucket so a reader never reads them as substituted.
+    observed: Vec<(u32, String, u64)>,
 }
 
 /// One-line English headline for a verdict wire token. Upper-case so success and failure are
@@ -507,6 +523,15 @@ fn describe_warning(key: &str) -> String {
     }
 }
 
+/// "1 call" vs "N calls" - a bare plural reads wrong in a report a user pastes into a bug ticket.
+fn calls_label(n: u64) -> String {
+    if n == 1 {
+        "1 call".to_string()
+    } else {
+        format!("{n} calls")
+    }
+}
+
 /// Render the session outcome as a human report (English). Failure and non-effect are the
 /// point: the Stage 2 gate is recognising when substitution did NOT take effect.
 fn render_report(r: &SessionReport) -> String {
@@ -536,6 +561,20 @@ fn render_report(r: &SessionReport) -> String {
         out.push_str(&format!("            reason: {reason_key}\n"));
     } else {
         out.push_str("  verdict:  <no verdict emitted>\n");
+    }
+
+    if !r.covered.is_empty() {
+        out.push_str("  covered channels (substituted, with call counts):\n");
+        for (pid, ch, calls) in &r.covered {
+            out.push_str(&format!("            - pid {pid}: {ch} ({})\n", calls_label(*calls)));
+        }
+    }
+
+    if !r.observed.is_empty() {
+        out.push_str("  observed channels (hooked but left real):\n");
+        for (pid, ch, calls) in &r.observed {
+            out.push_str(&format!("            - pid {pid}: {ch} ({})\n", calls_label(*calls)));
+        }
     }
 
     if !r.uncovered.is_empty() {
@@ -1010,6 +1049,8 @@ mod tests {
             vanished: None,
             warnings: vec![],
             uncovered: vec![],
+            covered: vec![],
+            observed: vec![],
         }
     }
 
@@ -1050,5 +1091,21 @@ mod tests {
         assert!(out.contains("object waits are hooked"), "got:\n{out}");
         // An unknown warning key is shown verbatim - we never invent an explanation.
         assert!(out.contains("some.unknown_key"), "got:\n{out}");
+    }
+
+    #[test]
+    fn covered_and_observed_channels_are_shown_with_counts_per_pid() {
+        let r = SessionReport {
+            session_verdict: Some(("works".into(), "session.family_covered".into(), 1)),
+            covered: vec![(1234, "GetSystemTime".into(), 7)],
+            observed: vec![(1234, "WaitForSingleObject".into(), 1)],
+            ..empty_report()
+        };
+        let out = render_report(&r);
+        assert!(out.contains("covered channels"), "got:\n{out}");
+        assert!(out.contains("pid 1234: GetSystemTime (7 calls)"), "got:\n{out}");
+        assert!(out.contains("observed channels (hooked but left real)"), "got:\n{out}");
+        // Singular reads correctly (1 call, not "1 calls").
+        assert!(out.contains("pid 1234: WaitForSingleObject (1 call)"), "got:\n{out}");
     }
 }
