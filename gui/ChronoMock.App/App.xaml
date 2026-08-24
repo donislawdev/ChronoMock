@@ -1,7 +1,8 @@
 <Application x:Class="ChronoMock.App.App"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml">
+             xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+             xmlns:local="clr-namespace:ChronoMock.App">
   <Application.Resources>
     <ResourceDictionary>
       <ResourceDictionary.MergedDictionaries>
@@ -17,6 +18,10 @@
         <ResourceDictionary Source="Themes/Values.xaml" />
         <ResourceDictionary Source="Themes/Colours.xaml" />
       </ResourceDictionary.MergedDictionaries>
+
+      <!-- App-wide so both the window and the clock tiles resolve it. Renders a translation key (as the
+           core and the VM emit) to text in the current language (untouchable rules 15/16). -->
+      <local:TranslationKeyConverter x:Key="KeyToText" />
     </ResourceDictionary>
   </Application.Resources>
 </Application>

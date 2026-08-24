@@ -1,0 +1,32 @@
+<UserControl x:Class="ChronoMock.App.Controls.ClockTile"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             Focusable="False"
+             IsTabStop="False">
+  <!--
+    One tile template for BOTH clocks (zasady/13 section 2.4): the fake and the real clock are two instances
+    of this, so they cannot drift apart. Only named resources here - the literal guard scans this view.
+    Meaning is carried by the role LABEL and the explicit zone, never by colour alone (section 9).
+  -->
+  <Border Background="{DynamicResource BrushBgSurface}"
+          CornerRadius="{StaticResource RadiusMd}"
+          Padding="{StaticResource SpaceLg}">
+    <StackPanel>
+      <TextBlock Text="{Binding RoleKey, Converter={StaticResource KeyToText}}"
+                 FontSize="{StaticResource FontSizeCaption}"
+                 Foreground="{DynamicResource BrushTextSecondary}" />
+      <TextBlock Text="{Binding Date}"
+                 Margin="{StaticResource SpaceXs}"
+                 FontSize="{StaticResource FontSizeSubtitle}"
+                 Foreground="{DynamicResource BrushTextPrimary}" />
+      <TextBlock Text="{Binding Time}"
+                 FontSize="{StaticResource FontSizeClock}"
+                 FontWeight="SemiBold"
+                 Foreground="{DynamicResource BrushTextPrimary}" />
+      <TextBlock Text="{Binding Zone}"
+                 Margin="{StaticResource SpaceXs}"
+                 FontSize="{StaticResource FontSizeCaption}"
+                 Foreground="{DynamicResource BrushTextSecondary}" />
+    </StackPanel>
+  </Border>
+</UserControl>

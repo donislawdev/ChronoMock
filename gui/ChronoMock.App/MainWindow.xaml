@@ -2,6 +2,7 @@
                  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
                  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
                  xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+                 xmlns:controls="clr-namespace:ChronoMock.App.Controls"
                  Title="{DynamicResource app.title}"
                  Width="720"
                  Height="480"
@@ -19,20 +20,47 @@
 
     <ui:TitleBar Grid.Row="0" Title="{DynamicResource app.title}" />
 
-    <StackPanel Grid.Row="1"
-                Margin="{StaticResource SpaceXl}"
-                HorizontalAlignment="Center"
-                VerticalAlignment="Center">
-      <TextBlock Text="{DynamicResource app.title}"
-                 FontSize="{StaticResource FontSizeTitle}"
-                 FontWeight="SemiBold"
-                 Foreground="{DynamicResource BrushTextPrimary}"
-                 HorizontalAlignment="Center" />
-      <TextBlock Text="{DynamicResource app.foundation_placeholder}"
-                 Margin="{StaticResource SpaceSm}"
-                 FontSize="{StaticResource FontSizeBody}"
-                 Foreground="{DynamicResource BrushTextSecondary}"
-                 HorizontalAlignment="Center" />
-    </StackPanel>
+    <Grid Grid.Row="1" Margin="{StaticResource SpaceXl}">
+      <Grid.RowDefinitions>
+        <RowDefinition Height="*" />
+        <RowDefinition Height="Auto" />
+        <RowDefinition Height="Auto" />
+      </Grid.RowDefinitions>
+
+      <!-- The two clocks: fake and real, each from the same tile template, each with its explicit zone. -->
+      <Grid Grid.Row="0" VerticalAlignment="Center">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="*" />
+          <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
+        <controls:ClockTile Grid.Column="0" Margin="{StaticResource SpaceSm}" DataContext="{Binding Fake}" />
+        <controls:ClockTile Grid.Column="1" Margin="{StaticResource SpaceSm}" DataContext="{Binding Real}" />
+      </Grid>
+
+      <!-- Status and rate. The meaning is carried by the translated label, not by colour (zasady/13 9). -->
+      <StackPanel Grid.Row="1" Margin="{StaticResource SpaceMd}" HorizontalAlignment="Center">
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+          <TextBlock Text="{Binding StatusKey, Converter={StaticResource KeyToText}}"
+                     FontSize="{StaticResource FontSizeBody}"
+                     Foreground="{DynamicResource BrushTextPrimary}" />
+          <TextBlock Text="{Binding MultiplierText}"
+                     Margin="{StaticResource SpaceSm}"
+                     FontSize="{StaticResource FontSizeBody}"
+                     Foreground="{DynamicResource BrushTextSecondary}" />
+        </StackPanel>
+        <TextBlock Text="{Binding LastError}"
+                   FontSize="{StaticResource FontSizeCaption}"
+                   Foreground="{DynamicResource BrushTextSecondary}"
+                   HorizontalAlignment="Center"
+                   TextWrapping="Wrap" />
+      </StackPanel>
+
+      <Button Grid.Row="2"
+              Margin="{StaticResource SpaceSm}"
+              HorizontalAlignment="Center"
+              Content="{DynamicResource action.start}"
+              IsEnabled="{Binding CanStart}"
+              Click="OnStartClick" />
+    </Grid>
   </Grid>
 </ui:FluentWindow>

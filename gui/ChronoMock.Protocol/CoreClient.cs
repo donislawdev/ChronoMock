@@ -46,11 +46,15 @@ public sealed class CoreClient : IAsyncDisposable
     /// </summary>
     public IReadOnlyCollection<string> Diagnostics => _diagnostics;
 
-    /// <summary>Launch the core and send <c>start</c> immediately (start-first, mirroring the core).</summary>
-    public static CoreClient Launch(string coreExePath, StartCommand start)
+    /// <summary>
+    /// Spawn the core WITHOUT sending a command, so the client can gate on <c>ready</c> - check the protocol
+    /// version and bitness (<see cref="HandshakeGate"/>) - before it commits to launching the target. The core
+    /// emits <c>ready</c> before it reads its first command (docs/08 section 3, fixed in 97eae17), so awaiting
+    /// <c>ready</c> here cannot deadlock.
+    /// </summary>
+    public static CoreClient Connect(string coreExePath)
     {
         ArgumentException.ThrowIfNullOrEmpty(coreExePath);
-        ArgumentNullException.ThrowIfNull(start);
 
         var psi = new ProcessStartInfo
         {
@@ -68,7 +72,17 @@ public sealed class CoreClient : IAsyncDisposable
 
         var process = Process.Start(psi)
             ?? throw new InvalidOperationException($"failed to start core '{coreExePath}'");
-        var client = new CoreClient(process);
+        return new CoreClient(process);
+    }
+
+    /// <summary>
+    /// Spawn the core and send <c>start</c> immediately (start-first). A convenience over <see cref="Connect"/>
+    /// for callers that do not gate on <c>ready</c> first - the conformance tests use it.
+    /// </summary>
+    public static CoreClient Launch(string coreExePath, StartCommand start)
+    {
+        ArgumentNullException.ThrowIfNull(start);
+        var client = Connect(coreExePath);
         client.Send(start);
         return client;
     }

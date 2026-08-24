@@ -5,6 +5,27 @@
   <!-- English interface strings. Keys are stable and English; values are the display text. A new
        language is a copy of this file named Strings.<culture>.xaml with the values translated. -->
   <sys:String x:Key="app.title">Chrono Mock</sys:String>
-  <sys:String x:Key="app.foundation_placeholder">Session panel coming next.</sys:String>
+
+  <!-- Clock roles. -->
+  <sys:String x:Key="clock.fake">Fake clock</sys:String>
+  <sys:String x:Key="clock.real">Real clock</sys:String>
+
+  <!-- Actions. -->
+  <sys:String x:Key="action.start">Start</sys:String>
+
+  <!-- Session status. Meaning is carried by this label, never by colour alone. -->
+  <sys:String x:Key="status.idle">Not started</sys:String>
+  <sys:String x:Key="status.connecting">Starting the core</sys:String>
+  <sys:String x:Key="status.running">Running</sys:String>
+  <sys:String x:Key="status.ended">Session ended</sys:String>
+  <sys:String x:Key="status.did_not_take_effect">Did not take effect - the target vanished</sys:String>
+  <sys:String x:Key="status.core_stopped">Core stopped - the target time is frozen</sys:String>
+  <sys:String x:Key="status.core_missing">Cannot start the demo session - build the solution first</sys:String>
+  <sys:String x:Key="status.no_ready">No handshake from the core</sys:String>
+  <sys:String x:Key="status.error">Session error</sys:String>
+
+  <!-- Handshake gate refusals (surfaced before the target is launched). -->
+  <sys:String x:Key="handshake.protocol_mismatch">Protocol version mismatch - not started</sys:String>
+  <sys:String x:Key="handshake.bitness_mismatch">Core bitness mismatch - not started</sys:String>
 
 </ResourceDictionary>

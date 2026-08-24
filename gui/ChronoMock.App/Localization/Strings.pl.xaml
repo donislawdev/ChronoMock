@@ -2,9 +2,29 @@
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
                     xmlns:sys="clr-namespace:System;assembly=System.Runtime">
 
-  <!-- Polish interface strings. Same key set as Strings.en.xaml (a test enforces this). "Chrono Mock"
-       is a proper name and stays untranslated. -->
+  <!-- Polish interface strings. Same key set as Strings.en.xaml (a test enforces parity); values translated. -->
   <sys:String x:Key="app.title">Chrono Mock</sys:String>
-  <sys:String x:Key="app.foundation_placeholder">Panel sesji juz wkrotce.</sys:String>
+
+  <!-- Clock roles. -->
+  <sys:String x:Key="clock.fake">Zegar fałszywy</sys:String>
+  <sys:String x:Key="clock.real">Zegar rzeczywisty</sys:String>
+
+  <!-- Actions. -->
+  <sys:String x:Key="action.start">Start</sys:String>
+
+  <!-- Session status. -->
+  <sys:String x:Key="status.idle">Nie uruchomiono</sys:String>
+  <sys:String x:Key="status.connecting">Uruchamianie rdzenia</sys:String>
+  <sys:String x:Key="status.running">Działa</sys:String>
+  <sys:String x:Key="status.ended">Sesja zakończona</sys:String>
+  <sys:String x:Key="status.did_not_take_effect">Nie zadziałało - cel zniknął</sys:String>
+  <sys:String x:Key="status.core_stopped">Rdzeń zatrzymany - czas celu zamrożony</sys:String>
+  <sys:String x:Key="status.core_missing">Nie można uruchomić sesji demo - najpierw zbuduj rozwiązanie</sys:String>
+  <sys:String x:Key="status.no_ready">Brak uzgodnienia z rdzeniem</sys:String>
+  <sys:String x:Key="status.error">Błąd sesji</sys:String>
+
+  <!-- Odmowy bramki uzgodnienia (zgłaszane, zanim cel zostanie uruchomiony). -->
+  <sys:String x:Key="handshake.protocol_mismatch">Niezgodna wersja protokołu - nie uruchomiono</sys:String>
+  <sys:String x:Key="handshake.bitness_mismatch">Niezgodna bitowość rdzenia - nie uruchomiono</sys:String>
 
 </ResourceDictionary>

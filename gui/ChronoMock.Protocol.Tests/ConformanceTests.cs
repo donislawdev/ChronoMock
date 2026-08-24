@@ -64,6 +64,28 @@ public class ConformanceTests
         Assert.Equal(0, exit); // works -> exit 0 (docs/08 section 8)
     }
 
+    [Fact]
+    public async Task Gated_connect_checks_ready_before_it_launches_then_drives_the_session()
+    {
+        var (core, target) = Fixture();
+
+        // Connect (spawn only, no start), gate on ready, THEN commit to launching the target - the safety
+        // the ready-first fix unlocked (docs/08 section 3), proven end to end against the real core.
+        await using var client = CoreClient.Connect(core);
+
+        var untilReady = await ReadUntilAsync(client, e => e.Any(x => x is ReadyEvent), ReadTimeout);
+        var ready = untilReady.OfType<ReadyEvent>().Single();
+        var gate = HandshakeGate.Check(ready, ProtocolJson.ProtocolVersion, PeReader.Machine.X64);
+        Assert.True(gate.IsOk);
+
+        client.Send(StartAt(target, mode: "multiplier", multiplier: 60));
+        var running = await ReadUntilAsync(client, e => e.OfType<StateEvent>().Count() >= 2, ReadTimeout);
+        Assert.True(running.OfType<StateEvent>().Count() >= 2);
+
+        client.Send(new EndCommand { Id = 99 });
+        _ = await ReadUntilAsync(client, e => e.Any(x => x is EndedEvent), ReadTimeout);
+    }
+
     private static (string core, string target) Fixture()
     {
         var repo = RepoPaths.RepoRoot();
