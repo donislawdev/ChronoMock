@@ -358,6 +358,7 @@ fn driver_run(argv: &[String]) -> i32 {
     let mut uncovered: Vec<(u32, String)> = Vec::new(); // (pid, channel) - the honest gaps
     let mut covered: Vec<(u32, String, u64)> = Vec::new(); // (pid, channel, calls) - what took effect
     let mut observed: Vec<(u32, String, u64)> = Vec::new(); // (pid, channel, calls) - hooked, left real
+    let mut last_state: Option<(String, i64, i64)> = None; // (fake wall, elapsed_real_ms, elapsed_fake_ms)
     let mut states_seen: u64 = 0;
     let mut end_sent = false;
     if let Some(stdout) = child.stdout.take() {
@@ -381,8 +382,9 @@ fn driver_run(argv: &[String]) -> i32 {
                     // no tick budget keeps the substitution for the target's whole
                     // life. ticks > 0 ends after that many state heartbeats.
                 }
-                Ok(Event::State { .. }) => {
+                Ok(Event::State { fake, elapsed_real_ms, elapsed_fake_ms, .. }) => {
                     states_seen += 1;
+                    last_state = Some((fake.wall, elapsed_real_ms, elapsed_fake_ms));
                     if let Some((t, m)) = ra.set_after {
                         if states_seen == t {
                             send_set_multiplier(&mut stdin, m);
@@ -438,6 +440,7 @@ fn driver_run(argv: &[String]) -> i32 {
         uncovered,
         covered,
         observed,
+        timing: last_state,
     };
     if let Some(path) = &ra.report {
         let params = EvidenceParams {
@@ -485,6 +488,9 @@ struct SessionReport {
     /// Channels hooked but deliberately left real (waits, network, multimedia timers) - their own
     /// bucket so a reader never reads them as substituted.
     observed: Vec<(u32, String, u64)>,
+    /// Last state heartbeat seen: (fake wall reached, real ms elapsed, fake ms elapsed), or None
+    /// when the session was too short for a heartbeat. View-only, sampled from the state stream.
+    timing: Option<(String, i64, i64)>,
 }
 
 /// One-line English headline for a verdict wire token. Upper-case so success and failure are
@@ -580,6 +586,15 @@ fn render_report(r: &SessionReport) -> String {
         out.push_str(&format!("            reason: {reason_key}\n"));
     } else {
         out.push_str("  verdict:  <no verdict emitted>\n");
+    }
+
+    if let Some((fake_wall, real_ms, fake_ms)) = &r.timing {
+        out.push_str(&format!("  session:  fake clock reached {fake_wall}\n"));
+        out.push_str(&format!(
+            "            real elapsed {:.1}s, fake elapsed {:.1}s\n",
+            *real_ms as f64 / 1000.0,
+            *fake_ms as f64 / 1000.0
+        ));
     }
 
     if !r.covered.is_empty() {
@@ -1126,6 +1141,7 @@ mod tests {
             uncovered: vec![],
             covered: vec![],
             observed: vec![],
+            timing: None,
         }
     }
 
@@ -1226,5 +1242,18 @@ mod tests {
         assert_eq!(format_bias(0), "+00:00");
         assert_eq!(format_bias(-120), "+02:00"); // UTC+2
         assert_eq!(format_bias(300), "-05:00"); // UTC-5
+    }
+
+    #[test]
+    fn session_timing_shows_elapsed_when_a_heartbeat_was_seen() {
+        let r = SessionReport {
+            session_verdict: Some(("works".into(), "session.family_covered".into(), 1)),
+            timing: Some(("2038-01-19 03:15:07".into(), 1500, 90000)),
+            ..empty_report()
+        };
+        let out = render_report(&r);
+        assert!(out.contains("session:  fake clock reached 2038-01-19 03:15:07"), "got:\n{out}");
+        // 1.5s real mapped to 90s fake - the x60 acceleration is visible in the report.
+        assert!(out.contains("real elapsed 1.5s, fake elapsed 90.0s"), "got:\n{out}");
     }
 }
