@@ -720,6 +720,17 @@ fn emit_coverage(pid: u32, cov: &chrono_core::Coverage) {
 }
 
 fn core_mode() -> i32 {
+    // Handshake first - before reading any command - so a client can verify `protocol` and
+    // `bitness` before it sends `start` (docs/08 section 3). Emitting `ready` ahead of the read also
+    // makes the protocol deadlock-proof: a client may gate on `ready` or send `start` first, both work.
+    emit(&Event::Ready {
+        v: PROTOCOL_VERSION,
+        protocol: PROTOCOL_VERSION,
+        core_version: CORE_VERSION.into(),
+        bitness: this_bitness().into(),
+        capabilities: vec![],
+    });
+
     // Read the first command (`start`) from a reader we hand to the session loop
     // afterwards, so it can keep reading subsequent commands (query, end).
     let mut reader = BufReader::new(std::io::stdin());
@@ -763,15 +774,6 @@ fn core_mode() -> i32 {
             return 1;
         }
     };
-
-    // Handshake first, before doing any work.
-    emit(&Event::Ready {
-        v: PROTOCOL_VERSION,
-        protocol: PROTOCOL_VERSION,
-        core_version: CORE_VERSION.into(),
-        bitness: this_bitness().into(),
-        capabilities: vec![],
-    });
 
     // Prepare and start the session (Stage 2: real injection of one wall channel).
     let hook = match hook_dll_path() {

@@ -20,9 +20,14 @@
 *.suo
 
 # The user's GLOBAL gitignore (~/.gitignore, a Unity template) ignores *.csproj and *.sln.
-# Re-include our C# project files so the build definition is actually tracked. We use .slnx,
-# which the global *.sln pattern does not match, so the solution needs no negation.
+# Re-include our C# build-definition files here (a repo .gitignore overrides the global). These
+# are defensive: a silently-dropped Directory.Build.props is worse than a broken clone, because
+# the clone still builds - just without our shared settings (TreatWarningsAsErrors, Nullable).
 !*.csproj
+!*.sln
+!*.slnx
+!*.props
+!*.targets
 
 # === OS / editor noise ===
 .DS_Store
