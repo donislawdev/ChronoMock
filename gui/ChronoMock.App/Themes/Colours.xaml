@@ -1,0 +1,29 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+  <!--
+    Dark palette. One theme only (7.4), but the colours live here as named brushes so a second theme
+    would be a new file, not a rewrite of views (zasady/13 section 7). Colours are chosen to hold
+    contrast on the dark base - the accessibility floor holds even though we ship dark only. Meaning
+    never rides on colour alone: a shape or label always accompanies a status colour (section 9).
+  -->
+
+  <!-- Surfaces and text. -->
+  <SolidColorBrush x:Key="BrushBgBase" Color="#FF1B1B1F" />
+  <SolidColorBrush x:Key="BrushBgSurface" Color="#FF26262B" />
+  <SolidColorBrush x:Key="BrushBgSurfaceAlt" Color="#FF2F2F35" />
+  <SolidColorBrush x:Key="BrushStroke" Color="#FF3A3A42" />
+  <SolidColorBrush x:Key="BrushTextPrimary" Color="#FFF2F2F4" />
+  <SolidColorBrush x:Key="BrushTextSecondary" Color="#FFB4B4BE" />
+
+  <!-- Accent and keyboard focus (focus ring must be visibly high-contrast, section 9). -->
+  <SolidColorBrush x:Key="BrushAccent" Color="#FF4CC2FF" />
+  <SolidColorBrush x:Key="BrushFocusRing" Color="#FF7CD0FF" />
+
+  <!-- Verdict status colours. Always paired with a shape and a label, never colour alone. -->
+  <SolidColorBrush x:Key="BrushStatusWorks" Color="#FF4EC9A8" />
+  <SolidColorBrush x:Key="BrushStatusPartial" Color="#FFE5C07B" />
+  <SolidColorBrush x:Key="BrushStatusFails" Color="#FFF0736A" />
+  <SolidColorBrush x:Key="BrushStatusUndetermined" Color="#FF9AA0A6" />
+
+</ResourceDictionary>

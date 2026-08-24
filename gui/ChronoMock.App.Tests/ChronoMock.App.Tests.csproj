@@ -1,0 +1,37 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Tests for the GUI foundation. net10.0-windows + UseWPF so the window-build test can construct the
+    real window on an STA thread, and the localization service (XamlReader) can load the loose files.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows10.0.17763.0</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="coverlet.collector" Version="6.0.4" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\ChronoMock.App\ChronoMock.App.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The app's loose language files, copied into the test output so the localization service and the
+         window-build host find them at AppContext.BaseDirectory/Localization - the same layout the
+         running app sees. -->
+    <Content Include="..\ChronoMock.App\Localization\**\*.xaml"
+             Link="Localization\%(RecursiveDir)%(Filename)%(Extension)"
+             CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+</Project>

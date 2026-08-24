@@ -1,0 +1,38 @@
+<ui:FluentWindow x:Class="ChronoMock.App.MainWindow"
+                 xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                 xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                 xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+                 Title="{DynamicResource app.title}"
+                 Width="720"
+                 Height="480"
+                 MinWidth="480"
+                 MinHeight="320"
+                 Background="{DynamicResource BrushBgBase}"
+                 ExtendsContentIntoTitleBar="True"
+                 WindowBackdropType="None"
+                 WindowStartupLocation="CenterScreen">
+  <Grid>
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="*" />
+    </Grid.RowDefinitions>
+
+    <ui:TitleBar Grid.Row="0" Title="{DynamicResource app.title}" />
+
+    <StackPanel Grid.Row="1"
+                Margin="{StaticResource SpaceXl}"
+                HorizontalAlignment="Center"
+                VerticalAlignment="Center">
+      <TextBlock Text="{DynamicResource app.title}"
+                 FontSize="{StaticResource FontSizeTitle}"
+                 FontWeight="SemiBold"
+                 Foreground="{DynamicResource BrushTextPrimary}"
+                 HorizontalAlignment="Center" />
+      <TextBlock Text="{DynamicResource app.foundation_placeholder}"
+                 Margin="{StaticResource SpaceSm}"
+                 FontSize="{StaticResource FontSizeBody}"
+                 Foreground="{DynamicResource BrushTextSecondary}"
+                 HorizontalAlignment="Center" />
+    </StackPanel>
+  </Grid>
+</ui:FluentWindow>

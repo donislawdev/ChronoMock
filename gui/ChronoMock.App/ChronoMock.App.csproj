@@ -1,0 +1,40 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Chrono Mock GUI (Stage 3). A CLIENT of the machine protocol (ADR-6), not FFI, so it stays
+    AnyCPU and launches the matching-bitness core as a child process. Dark theme only (7.4).
+    The Windows support floor is pinned in the TFM (Win10 1809 / Server 2019) - a compile-time
+    floor beats a sentence in a doc (method from the betterwindowsservices project). The exact
+    floor ties to the open "minimum Windows version" decision (chrono-mock.md 9.4, question 7).
+  -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows10.0.17763.0</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <IsPackable>false</IsPackable>
+    <!-- AnyCPU is deliberate: the GUI launches the right-bitness core, it never matches the target itself. -->
+    <Platforms>AnyCPU</Platforms>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!--
+      wpfui 4.3.0 - current stable (nuget.org, published 2026-05-04), MIT (rule-8 licence sieve:
+      MIT is GPL-3.0 compatible; a legal assessment, not a lawyer's ruling). Pinned, never floating:
+      a controls library that changes the product's look on package restore is a change nobody chose.
+      The MIT notice ships in THIRD-PARTY-NOTICES.md.
+    -->
+    <PackageReference Include="WPF-UI" Version="4.3.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\ChronoMock.Protocol\ChronoMock.Protocol.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Language files are loose Content (not compiled BAML), so anyone can add a language by dropping
+         a Strings.<culture>.xaml next to the app - no recompile (untouchable rule 15). -->
+    <Page Remove="Localization\**\*.xaml" />
+    <Content Include="Localization\**\*.xaml" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

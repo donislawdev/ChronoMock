@@ -1,0 +1,22 @@
+<Application x:Class="ChronoMock.App.App"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml">
+  <Application.Resources>
+    <ResourceDictionary>
+      <ResourceDictionary.MergedDictionaries>
+        <!--
+          Order is load-bearing (measured method from the betterwindowsservices project):
+          the wpfui dictionaries come FIRST and our own come LAST, because a later-merged
+          dictionary wins. Within ours, Values before Colours (StaticResource resolves as the
+          file is read). There is deliberately NO ThemeMode on <Application>: set together with
+          the wpfui dictionaries it throws at startup (AllowsTransparency after the window shows).
+        -->
+        <ui:ThemesDictionary Theme="Dark" />
+        <ui:ControlsDictionary />
+        <ResourceDictionary Source="Themes/Values.xaml" />
+        <ResourceDictionary Source="Themes/Colours.xaml" />
+      </ResourceDictionary.MergedDictionaries>
+    </ResourceDictionary>
+  </Application.Resources>
+</Application>

@@ -1,0 +1,32 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:sys="clr-namespace:System;assembly=System.Runtime">
+
+  <!--
+    Design VALUES - one source, referenced by name (zasady/13 section 2.1). Views point at these
+    names, never at raw numbers, and the literal guard reddens on a raw number in a design attribute.
+    Values live before styles because StaticResource resolves as the file is read.
+  -->
+
+  <!-- Closed spacing scale (uniform Thickness). A view that wants 7 takes the nearest named step - the
+       scale cannot be bypassed without tripping the guard (zasady/13 sections 2.2 and 2.3). -->
+  <Thickness x:Key="SpaceXs">4</Thickness>
+  <Thickness x:Key="SpaceSm">8</Thickness>
+  <Thickness x:Key="SpaceMd">12</Thickness>
+  <Thickness x:Key="SpaceLg">16</Thickness>
+  <Thickness x:Key="SpaceXl">24</Thickness>
+  <Thickness x:Key="SpaceXxl">32</Thickness>
+
+  <!-- Typography: a fixed set of size roles, not a free axis. Caption is the legibility floor. -->
+  <sys:Double x:Key="FontSizeCaption">12</sys:Double>
+  <sys:Double x:Key="FontSizeBody">14</sys:Double>
+  <sys:Double x:Key="FontSizeSubtitle">18</sys:Double>
+  <sys:Double x:Key="FontSizeTitle">24</sys:Double>
+  <sys:Double x:Key="FontSizeClock">34</sys:Double>
+
+  <!-- Radii and stroke. -->
+  <CornerRadius x:Key="RadiusSm">4</CornerRadius>
+  <CornerRadius x:Key="RadiusMd">8</CornerRadius>
+  <sys:Double x:Key="StrokeThin">1</sys:Double>
+
+</ResourceDictionary>

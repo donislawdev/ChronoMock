@@ -1,0 +1,10 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:sys="clr-namespace:System;assembly=System.Runtime">
+
+  <!-- Polish interface strings. Same key set as Strings.en.xaml (a test enforces this). "Chrono Mock"
+       is a proper name and stays untranslated. -->
+  <sys:String x:Key="app.title">Chrono Mock</sys:String>
+  <sys:String x:Key="app.foundation_placeholder">Panel sesji juz wkrotce.</sys:String>
+
+</ResourceDictionary>
