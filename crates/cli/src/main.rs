@@ -45,7 +45,7 @@ fn main() {
 }
 
 fn print_usage() {
-    eprintln!("usage: chrono run <target> [--at <local-moment>] [--zone <+HH:MM>] [--mode <flow|frozen|xN>] [--scale-duration] [--ticks N] [--set-after T:M] [--jump-after T:moment] [--args \"...\"] [--json]");
+    eprintln!("usage: chrono run <target> [--at <local-moment>] [--zone <+HH:MM>] [--mode <flow|frozen|xN>] [--scale-duration] [--ticks N] [--set-after T:M] [--jump-after T:moment] [--args \"...\"] [--report <path>] [--json]");
 }
 
 fn this_bitness() -> &'static str {
@@ -76,6 +76,8 @@ struct RunArgs {
     set_after: Option<(u64, i64)>,
     /// After the Nth state heartbeat, jump the wall clock to the given moment.
     jump_after: Option<(u64, String)>,
+    /// Optional path to write the human evidence report to, in addition to stdout.
+    report: Option<String>,
     json: bool,
 }
 
@@ -113,6 +115,7 @@ fn parse_run_args(argv: &[String]) -> Result<RunArgs, String> {
     let mut set_after: Option<(u64, i64)> = None;
     let mut jump_after: Option<(u64, String)> = None;
     let mut json = false;
+    let mut report: Option<String> = None;
 
     let mut i = 0;
     while i < argv.len() {
@@ -164,6 +167,10 @@ fn parse_run_args(argv: &[String]) -> Result<RunArgs, String> {
                 jump_after = Some((t.parse().map_err(|_| format!("bad tick in '{raw}'"))?, mom.to_string()));
             }
             "--json" => json = true,
+            "--report" => {
+                i += 1;
+                report = Some(argv.get(i).ok_or("--report needs a path")?.clone());
+            }
             other if other.starts_with("--") => {
                 return Err(format!("unknown flag '{other}'"));
             }
@@ -189,6 +196,7 @@ fn parse_run_args(argv: &[String]) -> Result<RunArgs, String> {
         ticks,
         set_after,
         jump_after,
+        report,
         json,
     })
 }
@@ -421,17 +429,28 @@ fn driver_run(argv: &[String]) -> i32 {
 
     let status = child.wait();
 
-    if !ra.json {
-        let report = SessionReport {
-            target: ra.target.clone(),
-            session_verdict: session_line,
-            parent_verdict: verdict_line,
-            vanished,
-            warnings,
-            uncovered,
-            covered,
-            observed,
+    let report = SessionReport {
+        target: ra.target.clone(),
+        session_verdict: session_line,
+        parent_verdict: verdict_line,
+        vanished,
+        warnings,
+        uncovered,
+        covered,
+        observed,
+    };
+    if let Some(path) = &ra.report {
+        let params = EvidenceParams {
+            moment: resolved_at.clone().unwrap_or_else(|| "(default)".into()),
+            zone: ra.zone_bias_min.map(format_bias).unwrap_or_else(|| "(host default)".into()),
+            mode: mode_label(&ra.mode, ra.multiplier),
         };
+        match std::fs::write(path, render_evidence(&report, &params)) {
+            Ok(()) => eprintln!("chrono: evidence written to {path}"),
+            Err(e) => eprintln!("chrono: cannot write evidence to {path}: {e}"),
+        }
+    }
+    if !ra.json {
         print!("{}", render_report(&report));
     }
 
@@ -591,6 +610,62 @@ fn render_report(r: &SessionReport) -> String {
         }
     }
 
+    out
+}
+
+/// Session parameters echoed into an evidence export so the file stands alone as proof (8.8).
+struct EvidenceParams {
+    moment: String,
+    zone: String,
+    mode: String,
+}
+
+/// A clean WORKS session (no vanish, no partial/fails). Anything else must carry the unreliable
+/// banner in an evidence export - evidence that hides doubt is worse than none (8.8).
+fn session_is_reliable(r: &SessionReport) -> bool {
+    if r.vanished.is_some() {
+        return false;
+    }
+    if let Some((v, _, _)) = &r.session_verdict {
+        return v == "works";
+    }
+    if let Some((v, _)) = &r.parent_verdict {
+        return v == "works";
+    }
+    false
+}
+
+/// Format a session bias (minutes, UTC = local + bias) back to a "+HH:MM" zone label.
+fn format_bias(bias: i32) -> String {
+    let offset = -bias;
+    let sign = if offset < 0 { '-' } else { '+' };
+    let abs = offset.abs();
+    format!("{sign}{:02}:{:02}", abs / 60, abs % 60)
+}
+
+/// Human label for the requested time mode.
+fn mode_label(mode: &str, multiplier: Option<i64>) -> String {
+    match mode {
+        "multiplier" => format!("x{}", multiplier.unwrap_or(1)),
+        other => other.to_string(),
+    }
+}
+
+/// Compose the evidence file: an unreliable banner for any non-WORKS session (8.8), then the human
+/// report, then the requested parameters so the file is self-contained proof.
+fn render_evidence(r: &SessionReport, p: &EvidenceParams) -> String {
+    let mut out = String::new();
+    if !session_is_reliable(r) {
+        out.push_str(
+            "!! UNRELIABLE EVIDENCE - the time substitution did not fully take effect. \
+             Do not cite this as proof of behavior.\n\n",
+        );
+    }
+    out.push_str(&render_report(r));
+    out.push_str(&format!(
+        "  requested:  {} (zone {}, mode {})\n",
+        p.moment, p.zone, p.mode
+    ));
     out
 }
 
@@ -1107,5 +1182,49 @@ mod tests {
         assert!(out.contains("observed channels (hooked but left real)"), "got:\n{out}");
         // Singular reads correctly (1 call, not "1 calls").
         assert!(out.contains("pid 1234: WaitForSingleObject (1 call)"), "got:\n{out}");
+    }
+
+    #[test]
+    fn evidence_from_works_has_no_unreliable_banner_and_echoes_params() {
+        let r = SessionReport {
+            session_verdict: Some(("works".into(), "session.family_covered".into(), 1)),
+            covered: vec![(1, "GetSystemTime".into(), 2)],
+            ..empty_report()
+        };
+        let p = EvidenceParams {
+            moment: "2038-01-19T03:14:07".into(),
+            zone: "+00:00".into(),
+            mode: "x60".into(),
+        };
+        let out = render_evidence(&r, &p);
+        assert!(!out.contains("UNRELIABLE"), "a works session must not be flagged, got:\n{out}");
+        assert!(out.contains("WORKS"), "got:\n{out}");
+        assert!(
+            out.contains("requested:  2038-01-19T03:14:07 (zone +00:00, mode x60)"),
+            "got:\n{out}"
+        );
+    }
+
+    #[test]
+    fn evidence_from_vanish_leads_with_the_unreliable_banner() {
+        let r = SessionReport {
+            vanished: Some(("target.single_instance_suspected".into(), 1500)),
+            ..empty_report()
+        };
+        let p = EvidenceParams {
+            moment: "2038-01-19T03:14:07".into(),
+            zone: "+00:00".into(),
+            mode: "flow".into(),
+        };
+        let out = render_evidence(&r, &p);
+        assert!(out.starts_with("!! UNRELIABLE EVIDENCE"), "non-works must lead with the banner, got:\n{out}");
+        assert!(out.contains("DID NOT TAKE EFFECT"), "got:\n{out}");
+    }
+
+    #[test]
+    fn format_bias_maps_common_zones() {
+        assert_eq!(format_bias(0), "+00:00");
+        assert_eq!(format_bias(-120), "+02:00"); // UTC+2
+        assert_eq!(format_bias(300), "-05:00"); // UTC-5
     }
 }
