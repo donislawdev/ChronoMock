@@ -31,6 +31,12 @@
   <sys:String x:Key="action.choose_target">Wybierz…</sys:String>
   <sys:String x:Key="action.freeze">Zamroź</sys:String>
 
+  <!-- Skoki w locie (jednostki w Tag przycisku). -->
+  <sys:String x:Key="jump.minus_day">-1 dzień</sys:String>
+  <sys:String x:Key="jump.minus_hour">-1 godz.</sys:String>
+  <sys:String x:Key="jump.plus_hour">+1 godz.</sys:String>
+  <sys:String x:Key="jump.plus_day">+1 dzień</sys:String>
+
   <!-- Session status. -->
   <sys:String x:Key="status.idle">Nie uruchomiono</sys:String>
   <sys:String x:Key="status.connecting">Uruchamianie rdzenia</sys:String>

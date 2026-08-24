@@ -54,6 +54,15 @@ public partial class MainWindow : FluentWindow
         }
     }
 
+    // In-flight jump: each button carries its relative delta in Tag (e.g. "+1d", "-1h").
+    private void OnJumpClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement { Tag: string delta } && delta.Length > 0)
+        {
+            _session.SendJump(delta);
+        }
+    }
+
     // Resolve a translation key to text for a native dialog (rule 15); falls back to the raw key if missing.
     private static string Text(string key) => Application.Current?.TryFindResource(key) as string ?? key;
 }

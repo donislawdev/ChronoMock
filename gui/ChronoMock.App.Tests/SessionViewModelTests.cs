@@ -266,6 +266,16 @@ public class SessionViewModelTests
         Assert.False(vm.IsRunning);
     }
 
+    [Fact]
+    public void Send_jump_is_a_safe_no_op_when_no_session_runs()
+    {
+        var vm = new SessionViewModel();
+
+        vm.SendJump("+1d"); // idle, no client - must not throw
+
+        Assert.False(vm.IsRunning);
+    }
+
     private static VerdictEvent Verdict(string verdict, string reasonKey) => new()
     {
         V = ProtocolJson.ProtocolVersion,

@@ -158,6 +158,33 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
         }
     }
 
+    /// <summary>
+    /// Jump the fake clock by a relative delta (e.g. "+1d", "-2h" - units s/m/h/d/w). The core adds it to
+    /// the current fake time and re-anchors; a backward jump never rewinds the duration axis (rule 3). The
+    /// core validates the delta and reports a bad one as an error. No-op unless a session is running.
+    /// </summary>
+    public void SendJump(string delta)
+    {
+        var client = _client;
+        if (client is null || !IsRunning)
+        {
+            return;
+        }
+
+        try
+        {
+            client.Send(new JumpCommand
+            {
+                Id = _nextCommandId++,
+                To = new MomentSpec { Kind = "relative", Delta = delta },
+            });
+        }
+        catch (IOException)
+        {
+            // The core is already gone - the read loop will surface the end; nothing to do here.
+        }
+    }
+
     /// <summary>True when no session is running - the setup inputs bind their enabled state to this, so the
     /// user can still fix an invalid moment (which disables Start but not the fields).</summary>
     public bool IsIdle => _idle;

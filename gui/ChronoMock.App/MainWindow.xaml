@@ -197,15 +197,23 @@
         </StackPanel>
       </ScrollViewer>
 
-      <!-- In-flight speed control (chrono-mock 7.2), shown only while a session runs. Each button carries
-           its multiplier in Tag; Freeze is set_multiplier(0). The core re-anchors continuously (ADR-5). -->
-      <StackPanel Grid.Row="5" Orientation="Horizontal" HorizontalAlignment="Center" Margin="{StaticResource SpaceSm}"
-                  Visibility="{Binding IsRunning, Converter={StaticResource BoolToVis}}">
-        <Button Content="{DynamicResource mode.x1}" Tag="1" Margin="{StaticResource SpaceXs}" Click="OnSpeedClick" />
-        <Button Content="{DynamicResource mode.x10}" Tag="10" Margin="{StaticResource SpaceXs}" Click="OnSpeedClick" />
-        <Button Content="{DynamicResource mode.x60}" Tag="60" Margin="{StaticResource SpaceXs}" Click="OnSpeedClick" />
-        <Button Content="{DynamicResource mode.x1440}" Tag="1440" Margin="{StaticResource SpaceXs}" Click="OnSpeedClick" />
-        <Button Content="{DynamicResource action.freeze}" Tag="0" Margin="{StaticResource SpaceSm}" Click="OnSpeedClick" />
+      <!-- In-flight controls (chrono-mock 7.2), shown only while a session runs: speed (each button's
+           multiplier in Tag, Freeze = set_multiplier(0)) and jump (each button's relative delta in Tag).
+           The core re-anchors continuously (ADR-5); a backward jump never rewinds the duration (rule 3). -->
+      <StackPanel Grid.Row="5" Visibility="{Binding IsRunning, Converter={StaticResource BoolToVis}}">
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="{StaticResource SpaceXs}">
+          <Button Content="{DynamicResource mode.x1}" Tag="1" Margin="{StaticResource SpaceXs}" Click="OnSpeedClick" />
+          <Button Content="{DynamicResource mode.x10}" Tag="10" Margin="{StaticResource SpaceXs}" Click="OnSpeedClick" />
+          <Button Content="{DynamicResource mode.x60}" Tag="60" Margin="{StaticResource SpaceXs}" Click="OnSpeedClick" />
+          <Button Content="{DynamicResource mode.x1440}" Tag="1440" Margin="{StaticResource SpaceXs}" Click="OnSpeedClick" />
+          <Button Content="{DynamicResource action.freeze}" Tag="0" Margin="{StaticResource SpaceSm}" Click="OnSpeedClick" />
+        </StackPanel>
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="{StaticResource SpaceXs}">
+          <Button Content="{DynamicResource jump.minus_day}" Tag="-1d" Margin="{StaticResource SpaceXs}" Click="OnJumpClick" />
+          <Button Content="{DynamicResource jump.minus_hour}" Tag="-1h" Margin="{StaticResource SpaceXs}" Click="OnJumpClick" />
+          <Button Content="{DynamicResource jump.plus_hour}" Tag="+1h" Margin="{StaticResource SpaceXs}" Click="OnJumpClick" />
+          <Button Content="{DynamicResource jump.plus_day}" Tag="+1d" Margin="{StaticResource SpaceXs}" Click="OnJumpClick" />
+        </StackPanel>
       </StackPanel>
 
       <!-- Status and rate. The meaning is carried by the translated label, not by colour (zasady/13 9). -->

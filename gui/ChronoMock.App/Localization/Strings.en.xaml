@@ -32,6 +32,12 @@
   <sys:String x:Key="action.choose_target">Choose…</sys:String>
   <sys:String x:Key="action.freeze">Freeze</sys:String>
 
+  <!-- In-flight jump deltas (units carried in the button Tag). -->
+  <sys:String x:Key="jump.minus_day">-1 day</sys:String>
+  <sys:String x:Key="jump.minus_hour">-1 hour</sys:String>
+  <sys:String x:Key="jump.plus_hour">+1 hour</sys:String>
+  <sys:String x:Key="jump.plus_day">+1 day</sys:String>
+
   <!-- Session status. Meaning is carried by this label, never by colour alone. -->
   <sys:String x:Key="status.idle">Not started</sys:String>
   <sys:String x:Key="status.connecting">Starting the core</sys:String>

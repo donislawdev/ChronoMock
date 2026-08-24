@@ -105,6 +105,30 @@ public class ConformanceTests
         _ = await ReadUntilAsync(client, e => e.Any(x => x is EndedEvent), ReadTimeout);
     }
 
+    [Fact]
+    public async Task Jump_moves_the_fake_clock_by_a_relative_delta()
+    {
+        var (core, target) = Fixture();
+        await using var client = CoreClient.Launch(core, StartAt(target, mode: "frozen", multiplier: null));
+
+        // Frozen holds the fake clock at the moment, so a jump is unambiguous to observe.
+        var before = await ReadUntilAsync(client, e => e.OfType<StateEvent>().Any(), ReadTimeout);
+        Assert.Equal(Moment, before.OfType<StateEvent>().Last().Fake.Wall);
+
+        client.Send(new JumpCommand { Id = 60, To = new MomentSpec { Kind = "relative", Delta = "+1d" } });
+
+        // The fake wall advances one day (2038-01-19 -> 2038-01-20), the control the GUI's jump buttons send.
+        var after = await ReadUntilAsync(
+            client,
+            e => e.OfType<StateEvent>().Any(s => s.Fake.Wall.StartsWith("2038-01-20", StringComparison.Ordinal)),
+            ReadTimeout);
+        Assert.Contains(
+            after.OfType<StateEvent>(), s => s.Fake.Wall.StartsWith("2038-01-20", StringComparison.Ordinal));
+
+        client.Send(new EndCommand { Id = 99 });
+        _ = await ReadUntilAsync(client, e => e.Any(x => x is EndedEvent), ReadTimeout);
+    }
+
     private static (string core, string target) Fixture()
     {
         var repo = RepoPaths.RepoRoot();
