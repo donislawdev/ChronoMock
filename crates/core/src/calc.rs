@@ -715,10 +715,10 @@ pub fn metadata(civil: &CivilDateTime, today: &CivilDateTime) -> Metadata {
 // --- Significance ("what this date tests", 7.3 - the calculator's differentiator) ------
 //
 // The calculator names the edge case a result date lands on, instead of giving a number and
-// staying silent like an online date calculator (6.2). This slice covers the CALENDAR-INDEPENDENT
-// landmarks. Holiday and weekend (calendar-dependent) and daylight-saving transitions (which need
-// the zone's DST rules the tool does not carry) are honestly NOT built yet, not silently omitted
-// (docs/08 section 9a, rule 4).
+// staying silent like an online date calculator (6.2). Calendar-independent landmarks are always
+// checked; the weekend / holiday / observed-holiday landmarks need a calendar and are added only
+// when one is supplied. Daylight-saving transitions (which need the zone's DST rules the tool does
+// not carry) are honestly NOT built yet, not silently omitted (docs/08 section 9a, rule 4).
 
 /// A test-relevant landmark a date lands on. Emitted as stable variants, never prose: the text is
 /// a translated string (docs/02 section 8, rule 15), so the core names the landmark and the
@@ -746,6 +746,13 @@ pub enum Significance {
     UnixEpoch,
     /// At or past the signed 32-bit `time_t` limit (2038-01-19T03:14:07Z, `i32::MAX` seconds).
     Year2038Boundary,
+    /// A weekend day (per the calendar's weekend), so not a business day.
+    Weekend,
+    /// A public holiday on its own calendar date (the calendar names which one in the metadata).
+    PublicHoliday,
+    /// A weekday that is a day off because a holiday is OBSERVED on it - its actual date fell on a
+    /// weekend and shifted here. Explains a "not a business day, yet not a holiday" date.
+    ObservedHoliday,
 }
 
 impl Significance {
@@ -767,6 +774,11 @@ impl Significance {
             Significance::Year2038Boundary => {
                 "at or past the 2038-01-19T03:14:07Z 32-bit time_t limit (Y2038)"
             }
+            Significance::Weekend => "weekend - not a business day",
+            Significance::PublicHoliday => "public holiday",
+            Significance::ObservedHoliday => {
+                "observed public holiday - a day off shifted here from a weekend holiday"
+            }
         }
     }
 }
@@ -781,7 +793,14 @@ impl Significance {
 /// a-common-year landmarks stand in for the generic month-end. Instant markers (epoch, 2038) need
 /// the UTC instant of the result: a pre-epoch date has a negative instant, so they stay silent,
 /// and a year that cannot be represented as an instant at all is skipped rather than guessed.
-pub fn significance(civil: &CivilDateTime, tz_bias_min: i32) -> Vec<Significance> {
+///
+/// The weekend / holiday / observed-holiday landmarks are added only when `calendar` is supplied
+/// (the same opt-in the metadata block uses); without one they are simply absent, never guessed.
+pub fn significance(
+    civil: &CivilDateTime,
+    tz_bias_min: i32,
+    calendar: Option<&crate::calendar::Calendar>,
+) -> Vec<Significance> {
     let mut out = Vec::new();
 
     let last = last_day_of_month(civil.year, civil.month as i64);
@@ -822,6 +841,23 @@ pub fn significance(civil: &CivilDateTime, tz_bias_min: i32) -> Vec<Significance
         }
     }
 
+    // Calendar-dependent markers: only when a calendar is supplied. Derived from the existing engine
+    // predicates, so a weekend holiday reports both, while a non-business weekday that is not the
+    // holiday's own date can only be an observed (shifted) holiday.
+    if let Some(cal) = calendar {
+        let is_weekend = cal.weekend.contains(&(day_of_week(civil) as u32));
+        let is_holiday = crate::calendar::holiday_on(civil, cal).is_some();
+        if is_weekend {
+            out.push(Significance::Weekend);
+        }
+        if is_holiday {
+            out.push(Significance::PublicHoliday);
+        }
+        if !is_weekend && !is_holiday && !crate::calendar::is_business_day(civil, cal) {
+            out.push(Significance::ObservedHoliday);
+        }
+    }
+
     out
 }
 
@@ -851,6 +887,11 @@ mod tests {
     /// whole point is a base expressed in one zone and re-expressed in another.
     fn eval_at_zone(expr: &MomentExpr, now: CivilDateTime, zone_bias_min: i32) -> Result<EvalOutcome, EvalError> {
         eval(expr, &EvalContext { now, zone_bias_min, calendar: None })
+    }
+
+    /// Significance with no calendar - for the calendar-independent landmark tests.
+    fn sig(civil: &CivilDateTime, tz_bias_min: i32) -> Vec<Significance> {
+        significance(civil, tz_bias_min, None)
     }
 
     #[test]
@@ -1327,60 +1368,124 @@ mod tests {
     #[test]
     fn significance_february_leap_and_common_year() {
         // Feb 29 is the leap day - and NOT also reported as a generic month-end.
-        assert_eq!(significance(&dt(2024, 2, 29, 0, 0, 0), 0), vec![Significance::LeapDay]);
+        assert_eq!(sig(&dt(2024, 2, 29, 0, 0, 0), 0), vec![Significance::LeapDay]);
         // Feb 28 of a non-leap year is the last day of February with no 29th - its own landmark.
         assert_eq!(
-            significance(&dt(2025, 2, 28, 0, 0, 0), 0),
+            sig(&dt(2025, 2, 28, 0, 0, 0), 0),
             vec![Significance::LastDayOfFebruaryCommonYear]
         );
         // Feb 28 of a LEAP year is an ordinary day (the 29th is the month's last).
-        assert!(significance(&dt(2024, 2, 28, 0, 0, 0), 0).is_empty());
+        assert!(sig(&dt(2024, 2, 28, 0, 0, 0), 0).is_empty());
     }
 
     #[test]
     fn significance_period_boundary_collapses_to_the_strongest() {
         // Dec 31 is month-, quarter- and year-end at once: only the strongest (year) is reported.
-        assert_eq!(significance(&dt(2027, 12, 31, 0, 0, 0), 0), vec![Significance::EndOfYear]);
+        assert_eq!(sig(&dt(2027, 12, 31, 0, 0, 0), 0), vec![Significance::EndOfYear]);
         // Sep 30 is month- and quarter-end: quarter wins over month.
-        assert_eq!(significance(&dt(2027, 9, 30, 0, 0, 0), 0), vec![Significance::EndOfQuarter]);
+        assert_eq!(sig(&dt(2027, 9, 30, 0, 0, 0), 0), vec![Significance::EndOfQuarter]);
         // Jan 31 is only a month-end (January is not a quarter-end month).
-        assert_eq!(significance(&dt(2027, 1, 31, 0, 0, 0), 0), vec![Significance::EndOfMonth]);
+        assert_eq!(sig(&dt(2027, 1, 31, 0, 0, 0), 0), vec![Significance::EndOfMonth]);
         // Starts mirror the ends: year, quarter, month.
-        assert_eq!(significance(&dt(2027, 1, 1, 0, 0, 0), 0), vec![Significance::StartOfYear]);
-        assert_eq!(significance(&dt(2027, 4, 1, 0, 0, 0), 0), vec![Significance::StartOfQuarter]);
-        assert_eq!(significance(&dt(2027, 2, 1, 0, 0, 0), 0), vec![Significance::StartOfMonth]);
+        assert_eq!(sig(&dt(2027, 1, 1, 0, 0, 0), 0), vec![Significance::StartOfYear]);
+        assert_eq!(sig(&dt(2027, 4, 1, 0, 0, 0), 0), vec![Significance::StartOfQuarter]);
+        assert_eq!(sig(&dt(2027, 2, 1, 0, 0, 0), 0), vec![Significance::StartOfMonth]);
     }
 
     #[test]
     fn significance_unix_epoch_is_instant_zero_and_zone_aware() {
         // 1970-01-01 in UTC is both the year start and epoch 0 - two independent axes.
         assert_eq!(
-            significance(&dt(1970, 1, 1, 0, 0, 0), 0),
+            sig(&dt(1970, 1, 1, 0, 0, 0), 0),
             vec![Significance::StartOfYear, Significance::UnixEpoch]
         );
         // In UTC+1 (bias -60), local midnight 1970-01-01 is 1969-12-31T23:00Z - epoch is -3600, so
         // only the (zone-independent) year-start marker fires, not the epoch one.
-        assert_eq!(significance(&dt(1970, 1, 1, 0, 0, 0), -60), vec![Significance::StartOfYear]);
+        assert_eq!(sig(&dt(1970, 1, 1, 0, 0, 0), -60), vec![Significance::StartOfYear]);
     }
 
     #[test]
     fn significance_2038_boundary_fires_at_or_past_i32_max() {
         // Exactly the signed 32-bit time_t limit: 2038-01-19T03:14:07Z = 2_147_483_647 seconds.
-        assert!(significance(&dt(2038, 1, 19, 3, 14, 7), 0).contains(&Significance::Year2038Boundary));
+        assert!(sig(&dt(2038, 1, 19, 3, 14, 7), 0).contains(&Significance::Year2038Boundary));
         // One second earlier: not yet at the limit.
-        assert!(!significance(&dt(2038, 1, 19, 3, 14, 6), 0).contains(&Significance::Year2038Boundary));
+        assert!(!sig(&dt(2038, 1, 19, 3, 14, 6), 0).contains(&Significance::Year2038Boundary));
         // Well past it.
-        assert!(significance(&dt(2050, 6, 1, 0, 0, 0), 0).contains(&Significance::Year2038Boundary));
+        assert!(sig(&dt(2050, 6, 1, 0, 0, 0), 0).contains(&Significance::Year2038Boundary));
     }
 
     #[test]
     fn significance_plain_and_pre_epoch_dates_are_honest() {
         // A mid-month weekday hits nothing notable - an empty list, not a guessed landmark.
-        assert!(significance(&dt(2026, 8, 12, 9, 0, 0), 0).is_empty());
+        assert!(sig(&dt(2026, 8, 12, 9, 0, 0), 0).is_empty());
         // A pre-epoch mid-month date: the instant is negative, so no epoch/2038 marker, and it is
         // not a boundary either.
-        assert!(significance(&dt(1900, 6, 15, 0, 0, 0), 0).is_empty());
+        assert!(sig(&dt(1900, 6, 15, 0, 0, 0), 0).is_empty());
         // A civil boundary in the deep past still fires its civil marker regardless of the instant.
-        assert_eq!(significance(&dt(1000, 12, 31, 0, 0, 0), 0), vec![Significance::EndOfYear]);
+        assert_eq!(sig(&dt(1000, 12, 31, 0, 0, 0), 0), vec![Significance::EndOfYear]);
+    }
+
+    /// A small US-shaped calendar (New Year, Independence Day) with a configurable observance, for
+    /// the calendar-dependent significance tests.
+    fn cal_us(observed: crate::calendar::Observed) -> crate::calendar::Calendar {
+        use crate::calendar::{Calendar, Holiday, HolidayRule};
+        let h = |id: &str, month, day| Holiday {
+            id: id.into(),
+            name_en: id.into(),
+            name_local: id.into(),
+            rule: HolidayRule::Fixed { month, day },
+            valid_from: None,
+            valid_to: None,
+            source: "test".into(),
+        };
+        Calendar {
+            id: "us-test".into(),
+            country: "US".into(),
+            weekend: vec![0, 6],
+            observed,
+            holidays: vec![h("new_year", 1, 1), h("independence", 7, 4)],
+        }
+    }
+
+    #[test]
+    fn significance_calendar_markers_weekend_holiday_and_observed() {
+        let federal = cal_us(crate::calendar::Observed::SatToFriSunToMon);
+        // 2026-07-04 is a Saturday AND Independence Day: both markers, weekend first.
+        assert_eq!(
+            significance(&dt(2026, 7, 4, 0, 0, 0), 0, Some(&federal)),
+            vec![Significance::Weekend, Significance::PublicHoliday]
+        );
+        // 2026-07-03 is a Friday, a day off only because July 4 (Saturday) is OBSERVED here - the
+        // marker that explains a "not a business day, yet not a holiday" date.
+        assert_eq!(
+            significance(&dt(2026, 7, 3, 0, 0, 0), 0, Some(&federal)),
+            vec![Significance::ObservedHoliday]
+        );
+        // An ordinary Saturday (2026-07-11) is just a weekend; an ordinary weekday hits nothing.
+        assert_eq!(significance(&dt(2026, 7, 11, 0, 0, 0), 0, Some(&federal)), vec![Significance::Weekend]);
+        assert!(significance(&dt(2026, 7, 7, 0, 0, 0), 0, Some(&federal)).is_empty());
+    }
+
+    #[test]
+    fn significance_mixes_civil_and_calendar_markers() {
+        let federal = cal_us(crate::calendar::Observed::SatToFriSunToMon);
+        // 2026-01-01 is the year start (civil) AND New Year, a weekday holiday (calendar).
+        assert_eq!(
+            significance(&dt(2026, 1, 1, 0, 0, 0), 0, Some(&federal)),
+            vec![Significance::StartOfYear, Significance::PublicHoliday]
+        );
+    }
+
+    #[test]
+    fn significance_observed_holiday_needs_a_shifting_calendar() {
+        // Under a no-shift calendar (Poland-style), a weekend holiday does not move, so the Friday
+        // before is an ordinary business day - no observed-holiday marker.
+        let none = cal_us(crate::calendar::Observed::None);
+        assert!(significance(&dt(2026, 7, 3, 0, 0, 0), 0, Some(&none)).is_empty());
+        // The Saturday itself is still a weekend holiday.
+        assert_eq!(
+            significance(&dt(2026, 7, 4, 0, 0, 0), 0, Some(&none)),
+            vec![Significance::Weekend, Significance::PublicHoliday]
+        );
     }
 }

@@ -1013,16 +1013,21 @@ fn render_calc(
     let result_bias = outcome.result_bias;
     out.push_str(&render_formats(&outcome.result(), result_bias));
     out.push_str(&render_metadata(&outcome.result(), now, calendar));
-    out.push_str(&render_significance(&outcome.result(), result_bias));
+    out.push_str(&render_significance(&outcome.result(), result_bias, calendar));
     out
 }
 
 /// Render the "what this date tests" block (7.3): the test-relevant landmarks the result lands
 /// on, one per line, ready to read at a glance. This is the calculator's differentiator over an
-/// online date calculator (6.2). Omitted entirely when the date hits nothing notable - the block
-/// is a positive signal, never a "no landmark" line to scan past.
-fn render_significance(civil: &chrono_core::calc::CivilDateTime, tz_bias_min: i32) -> String {
-    let marks = chrono_core::calc::significance(civil, tz_bias_min);
+/// online date calculator (6.2). With a calendar it also names the weekend / holiday / observed-
+/// holiday landmarks. Omitted entirely when the date hits nothing notable - the block is a
+/// positive signal, never a "no landmark" line to scan past.
+fn render_significance(
+    civil: &chrono_core::calc::CivilDateTime,
+    tz_bias_min: i32,
+    calendar: Option<&chrono_core::calendar::Calendar>,
+) -> String {
+    let marks = chrono_core::calc::significance(civil, tz_bias_min, calendar);
     if marks.is_empty() {
         return String::new();
     }
@@ -2081,6 +2086,22 @@ mod tests {
         let out = chrono_core::calc::eval(&expr, &EvalContext { now, zone_bias_min: 0, calendar: None }).unwrap();
         let text = render_calc(&expr, &out, Some(0), &now, None);
         assert!(!text.contains("what this date tests:"), "got:\n{text}");
+    }
+
+    #[test]
+    fn render_calc_names_calendar_landmarks_only_with_a_calendar() {
+        // 2026-07-04 is a Saturday and Independence Day: with a calendar the block names both.
+        let ca = parse_calc_args(&["--base".into(), "2026-07-04T00:00:00".into()]).unwrap();
+        let expr = MomentExpr { base: ca.base, steps: ca.steps };
+        let now = chrono_core::calc::CivilDateTime { year: 2000, month: 1, day: 1, hour: 0, minute: 0, second: 0 };
+        let out = chrono_core::calc::eval(&expr, &EvalContext { now, zone_bias_min: 0, calendar: None }).unwrap();
+        let cal = test_calendar();
+        let text = render_calc(&expr, &out, Some(0), &now, Some(&cal));
+        assert!(text.contains("what this date tests:"), "got:\n{text}");
+        assert!(text.contains("weekend - not a business day"), "got:\n{text}");
+        assert!(text.contains("public holiday"), "got:\n{text}");
+        // Without a calendar the same date names no calendar landmark (and here nothing at all).
+        assert!(!render_calc(&expr, &out, Some(0), &now, None).contains("what this date tests:"));
     }
 
     #[test]
