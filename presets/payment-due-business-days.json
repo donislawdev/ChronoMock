@@ -1,0 +1,21 @@
+{
+  "schema": "chronomock.preset/1",
+  "stability": "unstable",
+  "id": "payment-due-business-days",
+  "name": { "en": "Payment due, +N business days", "pl": "Termin płatności, +N dni roboczych" },
+  "explains": {
+    "en": "Does a payment due N business days out land on the right day, skipping weekends and holidays?",
+    "pl": "Czy termin płatności za N dni roboczych wypada w poprawnym dniu, pomijając weekendy i święta?"
+  },
+  "applies_to": "calculator",
+  "market": "us",
+  "parameters": [
+    { "id": "days", "type": "duration", "default": { "amount": 90, "unit": "business_days" } }
+  ],
+  "moment": {
+    "base": "today",
+    "steps": [
+      { "shift": { "sign": "+", "parameter": "days" } }
+    ]
+  }
+}
