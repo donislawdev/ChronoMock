@@ -29,4 +29,9 @@
   <CornerRadius x:Key="RadiusMd">8</CornerRadius>
   <sys:Double x:Key="StrokeThin">1</sys:Double>
 
+  <!-- Layout cap: the coverage audit list scrolls inside this height instead of pushing the in-flight
+       controls off-screen. A named cap, not free geometry (zasady/13 2.1); the whole panel also scrolls,
+       so nothing is ever clipped. -->
+  <sys:Double x:Key="CoverageMaxHeight">140</sys:Double>
+
 </ResourceDictionary>

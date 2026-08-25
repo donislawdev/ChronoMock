@@ -5,7 +5,7 @@
                  xmlns:controls="clr-namespace:ChronoMock.App.Controls"
                  Title="{DynamicResource app.title}"
                  Width="720"
-                 Height="680"
+                 Height="800"
                  MinWidth="480"
                  MinHeight="360"
                  Background="{DynamicResource BrushBgBase}"
@@ -20,231 +20,237 @@
 
     <ui:TitleBar Grid.Row="0" Title="{DynamicResource app.title}" />
 
-    <Grid Grid.Row="1" Margin="{StaticResource SpaceXl}">
-      <Grid.RowDefinitions>
-        <RowDefinition Height="Auto" />
-        <RowDefinition Height="Auto" />
-        <RowDefinition Height="Auto" />
-        <RowDefinition Height="Auto" />
-        <RowDefinition Height="*" />
-        <RowDefinition Height="Auto" />
-        <RowDefinition Height="Auto" />
-      </Grid.RowDefinitions>
+    <!-- The whole panel scrolls when it does not fit, so no row is ever clipped at a small window size or
+         a large system scale (zasady/13 2.1 - computed layout over hard geometry). -->
+    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+      <Grid Margin="{StaticResource SpaceXl}">
+        <Grid.RowDefinitions>
+          <RowDefinition Height="Auto" />
+          <RowDefinition Height="Auto" />
+          <RowDefinition Height="Auto" />
+          <RowDefinition Height="Auto" />
+          <RowDefinition Height="Auto" />
+          <RowDefinition Height="Auto" />
+          <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
 
-      <!-- Setup: what to run (target), when (moment in the session zone), how fast (mode). chrono-mock 7.1.
-           The whole block is disabled while a session runs - changing time in-flight is a later slice. -->
-      <StackPanel Grid.Row="0" IsEnabled="{Binding IsIdle}">
-        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="{StaticResource SpaceXs}">
-          <TextBlock Text="{DynamicResource target.label}" VerticalAlignment="Center"
-                     FontSize="{StaticResource FontSizeBody}" Foreground="{DynamicResource BrushTextSecondary}" />
-          <TextBlock Text="{Binding TargetName}" Margin="{StaticResource SpaceXs}" VerticalAlignment="Center"
-                     FontSize="{StaticResource FontSizeBody}" Foreground="{DynamicResource BrushTextPrimary}" />
-          <Button Margin="{StaticResource SpaceSm}" Content="{DynamicResource action.choose_target}" Click="OnChooseTargetClick" />
+        <!-- Setup: what to run (target), when (moment in the session zone), how fast (mode). chrono-mock 7.1.
+             The whole block is disabled while a session runs - changing time in-flight is a later slice. -->
+        <StackPanel Grid.Row="0" IsEnabled="{Binding IsIdle}">
+          <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="{StaticResource SpaceXs}">
+            <TextBlock Text="{DynamicResource target.label}" VerticalAlignment="Center"
+                       FontSize="{StaticResource FontSizeBody}" Foreground="{DynamicResource BrushTextSecondary}" />
+            <TextBlock Text="{Binding TargetName}" Margin="{StaticResource SpaceXs}" VerticalAlignment="Center"
+                       FontSize="{StaticResource FontSizeBody}" Foreground="{DynamicResource BrushTextPrimary}" />
+            <Button Margin="{StaticResource SpaceSm}" Content="{DynamicResource action.choose_target}" Click="OnChooseTargetClick" />
+          </StackPanel>
+
+          <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="{StaticResource SpaceXs}">
+            <TextBlock Text="{DynamicResource moment.label}" VerticalAlignment="Center"
+                       FontSize="{StaticResource FontSizeBody}" Foreground="{DynamicResource BrushTextSecondary}" />
+            <TextBox Text="{Binding MomentText, UpdateSourceTrigger=PropertyChanged}"
+                     Width="190" Margin="{StaticResource SpaceXs}" VerticalAlignment="Center"
+                     FontSize="{StaticResource FontSizeBody}" />
+            <TextBlock Text="{DynamicResource zone.label}" Margin="{StaticResource SpaceSm}" VerticalAlignment="Center"
+                       FontSize="{StaticResource FontSizeBody}" Foreground="{DynamicResource BrushTextSecondary}" />
+            <ComboBox ItemsSource="{Binding Zones}" SelectedItem="{Binding SelectedZone}" DisplayMemberPath="Label"
+                      Margin="{StaticResource SpaceXs}" VerticalAlignment="Center" />
+          </StackPanel>
+
+          <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="{StaticResource SpaceXs}">
+            <TextBlock Text="{DynamicResource mode.label}" VerticalAlignment="Center"
+                       FontSize="{StaticResource FontSizeBody}" Foreground="{DynamicResource BrushTextSecondary}" />
+            <ComboBox ItemsSource="{Binding Modes}" SelectedItem="{Binding SelectedMode}"
+                      Margin="{StaticResource SpaceXs}" VerticalAlignment="Center">
+              <ComboBox.ItemTemplate>
+                <DataTemplate>
+                  <TextBlock Text="{Binding LabelKey, Converter={StaticResource KeyToText}}" />
+                </DataTemplate>
+              </ComboBox.ItemTemplate>
+            </ComboBox>
+          </StackPanel>
+
+          <TextBlock Text="{DynamicResource moment.invalid}" TextAlignment="Center" Margin="{StaticResource SpaceXs}"
+                     TextWrapping="Wrap"
+                     FontSize="{StaticResource FontSizeCaption}" Foreground="{DynamicResource BrushStatusPartial}"
+                     Visibility="{Binding MomentInvalid, Converter={StaticResource BoolToVis}}" />
         </StackPanel>
 
-        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="{StaticResource SpaceXs}">
-          <TextBlock Text="{DynamicResource moment.label}" VerticalAlignment="Center"
-                     FontSize="{StaticResource FontSizeBody}" Foreground="{DynamicResource BrushTextSecondary}" />
-          <TextBox Text="{Binding MomentText, UpdateSourceTrigger=PropertyChanged}"
-                   Width="190" Margin="{StaticResource SpaceXs}" VerticalAlignment="Center"
-                   FontSize="{StaticResource FontSizeBody}" />
-          <TextBlock Text="{DynamicResource zone.label}" Margin="{StaticResource SpaceSm}" VerticalAlignment="Center"
-                     FontSize="{StaticResource FontSizeBody}" Foreground="{DynamicResource BrushTextSecondary}" />
-          <ComboBox ItemsSource="{Binding Zones}" SelectedItem="{Binding SelectedZone}" DisplayMemberPath="Label"
-                    Margin="{StaticResource SpaceXs}" VerticalAlignment="Center" />
-        </StackPanel>
+        <Button Grid.Row="1" Margin="{StaticResource SpaceSm}" HorizontalAlignment="Center"
+                Content="{DynamicResource action.start}" IsEnabled="{Binding CanStart}" Click="OnStartClick" />
 
-        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="{StaticResource SpaceXs}">
-          <TextBlock Text="{DynamicResource mode.label}" VerticalAlignment="Center"
-                     FontSize="{StaticResource FontSizeBody}" Foreground="{DynamicResource BrushTextSecondary}" />
-          <ComboBox ItemsSource="{Binding Modes}" SelectedItem="{Binding SelectedMode}"
-                    Margin="{StaticResource SpaceXs}" VerticalAlignment="Center">
-            <ComboBox.ItemTemplate>
-              <DataTemplate>
-                <TextBlock Text="{Binding LabelKey, Converter={StaticResource KeyToText}}" />
-              </DataTemplate>
-            </ComboBox.ItemTemplate>
-          </ComboBox>
-        </StackPanel>
+        <!-- The two clocks: fake and real, each from the same tile template, each with its explicit zone. -->
+        <Grid Grid.Row="2" VerticalAlignment="Center">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="*" />
+          </Grid.ColumnDefinitions>
+          <controls:ClockTile Grid.Column="0" Margin="{StaticResource SpaceSm}" DataContext="{Binding Fake}" />
+          <controls:ClockTile Grid.Column="1" Margin="{StaticResource SpaceSm}" DataContext="{Binding Real}" />
+        </Grid>
 
-        <TextBlock Text="{DynamicResource moment.invalid}" TextAlignment="Center" Margin="{StaticResource SpaceXs}"
-                   TextWrapping="Wrap"
-                   FontSize="{StaticResource FontSizeCaption}" Foreground="{DynamicResource BrushStatusPartial}"
-                   Visibility="{Binding MomentInvalid, Converter={StaticResource BoolToVis}}" />
-      </StackPanel>
-
-      <Button Grid.Row="1" Margin="{StaticResource SpaceSm}" HorizontalAlignment="Center"
-              Content="{DynamicResource action.start}" IsEnabled="{Binding CanStart}" Click="OnStartClick" />
-
-      <!-- The two clocks: fake and real, each from the same tile template, each with its explicit zone. -->
-      <Grid Grid.Row="2" VerticalAlignment="Center">
-        <Grid.ColumnDefinitions>
-          <ColumnDefinition Width="*" />
-          <ColumnDefinition Width="*" />
-        </Grid.ColumnDefinitions>
-        <controls:ClockTile Grid.Column="0" Margin="{StaticResource SpaceSm}" DataContext="{Binding Fake}" />
-        <controls:ClockTile Grid.Column="1" Margin="{StaticResource SpaceSm}" DataContext="{Binding Real}" />
-      </Grid>
-
-      <!-- Verdict indicator (chrono-mock 7.1), visible once a verdict arrives. The verdict is told apart
-           by the glyph and the label, not by colour alone (zasady/13 9); the colour reinforces it. The
-           reason and the plain-language meaning show only for a non-works verdict. -->
-      <StackPanel Grid.Row="3"
-                  Margin="{StaticResource SpaceMd}"
-                  Visibility="{Binding VerdictKnown, Converter={StaticResource BoolToVis}}">
-        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
-          <TextBlock Text="{Binding VerdictKind, Converter={StaticResource VerdictGlyph}}"
-                     FontSize="{StaticResource FontSizeSubtitle}"
-                     Foreground="{Binding VerdictKind, Converter={StaticResource VerdictBrush}}" />
-          <TextBlock Text="{Binding VerdictLabelKey, Converter={StaticResource KeyToText}}"
+        <!-- Verdict indicator (chrono-mock 7.1), visible once a verdict arrives. The verdict is told apart
+             by the glyph and the label, not by colour alone (zasady/13 9); the colour reinforces it. The
+             reason and the plain-language meaning show only for a non-works verdict. -->
+        <StackPanel Grid.Row="3"
+                    Margin="{StaticResource SpaceMd}"
+                    Visibility="{Binding VerdictKnown, Converter={StaticResource BoolToVis}}">
+          <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+            <TextBlock Text="{Binding VerdictKind, Converter={StaticResource VerdictGlyph}}"
+                       FontSize="{StaticResource FontSizeSubtitle}"
+                       Foreground="{Binding VerdictKind, Converter={StaticResource VerdictBrush}}" />
+            <TextBlock Text="{Binding VerdictLabelKey, Converter={StaticResource KeyToText}}"
+                       Margin="{StaticResource SpaceXs}"
+                       FontSize="{StaticResource FontSizeSubtitle}"
+                       FontWeight="SemiBold"
+                       Foreground="{Binding VerdictKind, Converter={StaticResource VerdictBrush}}" />
+          </StackPanel>
+          <TextBlock Text="{Binding VerdictReasonKey, Converter={StaticResource KeyToText}}"
+                     TextAlignment="Center"
+                     FontSize="{StaticResource FontSizeCaption}"
+                     Foreground="{DynamicResource BrushTextSecondary}"
+                     Visibility="{Binding VerdictHasReason, Converter={StaticResource BoolToVis}}" />
+          <TextBlock Text="{Binding VerdictMeaningKey, Converter={StaticResource KeyToText}}"
                      Margin="{StaticResource SpaceXs}"
-                     FontSize="{StaticResource FontSizeSubtitle}"
-                     FontWeight="SemiBold"
-                     Foreground="{Binding VerdictKind, Converter={StaticResource VerdictBrush}}" />
-        </StackPanel>
-        <TextBlock Text="{Binding VerdictReasonKey, Converter={StaticResource KeyToText}}"
-                   TextAlignment="Center"
-                   FontSize="{StaticResource FontSizeCaption}"
-                   Foreground="{DynamicResource BrushTextSecondary}"
-                   Visibility="{Binding VerdictHasReason, Converter={StaticResource BoolToVis}}" />
-        <TextBlock Text="{Binding VerdictMeaningKey, Converter={StaticResource KeyToText}}"
-                   Margin="{StaticResource SpaceXs}"
-                   TextAlignment="Center"
-                   TextWrapping="Wrap"
-                   FontSize="{StaticResource FontSizeCaption}"
-                   Foreground="{DynamicResource BrushTextSecondary}"
-                   Visibility="{Binding VerdictHasMeaning, Converter={StaticResource BoolToVis}}" />
-      </StackPanel>
-
-      <!-- Coverage detail (chrono-mock 7.2 audit preview), visible once a coverage report arrives. Section
-           headers carry a synthesized count (zasady/13 10). Uncovered channels wear the partial colour. -->
-      <ScrollViewer Grid.Row="4"
-                    VerticalScrollBarVisibility="Auto"
-                    Visibility="{Binding CoverageKnown, Converter={StaticResource BoolToVis}}">
-        <StackPanel>
-          <TextBlock Margin="{StaticResource SpaceXs}"
-                     Text="{DynamicResource coverage.family_note}"
                      TextAlignment="Center"
                      TextWrapping="Wrap"
                      FontSize="{StaticResource FontSizeCaption}"
                      Foreground="{DynamicResource BrushTextSecondary}"
-                     Visibility="{Binding IsFamily, Converter={StaticResource BoolToVis}}" />
+                     Visibility="{Binding VerdictHasMeaning, Converter={StaticResource BoolToVis}}" />
+        </StackPanel>
 
-          <StackPanel Margin="{StaticResource SpaceXs}"
-                      Visibility="{Binding HasCovered, Converter={StaticResource BoolToVis}}">
-            <TextBlock FontSize="{StaticResource FontSizeCaption}" Foreground="{DynamicResource BrushTextSecondary}">
-              <Run Text="{DynamicResource coverage.covered}" /><Run Text="{Binding Covered.Count, StringFormat=' ({0})', Mode=OneWay}" />
-            </TextBlock>
-            <ItemsControl ItemsSource="{Binding Covered}">
-              <ItemsControl.ItemTemplate>
-                <DataTemplate>
-                  <TextBlock Text="{Binding}"
-                             FontSize="{StaticResource FontSizeBody}"
-                             Foreground="{DynamicResource BrushTextPrimary}" />
-                </DataTemplate>
-              </ItemsControl.ItemTemplate>
-            </ItemsControl>
+        <!-- Coverage detail (chrono-mock 7.2 audit preview), visible once a coverage report arrives. Section
+             headers carry a synthesized count (zasady/13 10). Uncovered channels wear the partial colour.
+             It scrolls within a capped height so a long channel list never pushes the controls off-screen. -->
+        <ScrollViewer Grid.Row="4"
+                      MaxHeight="{StaticResource CoverageMaxHeight}"
+                      VerticalScrollBarVisibility="Auto"
+                      Visibility="{Binding CoverageKnown, Converter={StaticResource BoolToVis}}">
+          <StackPanel>
+            <TextBlock Margin="{StaticResource SpaceXs}"
+                       Text="{DynamicResource coverage.family_note}"
+                       TextAlignment="Center"
+                       TextWrapping="Wrap"
+                       FontSize="{StaticResource FontSizeCaption}"
+                       Foreground="{DynamicResource BrushTextSecondary}"
+                       Visibility="{Binding IsFamily, Converter={StaticResource BoolToVis}}" />
+
+            <StackPanel Margin="{StaticResource SpaceXs}"
+                        Visibility="{Binding HasCovered, Converter={StaticResource BoolToVis}}">
+              <TextBlock FontSize="{StaticResource FontSizeCaption}" Foreground="{DynamicResource BrushTextSecondary}">
+                <Run Text="{DynamicResource coverage.covered}" /><Run Text="{Binding Covered.Count, StringFormat=' ({0})', Mode=OneWay}" />
+              </TextBlock>
+              <ItemsControl ItemsSource="{Binding Covered}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate>
+                    <TextBlock Text="{Binding}"
+                               FontSize="{StaticResource FontSizeBody}"
+                               Foreground="{DynamicResource BrushTextPrimary}" />
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </StackPanel>
+
+            <StackPanel Margin="{StaticResource SpaceXs}"
+                        Visibility="{Binding HasObserved, Converter={StaticResource BoolToVis}}">
+              <TextBlock FontSize="{StaticResource FontSizeCaption}" Foreground="{DynamicResource BrushTextSecondary}">
+                <Run Text="{DynamicResource coverage.observed}" /><Run Text="{Binding Observed.Count, StringFormat=' ({0})', Mode=OneWay}" />
+              </TextBlock>
+              <ItemsControl ItemsSource="{Binding Observed}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate>
+                    <TextBlock Text="{Binding}"
+                               FontSize="{StaticResource FontSizeBody}"
+                               Foreground="{DynamicResource BrushTextSecondary}" />
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </StackPanel>
+
+            <StackPanel Margin="{StaticResource SpaceXs}"
+                        Visibility="{Binding HasUncovered, Converter={StaticResource BoolToVis}}">
+              <TextBlock FontSize="{StaticResource FontSizeCaption}" Foreground="{DynamicResource BrushStatusPartial}">
+                <Run Text="{DynamicResource coverage.uncovered}" /><Run Text="{Binding Uncovered.Count, StringFormat=' ({0})', Mode=OneWay}" />
+              </TextBlock>
+              <ItemsControl ItemsSource="{Binding Uncovered}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate>
+                    <TextBlock Text="{Binding}"
+                               FontSize="{StaticResource FontSizeBody}"
+                               Foreground="{DynamicResource BrushTextPrimary}" />
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </StackPanel>
+
+            <StackPanel Margin="{StaticResource SpaceXs}"
+                        Visibility="{Binding HasWarnings, Converter={StaticResource BoolToVis}}">
+              <TextBlock FontSize="{StaticResource FontSizeCaption}" Foreground="{DynamicResource BrushStatusPartial}">
+                <Run Text="{DynamicResource coverage.warnings}" /><Run Text="{Binding Warnings.Count, StringFormat=' ({0})', Mode=OneWay}" />
+              </TextBlock>
+              <ItemsControl ItemsSource="{Binding Warnings}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate>
+                    <TextBlock Text="{Binding Converter={StaticResource KeyToText}}"
+                               TextWrapping="Wrap"
+                               FontSize="{StaticResource FontSizeBody}"
+                               Foreground="{DynamicResource BrushTextPrimary}" />
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </StackPanel>
           </StackPanel>
+        </ScrollViewer>
 
-          <StackPanel Margin="{StaticResource SpaceXs}"
-                      Visibility="{Binding HasObserved, Converter={StaticResource BoolToVis}}">
-            <TextBlock FontSize="{StaticResource FontSizeCaption}" Foreground="{DynamicResource BrushTextSecondary}">
-              <Run Text="{DynamicResource coverage.observed}" /><Run Text="{Binding Observed.Count, StringFormat=' ({0})', Mode=OneWay}" />
-            </TextBlock>
-            <ItemsControl ItemsSource="{Binding Observed}">
-              <ItemsControl.ItemTemplate>
-                <DataTemplate>
-                  <TextBlock Text="{Binding}"
-                             FontSize="{StaticResource FontSizeBody}"
-                             Foreground="{DynamicResource BrushTextSecondary}" />
-                </DataTemplate>
-              </ItemsControl.ItemTemplate>
-            </ItemsControl>
+        <!-- In-flight controls (chrono-mock 7.2), shown only while a session runs: speed (each button's
+             multiplier in Tag, Freeze = set_multiplier(0)) and jump (each button's relative delta in Tag).
+             The core re-anchors continuously (ADR-5); a backward jump never rewinds the duration (rule 3). -->
+        <StackPanel Grid.Row="5" Visibility="{Binding IsRunning, Converter={StaticResource BoolToVis}}">
+          <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="{StaticResource SpaceXs}">
+            <Button Content="{DynamicResource mode.x1}" Tag="1" Margin="{StaticResource SpaceXs}" Click="OnSpeedClick" />
+            <Button Content="{DynamicResource mode.x10}" Tag="10" Margin="{StaticResource SpaceXs}" Click="OnSpeedClick" />
+            <Button Content="{DynamicResource mode.x60}" Tag="60" Margin="{StaticResource SpaceXs}" Click="OnSpeedClick" />
+            <Button Content="{DynamicResource mode.x1440}" Tag="1440" Margin="{StaticResource SpaceXs}" Click="OnSpeedClick" />
+            <Button Content="{DynamicResource action.freeze}" Tag="0" Margin="{StaticResource SpaceSm}" Click="OnSpeedClick" />
           </StackPanel>
-
-          <StackPanel Margin="{StaticResource SpaceXs}"
-                      Visibility="{Binding HasUncovered, Converter={StaticResource BoolToVis}}">
-            <TextBlock FontSize="{StaticResource FontSizeCaption}" Foreground="{DynamicResource BrushStatusPartial}">
-              <Run Text="{DynamicResource coverage.uncovered}" /><Run Text="{Binding Uncovered.Count, StringFormat=' ({0})', Mode=OneWay}" />
-            </TextBlock>
-            <ItemsControl ItemsSource="{Binding Uncovered}">
-              <ItemsControl.ItemTemplate>
-                <DataTemplate>
-                  <TextBlock Text="{Binding}"
-                             FontSize="{StaticResource FontSizeBody}"
-                             Foreground="{DynamicResource BrushTextPrimary}" />
-                </DataTemplate>
-              </ItemsControl.ItemTemplate>
-            </ItemsControl>
-          </StackPanel>
-
-          <StackPanel Margin="{StaticResource SpaceXs}"
-                      Visibility="{Binding HasWarnings, Converter={StaticResource BoolToVis}}">
-            <TextBlock FontSize="{StaticResource FontSizeCaption}" Foreground="{DynamicResource BrushStatusPartial}">
-              <Run Text="{DynamicResource coverage.warnings}" /><Run Text="{Binding Warnings.Count, StringFormat=' ({0})', Mode=OneWay}" />
-            </TextBlock>
-            <ItemsControl ItemsSource="{Binding Warnings}">
-              <ItemsControl.ItemTemplate>
-                <DataTemplate>
-                  <TextBlock Text="{Binding Converter={StaticResource KeyToText}}"
-                             TextWrapping="Wrap"
-                             FontSize="{StaticResource FontSizeBody}"
-                             Foreground="{DynamicResource BrushTextPrimary}" />
-                </DataTemplate>
-              </ItemsControl.ItemTemplate>
-            </ItemsControl>
+          <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="{StaticResource SpaceXs}">
+            <Button Content="{DynamicResource jump.minus_day}" Tag="-1d" Margin="{StaticResource SpaceXs}" Click="OnJumpClick" />
+            <Button Content="{DynamicResource jump.minus_hour}" Tag="-1h" Margin="{StaticResource SpaceXs}" Click="OnJumpClick" />
+            <Button Content="{DynamicResource jump.plus_hour}" Tag="+1h" Margin="{StaticResource SpaceXs}" Click="OnJumpClick" />
+            <Button Content="{DynamicResource jump.plus_day}" Tag="+1d" Margin="{StaticResource SpaceXs}" Click="OnJumpClick" />
           </StackPanel>
         </StackPanel>
-      </ScrollViewer>
 
-      <!-- In-flight controls (chrono-mock 7.2), shown only while a session runs: speed (each button's
-           multiplier in Tag, Freeze = set_multiplier(0)) and jump (each button's relative delta in Tag).
-           The core re-anchors continuously (ADR-5); a backward jump never rewinds the duration (rule 3). -->
-      <StackPanel Grid.Row="5" Visibility="{Binding IsRunning, Converter={StaticResource BoolToVis}}">
-        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="{StaticResource SpaceXs}">
-          <Button Content="{DynamicResource mode.x1}" Tag="1" Margin="{StaticResource SpaceXs}" Click="OnSpeedClick" />
-          <Button Content="{DynamicResource mode.x10}" Tag="10" Margin="{StaticResource SpaceXs}" Click="OnSpeedClick" />
-          <Button Content="{DynamicResource mode.x60}" Tag="60" Margin="{StaticResource SpaceXs}" Click="OnSpeedClick" />
-          <Button Content="{DynamicResource mode.x1440}" Tag="1440" Margin="{StaticResource SpaceXs}" Click="OnSpeedClick" />
-          <Button Content="{DynamicResource action.freeze}" Tag="0" Margin="{StaticResource SpaceSm}" Click="OnSpeedClick" />
-        </StackPanel>
-        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="{StaticResource SpaceXs}">
-          <Button Content="{DynamicResource jump.minus_day}" Tag="-1d" Margin="{StaticResource SpaceXs}" Click="OnJumpClick" />
-          <Button Content="{DynamicResource jump.minus_hour}" Tag="-1h" Margin="{StaticResource SpaceXs}" Click="OnJumpClick" />
-          <Button Content="{DynamicResource jump.plus_hour}" Tag="+1h" Margin="{StaticResource SpaceXs}" Click="OnJumpClick" />
-          <Button Content="{DynamicResource jump.plus_day}" Tag="+1d" Margin="{StaticResource SpaceXs}" Click="OnJumpClick" />
-        </StackPanel>
-      </StackPanel>
-
-      <!-- Status and rate. The meaning is carried by the translated label, not by colour (zasady/13 9). -->
-      <StackPanel Grid.Row="6" Margin="{StaticResource SpaceMd}" HorizontalAlignment="Center">
-        <!-- Copy the paste-into-ticket session summary (chrono-mock 7.2, 8.8), available once a session has
-             started. A non-works session's summary leads with an unreliable-evidence banner. -->
-        <Button Content="{DynamicResource action.copy_summary}"
-                Margin="{StaticResource SpaceXs}"
-                HorizontalAlignment="Center"
-                Visibility="{Binding CanCopySummary, Converter={StaticResource BoolToVis}}"
-                Click="OnCopySummaryClick" />
-        <TextBlock Text="{Binding CopyFeedbackKey, Converter={StaticResource KeyToText}}"
-                   Margin="{StaticResource SpaceXs}"
-                   HorizontalAlignment="Center"
-                   FontSize="{StaticResource FontSizeCaption}"
-                   Foreground="{DynamicResource BrushTextSecondary}" />
-        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
-          <TextBlock Text="{Binding StatusKey, Converter={StaticResource KeyToText}}"
-                     FontSize="{StaticResource FontSizeBody}"
-                     Foreground="{DynamicResource BrushTextPrimary}" />
-          <TextBlock Text="{Binding MultiplierText}"
-                     Margin="{StaticResource SpaceSm}"
-                     FontSize="{StaticResource FontSizeBody}"
+        <!-- Status and rate. The meaning is carried by the translated label, not by colour (zasady/13 9). -->
+        <StackPanel Grid.Row="6" Margin="{StaticResource SpaceMd}" HorizontalAlignment="Center">
+          <!-- Copy the paste-into-ticket session summary (chrono-mock 7.2, 8.8), available once a session has
+               started. A non-works session's summary leads with an unreliable-evidence banner. -->
+          <Button Content="{DynamicResource action.copy_summary}"
+                  Margin="{StaticResource SpaceXs}"
+                  HorizontalAlignment="Center"
+                  Visibility="{Binding CanCopySummary, Converter={StaticResource BoolToVis}}"
+                  Click="OnCopySummaryClick" />
+          <TextBlock Text="{Binding CopyFeedbackKey, Converter={StaticResource KeyToText}}"
+                     Margin="{StaticResource SpaceXs}"
+                     HorizontalAlignment="Center"
+                     FontSize="{StaticResource FontSizeCaption}"
                      Foreground="{DynamicResource BrushTextSecondary}" />
+          <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+            <TextBlock Text="{Binding StatusKey, Converter={StaticResource KeyToText}}"
+                       FontSize="{StaticResource FontSizeBody}"
+                       Foreground="{DynamicResource BrushTextPrimary}" />
+            <TextBlock Text="{Binding MultiplierText}"
+                       Margin="{StaticResource SpaceSm}"
+                       FontSize="{StaticResource FontSizeBody}"
+                       Foreground="{DynamicResource BrushTextSecondary}" />
+          </StackPanel>
+          <TextBlock Text="{Binding LastError}"
+                     FontSize="{StaticResource FontSizeCaption}"
+                     Foreground="{DynamicResource BrushTextSecondary}"
+                     HorizontalAlignment="Center"
+                     TextWrapping="Wrap" />
         </StackPanel>
-        <TextBlock Text="{Binding LastError}"
-                   FontSize="{StaticResource FontSizeCaption}"
-                   Foreground="{DynamicResource BrushTextSecondary}"
-                   HorizontalAlignment="Center"
-                   TextWrapping="Wrap" />
-      </StackPanel>
-    </Grid>
+      </Grid>
+    </ScrollViewer>
   </Grid>
 </ui:FluentWindow>
