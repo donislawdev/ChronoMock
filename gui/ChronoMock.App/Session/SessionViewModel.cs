@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.IO; // The WPF SDK trims System.IO from implicit usings (Path collides with Shapes.Path).
+using System.Text;
 using ChronoMock.Protocol;
 
 namespace ChronoMock.App;
@@ -54,6 +55,14 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     private IReadOnlyList<string> _uncovered = [];
     private IReadOnlyList<string> _warnings = [];
 
+    private bool _hasTiming;
+    private long _elapsedRealMs;
+    private long _elapsedFakeMs;
+    private string _fakeEndWall = string.Empty;
+    private string _vanishReasonKey = string.Empty;
+    private long _livedMs;
+    private string _copyFeedbackKey = string.Empty;
+
     public ClockView Fake { get; } = new("clock.fake");
 
     public ClockView Real { get; } = new("clock.real");
@@ -64,17 +73,35 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     public SessionStatusKind StatusKind
     {
         get => _statusKind;
-        private set { if (Set(ref _statusKind, value)) { RaisePropertyChanged(nameof(IsRunning)); } }
+        private set
+        {
+            if (Set(ref _statusKind, value))
+            {
+                RaisePropertyChanged(nameof(IsRunning));
+                RaisePropertyChanged(nameof(CanCopySummary));
+            }
+        }
     }
 
     /// <summary>True while the session is live - the in-flight controls bind their visibility to this.</summary>
     public bool IsRunning => _statusKind == SessionStatusKind.Running;
+
+    /// <summary>True once a session has started (running or finished) - there is then something to copy.
+    /// The Copy summary button binds its visibility to this (chrono-mock 7.2, 8.8).</summary>
+    public bool CanCopySummary => _statusKind is not (SessionStatusKind.Idle or SessionStatusKind.Connecting);
 
     /// <summary>The current rate as data, e.g. "x60" - empty until the first heartbeat.</summary>
     public string MultiplierText { get => _multiplierText; private set => Set(ref _multiplierText, value); }
 
     /// <summary>The raw failure detail when something went wrong - shown verbatim so a failure is never silent.</summary>
     public string LastError { get => _lastError; private set => Set(ref _lastError, value); }
+
+    /// <summary>Translation key for the copy-summary feedback ("copy.done" / "copy.failed"), empty until a
+    /// copy is attempted. A clipboard failure is surfaced, never swallowed (rule 6).</summary>
+    public string CopyFeedbackKey { get => _copyFeedbackKey; private set => Set(ref _copyFeedbackKey, value); }
+
+    /// <summary>Record the outcome of a clipboard copy so the panel can confirm it or report a failure.</summary>
+    public void NoteCopy(bool ok) => CopyFeedbackKey = ok ? "copy.done" : "copy.failed";
 
     /// <summary>Path to the target executable to run, chosen by the user (or a bundled default in dev).</summary>
     public string? TargetPath
@@ -292,12 +319,26 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
                 Real.Wall = s.Real.Wall;
                 Real.Zone = ZoneLabel.FromBiasMinutes(s.Real.ZoneBiasMin);
                 MultiplierText = $"x{s.Multiplier}";
+                _elapsedRealMs = s.ElapsedRealMs;
+                _elapsedFakeMs = s.ElapsedFakeMs;
+                _hasTiming = true;
                 SetStatus("status.running", SessionStatusKind.Running);
                 break;
-            case VanishedEvent:
+            case VanishedEvent vd:
+                _vanishReasonKey = vd.ReasonKey;
+                _livedMs = vd.LivedMs;
                 SetStatus("status.did_not_take_effect", SessionStatusKind.DidNotTakeEffect);
                 break;
-            case EndedEvent:
+            case EndedEvent e:
+                if (e.FakeEndWall is not null)
+                {
+                    // The core's authoritative end timing (docs/08 section 6) - prefer it over the last heartbeat.
+                    _fakeEndWall = e.FakeEndWall;
+                    _elapsedRealMs = e.ElapsedRealMs;
+                    _elapsedFakeMs = e.ElapsedFakeMs;
+                    _hasTiming = true;
+                }
+
                 SetStatus("status.ended", SessionStatusKind.Ended);
                 break;
             case ErrorEvent:
@@ -466,6 +507,14 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
         Observed = [];
         Uncovered = [];
         Warnings = [];
+
+        _hasTiming = false;
+        _elapsedRealMs = 0;
+        _elapsedFakeMs = 0;
+        _fakeEndWall = string.Empty;
+        _vanishReasonKey = string.Empty;
+        _livedMs = 0;
+        CopyFeedbackKey = string.Empty;
     }
 
     private static string FormatChannel(CoveredChannel channel) => $"{channel.Channel}  ×{channel.Calls}";
@@ -482,6 +531,115 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
             Multiplier = SelectedMode.Multiplier,
             ScaleDuration = false,
         };
+    }
+
+    /// <summary>
+    /// Compose the paste-into-ticket session summary (chrono-mock 7.2, 8.8) in the interface language. It
+    /// mirrors the CLI evidence export (crates/cli render_evidence): a session that is anything other than a
+    /// clean "works" ALWAYS leads with an unreliable-evidence banner - evidence that hides doubt is worse
+    /// than none. Pure over the view state, so it is unit tested with a fake translator; the caller supplies
+    /// the key resolver (rule 15), never Application.Current directly, so this stays testable without WPF.
+    /// </summary>
+    public string BuildSummary(Func<string, string> translate)
+    {
+        ArgumentNullException.ThrowIfNull(translate);
+        var sb = new StringBuilder();
+
+        if (!IsReliable)
+        {
+            sb.Append(translate("report.unreliable_banner")).Append("\n\n");
+        }
+
+        sb.Append(translate("report.title")).Append('\n');
+        sb.Append("  ").Append(translate("report.target")).Append(": ").Append(TargetName).Append('\n');
+
+        // Verdict headline: a vanish is an honest non-effect first, then the family/parent verdict, else none.
+        if (_statusKind == SessionStatusKind.DidNotTakeEffect)
+        {
+            sb.Append("  ").Append(translate("report.verdict")).Append(": ")
+              .Append(translate("report.did_not_take_effect")).Append('\n');
+            if (_vanishReasonKey.Length > 0)
+            {
+                sb.Append("    ")
+                  .Append(Fmt(translate("report.vanish_detail"), translate(_vanishReasonKey), _livedMs))
+                  .Append('\n');
+            }
+        }
+        else if (_verdictKnown)
+        {
+            sb.Append("  ").Append(translate("report.verdict")).Append(": ").Append(translate(VerdictLabelKey));
+            if (IsFamily)
+            {
+                sb.Append("  ").Append(Fmt(translate("report.processes"), _processCount));
+            }
+
+            sb.Append('\n');
+            if (_verdictHasReason)
+            {
+                sb.Append("    ").Append(translate(VerdictReasonKey)).Append('\n');
+            }
+
+            if (_verdictHasMeaning)
+            {
+                sb.Append("    ").Append(translate(VerdictMeaningKey)).Append('\n');
+            }
+        }
+        else
+        {
+            sb.Append("  ").Append(translate("report.verdict")).Append(": ")
+              .Append(translate("report.no_verdict")).Append('\n');
+        }
+
+        if (_hasTiming)
+        {
+            // Prefer the authoritative end wall from `ended`; fall back to the last heartbeat's fake clock.
+            var fakeWall = _fakeEndWall.Length > 0 ? _fakeEndWall : Fake.Wall;
+            sb.Append("  ").Append(translate("report.session")).Append(": ")
+              .Append(Fmt(translate("report.session_reached"), fakeWall)).Append('\n');
+            sb.Append("    ")
+              .Append(Fmt(translate("report.elapsed"), Seconds(_elapsedRealMs), Seconds(_elapsedFakeMs)))
+              .Append('\n');
+        }
+
+        // Channel names are raw API identifiers (not translated); warnings are keys the core raised.
+        AppendList(sb, translate, "coverage.covered", _covered, translateItems: false);
+        AppendList(sb, translate, "coverage.observed", _observed, translateItems: false);
+        AppendList(sb, translate, "coverage.uncovered", _uncovered, translateItems: false);
+        AppendList(sb, translate, "coverage.warnings", _warnings, translateItems: true);
+
+        sb.Append("  ")
+          .Append(Fmt(translate("report.requested"), _momentText, SelectedZone.Label, translate(SelectedMode.LabelKey)))
+          .Append('\n');
+
+        return sb.ToString();
+    }
+
+    /// <summary>A clean "works" session is the only reliable one; anything else must carry the unreliable
+    /// banner in an export (chrono-mock 8.8), mirroring the CLI's session_is_reliable.</summary>
+    private bool IsReliable => _verdictKind == VerdictKind.Works
+                              && _statusKind != SessionStatusKind.DidNotTakeEffect;
+
+    private static string Seconds(long ms) => (ms / 1000.0).ToString("0.0", CultureInfo.InvariantCulture);
+
+    // Format a possibly-missing template safely: a resolver that returns the raw key (no placeholders)
+    // leaves it unchanged, because string.Format ignores extra arguments when there are no holes to fill.
+    private static string Fmt(string template, params object[] args)
+        => string.Format(CultureInfo.InvariantCulture, template, args);
+
+    private static void AppendList(
+        StringBuilder sb, Func<string, string> translate, string headerKey,
+        IReadOnlyList<string> items, bool translateItems)
+    {
+        if (items.Count == 0)
+        {
+            return;
+        }
+
+        sb.Append("  ").Append(translate(headerKey)).Append(" (").Append(items.Count).Append("):\n");
+        foreach (var item in items)
+        {
+            sb.Append("    - ").Append(translateItems ? translate(item) : item).Append('\n');
+        }
     }
 
     // Accept an ISO moment with a 'T' or a space separator. This is a well-formed-ness check only - the

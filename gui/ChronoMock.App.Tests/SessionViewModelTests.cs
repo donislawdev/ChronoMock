@@ -10,13 +10,35 @@ namespace ChronoMock.App.Tests;
 /// </summary>
 public class SessionViewModelTests
 {
-    private static StateEvent State(string fakeWall, string realWall, int bias, long multiplier) => new()
+    private static StateEvent State(
+        string fakeWall, string realWall, int bias, long multiplier,
+        long elapsedRealMs = 0, long elapsedFakeMs = 0) => new()
+        {
+            V = ProtocolJson.ProtocolVersion,
+            Fake = new Clock { Wall = fakeWall, ZoneBiasMin = bias },
+            Real = new Clock { Wall = realWall, ZoneBiasMin = bias },
+            Multiplier = multiplier,
+            ElapsedRealMs = elapsedRealMs,
+            ElapsedFakeMs = elapsedFakeMs,
+        };
+
+    // A fake translator: known format templates for the keys under test, echoing the key otherwise (which
+    // is also the production fallback for a missing key). This keeps BuildSummary testable without WPF.
+    private static Func<string, string> T()
     {
-        V = ProtocolJson.ProtocolVersion,
-        Fake = new Clock { Wall = fakeWall, ZoneBiasMin = bias },
-        Real = new Clock { Wall = realWall, ZoneBiasMin = bias },
-        Multiplier = multiplier,
-    };
+        var map = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["report.unreliable_banner"] = "!! UNRELIABLE EVIDENCE - not proof",
+            ["report.title"] = "Chrono Mock - session report",
+            ["report.vanish_detail"] = "suspected single-instance app: {0} - lived {1} ms",
+            ["report.session_reached"] = "fake clock reached {0}",
+            ["report.elapsed"] = "real {0}s, fake {1}s",
+            ["report.processes"] = "processes: {0}",
+            ["report.requested"] = "requested: {0} (zone {1}, mode {2})",
+            ["mode.x60"] = "×60",
+        };
+        return key => map.TryGetValue(key, out var value) ? value : key;
+    }
 
     [Fact]
     public void State_event_fills_both_clocks_with_explicit_zones_and_rate()
@@ -274,6 +296,151 @@ public class SessionViewModelTests
         vm.SendJump("+1d"); // idle, no client - must not throw
 
         Assert.False(vm.IsRunning);
+    }
+
+    [Fact]
+    public void A_works_session_summary_has_no_unreliable_banner_and_echoes_the_target()
+    {
+        var vm = new SessionViewModel();
+        vm.SetTarget(@"C:\apps\Ledger.exe");
+        vm.Apply(State("2038-01-19T03:14:07", "2026-08-25T00:00:00", bias: -120, multiplier: 60));
+        vm.Apply(Verdict("works", "verdict.works.covered"));
+
+        var summary = vm.BuildSummary(T());
+
+        Assert.DoesNotContain("UNRELIABLE", summary, StringComparison.Ordinal);
+        Assert.Contains("Ledger.exe", summary, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("partial")]
+    [InlineData("fails")]
+    [InlineData("undetermined")]
+    public void A_non_works_session_summary_leads_with_the_unreliable_banner(string wire)
+    {
+        var vm = new SessionViewModel();
+        vm.SetTarget(@"C:\apps\Ledger.exe");
+        vm.Apply(Verdict(wire, "verdict.some.reason"));
+
+        Assert.StartsWith("!! UNRELIABLE EVIDENCE", vm.BuildSummary(T()), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_vanished_session_summary_is_unreliable_and_names_the_non_effect()
+    {
+        var vm = new SessionViewModel();
+        vm.SetTarget(@"C:\apps\Ledger.exe");
+        vm.Apply(new VanishedEvent
+        {
+            V = ProtocolJson.ProtocolVersion,
+            Pid = 1234,
+            ReasonKey = "target.single_instance_suspected",
+            LivedMs = 1500,
+        });
+
+        var summary = vm.BuildSummary(T());
+
+        Assert.StartsWith("!! UNRELIABLE EVIDENCE", summary, StringComparison.Ordinal);
+        Assert.Contains("report.did_not_take_effect", summary, StringComparison.Ordinal); // key echoed by T()
+        Assert.Contains("target.single_instance_suspected", summary, StringComparison.Ordinal);
+        Assert.Contains("1500", summary, StringComparison.Ordinal); // lived ms
+    }
+
+    [Fact]
+    public void The_summary_lists_uncovered_channels()
+    {
+        var vm = new SessionViewModel();
+        vm.SetTarget(@"C:\apps\Ledger.exe");
+        vm.Apply(new CoverageEvent
+        {
+            V = ProtocolJson.ProtocolVersion,
+            Pid = 100,
+            Covered = [new CoveredChannel { Channel = "GetSystemTimeAsFileTime", Calls = 842 }],
+            Uncovered = ["KUSER_SHARED_DATA"],
+        });
+
+        var summary = vm.BuildSummary(T());
+
+        Assert.Contains("GetSystemTimeAsFileTime", summary, StringComparison.Ordinal);
+        Assert.Contains("KUSER_SHARED_DATA", summary, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void The_summary_timing_prefers_the_authoritative_end_wall_and_elapsed()
+    {
+        var vm = new SessionViewModel();
+        vm.SetTarget(@"C:\apps\Ledger.exe");
+        vm.Apply(State("2038-01-19T03:14:07", "2026-08-25T00:00:00", bias: 0, multiplier: 60,
+            elapsedRealMs: 1000, elapsedFakeMs: 60000));
+        vm.Apply(new EndedEvent
+        {
+            V = ProtocolJson.ProtocolVersion,
+            Clean = true,
+            FakeEndWall = "2038-01-20T00:00:00",
+            ElapsedRealMs = 1500,
+            ElapsedFakeMs = 90000,
+        });
+
+        var summary = vm.BuildSummary(T());
+
+        Assert.Contains("fake clock reached 2038-01-20T00:00:00", summary, StringComparison.Ordinal);
+        Assert.Contains("real 1.5s, fake 90.0s", summary, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void The_summary_timing_falls_back_to_the_last_heartbeat_when_ended_has_no_wall()
+    {
+        var vm = new SessionViewModel();
+        vm.SetTarget(@"C:\apps\Ledger.exe");
+        vm.Apply(State("2038-01-19T03:14:07", "2026-08-25T00:00:00", bias: 0, multiplier: 60,
+            elapsedRealMs: 1000, elapsedFakeMs: 60000));
+        vm.Apply(new EndedEvent { V = ProtocolJson.ProtocolVersion, Clean = true }); // no FakeEndWall
+
+        var summary = vm.BuildSummary(T());
+
+        Assert.Contains("fake clock reached 2038-01-19T03:14:07", summary, StringComparison.Ordinal);
+        Assert.Contains("real 1.0s, fake 60.0s", summary, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void The_summary_echoes_the_requested_moment_zone_and_mode()
+    {
+        // Defaults: moment 2038-01-19T03:14:07, zone UTC+02:00, mode ×60.
+        var vm = new SessionViewModel();
+        vm.SetTarget(@"C:\apps\Ledger.exe");
+        vm.Apply(Verdict("works", "verdict.works.covered"));
+
+        var summary = vm.BuildSummary(T());
+
+        Assert.Contains("2038-01-19T03:14:07", summary, StringComparison.Ordinal);
+        Assert.Contains("UTC+02:00", summary, StringComparison.Ordinal);
+        Assert.Contains("×60", summary, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Can_copy_summary_only_after_a_session_has_started()
+    {
+        var vm = new SessionViewModel();
+        Assert.False(vm.CanCopySummary); // idle - nothing to copy yet
+
+        vm.Apply(State("2038-01-19T03:14:07", "2026-08-25T00:00:00", bias: 0, multiplier: 60));
+        Assert.True(vm.CanCopySummary); // running
+
+        vm.Apply(new EndedEvent { V = ProtocolJson.ProtocolVersion, Clean = true });
+        Assert.True(vm.CanCopySummary); // ended - still copyable
+    }
+
+    [Fact]
+    public void Copy_feedback_reports_success_and_failure()
+    {
+        var vm = new SessionViewModel();
+        Assert.Equal(string.Empty, vm.CopyFeedbackKey);
+
+        vm.NoteCopy(ok: true);
+        Assert.Equal("copy.done", vm.CopyFeedbackKey);
+
+        vm.NoteCopy(ok: false);
+        Assert.Equal("copy.failed", vm.CopyFeedbackKey);
     }
 
     private static VerdictEvent Verdict(string verdict, string reasonKey) => new()

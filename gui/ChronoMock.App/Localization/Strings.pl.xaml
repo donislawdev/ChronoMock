@@ -71,4 +71,22 @@
   <sys:String x:Key="coverage.warnings">Ostrzeżenia</sys:String>
   <sys:String x:Key="coverage.family_note">Sesja rodziny - pokazano pokrycie procesu rodzica.</sys:String>
 
+  <!-- Kopiowanie podsumowania sesji (chrono-mock 7.2, 8.8). Raport do wklejenia w zgłoszenie; sesja inna
+       niż „działa" prowadzi banerem nierzetelności. Klucze z szablonem niosą pola {0}. -->
+  <sys:String x:Key="action.copy_summary">Kopiuj podsumowanie</sys:String>
+  <sys:String x:Key="copy.done">Skopiowano do schowka</sys:String>
+  <sys:String x:Key="copy.failed">Nie można skopiować - schowek jest zajęty</sys:String>
+  <sys:String x:Key="report.unreliable_banner">!! DOWÓD NIERZETELNY - podmiana czasu nie zadziałała w pełni. Nie cytuj tego jako dowodu zachowania.</sys:String>
+  <sys:String x:Key="report.title">Chrono Mock - raport sesji</sys:String>
+  <sys:String x:Key="report.target">cel</sys:String>
+  <sys:String x:Key="report.verdict">werdykt</sys:String>
+  <sys:String x:Key="report.no_verdict">brak werdyktu</sys:String>
+  <sys:String x:Key="report.did_not_take_effect">NIE ZADZIAŁAŁO - cel zniknął zaraz po wstrzyknięciu</sys:String>
+  <sys:String x:Key="report.vanish_detail">podejrzenie aplikacji jednoinstancyjnej: {0} - działał {1} ms</sys:String>
+  <sys:String x:Key="report.processes">procesy: {0}</sys:String>
+  <sys:String x:Key="report.session">sesja</sys:String>
+  <sys:String x:Key="report.session_reached">fałszywy zegar osiągnął {0}</sys:String>
+  <sys:String x:Key="report.elapsed">realnie {0}s, fałszywie {1}s</sys:String>
+  <sys:String x:Key="report.requested">żądano: {0} (strefa {1}, tryb {2})</sys:String>
+
 </ResourceDictionary>

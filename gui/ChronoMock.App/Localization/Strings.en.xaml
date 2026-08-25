@@ -72,4 +72,22 @@
   <sys:String x:Key="coverage.warnings">Warnings</sys:String>
   <sys:String x:Key="coverage.family_note">Family session - showing the parent process coverage.</sys:String>
 
+  <!-- Copy session summary (chrono-mock 7.2, 8.8). A paste-into-ticket report; a non-works session leads
+       with the unreliable-evidence banner. Keys ending in a template carry {0}-style placeholders. -->
+  <sys:String x:Key="action.copy_summary">Copy summary</sys:String>
+  <sys:String x:Key="copy.done">Copied to clipboard</sys:String>
+  <sys:String x:Key="copy.failed">Could not copy - the clipboard is busy</sys:String>
+  <sys:String x:Key="report.unreliable_banner">!! UNRELIABLE EVIDENCE - the time substitution did not fully take effect. Do not cite this as proof of behavior.</sys:String>
+  <sys:String x:Key="report.title">Chrono Mock - session report</sys:String>
+  <sys:String x:Key="report.target">target</sys:String>
+  <sys:String x:Key="report.verdict">verdict</sys:String>
+  <sys:String x:Key="report.no_verdict">no verdict emitted</sys:String>
+  <sys:String x:Key="report.did_not_take_effect">DID NOT TAKE EFFECT - the target vanished right after injection</sys:String>
+  <sys:String x:Key="report.vanish_detail">suspected single-instance app: {0} - lived {1} ms</sys:String>
+  <sys:String x:Key="report.processes">processes: {0}</sys:String>
+  <sys:String x:Key="report.session">session</sys:String>
+  <sys:String x:Key="report.session_reached">fake clock reached {0}</sys:String>
+  <sys:String x:Key="report.elapsed">real {0}s, fake {1}s</sys:String>
+  <sys:String x:Key="report.requested">requested: {0} (zone {1}, mode {2})</sys:String>
+
 </ResourceDictionary>

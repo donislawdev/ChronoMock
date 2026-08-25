@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Runtime.InteropServices;
 using System.Windows;
 using Microsoft.Win32;
 using Wpf.Ui.Controls;
@@ -61,6 +62,29 @@ public partial class MainWindow : FluentWindow
         {
             _session.SendJump(delta);
         }
+    }
+
+    // Copy the session summary to the clipboard (chrono-mock 7.2, 8.8). The summary is built in the UI
+    // language; a clipboard held by another process is reported honestly, never swallowed (rule 6).
+    private void OnCopySummaryClick(object sender, RoutedEventArgs e)
+        => _session.NoteCopy(TrySetClipboard(_session.BuildSummary(Text)));
+
+    private static bool TrySetClipboard(string text)
+    {
+        for (int attempt = 0; attempt < 2; attempt++)
+        {
+            try
+            {
+                Clipboard.SetText(text);
+                return true;
+            }
+            catch (ExternalException)
+            {
+                // Another process holds the clipboard lock - retry once, then report the failure.
+            }
+        }
+
+        return false;
     }
 
     // Resolve a translation key to text for a native dialog (rule 15); falls back to the raw key if missing.

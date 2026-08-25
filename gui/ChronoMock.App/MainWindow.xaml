@@ -218,6 +218,18 @@
 
       <!-- Status and rate. The meaning is carried by the translated label, not by colour (zasady/13 9). -->
       <StackPanel Grid.Row="6" Margin="{StaticResource SpaceMd}" HorizontalAlignment="Center">
+        <!-- Copy the paste-into-ticket session summary (chrono-mock 7.2, 8.8), available once a session has
+             started. A non-works session's summary leads with an unreliable-evidence banner. -->
+        <Button Content="{DynamicResource action.copy_summary}"
+                Margin="{StaticResource SpaceXs}"
+                HorizontalAlignment="Center"
+                Visibility="{Binding CanCopySummary, Converter={StaticResource BoolToVis}}"
+                Click="OnCopySummaryClick" />
+        <TextBlock Text="{Binding CopyFeedbackKey, Converter={StaticResource KeyToText}}"
+                   Margin="{StaticResource SpaceXs}"
+                   HorizontalAlignment="Center"
+                   FontSize="{StaticResource FontSizeCaption}"
+                   Foreground="{DynamicResource BrushTextSecondary}" />
         <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
           <TextBlock Text="{Binding StatusKey, Converter={StaticResource KeyToText}}"
                      FontSize="{StaticResource FontSizeBody}"
