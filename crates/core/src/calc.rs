@@ -415,6 +415,71 @@ pub fn step_target(fake_now_ft: i64, tz_bias_min: i32, step: &Step) -> Result<i6
     shift_filetime(fake_now_ft, tz_bias_min, step)
 }
 
+// --- Output formats (the calculator's right column, docs/02 section 8) ---------------
+
+const MONTH_ABBR: [&str; 12] =
+    ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const DOW_ABBR: [&str; 7] = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]; // 0 = Sunday
+
+/// Day of week for a civil date: 0 = Sunday .. 6 = Saturday. 1970-01-01 (day 0) was a Thursday.
+fn day_of_week(civil: &CivilDateTime) -> usize {
+    (days_from_civil(civil.year, civil.month as i64, civil.day as i64) + 4).rem_euclid(7) as usize
+}
+
+/// A "+HH:MM" / "-HH:MM" offset for a session bias (UTC = local + bias, so the offset is -bias).
+fn offset_label(tz_bias_min: i32) -> String {
+    let off = -tz_bias_min;
+    let sign = if off < 0 { '-' } else { '+' };
+    format!("{sign}{:02}:{:02}", off.abs() / 60, off.abs() % 60)
+}
+
+/// A moment rendered in every fixed output format at once (docs/02 section 8, in that order).
+/// The civil formats are always present; the instant-based ones (epoch, FILETIME, RFC 1123)
+/// need the UTC instant and are `None` only when the civil date is outside the FILETIME range.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Formats {
+    pub iso_date: String,
+    pub iso_datetime: String,
+    pub us: String,
+    pub pl: String,
+    pub rfc1123: Option<String>,
+    pub epoch_seconds: Option<i64>,
+    pub epoch_millis: Option<i64>,
+    pub filetime: Option<i64>,
+}
+
+/// Render `civil` (wall-clock in the session zone `tz_bias_min`) in every fixed format.
+pub fn formats(civil: &CivilDateTime, tz_bias_min: i32) -> Formats {
+    const FT_1970: i64 = 116_444_736_000_000_000; // FILETIME ticks at the Unix epoch
+    let iso_date = format!("{:04}-{:02}-{:02}", civil.year, civil.month, civil.day);
+    let iso_datetime = format!("{}{}", civil.to_iso(), offset_label(tz_bias_min));
+    let us = format!("{:02}/{:02}/{:04}", civil.month, civil.day, civil.year);
+    let pl = format!("{:02}.{:02}.{:04}", civil.day, civil.month, civil.year);
+
+    // Instant-based formats: the civil moment interpreted in the session zone as a UTC instant.
+    let (rfc1123, epoch_seconds, epoch_millis, filetime) = match super::moment_to_filetime_utc(
+        &super::Moment { local: civil.to_iso(), tz_bias_min: Some(tz_bias_min) },
+    ) {
+        Ok(ft) => {
+            let utc = filetime_to_civil(ft, 0);
+            let rfc = format!(
+                "{}, {:02} {} {:04} {:02}:{:02}:{:02} GMT",
+                DOW_ABBR[day_of_week(&utc)],
+                utc.day,
+                MONTH_ABBR[(utc.month - 1) as usize],
+                utc.year,
+                utc.hour,
+                utc.minute,
+                utc.second
+            );
+            (Some(rfc), Some((ft - FT_1970) / 10_000_000), Some((ft - FT_1970) / 10_000), Some(ft))
+        }
+        Err(_) => (None, None, None, None),
+    };
+
+    Formats { iso_date, iso_datetime, us, pl, rfc1123, epoch_seconds, epoch_millis, filetime }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -686,5 +751,45 @@ mod tests {
         {
             assert_eq!(filetime_to_civil(ft_of(local, bias), bias).to_iso(), local);
         }
+    }
+
+    // --- output formats ------------------------------------------------------
+
+    #[test]
+    fn formats_unix_epoch_is_all_zeros_and_thursday() {
+        let f = formats(&dt(1970, 1, 1, 0, 0, 0), 0);
+        assert_eq!(f.iso_date, "1970-01-01");
+        assert_eq!(f.iso_datetime, "1970-01-01T00:00:00+00:00");
+        assert_eq!(f.us, "01/01/1970");
+        assert_eq!(f.pl, "01.01.1970");
+        assert_eq!(f.epoch_seconds, Some(0));
+        assert_eq!(f.epoch_millis, Some(0));
+        assert_eq!(f.filetime, Some(116_444_736_000_000_000));
+        assert_eq!(f.rfc1123.as_deref(), Some("Thu, 01 Jan 1970 00:00:00 GMT"));
+    }
+
+    #[test]
+    fn formats_2038_boundary_epoch_is_i32_max() {
+        let f = formats(&dt(2038, 1, 19, 3, 14, 7), 0);
+        assert_eq!(f.epoch_seconds, Some(2_147_483_647)); // the classic 32-bit time_t boundary
+    }
+
+    #[test]
+    fn formats_respect_session_zone_offset() {
+        // 12:00 local in UTC+2 is 10:00 UTC: the offset shows in ISO, and epoch is the UTC instant.
+        let f = formats(&dt(2026, 1, 15, 12, 0, 0), -120);
+        assert_eq!(f.iso_datetime, "2026-01-15T12:00:00+02:00");
+        assert_eq!(f.us, "01/15/2026");
+        assert_eq!(f.pl, "15.01.2026");
+        assert_eq!(f.epoch_seconds, formats(&dt(2026, 1, 15, 10, 0, 0), 0).epoch_seconds);
+    }
+
+    #[test]
+    fn formats_day_of_week_name_is_correct() {
+        // 2000-01-01 was a Saturday - the RFC 1123 day name must match.
+        assert_eq!(
+            formats(&dt(2000, 1, 1, 0, 0, 0), 0).rfc1123.as_deref(),
+            Some("Sat, 01 Jan 2000 00:00:00 GMT")
+        );
     }
 }

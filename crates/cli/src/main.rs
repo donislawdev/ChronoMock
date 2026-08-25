@@ -939,6 +939,25 @@ fn render_calc(expr: &MomentExpr, outcome: &chrono_core::calc::EvalOutcome, zone
         out.push_str(&format!("  step {}:  {}  -> {}\n", i + 1, describe_step(step), outcome.after_each[i].to_iso()));
     }
     out.push_str(&format!("  result:  {}\n", outcome.result().to_iso()));
+    out.push_str(&render_formats(&outcome.result(), zone_bias_min.unwrap_or(0)));
+    out
+}
+
+/// Render the result in every output format, each on its own labelled line ready to copy
+/// (docs/02 section 8, in that order). An instant-based format outside FILETIME range shows
+/// "(out of range)" rather than a wrong number or nothing.
+fn render_formats(civil: &chrono_core::calc::CivilDateTime, tz_bias_min: i32) -> String {
+    let f = chrono_core::calc::formats(civil, tz_bias_min);
+    let num = |n: Option<i64>| n.map(|v| v.to_string()).unwrap_or_else(|| "(out of range)".into());
+    let mut out = String::from("  formats:\n");
+    out.push_str(&format!("    ISO date      {}\n", f.iso_date));
+    out.push_str(&format!("    ISO datetime  {}\n", f.iso_datetime));
+    out.push_str(&format!("    US            {}\n", f.us));
+    out.push_str(&format!("    PL            {}\n", f.pl));
+    out.push_str(&format!("    epoch (s)     {}\n", num(f.epoch_seconds)));
+    out.push_str(&format!("    epoch (ms)    {}\n", num(f.epoch_millis)));
+    out.push_str(&format!("    FILETIME      {}\n", num(f.filetime)));
+    out.push_str(&format!("    RFC 1123      {}\n", f.rfc1123.unwrap_or_else(|| "(out of range)".into())));
     out
 }
 
@@ -1678,5 +1697,20 @@ mod tests {
         let ca = parse_calc_args(&[]).unwrap();
         assert_eq!(ca.base, Base::Today);
         assert!(ca.steps.is_empty());
+    }
+
+    #[test]
+    fn render_calc_includes_the_formats_block() {
+        let ca = parse_calc_args(&["--base".into(), "1970-01-01T00:00:00".into()]).unwrap();
+        let expr = MomentExpr { base: ca.base, steps: ca.steps };
+        let now = chrono_core::calc::CivilDateTime { year: 2000, month: 1, day: 1, hour: 0, minute: 0, second: 0 };
+        let out = chrono_core::calc::eval(&expr, &EvalContext { now }).unwrap();
+        let text = render_calc(&expr, &out, Some(0));
+        assert!(text.contains("formats:"), "got:\n{text}");
+        assert!(text.contains("ISO datetime  1970-01-01T00:00:00+00:00"), "got:\n{text}");
+        assert!(text.contains("US            01/01/1970"), "got:\n{text}");
+        assert!(text.contains("epoch (s)     0"), "got:\n{text}");
+        assert!(text.contains("FILETIME      116444736000000000"), "got:\n{text}");
+        assert!(text.contains("RFC 1123      Thu, 01 Jan 1970 00:00:00 GMT"), "got:\n{text}");
     }
 }
