@@ -199,10 +199,15 @@ fn parse_run_args(argv: &[String]) -> Result<RunArgs, String> {
                 let (t, m) = raw
                     .split_once(':')
                     .ok_or("--set-after must be <tick>:<multiplier>")?;
-                set_after = Some((
-                    t.parse().map_err(|_| format!("bad tick in '{raw}'"))?,
-                    m.parse().map_err(|_| format!("bad multiplier in '{raw}'"))?,
-                ));
+                let tick: u64 = t.parse().map_err(|_| format!("bad tick in '{raw}'"))?;
+                let mult: i64 = m.parse().map_err(|_| format!("bad multiplier in '{raw}'"))?;
+                // Same invariant as --mode xN (parse_mode): an in-flight multiplier is >= 1. A zero or
+                // negative value would freeze or run the wall clock backward as a silent side effect
+                // of an unvalidated surface (rule 4); freezing in flight is not a feature here.
+                if mult < 1 {
+                    return Err(format!("--set-after multiplier must be >= 1, got '{raw}'"));
+                }
+                set_after = Some((tick, mult));
             }
             "--jump-after" => {
                 i += 1;
@@ -1476,7 +1481,18 @@ fn rule_from(dto: RuleDto) -> Result<chrono_core::calendar::HolidayRule, String>
 }
 
 /// Locate a calendar file: next to the executable (portable layout), else in ./calendars.
+/// Whether a catalogue id (calendar / preset) is safe to turn into a file name: non-empty and made
+/// only of letters, digits, '-' and '_'. This rejects any path separator, '..', drive letter, or
+/// ADS colon BEFORE the id becomes a path, so `--preset ../../secret` cannot read a file outside the
+/// catalogue directory (docs/04 4.1 - a shared catalogue entry can never smuggle a path).
+fn is_valid_catalogue_id(id: &str) -> bool {
+    !id.is_empty() && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+}
+
 fn find_calendar_file(id: &str) -> Result<std::path::PathBuf, String> {
+    if !is_valid_catalogue_id(id) {
+        return Err(format!("invalid calendar id '{id}' (use letters, digits, '-' or '_')"));
+    }
     let name = format!("{id}.json");
     let mut candidates: Vec<std::path::PathBuf> = Vec::new();
     if let Ok(exe) = std::env::current_exe() {
@@ -2010,6 +2026,11 @@ fn read_target_creation_date(
 
 /// Locate a preset file: next to the executable (portable layout), else in ./presets.
 fn find_preset_file(id: &str) -> Result<std::path::PathBuf, PresetError> {
+    if !is_valid_catalogue_id(id) {
+        return Err(PresetError::NotFound(format!(
+            "invalid preset id '{id}' (use letters, digits, '-' or '_')"
+        )));
+    }
     let name = format!("{id}.json");
     let mut candidates: Vec<std::path::PathBuf> = Vec::new();
     if let Ok(exe) = std::env::current_exe() {
@@ -2469,6 +2490,31 @@ mod tests {
         assert!(parse_mode("x0").is_err());
         assert!(parse_mode("x-5").is_err());
         assert!(parse_mode("xabc").is_err());
+    }
+
+    #[test]
+    fn set_after_multiplier_must_be_at_least_one() {
+        // The in-flight multiplier gets the same >= 1 rule as --mode xN, instead of silently
+        // accepting a zero/negative that would freeze or reverse the wall clock.
+        let ok = parse_run_args(&["t".into(), "--set-after".into(), "5:60".into()]).unwrap();
+        assert_eq!(ok.set_after, Some((5, 60)));
+        assert!(parse_run_args(&["t".into(), "--set-after".into(), "5:0".into()]).is_err());
+        assert!(parse_run_args(&["t".into(), "--set-after".into(), "5:-3".into()]).is_err());
+    }
+
+    #[test]
+    fn catalogue_id_rejects_path_traversal() {
+        // A catalogue id must never become a path escape: separators, '..', a drive colon, or empty
+        // are refused before the id is turned into a file name (docs/04 4.1).
+        assert!(is_valid_catalogue_id("month-end"));
+        assert!(is_valid_catalogue_id("us_banking"));
+        assert!(is_valid_catalogue_id("year-2038"));
+        assert!(!is_valid_catalogue_id(""));
+        assert!(!is_valid_catalogue_id(".."));
+        assert!(!is_valid_catalogue_id("../secret"));
+        assert!(!is_valid_catalogue_id("a/b"));
+        assert!(!is_valid_catalogue_id("a\\b"));
+        assert!(!is_valid_catalogue_id("c:evil"));
     }
 
     #[test]
