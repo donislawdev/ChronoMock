@@ -51,7 +51,8 @@ fn main() {
 }
 
 fn print_usage() {
-    eprintln!("usage: chrono run <target> [--at <local-moment>] [--zone <+HH:MM>] [--mode <flow|frozen|xN>] [--scale-duration] [--ticks N] [--set-after T:M] [--jump-after T:moment] [--args \"...\"] [--report <path>] [--json]");
+    eprintln!("usage: chrono run <target> [--at <local-moment>] [--preset <id>] [--zone <+HH:MM>] [--mode <flow|frozen|xN>] [--scale-duration] [--ticks N] [--set-after T:M] [--jump-after T:moment] [--args \"...\"] [--report <path>] [--json]");
+    eprintln!("       (--preset supplies the moment and mode from presets/<id>.json; exclusive of --at/--mode/--scale-duration)");
     print_calc_usage();
 }
 
@@ -93,6 +94,9 @@ struct RunArgs {
     /// Optional path to write the human evidence report to, in addition to stdout.
     report: Option<String>,
     json: bool,
+    /// A named preset id (docs/04 4.3): the moment AND the time mode come from `presets/<id>.json`
+    /// instead of --at/--mode. None = build them from the flags. Exclusive of --at/--mode/--scale-duration.
+    preset: Option<String>,
 }
 
 /// Parse `--mode` into a wire mode token and optional multiplier.
@@ -130,6 +134,10 @@ fn parse_run_args(argv: &[String]) -> Result<RunArgs, String> {
     let mut jump_after: Option<(u64, String)> = None;
     let mut json = false;
     let mut report: Option<String> = None;
+    let mut preset: Option<String> = None;
+    // Whether any moment/mode flag appeared, so `--preset` (which supplies both) can reject being
+    // combined with them instead of silently ignoring one source.
+    let mut saw_time_flag = false;
 
     let mut i = 0;
     while i < argv.len() {
@@ -137,6 +145,11 @@ fn parse_run_args(argv: &[String]) -> Result<RunArgs, String> {
             "--at" => {
                 i += 1;
                 at = Some(argv.get(i).ok_or("--at needs a value")?.clone());
+                saw_time_flag = true;
+            }
+            "--preset" => {
+                i += 1;
+                preset = Some(argv.get(i).ok_or("--preset needs an id like month-end")?.clone());
             }
             "--zone" => {
                 i += 1;
@@ -149,13 +162,17 @@ fn parse_run_args(argv: &[String]) -> Result<RunArgs, String> {
                 let (m, mult) = parse_mode(raw)?;
                 mode = m;
                 multiplier = mult;
+                saw_time_flag = true;
             }
             "--args" => {
                 i += 1;
                 let raw = argv.get(i).ok_or("--args needs a value")?;
                 args = raw.split_whitespace().map(str::to_string).collect();
             }
-            "--scale-duration" => scale_duration = true,
+            "--scale-duration" => {
+                scale_duration = true;
+                saw_time_flag = true;
+            }
             "--ticks" => {
                 i += 1;
                 let raw = argv.get(i).ok_or("--ticks needs a value")?;
@@ -199,6 +216,14 @@ fn parse_run_args(argv: &[String]) -> Result<RunArgs, String> {
         i += 1;
     }
 
+    // A preset supplies both the moment and the time mode, so combining it with --at/--mode/
+    // --scale-duration would mean two sources. Reject it rather than pick one silently.
+    if preset.is_some() && saw_time_flag {
+        return Err("--preset supplies the moment and mode; it cannot be combined with \
+                    --at/--mode/--scale-duration"
+            .into());
+    }
+
     Ok(RunArgs {
         target: target.ok_or("missing <target>")?,
         args,
@@ -212,6 +237,7 @@ fn parse_run_args(argv: &[String]) -> Result<RunArgs, String> {
         jump_after,
         report,
         json,
+        preset,
     })
 }
 
@@ -337,17 +363,66 @@ fn driver_run(argv: &[String]) -> i32 {
         }
     };
 
-    // Resolve a relative --at (now + delta) to an absolute moment before we spawn.
-    let resolved_at = match &ra.at {
-        Some(raw) => match resolve_at(raw, ra.zone_bias_min) {
-            Ok(s) => Some(s),
-            Err(e) => {
-                eprintln!("chrono: {e}");
-                print_usage();
-                return 1;
+    // The moment AND the time mode come either from a named preset (docs/04 4.3) or from the flags.
+    // A preset is resolved driver-side here - the same way a relative --at is - so the core still
+    // receives an absolute moment and a plain mode, and never learns that a preset existed.
+    let (resolved_at, mode, multiplier, scale_duration) = if let Some(pid) = &ra.preset {
+        match load_preset(pid) {
+            Ok(p) => {
+                // The substitution surface honours applies_to: a calculator-only preset is not a
+                // substitution question. Refuse it rather than run a moment nobody asked to run.
+                if !preset_targets_substitution(&p.applies_to) {
+                    eprintln!(
+                        "chrono: preset '{}' targets {}, not substitution (preset.not_for_substitution)",
+                        p.id, p.applies_to
+                    );
+                    return 1;
+                }
+                // Evaluate the preset moment against real "now" in the session zone, exactly like a
+                // relative --at, to an absolute wall moment. No calendar here - a preset that needs
+                // one is an honest error (the run surface has no --calendar yet).
+                let now = match resolve_now_civil(ra.zone_bias_min) {
+                    Ok(n) => n,
+                    Err(e) => {
+                        eprintln!("chrono: cannot resolve current time: {e}");
+                        return 3;
+                    }
+                };
+                match chrono_core::calc::eval(
+                    &p.moment,
+                    &EvalContext { now, zone_bias_min: ra.zone_bias_min.unwrap_or(0), calendar: None },
+                ) {
+                    Ok(outcome) => (
+                        Some(outcome.result().to_iso()),
+                        p.time_mode.mode.clone(),
+                        p.time_mode.multiplier,
+                        p.time_mode.scale_duration,
+                    ),
+                    Err(e) => {
+                        eprintln!("chrono: preset '{}' moment: {}", p.id, describe_calc_error(&e));
+                        return calc_error_exit_code(&e);
+                    }
+                }
             }
-        },
-        None => None,
+            Err(e) => {
+                eprintln!("chrono: {}", e.message());
+                return e.exit_code();
+            }
+        }
+    } else {
+        // Resolve a relative --at (now + delta) to an absolute moment before we spawn.
+        let resolved = match &ra.at {
+            Some(raw) => match resolve_at(raw, ra.zone_bias_min) {
+                Ok(s) => Some(s),
+                Err(e) => {
+                    eprintln!("chrono: {e}");
+                    print_usage();
+                    return 1;
+                }
+            },
+            None => None,
+        };
+        (resolved, ra.mode.clone(), ra.multiplier, ra.scale_duration)
     };
 
     let exe = match std::env::current_exe() {
@@ -388,9 +463,9 @@ fn driver_run(argv: &[String]) -> i32 {
                 tz_bias_min: ra.zone_bias_min,
                 delta: None,
             },
-            mode: ra.mode.clone(),
-            multiplier: ra.multiplier,
-            scale_duration: ra.scale_duration,
+            mode: mode.clone(),
+            multiplier,
+            scale_duration,
         },
     };
     let mut stdin = child.stdin.take().expect("piped stdin");
@@ -505,7 +580,7 @@ fn driver_run(argv: &[String]) -> i32 {
         let params = EvidenceParams {
             moment: resolved_at.clone().unwrap_or_else(|| "(default)".into()),
             zone: ra.zone_bias_min.map(format_bias).unwrap_or_else(|| "(host default)".into()),
-            mode: mode_label(&ra.mode, ra.multiplier),
+            mode: mode_label(&mode, multiplier),
         };
         match std::fs::write(path, render_evidence(&report, &params)) {
             Ok(()) => eprintln!("chrono: evidence written to {path}"),
@@ -1400,15 +1475,35 @@ fn load_calendar(id: &str) -> Result<chrono_core::calendar::Calendar, String> {
 // never starts a session; the substitution side (preset -> `run`) arrives with the proto step wire
 // (docs/08 section 11 item 1), and the full session-level path guard lands with it.
 
-/// A preset ready for the calculator: its canonical moment plus the human framing the surface shows.
+/// A preset ready to use: its canonical moment, its human framing (calculator surface), and its
+/// time mode (substitution surface). The calculator ignores `time_mode` (docs/04 4.2); `run` uses it.
 #[derive(Debug)]
 struct Preset {
     id: String,
     name_en: String,
     explains_en: String,
-    /// `calculator` / `substitution` / `both` (docs/04 4.2). The calculator honours it.
+    /// `calculator` / `substitution` / `both` (docs/04 4.2). Each surface honours it.
     applies_to: String,
     moment: MomentExpr,
+    time_mode: PresetTimeMode,
+}
+
+/// A preset's time mode, resolved to the substitution surface's wire shape (the same `mode` /
+/// `multiplier` / `scale_duration` a `run` session carries). The contract carries `multiplier` and
+/// `scale_duration_clock` (docs/04 4.2); `multiplier == 1` is real-time `flow`, `> 1` is `xN`.
+#[derive(Debug, Clone)]
+struct PresetTimeMode {
+    /// Wire mode token: "flow" or "multiplier". (Presets do not express "frozen".)
+    mode: String,
+    multiplier: Option<i64>,
+    scale_duration: bool,
+}
+
+impl Default for PresetTimeMode {
+    /// A preset with no `time_mode` (e.g. a calculator-only one) runs at real speed.
+    fn default() -> Self {
+        Self { mode: "flow".into(), multiplier: None, scale_duration: false }
+    }
 }
 
 /// Why a preset could not be loaded for the calculator. Enumerated, not a shared string, so the
@@ -1453,6 +1548,19 @@ struct PresetDto {
     #[serde(default)]
     parameters: Vec<serde_json::Value>,
     moment: MomentDto,
+    // Only substitution/both presets carry a time mode; a calculator-only one may omit it (the
+    // calculator ignores it either way). Absent = real-time flow (PresetTimeMode::default).
+    #[serde(default)]
+    time_mode: Option<TimeModeDto>,
+}
+
+/// A preset's `time_mode` object (docs/04 4.2): `{ "multiplier": N, "scale_duration_clock": bool }`.
+#[derive(Deserialize)]
+struct TimeModeDto {
+    #[serde(default)]
+    multiplier: Option<i64>,
+    #[serde(default)]
+    scale_duration_clock: bool,
 }
 
 /// The English text is what the CLI renders (rule 15 - CLI is English only); `pl` rides in the file
@@ -1589,13 +1697,33 @@ fn preset_from_json(text: &str) -> Result<Preset, PresetError> {
     }
     let base = base_from(dto.moment.base)?;
     let steps = dto.moment.steps.into_iter().map(step_from).collect::<Result<Vec<_>, _>>()?;
+    let time_mode = time_mode_from(dto.time_mode)?;
     Ok(Preset {
         id: dto.id,
         name_en: dto.name.en,
         explains_en: dto.explains.en,
         applies_to: dto.applies_to,
         moment: MomentExpr { base, steps },
+        time_mode,
     })
+}
+
+/// Map a preset's `time_mode` to the substitution wire shape. `multiplier == 1` (or absent) is
+/// real-time `flow`; `> 1` is `xN`; `< 1` is rejected. Presets do not express `frozen`.
+fn time_mode_from(dto: Option<TimeModeDto>) -> Result<PresetTimeMode, PresetError> {
+    let Some(dto) = dto else { return Ok(PresetTimeMode::default()) };
+    let multiplier = dto.multiplier.unwrap_or(1);
+    let (mode, multiplier) = match multiplier {
+        1 => ("flow".to_string(), None),
+        m if m > 1 => ("multiplier".to_string(), Some(m)),
+        _ => return Err(PresetError::BadFile(format!("time_mode multiplier must be >= 1, got {multiplier}"))),
+    };
+    Ok(PresetTimeMode { mode, multiplier, scale_duration: dto.scale_duration_clock })
+}
+
+/// Whether a preset's `applies_to` makes it a substitution question (docs/04 4.2).
+fn preset_targets_substitution(applies_to: &str) -> bool {
+    matches!(applies_to, "substitution" | "both")
 }
 
 /// Locate a preset file: next to the executable (portable layout), else in ./presets.
@@ -2675,5 +2803,63 @@ mod tests {
     #[test]
     fn preset_bad_json_is_reported() {
         assert!(matches!(preset_from_json("{ not json"), Err(PresetError::BadFile(_))));
+    }
+
+    // --- run --preset (Stage 4 slice 17): the substitution bridge, docs/06.3 pkt 3 -----------
+
+    /// A preset's time_mode maps to the substitution wire shape: multiplier 1 (or absent) is flow,
+    /// >1 is xN, <1 is refused. scale_duration_clock rides through.
+    #[test]
+    fn preset_time_mode_maps_to_wire_shape() {
+        let none = time_mode_from(None).unwrap();
+        assert_eq!(none.mode, "flow");
+        assert_eq!(none.multiplier, None);
+        assert!(!none.scale_duration);
+
+        let flow = time_mode_from(Some(TimeModeDto { multiplier: Some(1), scale_duration_clock: false })).unwrap();
+        assert_eq!((flow.mode.as_str(), flow.multiplier), ("flow", None));
+
+        let xn = time_mode_from(Some(TimeModeDto { multiplier: Some(60), scale_duration_clock: true })).unwrap();
+        assert_eq!((xn.mode.as_str(), xn.multiplier, xn.scale_duration), ("multiplier", Some(60), true));
+
+        assert!(matches!(
+            time_mode_from(Some(TimeModeDto { multiplier: Some(0), scale_duration_clock: false })),
+            Err(PresetError::BadFile(_))
+        ));
+    }
+
+    /// A preset carrying a time_mode object surfaces it on the loaded preset.
+    #[test]
+    fn preset_from_json_reads_time_mode() {
+        let json = r#"{
+            "schema": "chronomock.preset/1", "id": "fast",
+            "name": { "en": "n" }, "explains": { "en": "e" }, "applies_to": "both",
+            "moment": { "base": "today", "steps": [] },
+            "time_mode": { "multiplier": 1440, "scale_duration_clock": true }
+        }"#;
+        let p = preset_from_json(json).unwrap();
+        assert_eq!(p.time_mode.mode, "multiplier");
+        assert_eq!(p.time_mode.multiplier, Some(1440));
+        assert!(p.time_mode.scale_duration);
+    }
+
+    /// The substitution surface honours applies_to: calculator-only presets are not run questions.
+    #[test]
+    fn preset_applies_to_gates_substitution() {
+        assert!(preset_targets_substitution("substitution"));
+        assert!(preset_targets_substitution("both"));
+        assert!(!preset_targets_substitution("calculator"));
+    }
+
+    /// `run --preset` supplies the moment and mode, so combining it with a time flag is a usage
+    /// error; alone (with a target) it parses and carries the id.
+    #[test]
+    fn run_preset_flag_is_exclusive_of_time_flags() {
+        let ok = parse_run_args(&["--preset".into(), "month-end".into(), "app.exe".into()]).unwrap();
+        assert_eq!(ok.preset.as_deref(), Some("month-end"));
+        assert_eq!(ok.target, "app.exe");
+        assert!(parse_run_args(&["--preset".into(), "m".into(), "--at".into(), "2020-01-01T00:00:00".into(), "app.exe".into()]).is_err());
+        assert!(parse_run_args(&["--preset".into(), "m".into(), "--mode".into(), "x60".into(), "app.exe".into()]).is_err());
+        assert!(parse_run_args(&["--preset".into(), "m".into(), "--scale-duration".into(), "app.exe".into()]).is_err());
     }
 }
