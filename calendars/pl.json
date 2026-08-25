@@ -1,0 +1,127 @@
+{
+  "schema": "chronomock.calendar/1",
+  "stability": "unstable",
+  "id": "pl",
+  "country": "PL",
+  "subregion": null,
+  "name": {
+    "en": "Poland",
+    "local": "Polska"
+  },
+  "weekend": ["saturday", "sunday"],
+  "observed": "none",
+  "holidays": [
+    {
+      "id": "new_years_day",
+      "name": { "en": "New Year's Day", "local": "Nowy Rok" },
+      "rule": { "type": "fixed", "month": 1, "day": 1 },
+      "valid_from": null,
+      "valid_to": null,
+      "source": "Non-working Days Act of 18 January 1951 (Poland)"
+    },
+    {
+      "id": "epiphany",
+      "name": { "en": "Epiphany", "local": "Święto Trzech Króli" },
+      "rule": { "type": "fixed", "month": 1, "day": 6 },
+      "valid_from": 2011,
+      "valid_to": null,
+      "source": "Non-working Days Act of 18 January 1951; restored as a non-working day effective 2011 (2010 amendment)"
+    },
+    {
+      "id": "easter_sunday",
+      "name": { "en": "Easter Sunday", "local": "Niedziela Wielkanocna" },
+      "rule": { "type": "easter_offset", "offset": 0 },
+      "valid_from": null,
+      "valid_to": null,
+      "source": "Non-working Days Act of 18 January 1951 (Poland)"
+    },
+    {
+      "id": "easter_monday",
+      "name": { "en": "Easter Monday", "local": "Poniedziałek Wielkanocny" },
+      "rule": { "type": "easter_offset", "offset": 1 },
+      "valid_from": null,
+      "valid_to": null,
+      "source": "Non-working Days Act of 18 January 1951 (Poland)"
+    },
+    {
+      "id": "labour_day",
+      "name": { "en": "May Day (Labour Day)", "local": "Święto Pracy" },
+      "rule": { "type": "fixed", "month": 5, "day": 1 },
+      "valid_from": null,
+      "valid_to": null,
+      "source": "Non-working Days Act of 18 January 1951 (Poland)"
+    },
+    {
+      "id": "constitution_day",
+      "name": { "en": "Constitution Day", "local": "Święto Konstytucji 3 Maja" },
+      "rule": { "type": "fixed", "month": 5, "day": 3 },
+      "valid_from": null,
+      "valid_to": null,
+      "source": "Non-working Days Act of 18 January 1951 (Poland)"
+    },
+    {
+      "id": "pentecost",
+      "name": { "en": "Pentecost (Whit Sunday)", "local": "Zielone Świątki" },
+      "rule": { "type": "easter_offset", "offset": 49 },
+      "valid_from": null,
+      "valid_to": null,
+      "source": "Non-working Days Act of 18 January 1951 (Poland); 49 days (7 weeks) after Easter Sunday"
+    },
+    {
+      "id": "corpus_christi",
+      "name": { "en": "Corpus Christi", "local": "Boże Ciało" },
+      "rule": { "type": "easter_offset", "offset": 60 },
+      "valid_from": null,
+      "valid_to": null,
+      "source": "Non-working Days Act of 18 January 1951 (Poland); Thursday after Trinity Sunday, 60 days after Easter Sunday"
+    },
+    {
+      "id": "assumption_day",
+      "name": { "en": "Assumption of the Blessed Virgin Mary / Polish Armed Forces Day", "local": "Wniebowzięcie Najświętszej Maryi Panny / Święto Wojska Polskiego" },
+      "rule": { "type": "fixed", "month": 8, "day": 15 },
+      "valid_from": null,
+      "valid_to": null,
+      "source": "Non-working Days Act of 18 January 1951 (Poland)"
+    },
+    {
+      "id": "all_saints_day",
+      "name": { "en": "All Saints' Day", "local": "Wszystkich Świętych" },
+      "rule": { "type": "fixed", "month": 11, "day": 1 },
+      "valid_from": null,
+      "valid_to": null,
+      "source": "Non-working Days Act of 18 January 1951 (Poland)"
+    },
+    {
+      "id": "independence_day",
+      "name": { "en": "National Independence Day", "local": "Narodowe Święto Niepodległości" },
+      "rule": { "type": "fixed", "month": 11, "day": 11 },
+      "valid_from": null,
+      "valid_to": null,
+      "source": "Non-working Days Act of 18 January 1951 (Poland)"
+    },
+    {
+      "id": "christmas_eve",
+      "name": { "en": "Christmas Eve", "local": "Wigilia Bożego Narodzenia" },
+      "rule": { "type": "fixed", "month": 12, "day": 24 },
+      "valid_from": 2025,
+      "valid_to": null,
+      "source": "Act of 6 December 2024 amending the Non-working Days Act (in force 1 February 2025; first non-working Christmas Eve 2025-12-24)"
+    },
+    {
+      "id": "christmas_day",
+      "name": { "en": "Christmas Day", "local": "Boże Narodzenie (pierwszy dzień)" },
+      "rule": { "type": "fixed", "month": 12, "day": 25 },
+      "valid_from": null,
+      "valid_to": null,
+      "source": "Non-working Days Act of 18 January 1951 (Poland)"
+    },
+    {
+      "id": "second_day_of_christmas",
+      "name": { "en": "Second Day of Christmas", "local": "Drugi dzień Bożego Narodzenia" },
+      "rule": { "type": "fixed", "month": 12, "day": 26 },
+      "valid_from": null,
+      "valid_to": null,
+      "source": "Non-working Days Act of 18 January 1951 (Poland)"
+    }
+  ]
+}

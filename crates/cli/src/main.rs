@@ -997,16 +997,11 @@ fn render_metadata(
     out.push_str(&format!("    days from now {days}\n"));
 
     if let Some(cal) = calendar {
-        let business = match chrono_core::calendar::is_business_day(civil, cal) {
-            Ok(true) => "yes".to_string(),
-            Ok(false) => "no".to_string(),
-            Err(e) => format!("(unsupported rule: {})", e.holiday_id),
-        };
+        let business = if chrono_core::calendar::is_business_day(civil, cal) { "yes" } else { "no" };
         out.push_str(&format!("    business day  {business}  ({})\n", cal.id));
         let holiday = match chrono_core::calendar::holiday_on(civil, cal) {
-            Ok(Some(h)) => h.name_en.clone(),
-            Ok(None) => "no".to_string(),
-            Err(e) => format!("(unsupported rule: {})", e.holiday_id),
+            Some(h) => h.name_en.as_str(),
+            None => "no",
         };
         out.push_str(&format!("    holiday       {holiday}\n"));
     }
