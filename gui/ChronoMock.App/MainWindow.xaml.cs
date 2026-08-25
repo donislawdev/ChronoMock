@@ -8,7 +8,7 @@ namespace ChronoMock.App;
 
 public partial class MainWindow : FluentWindow
 {
-    private readonly SessionViewModel _session = new();
+    private readonly SessionViewModel _session = new(FileSessionHistoryStore.ForApp());
 
     public MainWindow()
     {
@@ -85,6 +85,16 @@ public partial class MainWindow : FluentWindow
         }
 
         return false;
+    }
+
+    // Repeat a past session: fill the setup form from the clicked record. It never starts a session
+    // (untouchable rule 7, docs/04 section 6) - the user reviews the filled form and clicks Start.
+    private void OnHistoryClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement { Tag: SessionRecord record })
+        {
+            _session.LoadFromHistory(record);
+        }
     }
 
     // Resolve a translation key to text for a native dialog (rule 15); falls back to the raw key if missing.

@@ -90,4 +90,9 @@
   <sys:String x:Key="report.elapsed">real {0}s, fake {1}s</sys:String>
   <sys:String x:Key="report.requested">requested: {0} (zone {1}, mode {2})</sys:String>
 
+  <!-- Session history (chrono-mock 7.2, 8.8, 11.1 pt 13). Local-only; clicking an entry fills the setup
+       form and never starts a session (untouchable rule 7, docs/04 section 6). -->
+  <sys:String x:Key="history.header">History</sys:String>
+  <sys:String x:Key="history.save_failed">Could not save to history:</sys:String>
+
 </ResourceDictionary>

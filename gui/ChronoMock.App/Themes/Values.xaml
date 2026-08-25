@@ -34,4 +34,8 @@
        so nothing is ever clipped. -->
   <sys:Double x:Key="CoverageMaxHeight">140</sys:Double>
 
+  <!-- The history list scrolls inside this height so a long history never dominates the panel. Named cap,
+       not free geometry (zasady/13 2.1); the whole panel also scrolls. -->
+  <sys:Double x:Key="HistoryMaxHeight">160</sys:Double>
+
 </ResourceDictionary>

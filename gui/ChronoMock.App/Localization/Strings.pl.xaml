@@ -89,4 +89,9 @@
   <sys:String x:Key="report.elapsed">realnie {0}s, fałszywie {1}s</sys:String>
   <sys:String x:Key="report.requested">żądano: {0} (strefa {1}, tryb {2})</sys:String>
 
+  <!-- Historia sesji (chrono-mock 7.2, 8.8, 11.1 pkt 13). Tylko lokalnie; klik wpisu wypełnia formularz
+       setup i nigdy nie uruchamia sesji (reguła nietykalna 7, docs/04 §6). -->
+  <sys:String x:Key="history.header">Historia</sys:String>
+  <sys:String x:Key="history.save_failed">Nie udało się zapisać do historii:</sys:String>
+
 </ResourceDictionary>

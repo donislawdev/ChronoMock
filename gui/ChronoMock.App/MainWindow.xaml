@@ -32,6 +32,7 @@
           <RowDefinition Height="Auto" />
           <RowDefinition Height="Auto" />
           <RowDefinition Height="Auto" />
+          <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
         <!-- Setup: what to run (target), when (moment in the session zone), how fast (mode). chrono-mock 7.1.
@@ -250,6 +251,58 @@
                      HorizontalAlignment="Center"
                      TextWrapping="Wrap" />
         </StackPanel>
+
+        <!-- Session history (chrono-mock 7.2, 8.8, 11.1 pt 13), shown once there is a recorded session.
+             Clicking an entry FILLS the setup form and never starts a session (rule 7, docs/04 section 6).
+             It scrolls within a capped height so a long history never dominates the panel. -->
+        <Expander Grid.Row="7"
+                  Margin="{StaticResource SpaceMd}"
+                  Visibility="{Binding HasHistory, Converter={StaticResource BoolToVis}}">
+          <Expander.Header>
+            <TextBlock FontSize="{StaticResource FontSizeBody}" Foreground="{DynamicResource BrushTextSecondary}">
+              <Run Text="{DynamicResource history.header}" /><Run Text="{Binding History.Count, StringFormat=' ({0})', Mode=OneWay}" />
+            </TextBlock>
+          </Expander.Header>
+          <StackPanel>
+            <TextBlock Margin="{StaticResource SpaceXs}"
+                       TextWrapping="Wrap"
+                       FontSize="{StaticResource FontSizeCaption}"
+                       Foreground="{DynamicResource BrushStatusPartial}"
+                       Visibility="{Binding HasHistoryError, Converter={StaticResource BoolToVis}}">
+              <Run Text="{DynamicResource history.save_failed}" /><Run Text="{Binding HistoryError, Mode=OneWay}" />
+            </TextBlock>
+            <ScrollViewer MaxHeight="{StaticResource HistoryMaxHeight}" VerticalScrollBarVisibility="Auto">
+              <ItemsControl ItemsSource="{Binding History}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate>
+                    <Button Click="OnHistoryClick" Tag="{Binding}"
+                            AutomationProperties.Name="{Binding TargetName}"
+                            HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
+                            Margin="{StaticResource SpaceXs}">
+                      <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="{Binding VerdictKind, Converter={StaticResource VerdictGlyph}}"
+                                   Foreground="{Binding VerdictKind, Converter={StaticResource VerdictBrush}}"
+                                   FontSize="{StaticResource FontSizeBody}" />
+                        <TextBlock Text="{Binding TargetName}"
+                                   Margin="{StaticResource SpaceXs}"
+                                   FontSize="{StaticResource FontSizeBody}"
+                                   Foreground="{DynamicResource BrushTextPrimary}" />
+                        <TextBlock Text="{Binding MomentLocal}"
+                                   Margin="{StaticResource SpaceXs}"
+                                   FontSize="{StaticResource FontSizeCaption}"
+                                   Foreground="{DynamicResource BrushTextSecondary}" />
+                        <TextBlock Text="{Binding EndedAtUtc}"
+                                   Margin="{StaticResource SpaceXs}"
+                                   FontSize="{StaticResource FontSizeCaption}"
+                                   Foreground="{DynamicResource BrushTextSecondary}" />
+                      </StackPanel>
+                    </Button>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </ScrollViewer>
+          </StackPanel>
+        </Expander>
       </Grid>
     </ScrollViewer>
   </Grid>

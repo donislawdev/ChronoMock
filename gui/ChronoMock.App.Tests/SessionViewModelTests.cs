@@ -443,6 +443,110 @@ public class SessionViewModelTests
         Assert.Equal("copy.failed", vm.CopyFeedbackKey);
     }
 
+    [Fact]
+    public void Build_record_captures_the_setup_and_the_verdict()
+    {
+        var vm = new SessionViewModel();
+        vm.SetTarget(@"C:\apps\Ledger.exe");
+        vm.MomentText = "2040-06-15 08:30:00";
+        vm.SelectedZone = vm.Zones.First(z => z.BiasMinutes == 300);
+        vm.SelectedMode = vm.Modes.First(m => m.Mode == "frozen");
+        vm.Apply(Verdict("works", "verdict.works.covered"));
+
+        var record = vm.BuildRecord();
+
+        Assert.Equal(@"C:\apps\Ledger.exe", record.TargetPath);
+        Assert.Equal("2040-06-15T08:30:00", record.MomentLocal); // canonicalised to the 'T' form
+        Assert.Equal(300, record.TzBiasMin);
+        Assert.Equal("frozen", record.Mode);
+        Assert.Null(record.Multiplier);
+        Assert.Equal("works", record.Verdict);
+        Assert.EndsWith("Z", record.EndedAtUtc, StringComparison.Ordinal); // UTC end time
+    }
+
+    [Fact]
+    public void Build_record_is_undetermined_for_a_vanished_session()
+    {
+        var vm = new SessionViewModel();
+        vm.SetTarget(@"C:\apps\Ledger.exe");
+        vm.Apply(new VanishedEvent
+        {
+            V = ProtocolJson.ProtocolVersion,
+            Pid = 1,
+            ReasonKey = "target.single_instance_suspected",
+            LivedMs = 1,
+        });
+
+        Assert.Equal("undetermined", vm.BuildRecord().Verdict); // could not be audited - never a faked verdict
+    }
+
+    [Fact]
+    public void Load_from_history_fills_the_setup_and_does_not_start()
+    {
+        var vm = new SessionViewModel();
+
+        vm.LoadFromHistory(HistoryRecord("Ledger", moment: "2040-06-15T08:30:00", bias: 300, mode: "frozen", multiplier: null));
+
+        Assert.Equal(@"C:\apps\Ledger.exe", vm.TargetPath);
+        Assert.Equal("2040-06-15T08:30:00", vm.MomentText);
+        Assert.Equal(300, vm.SelectedZone.BiasMinutes);
+        Assert.Equal("frozen", vm.SelectedMode.Mode);
+        Assert.Equal(SessionStatusKind.Idle, vm.StatusKind); // rule 7: fills the form, never starts a session
+    }
+
+    [Fact]
+    public void Load_from_history_is_ignored_while_a_session_runs()
+    {
+        var vm = new SessionViewModel();
+        vm.SetTarget(@"C:\apps\Ledger.exe");
+        vm.Apply(State("2038-01-19T03:14:07", "2026-08-25T00:00:00", bias: 0, multiplier: 60)); // running
+
+        vm.LoadFromHistory(HistoryRecord("Other", moment: "2000-01-01T00:00:00", bias: 0, mode: "flow", multiplier: null));
+
+        Assert.Equal(@"C:\apps\Ledger.exe", vm.TargetPath); // unchanged - a run is in progress
+    }
+
+    [Fact]
+    public void Constructor_loads_existing_history_newest_first()
+    {
+        var store = new InMemorySessionHistoryStore();
+        store.Append(HistoryRecord("Alpha")); // oldest
+        store.Append(HistoryRecord("Beta"));  // newest
+
+        var vm = new SessionViewModel(store);
+
+        Assert.Equal("Beta.exe", vm.History[0].TargetName); // newest first
+        Assert.Equal("Alpha.exe", vm.History[1].TargetName);
+        Assert.True(vm.HasHistory);
+    }
+
+    [Fact]
+    public void Record_session_prepends_to_the_panel_and_persists()
+    {
+        var store = new InMemorySessionHistoryStore();
+        var vm = new SessionViewModel(store);
+        vm.SetTarget(@"C:\apps\Ledger.exe");
+        vm.Apply(Verdict("works", "verdict.works.covered"));
+
+        vm.RecordSession();
+
+        Assert.Equal("Ledger.exe", vm.History[0].TargetName); // prepended for the panel
+        Assert.Equal("Ledger.exe", Assert.Single(store.Load()).TargetName); // persisted to the store
+    }
+
+    private static SessionRecord HistoryRecord(
+        string name, string moment = "2038-01-19T03:14:07", int bias = -120,
+        string mode = "multiplier", long? multiplier = 60) => new()
+        {
+            TargetPath = $@"C:\apps\{name}.exe",
+            MomentLocal = moment,
+            TzBiasMin = bias,
+            Mode = mode,
+            Multiplier = multiplier,
+            Verdict = "works",
+            EndedAtUtc = "2026-08-25T09:00:00Z",
+        };
+
     private static VerdictEvent Verdict(string verdict, string reasonKey) => new()
     {
         V = ProtocolJson.ProtocolVersion,

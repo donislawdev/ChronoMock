@@ -1,3 +1,4 @@
+using System.Collections.ObjectModel;
 using System.Globalization;
 using System.IO; // The WPF SDK trims System.IO from implicit usings (Path collides with Shapes.Path).
 using System.Text;
@@ -33,12 +34,28 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     private string _momentText = "2038-01-19T03:14:07";
     private ZoneOption _selectedZone;
     private ModeOption _selectedMode;
+    private readonly ISessionHistoryStore _store;
+    private bool _launched;
+    private string _historyError = string.Empty;
 
-    public SessionViewModel()
+    /// <summary>Bare view-model: history is in-memory, so a default construction and unit tests touch no files.</summary>
+    public SessionViewModel() : this(new InMemorySessionHistoryStore())
     {
+    }
+
+    public SessionViewModel(ISessionHistoryStore history)
+    {
+        _store = history;
+
         // Defaults match the moment/mode the panel shipped with before these inputs existed.
         _selectedZone = TimeInputs.Zones.First(z => z.BiasMinutes == -120); // UTC+02:00
         _selectedMode = TimeInputs.Modes.First(m => m.Multiplier == 60);    // x60
+
+        History.CollectionChanged += (_, _) => RaisePropertyChanged(nameof(HasHistory));
+        foreach (var record in _store.Load())
+        {
+            History.Insert(0, record); // newest first for display
+        }
     }
     private bool _verdictKnown;
     private VerdictKind _verdictKind = VerdictKind.Unknown;
@@ -102,6 +119,24 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
 
     /// <summary>Record the outcome of a clipboard copy so the panel can confirm it or report a failure.</summary>
     public void NoteCopy(bool ok) => CopyFeedbackKey = ok ? "copy.done" : "copy.failed";
+
+    /// <summary>Past sessions, newest first, for the History panel (docs/04 section 6). Loaded from the
+    /// injected store on construction and prepended as each session ends.</summary>
+    public ObservableCollection<SessionRecord> History { get; } = [];
+
+    /// <summary>True when there is at least one recorded session - the History panel binds its visibility here.</summary>
+    public bool HasHistory => History.Count > 0;
+
+    /// <summary>Raw detail when a session could not be written to history (e.g. a read-only drive), empty
+    /// otherwise. Surfaced, never swallowed (rule 6).</summary>
+    public string HistoryError
+    {
+        get => _historyError;
+        private set { if (Set(ref _historyError, value)) { RaisePropertyChanged(nameof(HasHistoryError)); } }
+    }
+
+    /// <summary>True when a history write failed - the panel shows the reason (rule 6).</summary>
+    public bool HasHistoryError => _historyError.Length > 0;
 
     /// <summary>Path to the target executable to run, chosen by the user (or a bundled default in dev).</summary>
     public string? TargetPath
@@ -382,6 +417,7 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
         }
 
         Idle = false;
+        _launched = false;
         LastError = string.Empty;
         ResetSession();
         SetStatus("status.connecting", SessionStatusKind.Connecting);
@@ -409,6 +445,7 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
             }
 
             client.Send(plan.Start);
+            _launched = true; // the target is now running - this session will be recorded in history on exit
             SetStatus("status.running", SessionStatusKind.Running);
 
             await foreach (var evt in client.Events.ReadAllAsync())
@@ -438,6 +475,12 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
         }
         finally
         {
+            if (_launched)
+            {
+                // A session actually ran (the target launched) - record it with its final verdict.
+                RecordSession();
+            }
+
             if (client is not null)
             {
                 // DisposeAsync blocks briefly (it waits for the core to exit), so keep it off the UI thread.
@@ -640,6 +683,74 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
         {
             sb.Append("    - ").Append(translateItems ? translate(item) : item).Append('\n');
         }
+    }
+
+    /// <summary>Build a history record from the current setup and the session's final verdict (docs/04
+    /// section 6). Pure over the view state, so it is unit tested; the GUI's own clock is real (only the
+    /// target is faked), so DateTime.UtcNow is the true end time.</summary>
+    internal SessionRecord BuildRecord()
+    {
+        TryParseMoment(_momentText, out var canonical);
+        return new SessionRecord
+        {
+            TargetPath = _targetPath ?? string.Empty,
+            MomentLocal = canonical.Length > 0 ? canonical : _momentText,
+            TzBiasMin = SelectedZone.BiasMinutes,
+            Mode = SelectedMode.Mode,
+            Multiplier = SelectedMode.Multiplier,
+            Verdict = RecordedVerdict(),
+            EndedAtUtc = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture),
+        };
+    }
+
+    // A vanished session could not be audited, so it is recorded as "undetermined" - honest, never a faked
+    // verdict (untouchable rule 4). Otherwise the per-session/family verdict kind maps to its wire string.
+    private string RecordedVerdict() => _statusKind == SessionStatusKind.DidNotTakeEffect
+        ? "undetermined"
+        : _verdictKind switch
+        {
+            VerdictKind.Works => "works",
+            VerdictKind.Partial => "partial",
+            VerdictKind.Fails => "fails",
+            _ => "undetermined",
+        };
+
+    /// <summary>Record the just-ended session: prepend it to the panel and persist it. A write failure is
+    /// surfaced, never swallowed (rule 6, docs/04 section 7).</summary>
+    internal void RecordSession()
+    {
+        var record = BuildRecord();
+        History.Insert(0, record);
+        try
+        {
+            _store.Append(record);
+            HistoryError = string.Empty;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            HistoryError = ex.Message;
+        }
+    }
+
+    /// <summary>Repeat a past session by filling the setup form with its parameters. It never starts a
+    /// session (untouchable rule 7, docs/04 section 6) and is ignored while one is running.</summary>
+    public void LoadFromHistory(SessionRecord record)
+    {
+        ArgumentNullException.ThrowIfNull(record);
+
+        // Ignore while a session is active - filling would clobber a live run's setup. Checked on both the
+        // lifecycle flag (set by Start, covers Connecting) and the running status (set by state events), so
+        // it holds however the state was reached. The History panel sits outside the disabled setup block.
+        if (!_idle || IsRunning)
+        {
+            return;
+        }
+
+        SetTarget(record.TargetPath);
+        MomentText = record.MomentLocal;
+        SelectedZone = TimeInputs.Zones.FirstOrDefault(z => z.BiasMinutes == record.TzBiasMin) ?? SelectedZone;
+        SelectedMode = TimeInputs.Modes.FirstOrDefault(
+            m => m.Mode == record.Mode && m.Multiplier == record.Multiplier) ?? SelectedMode;
     }
 
     // Accept an ISO moment with a 'T' or a space separator. This is a well-formed-ness check only - the
