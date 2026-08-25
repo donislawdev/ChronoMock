@@ -20,7 +20,9 @@ use std::time::{Duration, Instant};
 
 use serde::Deserialize;
 
-use chrono_core::calc::{Base, EvalContext, EvalError, MomentExpr, Sign, SnapTarget, Step, Unit};
+use chrono_core::calc::{
+    Base, EvalContext, EvalError, MomentExpr, NearestTarget, Sign, SnapTarget, Step, Unit,
+};
 use chrono_core::{filetime_utc_to_wall, verdict_from_coverage, Moment, SessionSpec, TimeMode, Verdict};
 use chrono_proto::{
     parse_command, Clock, Command, CoveredChannel, Event, MomentSpec, TargetSpec, TimeSpec,
@@ -273,11 +275,12 @@ fn resolve_relative_at(raw: &str, now: chrono_core::calc::CivilDateTime) -> Resu
 /// step, so the step-level variants cannot occur, but the match stays total.
 fn describe_at_error(e: EvalError) -> String {
     match e {
-        EvalError::UnitUnsupported { unit, .. } => {
-            format!("relative --at unit '{unit}' is not built yet (needs a calendar)")
+        EvalError::NeedsCalendar { .. } => {
+            "relative --at uses business days, which need a calendar (not available here)".to_string()
         }
         EvalError::Overflow { .. } => "relative --at is too large".to_string(),
         EvalError::StepUnsupported { kind, .. } => format!("relative --at step '{kind}' is not supported"),
+        EvalError::NotFound { .. } => "relative --at found no matching date".to_string(),
         EvalError::BadSetTime { .. } => "relative --at has an invalid time".to_string(),
     }
 }
@@ -296,8 +299,8 @@ fn send_set_multiplier(stdin: &mut std::process::ChildStdin, m: i64) {
 /// calendar (not built yet); anything else is an invalid moment. Honest, never silent (rule 6).
 fn jump_error_key(e: EvalError) -> &'static str {
     match e {
-        EvalError::UnitUnsupported { .. } | EvalError::StepUnsupported { .. } => "moment.unit_not_built",
-        EvalError::Overflow { .. } | EvalError::BadSetTime { .. } => "moment.invalid",
+        EvalError::NeedsCalendar { .. } => "moment.needs_calendar",
+        _ => "moment.invalid",
     }
 }
 
@@ -838,7 +841,7 @@ fn parse_calc_args(argv: &[String]) -> Result<CalcArgs, String> {
             }
             "--nearest" => {
                 i += 1;
-                steps.push(Step::Nearest(argv.get(i).ok_or("--nearest needs a target")?.clone()));
+                steps.push(Step::Nearest(parse_nearest(argv.get(i).ok_or("--nearest needs a target")?)?));
             }
             other if other.starts_with("--") => return Err(format!("unknown flag '{other}'")),
             other => return Err(format!("unexpected argument '{other}'")),
@@ -910,6 +913,17 @@ fn parse_snap(raw: &str) -> Result<SnapTarget, String> {
     })
 }
 
+/// Parse a `--nearest` target token into a typed target.
+fn parse_nearest(raw: &str) -> Result<NearestTarget, String> {
+    Ok(match raw {
+        "next-business-day" | "nbd" => NearestTarget::NextBusinessDay,
+        "prev-business-day" | "previous-business-day" | "pbd" => NearestTarget::PrevBusinessDay,
+        other => {
+            return Err(format!("unknown nearest target '{other}' (next-business-day, prev-business-day)"))
+        }
+    })
+}
+
 /// Parse a `--set-time` value `HH:MM:SS`. Field ranges are validated in the core
 /// evaluator (BadSetTime), so parsing only checks the shape and numeric form here.
 fn parse_set_time(raw: &str) -> Result<Step, String> {
@@ -935,7 +949,7 @@ fn resolve_now_civil(zone_bias_min: Option<i32>) -> Result<chrono_core::calc::Ci
 /// in this release is its own honest code (5) so a script can tell the two apart.
 fn calc_error_exit_code(e: &EvalError) -> i32 {
     match e {
-        EvalError::StepUnsupported { .. } | EvalError::UnitUnsupported { .. } => 5,
+        EvalError::StepUnsupported { .. } | EvalError::NeedsCalendar { .. } | EvalError::NotFound { .. } => 5,
         EvalError::Overflow { .. } | EvalError::BadSetTime { .. } => 1,
     }
 }
@@ -948,11 +962,11 @@ fn describe_calc_error(e: &EvalError) -> String {
         EvalError::StepUnsupported { kind, index } => {
             format!("chrono calc: step {} ({kind}) is not built yet (calc.step_unsupported)", index + 1)
         }
-        EvalError::UnitUnsupported { unit, index } => {
-            format!(
-                "chrono calc: step {} (shift {unit}) needs a calendar, not built yet (calc.unit_unsupported)",
-                index + 1
-            )
+        EvalError::NeedsCalendar { index } => {
+            format!("chrono calc: step {} needs a calendar - pass --calendar (calc.needs_calendar)", index + 1)
+        }
+        EvalError::NotFound { index } => {
+            format!("chrono calc: step {} found no matching date in range (calc.not_found)", index + 1)
         }
         EvalError::Overflow { index } => {
             format!("chrono calc: step {} overflows the representable range (calc.overflow)", index + 1)
@@ -1054,7 +1068,7 @@ fn describe_step(step: &Step) -> String {
         }
         Step::SetTime { hour, minute, second } => format!("set time {hour:02}:{minute:02}:{second:02}"),
         Step::Snap(t) => format!("snap to {}", t.label()),
-        Step::Nearest(t) => format!("nearest {t}"),
+        Step::Nearest(t) => format!("nearest {}", t.label()),
         Step::Zone(t) => format!("zone {t}"),
     }
 }
@@ -1677,10 +1691,10 @@ mod tests {
     }
 
     #[test]
-    fn at_relative_business_days_not_built_is_an_error() {
+    fn at_relative_business_days_need_a_calendar() {
         let now = chrono_core::calc::CivilDateTime { year: 2026, month: 8, day: 25, hour: 0, minute: 0, second: 0 };
         let err = resolve_relative_at("+5bd", now).unwrap_err();
-        assert!(err.contains("not built yet"), "honest not-built message, got: {err}");
+        assert!(err.contains("calendar"), "honest needs-a-calendar message, got: {err}");
     }
 
     fn empty_report() -> SessionReport {
@@ -1849,20 +1863,21 @@ mod tests {
     }
 
     #[test]
-    fn calc_exit_codes_split_bad_input_from_not_built() {
-        // Not built in this release -> its own code 5; bad input -> usage 1.
-        assert_eq!(calc_error_exit_code(&EvalError::StepUnsupported { kind: "snap", index: 0 }), 5);
-        assert_eq!(calc_error_exit_code(&EvalError::UnitUnsupported { unit: "business_days", index: 0 }), 5);
+    fn calc_exit_codes_split_bad_input_from_needs_data() {
+        // Not built / needs data -> code 5; bad input -> usage 1.
+        assert_eq!(calc_error_exit_code(&EvalError::StepUnsupported { kind: "zone", index: 0 }), 5);
+        assert_eq!(calc_error_exit_code(&EvalError::NeedsCalendar { index: 0 }), 5);
+        assert_eq!(calc_error_exit_code(&EvalError::NotFound { index: 0 }), 5);
         assert_eq!(calc_error_exit_code(&EvalError::Overflow { index: 0 }), 1);
         assert_eq!(calc_error_exit_code(&EvalError::BadSetTime { index: 0 }), 1);
     }
 
     #[test]
     fn calc_error_message_carries_key_and_one_based_step() {
-        let msg = describe_calc_error(&EvalError::UnitUnsupported { unit: "business_days", index: 0 });
+        let msg = describe_calc_error(&EvalError::NeedsCalendar { index: 0 });
         assert!(msg.contains("step 1"), "1-based step number, got: {msg}");
-        assert!(msg.contains("calc.unit_unsupported"), "stable key, got: {msg}");
-        let msg = describe_calc_error(&EvalError::StepUnsupported { kind: "snap", index: 2 });
+        assert!(msg.contains("calc.needs_calendar"), "stable key, got: {msg}");
+        let msg = describe_calc_error(&EvalError::StepUnsupported { kind: "zone", index: 2 });
         assert!(msg.contains("step 3") && msg.contains("calc.step_unsupported"), "got: {msg}");
     }
 
@@ -1989,6 +2004,13 @@ mod tests {
         assert_eq!(parse_snap("eom").unwrap(), SnapTarget::EndOfMonth);
         assert_eq!(parse_snap("start-of-year").unwrap(), SnapTarget::StartOfYear);
         assert!(parse_snap("end-of-week").is_err());
+    }
+
+    #[test]
+    fn parse_nearest_reads_targets_and_rejects_unknown() {
+        assert_eq!(parse_nearest("next-business-day").unwrap(), NearestTarget::NextBusinessDay);
+        assert_eq!(parse_nearest("pbd").unwrap(), NearestTarget::PrevBusinessDay);
+        assert!(parse_nearest("next-full-moon").is_err());
     }
 
     #[test]

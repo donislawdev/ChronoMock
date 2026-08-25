@@ -111,16 +111,35 @@ impl SnapTarget {
     }
 }
 
+/// A nearest step's target: the closest date of a kind, in one direction.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NearestTarget {
+    /// The nearest business day on or after the current date (itself if it is one).
+    NextBusinessDay,
+    /// The nearest business day on or before the current date.
+    PrevBusinessDay,
+}
+
+impl NearestTarget {
+    /// Human label for reports.
+    pub fn label(&self) -> &'static str {
+        match self {
+            NearestTarget::NextBusinessDay => "next business day",
+            NearestTarget::PrevBusinessDay => "previous business day",
+        }
+    }
+}
+
 /// One step of a moment expression. Step kinds mirror docs/04 section 4.3 exactly
-/// so a preset `moment` and the calculator share one model. `Nearest` and `Zone`
-/// carry their raw target token for now - they are not built in this slice and
-/// evaluate to an honest "not supported yet".
+/// so a preset `moment` and the calculator share one model. `Zone` carries its raw
+/// target token for now - it is not built in this slice and evaluates to an honest
+/// "not supported yet".
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Step {
     Shift { sign: Sign, amount: i64, unit: Unit },
     SetTime { hour: u32, minute: u32, second: u32 },
     Snap(SnapTarget),
-    Nearest(String),
+    Nearest(NearestTarget),
     Zone(String),
 }
 
@@ -188,10 +207,13 @@ impl EvalOutcome {
 /// out-of-range `set_time`. Each carries the step index so the surface can point at it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EvalError {
-    /// A step kind that exists in the model but is not built in this release.
+    /// A step kind that exists in the model but is not built in this release (only `zone`).
     StepUnsupported { kind: &'static str, index: usize },
-    /// A shift unit that is not built in this release (business days need a calendar).
-    UnitUnsupported { unit: &'static str, index: usize },
+    /// A built step or unit that needs a calendar the caller did not provide (the `business_days`
+    /// unit, the `nearest` business-day step). The substitution `--at`/`jump` paths have none.
+    NeedsCalendar { index: usize },
+    /// A `nearest` target had no match within the search range - only a degenerate calendar.
+    NotFound { index: usize },
     /// The shift overflowed the representable range - rejected, not wrapped.
     Overflow { index: usize },
     /// `set_time` fields out of range (hour > 23, minute/second > 59).
@@ -250,11 +272,24 @@ fn apply_step(
             Ok(CivilDateTime { hour: *hour, minute: *minute, second: *second, ..cur })
         }
         Step::Snap(target) => Ok(apply_snap(cur, *target)),
+        Step::Nearest(target) => match calendar {
+            Some(cal) => apply_nearest(cur, *target, cal, index),
+            None => Err(EvalError::NeedsCalendar { index }),
+        },
         // Not built yet - honest "not supported" rather than a silent skip.
-        Step::Nearest(_) | Step::Zone(_) => {
-            Err(EvalError::StepUnsupported { kind: step.kind(), index })
-        }
+        Step::Zone(_) => Err(EvalError::StepUnsupported { kind: step.kind(), index }),
     }
+}
+
+/// Jump to the nearest business day in the target's direction (calendar::nearest_business_day).
+fn apply_nearest(
+    cur: CivilDateTime,
+    target: NearestTarget,
+    cal: &crate::calendar::Calendar,
+    index: usize,
+) -> Result<CivilDateTime, EvalError> {
+    let forward = matches!(target, NearestTarget::NextBusinessDay);
+    crate::calendar::nearest_business_day(&cur, forward, cal).ok_or(EvalError::NotFound { index })
 }
 
 /// Jump to the boundary of the calendar period containing `cur`. A "start" is the first day at
@@ -313,7 +348,7 @@ fn apply_shift(
             Some(cal) => {
                 crate::calendar::add_business_days(&cur, signed, cal).ok_or(EvalError::Overflow { index })
             }
-            None => Err(EvalError::UnitUnsupported { unit: unit.name(), index }),
+            None => Err(EvalError::NeedsCalendar { index }),
         },
     }
 }
@@ -761,15 +796,15 @@ mod tests {
     }
 
     #[test]
-    fn business_days_without_a_calendar_is_unsupported() {
-        // No calendar in context (the substitution paths): business_days stays honestly unsupported.
+    fn business_days_without_a_calendar_needs_one() {
+        // No calendar in context (the substitution paths): business_days needs one.
         let expr = MomentExpr {
             base: abs(dt(2026, 1, 1, 0, 0, 0)),
             steps: vec![shift(Sign::Plus, 5, Unit::BusinessDays)],
         };
         assert_eq!(
             eval_at(&expr, dt(2000, 1, 1, 0, 0, 0)),
-            Err(EvalError::UnitUnsupported { unit: "business_days", index: 0 })
+            Err(EvalError::NeedsCalendar { index: 0 })
         );
     }
 
@@ -793,17 +828,40 @@ mod tests {
     }
 
     #[test]
-    fn nearest_and_zone_steps_are_not_built_yet() {
-        for (step, kind) in [
-            (Step::Nearest("next-business-day".into()), "nearest"),
-            (Step::Zone("+05:45".into()), "zone"),
-        ] {
-            let expr = MomentExpr { base: abs(dt(2026, 1, 1, 0, 0, 0)), steps: vec![step] };
-            assert_eq!(
-                eval_at(&expr, dt(2000, 1, 1, 0, 0, 0)),
-                Err(EvalError::StepUnsupported { kind, index: 0 })
-            );
-        }
+    fn zone_step_is_not_built_yet() {
+        let expr = MomentExpr { base: abs(dt(2026, 1, 1, 0, 0, 0)), steps: vec![Step::Zone("+05:45".into())] };
+        assert_eq!(
+            eval_at(&expr, dt(2000, 1, 1, 0, 0, 0)),
+            Err(EvalError::StepUnsupported { kind: "zone", index: 0 })
+        );
+    }
+
+    #[test]
+    fn nearest_without_a_calendar_needs_one() {
+        let expr = MomentExpr {
+            base: abs(dt(2026, 1, 1, 0, 0, 0)),
+            steps: vec![Step::Nearest(NearestTarget::NextBusinessDay)],
+        };
+        assert_eq!(eval_at(&expr, dt(2000, 1, 1, 0, 0, 0)), Err(EvalError::NeedsCalendar { index: 0 }));
+    }
+
+    #[test]
+    fn nearest_with_a_calendar_rolls_to_a_business_day() {
+        use crate::calendar::{Calendar, Observed};
+        let cal = Calendar {
+            id: "t".into(),
+            country: "US".into(),
+            weekend: vec![0, 6],
+            observed: Observed::None,
+            holidays: vec![],
+        };
+        // 2026-07-04 is a Saturday; the next business day is Monday 2026-07-06.
+        let expr = MomentExpr {
+            base: abs(dt(2026, 7, 4, 0, 0, 0)),
+            steps: vec![Step::Nearest(NearestTarget::NextBusinessDay)],
+        };
+        let out = eval(&expr, &EvalContext { now: dt(2000, 1, 1, 0, 0, 0), calendar: Some(&cal) }).unwrap();
+        assert_eq!(out.result(), dt(2026, 7, 6, 0, 0, 0));
     }
 
     #[test]
@@ -835,11 +893,11 @@ mod tests {
         // A good step then an unbuilt one: the error points at step 1, not 0.
         let expr = MomentExpr {
             base: abs(dt(2026, 1, 1, 0, 0, 0)),
-            steps: vec![shift(Sign::Plus, 1, Unit::Days), Step::Nearest("next-business-day".into())],
+            steps: vec![shift(Sign::Plus, 1, Unit::Days), Step::Zone("+05:45".into())],
         };
         assert_eq!(
             eval_at(&expr, dt(2000, 1, 1, 0, 0, 0)),
-            Err(EvalError::StepUnsupported { kind: "nearest", index: 1 })
+            Err(EvalError::StepUnsupported { kind: "zone", index: 1 })
         );
     }
 
@@ -920,11 +978,12 @@ mod tests {
     }
 
     #[test]
-    fn step_target_business_days_is_unsupported() {
+    fn step_target_business_days_needs_a_calendar() {
+        // The jump path has no calendar, so a business-day step needs one it does not have.
         let ft = ft_of("2026-01-01T00:00:00", 0);
         assert_eq!(
             step_target(ft, 0, &shift(Sign::Plus, 5, Unit::BusinessDays)),
-            Err(EvalError::UnitUnsupported { unit: "business_days", index: 0 })
+            Err(EvalError::NeedsCalendar { index: 0 })
         );
     }
 

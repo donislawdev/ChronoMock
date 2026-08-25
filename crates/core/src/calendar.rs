@@ -187,6 +187,30 @@ pub fn is_business_day(date: &CivilDateTime, cal: &Calendar) -> bool {
 /// loop unbounded. Signalled to the caller as `None`.
 pub const MAX_BUSINESS_DAYS: i64 = 1_000_000;
 
+/// The nearest business day to `from` in one direction, INCLUDING `from` itself if it is already a
+/// business day (roll semantics: "adjust to a business day"). `forward` rolls toward later dates,
+/// otherwise earlier. Time of day is kept. `None` only for a degenerate calendar with no business
+/// day within a month (e.g. every weekday marked weekend).
+pub fn nearest_business_day(from: &CivilDateTime, forward: bool, cal: &Calendar) -> Option<CivilDateTime> {
+    let step = if forward { 1 } else { -1 };
+    let mut d = days(from.year, from.month, from.day);
+    for _ in 0..31 {
+        if is_business_day_days(d, cal) {
+            let (year, month, day) = crate::civil_from_days(d);
+            return Some(CivilDateTime {
+                year,
+                month: month as u32,
+                day: day as u32,
+                hour: from.hour,
+                minute: from.minute,
+                second: from.second,
+            });
+        }
+        d += step;
+    }
+    None
+}
+
 /// `start` advanced by `n` business days (negative = backward), keeping the time of day. The start
 /// day is not counted: the walk steps day by day and counts only business days, so Friday + 1 = the
 /// next Monday. `None` if `|n|` exceeds `MAX_BUSINESS_DAYS`.
@@ -395,5 +419,25 @@ mod tests {
     fn add_business_days_caps_absurd_shifts() {
         let cal = us(Observed::SunToMon);
         assert!(add_business_days(&dt(2026, 7, 6), MAX_BUSINESS_DAYS + 1, &cal).is_none());
+    }
+
+    #[test]
+    fn nearest_business_day_rolls_and_includes_a_business_day() {
+        let cal = us(Observed::SunToMon);
+        // A Saturday rolls forward to Monday; a business day is itself (roll includes it).
+        assert_eq!(nearest_business_day(&dt(2026, 7, 4), true, &cal).unwrap(), dt(2026, 7, 6));
+        assert_eq!(nearest_business_day(&dt(2026, 7, 6), true, &cal).unwrap(), dt(2026, 7, 6));
+        // A Sunday rolls backward to the Friday (a business day under banking).
+        assert_eq!(nearest_business_day(&dt(2026, 7, 5), false, &cal).unwrap(), dt(2026, 7, 3));
+        // A holiday (New Year, a Thursday) rolls forward past it to the Friday.
+        assert_eq!(nearest_business_day(&dt(2026, 1, 1), true, &cal).unwrap(), dt(2026, 1, 2));
+    }
+
+    #[test]
+    fn nearest_business_day_keeps_time_of_day() {
+        let cal = us(Observed::SunToMon);
+        let sat = CivilDateTime { year: 2026, month: 7, day: 4, hour: 15, minute: 45, second: 30 };
+        let mon = CivilDateTime { year: 2026, month: 7, day: 6, hour: 15, minute: 45, second: 30 };
+        assert_eq!(nearest_business_day(&sat, true, &cal).unwrap(), mon);
     }
 }
