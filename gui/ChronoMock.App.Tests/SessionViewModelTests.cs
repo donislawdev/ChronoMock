@@ -534,6 +534,50 @@ public class SessionViewModelTests
         Assert.Equal("Ledger.exe", Assert.Single(store.Load()).TargetName); // persisted to the store
     }
 
+    [Fact]
+    public void Remove_from_history_drops_it_from_the_panel_and_the_store()
+    {
+        var store = new InMemorySessionHistoryStore();
+        store.Append(HistoryRecord("Alpha"));
+        store.Append(HistoryRecord("Beta"));
+        var vm = new SessionViewModel(store);
+        Assert.Equal(2, vm.History.Count);
+
+        vm.RemoveFromHistory(vm.History.First(r => r.TargetName == "Alpha.exe"));
+
+        Assert.Equal("Beta.exe", Assert.Single(vm.History).TargetName);
+        Assert.Single(store.Load());
+    }
+
+    [Fact]
+    public void Clear_history_empties_the_panel_and_the_store()
+    {
+        var store = new InMemorySessionHistoryStore();
+        store.Append(HistoryRecord("Alpha"));
+        var vm = new SessionViewModel(store);
+        Assert.True(vm.HasHistory);
+
+        vm.ClearHistory();
+
+        Assert.Empty(vm.History);
+        Assert.Empty(store.Load());
+        Assert.False(vm.HasHistory);
+    }
+
+    [Fact]
+    public void Record_session_caps_the_panel_at_the_maximum()
+    {
+        var vm = new SessionViewModel();
+        vm.SetTarget(@"C:\apps\Ledger.exe");
+
+        for (int i = 0; i < SessionHistoryLimits.Max + 5; i++)
+        {
+            vm.RecordSession();
+        }
+
+        Assert.Equal(SessionHistoryLimits.Max, vm.History.Count);
+    }
+
     private static SessionRecord HistoryRecord(
         string name, string moment = "2038-01-19T03:14:07", int bias = -120,
         string mode = "multiplier", long? multiplier = 60) => new()

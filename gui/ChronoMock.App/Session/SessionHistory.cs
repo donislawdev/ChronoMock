@@ -4,9 +4,16 @@ using System.Text.Json.Serialization;
 
 namespace ChronoMock.App;
 
+/// <summary>Limits on the local history - it is a convenience log, not an archive.</summary>
+public static class SessionHistoryLimits
+{
+    /// <summary>The most recent sessions kept; older ones are dropped on append.</summary>
+    public const int Max = 50;
+}
+
 /// <summary>
-/// Reads and appends the local session history (docs/04 section 6). Local-only, never exported. Injected
-/// into <see cref="SessionViewModel"/> so unit tests use an in-memory store and touch no files.
+/// Reads, appends, and prunes the local session history (docs/04 section 6). Local-only, never exported.
+/// Injected into <see cref="SessionViewModel"/> so unit tests use an in-memory store and touch no files.
 /// </summary>
 public interface ISessionHistoryStore
 {
@@ -14,10 +21,16 @@ public interface ISessionHistoryStore
     /// a missing or corrupt file - a broken history must never crash the app or be silently deleted.</summary>
     IReadOnlyList<SessionRecord> Load();
 
-    /// <summary>Append one session and persist. Throws <see cref="IOException"/> or
-    /// <see cref="UnauthorizedAccessException"/> when the location cannot be written (e.g. a read-only
-    /// drive) so the caller can say so out loud, never swallow it (untouchable rule 6).</summary>
+    /// <summary>Append one session and persist, keeping only the most recent <see cref="SessionHistoryLimits.Max"/>.
+    /// Throws <see cref="IOException"/> or <see cref="UnauthorizedAccessException"/> when the location cannot
+    /// be written (e.g. a read-only drive) so the caller can say so out loud, never swallow it (rule 6).</summary>
     void Append(SessionRecord record);
+
+    /// <summary>Remove one recorded session (matched by value). Same write-failure contract as Append.</summary>
+    void Remove(SessionRecord record);
+
+    /// <summary>Remove every recorded session. Same write-failure contract as Append.</summary>
+    void Clear();
 }
 
 /// <summary>In-memory store: the default for a bare view-model and for unit tests, so they touch no files.</summary>
@@ -27,7 +40,18 @@ public sealed class InMemorySessionHistoryStore : ISessionHistoryStore
 
     public IReadOnlyList<SessionRecord> Load() => [.. _records];
 
-    public void Append(SessionRecord record) => _records.Add(record);
+    public void Append(SessionRecord record)
+    {
+        _records.Add(record);
+        if (_records.Count > SessionHistoryLimits.Max)
+        {
+            _records.RemoveAt(0); // drop the oldest
+        }
+    }
+
+    public void Remove(SessionRecord record) => _records.Remove(record);
+
+    public void Clear() => _records.Clear();
 }
 
 /// <summary>
@@ -78,6 +102,33 @@ public sealed class FileSessionHistoryStore : ISessionHistoryStore
     public void Append(SessionRecord record)
     {
         var sessions = new List<SessionRecord>(Load()) { record };
+        if (sessions.Count > SessionHistoryLimits.Max)
+        {
+            sessions.RemoveRange(0, sessions.Count - SessionHistoryLimits.Max); // drop the oldest
+        }
+
+        Write(sessions);
+    }
+
+    public void Remove(SessionRecord record)
+    {
+        var sessions = new List<SessionRecord>(Load());
+        if (sessions.Remove(record))
+        {
+            Write(sessions);
+        }
+    }
+
+    public void Clear()
+    {
+        if (File.Exists(FilePath))
+        {
+            File.Delete(FilePath);
+        }
+    }
+
+    private void Write(IReadOnlyList<SessionRecord> sessions)
+    {
         Directory.CreateDirectory(_directory); // no-op when it exists; throws only on a real failure
         var file = new HistoryFile { Schema = Schema, Stability = "unstable", Sessions = sessions };
         File.WriteAllText(FilePath, JsonSerializer.Serialize(file, Options));

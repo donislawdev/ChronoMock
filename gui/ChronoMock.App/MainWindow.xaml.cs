@@ -97,6 +97,29 @@ public partial class MainWindow : FluentWindow
         }
     }
 
+    // Delete one past session. Mild and un-confirmed (zasady/13 section 11) - a re-run re-creates one.
+    private void OnHistoryDeleteClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement { Tag: SessionRecord record })
+        {
+            _session.RemoveFromHistory(record);
+        }
+    }
+
+    // Clear all history. Destructive, so it confirms first with the effect spelled out (zasady/13 section 11).
+    private void OnHistoryClearClick(object sender, RoutedEventArgs e)
+    {
+        // Fully qualified: wpfui also defines a MessageBox type, so the bare names are ambiguous here.
+        var confirmed = System.Windows.MessageBox.Show(
+            Text("history.clear_confirm"), Text("history.clear_title"),
+            System.Windows.MessageBoxButton.YesNo, System.Windows.MessageBoxImage.Warning)
+            == System.Windows.MessageBoxResult.Yes;
+        if (confirmed)
+        {
+            _session.ClearHistory();
+        }
+    }
+
     // Resolve a translation key to text for a native dialog (rule 15); falls back to the raw key if missing.
     private static string Text(string key) => Application.Current?.TryFindResource(key) as string ?? key;
 }

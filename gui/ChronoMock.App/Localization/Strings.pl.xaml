@@ -93,5 +93,9 @@
        setup i nigdy nie uruchamia sesji (reguła nietykalna 7, docs/04 §6). -->
   <sys:String x:Key="history.header">Historia</sys:String>
   <sys:String x:Key="history.save_failed">Nie udało się zapisać do historii:</sys:String>
+  <sys:String x:Key="history.delete">Usuń tę sesję</sys:String>
+  <sys:String x:Key="history.clear">Wyczyść</sys:String>
+  <sys:String x:Key="history.clear_title">Wyczyść historię</sys:String>
+  <sys:String x:Key="history.clear_confirm">Wyczyścić wszystkie zapisane sesje? Tej operacji nie można cofnąć.</sys:String>
 
 </ResourceDictionary>

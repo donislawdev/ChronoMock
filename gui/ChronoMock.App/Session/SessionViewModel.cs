@@ -721,9 +721,47 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     {
         var record = BuildRecord();
         History.Insert(0, record);
+        while (History.Count > SessionHistoryLimits.Max)
+        {
+            History.RemoveAt(History.Count - 1); // keep the panel in step with the store's cap
+        }
+
         try
         {
             _store.Append(record);
+            HistoryError = string.Empty;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            HistoryError = ex.Message;
+        }
+    }
+
+    /// <summary>Remove one past session from the panel and the store. Mild and left un-confirmed (zasady/13
+    /// section 11) - it is a log entry, and a re-run re-creates one.</summary>
+    public void RemoveFromHistory(SessionRecord record)
+    {
+        ArgumentNullException.ThrowIfNull(record);
+        History.Remove(record);
+        try
+        {
+            _store.Remove(record);
+            HistoryError = string.Empty;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            HistoryError = ex.Message;
+        }
+    }
+
+    /// <summary>Remove every past session from the panel and the store. The view confirms first (zasady/13
+    /// section 11) - this method just performs it.</summary>
+    public void ClearHistory()
+    {
+        History.Clear();
+        try
+        {
+            _store.Clear();
             HistoryError = string.Empty;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)

@@ -72,4 +72,45 @@ public sealed class SessionHistoryStoreTests : IDisposable
         store.Append(Record("Gamma"));
         Assert.Equal("Gamma.exe", Assert.Single(store.Load()).TargetName);
     }
+
+    [Fact]
+    public void Clear_empties_the_file_store()
+    {
+        var store = new FileSessionHistoryStore(_dir);
+        store.Append(Record("Alpha"));
+        store.Append(Record("Beta"));
+
+        store.Clear();
+
+        Assert.Empty(store.Load());
+    }
+
+    [Fact]
+    public void Remove_deletes_the_matching_record()
+    {
+        var store = new FileSessionHistoryStore(_dir);
+        var alpha = Record("Alpha");
+        store.Append(alpha);
+        store.Append(Record("Beta"));
+
+        store.Remove(alpha);
+
+        Assert.Equal("Beta.exe", Assert.Single(store.Load()).TargetName);
+    }
+
+    [Fact]
+    public void Append_keeps_only_the_most_recent_maximum()
+    {
+        var store = new FileSessionHistoryStore(_dir);
+        for (int i = 0; i < SessionHistoryLimits.Max + 3; i++)
+        {
+            store.Append(Record($"App{i}"));
+        }
+
+        var loaded = store.Load();
+
+        Assert.Equal(SessionHistoryLimits.Max, loaded.Count);
+        Assert.Equal("App3.exe", loaded[0].TargetName); // App0..App2 dropped as oldest
+        Assert.Equal($"App{SessionHistoryLimits.Max + 2}.exe", loaded[^1].TargetName); // newest kept
+    }
 }
