@@ -1,0 +1,19 @@
+{
+  "schema": "chronomock.preset/1",
+  "stability": "unstable",
+  "id": "license-expired-year-ago",
+  "name": { "en": "Licence expired a year ago", "pl": "Licencja wygasła rok temu" },
+  "explains": {
+    "en": "Does the app handle a licence that expired long ago, not just yesterday?",
+    "pl": "Czy aplikacja radzi sobie z licencją, która wygasła dawno, a nie tylko wczoraj?"
+  },
+  "applies_to": "substitution",
+  "market": null,
+  "moment": {
+    "base": "today",
+    "steps": [
+      { "shift": { "sign": "-", "amount": 1, "unit": "years" } }
+    ]
+  },
+  "time_mode": { "multiplier": 1, "scale_duration_clock": false }
+}

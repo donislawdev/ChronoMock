@@ -1,0 +1,20 @@
+{
+  "schema": "chronomock.preset/1",
+  "stability": "unstable",
+  "id": "year-rollover",
+  "name": { "en": "Year rollover, live", "pl": "Przełom roku, na żywo" },
+  "explains": {
+    "en": "Do document numbering, year-in-name, and annual reports handle the rollover live, as the clock crosses midnight?",
+    "pl": "Czy numeracja dokumentów, rok w nazwach i raporty roczne obsługują przełom na żywo, gdy zegar mija północ?"
+  },
+  "applies_to": "substitution",
+  "market": null,
+  "moment": {
+    "base": "today",
+    "steps": [
+      { "snap": "end-of-year" },
+      { "shift": { "sign": "-", "amount": 9, "unit": "seconds" } }
+    ]
+  },
+  "time_mode": { "multiplier": 1, "scale_duration_clock": false }
+}
