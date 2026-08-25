@@ -550,19 +550,27 @@ pub struct Formats {
     pub filetime: Option<i64>,
 }
 
+/// FILETIME ticks (100 ns since 1601) at the Unix epoch (1970-01-01T00:00:00Z).
+const FT_1970: i64 = 116_444_736_000_000_000;
+
+/// The UTC FILETIME of a civil moment read in the session zone `tz_bias_min`, or `None` if the
+/// civil date cannot be represented as an instant (an extreme year whose ISO form does not
+/// round-trip). The single instant conversion behind both the instant-based output formats and
+/// the instant-based significance markers.
+fn instant_filetime(civil: &CivilDateTime, tz_bias_min: i32) -> Option<i64> {
+    super::moment_to_filetime_utc(&super::Moment { local: civil.to_iso(), tz_bias_min: Some(tz_bias_min) }).ok()
+}
+
 /// Render `civil` (wall-clock in the session zone `tz_bias_min`) in every fixed format.
 pub fn formats(civil: &CivilDateTime, tz_bias_min: i32) -> Formats {
-    const FT_1970: i64 = 116_444_736_000_000_000; // FILETIME ticks at the Unix epoch
     let iso_date = format!("{:04}-{:02}-{:02}", civil.year, civil.month, civil.day);
     let iso_datetime = format!("{}{}", civil.to_iso(), offset_label(tz_bias_min));
     let us = format!("{:02}/{:02}/{:04}", civil.month, civil.day, civil.year);
     let pl = format!("{:02}.{:02}.{:04}", civil.day, civil.month, civil.year);
 
     // Instant-based formats: the civil moment interpreted in the session zone as a UTC instant.
-    let (rfc1123, epoch_seconds, epoch_millis, filetime) = match super::moment_to_filetime_utc(
-        &super::Moment { local: civil.to_iso(), tz_bias_min: Some(tz_bias_min) },
-    ) {
-        Ok(ft) => {
+    let (rfc1123, epoch_seconds, epoch_millis, filetime) = match instant_filetime(civil, tz_bias_min) {
+        Some(ft) => {
             let utc = filetime_to_civil(ft, 0);
             let rfc = format!(
                 "{}, {:02} {} {:04} {:02}:{:02}:{:02} GMT",
@@ -576,7 +584,7 @@ pub fn formats(civil: &CivilDateTime, tz_bias_min: i32) -> Formats {
             );
             (Some(rfc), Some((ft - FT_1970) / 10_000_000), Some((ft - FT_1970) / 10_000), Some(ft))
         }
-        Err(_) => (None, None, None, None),
+        None => (None, None, None, None),
     };
 
     Formats { iso_date, iso_datetime, us, pl, rfc1123, epoch_seconds, epoch_millis, filetime }
@@ -661,6 +669,119 @@ pub fn metadata(civil: &CivilDateTime, today: &CivilDateTime) -> Metadata {
         days_from_today: days_from_civil(civil.year, civil.month as i64, civil.day as i64)
             - days_from_civil(today.year, today.month as i64, today.day as i64),
     }
+}
+
+// --- Significance ("what this date tests", 7.3 - the calculator's differentiator) ------
+//
+// The calculator names the edge case a result date lands on, instead of giving a number and
+// staying silent like an online date calculator (6.2). This slice covers the CALENDAR-INDEPENDENT
+// landmarks. Holiday and weekend (calendar-dependent) and daylight-saving transitions (which need
+// the zone's DST rules the tool does not carry) are honestly NOT built yet, not silently omitted
+// (docs/08 section 9a, rule 4).
+
+/// A test-relevant landmark a date lands on. Emitted as stable variants, never prose: the text is
+/// a translated string (docs/02 section 8, rule 15), so the core names the landmark and the
+/// consumer renders it (the CLI in English via `label`, the calculator GUI later in the interface
+/// language). `label` returns English human text, matching the other calc enums (`SnapTarget`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Significance {
+    /// The first day of the month.
+    StartOfMonth,
+    /// The last day of the month.
+    EndOfMonth,
+    /// The first day of a calendar quarter (Jan / Apr / Jul / Oct 1).
+    StartOfQuarter,
+    /// The last day of a calendar quarter (Mar 31 / Jun 30 / Sep 30 / Dec 31).
+    EndOfQuarter,
+    /// The first day of the year (Jan 1).
+    StartOfYear,
+    /// The last day of the year (Dec 31).
+    EndOfYear,
+    /// February 29 - the leap day.
+    LeapDay,
+    /// February 28 of a common (non-leap) year - the last day of February with no 29th.
+    LastDayOfFebruaryCommonYear,
+    /// The Unix epoch instant (epoch second 0, 1970-01-01T00:00:00Z).
+    UnixEpoch,
+    /// At or past the signed 32-bit `time_t` limit (2038-01-19T03:14:07Z, `i32::MAX` seconds).
+    Year2038Boundary,
+}
+
+impl Significance {
+    /// English human label for the CLI (docs/08 section 9a). Becomes a translation key when the
+    /// calculator GUI arrives, like the rest of calc.
+    pub fn label(&self) -> &'static str {
+        match self {
+            Significance::StartOfMonth => "first day of the month",
+            Significance::EndOfMonth => "last day of the month (month-end)",
+            Significance::StartOfQuarter => "first day of the quarter",
+            Significance::EndOfQuarter => "last day of the quarter (quarter-end)",
+            Significance::StartOfYear => "first day of the year",
+            Significance::EndOfYear => "last day of the year (year-end rollover)",
+            Significance::LeapDay => "February 29 - leap day",
+            Significance::LastDayOfFebruaryCommonYear => {
+                "February 28 - last day of February (common year, no Feb 29)"
+            }
+            Significance::UnixEpoch => "Unix epoch (1970-01-01T00:00:00Z, epoch 0)",
+            Significance::Year2038Boundary => {
+                "at or past the 2038-01-19T03:14:07Z 32-bit time_t limit (Y2038)"
+            }
+        }
+    }
+}
+
+/// The test-relevant landmarks `civil` (read in the session zone `tz_bias_min`) lands on, in
+/// priority order (7.3). This is a POSITIVE signal: it names what it detects and stays silent
+/// otherwise, never claiming a landmark it did not verify (rule 4). The list is empty when the
+/// date hits nothing notable.
+///
+/// Period boundaries collapse to the single strongest - year subsumes quarter subsumes month - so
+/// Dec 31 reads "last day of the year", not three lines. In February the leap-day and last-day-of-
+/// a-common-year landmarks stand in for the generic month-end. Instant markers (epoch, 2038) need
+/// the UTC instant of the result: a pre-epoch date has a negative instant, so they stay silent,
+/// and a year that cannot be represented as an instant at all is skipped rather than guessed.
+pub fn significance(civil: &CivilDateTime, tz_bias_min: i32) -> Vec<Significance> {
+    let mut out = Vec::new();
+
+    let last = last_day_of_month(civil.year, civil.month as i64);
+    let quarter_start_month = (civil.month - 1) / 3 * 3 + 1; // 1, 4, 7, 10
+
+    if civil.month == 2 && civil.day == 29 {
+        out.push(Significance::LeapDay);
+    } else if civil.month == 2 && civil.day == 28 && !is_leap(civil.year) {
+        out.push(Significance::LastDayOfFebruaryCommonYear);
+    } else if civil.day == last {
+        // Strongest end-of-period: year, then quarter, then month.
+        out.push(if civil.month == 12 {
+            Significance::EndOfYear
+        } else if civil.month == quarter_start_month + 2 {
+            Significance::EndOfQuarter
+        } else {
+            Significance::EndOfMonth
+        });
+    } else if civil.day == 1 {
+        // Strongest start-of-period: year, then quarter, then month.
+        out.push(if civil.month == 1 {
+            Significance::StartOfYear
+        } else if civil.month == quarter_start_month {
+            Significance::StartOfQuarter
+        } else {
+            Significance::StartOfMonth
+        });
+    }
+
+    // Instant markers: the result interpreted in the session zone as a UTC instant.
+    if let Some(ft) = instant_filetime(civil, tz_bias_min) {
+        let epoch = (ft - FT_1970) / 10_000_000;
+        if epoch == 0 {
+            out.push(Significance::UnixEpoch);
+        }
+        if epoch >= i32::MAX as i64 {
+            out.push(Significance::Year2038Boundary);
+        }
+    }
+
+    out
 }
 
 #[cfg(test)]
@@ -1087,5 +1208,67 @@ mod tests {
         assert_eq!(metadata(&dt(2026, 1, 10, 23, 0, 0), &today).days_from_today, 9); // time ignored
         assert_eq!(metadata(&dt(2025, 12, 30, 0, 0, 0), &today).days_from_today, -2);
         assert_eq!(metadata(&today, &today).days_from_today, 0);
+    }
+
+    // --- significance ("what this date tests") -------------------------------
+
+    #[test]
+    fn significance_february_leap_and_common_year() {
+        // Feb 29 is the leap day - and NOT also reported as a generic month-end.
+        assert_eq!(significance(&dt(2024, 2, 29, 0, 0, 0), 0), vec![Significance::LeapDay]);
+        // Feb 28 of a non-leap year is the last day of February with no 29th - its own landmark.
+        assert_eq!(
+            significance(&dt(2025, 2, 28, 0, 0, 0), 0),
+            vec![Significance::LastDayOfFebruaryCommonYear]
+        );
+        // Feb 28 of a LEAP year is an ordinary day (the 29th is the month's last).
+        assert!(significance(&dt(2024, 2, 28, 0, 0, 0), 0).is_empty());
+    }
+
+    #[test]
+    fn significance_period_boundary_collapses_to_the_strongest() {
+        // Dec 31 is month-, quarter- and year-end at once: only the strongest (year) is reported.
+        assert_eq!(significance(&dt(2027, 12, 31, 0, 0, 0), 0), vec![Significance::EndOfYear]);
+        // Sep 30 is month- and quarter-end: quarter wins over month.
+        assert_eq!(significance(&dt(2027, 9, 30, 0, 0, 0), 0), vec![Significance::EndOfQuarter]);
+        // Jan 31 is only a month-end (January is not a quarter-end month).
+        assert_eq!(significance(&dt(2027, 1, 31, 0, 0, 0), 0), vec![Significance::EndOfMonth]);
+        // Starts mirror the ends: year, quarter, month.
+        assert_eq!(significance(&dt(2027, 1, 1, 0, 0, 0), 0), vec![Significance::StartOfYear]);
+        assert_eq!(significance(&dt(2027, 4, 1, 0, 0, 0), 0), vec![Significance::StartOfQuarter]);
+        assert_eq!(significance(&dt(2027, 2, 1, 0, 0, 0), 0), vec![Significance::StartOfMonth]);
+    }
+
+    #[test]
+    fn significance_unix_epoch_is_instant_zero_and_zone_aware() {
+        // 1970-01-01 in UTC is both the year start and epoch 0 - two independent axes.
+        assert_eq!(
+            significance(&dt(1970, 1, 1, 0, 0, 0), 0),
+            vec![Significance::StartOfYear, Significance::UnixEpoch]
+        );
+        // In UTC+1 (bias -60), local midnight 1970-01-01 is 1969-12-31T23:00Z - epoch is -3600, so
+        // only the (zone-independent) year-start marker fires, not the epoch one.
+        assert_eq!(significance(&dt(1970, 1, 1, 0, 0, 0), -60), vec![Significance::StartOfYear]);
+    }
+
+    #[test]
+    fn significance_2038_boundary_fires_at_or_past_i32_max() {
+        // Exactly the signed 32-bit time_t limit: 2038-01-19T03:14:07Z = 2_147_483_647 seconds.
+        assert!(significance(&dt(2038, 1, 19, 3, 14, 7), 0).contains(&Significance::Year2038Boundary));
+        // One second earlier: not yet at the limit.
+        assert!(!significance(&dt(2038, 1, 19, 3, 14, 6), 0).contains(&Significance::Year2038Boundary));
+        // Well past it.
+        assert!(significance(&dt(2050, 6, 1, 0, 0, 0), 0).contains(&Significance::Year2038Boundary));
+    }
+
+    #[test]
+    fn significance_plain_and_pre_epoch_dates_are_honest() {
+        // A mid-month weekday hits nothing notable - an empty list, not a guessed landmark.
+        assert!(significance(&dt(2026, 8, 12, 9, 0, 0), 0).is_empty());
+        // A pre-epoch mid-month date: the instant is negative, so no epoch/2038 marker, and it is
+        // not a boundary either.
+        assert!(significance(&dt(1900, 6, 15, 0, 0, 0), 0).is_empty());
+        // A civil boundary in the deep past still fires its civil marker regardless of the instant.
+        assert_eq!(significance(&dt(1000, 12, 31, 0, 0, 0), 0), vec![Significance::EndOfYear]);
     }
 }

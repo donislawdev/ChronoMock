@@ -999,6 +999,23 @@ fn render_calc(
     out.push_str(&format!("  result:  {}\n", outcome.result().to_iso()));
     out.push_str(&render_formats(&outcome.result(), zone_bias_min.unwrap_or(0)));
     out.push_str(&render_metadata(&outcome.result(), now, calendar));
+    out.push_str(&render_significance(&outcome.result(), zone_bias_min.unwrap_or(0)));
+    out
+}
+
+/// Render the "what this date tests" block (7.3): the test-relevant landmarks the result lands
+/// on, one per line, ready to read at a glance. This is the calculator's differentiator over an
+/// online date calculator (6.2). Omitted entirely when the date hits nothing notable - the block
+/// is a positive signal, never a "no landmark" line to scan past.
+fn render_significance(civil: &chrono_core::calc::CivilDateTime, tz_bias_min: i32) -> String {
+    let marks = chrono_core::calc::significance(civil, tz_bias_min);
+    if marks.is_empty() {
+        return String::new();
+    }
+    let mut out = String::from("  what this date tests:\n");
+    for m in marks {
+        out.push_str(&format!("    {}\n", m.label()));
+    }
     out
 }
 
@@ -2026,5 +2043,29 @@ mod tests {
         let now = chrono_core::calc::CivilDateTime { year: 2000, month: 1, day: 1, hour: 0, minute: 0, second: 0 };
         let out = chrono_core::calc::eval(&expr, &EvalContext { now, calendar: None }).unwrap();
         assert_eq!(out.result().to_iso(), "2026-06-30T23:59:59");
+    }
+
+    #[test]
+    fn render_calc_shows_the_what_this_tests_block_when_a_landmark_is_hit() {
+        // A snap to the end of the year lands on Dec 31: the block names the year-end landmark.
+        let ca = parse_calc_args(&["--base".into(), "2026-05-15T00:00:00".into(), "--snap".into(), "eoy".into()])
+            .unwrap();
+        let expr = MomentExpr { base: ca.base, steps: ca.steps };
+        let now = chrono_core::calc::CivilDateTime { year: 2000, month: 1, day: 1, hour: 0, minute: 0, second: 0 };
+        let out = chrono_core::calc::eval(&expr, &EvalContext { now, calendar: None }).unwrap();
+        let text = render_calc(&expr, &out, Some(0), &now, None);
+        assert!(text.contains("what this date tests:"), "got:\n{text}");
+        assert!(text.contains("last day of the year (year-end rollover)"), "got:\n{text}");
+    }
+
+    #[test]
+    fn render_calc_omits_the_block_for_a_plain_date() {
+        // A mid-month weekday hits no landmark, so the block is absent (positive signal only).
+        let ca = parse_calc_args(&["--base".into(), "2026-08-12T09:00:00".into()]).unwrap();
+        let expr = MomentExpr { base: ca.base, steps: ca.steps };
+        let now = chrono_core::calc::CivilDateTime { year: 2000, month: 1, day: 1, hour: 0, minute: 0, second: 0 };
+        let out = chrono_core::calc::eval(&expr, &EvalContext { now, calendar: None }).unwrap();
+        let text = render_calc(&expr, &out, Some(0), &now, None);
+        assert!(!text.contains("what this date tests:"), "got:\n{text}");
     }
 }
