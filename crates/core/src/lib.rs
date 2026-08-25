@@ -5,6 +5,11 @@
 //! (zasady/06 section 7). Everything here is unit-testable without a target
 //! process or an operating system.
 
+/// Date-arithmetic engine: the canonical step model shared by the calculator and
+/// (later) the substitution moment grammar. A child module, so it may reuse the
+/// crate-private civil-date primitives below without widening their visibility.
+pub mod calc;
+
 /// How the session expresses the target moment.
 ///
 /// Semantics (docs/01 section 4, untouchable rule 2): the entered moment is in

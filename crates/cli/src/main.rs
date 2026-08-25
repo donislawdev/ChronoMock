@@ -18,6 +18,7 @@ use std::process::{Command as PCommand, Stdio};
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
+use chrono_core::calc::{Base, EvalContext, EvalError, MomentExpr, Sign, Step, Unit};
 use chrono_core::{filetime_utc_to_wall, verdict_from_coverage, Moment, SessionSpec, TimeMode, Verdict};
 use chrono_proto::{
     parse_command, Clock, Command, CoveredChannel, Event, MomentSpec, TargetSpec, TimeSpec,
@@ -31,6 +32,7 @@ fn main() {
     let code = match args.get(1).map(String::as_str) {
         Some("__core") => core_mode(),
         Some("run") => driver_run(&args[2..]),
+        Some("calc") => calc_run(&args[2..]),
         Some("--help") | Some("-h") | None => {
             print_usage();
             0
@@ -46,6 +48,12 @@ fn main() {
 
 fn print_usage() {
     eprintln!("usage: chrono run <target> [--at <local-moment>] [--zone <+HH:MM>] [--mode <flow|frozen|xN>] [--scale-duration] [--ticks N] [--set-after T:M] [--jump-after T:moment] [--args \"...\"] [--report <path>] [--json]");
+    print_calc_usage();
+}
+
+fn print_calc_usage() {
+    eprintln!("usage: chrono calc [--base <today|now|YYYY-MM-DDTHH:MM:SS>] [--shift <±N<unit>>]... [--set-time <HH:MM:SS>] [--snap <target>] [--nearest <target>] [--zone <+HH:MM>]");
+    eprintln!("       units: s m h d w mo q y bd (minute=m, month=mo). built now: shift (fixed + mo/q/y), set-time. snap/nearest/business-days: not built yet");
 }
 
 fn this_bitness() -> &'static str {
@@ -689,6 +697,232 @@ fn render_evidence(r: &SessionReport, p: &EvidenceParams) -> String {
 }
 
 // ---------------------------------------------------------------------------
+// Date calculator: `chrono calc ...`
+// ---------------------------------------------------------------------------
+//
+// The calculator surface of the shared step grammar (docs/04 section 4.3). The
+// driver parses typed flags into a canonical `MomentExpr`, resolves "now" for a
+// today/now base (the core stays pure and takes now as data), evaluates, and
+// renders. No natural language (6.2): each flag is one step, order is step order.
+
+/// Parsed `chrono calc` arguments: a base, an ordered step list, and the session
+/// zone used to resolve a today/now base.
+struct CalcArgs {
+    base: Base,
+    steps: Vec<Step>,
+    zone_bias_min: Option<i32>,
+}
+
+fn calc_run(argv: &[String]) -> i32 {
+    let ca = match parse_calc_args(argv) {
+        Ok(ca) => ca,
+        Err(e) => {
+            eprintln!("chrono: {e}");
+            print_calc_usage();
+            return 1;
+        }
+    };
+
+    // Resolve the real current time in the session zone, as data for the pure core.
+    // Same pattern as `resolve_at`: UTC now, shifted by the session bias (UTC when
+    // no zone is given). Zone-aware "today" without an explicit zone is a later slice.
+    let now = match resolve_now_civil(ca.zone_bias_min) {
+        Ok(n) => n,
+        Err(e) => {
+            eprintln!("chrono: cannot resolve current time: {e}");
+            return 3;
+        }
+    };
+
+    let expr = MomentExpr { base: ca.base, steps: ca.steps };
+    match chrono_core::calc::eval(&expr, &EvalContext { now }) {
+        Ok(outcome) => {
+            print!("{}", render_calc(&expr, &outcome, ca.zone_bias_min));
+            0
+        }
+        Err(e) => {
+            eprintln!("{}", describe_calc_error(&e));
+            calc_error_exit_code(&e)
+        }
+    }
+}
+
+fn parse_calc_args(argv: &[String]) -> Result<CalcArgs, String> {
+    let mut base = Base::Today;
+    let mut steps: Vec<Step> = Vec::new();
+    let mut zone_bias_min: Option<i32> = None;
+
+    let mut i = 0;
+    while i < argv.len() {
+        match argv[i].as_str() {
+            "--base" => {
+                i += 1;
+                base = parse_base(argv.get(i).ok_or("--base needs a value")?)?;
+            }
+            "--zone" => {
+                i += 1;
+                let raw = argv.get(i).ok_or("--zone needs a value like +02:00")?;
+                zone_bias_min = Some(parse_zone_to_bias(raw)?);
+            }
+            "--shift" => {
+                i += 1;
+                steps.push(parse_shift(argv.get(i).ok_or("--shift needs a value like +18years")?)?);
+            }
+            "--set-time" => {
+                i += 1;
+                steps.push(parse_set_time(argv.get(i).ok_or("--set-time needs a value like 23:59:59")?)?);
+            }
+            "--snap" => {
+                i += 1;
+                steps.push(Step::Snap(argv.get(i).ok_or("--snap needs a target")?.clone()));
+            }
+            "--nearest" => {
+                i += 1;
+                steps.push(Step::Nearest(argv.get(i).ok_or("--nearest needs a target")?.clone()));
+            }
+            other if other.starts_with("--") => return Err(format!("unknown flag '{other}'")),
+            other => return Err(format!("unexpected argument '{other}'")),
+        }
+        i += 1;
+    }
+
+    Ok(CalcArgs { base, steps, zone_bias_min })
+}
+
+/// Parse a `--base` value: the keywords `today`/`now`, or an absolute civil date-time.
+fn parse_base(raw: &str) -> Result<Base, String> {
+    match raw {
+        "today" => Ok(Base::Today),
+        "now" => Ok(Base::Now),
+        _ => Ok(Base::Absolute(chrono_core::calc::parse_civil_datetime(raw)?)),
+    }
+}
+
+/// Parse a `--shift` value `±N<unit>` into a shift step. The sign is mandatory; the
+/// unit accepts short codes and full names. Minute stays `m`; month is `mo`, never `m`.
+fn parse_shift(raw: &str) -> Result<Step, String> {
+    let sign = match raw.as_bytes().first() {
+        Some(b'+') => Sign::Plus,
+        Some(b'-') => Sign::Minus,
+        _ => return Err(format!("shift must start with + or -, got '{raw}'")),
+    };
+    let rest = &raw[1..];
+    let split = rest.find(|c: char| !c.is_ascii_digit()).unwrap_or(rest.len());
+    let (num, unit_str) = rest.split_at(split);
+    if num.is_empty() {
+        return Err(format!("shift needs a number, got '{raw}'"));
+    }
+    let amount: i64 = num.parse().map_err(|_| format!("bad number in shift '{raw}'"))?;
+    let unit = parse_unit(unit_str).ok_or_else(|| format!("unknown unit '{unit_str}' in shift '{raw}'"))?;
+    Ok(Step::Shift { sign, amount, unit })
+}
+
+/// Map a unit token (short code or full name) to a canonical unit. 🔴 `m` is minutes,
+/// `mo` is months - never conflate them (the substitution `--at` delta already uses `m`
+/// for minutes, so calc keeps the same convention).
+fn parse_unit(s: &str) -> Option<Unit> {
+    Some(match s {
+        "s" | "sec" | "secs" | "seconds" => Unit::Seconds,
+        "m" | "min" | "mins" | "minutes" => Unit::Minutes,
+        "h" | "hr" | "hrs" | "hours" => Unit::Hours,
+        "d" | "day" | "days" => Unit::Days,
+        "w" | "week" | "weeks" => Unit::Weeks,
+        "mo" | "month" | "months" => Unit::Months,
+        "q" | "quarter" | "quarters" => Unit::Quarters,
+        "y" | "yr" | "yrs" | "year" | "years" => Unit::Years,
+        "bd" | "business_days" | "businessdays" => Unit::BusinessDays,
+        _ => return None,
+    })
+}
+
+/// Parse a `--set-time` value `HH:MM:SS`. Field ranges are validated in the core
+/// evaluator (BadSetTime), so parsing only checks the shape and numeric form here.
+fn parse_set_time(raw: &str) -> Result<Step, String> {
+    let p: Vec<&str> = raw.split(':').collect();
+    if p.len() != 3 {
+        return Err(format!("set-time must be HH:MM:SS, got '{raw}'"));
+    }
+    let hour = p[0].parse().map_err(|_| format!("bad hour in set-time '{raw}'"))?;
+    let minute = p[1].parse().map_err(|_| format!("bad minute in set-time '{raw}'"))?;
+    let second = p[2].parse().map_err(|_| format!("bad second in set-time '{raw}'"))?;
+    Ok(Step::SetTime { hour, minute, second })
+}
+
+/// Real current time in the session zone, as a civil date-time for the pure core.
+/// Reuses the tested UTC-now and wall-clock conversion, then parses back to civil.
+fn resolve_now_civil(zone_bias_min: Option<i32>) -> Result<chrono_core::calc::CivilDateTime, String> {
+    let wall = filetime_utc_to_wall(now_filetime_utc(), zone_bias_min.unwrap_or(0));
+    chrono_core::calc::parse_civil_datetime(&wall)
+}
+
+/// Exit code for a calc error (a small table separate from the substitution verdict
+/// codes in docs/08 section 8): bad input is a usage error (1), an operation not built
+/// in this release is its own honest code (5) so a script can tell the two apart.
+fn calc_error_exit_code(e: &EvalError) -> i32 {
+    match e {
+        EvalError::StepUnsupported { .. } | EvalError::UnitUnsupported { .. } => 5,
+        EvalError::Overflow { .. } | EvalError::BadSetTime { .. } => 1,
+    }
+}
+
+/// Human message for a calc error, carrying a stable key (docs/08 section 10) and a
+/// 1-based step number. "Not built yet" is the product's honest vocabulary, never a
+/// silent skip or a faked result (zasady/01 section 2).
+fn describe_calc_error(e: &EvalError) -> String {
+    match e {
+        EvalError::StepUnsupported { kind, index } => {
+            format!("chrono calc: step {} ({kind}) is not built yet (calc.step_unsupported)", index + 1)
+        }
+        EvalError::UnitUnsupported { unit, index } => {
+            format!(
+                "chrono calc: step {} (shift {unit}) needs a calendar, not built yet (calc.unit_unsupported)",
+                index + 1
+            )
+        }
+        EvalError::Overflow { index } => {
+            format!("chrono calc: step {} overflows the representable range (calc.overflow)", index + 1)
+        }
+        EvalError::BadSetTime { index } => {
+            format!("chrono calc: step {} has an out-of-range time (calc.bad_set_time)", index + 1)
+        }
+    }
+}
+
+/// Render a calc result: the base, the intermediate value after each step, and the
+/// final moment (7.3 - the user sees where they went wrong, not just the final number).
+fn render_calc(expr: &MomentExpr, outcome: &chrono_core::calc::EvalOutcome, zone_bias_min: Option<i32>) -> String {
+    let zone = zone_bias_min.map(format_bias).unwrap_or_else(|| "UTC".into());
+    let mut out = String::from("Chrono Mock - date calculator\n");
+    match &expr.base {
+        Base::Today => out.push_str(&format!("  base:    {}  (today, session zone {zone})\n", outcome.base.to_iso())),
+        Base::Now => out.push_str(&format!("  base:    {}  (now, session zone {zone})\n", outcome.base.to_iso())),
+        Base::Absolute(_) => out.push_str(&format!("  base:    {}\n", outcome.base.to_iso())),
+    }
+    for (i, step) in expr.steps.iter().enumerate() {
+        out.push_str(&format!("  step {}:  {}  -> {}\n", i + 1, describe_step(step), outcome.after_each[i].to_iso()));
+    }
+    out.push_str(&format!("  result:  {}\n", outcome.result().to_iso()));
+    out
+}
+
+/// One step described in English for the report.
+fn describe_step(step: &Step) -> String {
+    match step {
+        Step::Shift { sign, amount, unit } => {
+            let s = match sign {
+                Sign::Plus => "+",
+                Sign::Minus => "-",
+            };
+            format!("shift {s}{amount} {}", unit.name())
+        }
+        Step::SetTime { hour, minute, second } => format!("set time {hour:02}:{minute:02}:{second:02}"),
+        Step::Snap(t) => format!("snap {t}"),
+        Step::Nearest(t) => format!("nearest {t}"),
+        Step::Zone(t) => format!("zone {t}"),
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Core mode: `chrono __core`
 // ---------------------------------------------------------------------------
 
@@ -1270,5 +1504,110 @@ mod tests {
         assert!(out.contains("session:  fake clock reached 2038-01-19 03:15:07"), "got:\n{out}");
         // 1.5s real mapped to 90s fake - the x60 acceleration is visible in the report.
         assert!(out.contains("real elapsed 1.5s, fake elapsed 90.0s"), "got:\n{out}");
+    }
+
+    // --- calc surface ---------------------------------------------------------
+
+    #[test]
+    fn parse_shift_reads_sign_amount_and_unit() {
+        assert_eq!(parse_shift("+18years").unwrap(), Step::Shift { sign: Sign::Plus, amount: 18, unit: Unit::Years });
+        assert_eq!(parse_shift("-1d").unwrap(), Step::Shift { sign: Sign::Minus, amount: 1, unit: Unit::Days });
+        assert_eq!(parse_shift("+2q").unwrap(), Step::Shift { sign: Sign::Plus, amount: 2, unit: Unit::Quarters });
+    }
+
+    #[test]
+    fn shift_unit_m_is_minutes_mo_is_months() {
+        // The collision that would silently corrupt every month calc if conflated.
+        assert_eq!(parse_shift("+5m").unwrap(), Step::Shift { sign: Sign::Plus, amount: 5, unit: Unit::Minutes });
+        assert_eq!(parse_shift("+5mo").unwrap(), Step::Shift { sign: Sign::Plus, amount: 5, unit: Unit::Months });
+    }
+
+    #[test]
+    fn parse_shift_rejects_bad_shapes() {
+        assert!(parse_shift("18years").is_err()); // no sign
+        assert!(parse_shift("+years").is_err()); // no number
+        assert!(parse_shift("+18zz").is_err()); // unknown unit
+        assert!(parse_shift("+").is_err()); // sign only
+    }
+
+    #[test]
+    fn parse_base_reads_keywords_and_absolute() {
+        assert_eq!(parse_base("today").unwrap(), Base::Today);
+        assert_eq!(parse_base("now").unwrap(), Base::Now);
+        assert!(matches!(parse_base("2025-01-31T12:00:00").unwrap(), Base::Absolute(_)));
+        assert!(parse_base("2025-02-31T00:00:00").is_err()); // impossible day rejected, not normalized
+    }
+
+    #[test]
+    fn parse_set_time_reads_hms() {
+        assert_eq!(parse_set_time("23:59:59").unwrap(), Step::SetTime { hour: 23, minute: 59, second: 59 });
+        assert!(parse_set_time("23:59").is_err()); // wrong shape
+        assert!(parse_set_time("aa:bb:cc").is_err()); // non-numeric
+    }
+
+    #[test]
+    fn calc_exit_codes_split_bad_input_from_not_built() {
+        // Not built in this release -> its own code 5; bad input -> usage 1.
+        assert_eq!(calc_error_exit_code(&EvalError::StepUnsupported { kind: "snap", index: 0 }), 5);
+        assert_eq!(calc_error_exit_code(&EvalError::UnitUnsupported { unit: "business_days", index: 0 }), 5);
+        assert_eq!(calc_error_exit_code(&EvalError::Overflow { index: 0 }), 1);
+        assert_eq!(calc_error_exit_code(&EvalError::BadSetTime { index: 0 }), 1);
+    }
+
+    #[test]
+    fn calc_error_message_carries_key_and_one_based_step() {
+        let msg = describe_calc_error(&EvalError::UnitUnsupported { unit: "business_days", index: 0 });
+        assert!(msg.contains("step 1"), "1-based step number, got: {msg}");
+        assert!(msg.contains("calc.unit_unsupported"), "stable key, got: {msg}");
+        let msg = describe_calc_error(&EvalError::StepUnsupported { kind: "snap", index: 2 });
+        assert!(msg.contains("step 3") && msg.contains("calc.step_unsupported"), "got: {msg}");
+    }
+
+    #[test]
+    fn calc_parse_to_eval_end_to_end_absolute_base() {
+        // The whole CLI path minus the system clock: parse flags, evaluate, check the
+        // month clamp that proves the model beats a fixed-tick delta.
+        let ca = parse_calc_args(&[
+            "--base".into(),
+            "2025-01-31T12:00:00".into(),
+            "--shift".into(),
+            "+1mo".into(),
+        ])
+        .unwrap();
+        let expr = MomentExpr { base: ca.base, steps: ca.steps };
+        let now = chrono_core::calc::CivilDateTime { year: 2000, month: 1, day: 1, hour: 0, minute: 0, second: 0 };
+        let out = chrono_core::calc::eval(&expr, &EvalContext { now }).unwrap();
+        assert_eq!(out.result().to_iso(), "2025-02-28T12:00:00");
+    }
+
+    #[test]
+    fn render_calc_shows_base_steps_and_result() {
+        let ca = parse_calc_args(&[
+            "--base".into(),
+            "2008-08-04T00:00:00".into(),
+            "--shift".into(),
+            "-18years".into(),
+            "--shift".into(),
+            "-1d".into(),
+            "--set-time".into(),
+            "23:59:59".into(),
+        ])
+        .unwrap();
+        let expr = MomentExpr { base: ca.base, steps: ca.steps };
+        let now = chrono_core::calc::CivilDateTime { year: 2000, month: 1, day: 1, hour: 0, minute: 0, second: 0 };
+        let out = chrono_core::calc::eval(&expr, &EvalContext { now }).unwrap();
+        let text = render_calc(&expr, &out, None);
+        assert!(text.contains("base:    2008-08-04T00:00:00"), "got:\n{text}");
+        assert!(text.contains("step 1:  shift -18 years  -> 1990-08-04T00:00:00"), "got:\n{text}");
+        assert!(text.contains("step 3:  set time 23:59:59  -> 1990-08-03T23:59:59"), "got:\n{text}");
+        assert!(text.contains("result:  1990-08-03T23:59:59"), "got:\n{text}");
+    }
+
+    #[test]
+    fn calc_default_base_is_today_with_no_steps() {
+        // The degenerate-but-legal input: `chrono calc` with no args -> today, no steps.
+        let ca = parse_calc_args(&[]).unwrap();
+        assert_eq!(ca.base, Base::Today);
+        assert!(ca.steps.is_empty());
     }
 }
