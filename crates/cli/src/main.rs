@@ -237,18 +237,46 @@ fn now_filetime_utc() -> i64 {
     (DAYS_1601_TO_1970 * 86_400 + d.as_secs() as i64) * 10_000_000 + (d.subsec_nanos() as i64 / 100)
 }
 
-/// Resolve the `--at` value. A leading `+`/`-` marks a relative moment (now + delta)
-/// with a fixed-length unit s/m/h/d/w; the driver resolves it to an absolute wall
-/// string so the core only ever sees an absolute moment. Months, years, and business
-/// days are the calculator's job (later) and are rejected here. Anything else passes
+/// Resolve the `--at` value to an absolute wall string (the core only ever sees an
+/// absolute moment). A leading `+`/`-` marks a relative moment - now plus one shift
+/// step - resolved through the SHARED calc evaluator, so `--at` accepts exactly the
+/// units the calculator does, including months, quarters, and years, which fold onto
+/// the civil date (a fixed-tick delta cannot express them). Anything else passes
 /// through as an absolute moment.
+///
+/// One grammar, not two: this retires `parse_relative_delta` from the `--at` path.
+/// The relative `jump` path still uses it (folded onto the evaluator in a later slice).
 fn resolve_at(raw: &str, tz_bias_min: Option<i32>) -> Result<String, String> {
-    let first = raw.as_bytes().first().copied();
-    if first == Some(b'+') || first == Some(b'-') {
-        let target = now_filetime_utc() + chrono_core::parse_relative_delta(raw)?;
-        return Ok(filetime_utc_to_wall(target, tz_bias_min.unwrap_or(0)));
+    if raw.starts_with(['+', '-']) {
+        let now = resolve_now_civil(tz_bias_min)?;
+        resolve_relative_at(raw, now)
+    } else {
+        Ok(raw.to_string())
     }
-    Ok(raw.to_string())
+}
+
+/// The pure core of a relative `--at`, taking "now" as data so it is deterministic to
+/// test. The caller guarantees `raw` starts with a sign.
+fn resolve_relative_at(raw: &str, now: chrono_core::calc::CivilDateTime) -> Result<String, String> {
+    let step = parse_shift(raw)?;
+    let expr = MomentExpr { base: Base::Now, steps: vec![step] };
+    let outcome = chrono_core::calc::eval(&expr, &EvalContext { now }).map_err(describe_at_error)?;
+    Ok(outcome.result().to_iso())
+}
+
+/// Message for an eval error while resolving a relative `--at`. A pre-spawn resolution
+/// failure is a usage error (the caller exits 1), never a substitution verdict - business
+/// days need a calendar, an extreme delta overflows. `--at` only ever builds one shift
+/// step, so the step-level variants cannot occur, but the match stays total.
+fn describe_at_error(e: EvalError) -> String {
+    match e {
+        EvalError::UnitUnsupported { unit, .. } => {
+            format!("relative --at unit '{unit}' is not built yet (needs a calendar)")
+        }
+        EvalError::Overflow { .. } => "relative --at is too large".to_string(),
+        EvalError::StepUnsupported { kind, .. } => format!("relative --at step '{kind}' is not supported"),
+        EvalError::BadSetTime { .. } => "relative --at has an invalid time".to_string(),
+    }
 }
 
 /// Send an `end` command to the core over its stdin.
@@ -1378,6 +1406,35 @@ mod tests {
         assert!(resolve_at("+1x", None).is_err());
         assert!(resolve_at("+abcd", None).is_err());
         assert!(resolve_at("-y", None).is_err());
+    }
+
+    #[test]
+    fn at_relative_fixed_unit_is_deterministic_with_now() {
+        // Fixed-length units resolve exactly as before - now + a plain offset. Deterministic
+        // because now is passed as data, not read from the clock.
+        let now = chrono_core::calc::CivilDateTime { year: 2026, month: 8, day: 25, hour: 14, minute: 30, second: 45 };
+        assert_eq!(resolve_relative_at("+1d", now).unwrap(), "2026-08-26T14:30:45");
+        assert_eq!(resolve_relative_at("-2h", now).unwrap(), "2026-08-25T12:30:45");
+        assert_eq!(resolve_relative_at("+1w", now).unwrap(), "2026-09-01T14:30:45");
+    }
+
+    #[test]
+    fn at_relative_now_accepts_calendar_units() {
+        // The new capability: `--at` gains months/quarters/years through the shared model,
+        // with the same clamp - the substitution side could not express these before.
+        let now = chrono_core::calc::CivilDateTime { year: 2026, month: 8, day: 25, hour: 0, minute: 0, second: 0 };
+        assert_eq!(resolve_relative_at("+1mo", now).unwrap(), "2026-09-25T00:00:00");
+        assert_eq!(resolve_relative_at("-18years", now).unwrap(), "2008-08-25T00:00:00");
+        // End-of-month clamp reaches `--at` too: Jan 31 + 1 month = Feb 28 (2027, non-leap).
+        let jan31 = chrono_core::calc::CivilDateTime { year: 2027, month: 1, day: 31, hour: 12, minute: 0, second: 0 };
+        assert_eq!(resolve_relative_at("+1mo", jan31).unwrap(), "2027-02-28T12:00:00");
+    }
+
+    #[test]
+    fn at_relative_business_days_not_built_is_an_error() {
+        let now = chrono_core::calc::CivilDateTime { year: 2026, month: 8, day: 25, hour: 0, minute: 0, second: 0 };
+        let err = resolve_relative_at("+5bd", now).unwrap_err();
+        assert!(err.contains("not built yet"), "honest not-built message, got: {err}");
     }
 
     fn empty_report() -> SessionReport {
