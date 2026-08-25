@@ -244,8 +244,8 @@ fn now_filetime_utc() -> i64 {
 /// the civil date (a fixed-tick delta cannot express them). Anything else passes
 /// through as an absolute moment.
 ///
-/// One grammar, not two: this retires `parse_relative_delta` from the `--at` path.
-/// The relative `jump` path still uses it (folded onto the evaluator in a later slice).
+/// One grammar, not two: `--at`, `jump`, and the calculator all resolve through the same
+/// step evaluator. The old `parse_relative_delta` (fixed-tick only) is gone entirely.
 fn resolve_at(raw: &str, tz_bias_min: Option<i32>) -> Result<String, String> {
     if raw.starts_with(['+', '-']) {
         let now = resolve_now_civil(tz_bias_min)?;
@@ -289,7 +289,16 @@ fn send_set_multiplier(stdin: &mut std::process::ChildStdin, m: i64) {
     send_command(stdin, &Command::SetMultiplier { v: PROTOCOL_VERSION, id: 3, multiplier: m });
 }
 
-/// Send a `jump` command in flight. A leading +/- marks a relative jump (current fake + delta),
+/// Translation key for a relative-jump eval error (docs/08 section 10). Business days need a
+/// calendar (not built yet); anything else is an invalid moment. Honest, never silent (rule 6).
+fn jump_error_key(e: EvalError) -> &'static str {
+    match e {
+        EvalError::UnitUnsupported { .. } | EvalError::StepUnsupported { .. } => "moment.unit_not_built",
+        EvalError::Overflow { .. } | EvalError::BadSetTime { .. } => "moment.invalid",
+    }
+}
+
+/// Send a `jump` command in flight. A leading +/- marks a relative jump (current fake + one step),
 /// carried in `delta`; anything else is an absolute moment in the session zone, carried in `local`.
 fn send_jump(stdin: &mut std::process::ChildStdin, moment: &str, tz_bias_min: Option<i32>) {
     let first = moment.as_bytes().first().copied();
@@ -1200,13 +1209,16 @@ fn run_session(
                 emit(&state_event(&session));
             }
             Ok(Command::Jump { id, to, .. }) => {
-                // Relative jump (current fake + delta) resolves in the core, which alone knows the
-                // live fake clock; absolute resolves through moment_from_spec. Both re-anchor.
+                // Relative jump (current fake + one step) resolves in the core through the SHARED
+                // evaluator, so `jump` accepts the same calendar units as calc and `--at`. The core
+                // alone knows the live fake clock. Absolute resolves through moment_from_spec. Both
+                // re-anchor under one clock read.
                 let resolved: Result<(), &str> = if to.kind == "relative" {
                     match to.delta.as_deref() {
-                        Some(d) => chrono_core::parse_relative_delta(d)
-                            .map(|delta| session.jump_relative(delta))
-                            .map_err(|_| "moment.invalid"),
+                        Some(d) => match parse_shift(d) {
+                            Ok(step) => session.jump_step(&step).map_err(jump_error_key),
+                            Err(_) => Err("moment.invalid"),
+                        },
                         None => Err("moment.invalid"),
                     }
                 } else {

@@ -190,14 +190,22 @@ impl Session {
         unsafe { write_anchor(self.ctl_mut(), to_ft, now, cur_m) };
     }
 
-    /// Jump the wall clock by `delta` ticks (100 ns) from its CURRENT fake value, keeping the
-    /// multiplier. Relative jump semantics: "advance the session clock by delta", computed
-    /// atomically under one anchor read so no real time leaks between reading and re-anchoring.
-    pub fn jump_relative(&self, delta: i64) {
+    /// Jump the wall clock by ONE shift step from its CURRENT fake value, keeping the
+    /// multiplier. Fixed-length units add a tick delta (sub-second precision preserved);
+    /// calendar units (months/quarters/years) fold through the civil date in the session
+    /// zone. Computed under ONE anchor read so no real time leaks between reading the
+    /// current fake and re-anchoring - a calendar jump is as race-free as a fixed one
+    /// (ADR-5). Returns Err if the step is unsupported (business days) or overflows.
+    pub fn jump_step(
+        &self,
+        step: &chrono_core::calc::Step,
+    ) -> Result<(), chrono_core::calc::EvalError> {
         let now = quit_now();
         let (a_fake, a_real, cur_m) = unsafe { read_anchor(self.ctl()) };
         let fake_now = a_fake.wrapping_add(now.wrapping_sub(a_real).wrapping_mul(cur_m));
-        unsafe { write_anchor(self.ctl_mut(), fake_now.wrapping_add(delta), now, cur_m) };
+        let target = chrono_core::calc::step_target(fake_now, self.tz_bias, step)?;
+        unsafe { write_anchor(self.ctl_mut(), target, now, cur_m) };
+        Ok(())
     }
 
     /// Scan the PID registry for processes not yet reported (children that joined the

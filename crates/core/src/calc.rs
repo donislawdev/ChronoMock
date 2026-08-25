@@ -337,6 +337,84 @@ fn last_day_of_month(year: i64, month: i64) -> u32 {
     }
 }
 
+// --- Bridge to the substitution tick world (the relative `jump` path) ---------------
+//
+// The substitution fake clock is a UTC FILETIME; a relative jump means "advance the fake
+// clock by one step". Fixed-length units are a tick delta (kept exact, sub-second and all);
+// calendar units are defined on the civil date in the SESSION zone, so they fold through it.
+
+/// Session-local civil fields from a UTC FILETIME. Pure arithmetic mirroring the civil half
+/// of `filetime_utc_to_wall` (no string, no parse, so it cannot fail).
+fn filetime_to_civil(ft_utc: i64, tz_bias_min: i32) -> CivilDateTime {
+    // Session-local = UTC - bias (UTC = local + bias).
+    let local_ticks = ft_utc - (tz_bias_min as i64) * 60 * 10_000_000;
+    const DAYS_1601_TO_1970: i64 = 134_774;
+    let secs_1601 = local_ticks.div_euclid(10_000_000);
+    let secs_1970 = secs_1601 - DAYS_1601_TO_1970 * 86_400;
+    let days = secs_1970.div_euclid(86_400);
+    let tod = secs_1970.rem_euclid(86_400);
+    let (y, mo, d) = civil_from_days(days);
+    CivilDateTime {
+        year: y,
+        month: mo as u32,
+        day: d as u32,
+        hour: (tod / 3_600) as u32,
+        minute: (tod % 3_600 / 60) as u32,
+        second: (tod % 60) as u32,
+    }
+}
+
+/// Signed length of a FIXED-length shift step in FILETIME ticks (100 ns), or `None` if the
+/// step is not a fixed-length shift (calendar units and business days need the civil fold,
+/// non-shift steps have no tick length). `Err` only on overflow of a fixed shift.
+pub fn fixed_shift_ticks(step: &Step) -> Result<Option<i64>, EvalError> {
+    let Step::Shift { sign, amount, unit } = step else {
+        return Ok(None);
+    };
+    let unit_secs: i64 = match unit {
+        Unit::Seconds => 1,
+        Unit::Minutes => 60,
+        Unit::Hours => 3_600,
+        Unit::Days => 86_400,
+        Unit::Weeks => 604_800,
+        _ => return Ok(None), // calendar unit or business days: civil fold
+    };
+    let signed = match sign {
+        Sign::Plus => *amount,
+        Sign::Minus => amount.checked_neg().ok_or(EvalError::Overflow { index: 0 })?,
+    };
+    let ticks = signed
+        .checked_mul(unit_secs)
+        .and_then(|s| s.checked_mul(10_000_000))
+        .ok_or(EvalError::Overflow { index: 0 })?;
+    Ok(Some(ticks))
+}
+
+/// Apply one calendar shift step to a UTC FILETIME read as wall-clock in `tz_bias_min`.
+/// Round-trips ft -> session-local civil -> shifted civil -> ft, reusing the canonical
+/// `moment_to_filetime_utc` (the same civil->ft the mechanism uses). Overflow of the
+/// resulting instant is reported.
+fn shift_filetime(ft_utc: i64, tz_bias_min: i32, step: &Step) -> Result<i64, EvalError> {
+    let civil = filetime_to_civil(ft_utc, tz_bias_min);
+    let shifted = apply_step(civil, step, 0)?;
+    super::moment_to_filetime_utc(&super::Moment {
+        local: shifted.to_iso(),
+        tz_bias_min: Some(tz_bias_min),
+    })
+    .map_err(|_| EvalError::Overflow { index: 0 })
+}
+
+/// The target UTC FILETIME after applying ONE shift step to the current fake instant - the
+/// single source of truth for "current fake + one step" on the substitution jump path. A
+/// fixed-length unit adds a tick delta (sub-second precision preserved); a calendar unit
+/// folds through the civil date in the session zone. Business days are not built yet.
+pub fn step_target(fake_now_ft: i64, tz_bias_min: i32, step: &Step) -> Result<i64, EvalError> {
+    if let Some(ticks) = fixed_shift_ticks(step)? {
+        return fake_now_ft.checked_add(ticks).ok_or(EvalError::Overflow { index: 0 });
+    }
+    shift_filetime(fake_now_ft, tz_bias_min, step)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -552,5 +630,61 @@ mod tests {
     fn iso_formats_with_zero_padding() {
         assert_eq!(dt(2008, 8, 3, 23, 59, 59).to_iso(), "2008-08-03T23:59:59");
         assert_eq!(dt(2026, 1, 1, 0, 0, 0).to_iso(), "2026-01-01T00:00:00");
+    }
+
+    // --- step_target: the substitution jump bridge ---------------------------
+
+    fn ft_of(local: &str, bias: i32) -> i64 {
+        crate::moment_to_filetime_utc(&crate::Moment { local: local.into(), tz_bias_min: Some(bias) }).unwrap()
+    }
+
+    #[test]
+    fn step_target_fixed_is_exact_and_keeps_sub_second() {
+        // Fixed units add a precise tick delta - sub-second bits survive (no civil truncation),
+        // exactly as the old jump_relative did.
+        let ft = 1_000_000_123; // arbitrary ticks, with a sub-second remainder
+        assert_eq!(step_target(ft, 0, &shift(Sign::Plus, 1, Unit::Seconds)).unwrap(), ft + 10_000_000);
+        assert_eq!(step_target(ft, 0, &shift(Sign::Minus, 2, Unit::Hours)).unwrap(), ft - 2 * 3600 * 10_000_000);
+    }
+
+    #[test]
+    fn step_target_calendar_folds_through_civil_with_clamp() {
+        // +1 month on the fake clock clamps like the calculator: Jan 31 -> Feb 28.
+        let jan31 = ft_of("2025-01-31T12:00:00", 0);
+        let feb28 = ft_of("2025-02-28T12:00:00", 0);
+        assert_eq!(step_target(jan31, 0, &shift(Sign::Plus, 1, Unit::Months)).unwrap(), feb28);
+    }
+
+    #[test]
+    fn step_target_calendar_respects_session_zone() {
+        // The fold reads and writes the civil date at the same session bias.
+        let jan31 = ft_of("2025-01-31T12:00:00", -120); // UTC+2 session
+        let feb28 = ft_of("2025-02-28T12:00:00", -120);
+        assert_eq!(step_target(jan31, -120, &shift(Sign::Plus, 1, Unit::Months)).unwrap(), feb28);
+    }
+
+    #[test]
+    fn step_target_business_days_is_unsupported() {
+        let ft = ft_of("2026-01-01T00:00:00", 0);
+        assert_eq!(
+            step_target(ft, 0, &shift(Sign::Plus, 5, Unit::BusinessDays)),
+            Err(EvalError::UnitUnsupported { unit: "business_days", index: 0 })
+        );
+    }
+
+    #[test]
+    fn step_target_overflow_is_reported_not_wrapped() {
+        let ft = ft_of("2026-01-01T00:00:00", 0);
+        assert!(step_target(ft, 0, &shift(Sign::Plus, i64::MAX, Unit::Years)).is_err());
+        assert!(step_target(ft, 0, &shift(Sign::Plus, i64::MAX, Unit::Weeks)).is_err());
+    }
+
+    #[test]
+    fn filetime_to_civil_inverts_moment_to_filetime() {
+        for (local, bias) in
+            [("2038-01-19T03:14:07", 0), ("2025-02-28T12:00:00", -120), ("1990-08-03T23:59:59", 300)]
+        {
+            assert_eq!(filetime_to_civil(ft_of(local, bias), bias).to_iso(), local);
+        }
     }
 }
