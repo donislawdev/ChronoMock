@@ -71,6 +71,13 @@
             </ComboBox>
           </StackPanel>
 
+          <!-- Scale the duration axis too (chrono-mock 11.1 pt 4): with a multiplier, a countdown or timer
+               inside the target runs N times faster, not just the wall clock. Maps to wire scale_duration. -->
+          <CheckBox Content="{DynamicResource mode.scale_duration}"
+                    IsChecked="{Binding ScaleDuration}"
+                    HorizontalAlignment="Center" Margin="{StaticResource SpaceXs}"
+                    FontSize="{StaticResource FontSizeBody}" Foreground="{DynamicResource BrushTextSecondary}" />
+
           <TextBlock Text="{DynamicResource moment.invalid}" TextAlignment="Center" Margin="{StaticResource SpaceXs}"
                      TextWrapping="Wrap"
                      FontSize="{StaticResource FontSizeCaption}" Foreground="{DynamicResource BrushStatusPartial}"

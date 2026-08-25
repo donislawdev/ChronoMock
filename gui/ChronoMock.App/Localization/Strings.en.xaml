@@ -26,6 +26,7 @@
   <sys:String x:Key="mode.x10">×10</sys:String>
   <sys:String x:Key="mode.x60">×60</sys:String>
   <sys:String x:Key="mode.x1440">×1440</sys:String>
+  <sys:String x:Key="mode.scale_duration">Scale duration too</sys:String>
 
   <!-- Actions. -->
   <sys:String x:Key="action.start">Start</sys:String>

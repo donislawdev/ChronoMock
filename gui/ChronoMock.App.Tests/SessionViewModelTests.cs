@@ -162,7 +162,19 @@ public class SessionViewModelTests
         Assert.Equal(300, time.Moment.TzBiasMin);
         Assert.Equal("frozen", time.Mode);
         Assert.Null(time.Multiplier);
-        Assert.False(time.ScaleDuration);
+        Assert.False(time.ScaleDuration); // off by default
+    }
+
+    [Fact]
+    public void Build_time_carries_the_scale_duration_toggle()
+    {
+        // The toggle (chrono-mock 11.1 pt 4) flows to the wire so a duration-based target - a countdown,
+        // an animation - can be sped up with the multiplier, not just the wall clock.
+        var vm = new SessionViewModel { ScaleDuration = true };
+        Assert.True(vm.BuildTime().ScaleDuration);
+
+        vm.ScaleDuration = false;
+        Assert.False(vm.BuildTime().ScaleDuration);
     }
 
     [Fact]

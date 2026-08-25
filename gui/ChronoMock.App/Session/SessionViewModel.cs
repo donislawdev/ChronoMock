@@ -34,6 +34,7 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     private string _momentText = "2038-01-19T03:14:07";
     private ZoneOption _selectedZone;
     private ModeOption _selectedMode;
+    private bool _scaleDuration;
     private readonly ISessionHistoryStore _store;
     private bool _launched;
     private string _historyError = string.Empty;
@@ -190,6 +191,12 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     public ZoneOption SelectedZone { get => _selectedZone; set => Set(ref _selectedZone, value); }
 
     public ModeOption SelectedMode { get => _selectedMode; set => Set(ref _selectedMode, value); }
+
+    /// <summary>Scale the duration axis too (chrono-mock 11.1 pt 4): with a multiplier, timers, sleeps and
+    /// tick counts advance N times as well, so a countdown or animation runs N times faster - not just the
+    /// wall clock. Off by default (the wall clock alone covers date-dependent behaviour); a duration-based
+    /// target like a countdown needs it. Maps to the wire <c>scale_duration</c> the core already accepts.</summary>
+    public bool ScaleDuration { get => _scaleDuration; set => Set(ref _scaleDuration, value); }
 
     /// <summary>True when a session may be started: nothing is running, a target is chosen, moment is valid.</summary>
     public bool CanStart => _idle && HasTarget && MomentValid;
@@ -572,7 +579,7 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
             Moment = new MomentSpec { Kind = "absolute", Local = canonical, TzBiasMin = SelectedZone.BiasMinutes },
             Mode = SelectedMode.Mode,
             Multiplier = SelectedMode.Multiplier,
-            ScaleDuration = false,
+            ScaleDuration = _scaleDuration,
         };
     }
 
