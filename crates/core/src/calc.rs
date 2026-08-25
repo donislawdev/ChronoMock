@@ -131,16 +131,17 @@ impl NearestTarget {
 }
 
 /// One step of a moment expression. Step kinds mirror docs/04 section 4.3 exactly
-/// so a preset `moment` and the calculator share one model. `Zone` carries its raw
-/// target token for now - it is not built in this slice and evaluates to an honest
-/// "not supported yet".
+/// so a preset `moment` and the calculator share one model. `Zone` carries the target
+/// session-zone bias in minutes ("UTC = local + bias", the same convention as
+/// `Moment::tz_bias_min`): it re-expresses the running moment in another fixed-offset
+/// zone (same instant, different wall-clock), so `eval` intercepts it to track the zone.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Step {
     Shift { sign: Sign, amount: i64, unit: Unit },
     SetTime { hour: u32, minute: u32, second: u32 },
     Snap(SnapTarget),
     Nearest(NearestTarget),
-    Zone(String),
+    Zone(i32),
 }
 
 impl Step {
@@ -176,22 +177,30 @@ pub struct MomentExpr {
 }
 
 /// What the evaluator needs from the outside: "real now" as data, so the core stays pure and a
-/// test can pin it (docs/07 section 4), plus an optional calendar for business-day arithmetic.
+/// test can pin it (docs/07 section 4), the session zone the base is expressed in (needed so a
+/// `zone` step can convert away from it), plus an optional calendar for business-day arithmetic.
 /// `calendar` is `None` on the substitution `--at`/`jump` paths, where `business_days` is then
-/// honestly unsupported.
+/// honestly unsupported; `zone_bias_min` is the base zone there too (those paths build no `zone`
+/// step, so it only sets the result zone, which they ignore).
 #[derive(Debug, Clone, Copy)]
 pub struct EvalContext<'a> {
     pub now: CivilDateTime,
+    /// Session-zone bias in minutes ("UTC = local + bias"): the zone the base lives in.
+    pub zone_bias_min: i32,
     pub calendar: Option<&'a crate::calendar::Calendar>,
 }
 
 /// The result of evaluating an expression: the base and the intermediate value
 /// after each step, so the surface can show progress step by step (7.3 - the user
-/// sees where they went wrong, not just the final number).
+/// sees where they went wrong, not just the final number). `result_bias` is the zone
+/// the FINAL moment is expressed in - it equals the session zone unless a `zone` step
+/// re-expressed the moment elsewhere. Intermediate zones are not tracked in this slice
+/// (the CLI needs only the final zone for its formats block).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EvalOutcome {
     pub base: CivilDateTime,
     pub after_each: Vec<CivilDateTime>,
+    pub result_bias: i32,
 }
 
 impl EvalOutcome {
@@ -249,12 +258,23 @@ pub fn eval(expr: &MomentExpr, ctx: &EvalContext) -> Result<EvalOutcome, EvalErr
         Base::Absolute(c) => *c,
     };
     let mut cur = base;
+    let mut cur_bias = ctx.zone_bias_min;
     let mut after_each = Vec::with_capacity(expr.steps.len());
     for (i, step) in expr.steps.iter().enumerate() {
-        cur = apply_step(cur, step, i, ctx.calendar)?;
+        // A `zone` step re-expresses the running moment in another fixed-offset zone (same
+        // instant, new wall-clock and bias). It is the only step that changes the zone, so it is
+        // handled here where the bias lives; every other step folds the civil date and keeps the
+        // current zone. The substitution jump path never builds a `zone` step, so `apply_step`
+        // still reports it as unsupported there.
+        if let Step::Zone(target_bias) = step {
+            cur = convert_zone(cur, cur_bias, *target_bias, i)?;
+            cur_bias = *target_bias;
+        } else {
+            cur = apply_step(cur, step, i, ctx.calendar)?;
+        }
         after_each.push(cur);
     }
-    Ok(EvalOutcome { base, after_each })
+    Ok(EvalOutcome { base, after_each, result_bias: cur_bias })
 }
 
 fn apply_step(
@@ -276,9 +296,30 @@ fn apply_step(
             Some(cal) => apply_nearest(cur, *target, cal, index),
             None => Err(EvalError::NeedsCalendar { index }),
         },
-        // Not built yet - honest "not supported" rather than a silent skip.
+        // `eval` intercepts `Zone` (it needs the running zone bias, which this per-civil helper
+        // does not carry). This arm is reached only from the substitution jump path, which cannot
+        // change zone by a time delta - an honest "unsupported" there, never a silent skip.
         Step::Zone(_) => Err(EvalError::StepUnsupported { kind: step.kind(), index }),
     }
+}
+
+/// Re-express a civil moment from one fixed-offset zone in another, preserving the instant: read
+/// `civil` in `bias_from` as a UTC instant, then read that instant back in `bias_to`. Reuses the
+/// canonical instant conversions (the same the mechanism and the output formats use), so a `zone`
+/// step introduces no new instant math. The instant is unchanged - only the wall-clock fields and
+/// the offset move. An unrepresentable extreme date is reported as overflow, never wrapped.
+fn convert_zone(
+    civil: CivilDateTime,
+    bias_from: i32,
+    bias_to: i32,
+    index: usize,
+) -> Result<CivilDateTime, EvalError> {
+    let ft = super::moment_to_filetime_utc(&super::Moment {
+        local: civil.to_iso(),
+        tz_bias_min: Some(bias_from),
+    })
+    .map_err(|_| EvalError::Overflow { index })?;
+    Ok(filetime_to_civil(ft, bias_to))
 }
 
 /// Jump to the nearest business day in the target's direction (calendar::nearest_business_day).
@@ -800,9 +841,16 @@ mod tests {
         Step::Shift { sign, amount, unit }
     }
 
-    /// Evaluate against a fixed `now` (no calendar) so `today`/`now` bases are deterministic.
+    /// Evaluate against a fixed `now` (no calendar, UTC session zone) so `today`/`now` bases are
+    /// deterministic.
     fn eval_at(expr: &MomentExpr, now: CivilDateTime) -> Result<EvalOutcome, EvalError> {
-        eval(expr, &EvalContext { now, calendar: None })
+        eval(expr, &EvalContext { now, zone_bias_min: 0, calendar: None })
+    }
+
+    /// Evaluate with an explicit session-zone bias (no calendar) - for the `zone` step, whose
+    /// whole point is a base expressed in one zone and re-expressed in another.
+    fn eval_at_zone(expr: &MomentExpr, now: CivilDateTime, zone_bias_min: i32) -> Result<EvalOutcome, EvalError> {
+        eval(expr, &EvalContext { now, zone_bias_min, calendar: None })
     }
 
     #[test]
@@ -944,17 +992,70 @@ mod tests {
             base: abs(dt(2026, 7, 10, 9, 0, 0)),
             steps: vec![shift(Sign::Plus, 1, Unit::BusinessDays)],
         };
-        let out = eval(&expr, &EvalContext { now: dt(2000, 1, 1, 0, 0, 0), calendar: Some(&cal) }).unwrap();
+        let out =
+            eval(&expr, &EvalContext { now: dt(2000, 1, 1, 0, 0, 0), zone_bias_min: 0, calendar: Some(&cal) })
+                .unwrap();
         assert_eq!(out.result(), dt(2026, 7, 13, 9, 0, 0));
     }
 
     #[test]
-    fn zone_step_is_not_built_yet() {
-        let expr = MomentExpr { base: abs(dt(2026, 1, 1, 0, 0, 0)), steps: vec![Step::Zone("+05:45".into())] };
+    fn zone_step_converts_preserving_the_instant() {
+        // 2026-01-15T12:00:00 in UTC+2, re-expressed in UTC+5:45 (Kathmandu's offset): 15:45
+        // wall-clock, new bias, SAME instant.
+        let expr = MomentExpr { base: abs(dt(2026, 1, 15, 12, 0, 0)), steps: vec![Step::Zone(-345)] };
+        let out = eval_at_zone(&expr, dt(2000, 1, 1, 0, 0, 0), -120).unwrap();
+        assert_eq!(out.result(), dt(2026, 1, 15, 15, 45, 0));
+        assert_eq!(out.result_bias, -345);
+        // Instant preserved: the UTC FILETIME of (base, base zone) equals that of (result, result zone).
         assert_eq!(
-            eval_at(&expr, dt(2000, 1, 1, 0, 0, 0)),
-            Err(EvalError::StepUnsupported { kind: "zone", index: 0 })
+            instant_filetime(&dt(2026, 1, 15, 12, 0, 0), -120),
+            instant_filetime(&out.result(), out.result_bias)
         );
+    }
+
+    #[test]
+    fn zone_step_crosses_midnight_forward_and_back() {
+        // 23:00 UTC re-expressed in UTC+5:45 rolls into the next day (04:45).
+        let fwd = MomentExpr { base: abs(dt(2026, 1, 15, 23, 0, 0)), steps: vec![Step::Zone(-345)] };
+        assert_eq!(eval_at_zone(&fwd, dt(2000, 1, 1, 0, 0, 0), 0).unwrap().result(), dt(2026, 1, 16, 4, 45, 0));
+        // 02:00 UTC re-expressed in UTC-10 rolls back to the previous day (16:00).
+        let back = MomentExpr { base: abs(dt(2026, 1, 15, 2, 0, 0)), steps: vec![Step::Zone(600)] };
+        assert_eq!(eval_at_zone(&back, dt(2000, 1, 1, 0, 0, 0), 0).unwrap().result(), dt(2026, 1, 14, 16, 0, 0));
+    }
+
+    #[test]
+    fn two_zone_steps_compose_from_the_current_zone() {
+        // UTC 10:00 -> +02:00 (12:00) -> +05:45 (15:45): each step converts from the then-current zone.
+        let expr = MomentExpr {
+            base: abs(dt(2026, 1, 15, 10, 0, 0)),
+            steps: vec![Step::Zone(-120), Step::Zone(-345)],
+        };
+        let out = eval_at_zone(&expr, dt(2000, 1, 1, 0, 0, 0), 0).unwrap();
+        assert_eq!(out.after_each[0], dt(2026, 1, 15, 12, 0, 0)); // in UTC+2
+        assert_eq!(out.result(), dt(2026, 1, 15, 15, 45, 0)); // in UTC+5:45
+        assert_eq!(out.result_bias, -345);
+    }
+
+    #[test]
+    fn zone_then_shift_folds_in_the_new_zone() {
+        // Convert to UTC+5:45 (15:45), then +1 day folds on THAT civil date: 16th 15:45, still +05:45.
+        let expr = MomentExpr {
+            base: abs(dt(2026, 1, 15, 12, 0, 0)),
+            steps: vec![Step::Zone(-345), shift(Sign::Plus, 1, Unit::Days)],
+        };
+        let out = eval_at_zone(&expr, dt(2000, 1, 1, 0, 0, 0), -120).unwrap();
+        assert_eq!(out.result(), dt(2026, 1, 16, 15, 45, 0));
+        assert_eq!(out.result_bias, -345);
+    }
+
+    #[test]
+    fn without_a_zone_step_the_result_bias_is_the_session_zone() {
+        // Regression guard: with no zone step the result stays in the session zone, so the render
+        // is unchanged from before this slice.
+        let expr = MomentExpr { base: abs(dt(2026, 1, 15, 12, 0, 0)), steps: vec![shift(Sign::Plus, 1, Unit::Days)] };
+        assert_eq!(eval_at_zone(&expr, dt(2000, 1, 1, 0, 0, 0), -120).unwrap().result_bias, -120);
+        let empty = MomentExpr { base: abs(dt(2026, 1, 15, 12, 0, 0)), steps: vec![] };
+        assert_eq!(eval_at_zone(&empty, dt(2000, 1, 1, 0, 0, 0), 300).unwrap().result_bias, 300);
     }
 
     #[test]
@@ -981,7 +1082,9 @@ mod tests {
             base: abs(dt(2026, 7, 4, 0, 0, 0)),
             steps: vec![Step::Nearest(NearestTarget::NextBusinessDay)],
         };
-        let out = eval(&expr, &EvalContext { now: dt(2000, 1, 1, 0, 0, 0), calendar: Some(&cal) }).unwrap();
+        let out =
+            eval(&expr, &EvalContext { now: dt(2000, 1, 1, 0, 0, 0), zone_bias_min: 0, calendar: Some(&cal) })
+                .unwrap();
         assert_eq!(out.result(), dt(2026, 7, 6, 0, 0, 0));
     }
 
@@ -1010,16 +1113,14 @@ mod tests {
     }
 
     #[test]
-    fn unsupported_step_reports_its_index() {
-        // A good step then an unbuilt one: the error points at step 1, not 0.
+    fn error_reports_its_step_index() {
+        // A good step then one that errors: the error points at step 1, not 0. Business days need a
+        // calendar this context has none of, so step 1 is where it fails.
         let expr = MomentExpr {
             base: abs(dt(2026, 1, 1, 0, 0, 0)),
-            steps: vec![shift(Sign::Plus, 1, Unit::Days), Step::Zone("+05:45".into())],
+            steps: vec![shift(Sign::Plus, 1, Unit::Days), shift(Sign::Plus, 5, Unit::BusinessDays)],
         };
-        assert_eq!(
-            eval_at(&expr, dt(2000, 1, 1, 0, 0, 0)),
-            Err(EvalError::StepUnsupported { kind: "zone", index: 1 })
-        );
+        assert_eq!(eval_at(&expr, dt(2000, 1, 1, 0, 0, 0)), Err(EvalError::NeedsCalendar { index: 1 }));
     }
 
     #[test]
@@ -1105,6 +1206,17 @@ mod tests {
         assert_eq!(
             step_target(ft, 0, &shift(Sign::Plus, 5, Unit::BusinessDays)),
             Err(EvalError::NeedsCalendar { index: 0 })
+        );
+    }
+
+    #[test]
+    fn step_target_zone_is_unsupported_on_the_jump_path() {
+        // The substitution jump advances the fake clock by a time delta - it cannot change zone.
+        // `eval` builds the `zone` step; `jump` never does, so the jump path reports it unsupported.
+        let ft = ft_of("2026-01-01T00:00:00", 0);
+        assert_eq!(
+            step_target(ft, 0, &Step::Zone(-345)),
+            Err(EvalError::StepUnsupported { kind: "zone", index: 0 })
         );
     }
 

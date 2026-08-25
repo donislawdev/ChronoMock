@@ -264,8 +264,10 @@ fn resolve_at(raw: &str, tz_bias_min: Option<i32>) -> Result<String, String> {
 fn resolve_relative_at(raw: &str, now: chrono_core::calc::CivilDateTime) -> Result<String, String> {
     let step = parse_shift(raw)?;
     let expr = MomentExpr { base: Base::Now, steps: vec![step] };
-    let outcome =
-        chrono_core::calc::eval(&expr, &EvalContext { now, calendar: None }).map_err(describe_at_error)?;
+    // `--at` builds a single shift step (no `zone` step) and reads back the civil result, so the
+    // session-zone bias here only sets the unused result zone - 0 is fine.
+    let outcome = chrono_core::calc::eval(&expr, &EvalContext { now, zone_bias_min: 0, calendar: None })
+        .map_err(describe_at_error)?;
     Ok(outcome.result().to_iso())
 }
 
@@ -793,7 +795,10 @@ fn calc_run(argv: &[String]) -> i32 {
     };
 
     let expr = MomentExpr { base: ca.base, steps: ca.steps };
-    match chrono_core::calc::eval(&expr, &EvalContext { now, calendar: calendar.as_ref() }) {
+    match chrono_core::calc::eval(
+        &expr,
+        &EvalContext { now, zone_bias_min: ca.zone_bias_min.unwrap_or(0), calendar: calendar.as_ref() },
+    ) {
         Ok(outcome) => {
             print!("{}", render_calc(&expr, &outcome, ca.zone_bias_min, &now, calendar.as_ref()));
             0
@@ -826,6 +831,11 @@ fn parse_calc_args(argv: &[String]) -> Result<CalcArgs, String> {
                 i += 1;
                 let raw = argv.get(i).ok_or("--zone needs a value like +02:00")?;
                 zone_bias_min = Some(parse_zone_to_bias(raw)?);
+            }
+            "--to-zone" => {
+                i += 1;
+                let raw = argv.get(i).ok_or("--to-zone needs a value like +05:45")?;
+                steps.push(Step::Zone(parse_zone_to_bias(raw)?));
             }
             "--shift" => {
                 i += 1;
@@ -997,9 +1007,13 @@ fn render_calc(
         out.push_str(&format!("  step {}:  {}  -> {}\n", i + 1, describe_step(step), outcome.after_each[i].to_iso()));
     }
     out.push_str(&format!("  result:  {}\n", outcome.result().to_iso()));
-    out.push_str(&render_formats(&outcome.result(), zone_bias_min.unwrap_or(0)));
+    // Formats and significance follow the RESULT's zone, which a `zone` step may have moved away
+    // from the session zone. Without a `zone` step this equals the session zone, so the output is
+    // unchanged from before.
+    let result_bias = outcome.result_bias;
+    out.push_str(&render_formats(&outcome.result(), result_bias));
     out.push_str(&render_metadata(&outcome.result(), now, calendar));
-    out.push_str(&render_significance(&outcome.result(), zone_bias_min.unwrap_or(0)));
+    out.push_str(&render_significance(&outcome.result(), result_bias));
     out
 }
 
@@ -1086,7 +1100,7 @@ fn describe_step(step: &Step) -> String {
         Step::SetTime { hour, minute, second } => format!("set time {hour:02}:{minute:02}:{second:02}"),
         Step::Snap(t) => format!("snap to {}", t.label()),
         Step::Nearest(t) => format!("nearest {}", t.label()),
-        Step::Zone(t) => format!("zone {t}"),
+        Step::Zone(bias) => format!("zone {}", format_bias(*bias)),
     }
 }
 
@@ -1911,7 +1925,7 @@ mod tests {
         .unwrap();
         let expr = MomentExpr { base: ca.base, steps: ca.steps };
         let now = chrono_core::calc::CivilDateTime { year: 2000, month: 1, day: 1, hour: 0, minute: 0, second: 0 };
-        let out = chrono_core::calc::eval(&expr, &EvalContext { now, calendar: None }).unwrap();
+        let out = chrono_core::calc::eval(&expr, &EvalContext { now, zone_bias_min: 0, calendar: None }).unwrap();
         assert_eq!(out.result().to_iso(), "2025-02-28T12:00:00");
     }
 
@@ -1930,7 +1944,7 @@ mod tests {
         .unwrap();
         let expr = MomentExpr { base: ca.base, steps: ca.steps };
         let now = chrono_core::calc::CivilDateTime { year: 2000, month: 1, day: 1, hour: 0, minute: 0, second: 0 };
-        let out = chrono_core::calc::eval(&expr, &EvalContext { now, calendar: None }).unwrap();
+        let out = chrono_core::calc::eval(&expr, &EvalContext { now, zone_bias_min: 0, calendar: None }).unwrap();
         let text = render_calc(&expr, &out, None, &now, None);
         assert!(text.contains("base:    2008-08-04T00:00:00"), "got:\n{text}");
         assert!(text.contains("step 1:  shift -18 years  -> 1990-08-04T00:00:00"), "got:\n{text}");
@@ -1951,7 +1965,7 @@ mod tests {
         let ca = parse_calc_args(&["--base".into(), "1970-01-01T00:00:00".into()]).unwrap();
         let expr = MomentExpr { base: ca.base, steps: ca.steps };
         let now = chrono_core::calc::CivilDateTime { year: 2000, month: 1, day: 1, hour: 0, minute: 0, second: 0 };
-        let out = chrono_core::calc::eval(&expr, &EvalContext { now, calendar: None }).unwrap();
+        let out = chrono_core::calc::eval(&expr, &EvalContext { now, zone_bias_min: 0, calendar: None }).unwrap();
         let text = render_calc(&expr, &out, Some(0), &now, None);
         assert!(text.contains("formats:"), "got:\n{text}");
         assert!(text.contains("ISO datetime  1970-01-01T00:00:00+00:00"), "got:\n{text}");
@@ -1967,7 +1981,7 @@ mod tests {
         let expr = MomentExpr { base: ca.base, steps: ca.steps };
         // A fixed "today" makes days-from-now deterministic: 2026-01-01 is 9 days before 2026-01-10.
         let now = chrono_core::calc::CivilDateTime { year: 2026, month: 1, day: 10, hour: 0, minute: 0, second: 0 };
-        let out = chrono_core::calc::eval(&expr, &EvalContext { now, calendar: None }).unwrap();
+        let out = chrono_core::calc::eval(&expr, &EvalContext { now, zone_bias_min: 0, calendar: None }).unwrap();
         let text = render_calc(&expr, &out, Some(0), &now, None);
         assert!(text.contains("metadata:"), "got:\n{text}");
         assert!(text.contains("weekday       Thursday"), "got:\n{text}"); // 2026-01-01 is a Thursday
@@ -2041,7 +2055,7 @@ mod tests {
         .unwrap();
         let expr = MomentExpr { base: ca.base, steps: ca.steps };
         let now = chrono_core::calc::CivilDateTime { year: 2000, month: 1, day: 1, hour: 0, minute: 0, second: 0 };
-        let out = chrono_core::calc::eval(&expr, &EvalContext { now, calendar: None }).unwrap();
+        let out = chrono_core::calc::eval(&expr, &EvalContext { now, zone_bias_min: 0, calendar: None }).unwrap();
         assert_eq!(out.result().to_iso(), "2026-06-30T23:59:59");
     }
 
@@ -2052,7 +2066,7 @@ mod tests {
             .unwrap();
         let expr = MomentExpr { base: ca.base, steps: ca.steps };
         let now = chrono_core::calc::CivilDateTime { year: 2000, month: 1, day: 1, hour: 0, minute: 0, second: 0 };
-        let out = chrono_core::calc::eval(&expr, &EvalContext { now, calendar: None }).unwrap();
+        let out = chrono_core::calc::eval(&expr, &EvalContext { now, zone_bias_min: 0, calendar: None }).unwrap();
         let text = render_calc(&expr, &out, Some(0), &now, None);
         assert!(text.contains("what this date tests:"), "got:\n{text}");
         assert!(text.contains("last day of the year (year-end rollover)"), "got:\n{text}");
@@ -2064,8 +2078,44 @@ mod tests {
         let ca = parse_calc_args(&["--base".into(), "2026-08-12T09:00:00".into()]).unwrap();
         let expr = MomentExpr { base: ca.base, steps: ca.steps };
         let now = chrono_core::calc::CivilDateTime { year: 2000, month: 1, day: 1, hour: 0, minute: 0, second: 0 };
-        let out = chrono_core::calc::eval(&expr, &EvalContext { now, calendar: None }).unwrap();
+        let out = chrono_core::calc::eval(&expr, &EvalContext { now, zone_bias_min: 0, calendar: None }).unwrap();
         let text = render_calc(&expr, &out, Some(0), &now, None);
         assert!(!text.contains("what this date tests:"), "got:\n{text}");
+    }
+
+    #[test]
+    fn calc_to_zone_converts_preserving_the_instant_end_to_end() {
+        // 12:00 in UTC+2 re-expressed in UTC+5:45 (Kathmandu's offset): 15:45 wall-clock, and the
+        // instant (epoch) is unchanged - the whole point of a zone conversion.
+        let ca = parse_calc_args(&[
+            "--base".into(),
+            "2026-01-15T12:00:00".into(),
+            "--zone".into(),
+            "+02:00".into(),
+            "--to-zone".into(),
+            "+05:45".into(),
+        ])
+        .unwrap();
+        let expr = MomentExpr { base: ca.base, steps: ca.steps };
+        let now = chrono_core::calc::CivilDateTime { year: 2000, month: 1, day: 1, hour: 0, minute: 0, second: 0 };
+        let bias = ca.zone_bias_min.unwrap_or(0);
+        let out = chrono_core::calc::eval(&expr, &EvalContext { now, zone_bias_min: bias, calendar: None }).unwrap();
+        assert_eq!(out.result().to_iso(), "2026-01-15T15:45:00");
+        assert_eq!(out.result_bias, -345);
+        let text = render_calc(&expr, &out, ca.zone_bias_min, &now, None);
+        assert!(text.contains("step 1:  zone +05:45"), "got:\n{text}");
+        assert!(text.contains("ISO datetime  2026-01-15T15:45:00+05:45"), "got:\n{text}");
+        // Same instant as the +02:00 base (12:00+02:00 = 10:00 UTC).
+        let base = chrono_core::calc::CivilDateTime { year: 2026, month: 1, day: 15, hour: 12, minute: 0, second: 0 };
+        assert_eq!(
+            chrono_core::calc::formats(&out.result(), out.result_bias).epoch_seconds,
+            chrono_core::calc::formats(&base, -120).epoch_seconds
+        );
+    }
+
+    #[test]
+    fn calc_to_zone_rejects_a_malformed_offset() {
+        assert!(parse_calc_args(&["--to-zone".into(), "midnight".into()]).is_err());
+        assert!(parse_calc_args(&["--to-zone".into(), "+5".into()]).is_err());
     }
 }
