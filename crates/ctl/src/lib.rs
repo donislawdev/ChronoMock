@@ -27,7 +27,7 @@
 //! directly; `GetLocalTime` returns it shifted back into the session zone by `tz_bias`.
 
 use std::ptr::{addr_of, addr_of_mut, read_volatile, write_volatile};
-use std::sync::atomic::{compiler_fence, AtomicU32, Ordering};
+use std::sync::atomic::{fence, AtomicU32, Ordering};
 
 /// Named shared section for a session's control memory (per interactive session).
 pub const CTL_SECTION_NAME: &str = "Local\\ChronoCtl";
@@ -383,11 +383,16 @@ pub unsafe fn write_anchor(p: *mut Ctl, a_fake: i64, a_real: i64, multiplier: i6
     let sp = addr_of_mut!((*p).seq);
     let s = read_volatile(sp).wrapping_add(1);
     write_volatile(sp, s); // odd - write in progress
-    compiler_fence(Ordering::SeqCst);
+    // Release fence: the odd-seq store is ordered before the data writes, and (below) the data
+    // writes complete before the even-seq store. Paired with the reader's Acquire fences this is a
+    // true cross-thread/-process seqlock, not merely a compiler barrier. On x86/x64 (TSO) a Release
+    // or Acquire fence emits no instruction, so the hot anchor-read path keeps its cost; on a weakly
+    // ordered ISA (ARM64) it emits the barrier that stops the anchor read from tearing.
+    fence(Ordering::Release);
     write_volatile(addr_of_mut!((*p).a_fake), a_fake);
     write_volatile(addr_of_mut!((*p).a_real), a_real);
     write_volatile(addr_of_mut!((*p).multiplier), multiplier);
-    compiler_fence(Ordering::SeqCst);
+    fence(Ordering::Release);
     write_volatile(sp, s.wrapping_add(1)); // even - write done
 }
 
@@ -402,11 +407,14 @@ pub unsafe fn read_anchor(p: *const Ctl) -> (i64, i64, i64) {
             std::hint::spin_loop();
             continue;
         }
-        compiler_fence(Ordering::SeqCst);
+        // Acquire fences: the data reads are ordered after the s1 (seq) read and before the s2 read,
+        // so a torn read racing a concurrent writer is caught by the s1 == s2 check below. See
+        // write_anchor for why Release/Acquire is zero-cost on x86/x64 yet correct on a weak ISA.
+        fence(Ordering::Acquire);
         let a_fake = read_volatile(addr_of!((*p).a_fake));
         let a_real = read_volatile(addr_of!((*p).a_real));
         let multiplier = read_volatile(addr_of!((*p).multiplier));
-        compiler_fence(Ordering::SeqCst);
+        fence(Ordering::Acquire);
         if s1 == read_volatile(addr_of!((*p).seq)) {
             return (a_fake, a_real, multiplier);
         }
@@ -535,8 +543,9 @@ pub unsafe fn read_calls(p: *const Cov, idx: usize) -> u64 {
 /// Scale a wait timeout in milliseconds by the duration multiplier: real wait =
 /// requested / M (ADR-7). `INFINITE` (0xFFFFFFFF) and 0 pass through untouched - never
 /// turn "wait forever" into a finite wait, never lengthen a poll. `m` is clamped to >= 1,
-/// so frozen (M=0) and slow motion (0<M<1) leave waits at real length, symmetric to the
-/// duration axis (untouchable rule 3). Integer division truncates: a sub-M timeout
+/// so frozen (M=0) leaves waits at real length (untouchable rule 3). The multiplier is an integer,
+/// so a fractional "slow motion" (0<M<1) is not representable and never arises; symmetric to the
+/// duration axis. Integer division truncates: a sub-M timeout
 /// collapses to a yield, the honest coarse behavior under heavy acceleration.
 pub fn scale_wait(ms: u32, m: i64) -> u32 {
     const INFINITE_MS: u32 = 0xFFFF_FFFF;
@@ -569,8 +578,9 @@ pub fn scale_delay_interval(interval: i64, m: i64) -> i64 {
 /// kernel reads the REAL clock for an absolute timer, so an unconverted fake instant would fire
 /// years off. An absolute due already at or before `fake_now` fires immediately (`-1`).
 ///
-/// `m` is clamped to >= 1, so frozen (M=0) and slow motion (0<M<1) leave the timer at real length,
-/// symmetric to the duration axis (untouchable rule 3). One consequence: an ABSOLUTE timer under
+/// `m` is clamped to >= 1, so frozen (M=0) leaves the timer at real length; the multiplier is an
+/// integer, so a fractional "slow motion" (0<M<1) is not representable and never arises (symmetric
+/// to the duration axis, untouchable rule 3). One consequence: an ABSOLUTE timer under
 /// frozen fires as if M=1 - a frozen wall clock never reaches a future absolute due on its own, so
 /// there is no "correct" wait to shorten. Documented limit, not a silent choice.
 pub fn scale_timer_due(due: i64, fake_now: i64, m: i64) -> i64 {
@@ -771,6 +781,7 @@ mod tests {
             (IDX_TPTIMER, CH_TPTIMER),
             (IDX_TPTIMEREX, CH_TPTIMEREX),
             (IDX_NTCUP, CH_NTCUP),
+            (IDX_CONNECT, CH_CONNECT),
         ];
         assert_eq!(CHANNELS.len(), CHANNEL_COUNT);
         for (idx, bit) in expected {

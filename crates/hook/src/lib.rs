@@ -1442,6 +1442,15 @@ unsafe fn make_hook<T: Copy>(
     }
 }
 
+/// Install and enable every channel's detour, wiring this process to the shared anchor.
+///
+/// INVARIANT (P6, docs/06 ADR-3): injection assumes the target is SUSPENDED - the parent is created
+/// `CREATE_SUSPENDED` and injected before its first thread runs, and children are forced
+/// `CREATE_SUSPENDED` in `h_cpw`/`h_cpa` before self-injection. This runs from `DLL_PROCESS_ATTACH`
+/// under the loader lock, and `MinHook::enable_all_hooks` suspends/resumes threads - safe ONLY while
+/// no other application thread exists yet. Do NOT add a path that injects into an already-running,
+/// multi-threaded process without moving hook-enabling off the loader lock (the watcher thread is
+/// created OUTSIDE DllMain, in `ensure_watcher`, for exactly this reason).
 unsafe fn install() -> Result<(), String> {
     let hmap = OpenFileMappingW(FILE_MAP_ALL_ACCESS.0, false, w!("Local\\ChronoCtl"))
         .map_err(|e| format!("OpenFileMappingW: {e:?}"))?;
