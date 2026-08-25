@@ -10,6 +10,10 @@
 /// crate-private civil-date primitives below without widening their visibility.
 pub mod calc;
 
+/// Business-day and holiday calendar engine (pure, data-driven). Like `calc`, a child
+/// module reusing the crate-private civil primitives.
+pub mod calendar;
+
 /// How the session expresses the target moment.
 ///
 /// Semantics (docs/01 section 4, untouchable rule 2): the entered moment is in

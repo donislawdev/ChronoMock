@@ -18,6 +18,8 @@ use std::process::{Command as PCommand, Stdio};
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
+use serde::Deserialize;
+
 use chrono_core::calc::{Base, EvalContext, EvalError, MomentExpr, Sign, Step, Unit};
 use chrono_core::{filetime_utc_to_wall, verdict_from_coverage, Moment, SessionSpec, TimeMode, Verdict};
 use chrono_proto::{
@@ -52,7 +54,7 @@ fn print_usage() {
 }
 
 fn print_calc_usage() {
-    eprintln!("usage: chrono calc [--base <today|now|YYYY-MM-DDTHH:MM:SS>] [--shift <±N<unit>>]... [--set-time <HH:MM:SS>] [--snap <target>] [--nearest <target>] [--zone <+HH:MM>]");
+    eprintln!("usage: chrono calc [--base <today|now|YYYY-MM-DDTHH:MM:SS>] [--shift <±N<unit>>]... [--set-time <HH:MM:SS>] [--snap <target>] [--nearest <target>] [--zone <+HH:MM>] [--calendar <us-banking|us-federal>]");
     eprintln!("       units: s m h d w mo q y bd (minute=m, month=mo). built now: shift (fixed + mo/q/y), set-time. snap/nearest/business-days: not built yet");
 }
 
@@ -748,6 +750,8 @@ struct CalcArgs {
     base: Base,
     steps: Vec<Step>,
     zone_bias_min: Option<i32>,
+    /// Calendar id (e.g. "us-banking") for business-day and holiday metadata. None = omit them.
+    calendar: Option<String>,
 }
 
 fn calc_run(argv: &[String]) -> i32 {
@@ -771,10 +775,23 @@ fn calc_run(argv: &[String]) -> i32 {
         }
     };
 
+    // Load the calendar (if requested) before evaluating: a missing or malformed calendar is a
+    // usage error surfaced before any result, never a silently dropped metadata field.
+    let calendar = match &ca.calendar {
+        Some(id) => match load_calendar(id) {
+            Ok(c) => Some(c),
+            Err(e) => {
+                eprintln!("chrono: {e}");
+                return 1;
+            }
+        },
+        None => None,
+    };
+
     let expr = MomentExpr { base: ca.base, steps: ca.steps };
     match chrono_core::calc::eval(&expr, &EvalContext { now }) {
         Ok(outcome) => {
-            print!("{}", render_calc(&expr, &outcome, ca.zone_bias_min, &now));
+            print!("{}", render_calc(&expr, &outcome, ca.zone_bias_min, &now, calendar.as_ref()));
             0
         }
         Err(e) => {
@@ -788,6 +805,7 @@ fn parse_calc_args(argv: &[String]) -> Result<CalcArgs, String> {
     let mut base = Base::Today;
     let mut steps: Vec<Step> = Vec::new();
     let mut zone_bias_min: Option<i32> = None;
+    let mut calendar: Option<String> = None;
 
     let mut i = 0;
     while i < argv.len() {
@@ -795,6 +813,10 @@ fn parse_calc_args(argv: &[String]) -> Result<CalcArgs, String> {
             "--base" => {
                 i += 1;
                 base = parse_base(argv.get(i).ok_or("--base needs a value")?)?;
+            }
+            "--calendar" => {
+                i += 1;
+                calendar = Some(argv.get(i).ok_or("--calendar needs an id like us-banking")?.clone());
             }
             "--zone" => {
                 i += 1;
@@ -823,7 +845,7 @@ fn parse_calc_args(argv: &[String]) -> Result<CalcArgs, String> {
         i += 1;
     }
 
-    Ok(CalcArgs { base, steps, zone_bias_min })
+    Ok(CalcArgs { base, steps, zone_bias_min, calendar })
 }
 
 /// Parse a `--base` value: the keywords `today`/`now`, or an absolute civil date-time.
@@ -932,6 +954,7 @@ fn render_calc(
     outcome: &chrono_core::calc::EvalOutcome,
     zone_bias_min: Option<i32>,
     now: &chrono_core::calc::CivilDateTime,
+    calendar: Option<&chrono_core::calendar::Calendar>,
 ) -> String {
     let zone = zone_bias_min.map(format_bias).unwrap_or_else(|| "UTC".into());
     let mut out = String::from("Chrono Mock - date calculator\n");
@@ -945,14 +968,19 @@ fn render_calc(
     }
     out.push_str(&format!("  result:  {}\n", outcome.result().to_iso()));
     out.push_str(&render_formats(&outcome.result(), zone_bias_min.unwrap_or(0)));
-    out.push_str(&render_metadata(&outcome.result(), now));
+    out.push_str(&render_metadata(&outcome.result(), now, calendar));
     out
 }
 
-/// Render the calendar-independent metadata for the result (7.3): weekday, ISO and US week
-/// numbers side by side (they are different numbers), day of year, quarter, leap year, and
-/// the signed day distance from today. Business-day and holiday fields arrive with calendars.
-fn render_metadata(civil: &chrono_core::calc::CivilDateTime, now: &chrono_core::calc::CivilDateTime) -> String {
+/// Render the metadata for the result (7.3): weekday, ISO and US week numbers side by side
+/// (they are different numbers), day of year, quarter, leap year, and the signed day distance
+/// from today. With a calendar, also the business-day and holiday fields (which need one) -
+/// omitted entirely without a calendar, never guessed.
+fn render_metadata(
+    civil: &chrono_core::calc::CivilDateTime,
+    now: &chrono_core::calc::CivilDateTime,
+    calendar: Option<&chrono_core::calendar::Calendar>,
+) -> String {
     let m = chrono_core::calc::metadata(civil, now);
     let days = match m.days_from_today {
         0 => "today".to_string(),
@@ -967,6 +995,21 @@ fn render_metadata(civil: &chrono_core::calc::CivilDateTime, now: &chrono_core::
     out.push_str(&format!("    quarter       Q{}\n", m.quarter));
     out.push_str(&format!("    leap year     {}\n", if m.is_leap_year { "yes" } else { "no" }));
     out.push_str(&format!("    days from now {days}\n"));
+
+    if let Some(cal) = calendar {
+        let business = match chrono_core::calendar::is_business_day(civil, cal) {
+            Ok(true) => "yes".to_string(),
+            Ok(false) => "no".to_string(),
+            Err(e) => format!("(unsupported rule: {})", e.holiday_id),
+        };
+        out.push_str(&format!("    business day  {business}  ({})\n", cal.id));
+        let holiday = match chrono_core::calendar::holiday_on(civil, cal) {
+            Ok(Some(h)) => h.name_en.clone(),
+            Ok(None) => "no".to_string(),
+            Err(e) => format!("(unsupported rule: {})", e.holiday_id),
+        };
+        out.push_str(&format!("    holiday       {holiday}\n"));
+    }
     out
 }
 
@@ -1003,6 +1046,140 @@ fn describe_step(step: &Step) -> String {
         Step::Nearest(t) => format!("nearest {t}"),
         Step::Zone(t) => format!("zone {t}"),
     }
+}
+
+// ---------------------------------------------------------------------------
+// Calendar loading (the data catalogue, docs/04 section 5)
+// ---------------------------------------------------------------------------
+//
+// The consumer owns the I/O and serde; the core engine works over already-parsed rules.
+// The JSON schema is the contract (docs/04 section 5); this is one reader of it. Unknown
+// fields are ignored (additive evolution is safe); an unknown major schema version is refused.
+
+#[derive(Deserialize)]
+struct CalendarDto {
+    schema: String,
+    id: String,
+    country: String,
+    weekend: Vec<String>,
+    observed: String,
+    holidays: Vec<HolidayDto>,
+}
+
+#[derive(Deserialize)]
+struct HolidayDto {
+    id: String,
+    name: NameDto,
+    rule: RuleDto,
+    #[serde(default)]
+    valid_from: Option<i64>,
+    #[serde(default)]
+    valid_to: Option<i64>,
+    source: String,
+}
+
+#[derive(Deserialize)]
+struct NameDto {
+    en: String,
+    local: String,
+}
+
+#[derive(Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+enum RuleDto {
+    Fixed { month: u32, day: u32 },
+    NthWeekday { month: u32, weekday: String, order: i32 },
+    EasterOffset { offset: i32 },
+}
+
+/// Map a weekday name to a Sunday-based index 0..=6.
+fn weekday_index(name: &str) -> Result<u32, String> {
+    Ok(match name.to_ascii_lowercase().as_str() {
+        "sunday" => 0,
+        "monday" => 1,
+        "tuesday" => 2,
+        "wednesday" => 3,
+        "thursday" => 4,
+        "friday" => 5,
+        "saturday" => 6,
+        other => return Err(format!("unknown weekday '{other}'")),
+    })
+}
+
+fn observed_from(s: &str) -> Result<chrono_core::calendar::Observed, String> {
+    use chrono_core::calendar::Observed;
+    Ok(match s {
+        "none" => Observed::None,
+        "sat_to_fri_sun_to_mon" => Observed::SatToFriSunToMon,
+        "sun_to_mon" => Observed::SunToMon,
+        "weekend_to_mon" => Observed::WeekendToMon,
+        other => return Err(format!("unknown observed rule '{other}'")),
+    })
+}
+
+fn rule_from(dto: RuleDto) -> Result<chrono_core::calendar::HolidayRule, String> {
+    use chrono_core::calendar::HolidayRule;
+    Ok(match dto {
+        RuleDto::Fixed { month, day } => HolidayRule::Fixed { month, day },
+        RuleDto::NthWeekday { month, weekday, order } => {
+            HolidayRule::NthWeekday { month, weekday: weekday_index(&weekday)?, order }
+        }
+        RuleDto::EasterOffset { offset } => HolidayRule::EasterOffset { offset },
+    })
+}
+
+/// Locate a calendar file: next to the executable (portable layout), else in ./calendars.
+fn find_calendar_file(id: &str) -> Result<std::path::PathBuf, String> {
+    let name = format!("{id}.json");
+    let mut candidates: Vec<std::path::PathBuf> = Vec::new();
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            candidates.push(dir.join("calendars").join(&name));
+        }
+    }
+    candidates.push(std::path::Path::new("calendars").join(&name));
+    candidates
+        .into_iter()
+        .find(|p| p.is_file())
+        .ok_or_else(|| format!("calendar '{id}' not found (looked in <exe>/calendars and ./calendars)"))
+}
+
+/// Load and validate a calendar by id, mapping the JSON schema to the core engine's types.
+fn load_calendar(id: &str) -> Result<chrono_core::calendar::Calendar, String> {
+    let path = find_calendar_file(id)?;
+    let text = std::fs::read_to_string(&path).map_err(|e| format!("cannot read {}: {e}", path.display()))?;
+    let dto: CalendarDto =
+        serde_json::from_str(&text).map_err(|e| format!("bad calendar JSON in {}: {e}", path.display()))?;
+    // An unknown major schema version is refused, not half-understood (docs/04 section 3.1).
+    if dto.schema != "chronomock.calendar/1" {
+        return Err(format!(
+            "unsupported calendar schema '{}' (this build reads chronomock.calendar/1)",
+            dto.schema
+        ));
+    }
+    let weekend = dto.weekend.iter().map(|w| weekday_index(w)).collect::<Result<Vec<_>, _>>()?;
+    let holidays = dto
+        .holidays
+        .into_iter()
+        .map(|h| {
+            Ok(chrono_core::calendar::Holiday {
+                id: h.id,
+                name_en: h.name.en,
+                name_local: h.name.local,
+                rule: rule_from(h.rule)?,
+                valid_from: h.valid_from,
+                valid_to: h.valid_to,
+                source: h.source,
+            })
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+    Ok(chrono_core::calendar::Calendar {
+        id: dto.id,
+        country: dto.country,
+        weekend,
+        observed: observed_from(&dto.observed)?,
+        holidays,
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -1711,7 +1888,7 @@ mod tests {
         let expr = MomentExpr { base: ca.base, steps: ca.steps };
         let now = chrono_core::calc::CivilDateTime { year: 2000, month: 1, day: 1, hour: 0, minute: 0, second: 0 };
         let out = chrono_core::calc::eval(&expr, &EvalContext { now }).unwrap();
-        let text = render_calc(&expr, &out, None, &now);
+        let text = render_calc(&expr, &out, None, &now, None);
         assert!(text.contains("base:    2008-08-04T00:00:00"), "got:\n{text}");
         assert!(text.contains("step 1:  shift -18 years  -> 1990-08-04T00:00:00"), "got:\n{text}");
         assert!(text.contains("step 3:  set time 23:59:59  -> 1990-08-03T23:59:59"), "got:\n{text}");
@@ -1732,7 +1909,7 @@ mod tests {
         let expr = MomentExpr { base: ca.base, steps: ca.steps };
         let now = chrono_core::calc::CivilDateTime { year: 2000, month: 1, day: 1, hour: 0, minute: 0, second: 0 };
         let out = chrono_core::calc::eval(&expr, &EvalContext { now }).unwrap();
-        let text = render_calc(&expr, &out, Some(0), &now);
+        let text = render_calc(&expr, &out, Some(0), &now, None);
         assert!(text.contains("formats:"), "got:\n{text}");
         assert!(text.contains("ISO datetime  1970-01-01T00:00:00+00:00"), "got:\n{text}");
         assert!(text.contains("US            01/01/1970"), "got:\n{text}");
@@ -1748,12 +1925,50 @@ mod tests {
         // A fixed "today" makes days-from-now deterministic: 2026-01-01 is 9 days before 2026-01-10.
         let now = chrono_core::calc::CivilDateTime { year: 2026, month: 1, day: 10, hour: 0, minute: 0, second: 0 };
         let out = chrono_core::calc::eval(&expr, &EvalContext { now }).unwrap();
-        let text = render_calc(&expr, &out, Some(0), &now);
+        let text = render_calc(&expr, &out, Some(0), &now, None);
         assert!(text.contains("metadata:"), "got:\n{text}");
         assert!(text.contains("weekday       Thursday"), "got:\n{text}"); // 2026-01-01 is a Thursday
         assert!(text.contains("ISO week      2026-W01"), "got:\n{text}");
         assert!(text.contains("US week       1"), "got:\n{text}");
         assert!(text.contains("quarter       Q1"), "got:\n{text}");
         assert!(text.contains("days from now -9 days"), "got:\n{text}");
+    }
+
+    fn test_calendar() -> chrono_core::calendar::Calendar {
+        use chrono_core::calendar::{Calendar, Holiday, HolidayRule, Observed};
+        Calendar {
+            id: "us-test".into(),
+            country: "US".into(),
+            weekend: vec![0, 6],
+            observed: Observed::SunToMon,
+            holidays: vec![Holiday {
+                id: "independence_day".into(),
+                name_en: "Independence Day".into(),
+                name_local: "Independence Day".into(),
+                rule: HolidayRule::Fixed { month: 7, day: 4 },
+                valid_from: None,
+                valid_to: None,
+                source: "test".into(),
+            }],
+        }
+    }
+
+    #[test]
+    fn render_metadata_with_calendar_shows_business_day_and_holiday() {
+        let civil = chrono_core::calc::CivilDateTime { year: 2026, month: 7, day: 4, hour: 0, minute: 0, second: 0 };
+        let cal = test_calendar();
+        let text = render_metadata(&civil, &civil, Some(&cal));
+        assert!(text.contains("holiday       Independence Day"), "got:\n{text}");
+        // 2026-07-04 is a Saturday, so it is not a business day.
+        assert!(text.contains("business day  no  (us-test)"), "got:\n{text}");
+    }
+
+    #[test]
+    fn calendar_loader_maps_weekdays_and_observed() {
+        assert_eq!(weekday_index("Monday").unwrap(), 1);
+        assert_eq!(weekday_index("sunday").unwrap(), 0);
+        assert!(weekday_index("funday").is_err());
+        assert!(matches!(observed_from("sun_to_mon").unwrap(), chrono_core::calendar::Observed::SunToMon));
+        assert!(observed_from("whenever").is_err());
     }
 }

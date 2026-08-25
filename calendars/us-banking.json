@@ -1,0 +1,103 @@
+{
+  "schema": "chronomock.calendar/1",
+  "stability": "unstable",
+  "id": "us-banking",
+  "country": "US",
+  "subregion": null,
+  "name": {
+    "en": "United States - banking (Federal Reserve)",
+    "local": "United States - banking (Federal Reserve)"
+  },
+  "weekend": ["saturday", "sunday"],
+  "observed": "sun_to_mon",
+  "holidays": [
+    {
+      "id": "new_years_day",
+      "name": { "en": "New Year's Day", "local": "New Year's Day" },
+      "rule": { "type": "fixed", "month": 1, "day": 1 },
+      "valid_from": null,
+      "valid_to": null,
+      "source": "U.S. Federal Reserve Bank holiday schedule"
+    },
+    {
+      "id": "mlk_day",
+      "name": { "en": "Birthday of Martin Luther King, Jr.", "local": "Birthday of Martin Luther King, Jr." },
+      "rule": { "type": "nth_weekday", "month": 1, "weekday": "monday", "order": 3 },
+      "valid_from": null,
+      "valid_to": null,
+      "source": "U.S. Federal Reserve Bank holiday schedule (first observance year unconfirmed; see docs/02 section 12)"
+    },
+    {
+      "id": "washingtons_birthday",
+      "name": { "en": "Washington's Birthday", "local": "Washington's Birthday" },
+      "rule": { "type": "nth_weekday", "month": 2, "weekday": "monday", "order": 3 },
+      "valid_from": null,
+      "valid_to": null,
+      "source": "U.S. Federal Reserve Bank holiday schedule"
+    },
+    {
+      "id": "memorial_day",
+      "name": { "en": "Memorial Day", "local": "Memorial Day" },
+      "rule": { "type": "nth_weekday", "month": 5, "weekday": "monday", "order": -1 },
+      "valid_from": null,
+      "valid_to": null,
+      "source": "U.S. Federal Reserve Bank holiday schedule"
+    },
+    {
+      "id": "juneteenth",
+      "name": { "en": "Juneteenth National Independence Day", "local": "Juneteenth National Independence Day" },
+      "rule": { "type": "fixed", "month": 6, "day": 19 },
+      "valid_from": 2021,
+      "valid_to": null,
+      "source": "Public Law 117-17, Juneteenth National Independence Day Act, 2021-06-17"
+    },
+    {
+      "id": "independence_day",
+      "name": { "en": "Independence Day", "local": "Independence Day" },
+      "rule": { "type": "fixed", "month": 7, "day": 4 },
+      "valid_from": null,
+      "valid_to": null,
+      "source": "U.S. Federal Reserve Bank holiday schedule"
+    },
+    {
+      "id": "labor_day",
+      "name": { "en": "Labor Day", "local": "Labor Day" },
+      "rule": { "type": "nth_weekday", "month": 9, "weekday": "monday", "order": 1 },
+      "valid_from": null,
+      "valid_to": null,
+      "source": "U.S. Federal Reserve Bank holiday schedule"
+    },
+    {
+      "id": "columbus_day",
+      "name": { "en": "Columbus Day", "local": "Columbus Day" },
+      "rule": { "type": "nth_weekday", "month": 10, "weekday": "monday", "order": 2 },
+      "valid_from": null,
+      "valid_to": null,
+      "source": "U.S. Federal Reserve Bank holiday schedule"
+    },
+    {
+      "id": "veterans_day",
+      "name": { "en": "Veterans Day", "local": "Veterans Day" },
+      "rule": { "type": "fixed", "month": 11, "day": 11 },
+      "valid_from": null,
+      "valid_to": null,
+      "source": "U.S. Federal Reserve Bank holiday schedule"
+    },
+    {
+      "id": "thanksgiving_day",
+      "name": { "en": "Thanksgiving Day", "local": "Thanksgiving Day" },
+      "rule": { "type": "nth_weekday", "month": 11, "weekday": "thursday", "order": 4 },
+      "valid_from": null,
+      "valid_to": null,
+      "source": "U.S. Federal Reserve Bank holiday schedule"
+    },
+    {
+      "id": "christmas_day",
+      "name": { "en": "Christmas Day", "local": "Christmas Day" },
+      "rule": { "type": "fixed", "month": 12, "day": 25 },
+      "valid_from": null,
+      "valid_to": null,
+      "source": "U.S. Federal Reserve Bank holiday schedule"
+    }
+  ]
+}

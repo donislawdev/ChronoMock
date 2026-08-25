@@ -19,6 +19,7 @@ dependencies = [
  "chrono-core",
  "chrono-mech",
  "chrono-proto",
+ "serde",
  "serde_json",
  "toml",
 ]
