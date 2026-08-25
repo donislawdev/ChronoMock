@@ -1,0 +1,24 @@
+{
+  "schema": "chronomock.preset/1",
+  "stability": "unstable",
+  "id": "trial-last-day",
+  "name": { "en": "Last day of trial", "pl": "Ostatni dzień triala" },
+  "explains": {
+    "en": "Does the app still work in the very last moment of the trial - the boundary from the 'should still work' side?",
+    "pl": "Czy aplikacja jeszcze działa w ostatniej chwili okresu próbnego - granica od strony „ma działać”?"
+  },
+  "applies_to": "both",
+  "market": null,
+  "parameters": [
+    { "id": "trial_length", "type": "duration", "default": { "amount": 30, "unit": "days" } },
+    { "id": "start_date", "type": "date", "default_hint": "target_file_creation" }
+  ],
+  "moment": {
+    "base": { "parameter": "start_date" },
+    "steps": [
+      { "shift": { "sign": "+", "parameter": "trial_length" } },
+      { "set_time": "23:59:59" }
+    ]
+  },
+  "time_mode": { "multiplier": 1, "scale_duration_clock": false }
+}
