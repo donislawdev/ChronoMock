@@ -562,6 +562,10 @@ pub fn step_target(fake_now_ft: i64, tz_bias_min: i32, step: &Step) -> Result<i6
 
 const MONTH_ABBR: [&str; 12] =
     ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const MONTH_FULL: [&str; 12] = [
+    "January", "February", "March", "April", "May", "June", "July", "August", "September", "October",
+    "November", "December",
+];
 const DOW_ABBR: [&str; 7] = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]; // 0 = Sunday
 
 /// Day of week for a civil date: 0 = Sunday .. 6 = Saturday. 1970-01-01 (day 0) was a Thursday.
@@ -629,6 +633,60 @@ pub fn formats(civil: &CivilDateTime, tz_bias_min: i32) -> Formats {
     };
 
     Formats { iso_date, iso_datetime, us, pl, rfc1123, epoch_seconds, epoch_millis, filetime }
+}
+
+// --- Custom format mask (7.3, docs/02 section 8 point 9 - hit the target app's exact format) ---
+
+/// Render `civil` in a user-supplied .NET/Java-style mask so the output can match the exact format
+/// the target app uses. Case-sensitive: `M` is month, `m` is minute. A token is a maximal run of
+/// one letter (`yyyy`, `MM`, `dd`, `HH`, `mm`, `ss`, plus `MMM`/`MMMM` month names and `ddd`/`dddd`
+/// weekday names); anything else, and any run whose length is not a known token (e.g. `yyy`), is
+/// emitted literally - never guessed. Escaping a literal that happens to be a token letter, a zone
+/// token, and single `y` are not built yet.
+pub fn format_with_mask(civil: &CivilDateTime, mask: &str) -> String {
+    let chars: Vec<char> = mask.chars().collect();
+    let mut out = String::new();
+    let mut i = 0;
+    while i < chars.len() {
+        let c = chars[i];
+        // Consume the maximal run of the same character.
+        let mut n = 1;
+        while i + n < chars.len() && chars[i + n] == c {
+            n += 1;
+        }
+        match mask_token(civil, c, n) {
+            Some(field) => out.push_str(&field),
+            None => (0..n).for_each(|_| out.push(c)),
+        }
+        i += n;
+    }
+    out
+}
+
+/// The field for a mask token: character `c` repeated `n` times, or None when `(c, n)` is not a
+/// recognised token (then the caller emits the run literally). The .NET / Java token vocabulary.
+fn mask_token(civil: &CivilDateTime, c: char, n: usize) -> Option<String> {
+    let month = (civil.month - 1) as usize;
+    let dow = day_of_week(civil);
+    Some(match (c, n) {
+        ('y', 4) => format!("{:04}", civil.year),
+        ('y', 2) => format!("{:02}", civil.year.rem_euclid(100)),
+        ('M', 4) => MONTH_FULL[month].to_string(),
+        ('M', 3) => MONTH_ABBR[month].to_string(),
+        ('M', 2) => format!("{:02}", civil.month),
+        ('M', 1) => civil.month.to_string(),
+        ('d', 4) => DOW_FULL[dow].to_string(),
+        ('d', 3) => DOW_ABBR[dow].to_string(),
+        ('d', 2) => format!("{:02}", civil.day),
+        ('d', 1) => civil.day.to_string(),
+        ('H', 2) => format!("{:02}", civil.hour),
+        ('H', 1) => civil.hour.to_string(),
+        ('m', 2) => format!("{:02}", civil.minute),
+        ('m', 1) => civil.minute.to_string(),
+        ('s', 2) => format!("{:02}", civil.second),
+        ('s', 1) => civil.second.to_string(),
+        _ => return None,
+    })
 }
 
 // --- Metadata (the calculator's info block, 7.3 - calendar-independent fields) --------
@@ -1645,5 +1703,49 @@ mod tests {
         assert!(analyze_date("hello").is_err());
         assert!(analyze_date("04/08/08").is_err()); // year not four digits
         assert!(analyze_date("2008/08/04").is_err()); // year-first numeric not recognised yet
+    }
+
+    // --- custom format mask --------------------------------------------------
+
+    #[test]
+    fn format_mask_common_patterns() {
+        let d = dt(2008, 8, 4, 23, 59, 9);
+        assert_eq!(format_with_mask(&d, "yyyy-MM-dd HH:mm:ss"), "2008-08-04 23:59:09");
+        assert_eq!(format_with_mask(&d, "MM/dd/yyyy"), "08/04/2008");
+        assert_eq!(format_with_mask(&d, "dd.MM.yyyy"), "04.08.2008");
+        assert_eq!(format_with_mask(&d, "yy"), "08");
+    }
+
+    #[test]
+    fn format_mask_is_case_sensitive_month_vs_minute() {
+        // M is month, m is minute - the classic gotcha.
+        let d = dt(2008, 3, 4, 12, 7, 0);
+        assert_eq!(format_with_mask(&d, "M m"), "3 7"); // month 3, minute 7 (no pad)
+        assert_eq!(format_with_mask(&d, "MM mm"), "03 07");
+    }
+
+    #[test]
+    fn format_mask_names_and_no_pad() {
+        let d = dt(2008, 8, 4, 5, 6, 7); // 2008-08-04 was a Monday
+        assert_eq!(format_with_mask(&d, "ddd, dd MMM yyyy"), "Mon, 04 Aug 2008");
+        assert_eq!(format_with_mask(&d, "dddd MMMM"), "Monday August");
+        assert_eq!(format_with_mask(&d, "d/M/yyyy H:m:s"), "4/8/2008 5:6:7"); // single = no pad
+    }
+
+    #[test]
+    fn format_mask_literals_and_unknown_runs_pass_through() {
+        let d = dt(2008, 8, 4, 0, 0, 0);
+        // A single 'y' and non-token characters are literal; a 3-run 'yyy' is not a token, so verbatim.
+        assert_eq!(format_with_mask(&d, "year=yyyy"), "year=2008");
+        assert_eq!(format_with_mask(&d, "yyy"), "yyy");
+        assert_eq!(format_with_mask(&d, "yyyy//MM"), "2008//08");
+        assert_eq!(format_with_mask(&d, ""), "");
+    }
+
+    #[test]
+    fn format_mask_single_token_letters_are_still_tokens() {
+        // A documented limitation: a lone token letter is a token even inside a would-be word, so a
+        // literal 's' (seconds) cannot appear without escaping (not built). Deliberate, not a bug.
+        assert_eq!(format_with_mask(&dt(2008, 8, 4, 0, 0, 30), "s"), "30");
     }
 }

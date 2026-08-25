@@ -56,7 +56,7 @@ fn print_usage() {
 }
 
 fn print_calc_usage() {
-    eprintln!("usage: chrono calc [--base <today|now|YYYY-MM-DDTHH:MM:SS>] [--shift <±N<unit>>]... [--set-time <HH:MM:SS>] [--snap <target>] [--nearest <target>] [--to-zone <+HH:MM>] [--zone <+HH:MM>] [--calendar <us-banking|us-federal|pl>]");
+    eprintln!("usage: chrono calc [--base <today|now|YYYY-MM-DDTHH:MM:SS>] [--shift <±N<unit>>]... [--set-time <HH:MM:SS>] [--snap <target>] [--nearest <target>] [--to-zone <+HH:MM>] [--zone <+HH:MM>] [--calendar <us-banking|us-federal|pl>] [--format <mask>]");
     eprintln!("       or: chrono calc --analyze <pasted-date>   (interpret a date, e.g. 04/08/2008; shows both readings when ambiguous)");
     eprintln!("       units: s m h d w mo q y bd (minute=m, month=mo)");
 }
@@ -761,6 +761,8 @@ struct CalcArgs {
     calendar: Option<String>,
     /// A pasted date to analyze in reverse (7.3) instead of building a moment. None = build mode.
     analyze: Option<String>,
+    /// A custom .NET/Java-style format mask (7.3, docs/02 8.9) for the result. None = fixed formats only.
+    format: Option<String>,
 }
 
 fn calc_run(argv: &[String]) -> i32 {
@@ -818,7 +820,15 @@ fn calc_run(argv: &[String]) -> i32 {
         &EvalContext { now, zone_bias_min: ca.zone_bias_min.unwrap_or(0), calendar: calendar.as_ref() },
     ) {
         Ok(outcome) => {
-            print!("{}", render_calc(&expr, &outcome, ca.zone_bias_min, &now, calendar.as_ref()));
+            let mut text = render_calc(&expr, &outcome, ca.zone_bias_min, &now, calendar.as_ref());
+            // A custom mask (7.3) adds one more line in the target app's exact format.
+            if let Some(mask) = &ca.format {
+                text.push_str(&format!(
+                    "  custom format:  {}\n",
+                    chrono_core::calc::format_with_mask(&outcome.result(), mask)
+                ));
+            }
+            print!("{text}");
             0
         }
         Err(e) => {
@@ -834,6 +844,7 @@ fn parse_calc_args(argv: &[String]) -> Result<CalcArgs, String> {
     let mut zone_bias_min: Option<i32> = None;
     let mut calendar: Option<String> = None;
     let mut analyze: Option<String> = None;
+    let mut format: Option<String> = None;
 
     let mut i = 0;
     while i < argv.len() {
@@ -849,6 +860,14 @@ fn parse_calc_args(argv: &[String]) -> Result<CalcArgs, String> {
             "--analyze" => {
                 i += 1;
                 analyze = Some(argv.get(i).ok_or("--analyze needs a date like 04/08/2008")?.clone());
+            }
+            "--format" => {
+                i += 1;
+                let m = argv.get(i).ok_or("--format needs a mask like yyyy-MM-dd")?;
+                if m.is_empty() {
+                    return Err("--format mask is empty".into());
+                }
+                format = Some(m.clone());
             }
             "--zone" => {
                 i += 1;
@@ -882,7 +901,7 @@ fn parse_calc_args(argv: &[String]) -> Result<CalcArgs, String> {
         i += 1;
     }
 
-    Ok(CalcArgs { base, steps, zone_bias_min, calendar, analyze })
+    Ok(CalcArgs { base, steps, zone_bias_min, calendar, analyze, format })
 }
 
 /// Parse a `--base` value: the keywords `today`/`now`, or an absolute civil date-time.
@@ -2214,5 +2233,12 @@ mod tests {
         let cal = test_calendar();
         let text = render_analysis(&analysis, "07/04/2026", &now, Some(0), Some(&cal));
         assert!(text.contains("public holiday"), "got:\n{text}");
+    }
+
+    #[test]
+    fn parse_calc_reads_the_format_mask_and_rejects_empty() {
+        let ca = parse_calc_args(&["--format".into(), "dd.MM.yyyy".into()]).unwrap();
+        assert_eq!(ca.format.as_deref(), Some("dd.MM.yyyy"));
+        assert!(parse_calc_args(&["--format".into(), String::new()]).is_err());
     }
 }
