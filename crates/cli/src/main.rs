@@ -51,8 +51,8 @@ fn main() {
 }
 
 fn print_usage() {
-    eprintln!("usage: chrono run <target> [--at <local-moment>] [--preset <id>] [--zone <+HH:MM>] [--mode <flow|frozen|xN>] [--scale-duration] [--ticks N] [--set-after T:M] [--jump-after T:moment] [--args \"...\"] [--report <path>] [--json]");
-    eprintln!("       (--preset supplies the moment and mode from presets/<id>.json; exclusive of --at/--mode/--scale-duration)");
+    eprintln!("usage: chrono run <target> [--at <local-moment>] [--preset <id>] [--param id=value]... [--zone <+HH:MM>] [--mode <flow|frozen|xN>] [--scale-duration] [--ticks N] [--set-after T:M] [--jump-after T:moment] [--args \"...\"] [--report <path>] [--json]");
+    eprintln!("       (--preset supplies the moment and mode from presets/<id>.json, exclusive of --at/--mode/--scale-duration; --param fills its parameters, a trial start_date defaults to the target's file date)");
     print_calc_usage();
 }
 
@@ -97,6 +97,9 @@ struct RunArgs {
     /// A named preset id (docs/04 4.3): the moment AND the time mode come from `presets/<id>.json`
     /// instead of --at/--mode. None = build them from the flags. Exclusive of --at/--mode/--scale-duration.
     preset: Option<String>,
+    /// Preset parameter values from `--param id=value` (docs/04 4.2). Only meaningful with --preset.
+    /// In run, a `target_file_creation` hint also resolves from the target's file date.
+    params: HashMap<String, String>,
 }
 
 /// Parse `--mode` into a wire mode token and optional multiplier.
@@ -135,6 +138,7 @@ fn parse_run_args(argv: &[String]) -> Result<RunArgs, String> {
     let mut json = false;
     let mut report: Option<String> = None;
     let mut preset: Option<String> = None;
+    let mut params: HashMap<String, String> = HashMap::new();
     // Whether any moment/mode flag appeared, so `--preset` (which supplies both) can reject being
     // combined with them instead of silently ignoring one source.
     let mut saw_time_flag = false;
@@ -150,6 +154,17 @@ fn parse_run_args(argv: &[String]) -> Result<RunArgs, String> {
             "--preset" => {
                 i += 1;
                 preset = Some(argv.get(i).ok_or("--preset needs an id like month-end")?.clone());
+            }
+            "--param" => {
+                i += 1;
+                let raw = argv.get(i).ok_or("--param needs id=value like start_date=2026-01-01")?;
+                let (id, value) = raw
+                    .split_once('=')
+                    .ok_or_else(|| format!("--param must be id=value, got '{raw}'"))?;
+                if id.is_empty() {
+                    return Err(format!("--param needs a non-empty id, got '{raw}'"));
+                }
+                params.insert(id.to_string(), value.to_string());
             }
             "--zone" => {
                 i += 1;
@@ -223,6 +238,10 @@ fn parse_run_args(argv: &[String]) -> Result<RunArgs, String> {
                     --at/--mode/--scale-duration"
             .into());
     }
+    // --param only makes sense with --preset (it fills a preset's declared parameters).
+    if !params.is_empty() && preset.is_none() {
+        return Err("--param needs --preset (parameters belong to a preset)".into());
+    }
 
     Ok(RunArgs {
         target: target.ok_or("missing <target>")?,
@@ -238,6 +257,7 @@ fn parse_run_args(argv: &[String]) -> Result<RunArgs, String> {
         report,
         json,
         preset,
+        params,
     })
 }
 
@@ -378,10 +398,11 @@ fn driver_run(argv: &[String]) -> i32 {
                     );
                     return 1;
                 }
-                // Resolve parameters, then substitute them into the moment. Run has no --param in
-                // this slice, so an empty map: a non-parametric preset resolves cleanly; a parametric
-                // one honestly errors until run grows --param and the target-date hint (a later slice).
-                let values = match resolve_parameters(&p.parameters, &HashMap::new()) {
+                // Resolve parameters (--param, then the target's file date for a
+                // target_file_creation hint), then substitute them into the moment. A non-parametric
+                // preset resolves to an empty map and an unchanged moment.
+                let target_date = read_target_creation_date(&ra.target, ra.zone_bias_min);
+                let values = match resolve_parameters(&p.parameters, &ra.params, target_date) {
                     Ok(v) => v,
                     Err(e) => {
                         eprintln!("chrono: {}", e.message());
@@ -930,7 +951,8 @@ fn calc_run(argv: &[String]) -> i32 {
                 }
                 // Resolve the preset's parameters (--param / default) then substitute them into its
                 // moment. A non-parametric preset resolves to an empty map and an unchanged moment.
-                let values = match resolve_parameters(&p.parameters, &ca.params) {
+                // The calculator has no target, so no target_file_creation hint (None).
+                let values = match resolve_parameters(&p.parameters, &ca.params, None) {
                     Ok(v) => v,
                     Err(e) => {
                         eprintln!("chrono calc: {}", e.message());
@@ -1851,13 +1873,15 @@ fn param_value_from_json(id: &str, kind: ParamKind, v: &serde_json::Value) -> Re
     }
 }
 
-/// Resolve every declared parameter to a value: `--param` first, then the file `default`, else an
-/// error. A `default_hint` is NOT resolved in this slice (the calculator has no target); it becomes
-/// an honest request to pass `--param`. A `--param` naming no declared parameter is rejected - a
-/// silently ignored typo is a wrong result, not a warning.
+/// Resolve every declared parameter to a value: `--param` first, then the file `default`, then a
+/// `default_hint` (in `run`, where a target exists), else an error. `target_date` carries the
+/// target's file creation date on the run path (`None` in calc, where a hint stays an honest request
+/// to pass `--param`). A `--param` naming no declared parameter is rejected - a silently ignored typo
+/// is a wrong result, not a warning.
 fn resolve_parameters(
     params: &[Parameter],
     cli: &HashMap<String, String>,
+    target_date: Option<chrono_core::calc::CivilDateTime>,
 ) -> Result<HashMap<String, ParamValue>, PresetError> {
     for id in cli.keys() {
         if !params.iter().any(|p| &p.id == id) {
@@ -1871,16 +1895,42 @@ fn resolve_parameters(
         } else if let Some(def) = &p.default {
             def.clone()
         } else if let Some(hint) = &p.default_hint {
-            return Err(PresetError::NotBuilt(format!(
-                "parameter '{}' takes its value from {hint} (only available when running a target) - pass --param {}=<value>",
-                p.id, p.id
-            )));
+            resolve_hint(&p.id, p.kind, hint, target_date)?
         } else {
             return Err(PresetError::BadFile(format!("parameter '{}' has no value - pass --param {}=<value>", p.id, p.id)));
         };
         out.insert(p.id.clone(), value);
     }
     Ok(out)
+}
+
+/// Resolve a parameter's `default_hint` to a value. Only `target_file_creation` is built (docs/04
+/// 4.2): it fills a `date` parameter from the target's file date, available only in `run`. Without a
+/// target it is an honest "not built" asking for `--param`, not a guess.
+fn resolve_hint(
+    id: &str,
+    kind: ParamKind,
+    hint: &str,
+    target_date: Option<chrono_core::calc::CivilDateTime>,
+) -> Result<ParamValue, PresetError> {
+    match hint {
+        "target_file_creation" => {
+            if kind != ParamKind::Date {
+                return Err(PresetError::BadFile(format!(
+                    "parameter '{id}': hint target_file_creation fills a date, but the parameter is not a date"
+                )));
+            }
+            match target_date {
+                Some(date) => Ok(ParamValue::Date(date)),
+                None => Err(PresetError::NotBuilt(format!(
+                    "parameter '{id}' takes its value from the target file date (only available when running a target) - pass --param {id}=<value>"
+                ))),
+            }
+        }
+        other => Err(PresetError::NotBuilt(format!(
+            "parameter '{id}' uses default_hint '{other}', which is not built yet (built: target_file_creation)"
+        ))),
+    }
 }
 
 /// Resolve a preset's raw moment to a concrete `MomentExpr`, substituting parameter values into a
@@ -1941,6 +1991,21 @@ fn time_mode_from(dto: Option<TimeModeDto>) -> Result<PresetTimeMode, PresetErro
 /// Whether a preset's `applies_to` makes it a substitution question (docs/04 4.2).
 fn preset_targets_substitution(applies_to: &str) -> bool {
     matches!(applies_to, "substitution" | "both")
+}
+
+/// Read the target executable's creation date, expressed in the session zone, for a
+/// `target_file_creation` hint (docs/04 4.2). `None` if the file's metadata cannot be read (the
+/// launch will then fail plainly on its own), so a hint falls back to the honest "pass --param".
+fn read_target_creation_date(
+    target: &str,
+    tz_bias_min: Option<i32>,
+) -> Option<chrono_core::calc::CivilDateTime> {
+    use std::os::windows::fs::MetadataExt;
+    let meta = std::fs::metadata(target).ok()?;
+    // creation_time() is a Windows FILETIME (100ns since 1601-01-01 UTC) - the same shape the
+    // wall-clock conversion speaks - so express it in the session zone as a civil date.
+    let wall = filetime_utc_to_wall(meta.creation_time() as i64, tz_bias_min.unwrap_or(0));
+    chrono_core::calc::parse_civil_datetime(&wall).ok()
 }
 
 /// Locate a preset file: next to the executable (portable layout), else in ./presets.
@@ -2896,7 +2961,7 @@ mod tests {
     /// Resolve a non-parametric preset's moment (empty parameter values) - the slice 16/17 path,
     /// now that parse and resolve are separate.
     fn resolve_no_params(p: Preset) -> Result<MomentExpr, PresetError> {
-        let values = resolve_parameters(&p.parameters, &HashMap::new())?;
+        let values = resolve_parameters(&p.parameters, &HashMap::new(), None)?;
         resolve_moment(p.moment, &values)
     }
 
@@ -3107,7 +3172,7 @@ mod tests {
     fn param_date_base_and_duration_shift_substitute() {
         let p = parse_preset(TRIAL_JSON).unwrap();
         let values =
-            resolve_parameters(&p.parameters, &param_map(&[("start_date", "2026-01-01"), ("trial_length", "30days")]))
+            resolve_parameters(&p.parameters, &param_map(&[("start_date", "2026-01-01"), ("trial_length", "30days")]), None)
                 .unwrap();
         let m = resolve_moment(p.moment, &values).unwrap();
         assert_eq!(m.base, Base::Absolute(civil(2026, 1, 1, 0, 0, 0)));
@@ -3125,7 +3190,7 @@ mod tests {
     #[test]
     fn param_default_used_when_flag_absent() {
         let p = parse_preset(TRIAL_JSON).unwrap();
-        let values = resolve_parameters(&p.parameters, &param_map(&[("start_date", "2026-01-01")])).unwrap();
+        let values = resolve_parameters(&p.parameters, &param_map(&[("start_date", "2026-01-01")]), None).unwrap();
         let m = resolve_moment(p.moment, &values).unwrap();
         assert_eq!(m.steps[0], Step::Shift { sign: Sign::Plus, amount: 30, unit: Unit::Days });
     }
@@ -3135,7 +3200,7 @@ mod tests {
     #[test]
     fn param_hint_only_needs_a_value_in_calc() {
         let p = parse_preset(TRIAL_JSON).unwrap();
-        let e = resolve_parameters(&p.parameters, &param_map(&[])).unwrap_err();
+        let e = resolve_parameters(&p.parameters, &param_map(&[]), None).unwrap_err();
         assert!(matches!(e, PresetError::NotBuilt(_)));
         assert_eq!(e.exit_code(), 5);
     }
@@ -3144,7 +3209,7 @@ mod tests {
     #[test]
     fn param_unknown_id_is_rejected() {
         let p = parse_preset(TRIAL_JSON).unwrap();
-        let e = resolve_parameters(&p.parameters, &param_map(&[("start_date", "2026-01-01"), ("nope", "1")])).unwrap_err();
+        let e = resolve_parameters(&p.parameters, &param_map(&[("start_date", "2026-01-01"), ("nope", "1")]), None).unwrap_err();
         assert!(matches!(e, PresetError::BadFile(_)));
     }
 
@@ -3153,12 +3218,12 @@ mod tests {
     fn param_bad_value_is_rejected() {
         let p = parse_preset(TRIAL_JSON).unwrap();
         assert!(matches!(
-            resolve_parameters(&p.parameters, &param_map(&[("start_date", "not-a-date")])),
+            resolve_parameters(&p.parameters, &param_map(&[("start_date", "not-a-date")]), None),
             Err(PresetError::BadFile(_))
         ));
         let p2 = parse_preset(TRIAL_JSON).unwrap();
         assert!(matches!(
-            resolve_parameters(&p2.parameters, &param_map(&[("start_date", "2026-01-01"), ("trial_length", "30frobs")])),
+            resolve_parameters(&p2.parameters, &param_map(&[("start_date", "2026-01-01"), ("trial_length", "30frobs")]), None),
             Err(PresetError::BadFile(_))
         ));
     }
@@ -3174,7 +3239,7 @@ mod tests {
             "moment": { "base": { "parameter": "d" }, "steps": [] }
         }"#;
         let p = parse_preset(json).unwrap();
-        let values = resolve_parameters(&p.parameters, &param_map(&[])).unwrap();
+        let values = resolve_parameters(&p.parameters, &param_map(&[]), None).unwrap();
         assert!(matches!(resolve_moment(p.moment, &values), Err(PresetError::BadFile(_))));
     }
 
@@ -3183,6 +3248,69 @@ mod tests {
     fn calc_param_needs_preset() {
         assert!(parse_calc_args(&["--param".into(), "start_date=2026-01-01".into()]).is_err());
         let ok = parse_calc_args(&["--preset".into(), "trial-first-day-after".into(), "--param".into(), "start_date=2026-01-01".into()]).unwrap();
+        assert_eq!(ok.params.get("start_date").map(String::as_str), Some("2026-01-01"));
+    }
+
+    // --- run --param + default_hint (Stage 4 slice 19): trial in substitution ------------------
+
+    /// The target_file_creation hint fills a date parameter from the target's file date (run only);
+    /// without a target it is the honest not-built; a duration slot or an unbuilt hint is refused.
+    #[test]
+    fn hint_target_file_creation_resolves_only_with_a_target() {
+        let d = civil(2025, 6, 15, 9, 30, 0);
+        assert!(matches!(
+            resolve_hint("start_date", ParamKind::Date, "target_file_creation", Some(d)),
+            Ok(ParamValue::Date(x)) if x == d
+        ));
+        let e = resolve_hint("start_date", ParamKind::Date, "target_file_creation", None).unwrap_err();
+        assert!(matches!(e, PresetError::NotBuilt(_)));
+        assert_eq!(e.exit_code(), 5);
+        assert!(matches!(
+            resolve_hint("d", ParamKind::Duration, "target_file_creation", Some(d)),
+            Err(PresetError::BadFile(_))
+        ));
+        assert!(matches!(
+            resolve_hint("x", ParamKind::Date, "somewhere_else", Some(d)),
+            Err(PresetError::NotBuilt(_))
+        ));
+    }
+
+    /// In run, the trial's start_date resolves from the target date and trial_length from its default,
+    /// with no --param at all - the flagship "trial in substitution" flow.
+    #[test]
+    fn param_hint_resolves_from_target_date_in_run() {
+        let p = parse_preset(TRIAL_JSON).unwrap();
+        let target = civil(2025, 1, 10, 0, 0, 0);
+        let values = resolve_parameters(&p.parameters, &param_map(&[]), Some(target)).unwrap();
+        assert!(matches!(values.get("start_date"), Some(ParamValue::Date(x)) if *x == target));
+        assert!(matches!(
+            values.get("trial_length"),
+            Some(ParamValue::Duration { amount: 30, unit: Unit::Days })
+        ));
+    }
+
+    /// --param wins over the hint even when a target date is available.
+    #[test]
+    fn param_flag_overrides_hint_in_run() {
+        let p = parse_preset(TRIAL_JSON).unwrap();
+        let target = civil(2025, 1, 10, 0, 0, 0);
+        let values =
+            resolve_parameters(&p.parameters, &param_map(&[("start_date", "2030-12-31")]), Some(target)).unwrap();
+        assert!(matches!(values.get("start_date"), Some(ParamValue::Date(x)) if *x == civil(2030, 12, 31, 0, 0, 0)));
+    }
+
+    /// --param in run needs --preset too.
+    #[test]
+    fn run_param_needs_preset() {
+        assert!(parse_run_args(&["--param".into(), "start_date=2026-01-01".into(), "app.exe".into()]).is_err());
+        let ok = parse_run_args(&[
+            "--preset".into(),
+            "trial-first-day-after".into(),
+            "--param".into(),
+            "start_date=2026-01-01".into(),
+            "app.exe".into(),
+        ])
+        .unwrap();
         assert_eq!(ok.params.get("start_date").map(String::as_str), Some("2026-01-01"));
     }
 }
