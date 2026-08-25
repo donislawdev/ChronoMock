@@ -12,7 +12,7 @@
 //! `mechanism.not_implemented`. The full input->output path exists and never
 //! fakes success.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::io::{BufRead, BufReader, Write};
 use std::process::{Command as PCommand, Stdio};
 use std::sync::mpsc;
@@ -58,7 +58,7 @@ fn print_usage() {
 
 fn print_calc_usage() {
     eprintln!("usage: chrono calc [--base <today|now|YYYY-MM-DDTHH:MM:SS>] [--shift <±N<unit>>]... [--set-time <HH:MM:SS>] [--snap <target>] [--nearest <target>] [--to-zone <+HH:MM>] [--zone <+HH:MM>] [--calendar <us-banking|us-federal|pl>] [--format <mask>]");
-    eprintln!("       or: chrono calc --preset <id>              (named moment, e.g. month-end; not combined with step flags)");
+    eprintln!("       or: chrono calc --preset <id> [--param id=value]...   (named moment, e.g. month-end, trial-first-day-after)");
     eprintln!("       or: chrono calc --analyze <pasted-date>   (interpret a date, e.g. 04/08/2008; shows both readings when ambiguous)");
     eprintln!("       units: s m h d w mo q y bd (minute=m, month=mo)");
 }
@@ -378,6 +378,23 @@ fn driver_run(argv: &[String]) -> i32 {
                     );
                     return 1;
                 }
+                // Resolve parameters, then substitute them into the moment. Run has no --param in
+                // this slice, so an empty map: a non-parametric preset resolves cleanly; a parametric
+                // one honestly errors until run grows --param and the target-date hint (a later slice).
+                let values = match resolve_parameters(&p.parameters, &HashMap::new()) {
+                    Ok(v) => v,
+                    Err(e) => {
+                        eprintln!("chrono: {}", e.message());
+                        return e.exit_code();
+                    }
+                };
+                let moment = match resolve_moment(p.moment, &values) {
+                    Ok(m) => m,
+                    Err(e) => {
+                        eprintln!("chrono: {}", e.message());
+                        return e.exit_code();
+                    }
+                };
                 // Evaluate the preset moment against real "now" in the session zone, exactly like a
                 // relative --at, to an absolute wall moment. No calendar here - a preset that needs
                 // one is an honest error (the run surface has no --calendar yet).
@@ -389,7 +406,7 @@ fn driver_run(argv: &[String]) -> i32 {
                     }
                 };
                 match chrono_core::calc::eval(
-                    &p.moment,
+                    &moment,
                     &EvalContext { now, zone_bias_min: ra.zone_bias_min.unwrap_or(0), calendar: None },
                 ) {
                     Ok(outcome) => (
@@ -842,6 +859,8 @@ struct CalcArgs {
     /// A named preset id (docs/04 4.3): the moment comes from `presets/<id>.json`, not from step
     /// flags. None = build the moment from the flags. Cannot be combined with the step flags.
     preset: Option<String>,
+    /// Preset parameter values from `--param id=value` (docs/04 4.2). Only meaningful with --preset.
+    params: HashMap<String, String>,
 }
 
 fn calc_run(argv: &[String]) -> i32 {
@@ -909,9 +928,25 @@ fn calc_run(argv: &[String]) -> i32 {
                     );
                     return 1;
                 }
+                // Resolve the preset's parameters (--param / default) then substitute them into its
+                // moment. A non-parametric preset resolves to an empty map and an unchanged moment.
+                let values = match resolve_parameters(&p.parameters, &ca.params) {
+                    Ok(v) => v,
+                    Err(e) => {
+                        eprintln!("chrono calc: {}", e.message());
+                        return e.exit_code();
+                    }
+                };
+                let moment = match resolve_moment(p.moment, &values) {
+                    Ok(m) => m,
+                    Err(e) => {
+                        eprintln!("chrono calc: {}", e.message());
+                        return e.exit_code();
+                    }
+                };
                 let header =
                     format!("  preset:   {} - {}\n  explains: {}\n", p.id, p.name_en, p.explains_en);
-                (p.moment, Some(header))
+                (moment, Some(header))
             }
             Err(e) => {
                 eprintln!("chrono calc: {}", e.message());
@@ -952,6 +987,7 @@ fn parse_calc_args(argv: &[String]) -> Result<CalcArgs, String> {
     let mut analyze: Option<String> = None;
     let mut format: Option<String> = None;
     let mut preset: Option<String> = None;
+    let mut params: HashMap<String, String> = HashMap::new();
     // Whether any moment-building flag appeared, so `--preset` (which supplies its own moment)
     // can reject being combined with them instead of silently ignoring one source.
     let mut saw_step_flag = false;
@@ -963,6 +999,17 @@ fn parse_calc_args(argv: &[String]) -> Result<CalcArgs, String> {
                 i += 1;
                 base = parse_base(argv.get(i).ok_or("--base needs a value")?)?;
                 saw_step_flag = true;
+            }
+            "--param" => {
+                i += 1;
+                let raw = argv.get(i).ok_or("--param needs id=value like start_date=2026-01-01")?;
+                let (id, value) = raw
+                    .split_once('=')
+                    .ok_or_else(|| format!("--param must be id=value, got '{raw}'"))?;
+                if id.is_empty() {
+                    return Err(format!("--param needs a non-empty id, got '{raw}'"));
+                }
+                params.insert(id.to_string(), value.to_string());
             }
             "--preset" => {
                 i += 1;
@@ -1032,8 +1079,12 @@ fn parse_calc_args(argv: &[String]) -> Result<CalcArgs, String> {
     if preset.is_some() && analyze.is_some() {
         return Err("--preset and --analyze are different modes; use one at a time".into());
     }
+    // --param only makes sense with --preset (it fills a preset's declared parameters).
+    if !params.is_empty() && preset.is_none() {
+        return Err("--param needs --preset (parameters belong to a preset)".into());
+    }
 
-    Ok(CalcArgs { base, steps, zone_bias_min, calendar, analyze, format, preset })
+    Ok(CalcArgs { base, steps, zone_bias_min, calendar, analyze, format, preset, params })
 }
 
 /// Parse a `--base` value: the keywords `today`/`now`, or an absolute civil date-time.
@@ -1475,8 +1526,11 @@ fn load_calendar(id: &str) -> Result<chrono_core::calendar::Calendar, String> {
 // never starts a session; the substitution side (preset -> `run`) arrives with the proto step wire
 // (docs/08 section 11 item 1), and the full session-level path guard lands with it.
 
-/// A preset ready to use: its canonical moment, its human framing (calculator surface), and its
-/// time mode (substitution surface). The calculator ignores `time_mode` (docs/04 4.2); `run` uses it.
+/// A parsed preset: its declared parameters and its RAW moment (docs/04 4.3), not yet resolved to a
+/// `MomentExpr` - because a parametric base/shift needs values (`--param` / `default`) that the file
+/// alone does not carry. `resolve_parameters` + `resolve_moment` turn it into a concrete moment.
+/// A non-parametric preset (slices 16/17) has empty `parameters` and resolves trivially. Also carries
+/// the human framing (calculator) and the time mode (substitution); the calculator ignores time_mode.
 #[derive(Debug)]
 struct Preset {
     id: String,
@@ -1484,8 +1538,36 @@ struct Preset {
     explains_en: String,
     /// `calculator` / `substitution` / `both` (docs/04 4.2). Each surface honours it.
     applies_to: String,
-    moment: MomentExpr,
+    parameters: Vec<Parameter>,
+    moment: MomentDto,
     time_mode: PresetTimeMode,
+}
+
+/// A preset parameter (docs/04 4.2): a typed slot filled by `--param`, a file `default`, or (in a
+/// substitution session, a later slice) a `default_hint` such as the target's file date.
+#[derive(Debug)]
+struct Parameter {
+    id: String,
+    kind: ParamKind,
+    default: Option<ParamValue>,
+    /// Where to propose a value from when neither `--param` nor `default` is given (docs/04 4.2).
+    /// `target_file_creation` needs a target, so it is honoured only in `run` (a later slice); the
+    /// calculator, having no target, reports it as a value the user must supply.
+    default_hint: Option<String>,
+}
+
+/// A parameter's type. `date` fills a base; `duration` fills a shift. (`variant`/`int` are later.)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ParamKind {
+    Date,
+    Duration,
+}
+
+/// A resolved parameter value, ready to substitute into the moment.
+#[derive(Debug, Clone)]
+enum ParamValue {
+    Date(chrono_core::calc::CivilDateTime),
+    Duration { amount: i64, unit: Unit },
 }
 
 /// A preset's time mode, resolved to the substitution surface's wire shape (the same `mode` /
@@ -1541,12 +1623,11 @@ struct PresetDto {
     name: PresetTextDto,
     explains: PresetTextDto,
     applies_to: String,
-    // Parameters are in the contract (trial length, start date - docs/04 4.2) but need a
-    // `Base::Parameter` the core does not have yet, so a preset that declares any is refused here
-    // rather than computed with them dropped. `serde_json::Value` keeps this reader agnostic to
-    // their eventual shape.
+    // Typed parameters (docs/04 4.2): each is filled by --param, a file default, or a default_hint.
+    // The moment's parametric base/shift refer to these by id; resolve_parameters + resolve_moment
+    // substitute them into a concrete MomentExpr (the core never learns a parameter existed).
     #[serde(default)]
-    parameters: Vec<serde_json::Value>,
+    parameters: Vec<ParameterDto>,
     moment: MomentDto,
     // Only substitution/both presets carry a time mode; a calculator-only one may omit it (the
     // calculator ignores it either way). Absent = real-time flow (PresetTimeMode::default).
@@ -1563,6 +1644,27 @@ struct TimeModeDto {
     scale_duration_clock: bool,
 }
 
+/// A preset parameter as written in the file (docs/04 4.2): `{ "id", "type", "default"?, "default_hint"? }`.
+/// `default` shape depends on `type` (a string for `date`, `{ amount, unit }` for `duration`), so it
+/// stays a raw value here and is parsed against the type in `parse_parameter`.
+#[derive(Deserialize)]
+struct ParameterDto {
+    id: String,
+    #[serde(rename = "type")]
+    kind: String,
+    #[serde(default)]
+    default: Option<serde_json::Value>,
+    #[serde(default)]
+    default_hint: Option<String>,
+}
+
+/// A `duration` value/`default` object: `{ "amount": N, "unit": "days" }` (docs/04 4.2).
+#[derive(Deserialize)]
+struct DurationDto {
+    amount: i64,
+    unit: String,
+}
+
 /// The English text is what the CLI renders (rule 15 - CLI is English only); `pl` rides in the file
 /// for the GUI but this reader does not need it, so it is not a field here (unknown fields ignored).
 #[derive(Deserialize)]
@@ -1570,7 +1672,7 @@ struct PresetTextDto {
     en: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 struct MomentDto {
     base: BaseDto,
     #[serde(default)]
@@ -1578,8 +1680,8 @@ struct MomentDto {
 }
 
 /// A preset base: the keyword `today`/`now`, an `{ "absolute": "ISO" }` object, or a
-/// `{ "parameter": "name" }` object (docs/04 4.2) that this build refuses as not-built.
-#[derive(Deserialize)]
+/// `{ "parameter": "name" }` object (docs/04 4.2) resolved from a `date` parameter.
+#[derive(Debug, Deserialize)]
 #[serde(untagged)]
 enum BaseDto {
     Keyword(String),
@@ -1594,7 +1696,7 @@ enum BaseDto {
 /// One preset step, externally tagged exactly as docs/04 4.2 writes it: `{ "shift": {...} }`,
 /// `{ "set_time": "HH:MM:SS" }`, `{ "snap": "end-of-month" }`, `{ "nearest": "next-business-day" }`,
 /// `{ "zone": "+05:45" }`. The string forms reuse the CLI parsers, keeping one grammar.
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 #[serde(rename_all = "snake_case")]
 enum StepDto {
     Shift(ShiftDto),
@@ -1605,8 +1707,8 @@ enum StepDto {
 }
 
 /// A `shift` step in a preset: either a literal `{ sign, amount, unit }` or a parametric
-/// `{ sign, parameter }` (docs/04 4.2). The parametric form is refused as not-built.
-#[derive(Deserialize)]
+/// `{ sign, parameter }` (docs/04 4.2), resolved from a `duration` parameter.
+#[derive(Debug, Deserialize)]
 struct ShiftDto {
     sign: String,
     #[serde(default)]
@@ -1624,7 +1726,7 @@ fn preset_targets_calculator(applies_to: &str) -> bool {
 
 /// Map a preset base to the core `Base`. A parametric base is refused (not built), never silently
 /// treated as `today`.
-fn base_from(dto: BaseDto) -> Result<Base, PresetError> {
+fn base_from(dto: BaseDto, values: &HashMap<String, ParamValue>) -> Result<Base, PresetError> {
     match dto {
         BaseDto::Keyword(k) => match k.as_str() {
             "today" => Ok(Base::Today),
@@ -1633,9 +1735,14 @@ fn base_from(dto: BaseDto) -> Result<Base, PresetError> {
                 "unknown preset base '{other}' (use today, now, or an absolute/parameter object)"
             ))),
         },
-        BaseDto::Object { parameter: Some(_), .. } => Err(PresetError::NotBuilt(
-            "preset base uses a parameter, which calc does not resolve yet".into(),
-        )),
+        // A parametric base takes its date from a `date` parameter (docs/04 4.2).
+        BaseDto::Object { parameter: Some(id), .. } => match values.get(&id) {
+            Some(ParamValue::Date(civil)) => Ok(Base::Absolute(*civil)),
+            Some(ParamValue::Duration { .. }) => {
+                Err(PresetError::BadFile(format!("base parameter '{id}' must be a date, not a duration")))
+            }
+            None => Err(PresetError::BadFile(format!("base parameter '{id}' has no value"))),
+        },
         BaseDto::Object { absolute: Some(s), parameter: None } => {
             let civil = chrono_core::calc::parse_civil_datetime(&s).map_err(PresetError::BadFile)?;
             Ok(Base::Absolute(civil))
@@ -1647,10 +1754,10 @@ fn base_from(dto: BaseDto) -> Result<Base, PresetError> {
 }
 
 /// Map a preset step to a core `Step`, reusing the CLI parsers so a preset speaks the same step
-/// grammar as the flags. A parametric shift is refused (not built).
-fn step_from(dto: StepDto) -> Result<Step, PresetError> {
+/// grammar as the flags. A `parameter` shift is resolved from the values map.
+fn step_from(dto: StepDto, values: &HashMap<String, ParamValue>) -> Result<Step, PresetError> {
     match dto {
-        StepDto::Shift(s) => shift_from(s),
+        StepDto::Shift(s) => shift_from(s, values),
         StepDto::SetTime(raw) => parse_set_time(&raw).map_err(PresetError::BadFile),
         StepDto::Snap(raw) => parse_snap(&raw).map(Step::Snap).map_err(PresetError::BadFile),
         StepDto::Nearest(raw) => parse_nearest(&raw).map(Step::Nearest).map_err(PresetError::BadFile),
@@ -1658,18 +1765,23 @@ fn step_from(dto: StepDto) -> Result<Step, PresetError> {
     }
 }
 
-fn shift_from(s: ShiftDto) -> Result<Step, PresetError> {
-    if s.parameter.is_some() {
-        return Err(PresetError::NotBuilt(
-            "preset shift uses a parameter, which calc does not resolve yet".into(),
-        ));
-    }
+fn shift_from(s: ShiftDto, values: &HashMap<String, ParamValue>) -> Result<Step, PresetError> {
     let sign = match s.sign.as_str() {
         "+" => Sign::Plus,
         "-" => Sign::Minus,
         other => return Err(PresetError::BadFile(format!("shift sign must be + or -, got '{other}'"))),
     };
-    let amount = s.amount.ok_or_else(|| PresetError::BadFile("shift needs an amount".into()))?;
+    // A parametric shift takes its magnitude and unit from a `duration` parameter (docs/04 4.2).
+    if let Some(id) = &s.parameter {
+        return match values.get(id) {
+            Some(ParamValue::Duration { amount, unit }) => Ok(Step::Shift { sign, amount: *amount, unit: *unit }),
+            Some(ParamValue::Date(_)) => {
+                Err(PresetError::BadFile(format!("shift parameter '{id}' must be a duration, not a date")))
+            }
+            None => Err(PresetError::BadFile(format!("shift parameter '{id}' has no value"))),
+        };
+    }
+    let amount = s.amount.ok_or_else(|| PresetError::BadFile("shift needs an amount or a parameter".into()))?;
     if amount < 0 {
         return Err(PresetError::BadFile("shift amount must be non-negative (the sign carries direction)".into()));
     }
@@ -1678,34 +1790,139 @@ fn shift_from(s: ShiftDto) -> Result<Step, PresetError> {
     Ok(Step::Shift { sign, amount, unit })
 }
 
-/// Parse and validate a preset from its JSON text (pure - no I/O, so a test pins it on a literal).
-fn preset_from_json(text: &str) -> Result<Preset, PresetError> {
+/// Parse a preset from JSON WITHOUT resolving its moment (pure - no I/O, no parameter values). The
+/// moment stays raw because a parametric base/shift needs values `resolve_parameters` supplies later;
+/// a non-parametric preset resolves trivially (empty values). Unknown major schema is refused.
+fn parse_preset(text: &str) -> Result<Preset, PresetError> {
     let dto: PresetDto =
         serde_json::from_str(text).map_err(|e| PresetError::BadFile(format!("bad preset JSON: {e}")))?;
-    // An unknown major schema version is refused, not half-understood (docs/04 section 3.1).
     if dto.schema != "chronomock.preset/1" {
         return Err(PresetError::BadFile(format!(
             "unsupported preset schema '{}' (this build reads chronomock.preset/1)",
             dto.schema
         )));
     }
-    if !dto.parameters.is_empty() {
-        return Err(PresetError::NotBuilt(format!(
-            "preset '{}' takes parameters, which calc does not resolve yet",
-            dto.id
-        )));
-    }
-    let base = base_from(dto.moment.base)?;
-    let steps = dto.moment.steps.into_iter().map(step_from).collect::<Result<Vec<_>, _>>()?;
+    let parameters = dto.parameters.into_iter().map(parse_parameter).collect::<Result<Vec<_>, _>>()?;
     let time_mode = time_mode_from(dto.time_mode)?;
     Ok(Preset {
         id: dto.id,
         name_en: dto.name.en,
         explains_en: dto.explains.en,
         applies_to: dto.applies_to,
-        moment: MomentExpr { base, steps },
+        parameters,
+        moment: dto.moment,
         time_mode,
     })
+}
+
+/// Parse one file parameter declaration into a typed `Parameter`, checking the type and any default.
+fn parse_parameter(dto: ParameterDto) -> Result<Parameter, PresetError> {
+    let kind = match dto.kind.as_str() {
+        "date" => ParamKind::Date,
+        "duration" => ParamKind::Duration,
+        other => {
+            return Err(PresetError::NotBuilt(format!(
+                "parameter '{}' has type '{other}', which calc does not resolve yet (built: date, duration)",
+                dto.id
+            )))
+        }
+    };
+    let default = match dto.default {
+        Some(v) => Some(param_value_from_json(&dto.id, kind, &v)?),
+        None => None,
+    };
+    Ok(Parameter { id: dto.id, kind, default, default_hint: dto.default_hint })
+}
+
+/// Parse a parameter's file `default` (a JSON value) against its declared type.
+fn param_value_from_json(id: &str, kind: ParamKind, v: &serde_json::Value) -> Result<ParamValue, PresetError> {
+    match kind {
+        ParamKind::Date => {
+            let s = v
+                .as_str()
+                .ok_or_else(|| PresetError::BadFile(format!("parameter '{id}' default must be a date string")))?;
+            Ok(ParamValue::Date(parse_param_date(s).map_err(PresetError::BadFile)?))
+        }
+        ParamKind::Duration => {
+            let d: DurationDto = serde_json::from_value(v.clone())
+                .map_err(|_| PresetError::BadFile(format!("parameter '{id}' default must be {{ amount, unit }}")))?;
+            duration_value(id, d.amount, &d.unit)
+        }
+    }
+}
+
+/// Resolve every declared parameter to a value: `--param` first, then the file `default`, else an
+/// error. A `default_hint` is NOT resolved in this slice (the calculator has no target); it becomes
+/// an honest request to pass `--param`. A `--param` naming no declared parameter is rejected - a
+/// silently ignored typo is a wrong result, not a warning.
+fn resolve_parameters(
+    params: &[Parameter],
+    cli: &HashMap<String, String>,
+) -> Result<HashMap<String, ParamValue>, PresetError> {
+    for id in cli.keys() {
+        if !params.iter().any(|p| &p.id == id) {
+            return Err(PresetError::BadFile(format!("unknown parameter '{id}' for this preset")));
+        }
+    }
+    let mut out = HashMap::new();
+    for p in params {
+        let value = if let Some(raw) = cli.get(&p.id) {
+            parse_param_value(&p.id, p.kind, raw)?
+        } else if let Some(def) = &p.default {
+            def.clone()
+        } else if let Some(hint) = &p.default_hint {
+            return Err(PresetError::NotBuilt(format!(
+                "parameter '{}' takes its value from {hint} (only available when running a target) - pass --param {}=<value>",
+                p.id, p.id
+            )));
+        } else {
+            return Err(PresetError::BadFile(format!("parameter '{}' has no value - pass --param {}=<value>", p.id, p.id)));
+        };
+        out.insert(p.id.clone(), value);
+    }
+    Ok(out)
+}
+
+/// Resolve a preset's raw moment to a concrete `MomentExpr`, substituting parameter values into a
+/// parametric base/shift. This is where the parametric preset becomes an ordinary moment the core
+/// evaluates - the core never sees a parameter.
+fn resolve_moment(moment: MomentDto, values: &HashMap<String, ParamValue>) -> Result<MomentExpr, PresetError> {
+    let base = base_from(moment.base, values)?;
+    let steps = moment.steps.into_iter().map(|s| step_from(s, values)).collect::<Result<Vec<_>, _>>()?;
+    Ok(MomentExpr { base, steps })
+}
+
+/// Parse a `--param` value string against the parameter's type. `date` accepts a bare date; a
+/// `duration` is a magnitude and a unit with no sign (the shift carries the sign).
+fn parse_param_value(id: &str, kind: ParamKind, raw: &str) -> Result<ParamValue, PresetError> {
+    match kind {
+        ParamKind::Date => Ok(ParamValue::Date(parse_param_date(raw).map_err(PresetError::BadFile)?)),
+        ParamKind::Duration => {
+            let split = raw.find(|c: char| !c.is_ascii_digit()).unwrap_or(raw.len());
+            let (num, unit_str) = raw.split_at(split);
+            let amount: i64 = num
+                .parse()
+                .map_err(|_| PresetError::BadFile(format!("parameter '{id}': bad duration '{raw}' (want e.g. 30days)")))?;
+            duration_value(id, amount, unit_str)
+        }
+    }
+}
+
+/// Build a `duration` value, mapping the unit token and rejecting a negative magnitude.
+fn duration_value(id: &str, amount: i64, unit_str: &str) -> Result<ParamValue, PresetError> {
+    if amount < 0 {
+        return Err(PresetError::BadFile(format!("parameter '{id}' amount must be non-negative")));
+    }
+    let unit = parse_unit(unit_str)
+        .ok_or_else(|| PresetError::BadFile(format!("parameter '{id}': unknown unit '{unit_str}'")))?;
+    Ok(ParamValue::Duration { amount, unit })
+}
+
+/// Parse a date or date-time; a bare date gets midnight so `--param start_date=2026-01-01` works.
+fn parse_param_date(s: &str) -> Result<chrono_core::calc::CivilDateTime, String> {
+    let normalized =
+        if s.contains('T') || s.contains(' ') { s.to_string() } else { format!("{s}T00:00:00") };
+    chrono_core::calc::parse_civil_datetime(&normalized)
 }
 
 /// Map a preset's `time_mode` to the substitution wire shape. `multiplier == 1` (or absent) is
@@ -1747,7 +1964,7 @@ fn load_preset(id: &str) -> Result<Preset, PresetError> {
     let path = find_preset_file(id)?;
     let text = std::fs::read_to_string(&path)
         .map_err(|e| PresetError::BadFile(format!("cannot read {}: {e}", path.display())))?;
-    preset_from_json(&text)
+    parse_preset(&text)
 }
 
 // ---------------------------------------------------------------------------
@@ -2674,7 +2891,19 @@ mod tests {
         assert!(parse_calc_args(&["--format".into(), String::new()]).is_err());
     }
 
-    // --- Presets (Stage 4 slice 16): a named moment expression, docs/04 4.3 -------------------
+    // --- Presets (Stage 4 slice 16-18): a named moment expression, docs/04 4.3 ----------------
+
+    /// Resolve a non-parametric preset's moment (empty parameter values) - the slice 16/17 path,
+    /// now that parse and resolve are separate.
+    fn resolve_no_params(p: Preset) -> Result<MomentExpr, PresetError> {
+        let values = resolve_parameters(&p.parameters, &HashMap::new())?;
+        resolve_moment(p.moment, &values)
+    }
+
+    /// Build a --param map for tests.
+    fn param_map(pairs: &[(&str, &str)]) -> HashMap<String, String> {
+        pairs.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect()
+    }
 
     /// A `both` preset over `today` with a snap step maps to the canonical moment and carries its
     /// English framing. `snap` speaks the same token as the `--snap` flag (one grammar).
@@ -2687,17 +2916,18 @@ mod tests {
             "applies_to": "both",
             "moment": { "base": "today", "steps": [ { "snap": "end-of-month" } ] }
         }"#;
-        let p = preset_from_json(json).unwrap();
+        let p = parse_preset(json).unwrap();
         assert_eq!(p.id, "month-end");
         assert_eq!(p.name_en, "Last day of month");
         assert_eq!(p.explains_en, "Month-end close?");
         assert_eq!(p.applies_to, "both");
-        assert_eq!(p.moment.base, Base::Today);
-        assert_eq!(p.moment.steps, vec![Step::Snap(SnapTarget::EndOfMonth)]);
+        let m = resolve_no_params(p).unwrap();
+        assert_eq!(m.base, Base::Today);
+        assert_eq!(m.steps, vec![Step::Snap(SnapTarget::EndOfMonth)]);
     }
 
-    /// An `{ "absolute": ... }` base parses to a fixed civil moment; a malformed one is refused,
-    /// never normalized silently.
+    /// An `{ "absolute": ... }` base resolves to a fixed civil moment; a malformed one is refused at
+    /// resolve time (the base is not parsed until then), never normalized silently.
     #[test]
     fn preset_absolute_base_parses_and_rejects_bad_date() {
         let ok = r#"{
@@ -2705,17 +2935,17 @@ mod tests {
             "name": { "en": "n" }, "explains": { "en": "e" }, "applies_to": "both",
             "moment": { "base": { "absolute": "1970-01-01T00:00:00" }, "steps": [] }
         }"#;
-        let p = preset_from_json(ok).unwrap();
+        let m = resolve_no_params(parse_preset(ok).unwrap()).unwrap();
         assert_eq!(
-            p.moment.base,
+            m.base,
             Base::Absolute(chrono_core::calc::CivilDateTime {
                 year: 1970, month: 1, day: 1, hour: 0, minute: 0, second: 0
             })
         );
-        assert!(p.moment.steps.is_empty());
+        assert!(m.steps.is_empty());
 
         let bad = ok.replace("1970-01-01T00:00:00", "2025-02-31T00:00:00");
-        assert!(matches!(preset_from_json(&bad), Err(PresetError::BadFile(_))));
+        assert!(matches!(resolve_no_params(parse_preset(&bad).unwrap()), Err(PresetError::BadFile(_))));
     }
 
     /// An unknown major schema version is refused (docs/04 3.1), as a usage error.
@@ -2726,39 +2956,24 @@ mod tests {
             "name": { "en": "n" }, "explains": { "en": "e" }, "applies_to": "both",
             "moment": { "base": "today", "steps": [] }
         }"#;
-        let e = preset_from_json(json).unwrap_err();
+        let e = parse_preset(json).unwrap_err();
         assert!(matches!(e, PresetError::BadFile(_)));
         assert_eq!(e.exit_code(), 1);
     }
 
-    /// A preset that declares parameters, or a parametric base/shift, is the honest "not built yet"
-    /// (exit 5) - the model allows it but the core cannot resolve it - never computed with the
-    /// parameter dropped.
+    /// A parameter type not built yet (variant/int) is the honest "not built" (exit 5) at parse time,
+    /// never guessed.
     #[test]
-    fn preset_parameters_are_not_built_yet() {
-        let with_params = r#"{
-            "schema": "chronomock.preset/1", "id": "trial",
-            "name": { "en": "n" }, "explains": { "en": "e" }, "applies_to": "both",
-            "parameters": [ { "id": "trial_length", "type": "duration" } ],
+    fn preset_unbuilt_param_type_is_not_built() {
+        let json = r#"{
+            "schema": "chronomock.preset/1", "id": "age",
+            "name": { "en": "n" }, "explains": { "en": "e" }, "applies_to": "calculator",
+            "parameters": [ { "id": "variant", "type": "variant" } ],
             "moment": { "base": "today", "steps": [] }
         }"#;
-        let e = preset_from_json(with_params).unwrap_err();
+        let e = parse_preset(json).unwrap_err();
         assert!(matches!(e, PresetError::NotBuilt(_)));
         assert_eq!(e.exit_code(), 5);
-
-        let param_base = r#"{
-            "schema": "chronomock.preset/1", "id": "trial",
-            "name": { "en": "n" }, "explains": { "en": "e" }, "applies_to": "both",
-            "moment": { "base": { "parameter": "start_date" }, "steps": [] }
-        }"#;
-        assert!(matches!(preset_from_json(param_base), Err(PresetError::NotBuilt(_))));
-
-        let param_shift = r#"{
-            "schema": "chronomock.preset/1", "id": "trial",
-            "name": { "en": "n" }, "explains": { "en": "e" }, "applies_to": "both",
-            "moment": { "base": "today", "steps": [ { "shift": { "sign": "+", "parameter": "trial_length" } } ] }
-        }"#;
-        assert!(matches!(preset_from_json(param_shift), Err(PresetError::NotBuilt(_))));
     }
 
     /// docs/04 4.1: a preset describes TIME, never a TARGET. There is no path field in the model, so
@@ -2772,9 +2987,9 @@ mod tests {
         }"#;
         // It loads (unknown fields ignored, docs/04 section 3) and the result has no way to carry a
         // path - `Preset` has no such field. The moment is exactly the declared one.
-        let p = preset_from_json(json).unwrap();
-        assert_eq!(p.moment.base, Base::Today);
-        assert!(p.moment.steps.is_empty());
+        let m = resolve_no_params(parse_preset(json).unwrap()).unwrap();
+        assert_eq!(m.base, Base::Today);
+        assert!(m.steps.is_empty());
     }
 
     /// The calculator honours `applies_to`: substitution-only presets are not calculator questions.
@@ -2802,7 +3017,7 @@ mod tests {
     /// Bad JSON is a usage-level bad-file error, not a panic.
     #[test]
     fn preset_bad_json_is_reported() {
-        assert!(matches!(preset_from_json("{ not json"), Err(PresetError::BadFile(_))));
+        assert!(matches!(parse_preset("{ not json"), Err(PresetError::BadFile(_))));
     }
 
     // --- run --preset (Stage 4 slice 17): the substitution bridge, docs/06.3 pkt 3 -----------
@@ -2837,7 +3052,7 @@ mod tests {
             "moment": { "base": "today", "steps": [] },
             "time_mode": { "multiplier": 1440, "scale_duration_clock": true }
         }"#;
-        let p = preset_from_json(json).unwrap();
+        let p = parse_preset(json).unwrap();
         assert_eq!(p.time_mode.mode, "multiplier");
         assert_eq!(p.time_mode.multiplier, Some(1440));
         assert!(p.time_mode.scale_duration);
@@ -2861,5 +3076,113 @@ mod tests {
         assert!(parse_run_args(&["--preset".into(), "m".into(), "--at".into(), "2020-01-01T00:00:00".into(), "app.exe".into()]).is_err());
         assert!(parse_run_args(&["--preset".into(), "m".into(), "--mode".into(), "x60".into(), "app.exe".into()]).is_err());
         assert!(parse_run_args(&["--preset".into(), "m".into(), "--scale-duration".into(), "app.exe".into()]).is_err());
+    }
+
+    // --- Parametric presets (Stage 4 slice 18): --param, docs/04 4.2 --------------------------
+
+    /// The canonical trial preset (docs/04 4.2): a `date` parameter fills the base, a `duration`
+    /// parameter fills a shift. With both values the moment substitutes to a concrete expression.
+    const TRIAL_JSON: &str = r#"{
+        "schema": "chronomock.preset/1", "id": "trial-first-day-after",
+        "name": { "en": "n" }, "explains": { "en": "e" }, "applies_to": "both",
+        "parameters": [
+            { "id": "trial_length", "type": "duration", "default": { "amount": 30, "unit": "days" } },
+            { "id": "start_date", "type": "date", "default_hint": "target_file_creation" }
+        ],
+        "moment": {
+            "base": { "parameter": "start_date" },
+            "steps": [
+                { "shift": { "sign": "+", "parameter": "trial_length" } },
+                { "shift": { "sign": "+", "amount": 1, "unit": "days" } },
+                { "set_time": "00:00:01" }
+            ]
+        }
+    }"#;
+
+    fn civil(y: i64, mo: u32, d: u32, h: u32, mi: u32, s: u32) -> chrono_core::calc::CivilDateTime {
+        chrono_core::calc::CivilDateTime { year: y, month: mo, day: d, hour: h, minute: mi, second: s }
+    }
+
+    #[test]
+    fn param_date_base_and_duration_shift_substitute() {
+        let p = parse_preset(TRIAL_JSON).unwrap();
+        let values =
+            resolve_parameters(&p.parameters, &param_map(&[("start_date", "2026-01-01"), ("trial_length", "30days")]))
+                .unwrap();
+        let m = resolve_moment(p.moment, &values).unwrap();
+        assert_eq!(m.base, Base::Absolute(civil(2026, 1, 1, 0, 0, 0)));
+        assert_eq!(
+            m.steps,
+            vec![
+                Step::Shift { sign: Sign::Plus, amount: 30, unit: Unit::Days },
+                Step::Shift { sign: Sign::Plus, amount: 1, unit: Unit::Days },
+                Step::SetTime { hour: 0, minute: 0, second: 1 },
+            ]
+        );
+    }
+
+    /// A parameter with a file `default` (trial_length) may be omitted; the default is used.
+    #[test]
+    fn param_default_used_when_flag_absent() {
+        let p = parse_preset(TRIAL_JSON).unwrap();
+        let values = resolve_parameters(&p.parameters, &param_map(&[("start_date", "2026-01-01")])).unwrap();
+        let m = resolve_moment(p.moment, &values).unwrap();
+        assert_eq!(m.steps[0], Step::Shift { sign: Sign::Plus, amount: 30, unit: Unit::Days });
+    }
+
+    /// A required parameter with only a default_hint (start_date) is the honest "not built" in the
+    /// calculator (exit 5) - the hint's target date is not available here. Never guessed.
+    #[test]
+    fn param_hint_only_needs_a_value_in_calc() {
+        let p = parse_preset(TRIAL_JSON).unwrap();
+        let e = resolve_parameters(&p.parameters, &param_map(&[])).unwrap_err();
+        assert!(matches!(e, PresetError::NotBuilt(_)));
+        assert_eq!(e.exit_code(), 5);
+    }
+
+    /// A --param naming no declared parameter is rejected (a silently ignored typo is a wrong result).
+    #[test]
+    fn param_unknown_id_is_rejected() {
+        let p = parse_preset(TRIAL_JSON).unwrap();
+        let e = resolve_parameters(&p.parameters, &param_map(&[("start_date", "2026-01-01"), ("nope", "1")])).unwrap_err();
+        assert!(matches!(e, PresetError::BadFile(_)));
+    }
+
+    /// A --param value that does not parse against its type is a usage error, not a panic.
+    #[test]
+    fn param_bad_value_is_rejected() {
+        let p = parse_preset(TRIAL_JSON).unwrap();
+        assert!(matches!(
+            resolve_parameters(&p.parameters, &param_map(&[("start_date", "not-a-date")])),
+            Err(PresetError::BadFile(_))
+        ));
+        let p2 = parse_preset(TRIAL_JSON).unwrap();
+        assert!(matches!(
+            resolve_parameters(&p2.parameters, &param_map(&[("start_date", "2026-01-01"), ("trial_length", "30frobs")])),
+            Err(PresetError::BadFile(_))
+        ));
+    }
+
+    /// A duration value in a date slot (or vice versa) is refused at substitution, not misread.
+    #[test]
+    fn param_wrong_type_for_slot_is_refused() {
+        // Feed trial_length (a duration) where the base expects a date by pointing base at it.
+        let json = r#"{
+            "schema": "chronomock.preset/1", "id": "mismatch",
+            "name": { "en": "n" }, "explains": { "en": "e" }, "applies_to": "both",
+            "parameters": [ { "id": "d", "type": "duration", "default": { "amount": 5, "unit": "days" } } ],
+            "moment": { "base": { "parameter": "d" }, "steps": [] }
+        }"#;
+        let p = parse_preset(json).unwrap();
+        let values = resolve_parameters(&p.parameters, &param_map(&[])).unwrap();
+        assert!(matches!(resolve_moment(p.moment, &values), Err(PresetError::BadFile(_))));
+    }
+
+    /// --param only makes sense with --preset.
+    #[test]
+    fn calc_param_needs_preset() {
+        assert!(parse_calc_args(&["--param".into(), "start_date=2026-01-01".into()]).is_err());
+        let ok = parse_calc_args(&["--preset".into(), "trial-first-day-after".into(), "--param".into(), "start_date=2026-01-01".into()]).unwrap();
+        assert_eq!(ok.params.get("start_date").map(String::as_str), Some("2026-01-01"));
     }
 }

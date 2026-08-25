@@ -1,0 +1,25 @@
+{
+  "schema": "chronomock.preset/1",
+  "stability": "unstable",
+  "id": "trial-first-day-after",
+  "name": { "en": "First day after trial expiry", "pl": "Pierwszy dzień po wygaśnięciu triala" },
+  "explains": {
+    "en": "Does the app refuse access the moment the trial ends, and how - a sensible message or a blank window?",
+    "pl": "Czy aplikacja odmawia dostępu w chwili końca okresu próbnego i jak - sensowny komunikat czy puste okno?"
+  },
+  "applies_to": "both",
+  "market": null,
+  "parameters": [
+    { "id": "trial_length", "type": "duration", "default": { "amount": 30, "unit": "days" } },
+    { "id": "start_date", "type": "date", "default_hint": "target_file_creation" }
+  ],
+  "moment": {
+    "base": { "parameter": "start_date" },
+    "steps": [
+      { "shift": { "sign": "+", "parameter": "trial_length" } },
+      { "shift": { "sign": "+", "amount": 1, "unit": "days" } },
+      { "set_time": "00:00:01" }
+    ]
+  },
+  "time_mode": { "multiplier": 1, "scale_duration_clock": false }
+}
