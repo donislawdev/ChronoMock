@@ -56,8 +56,9 @@ fn print_usage() {
 }
 
 fn print_calc_usage() {
-    eprintln!("usage: chrono calc [--base <today|now|YYYY-MM-DDTHH:MM:SS>] [--shift <±N<unit>>]... [--set-time <HH:MM:SS>] [--snap <target>] [--nearest <target>] [--zone <+HH:MM>] [--calendar <us-banking|us-federal>]");
-    eprintln!("       units: s m h d w mo q y bd (minute=m, month=mo). built now: shift (fixed + mo/q/y), set-time. snap/nearest/business-days: not built yet");
+    eprintln!("usage: chrono calc [--base <today|now|YYYY-MM-DDTHH:MM:SS>] [--shift <±N<unit>>]... [--set-time <HH:MM:SS>] [--snap <target>] [--nearest <target>] [--to-zone <+HH:MM>] [--zone <+HH:MM>] [--calendar <us-banking|us-federal|pl>]");
+    eprintln!("       or: chrono calc --analyze <pasted-date>   (interpret a date, e.g. 04/08/2008; shows both readings when ambiguous)");
+    eprintln!("       units: s m h d w mo q y bd (minute=m, month=mo)");
 }
 
 fn this_bitness() -> &'static str {
@@ -758,6 +759,8 @@ struct CalcArgs {
     zone_bias_min: Option<i32>,
     /// Calendar id (e.g. "us-banking") for business-day and holiday metadata. None = omit them.
     calendar: Option<String>,
+    /// A pasted date to analyze in reverse (7.3) instead of building a moment. None = build mode.
+    analyze: Option<String>,
 }
 
 fn calc_run(argv: &[String]) -> i32 {
@@ -794,6 +797,21 @@ fn calc_run(argv: &[String]) -> i32 {
         None => None,
     };
 
+    // Reverse analysis (7.3): with --analyze, interpret a pasted date instead of building a moment.
+    // The build flags (--base/--shift/...) do not apply; --calendar and --zone still do.
+    if let Some(input) = &ca.analyze {
+        return match chrono_core::calc::analyze_date(input) {
+            Ok(analysis) => {
+                print!("{}", render_analysis(&analysis, input, &now, ca.zone_bias_min, calendar.as_ref()));
+                0
+            }
+            Err(e) => {
+                eprintln!("chrono calc: {e} (calc.analyze_unrecognized)");
+                1
+            }
+        };
+    }
+
     let expr = MomentExpr { base: ca.base, steps: ca.steps };
     match chrono_core::calc::eval(
         &expr,
@@ -815,6 +833,7 @@ fn parse_calc_args(argv: &[String]) -> Result<CalcArgs, String> {
     let mut steps: Vec<Step> = Vec::new();
     let mut zone_bias_min: Option<i32> = None;
     let mut calendar: Option<String> = None;
+    let mut analyze: Option<String> = None;
 
     let mut i = 0;
     while i < argv.len() {
@@ -826,6 +845,10 @@ fn parse_calc_args(argv: &[String]) -> Result<CalcArgs, String> {
             "--calendar" => {
                 i += 1;
                 calendar = Some(argv.get(i).ok_or("--calendar needs an id like us-banking")?.clone());
+            }
+            "--analyze" => {
+                i += 1;
+                analyze = Some(argv.get(i).ok_or("--analyze needs a date like 04/08/2008")?.clone());
             }
             "--zone" => {
                 i += 1;
@@ -859,7 +882,7 @@ fn parse_calc_args(argv: &[String]) -> Result<CalcArgs, String> {
         i += 1;
     }
 
-    Ok(CalcArgs { base, steps, zone_bias_min, calendar })
+    Ok(CalcArgs { base, steps, zone_bias_min, calendar, analyze })
 }
 
 /// Parse a `--base` value: the keywords `today`/`now`, or an absolute civil date-time.
@@ -1034,6 +1057,39 @@ fn render_significance(
     let mut out = String::from("  what this date tests:\n");
     for m in marks {
         out.push_str(&format!("    {}\n", m.label()));
+    }
+    out
+}
+
+/// Render a reverse-analysis result (7.3): the input, then each reading with its resolved date,
+/// weekday, and the "what this date tests" markers. Two readings mean an ambiguous numeric order
+/// (04/08 is April 8 in the US, August 4 in Poland) - both are shown rather than one chosen silently.
+fn render_analysis(
+    analysis: &chrono_core::calc::DateAnalysis,
+    input: &str,
+    now: &chrono_core::calc::CivilDateTime,
+    zone_bias_min: Option<i32>,
+    calendar: Option<&chrono_core::calendar::Calendar>,
+) -> String {
+    let mut out = String::from("Chrono Mock - date analysis\n");
+    if analysis.is_ambiguous() {
+        out.push_str(&format!("  input:   {input}  (ambiguous - month/day order differs by locale)\n"));
+    } else {
+        out.push_str(&format!("  input:   {input}\n"));
+    }
+    let bias = zone_bias_min.unwrap_or(0);
+    for (reading, civil) in &analysis.readings {
+        let weekday = chrono_core::calc::metadata(civil, now).weekday;
+        out.push_str(&format!(
+            "  {}:  {:04}-{:02}-{:02}  ({weekday})\n",
+            reading.label(),
+            civil.year,
+            civil.month,
+            civil.day
+        ));
+        for m in chrono_core::calc::significance(civil, bias, calendar) {
+            out.push_str(&format!("      {}\n", m.label()));
+        }
     }
     out
 }
@@ -2138,5 +2194,25 @@ mod tests {
     fn calc_to_zone_rejects_a_malformed_offset() {
         assert!(parse_calc_args(&["--to-zone".into(), "midnight".into()]).is_err());
         assert!(parse_calc_args(&["--to-zone".into(), "+5".into()]).is_err());
+    }
+
+    #[test]
+    fn render_analysis_shows_both_readings_for_an_ambiguous_date() {
+        let analysis = chrono_core::calc::analyze_date("04/08/2008").unwrap();
+        let now = chrono_core::calc::CivilDateTime { year: 2026, month: 8, day: 25, hour: 0, minute: 0, second: 0 };
+        let text = render_analysis(&analysis, "04/08/2008", &now, Some(0), None);
+        assert!(text.contains("ambiguous"), "got:\n{text}");
+        assert!(text.contains("US MM/DD/YYYY:  2008-04-08  (Tuesday)"), "got:\n{text}");
+        assert!(text.contains("PL DD/MM/YYYY:  2008-08-04  (Monday)"), "got:\n{text}");
+    }
+
+    #[test]
+    fn render_analysis_names_a_holiday_with_a_calendar() {
+        // 07/04/2026: the US reading is Independence Day (a Saturday), named only with a calendar.
+        let analysis = chrono_core::calc::analyze_date("07/04/2026").unwrap();
+        let now = chrono_core::calc::CivilDateTime { year: 2026, month: 1, day: 1, hour: 0, minute: 0, second: 0 };
+        let cal = test_calendar();
+        let text = render_analysis(&analysis, "07/04/2026", &now, Some(0), Some(&cal));
+        assert!(text.contains("public holiday"), "got:\n{text}");
     }
 }

@@ -861,6 +861,100 @@ pub fn significance(
     out
 }
 
+// --- Reverse analysis (7.3 - paste a date, name what it is; show both readings when ambiguous) ---
+
+/// One reading of an analyzed date string. A numeric date with no clear order has two (US month-
+/// first, PL day-first); an ISO date has one. Stable variants, English `label` like the other enums.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DateReading {
+    /// An unambiguous ISO 8601 date (dash-separated).
+    Iso,
+    /// The US reading of a numeric date: month first (MM/DD/YYYY).
+    UsMonthDay,
+    /// The Polish / European reading of a numeric date: day first (DD/MM/YYYY).
+    PlDayMonth,
+}
+
+impl DateReading {
+    /// English label for the CLI (a translation key when the calculator GUI arrives).
+    pub fn label(&self) -> &'static str {
+        match self {
+            DateReading::Iso => "ISO 8601",
+            DateReading::UsMonthDay => "US MM/DD/YYYY",
+            DateReading::PlDayMonth => "PL DD/MM/YYYY",
+        }
+    }
+}
+
+/// The result of analyzing a pasted date string: the reading(s) it resolves to. Two readings mean
+/// the numeric order is genuinely ambiguous - 04/08 is April 8 in the US and August 4 in Poland, a
+/// real source of bad bug reports (7.3), so the tool shows BOTH rather than choosing one silently.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DateAnalysis {
+    pub readings: Vec<(DateReading, CivilDateTime)>,
+}
+
+impl DateAnalysis {
+    /// Whether the input has more than one valid reading.
+    pub fn is_ambiguous(&self) -> bool {
+        self.readings.len() > 1
+    }
+}
+
+/// A civil date at midnight, or None if the month or day cannot exist - the validity gate that
+/// turns a candidate month/day order into a real date (month 13 and Feb 30 are rejected).
+fn civil_date(year: i64, month: i64, day: i64) -> Option<CivilDateTime> {
+    if !(1..=12).contains(&month) || day < 1 || day > last_day_of_month(year, month) as i64 {
+        return None;
+    }
+    Some(CivilDateTime { year, month: month as u32, day: day as u32, hour: 0, minute: 0, second: 0 })
+}
+
+/// Recognise a pasted date and return its reading(s). ISO (dash-separated, optional time) is
+/// unambiguous; a slash- or dot-separated `N/N/YYYY` yields the US and PL readings, keeping only
+/// the ones that form a real date (so 29/02 is PL-only, 02/29 US-only, 02/30 an error, 05/05 one).
+/// Formats beyond these - epoch, FILETIME, RFC 1123, year-first numeric - are honestly not
+/// recognised yet (an error, never a guess).
+pub fn analyze_date(input: &str) -> Result<DateAnalysis, String> {
+    let s = input.trim();
+    if s.is_empty() {
+        return Err("empty input".into());
+    }
+    // ISO: dash-separated, with or without a time (midnight if the time is absent).
+    if s.contains('-') {
+        let iso = if s.contains('T') || s.contains(' ') { s.to_string() } else { format!("{s}T00:00:00") };
+        let civil = parse_civil_datetime(&iso)?;
+        return Ok(DateAnalysis { readings: vec![(DateReading::Iso, civil)] });
+    }
+    // Numeric: exactly one separator kind, three parts, a four-digit year last.
+    let sep = match (s.contains('/'), s.contains('.')) {
+        (true, false) => '/',
+        (false, true) => '.',
+        _ => return Err(format!("unrecognised date format '{input}'")),
+    };
+    let parts: Vec<&str> = s.split(sep).collect();
+    if parts.len() != 3 || parts[2].len() != 4 {
+        return Err(format!("expected N{sep}N{sep}YYYY, got '{input}'"));
+    }
+    let num = |p: &str| p.parse::<i64>().map_err(|_| format!("bad number in '{input}'"));
+    let (a, b, year) = (num(parts[0])?, num(parts[1])?, num(parts[2])?);
+    // Two candidate orders; keep the ones that form a real date, and never list one date twice.
+    let mut readings = Vec::new();
+    if let Some(c) = civil_date(year, a, b) {
+        readings.push((DateReading::UsMonthDay, c)); // month = a, day = b
+    }
+    if let Some(c) = civil_date(year, b, a) {
+        // day = a, month = b
+        if readings.first().map(|(_, uc)| *uc) != Some(c) {
+            readings.push((DateReading::PlDayMonth, c));
+        }
+    }
+    if readings.is_empty() {
+        return Err(format!("'{input}' is not a valid date in either month/day order"));
+    }
+    Ok(DateAnalysis { readings })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1487,5 +1581,69 @@ mod tests {
             significance(&dt(2026, 7, 4, 0, 0, 0), 0, Some(&none)),
             vec![Significance::Weekend, Significance::PublicHoliday]
         );
+    }
+
+    // --- reverse analysis ----------------------------------------------------
+
+    #[test]
+    fn analyze_iso_is_a_single_reading() {
+        let a = analyze_date("2008-08-04").unwrap();
+        assert!(!a.is_ambiguous());
+        assert_eq!(a.readings, vec![(DateReading::Iso, dt(2008, 8, 4, 0, 0, 0))]);
+        // A time component is kept.
+        assert_eq!(analyze_date("1990-08-03T23:59:59").unwrap().readings[0].1, dt(1990, 8, 3, 23, 59, 59));
+    }
+
+    #[test]
+    fn analyze_ambiguous_numeric_shows_both_us_and_pl() {
+        // 04/08/2008: April 8 (US) and August 4 (PL) - both valid, both shown, US first.
+        let a = analyze_date("04/08/2008").unwrap();
+        assert!(a.is_ambiguous());
+        assert_eq!(
+            a.readings,
+            vec![
+                (DateReading::UsMonthDay, dt(2008, 4, 8, 0, 0, 0)),
+                (DateReading::PlDayMonth, dt(2008, 8, 4, 0, 0, 0)),
+            ]
+        );
+        // Dots read the same way.
+        assert!(analyze_date("04.08.2008").unwrap().is_ambiguous());
+    }
+
+    #[test]
+    fn analyze_resolves_when_only_one_order_is_valid() {
+        // 29/02/2024: "month 29" is impossible, so only the PL reading (Feb 29, a leap day).
+        assert_eq!(
+            analyze_date("29/02/2024").unwrap().readings,
+            vec![(DateReading::PlDayMonth, dt(2024, 2, 29, 0, 0, 0))]
+        );
+        // 02/29/2024: the mirror - US only.
+        assert_eq!(
+            analyze_date("02/29/2024").unwrap().readings,
+            vec![(DateReading::UsMonthDay, dt(2024, 2, 29, 0, 0, 0))]
+        );
+        // 25/12/2008: "month 25" impossible - PL only.
+        assert_eq!(
+            analyze_date("25/12/2008").unwrap().readings,
+            vec![(DateReading::PlDayMonth, dt(2008, 12, 25, 0, 0, 0))]
+        );
+    }
+
+    #[test]
+    fn analyze_same_date_both_orders_is_not_ambiguous() {
+        // 05/05/2008 reads the same either way - one reading, not two.
+        let a = analyze_date("05/05/2008").unwrap();
+        assert!(!a.is_ambiguous());
+        assert_eq!(a.readings, vec![(DateReading::UsMonthDay, dt(2008, 5, 5, 0, 0, 0))]);
+    }
+
+    #[test]
+    fn analyze_rejects_the_unrepresentable_and_unrecognised() {
+        assert!(analyze_date("02/30/2008").is_err()); // Feb 30 in neither order
+        assert!(analyze_date("13/13/2008").is_err()); // month 13 in neither order
+        assert!(analyze_date("").is_err());
+        assert!(analyze_date("hello").is_err());
+        assert!(analyze_date("04/08/08").is_err()); // year not four digits
+        assert!(analyze_date("2008/08/04").is_err()); // year-first numeric not recognised yet
     }
 }
