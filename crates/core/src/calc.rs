@@ -86,15 +86,40 @@ impl Unit {
     }
 }
 
+/// A snap step's target: the calendar period whose boundary to jump to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SnapTarget {
+    StartOfMonth,
+    EndOfMonth,
+    StartOfQuarter,
+    EndOfQuarter,
+    StartOfYear,
+    EndOfYear,
+}
+
+impl SnapTarget {
+    /// Human label for reports.
+    pub fn label(&self) -> &'static str {
+        match self {
+            SnapTarget::StartOfMonth => "start of month",
+            SnapTarget::EndOfMonth => "end of month",
+            SnapTarget::StartOfQuarter => "start of quarter",
+            SnapTarget::EndOfQuarter => "end of quarter",
+            SnapTarget::StartOfYear => "start of year",
+            SnapTarget::EndOfYear => "end of year",
+        }
+    }
+}
+
 /// One step of a moment expression. Step kinds mirror docs/04 section 4.3 exactly
-/// so a preset `moment` and the calculator share one model. `Snap`, `Nearest`, and
-/// `Zone` carry their raw target token for now - they are not built in this slice
-/// and evaluate to an honest "not supported yet".
+/// so a preset `moment` and the calculator share one model. `Nearest` and `Zone`
+/// carry their raw target token for now - they are not built in this slice and
+/// evaluate to an honest "not supported yet".
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Step {
     Shift { sign: Sign, amount: i64, unit: Unit },
     SetTime { hour: u32, minute: u32, second: u32 },
-    Snap(String),
+    Snap(SnapTarget),
     Nearest(String),
     Zone(String),
 }
@@ -224,10 +249,35 @@ fn apply_step(
             }
             Ok(CivilDateTime { hour: *hour, minute: *minute, second: *second, ..cur })
         }
+        Step::Snap(target) => Ok(apply_snap(cur, *target)),
         // Not built yet - honest "not supported" rather than a silent skip.
-        Step::Snap(_) | Step::Nearest(_) | Step::Zone(_) => {
+        Step::Nearest(_) | Step::Zone(_) => {
             Err(EvalError::StepUnsupported { kind: step.kind(), index })
         }
+    }
+}
+
+/// Jump to the boundary of the calendar period containing `cur`. A "start" is the first day at
+/// 00:00:00, an "end" the last day at 23:59:59 - the earliest / latest instant of the period, so a
+/// period-end test needs no extra set-time step.
+fn apply_snap(cur: CivilDateTime, target: SnapTarget) -> CivilDateTime {
+    let quarter_start = (cur.month - 1) / 3 * 3 + 1; // 1, 4, 7, 10
+    let start = |month| CivilDateTime { year: cur.year, month, day: 1, hour: 0, minute: 0, second: 0 };
+    let end = |month| CivilDateTime {
+        year: cur.year,
+        month,
+        day: last_day_of_month(cur.year, month as i64),
+        hour: 23,
+        minute: 59,
+        second: 59,
+    };
+    match target {
+        SnapTarget::StartOfMonth => start(cur.month),
+        SnapTarget::EndOfMonth => end(cur.month),
+        SnapTarget::StartOfQuarter => start(quarter_start),
+        SnapTarget::EndOfQuarter => end(quarter_start + 2),
+        SnapTarget::StartOfYear => start(1),
+        SnapTarget::EndOfYear => end(12),
     }
 }
 
@@ -743,9 +793,8 @@ mod tests {
     }
 
     #[test]
-    fn snap_nearest_zone_steps_are_not_built_yet() {
+    fn nearest_and_zone_steps_are_not_built_yet() {
         for (step, kind) in [
-            (Step::Snap("end-of-quarter".into()), "snap"),
             (Step::Nearest("next-business-day".into()), "nearest"),
             (Step::Zone("+05:45".into()), "zone"),
         ] {
@@ -758,15 +807,39 @@ mod tests {
     }
 
     #[test]
+    fn snap_jumps_to_period_boundaries() {
+        let snap = |t| {
+            let expr = MomentExpr { base: abs(dt(2026, 5, 15, 9, 30, 0)), steps: vec![Step::Snap(t)] };
+            eval_at(&expr, dt(2000, 1, 1, 0, 0, 0)).unwrap().result()
+        };
+        assert_eq!(snap(SnapTarget::StartOfMonth), dt(2026, 5, 1, 0, 0, 0));
+        assert_eq!(snap(SnapTarget::EndOfMonth), dt(2026, 5, 31, 23, 59, 59));
+        assert_eq!(snap(SnapTarget::StartOfQuarter), dt(2026, 4, 1, 0, 0, 0)); // Q2 starts in April
+        assert_eq!(snap(SnapTarget::EndOfQuarter), dt(2026, 6, 30, 23, 59, 59)); // Q2 ends June 30
+        assert_eq!(snap(SnapTarget::StartOfYear), dt(2026, 1, 1, 0, 0, 0));
+        assert_eq!(snap(SnapTarget::EndOfYear), dt(2026, 12, 31, 23, 59, 59));
+    }
+
+    #[test]
+    fn snap_end_of_february_respects_leap_years() {
+        let eom = |year| {
+            let expr = MomentExpr { base: abs(dt(year, 2, 10, 0, 0, 0)), steps: vec![Step::Snap(SnapTarget::EndOfMonth)] };
+            eval_at(&expr, dt(2000, 1, 1, 0, 0, 0)).unwrap().result()
+        };
+        assert_eq!(eom(2024), dt(2024, 2, 29, 23, 59, 59)); // leap year
+        assert_eq!(eom(2025), dt(2025, 2, 28, 23, 59, 59)); // non-leap
+    }
+
+    #[test]
     fn unsupported_step_reports_its_index() {
         // A good step then an unbuilt one: the error points at step 1, not 0.
         let expr = MomentExpr {
             base: abs(dt(2026, 1, 1, 0, 0, 0)),
-            steps: vec![shift(Sign::Plus, 1, Unit::Days), Step::Snap("eoy".into())],
+            steps: vec![shift(Sign::Plus, 1, Unit::Days), Step::Nearest("next-business-day".into())],
         };
         assert_eq!(
             eval_at(&expr, dt(2000, 1, 1, 0, 0, 0)),
-            Err(EvalError::StepUnsupported { kind: "snap", index: 1 })
+            Err(EvalError::StepUnsupported { kind: "nearest", index: 1 })
         );
     }
 

@@ -20,7 +20,7 @@ use std::time::{Duration, Instant};
 
 use serde::Deserialize;
 
-use chrono_core::calc::{Base, EvalContext, EvalError, MomentExpr, Sign, Step, Unit};
+use chrono_core::calc::{Base, EvalContext, EvalError, MomentExpr, Sign, SnapTarget, Step, Unit};
 use chrono_core::{filetime_utc_to_wall, verdict_from_coverage, Moment, SessionSpec, TimeMode, Verdict};
 use chrono_proto::{
     parse_command, Clock, Command, CoveredChannel, Event, MomentSpec, TargetSpec, TimeSpec,
@@ -834,7 +834,7 @@ fn parse_calc_args(argv: &[String]) -> Result<CalcArgs, String> {
             }
             "--snap" => {
                 i += 1;
-                steps.push(Step::Snap(argv.get(i).ok_or("--snap needs a target")?.clone()));
+                steps.push(Step::Snap(parse_snap(argv.get(i).ok_or("--snap needs a target")?)?));
             }
             "--nearest" => {
                 i += 1;
@@ -892,6 +892,21 @@ fn parse_unit(s: &str) -> Option<Unit> {
         "y" | "yr" | "yrs" | "year" | "years" => Unit::Years,
         "bd" | "business_days" | "businessdays" => Unit::BusinessDays,
         _ => return None,
+    })
+}
+
+/// Parse a `--snap` target token (full or short form) into a typed target.
+fn parse_snap(raw: &str) -> Result<SnapTarget, String> {
+    Ok(match raw {
+        "start-of-month" | "som" => SnapTarget::StartOfMonth,
+        "end-of-month" | "eom" => SnapTarget::EndOfMonth,
+        "start-of-quarter" | "soq" => SnapTarget::StartOfQuarter,
+        "end-of-quarter" | "eoq" => SnapTarget::EndOfQuarter,
+        "start-of-year" | "soy" => SnapTarget::StartOfYear,
+        "end-of-year" | "eoy" => SnapTarget::EndOfYear,
+        other => {
+            return Err(format!("unknown snap target '{other}' (use start-of/end-of month|quarter|year)"))
+        }
     })
 }
 
@@ -1038,7 +1053,7 @@ fn describe_step(step: &Step) -> String {
             format!("shift {s}{amount} {}", unit.name())
         }
         Step::SetTime { hour, minute, second } => format!("set time {hour:02}:{minute:02}:{second:02}"),
-        Step::Snap(t) => format!("snap {t}"),
+        Step::Snap(t) => format!("snap to {}", t.label()),
         Step::Nearest(t) => format!("nearest {t}"),
         Step::Zone(t) => format!("zone {t}"),
     }
@@ -1966,5 +1981,28 @@ mod tests {
         assert!(weekday_index("funday").is_err());
         assert!(matches!(observed_from("sun_to_mon").unwrap(), chrono_core::calendar::Observed::SunToMon));
         assert!(observed_from("whenever").is_err());
+    }
+
+    #[test]
+    fn parse_snap_reads_targets_and_rejects_unknown() {
+        assert_eq!(parse_snap("end-of-quarter").unwrap(), SnapTarget::EndOfQuarter);
+        assert_eq!(parse_snap("eom").unwrap(), SnapTarget::EndOfMonth);
+        assert_eq!(parse_snap("start-of-year").unwrap(), SnapTarget::StartOfYear);
+        assert!(parse_snap("end-of-week").is_err());
+    }
+
+    #[test]
+    fn calc_snap_end_of_quarter_end_to_end() {
+        let ca = parse_calc_args(&[
+            "--base".into(),
+            "2026-05-15T09:30:00".into(),
+            "--snap".into(),
+            "end-of-quarter".into(),
+        ])
+        .unwrap();
+        let expr = MomentExpr { base: ca.base, steps: ca.steps };
+        let now = chrono_core::calc::CivilDateTime { year: 2000, month: 1, day: 1, hour: 0, minute: 0, second: 0 };
+        let out = chrono_core::calc::eval(&expr, &EvalContext { now, calendar: None }).unwrap();
+        assert_eq!(out.result().to_iso(), "2026-06-30T23:59:59");
     }
 }
