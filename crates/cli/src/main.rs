@@ -57,6 +57,7 @@ fn print_usage() {
 
 fn print_calc_usage() {
     eprintln!("usage: chrono calc [--base <today|now|YYYY-MM-DDTHH:MM:SS>] [--shift <±N<unit>>]... [--set-time <HH:MM:SS>] [--snap <target>] [--nearest <target>] [--to-zone <+HH:MM>] [--zone <+HH:MM>] [--calendar <us-banking|us-federal|pl>] [--format <mask>]");
+    eprintln!("       or: chrono calc --preset <id>              (named moment, e.g. month-end; not combined with step flags)");
     eprintln!("       or: chrono calc --analyze <pasted-date>   (interpret a date, e.g. 04/08/2008; shows both readings when ambiguous)");
     eprintln!("       units: s m h d w mo q y bd (minute=m, month=mo)");
 }
@@ -763,6 +764,9 @@ struct CalcArgs {
     analyze: Option<String>,
     /// A custom .NET/Java-style format mask (7.3, docs/02 8.9) for the result. None = fixed formats only.
     format: Option<String>,
+    /// A named preset id (docs/04 4.3): the moment comes from `presets/<id>.json`, not from step
+    /// flags. None = build the moment from the flags. Cannot be combined with the step flags.
+    preset: Option<String>,
 }
 
 fn calc_run(argv: &[String]) -> i32 {
@@ -814,13 +818,40 @@ fn calc_run(argv: &[String]) -> i32 {
         };
     }
 
-    let expr = MomentExpr { base: ca.base, steps: ca.steps };
+    // A named preset (docs/04 4.3) supplies the moment in place of the step flags; otherwise the
+    // moment is built from the flags. The preset also carries a human header (name + "explains").
+    let preset_id = ca.preset.clone();
+    let (expr, preset_header) = match preset_id {
+        Some(pid) => match load_preset(&pid) {
+            Ok(p) => {
+                // The calculator surface honours `applies_to`: a substitution-only preset
+                // (e.g. year-rollover) is not a calculator question (docs/05 3.1). Refuse it
+                // instead of computing a moment nobody asked the calculator for.
+                if !preset_targets_calculator(&p.applies_to) {
+                    eprintln!(
+                        "chrono calc: preset '{}' targets {}, not the calculator (calc.preset_not_for_calculator)",
+                        p.id, p.applies_to
+                    );
+                    return 1;
+                }
+                let header =
+                    format!("  preset:   {} - {}\n  explains: {}\n", p.id, p.name_en, p.explains_en);
+                (p.moment, Some(header))
+            }
+            Err(e) => {
+                eprintln!("chrono calc: {}", e.message());
+                return e.exit_code();
+            }
+        },
+        None => (MomentExpr { base: ca.base, steps: ca.steps }, None),
+    };
     match chrono_core::calc::eval(
         &expr,
         &EvalContext { now, zone_bias_min: ca.zone_bias_min.unwrap_or(0), calendar: calendar.as_ref() },
     ) {
         Ok(outcome) => {
-            let mut text = render_calc(&expr, &outcome, ca.zone_bias_min, &now, calendar.as_ref());
+            let mut text =
+                render_calc(&expr, &outcome, ca.zone_bias_min, &now, calendar.as_ref(), preset_header.as_deref());
             // A custom mask (7.3) adds one more line in the target app's exact format.
             if let Some(mask) = &ca.format {
                 text.push_str(&format!(
@@ -845,6 +876,10 @@ fn parse_calc_args(argv: &[String]) -> Result<CalcArgs, String> {
     let mut calendar: Option<String> = None;
     let mut analyze: Option<String> = None;
     let mut format: Option<String> = None;
+    let mut preset: Option<String> = None;
+    // Whether any moment-building flag appeared, so `--preset` (which supplies its own moment)
+    // can reject being combined with them instead of silently ignoring one source.
+    let mut saw_step_flag = false;
 
     let mut i = 0;
     while i < argv.len() {
@@ -852,6 +887,11 @@ fn parse_calc_args(argv: &[String]) -> Result<CalcArgs, String> {
             "--base" => {
                 i += 1;
                 base = parse_base(argv.get(i).ok_or("--base needs a value")?)?;
+                saw_step_flag = true;
+            }
+            "--preset" => {
+                i += 1;
+                preset = Some(argv.get(i).ok_or("--preset needs an id like month-end")?.clone());
             }
             "--calendar" => {
                 i += 1;
@@ -878,22 +918,27 @@ fn parse_calc_args(argv: &[String]) -> Result<CalcArgs, String> {
                 i += 1;
                 let raw = argv.get(i).ok_or("--to-zone needs a value like +05:45")?;
                 steps.push(Step::Zone(parse_zone_to_bias(raw)?));
+                saw_step_flag = true;
             }
             "--shift" => {
                 i += 1;
                 steps.push(parse_shift(argv.get(i).ok_or("--shift needs a value like +18years")?)?);
+                saw_step_flag = true;
             }
             "--set-time" => {
                 i += 1;
                 steps.push(parse_set_time(argv.get(i).ok_or("--set-time needs a value like 23:59:59")?)?);
+                saw_step_flag = true;
             }
             "--snap" => {
                 i += 1;
                 steps.push(Step::Snap(parse_snap(argv.get(i).ok_or("--snap needs a target")?)?));
+                saw_step_flag = true;
             }
             "--nearest" => {
                 i += 1;
                 steps.push(Step::Nearest(parse_nearest(argv.get(i).ok_or("--nearest needs a target")?)?));
+                saw_step_flag = true;
             }
             other if other.starts_with("--") => return Err(format!("unknown flag '{other}'")),
             other => return Err(format!("unexpected argument '{other}'")),
@@ -901,7 +946,19 @@ fn parse_calc_args(argv: &[String]) -> Result<CalcArgs, String> {
         i += 1;
     }
 
-    Ok(CalcArgs { base, steps, zone_bias_min, calendar, analyze, format })
+    // A preset supplies its own moment (base + steps); combining it with step flags would mean two
+    // sources for one moment. Reject it rather than pick one silently. `--analyze` is a different
+    // mode entirely (it reads a date, builds nothing), so it cannot ride with `--preset` either.
+    if preset.is_some() && saw_step_flag {
+        return Err("--preset builds the moment on its own; it cannot be combined with \
+                    --base/--shift/--set-time/--snap/--nearest/--to-zone"
+            .into());
+    }
+    if preset.is_some() && analyze.is_some() {
+        return Err("--preset and --analyze are different modes; use one at a time".into());
+    }
+
+    Ok(CalcArgs { base, steps, zone_bias_min, calendar, analyze, format, preset })
 }
 
 /// Parse a `--base` value: the keywords `today`/`now`, or an absolute civil date-time.
@@ -1037,9 +1094,15 @@ fn render_calc(
     zone_bias_min: Option<i32>,
     now: &chrono_core::calc::CivilDateTime,
     calendar: Option<&chrono_core::calendar::Calendar>,
+    preset_header: Option<&str>,
 ) -> String {
     let zone = zone_bias_min.map(format_bias).unwrap_or_else(|| "UTC".into());
     let mut out = String::from("Chrono Mock - date calculator\n");
+    // When the moment came from a named preset, name it and show its "explains" line (the
+    // preset's authored framing, docs/04 4.2 - distinct from the computed significance block).
+    if let Some(h) = preset_header {
+        out.push_str(h);
+    }
     match &expr.base {
         Base::Today => out.push_str(&format!("  base:    {}  (today, session zone {zone})\n", outcome.base.to_iso())),
         Base::Now => out.push_str(&format!("  base:    {}  (now, session zone {zone})\n", outcome.base.to_iso())),
@@ -1316,6 +1379,247 @@ fn load_calendar(id: &str) -> Result<chrono_core::calendar::Calendar, String> {
         observed: observed_from(&dto.observed)?,
         holidays,
     })
+}
+
+// ---------------------------------------------------------------------------
+// Preset loading (the shared catalogue, docs/04 section 4)
+// ---------------------------------------------------------------------------
+//
+// A preset is a NAMED moment expression (docs/04 4.3): the same canonical step model the
+// calculator evaluates, plus its human framing (`name`, `explains`). This reader maps the JSON
+// contract `chronomock.preset/1` to the core `MomentExpr`; as with the calendar reader the
+// consumer owns the I/O and serde, the core engine stays pure. Steps map through the SAME parsers
+// the CLI flags use (`parse_snap`/`parse_set_time`/...), so there is one grammar, not two.
+//
+// SECURITY (docs/04 4.1): a preset describes TIME, never a TARGET. The schema has no path field,
+// so a shared preset cannot smuggle an executable path - enforced structurally (there is no field
+// to put it in), which `preset_ignores_a_path_field` pins. Unknown fields are ignored (additive
+// evolution, docs/04 section 3); an unknown major schema version is refused (section 3.1).
+//
+// This slice builds the calculator surface (`chrono calc --preset`), so it computes a moment and
+// never starts a session; the substitution side (preset -> `run`) arrives with the proto step wire
+// (docs/08 section 11 item 1), and the full session-level path guard lands with it.
+
+/// A preset ready for the calculator: its canonical moment plus the human framing the surface shows.
+#[derive(Debug)]
+struct Preset {
+    id: String,
+    name_en: String,
+    explains_en: String,
+    /// `calculator` / `substitution` / `both` (docs/04 4.2). The calculator honours it.
+    applies_to: String,
+    moment: MomentExpr,
+}
+
+/// Why a preset could not be loaded for the calculator. Enumerated, not a shared string, so the
+/// exit code follows the cause: input problems are usage errors (1), while "the model has this in
+/// it but calc does not resolve it yet" is the honest not-built code (5), same split as calc's own
+/// error table (docs/08 section 9a).
+#[derive(Debug)]
+enum PresetError {
+    /// No such preset file.
+    NotFound(String),
+    /// Bad JSON, unknown schema, or a malformed field.
+    BadFile(String),
+    /// A shape the model allows but this build does not resolve yet (parameters).
+    NotBuilt(String),
+}
+
+impl PresetError {
+    fn exit_code(&self) -> i32 {
+        match self {
+            PresetError::NotBuilt(_) => 5,
+            PresetError::NotFound(_) | PresetError::BadFile(_) => 1,
+        }
+    }
+    fn message(&self) -> &str {
+        match self {
+            PresetError::NotFound(m) | PresetError::BadFile(m) | PresetError::NotBuilt(m) => m,
+        }
+    }
+}
+
+#[derive(Deserialize)]
+struct PresetDto {
+    schema: String,
+    id: String,
+    name: PresetTextDto,
+    explains: PresetTextDto,
+    applies_to: String,
+    // Parameters are in the contract (trial length, start date - docs/04 4.2) but need a
+    // `Base::Parameter` the core does not have yet, so a preset that declares any is refused here
+    // rather than computed with them dropped. `serde_json::Value` keeps this reader agnostic to
+    // their eventual shape.
+    #[serde(default)]
+    parameters: Vec<serde_json::Value>,
+    moment: MomentDto,
+}
+
+/// The English text is what the CLI renders (rule 15 - CLI is English only); `pl` rides in the file
+/// for the GUI but this reader does not need it, so it is not a field here (unknown fields ignored).
+#[derive(Deserialize)]
+struct PresetTextDto {
+    en: String,
+}
+
+#[derive(Deserialize)]
+struct MomentDto {
+    base: BaseDto,
+    #[serde(default)]
+    steps: Vec<StepDto>,
+}
+
+/// A preset base: the keyword `today`/`now`, an `{ "absolute": "ISO" }` object, or a
+/// `{ "parameter": "name" }` object (docs/04 4.2) that this build refuses as not-built.
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum BaseDto {
+    Keyword(String),
+    Object {
+        #[serde(default)]
+        absolute: Option<String>,
+        #[serde(default)]
+        parameter: Option<String>,
+    },
+}
+
+/// One preset step, externally tagged exactly as docs/04 4.2 writes it: `{ "shift": {...} }`,
+/// `{ "set_time": "HH:MM:SS" }`, `{ "snap": "end-of-month" }`, `{ "nearest": "next-business-day" }`,
+/// `{ "zone": "+05:45" }`. The string forms reuse the CLI parsers, keeping one grammar.
+#[derive(Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum StepDto {
+    Shift(ShiftDto),
+    SetTime(String),
+    Snap(String),
+    Nearest(String),
+    Zone(String),
+}
+
+/// A `shift` step in a preset: either a literal `{ sign, amount, unit }` or a parametric
+/// `{ sign, parameter }` (docs/04 4.2). The parametric form is refused as not-built.
+#[derive(Deserialize)]
+struct ShiftDto {
+    sign: String,
+    #[serde(default)]
+    amount: Option<i64>,
+    #[serde(default)]
+    unit: Option<String>,
+    #[serde(default)]
+    parameter: Option<String>,
+}
+
+/// Whether a preset's `applies_to` makes it a calculator question (docs/04 4.2, docs/05 3.1).
+fn preset_targets_calculator(applies_to: &str) -> bool {
+    matches!(applies_to, "calculator" | "both")
+}
+
+/// Map a preset base to the core `Base`. A parametric base is refused (not built), never silently
+/// treated as `today`.
+fn base_from(dto: BaseDto) -> Result<Base, PresetError> {
+    match dto {
+        BaseDto::Keyword(k) => match k.as_str() {
+            "today" => Ok(Base::Today),
+            "now" => Ok(Base::Now),
+            other => Err(PresetError::BadFile(format!(
+                "unknown preset base '{other}' (use today, now, or an absolute/parameter object)"
+            ))),
+        },
+        BaseDto::Object { parameter: Some(_), .. } => Err(PresetError::NotBuilt(
+            "preset base uses a parameter, which calc does not resolve yet".into(),
+        )),
+        BaseDto::Object { absolute: Some(s), parameter: None } => {
+            let civil = chrono_core::calc::parse_civil_datetime(&s).map_err(PresetError::BadFile)?;
+            Ok(Base::Absolute(civil))
+        }
+        BaseDto::Object { absolute: None, parameter: None } => Err(PresetError::BadFile(
+            "preset base object needs 'absolute' or 'parameter'".into(),
+        )),
+    }
+}
+
+/// Map a preset step to a core `Step`, reusing the CLI parsers so a preset speaks the same step
+/// grammar as the flags. A parametric shift is refused (not built).
+fn step_from(dto: StepDto) -> Result<Step, PresetError> {
+    match dto {
+        StepDto::Shift(s) => shift_from(s),
+        StepDto::SetTime(raw) => parse_set_time(&raw).map_err(PresetError::BadFile),
+        StepDto::Snap(raw) => parse_snap(&raw).map(Step::Snap).map_err(PresetError::BadFile),
+        StepDto::Nearest(raw) => parse_nearest(&raw).map(Step::Nearest).map_err(PresetError::BadFile),
+        StepDto::Zone(raw) => parse_zone_to_bias(&raw).map(Step::Zone).map_err(PresetError::BadFile),
+    }
+}
+
+fn shift_from(s: ShiftDto) -> Result<Step, PresetError> {
+    if s.parameter.is_some() {
+        return Err(PresetError::NotBuilt(
+            "preset shift uses a parameter, which calc does not resolve yet".into(),
+        ));
+    }
+    let sign = match s.sign.as_str() {
+        "+" => Sign::Plus,
+        "-" => Sign::Minus,
+        other => return Err(PresetError::BadFile(format!("shift sign must be + or -, got '{other}'"))),
+    };
+    let amount = s.amount.ok_or_else(|| PresetError::BadFile("shift needs an amount".into()))?;
+    if amount < 0 {
+        return Err(PresetError::BadFile("shift amount must be non-negative (the sign carries direction)".into()));
+    }
+    let unit_str = s.unit.ok_or_else(|| PresetError::BadFile("shift needs a unit".into()))?;
+    let unit = parse_unit(&unit_str).ok_or_else(|| PresetError::BadFile(format!("unknown unit '{unit_str}' in shift")))?;
+    Ok(Step::Shift { sign, amount, unit })
+}
+
+/// Parse and validate a preset from its JSON text (pure - no I/O, so a test pins it on a literal).
+fn preset_from_json(text: &str) -> Result<Preset, PresetError> {
+    let dto: PresetDto =
+        serde_json::from_str(text).map_err(|e| PresetError::BadFile(format!("bad preset JSON: {e}")))?;
+    // An unknown major schema version is refused, not half-understood (docs/04 section 3.1).
+    if dto.schema != "chronomock.preset/1" {
+        return Err(PresetError::BadFile(format!(
+            "unsupported preset schema '{}' (this build reads chronomock.preset/1)",
+            dto.schema
+        )));
+    }
+    if !dto.parameters.is_empty() {
+        return Err(PresetError::NotBuilt(format!(
+            "preset '{}' takes parameters, which calc does not resolve yet",
+            dto.id
+        )));
+    }
+    let base = base_from(dto.moment.base)?;
+    let steps = dto.moment.steps.into_iter().map(step_from).collect::<Result<Vec<_>, _>>()?;
+    Ok(Preset {
+        id: dto.id,
+        name_en: dto.name.en,
+        explains_en: dto.explains.en,
+        applies_to: dto.applies_to,
+        moment: MomentExpr { base, steps },
+    })
+}
+
+/// Locate a preset file: next to the executable (portable layout), else in ./presets.
+fn find_preset_file(id: &str) -> Result<std::path::PathBuf, PresetError> {
+    let name = format!("{id}.json");
+    let mut candidates: Vec<std::path::PathBuf> = Vec::new();
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            candidates.push(dir.join("presets").join(&name));
+        }
+    }
+    candidates.push(std::path::Path::new("presets").join(&name));
+    candidates
+        .into_iter()
+        .find(|p| p.is_file())
+        .ok_or_else(|| PresetError::NotFound(format!("preset '{id}' not found (looked in <exe>/presets and ./presets)")))
+}
+
+/// Load and validate a preset by id.
+fn load_preset(id: &str) -> Result<Preset, PresetError> {
+    let path = find_preset_file(id)?;
+    let text = std::fs::read_to_string(&path)
+        .map_err(|e| PresetError::BadFile(format!("cannot read {}: {e}", path.display())))?;
+    preset_from_json(&text)
 }
 
 // ---------------------------------------------------------------------------
@@ -2025,7 +2329,7 @@ mod tests {
         let expr = MomentExpr { base: ca.base, steps: ca.steps };
         let now = chrono_core::calc::CivilDateTime { year: 2000, month: 1, day: 1, hour: 0, minute: 0, second: 0 };
         let out = chrono_core::calc::eval(&expr, &EvalContext { now, zone_bias_min: 0, calendar: None }).unwrap();
-        let text = render_calc(&expr, &out, None, &now, None);
+        let text = render_calc(&expr, &out, None, &now, None, None);
         assert!(text.contains("base:    2008-08-04T00:00:00"), "got:\n{text}");
         assert!(text.contains("step 1:  shift -18 years  -> 1990-08-04T00:00:00"), "got:\n{text}");
         assert!(text.contains("step 3:  set time 23:59:59  -> 1990-08-03T23:59:59"), "got:\n{text}");
@@ -2046,7 +2350,7 @@ mod tests {
         let expr = MomentExpr { base: ca.base, steps: ca.steps };
         let now = chrono_core::calc::CivilDateTime { year: 2000, month: 1, day: 1, hour: 0, minute: 0, second: 0 };
         let out = chrono_core::calc::eval(&expr, &EvalContext { now, zone_bias_min: 0, calendar: None }).unwrap();
-        let text = render_calc(&expr, &out, Some(0), &now, None);
+        let text = render_calc(&expr, &out, Some(0), &now, None, None);
         assert!(text.contains("formats:"), "got:\n{text}");
         assert!(text.contains("ISO datetime  1970-01-01T00:00:00+00:00"), "got:\n{text}");
         assert!(text.contains("US            01/01/1970"), "got:\n{text}");
@@ -2062,7 +2366,7 @@ mod tests {
         // A fixed "today" makes days-from-now deterministic: 2026-01-01 is 9 days before 2026-01-10.
         let now = chrono_core::calc::CivilDateTime { year: 2026, month: 1, day: 10, hour: 0, minute: 0, second: 0 };
         let out = chrono_core::calc::eval(&expr, &EvalContext { now, zone_bias_min: 0, calendar: None }).unwrap();
-        let text = render_calc(&expr, &out, Some(0), &now, None);
+        let text = render_calc(&expr, &out, Some(0), &now, None, None);
         assert!(text.contains("metadata:"), "got:\n{text}");
         assert!(text.contains("weekday       Thursday"), "got:\n{text}"); // 2026-01-01 is a Thursday
         assert!(text.contains("ISO week      2026-W01"), "got:\n{text}");
@@ -2147,7 +2451,7 @@ mod tests {
         let expr = MomentExpr { base: ca.base, steps: ca.steps };
         let now = chrono_core::calc::CivilDateTime { year: 2000, month: 1, day: 1, hour: 0, minute: 0, second: 0 };
         let out = chrono_core::calc::eval(&expr, &EvalContext { now, zone_bias_min: 0, calendar: None }).unwrap();
-        let text = render_calc(&expr, &out, Some(0), &now, None);
+        let text = render_calc(&expr, &out, Some(0), &now, None, None);
         assert!(text.contains("what this date tests:"), "got:\n{text}");
         assert!(text.contains("last day of the year (year-end rollover)"), "got:\n{text}");
     }
@@ -2159,7 +2463,7 @@ mod tests {
         let expr = MomentExpr { base: ca.base, steps: ca.steps };
         let now = chrono_core::calc::CivilDateTime { year: 2000, month: 1, day: 1, hour: 0, minute: 0, second: 0 };
         let out = chrono_core::calc::eval(&expr, &EvalContext { now, zone_bias_min: 0, calendar: None }).unwrap();
-        let text = render_calc(&expr, &out, Some(0), &now, None);
+        let text = render_calc(&expr, &out, Some(0), &now, None, None);
         assert!(!text.contains("what this date tests:"), "got:\n{text}");
     }
 
@@ -2171,12 +2475,12 @@ mod tests {
         let now = chrono_core::calc::CivilDateTime { year: 2000, month: 1, day: 1, hour: 0, minute: 0, second: 0 };
         let out = chrono_core::calc::eval(&expr, &EvalContext { now, zone_bias_min: 0, calendar: None }).unwrap();
         let cal = test_calendar();
-        let text = render_calc(&expr, &out, Some(0), &now, Some(&cal));
+        let text = render_calc(&expr, &out, Some(0), &now, Some(&cal), None);
         assert!(text.contains("what this date tests:"), "got:\n{text}");
         assert!(text.contains("weekend - not a business day"), "got:\n{text}");
         assert!(text.contains("public holiday"), "got:\n{text}");
         // Without a calendar the same date names no calendar landmark (and here nothing at all).
-        assert!(!render_calc(&expr, &out, Some(0), &now, None).contains("what this date tests:"));
+        assert!(!render_calc(&expr, &out, Some(0), &now, None, None).contains("what this date tests:"));
     }
 
     #[test]
@@ -2198,7 +2502,7 @@ mod tests {
         let out = chrono_core::calc::eval(&expr, &EvalContext { now, zone_bias_min: bias, calendar: None }).unwrap();
         assert_eq!(out.result().to_iso(), "2026-01-15T15:45:00");
         assert_eq!(out.result_bias, -345);
-        let text = render_calc(&expr, &out, ca.zone_bias_min, &now, None);
+        let text = render_calc(&expr, &out, ca.zone_bias_min, &now, None, None);
         assert!(text.contains("step 1:  zone +05:45"), "got:\n{text}");
         assert!(text.contains("ISO datetime  2026-01-15T15:45:00+05:45"), "got:\n{text}");
         // Same instant as the +02:00 base (12:00+02:00 = 10:00 UTC).
@@ -2240,5 +2544,136 @@ mod tests {
         let ca = parse_calc_args(&["--format".into(), "dd.MM.yyyy".into()]).unwrap();
         assert_eq!(ca.format.as_deref(), Some("dd.MM.yyyy"));
         assert!(parse_calc_args(&["--format".into(), String::new()]).is_err());
+    }
+
+    // --- Presets (Stage 4 slice 16): a named moment expression, docs/04 4.3 -------------------
+
+    /// A `both` preset over `today` with a snap step maps to the canonical moment and carries its
+    /// English framing. `snap` speaks the same token as the `--snap` flag (one grammar).
+    #[test]
+    fn preset_maps_to_canonical_moment_with_framing() {
+        let json = r#"{
+            "schema": "chronomock.preset/1", "id": "month-end",
+            "name": { "en": "Last day of month", "pl": "x" },
+            "explains": { "en": "Month-end close?", "pl": "x" },
+            "applies_to": "both",
+            "moment": { "base": "today", "steps": [ { "snap": "end-of-month" } ] }
+        }"#;
+        let p = preset_from_json(json).unwrap();
+        assert_eq!(p.id, "month-end");
+        assert_eq!(p.name_en, "Last day of month");
+        assert_eq!(p.explains_en, "Month-end close?");
+        assert_eq!(p.applies_to, "both");
+        assert_eq!(p.moment.base, Base::Today);
+        assert_eq!(p.moment.steps, vec![Step::Snap(SnapTarget::EndOfMonth)]);
+    }
+
+    /// An `{ "absolute": ... }` base parses to a fixed civil moment; a malformed one is refused,
+    /// never normalized silently.
+    #[test]
+    fn preset_absolute_base_parses_and_rejects_bad_date() {
+        let ok = r#"{
+            "schema": "chronomock.preset/1", "id": "epoch-zero",
+            "name": { "en": "n" }, "explains": { "en": "e" }, "applies_to": "both",
+            "moment": { "base": { "absolute": "1970-01-01T00:00:00" }, "steps": [] }
+        }"#;
+        let p = preset_from_json(ok).unwrap();
+        assert_eq!(
+            p.moment.base,
+            Base::Absolute(chrono_core::calc::CivilDateTime {
+                year: 1970, month: 1, day: 1, hour: 0, minute: 0, second: 0
+            })
+        );
+        assert!(p.moment.steps.is_empty());
+
+        let bad = ok.replace("1970-01-01T00:00:00", "2025-02-31T00:00:00");
+        assert!(matches!(preset_from_json(&bad), Err(PresetError::BadFile(_))));
+    }
+
+    /// An unknown major schema version is refused (docs/04 3.1), as a usage error.
+    #[test]
+    fn preset_unknown_schema_is_refused() {
+        let json = r#"{
+            "schema": "chronomock.preset/2", "id": "x",
+            "name": { "en": "n" }, "explains": { "en": "e" }, "applies_to": "both",
+            "moment": { "base": "today", "steps": [] }
+        }"#;
+        let e = preset_from_json(json).unwrap_err();
+        assert!(matches!(e, PresetError::BadFile(_)));
+        assert_eq!(e.exit_code(), 1);
+    }
+
+    /// A preset that declares parameters, or a parametric base/shift, is the honest "not built yet"
+    /// (exit 5) - the model allows it but the core cannot resolve it - never computed with the
+    /// parameter dropped.
+    #[test]
+    fn preset_parameters_are_not_built_yet() {
+        let with_params = r#"{
+            "schema": "chronomock.preset/1", "id": "trial",
+            "name": { "en": "n" }, "explains": { "en": "e" }, "applies_to": "both",
+            "parameters": [ { "id": "trial_length", "type": "duration" } ],
+            "moment": { "base": "today", "steps": [] }
+        }"#;
+        let e = preset_from_json(with_params).unwrap_err();
+        assert!(matches!(e, PresetError::NotBuilt(_)));
+        assert_eq!(e.exit_code(), 5);
+
+        let param_base = r#"{
+            "schema": "chronomock.preset/1", "id": "trial",
+            "name": { "en": "n" }, "explains": { "en": "e" }, "applies_to": "both",
+            "moment": { "base": { "parameter": "start_date" }, "steps": [] }
+        }"#;
+        assert!(matches!(preset_from_json(param_base), Err(PresetError::NotBuilt(_))));
+
+        let param_shift = r#"{
+            "schema": "chronomock.preset/1", "id": "trial",
+            "name": { "en": "n" }, "explains": { "en": "e" }, "applies_to": "both",
+            "moment": { "base": "today", "steps": [ { "shift": { "sign": "+", "parameter": "trial_length" } } ] }
+        }"#;
+        assert!(matches!(preset_from_json(param_shift), Err(PresetError::NotBuilt(_))));
+    }
+
+    /// docs/04 4.1: a preset describes TIME, never a TARGET. There is no path field in the model, so
+    /// a smuggled `"path"` is simply ignored - it cannot reach the moment. Structural enforcement.
+    #[test]
+    fn preset_ignores_a_path_field() {
+        let json = r#"{
+            "schema": "chronomock.preset/1", "id": "sneaky", "path": "C:/evil.exe",
+            "name": { "en": "n" }, "explains": { "en": "e" }, "applies_to": "both",
+            "moment": { "base": "today", "steps": [] }
+        }"#;
+        // It loads (unknown fields ignored, docs/04 section 3) and the result has no way to carry a
+        // path - `Preset` has no such field. The moment is exactly the declared one.
+        let p = preset_from_json(json).unwrap();
+        assert_eq!(p.moment.base, Base::Today);
+        assert!(p.moment.steps.is_empty());
+    }
+
+    /// The calculator honours `applies_to`: substitution-only presets are not calculator questions.
+    #[test]
+    fn preset_applies_to_gates_the_calculator() {
+        assert!(preset_targets_calculator("calculator"));
+        assert!(preset_targets_calculator("both"));
+        assert!(!preset_targets_calculator("substitution"));
+    }
+
+    /// `--preset` supplies its own moment, so combining it with a step flag (or --analyze) is a
+    /// usage error; alone it parses.
+    #[test]
+    fn preset_flag_is_exclusive_of_step_flags() {
+        assert!(parse_calc_args(&["--preset".into(), "month-end".into()]).is_ok());
+        assert_eq!(
+            parse_calc_args(&["--preset".into(), "month-end".into()]).unwrap().preset.as_deref(),
+            Some("month-end")
+        );
+        assert!(parse_calc_args(&["--preset".into(), "month-end".into(), "--shift".into(), "+1d".into()]).is_err());
+        assert!(parse_calc_args(&["--shift".into(), "+1d".into(), "--preset".into(), "month-end".into()]).is_err());
+        assert!(parse_calc_args(&["--preset".into(), "x".into(), "--analyze".into(), "2020-01-01".into()]).is_err());
+    }
+
+    /// Bad JSON is a usage-level bad-file error, not a panic.
+    #[test]
+    fn preset_bad_json_is_reported() {
+        assert!(matches!(preset_from_json("{ not json"), Err(PresetError::BadFile(_))));
     }
 }

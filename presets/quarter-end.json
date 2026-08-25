@@ -1,0 +1,19 @@
+{
+  "schema": "chronomock.preset/1",
+  "stability": "unstable",
+  "id": "quarter-end",
+  "name": { "en": "Last day of quarter", "pl": "Ostatni dzień kwartału" },
+  "explains": {
+    "en": "Does quarter-end closing and reporting behave on the last day of the quarter?",
+    "pl": "Czy zamknięcie kwartału i raporty działają w ostatnim dniu kwartału?"
+  },
+  "applies_to": "both",
+  "market": null,
+  "moment": {
+    "base": "today",
+    "steps": [
+      { "snap": "end-of-quarter" }
+    ]
+  },
+  "time_mode": { "multiplier": 1, "scale_duration_clock": false }
+}

@@ -1,0 +1,17 @@
+{
+  "schema": "chronomock.preset/1",
+  "stability": "unstable",
+  "id": "year-2038",
+  "name": { "en": "2038 boundary", "pl": "Granica 2038" },
+  "explains": {
+    "en": "Does the app survive the 32-bit Unix time boundary (2038-01-19T03:14:07Z)?",
+    "pl": "Czy aplikacja przetrwa granicę 32-bitowego czasu uniksowego (2038-01-19T03:14:07Z)?"
+  },
+  "applies_to": "both",
+  "market": null,
+  "moment": {
+    "base": { "absolute": "2038-01-19T03:14:07" },
+    "steps": []
+  },
+  "time_mode": { "multiplier": 1, "scale_duration_clock": false }
+}
