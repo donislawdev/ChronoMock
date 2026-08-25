@@ -155,25 +155,63 @@ pub fn holiday_on<'a>(date: &CivilDateTime, cal: &'a Calendar) -> Option<&'a Hol
         .find(|h| in_force(h, date.year) && holiday_days(&h.rule, date.year) == target)
 }
 
-/// Whether `date` is a business day: not a weekend day, and not the OBSERVED date of any holiday
-/// in force. Observance is what makes a weekday a day off, so a Saturday July 4 shifted to Friday
-/// makes that Friday a non-business day (US federal) while leaving it a business day (US banking).
-pub fn is_business_day(date: &CivilDateTime, cal: &Calendar) -> bool {
-    let target = days(date.year, date.month, date.day);
+/// Whether the day-count `target` is a business day: not a weekend day, and not the OBSERVED date
+/// of any holiday in force. Observance is what makes a weekday a day off, so a Saturday July 4
+/// shifted to Friday makes that Friday a non-business day (US federal) while leaving it a business
+/// day (US banking).
+fn is_business_day_days(target: i64, cal: &Calendar) -> bool {
     if cal.weekend.contains(&weekday(target)) {
         return false;
     }
     // A holiday can be observed in an adjacent year (a Jan 1 that falls on Saturday observes on
     // Dec 31 of the previous year under some rules; a Dec 31 on Sunday observes on Jan 1 of the
-    // next). Check this year and its neighbours so a shifted observance near a boundary counts.
-    for year in [date.year - 1, date.year, date.year + 1] {
+    // next). Check that year and its neighbours so a shifted observance near a boundary counts.
+    let (year, _, _) = crate::civil_from_days(target);
+    for y in [year - 1, year, year + 1] {
         for h in &cal.holidays {
-            if in_force(h, year) && observed_days(holiday_days(&h.rule, year), cal.observed) == target {
+            if in_force(h, y) && observed_days(holiday_days(&h.rule, y), cal.observed) == target {
                 return false;
             }
         }
     }
     true
+}
+
+/// Whether `date` is a business day (see `is_business_day_days`).
+pub fn is_business_day(date: &CivilDateTime, cal: &Calendar) -> bool {
+    is_business_day_days(days(date.year, date.month, date.day), cal)
+}
+
+/// The largest business-day shift the day-by-day walk will take before reporting overflow -
+/// about 4000 years, far beyond any real use, but a hard bound so a pathological `+Nbd` cannot
+/// loop unbounded. Signalled to the caller as `None`.
+pub const MAX_BUSINESS_DAYS: i64 = 1_000_000;
+
+/// `start` advanced by `n` business days (negative = backward), keeping the time of day. The start
+/// day is not counted: the walk steps day by day and counts only business days, so Friday + 1 = the
+/// next Monday. `None` if `|n|` exceeds `MAX_BUSINESS_DAYS`.
+pub fn add_business_days(start: &CivilDateTime, n: i64, cal: &Calendar) -> Option<CivilDateTime> {
+    if n.unsigned_abs() > MAX_BUSINESS_DAYS as u64 {
+        return None;
+    }
+    let mut d = days(start.year, start.month, start.day);
+    let step = if n >= 0 { 1 } else { -1 };
+    let mut remaining = n.abs();
+    while remaining > 0 {
+        d += step;
+        if is_business_day_days(d, cal) {
+            remaining -= 1;
+        }
+    }
+    let (year, month, day) = crate::civil_from_days(d);
+    Some(CivilDateTime {
+        year,
+        month: month as u32,
+        day: day as u32,
+        hour: start.hour,
+        minute: start.minute,
+        second: start.second,
+    })
 }
 
 #[cfg(test)]
@@ -320,5 +358,42 @@ mod tests {
         assert!(!is_business_day(&dt(2025, 12, 24), &cal));
         assert!(holiday_on(&dt(2024, 12, 24), &cal).is_none());
         assert_eq!(holiday_on(&dt(2025, 12, 24), &cal).unwrap().id, "christmas_eve");
+    }
+
+    #[test]
+    fn add_business_days_skips_weekends() {
+        let cal = us(Observed::SunToMon);
+        // 2026-07-10 is a Friday; +1 business day is the next Monday, 2026-07-13.
+        assert_eq!(add_business_days(&dt(2026, 7, 10), 1, &cal).unwrap(), dt(2026, 7, 13));
+        // 2026-07-06 is a Monday; +5 business days is the next Monday.
+        assert_eq!(add_business_days(&dt(2026, 7, 6), 5, &cal).unwrap(), dt(2026, 7, 13));
+    }
+
+    #[test]
+    fn add_business_days_skips_holidays() {
+        let cal = us(Observed::SunToMon);
+        // New Year (Jan 1 2026, a Thursday holiday): 2025-12-31 (Wed) + 1 business day skips it to Jan 2.
+        assert_eq!(add_business_days(&dt(2025, 12, 31), 1, &cal).unwrap(), dt(2026, 1, 2));
+    }
+
+    #[test]
+    fn add_business_days_backward_and_from_a_day_off() {
+        let cal = us(Observed::SunToMon);
+        assert_eq!(add_business_days(&dt(2026, 7, 13), -1, &cal).unwrap(), dt(2026, 7, 10)); // Mon -1 = Fri
+        // Starting on a Saturday, +1 business day is the following Monday (the start is not counted).
+        assert_eq!(add_business_days(&dt(2026, 7, 4), 1, &cal).unwrap(), dt(2026, 7, 6));
+    }
+
+    #[test]
+    fn add_business_days_zero_is_identity_keeping_time() {
+        let cal = us(Observed::SunToMon);
+        let start = CivilDateTime { year: 2026, month: 7, day: 6, hour: 9, minute: 30, second: 0 };
+        assert_eq!(add_business_days(&start, 0, &cal).unwrap(), start);
+    }
+
+    #[test]
+    fn add_business_days_caps_absurd_shifts() {
+        let cal = us(Observed::SunToMon);
+        assert!(add_business_days(&dt(2026, 7, 6), MAX_BUSINESS_DAYS + 1, &cal).is_none());
     }
 }

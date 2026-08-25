@@ -262,7 +262,8 @@ fn resolve_at(raw: &str, tz_bias_min: Option<i32>) -> Result<String, String> {
 fn resolve_relative_at(raw: &str, now: chrono_core::calc::CivilDateTime) -> Result<String, String> {
     let step = parse_shift(raw)?;
     let expr = MomentExpr { base: Base::Now, steps: vec![step] };
-    let outcome = chrono_core::calc::eval(&expr, &EvalContext { now }).map_err(describe_at_error)?;
+    let outcome =
+        chrono_core::calc::eval(&expr, &EvalContext { now, calendar: None }).map_err(describe_at_error)?;
     Ok(outcome.result().to_iso())
 }
 
@@ -789,7 +790,7 @@ fn calc_run(argv: &[String]) -> i32 {
     };
 
     let expr = MomentExpr { base: ca.base, steps: ca.steps };
-    match chrono_core::calc::eval(&expr, &EvalContext { now }) {
+    match chrono_core::calc::eval(&expr, &EvalContext { now, calendar: calendar.as_ref() }) {
         Ok(outcome) => {
             print!("{}", render_calc(&expr, &outcome, ca.zone_bias_min, &now, calendar.as_ref()));
             0
@@ -1863,7 +1864,7 @@ mod tests {
         .unwrap();
         let expr = MomentExpr { base: ca.base, steps: ca.steps };
         let now = chrono_core::calc::CivilDateTime { year: 2000, month: 1, day: 1, hour: 0, minute: 0, second: 0 };
-        let out = chrono_core::calc::eval(&expr, &EvalContext { now }).unwrap();
+        let out = chrono_core::calc::eval(&expr, &EvalContext { now, calendar: None }).unwrap();
         assert_eq!(out.result().to_iso(), "2025-02-28T12:00:00");
     }
 
@@ -1882,7 +1883,7 @@ mod tests {
         .unwrap();
         let expr = MomentExpr { base: ca.base, steps: ca.steps };
         let now = chrono_core::calc::CivilDateTime { year: 2000, month: 1, day: 1, hour: 0, minute: 0, second: 0 };
-        let out = chrono_core::calc::eval(&expr, &EvalContext { now }).unwrap();
+        let out = chrono_core::calc::eval(&expr, &EvalContext { now, calendar: None }).unwrap();
         let text = render_calc(&expr, &out, None, &now, None);
         assert!(text.contains("base:    2008-08-04T00:00:00"), "got:\n{text}");
         assert!(text.contains("step 1:  shift -18 years  -> 1990-08-04T00:00:00"), "got:\n{text}");
@@ -1903,7 +1904,7 @@ mod tests {
         let ca = parse_calc_args(&["--base".into(), "1970-01-01T00:00:00".into()]).unwrap();
         let expr = MomentExpr { base: ca.base, steps: ca.steps };
         let now = chrono_core::calc::CivilDateTime { year: 2000, month: 1, day: 1, hour: 0, minute: 0, second: 0 };
-        let out = chrono_core::calc::eval(&expr, &EvalContext { now }).unwrap();
+        let out = chrono_core::calc::eval(&expr, &EvalContext { now, calendar: None }).unwrap();
         let text = render_calc(&expr, &out, Some(0), &now, None);
         assert!(text.contains("formats:"), "got:\n{text}");
         assert!(text.contains("ISO datetime  1970-01-01T00:00:00+00:00"), "got:\n{text}");
@@ -1919,7 +1920,7 @@ mod tests {
         let expr = MomentExpr { base: ca.base, steps: ca.steps };
         // A fixed "today" makes days-from-now deterministic: 2026-01-01 is 9 days before 2026-01-10.
         let now = chrono_core::calc::CivilDateTime { year: 2026, month: 1, day: 10, hour: 0, minute: 0, second: 0 };
-        let out = chrono_core::calc::eval(&expr, &EvalContext { now }).unwrap();
+        let out = chrono_core::calc::eval(&expr, &EvalContext { now, calendar: None }).unwrap();
         let text = render_calc(&expr, &out, Some(0), &now, None);
         assert!(text.contains("metadata:"), "got:\n{text}");
         assert!(text.contains("weekday       Thursday"), "got:\n{text}"); // 2026-01-01 is a Thursday

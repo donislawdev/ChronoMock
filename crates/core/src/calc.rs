@@ -131,11 +131,14 @@ pub struct MomentExpr {
     pub steps: Vec<Step>,
 }
 
-/// What the evaluator needs from the outside: "real now" as data, so the core
-/// stays pure and a test can pin it (docs/07 section 4).
+/// What the evaluator needs from the outside: "real now" as data, so the core stays pure and a
+/// test can pin it (docs/07 section 4), plus an optional calendar for business-day arithmetic.
+/// `calendar` is `None` on the substitution `--at`/`jump` paths, where `business_days` is then
+/// honestly unsupported.
 #[derive(Debug, Clone, Copy)]
-pub struct EvalContext {
+pub struct EvalContext<'a> {
     pub now: CivilDateTime,
+    pub calendar: Option<&'a crate::calendar::Calendar>,
 }
 
 /// The result of evaluating an expression: the base and the intermediate value
@@ -201,15 +204,20 @@ pub fn eval(expr: &MomentExpr, ctx: &EvalContext) -> Result<EvalOutcome, EvalErr
     let mut cur = base;
     let mut after_each = Vec::with_capacity(expr.steps.len());
     for (i, step) in expr.steps.iter().enumerate() {
-        cur = apply_step(cur, step, i)?;
+        cur = apply_step(cur, step, i, ctx.calendar)?;
         after_each.push(cur);
     }
     Ok(EvalOutcome { base, after_each })
 }
 
-fn apply_step(cur: CivilDateTime, step: &Step, index: usize) -> Result<CivilDateTime, EvalError> {
+fn apply_step(
+    cur: CivilDateTime,
+    step: &Step,
+    index: usize,
+    calendar: Option<&crate::calendar::Calendar>,
+) -> Result<CivilDateTime, EvalError> {
     match step {
-        Step::Shift { sign, amount, unit } => apply_shift(cur, *sign, *amount, *unit, index),
+        Step::Shift { sign, amount, unit } => apply_shift(cur, *sign, *amount, *unit, index, calendar),
         Step::SetTime { hour, minute, second } => {
             if *hour > 23 || *minute > 59 || *second > 59 {
                 return Err(EvalError::BadSetTime { index });
@@ -229,6 +237,7 @@ fn apply_shift(
     amount: i64,
     unit: Unit,
     index: usize,
+    calendar: Option<&crate::calendar::Calendar>,
 ) -> Result<CivilDateTime, EvalError> {
     // The amount is a non-negative magnitude; apply the sign here.
     let signed = match sign {
@@ -248,7 +257,14 @@ fn apply_shift(
         Unit::Years => {
             shift_months(cur, signed.checked_mul(12).ok_or(EvalError::Overflow { index })?, index)
         }
-        Unit::BusinessDays => Err(EvalError::UnitUnsupported { unit: unit.name(), index }),
+        // Business days need a calendar (weekends plus holidays). With one, walk the calendar;
+        // without one (the substitution paths), stay honestly unsupported.
+        Unit::BusinessDays => match calendar {
+            Some(cal) => {
+                crate::calendar::add_business_days(&cur, signed, cal).ok_or(EvalError::Overflow { index })
+            }
+            None => Err(EvalError::UnitUnsupported { unit: unit.name(), index }),
+        },
     }
 }
 
@@ -396,7 +412,8 @@ pub fn fixed_shift_ticks(step: &Step) -> Result<Option<i64>, EvalError> {
 /// resulting instant is reported.
 fn shift_filetime(ft_utc: i64, tz_bias_min: i32, step: &Step) -> Result<i64, EvalError> {
     let civil = filetime_to_civil(ft_utc, tz_bias_min);
-    let shifted = apply_step(civil, step, 0)?;
+    // No calendar on the jump path, so a business-day step stays unsupported here.
+    let shifted = apply_step(civil, step, 0, None)?;
     super::moment_to_filetime_utc(&super::Moment {
         local: shifted.to_iso(),
         tz_bias_min: Some(tz_bias_min),
@@ -577,9 +594,9 @@ mod tests {
         Step::Shift { sign, amount, unit }
     }
 
-    /// Evaluate against a fixed `now` so `today`/`now` bases are deterministic.
+    /// Evaluate against a fixed `now` (no calendar) so `today`/`now` bases are deterministic.
     fn eval_at(expr: &MomentExpr, now: CivilDateTime) -> Result<EvalOutcome, EvalError> {
-        eval(expr, &EvalContext { now })
+        eval(expr, &EvalContext { now, calendar: None })
     }
 
     #[test]
@@ -694,7 +711,8 @@ mod tests {
     }
 
     #[test]
-    fn business_days_unit_is_not_built_yet() {
+    fn business_days_without_a_calendar_is_unsupported() {
+        // No calendar in context (the substitution paths): business_days stays honestly unsupported.
         let expr = MomentExpr {
             base: abs(dt(2026, 1, 1, 0, 0, 0)),
             steps: vec![shift(Sign::Plus, 5, Unit::BusinessDays)],
@@ -703,6 +721,25 @@ mod tests {
             eval_at(&expr, dt(2000, 1, 1, 0, 0, 0)),
             Err(EvalError::UnitUnsupported { unit: "business_days", index: 0 })
         );
+    }
+
+    #[test]
+    fn business_days_with_a_calendar_skips_weekends() {
+        use crate::calendar::{Calendar, Observed};
+        let cal = Calendar {
+            id: "t".into(),
+            country: "US".into(),
+            weekend: vec![0, 6],
+            observed: Observed::None,
+            holidays: vec![],
+        };
+        // 2026-07-10 is a Friday; +1 business day is Monday 2026-07-13, time of day kept.
+        let expr = MomentExpr {
+            base: abs(dt(2026, 7, 10, 9, 0, 0)),
+            steps: vec![shift(Sign::Plus, 1, Unit::BusinessDays)],
+        };
+        let out = eval(&expr, &EvalContext { now: dt(2000, 1, 1, 0, 0, 0), calendar: Some(&cal) }).unwrap();
+        assert_eq!(out.result(), dt(2026, 7, 13, 9, 0, 0));
     }
 
     #[test]
