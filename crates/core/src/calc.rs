@@ -16,7 +16,7 @@
 //! model so the surface is complete, and return the product's honest "not built
 //! yet" vocabulary rather than a silent skip or a faked result (zasady/01 section 2).
 
-use super::{civil_from_days, days_from_civil, parse_civil};
+use super::{civil_from_days, days_from_civil, is_leap, last_day_of_month, parse_civil};
 
 /// A civil date and time - wall-clock fields in the session zone, no UTC, no DST.
 /// This is the running value the evaluator folds steps onto.
@@ -229,16 +229,12 @@ pub enum EvalError {
     BadSetTime { index: usize },
 }
 
-/// Parse a civil date-time in "YYYY-MM-DDTHH:MM:SS" form (a space may replace the
-/// `T`). Reuses the core's shape/range check and additionally rejects a day that
-/// cannot exist in its month (e.g. 2025-02-31), so a bad base is an honest error
-/// rather than a silent normalization to March.
+/// Parse a civil date-time in "YYYY-MM-DDTHH:MM:SS" form (a space may replace the `T`). The core's
+/// `parse_civil` already rejects a day that cannot exist in its month (e.g. 2025-02-31), so this
+/// maps the validated fields to `CivilDateTime` - one validation path shared with the substitution
+/// moment, no silent normalization to March.
 pub fn parse_civil_datetime(s: &str) -> Result<CivilDateTime, String> {
     let (y, mo, d, h, mi, sec) = parse_civil(s)?;
-    let last = last_day_of_month(y, mo) as i64;
-    if d > last {
-        return Err(format!("day {d} out of range for month {mo} in '{s}'"));
-    }
     Ok(CivilDateTime {
         year: y,
         month: mo as u32,
@@ -456,27 +452,6 @@ fn shift_months(cur: CivilDateTime, months: i64, index: usize) -> Result<CivilDa
         minute: cur.minute,
         second: cur.second,
     })
-}
-
-/// Proleptic Gregorian leap-year test.
-fn is_leap(year: i64) -> bool {
-    (year % 4 == 0 && year % 100 != 0) || year % 400 == 0
-}
-
-/// Last valid day of a month (1..=12), 28/29/30/31.
-fn last_day_of_month(year: i64, month: i64) -> u32 {
-    match month {
-        1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
-        4 | 6 | 9 | 11 => 30,
-        2 => {
-            if is_leap(year) {
-                29
-            } else {
-                28
-            }
-        }
-        _ => 0, // parse_civil already rejects a month outside 1..=12 upstream.
-    }
 }
 
 // --- Bridge to the substitution tick world (the relative `jump` path) ---------------
@@ -1359,6 +1334,27 @@ mod tests {
     fn iso_formats_with_zero_padding() {
         assert_eq!(dt(2008, 8, 3, 23, 59, 59).to_iso(), "2008-08-03T23:59:59");
         assert_eq!(dt(2026, 1, 1, 0, 0, 0).to_iso(), "2026-01-01T00:00:00");
+    }
+
+    #[test]
+    fn formats_out_of_filetime_range_keep_civil_drop_instant() {
+        // An extreme but civilly-valid year: the civil formats still render from the fields, while
+        // the instant-based ones honestly become None ("(out of range)") - never a wrapped number.
+        let f = formats(&dt(40000, 1, 1, 0, 0, 0), 0);
+        assert_eq!(f.iso_date, "40000-01-01");
+        assert_eq!(f.us, "01/01/40000");
+        assert!(f.filetime.is_none());
+        assert!(f.epoch_seconds.is_none());
+        assert!(f.epoch_millis.is_none());
+        assert!(f.rfc1123.is_none());
+    }
+
+    #[test]
+    fn significance_out_of_range_year_does_not_panic() {
+        // The instant markers (epoch, 2038) are skipped when the year has no FILETIME instant;
+        // the calendar-independent civil landmarks still work, with no panic.
+        let s = sig(&dt(40000, 1, 1, 0, 0, 0), 0);
+        assert!(s.contains(&Significance::StartOfYear));
     }
 
     // --- step_target: the substitution jump bridge ---------------------------

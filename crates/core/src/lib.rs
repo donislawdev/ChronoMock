@@ -164,6 +164,29 @@ fn days_from_civil(y: i64, m: i64, d: i64) -> i64 {
     era * 146097 + doe - 719468
 }
 
+/// Proleptic Gregorian leap-year test. A shared civil primitive next to `days_from_civil`;
+/// the `calc` submodule reuses it, so the leap rule lives in exactly one place (rule 6).
+fn is_leap(year: i64) -> bool {
+    (year % 4 == 0 && year % 100 != 0) || year % 400 == 0
+}
+
+/// Last valid day of a month (1..=12): 28/29/30/31. Returns 0 for a month outside 1..=12,
+/// which every caller rejects upstream before using the result.
+fn last_day_of_month(year: i64, month: i64) -> u32 {
+    match month {
+        1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
+        4 | 6 | 9 | 11 => 30,
+        2 => {
+            if is_leap(year) {
+                29
+            } else {
+                28
+            }
+        }
+        _ => 0,
+    }
+}
+
 /// Parse "YYYY-MM-DDTHH:MM:SS" (a space may replace the `T`). Strict on shape and
 /// on field ranges; deeper calendar validation comes later.
 fn parse_civil(local: &str) -> Result<(i64, i64, i64, i64, i64, i64), String> {
@@ -180,8 +203,15 @@ fn parse_civil(local: &str) -> Result<(i64, i64, i64, i64, i64, i64), String> {
     };
     let (year, month, day) = (p(d[0], "year")?, p(d[1], "month")?, p(d[2], "day")?);
     let (hour, min, sec) = (p(t[0], "hour")?, p(t[1], "minute")?, p(t[2], "second")?);
-    if !(1..=12).contains(&month) || !(1..=31).contains(&day) {
-        return Err(format!("month/day out of range in '{local}'"));
+    if !(1..=12).contains(&month) {
+        return Err(format!("month out of range in '{local}'"));
+    }
+    // Reject a day that cannot exist in its month (e.g. 2026-02-31): BOTH the substitution moment
+    // and the calculator refuse an impossible date here rather than let `days_from_civil` silently
+    // roll it into the next month (untouchable rule 4/6 - never a silent wrong moment).
+    let last = last_day_of_month(year, month) as i64;
+    if !(1..=last).contains(&day) {
+        return Err(format!("day {day} out of range for month {month} in '{local}'"));
     }
     if !(0..=23).contains(&hour) || !(0..=59).contains(&min) || !(0..=60).contains(&sec) {
         return Err(format!("time out of range in '{local}'"));
@@ -194,10 +224,25 @@ pub fn moment_to_filetime_utc(moment: &Moment) -> Result<i64, String> {
     let (y, mo, d, h, mi, s) = parse_civil(&moment.local)?;
     // Days between the FILETIME epoch (1601-01-01) and the Unix epoch (1970-01-01).
     const DAYS_1601_TO_1970: i64 = 134_774;
-    let local_secs = days_from_civil(y, mo, d) * 86_400 + h * 3_600 + mi * 60 + s;
+    // `days_from_civil` does unchecked internal i64 math; keep its input within a proleptic
+    // Gregorian year band far inside that overflow limit. FILETIME itself saturates i64 near year
+    // 30828 - well inside this band - so the checked chain below is what actually rejects an
+    // out-of-FILETIME-range moment; this guard only keeps the civil math sound for an absurd year,
+    // so such a moment is an honest Err, never a panic (debug) or a wrapped number (release).
+    if !(-262_143..=262_143).contains(&y) {
+        return Err(format!("year {y} in moment '{}' is out of range", moment.local));
+    }
     let bias = moment.tz_bias_min.unwrap_or(0) as i64;
-    let utc_secs = local_secs + bias * 60; // UTC = local + bias
-    Ok((utc_secs + DAYS_1601_TO_1970 * 86_400) * 10_000_000)
+    // h/mi/s are range-checked in parse_civil, so this sum is exact (max 86_400) - no overflow.
+    let tod = h * 3_600 + mi * 60 + s;
+    let out_of_range = || format!("moment '{}' is out of the representable FILETIME range", moment.local);
+    days_from_civil(y, mo, d)
+        .checked_mul(86_400)
+        .and_then(|day_secs| day_secs.checked_add(tod))
+        .and_then(|local_secs| local_secs.checked_add(bias * 60)) // UTC = local + bias
+        .and_then(|utc_secs| utc_secs.checked_add(DAYS_1601_TO_1970 * 86_400))
+        .and_then(|secs_1601| secs_1601.checked_mul(10_000_000))
+        .ok_or_else(out_of_range)
 }
 
 /// Civil date `(year, month, day)` from a day count since 1970-01-01 (Howard
@@ -285,6 +330,36 @@ mod tests {
     fn bad_moment_is_rejected() {
         assert!(moment_to_filetime_utc(&moment("not-a-date", None)).is_err());
         assert!(moment_to_filetime_utc(&moment("2038-13-01T00:00:00", None)).is_err());
+    }
+
+    #[test]
+    fn impossible_day_is_rejected_on_the_substitution_path() {
+        // The substitution moment must refuse an impossible day just like the calculator does,
+        // instead of silently rolling it into the next month (rule 4/6).
+        assert!(moment_to_filetime_utc(&moment("2026-02-31T12:00:00", Some(0))).is_err()); // Feb has 28
+        assert!(moment_to_filetime_utc(&moment("2025-02-29T00:00:00", Some(0))).is_err()); // 2025 not leap
+        assert!(moment_to_filetime_utc(&moment("2026-04-31T00:00:00", Some(0))).is_err()); // Apr has 30
+        assert!(moment_to_filetime_utc(&moment("2026-01-00T00:00:00", Some(0))).is_err()); // day 0
+        // The valid leap day still converts.
+        assert!(moment_to_filetime_utc(&moment("2024-02-29T00:00:00", Some(0))).is_ok());
+    }
+
+    #[test]
+    fn out_of_filetime_range_year_is_an_error_not_a_wrap() {
+        // An extreme but syntactically valid year overflows the FILETIME tick math. It must be a
+        // reported Err (so callers show "(out of range)"), never a panic (debug) or a wrapped,
+        // plausible-but-false number (release) - the promise "never a bad number".
+        assert!(moment_to_filetime_utc(&moment("40000-01-01T00:00:00", Some(0))).is_err());
+        // An absurd year would overflow days_from_civil's own internal math; the year guard rejects
+        // it before that, so there is no panic even here.
+        assert!(moment_to_filetime_utc(&moment("9223372036854775807-01-01T00:00:00", Some(0))).is_err());
+    }
+
+    #[test]
+    fn pre_1601_year_still_converts() {
+        // The fix must NOT regress pre-FILETIME-epoch dates: a year before 1601 yields a (negative)
+        // instant with no overflow, so it stays Ok and the calculator can still show its epoch.
+        assert!(moment_to_filetime_utc(&moment("1000-06-15T00:00:00", Some(0))).is_ok());
     }
 
     #[test]
