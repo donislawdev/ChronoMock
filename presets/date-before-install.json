@@ -1,0 +1,22 @@
+{
+  "schema": "chronomock.preset/1",
+  "stability": "unstable",
+  "id": "date-before-install",
+  "name": { "en": "Date before installation", "pl": "Data sprzed instalacji" },
+  "explains": {
+    "en": "Does the app behave when the clock is set before its own installation date?",
+    "pl": "Czy aplikacja zachowuje się poprawnie, gdy zegar jest ustawiony przed datą jej instalacji?"
+  },
+  "applies_to": "both",
+  "market": null,
+  "parameters": [
+    { "id": "install_date", "type": "date", "default_hint": "target_file_creation" }
+  ],
+  "moment": {
+    "base": { "parameter": "install_date" },
+    "steps": [
+      { "shift": { "sign": "-", "amount": 1, "unit": "days" } }
+    ]
+  },
+  "time_mode": { "multiplier": 1, "scale_duration_clock": false }
+}
