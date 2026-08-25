@@ -774,7 +774,7 @@ fn calc_run(argv: &[String]) -> i32 {
     let expr = MomentExpr { base: ca.base, steps: ca.steps };
     match chrono_core::calc::eval(&expr, &EvalContext { now }) {
         Ok(outcome) => {
-            print!("{}", render_calc(&expr, &outcome, ca.zone_bias_min));
+            print!("{}", render_calc(&expr, &outcome, ca.zone_bias_min, &now));
             0
         }
         Err(e) => {
@@ -927,7 +927,12 @@ fn describe_calc_error(e: &EvalError) -> String {
 
 /// Render a calc result: the base, the intermediate value after each step, and the
 /// final moment (7.3 - the user sees where they went wrong, not just the final number).
-fn render_calc(expr: &MomentExpr, outcome: &chrono_core::calc::EvalOutcome, zone_bias_min: Option<i32>) -> String {
+fn render_calc(
+    expr: &MomentExpr,
+    outcome: &chrono_core::calc::EvalOutcome,
+    zone_bias_min: Option<i32>,
+    now: &chrono_core::calc::CivilDateTime,
+) -> String {
     let zone = zone_bias_min.map(format_bias).unwrap_or_else(|| "UTC".into());
     let mut out = String::from("Chrono Mock - date calculator\n");
     match &expr.base {
@@ -940,6 +945,28 @@ fn render_calc(expr: &MomentExpr, outcome: &chrono_core::calc::EvalOutcome, zone
     }
     out.push_str(&format!("  result:  {}\n", outcome.result().to_iso()));
     out.push_str(&render_formats(&outcome.result(), zone_bias_min.unwrap_or(0)));
+    out.push_str(&render_metadata(&outcome.result(), now));
+    out
+}
+
+/// Render the calendar-independent metadata for the result (7.3): weekday, ISO and US week
+/// numbers side by side (they are different numbers), day of year, quarter, leap year, and
+/// the signed day distance from today. Business-day and holiday fields arrive with calendars.
+fn render_metadata(civil: &chrono_core::calc::CivilDateTime, now: &chrono_core::calc::CivilDateTime) -> String {
+    let m = chrono_core::calc::metadata(civil, now);
+    let days = match m.days_from_today {
+        0 => "today".to_string(),
+        n if n > 0 => format!("+{n} days"),
+        n => format!("{n} days"),
+    };
+    let mut out = String::from("  metadata:\n");
+    out.push_str(&format!("    weekday       {}\n", m.weekday));
+    out.push_str(&format!("    ISO week      {:04}-W{:02}\n", m.iso_week_year, m.iso_week));
+    out.push_str(&format!("    US week       {}\n", m.us_week));
+    out.push_str(&format!("    day of year   {}\n", m.day_of_year));
+    out.push_str(&format!("    quarter       Q{}\n", m.quarter));
+    out.push_str(&format!("    leap year     {}\n", if m.is_leap_year { "yes" } else { "no" }));
+    out.push_str(&format!("    days from now {days}\n"));
     out
 }
 
@@ -1684,7 +1711,7 @@ mod tests {
         let expr = MomentExpr { base: ca.base, steps: ca.steps };
         let now = chrono_core::calc::CivilDateTime { year: 2000, month: 1, day: 1, hour: 0, minute: 0, second: 0 };
         let out = chrono_core::calc::eval(&expr, &EvalContext { now }).unwrap();
-        let text = render_calc(&expr, &out, None);
+        let text = render_calc(&expr, &out, None, &now);
         assert!(text.contains("base:    2008-08-04T00:00:00"), "got:\n{text}");
         assert!(text.contains("step 1:  shift -18 years  -> 1990-08-04T00:00:00"), "got:\n{text}");
         assert!(text.contains("step 3:  set time 23:59:59  -> 1990-08-03T23:59:59"), "got:\n{text}");
@@ -1705,12 +1732,28 @@ mod tests {
         let expr = MomentExpr { base: ca.base, steps: ca.steps };
         let now = chrono_core::calc::CivilDateTime { year: 2000, month: 1, day: 1, hour: 0, minute: 0, second: 0 };
         let out = chrono_core::calc::eval(&expr, &EvalContext { now }).unwrap();
-        let text = render_calc(&expr, &out, Some(0));
+        let text = render_calc(&expr, &out, Some(0), &now);
         assert!(text.contains("formats:"), "got:\n{text}");
         assert!(text.contains("ISO datetime  1970-01-01T00:00:00+00:00"), "got:\n{text}");
         assert!(text.contains("US            01/01/1970"), "got:\n{text}");
         assert!(text.contains("epoch (s)     0"), "got:\n{text}");
         assert!(text.contains("FILETIME      116444736000000000"), "got:\n{text}");
         assert!(text.contains("RFC 1123      Thu, 01 Jan 1970 00:00:00 GMT"), "got:\n{text}");
+    }
+
+    #[test]
+    fn render_calc_includes_the_metadata_block() {
+        let ca = parse_calc_args(&["--base".into(), "2026-01-01T00:00:00".into()]).unwrap();
+        let expr = MomentExpr { base: ca.base, steps: ca.steps };
+        // A fixed "today" makes days-from-now deterministic: 2026-01-01 is 9 days before 2026-01-10.
+        let now = chrono_core::calc::CivilDateTime { year: 2026, month: 1, day: 10, hour: 0, minute: 0, second: 0 };
+        let out = chrono_core::calc::eval(&expr, &EvalContext { now }).unwrap();
+        let text = render_calc(&expr, &out, Some(0), &now);
+        assert!(text.contains("metadata:"), "got:\n{text}");
+        assert!(text.contains("weekday       Thursday"), "got:\n{text}"); // 2026-01-01 is a Thursday
+        assert!(text.contains("ISO week      2026-W01"), "got:\n{text}");
+        assert!(text.contains("US week       1"), "got:\n{text}");
+        assert!(text.contains("quarter       Q1"), "got:\n{text}");
+        assert!(text.contains("days from now -9 days"), "got:\n{text}");
     }
 }

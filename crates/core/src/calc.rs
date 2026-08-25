@@ -480,6 +480,87 @@ pub fn formats(civil: &CivilDateTime, tz_bias_min: i32) -> Formats {
     Formats { iso_date, iso_datetime, us, pl, rfc1123, epoch_seconds, epoch_millis, filetime }
 }
 
+// --- Metadata (the calculator's info block, 7.3 - calendar-independent fields) --------
+
+const DOW_FULL: [&str; 7] =
+    ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]; // 0 = Sunday
+
+/// Day of the year, 1..=366.
+fn day_of_year(civil: &CivilDateTime) -> i64 {
+    days_from_civil(civil.year, civil.month as i64, civil.day as i64)
+        - days_from_civil(civil.year, 1, 1)
+        + 1
+}
+
+/// ISO 8601 weekday: 1 = Monday .. 7 = Sunday.
+fn iso_weekday(civil: &CivilDateTime) -> i64 {
+    match day_of_week(civil) {
+        0 => 7, // Sunday
+        d => d as i64,
+    }
+}
+
+/// Whether an ISO week-year has 53 weeks: its Jan 1 is a Thursday, or it is a leap year
+/// whose Jan 1 is a Wednesday.
+fn is_long_iso_year(year: i64) -> bool {
+    let jan1 = day_of_week(&CivilDateTime { year, month: 1, day: 1, hour: 0, minute: 0, second: 0 });
+    jan1 == 4 || (is_leap(year) && jan1 == 3)
+}
+
+/// ISO 8601 week: (week-numbering year, week 1..=53). The week-year can differ from the
+/// calendar year at the boundaries (2005-01-01 is 2004-W53; 2019-12-30 is 2020-W01).
+fn iso_week(civil: &CivilDateTime) -> (i64, u32) {
+    let week = (day_of_year(civil) - iso_weekday(civil) + 10) / 7;
+    if week < 1 {
+        return (civil.year - 1, if is_long_iso_year(civil.year - 1) { 53 } else { 52 });
+    }
+    if week > 52 && !is_long_iso_year(civil.year) {
+        return (civil.year + 1, 1);
+    }
+    (civil.year, week as u32)
+}
+
+/// US week number: weeks start Sunday and week 1 contains January 1 (docs/02 section 7).
+/// A different number from the ISO week, on purpose - both are shown side by side (7.3).
+fn us_week(civil: &CivilDateTime) -> u32 {
+    let jan1 = days_from_civil(civil.year, 1, 1);
+    let jan1_dow = (jan1 + 4).rem_euclid(7); // 0 = Sunday, same basis as day_of_week
+    let week1_sunday = jan1 - jan1_dow; // the Sunday that starts week 1
+    let days = days_from_civil(civil.year, civil.month as i64, civil.day as i64);
+    ((days - week1_sunday) / 7 + 1) as u32
+}
+
+/// The calendar-independent metadata for a result (7.3). Calendar-dependent fields
+/// (business day, holiday) arrive with the calendar catalogue.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Metadata {
+    pub weekday: &'static str,
+    pub iso_week_year: i64,
+    pub iso_week: u32,
+    pub us_week: u32,
+    pub day_of_year: u32,
+    pub quarter: u32,
+    pub is_leap_year: bool,
+    /// Whole days from `today` to this date (date only, ignoring time of day). Signed.
+    pub days_from_today: i64,
+}
+
+/// Compute the metadata for `civil`, with `today` supplied as data (the core stays pure).
+pub fn metadata(civil: &CivilDateTime, today: &CivilDateTime) -> Metadata {
+    let (iso_week_year, iso_week) = iso_week(civil);
+    Metadata {
+        weekday: DOW_FULL[day_of_week(civil)],
+        iso_week_year,
+        iso_week,
+        us_week: us_week(civil),
+        day_of_year: day_of_year(civil) as u32,
+        quarter: (civil.month - 1) / 3 + 1,
+        is_leap_year: is_leap(civil.year),
+        days_from_today: days_from_civil(civil.year, civil.month as i64, civil.day as i64)
+            - days_from_civil(today.year, today.month as i64, today.day as i64),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -791,5 +872,51 @@ mod tests {
             formats(&dt(2000, 1, 1, 0, 0, 0), 0).rfc1123.as_deref(),
             Some("Sat, 01 Jan 2000 00:00:00 GMT")
         );
+    }
+
+    // --- metadata ------------------------------------------------------------
+
+    #[test]
+    fn metadata_iso_week_handles_year_boundaries() {
+        let t = dt(2000, 1, 1, 0, 0, 0);
+        let iso = |y, m, d| {
+            let x = metadata(&dt(y, m, d, 0, 0, 0), &t);
+            (x.iso_week_year, x.iso_week)
+        };
+        assert_eq!(iso(2026, 1, 1), (2026, 1)); // Thursday -> W01
+        assert_eq!(iso(2005, 1, 1), (2004, 53)); // belongs to the previous ISO year
+        assert_eq!(iso(2019, 12, 30), (2020, 1)); // belongs to the next ISO year
+        assert_eq!(iso(2020, 12, 31), (2020, 53)); // a long ISO year
+    }
+
+    #[test]
+    fn metadata_us_week_starts_sunday_and_week1_has_jan1() {
+        let t = dt(2000, 1, 1, 0, 0, 0);
+        assert_eq!(metadata(&dt(2026, 1, 1, 0, 0, 0), &t).us_week, 1); // Thu Jan 1 -> week 1
+        assert_eq!(metadata(&dt(2026, 1, 3, 0, 0, 0), &t).us_week, 1); // Sat, still week 1
+        assert_eq!(metadata(&dt(2026, 1, 4, 0, 0, 0), &t).us_week, 2); // Sunday starts week 2
+    }
+
+    #[test]
+    fn metadata_quarter_day_of_year_leap_and_weekday() {
+        let t = dt(2000, 1, 1, 0, 0, 0);
+        let m = metadata(&dt(2024, 2, 29, 0, 0, 0), &t);
+        assert_eq!(m.weekday, "Thursday"); // 2024-02-29 was a Thursday
+        assert_eq!(m.quarter, 1);
+        assert_eq!(m.day_of_year, 60); // 31 (Jan) + 29
+        assert!(m.is_leap_year);
+        assert_eq!(metadata(&dt(2024, 12, 31, 0, 0, 0), &t).day_of_year, 366);
+        assert_eq!(metadata(&dt(2025, 12, 31, 0, 0, 0), &t).day_of_year, 365);
+        assert_eq!(metadata(&dt(2025, 7, 1, 0, 0, 0), &t).quarter, 3);
+        assert!(!metadata(&dt(1900, 6, 1, 0, 0, 0), &t).is_leap_year); // century, not a leap year
+        assert!(metadata(&dt(2000, 6, 1, 0, 0, 0), &t).is_leap_year); // divisible by 400
+    }
+
+    #[test]
+    fn metadata_days_from_today_is_signed_date_difference() {
+        let today = dt(2026, 1, 1, 0, 0, 0);
+        assert_eq!(metadata(&dt(2026, 1, 10, 23, 0, 0), &today).days_from_today, 9); // time ignored
+        assert_eq!(metadata(&dt(2025, 12, 30, 0, 0, 0), &today).days_from_today, -2);
+        assert_eq!(metadata(&today, &today).days_from_today, 0);
     }
 }
