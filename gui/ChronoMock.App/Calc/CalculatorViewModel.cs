@@ -273,6 +273,9 @@ public sealed class CalculatorViewModel : ObservableObject
     private bool _hasError;
     private bool _hasResult;
     private bool _hasSignificance;
+    private bool _canUseInSubstitution;
+    private string _resultMomentLocal = string.Empty;
+    private int _resultZoneBias;
     private bool _computedOnce;
     private CancellationTokenSource? _cts;
 
@@ -468,6 +471,27 @@ public sealed class CalculatorViewModel : ObservableObject
     public bool HasError { get => _hasError; private set => Set(ref _hasError, value); }
     public bool HasResult { get => _hasResult; private set => Set(ref _hasResult, value); }
     public bool HasSignificance { get => _hasSignificance; private set => Set(ref _hasSignificance, value); }
+
+    /// <summary>Whether the current result can go to the substitution panel: a valid moment whose zone the
+    /// substitution offers, so it transfers with its zone and never as a bare local date (rule 2).</summary>
+    public bool CanUseInSubstitution { get => _canUseInSubstitution; private set => Set(ref _canUseInSubstitution, value); }
+
+    /// <summary>Raised when the user sends the result to substitution: the local moment and its zone bias.
+    /// The host window (which knows both modules) fills the substitution panel and switches to it.</summary>
+    public event Action<string, int>? UseInSubstitutionRequested;
+
+    /// <summary>Whether a zone bias is one the substitution panel offers (so a moment can transfer faithfully).</summary>
+    public static bool CanTransferZone(int biasMinutes)
+        => ChronoMock.App.TimeInputs.Zones.Any(zone => zone.BiasMinutes == biasMinutes);
+
+    /// <summary>Send the current result to the substitution panel (7.3, 6.3): the moment with its zone.</summary>
+    public void RequestUseInSubstitution()
+    {
+        if (CanUseInSubstitution)
+        {
+            UseInSubstitutionRequested?.Invoke(_resultMomentLocal, _resultZoneBias);
+        }
+    }
 
     /// <summary>Add a step (defaults to shift) and wire its edits to a recompute.</summary>
     public void AddStep()
@@ -830,6 +854,7 @@ public sealed class CalculatorViewModel : ObservableObject
             {
                 Error = e.Message;
                 HasError = true;
+                CanUseInSubstitution = false;
             }
         }
     }
@@ -840,6 +865,7 @@ public sealed class CalculatorViewModel : ObservableObject
         {
             Error = "calc returned no moment";
             HasError = true;
+            CanUseInSubstitution = false;
             return;
         }
 
@@ -873,6 +899,11 @@ public sealed class CalculatorViewModel : ObservableObject
 
         MetadataLine = BuildMetadataLine(moment.Metadata);
         HasResult = true;
+
+        // Remember the moment with its zone for the bridge to substitution (rule 2 - never a bare date).
+        _resultMomentLocal = moment.Iso;
+        _resultZoneBias = moment.ZoneBiasMin;
+        CanUseInSubstitution = CanTransferZone(moment.ZoneBiasMin);
     }
 
     private static string BuildMetadataLine(CalcMetadata m)

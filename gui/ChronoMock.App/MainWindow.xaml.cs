@@ -27,6 +27,9 @@ public partial class MainWindow : FluentWindow
         DataContext = _session;
         CalculatorContainer.DataContext = _calculator;
 
+        // Bridge: the calculator asks to send its result to substitution; this window fills the panel.
+        _calculator.UseInSubstitutionRequested += OnUseInSubstitution;
+
         // Dev convenience: pre-select the bundled sample target so the panel is usable at once. The user
         // can pick any executable instead - this default is dev scaffolding (DemoSession.DefaultTargetPath).
         var sample = SessionPlan.DefaultTargetPath();
@@ -57,6 +60,21 @@ public partial class MainWindow : FluentWindow
             // Compute on first reveal (not at construction, so building the window in a test spawns nothing).
             _ = _calculator.EnsureComputedAsync();
         }
+    }
+
+    // Bridge from the calculator (chrono-mock 6.3): fill the substitution setup with the moment and its
+    // zone (rule 2 - the moment travels with its zone, never a bare date), then show the substitution
+    // module. Only when idle - a running session's moment is left alone.
+    private void OnUseInSubstitution(string momentLocal, int zoneBias)
+    {
+        if (_session.IsIdle)
+        {
+            _session.MomentText = momentLocal;
+            _session.SelectedZone =
+                _session.Zones.FirstOrDefault(z => z.BiasMinutes == zoneBias) ?? _session.SelectedZone;
+        }
+
+        ModeSubstitution.IsChecked = true; // OnModeChanged swaps the visible module
     }
 
     private void OnChooseTargetClick(object sender, RoutedEventArgs e)

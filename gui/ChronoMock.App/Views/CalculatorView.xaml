@@ -329,7 +329,8 @@
                        FontSize="{StaticResource FontSizeCaption}" Foreground="{DynamicResource BrushTextPrimary}" />
 
             <Button Content="{DynamicResource calc.use_in_substitution}" Margin="{StaticResource SpaceMd}"
-                    HorizontalAlignment="Stretch" IsEnabled="False" />
+                    HorizontalAlignment="Stretch" Click="OnUseInSubstitutionClick"
+                    IsEnabled="{Binding CanUseInSubstitution}" />
           </StackPanel>
         </Border>
       </Grid>

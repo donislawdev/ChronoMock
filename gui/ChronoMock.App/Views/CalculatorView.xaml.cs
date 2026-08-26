@@ -39,6 +39,10 @@ public partial class CalculatorView : UserControl
         }
     }
 
+    // Send the result to the substitution panel (6.3): the view model raises an event the host window
+    // handles (it knows both modules), so the moment travels with its zone (rule 2).
+    private void OnUseInSubstitutionClick(object sender, RoutedEventArgs e) => ViewModel?.RequestUseInSubstitution();
+
     // Copy one output format to the clipboard. A clipboard held by another process is ignored for a
     // convenience copy (the value stays on screen to copy by hand).
     private void OnCopyFormatClick(object sender, RoutedEventArgs e)
