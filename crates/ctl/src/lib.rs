@@ -5,8 +5,10 @@
 //! Two sections, separated by lifetime and writer (per-pid coverage):
 //!
 //! - `Ctl` in `Local\ChronoCtl` is the SESSION-WIDE control block. The ANCHOR fields
-//!   (`a_fake`, `a_real`, `multiplier`) are written by the mechanism under a seqlock
-//!   and read by every hook (parent and children share ONE fake clock - ADR-3). The
+//!   (`a_fake`, `a_real`, `multiplier`, and the duration anchor `dur_tick_c0` / `dur_quit_c0` /
+//!   `dur_q0`) are written by the mechanism under a seqlock and read by every hook (parent and
+//!   children share ONE fake clock - ADR-3). The duration anchor rides the same seqlock as the
+//!   wall anchor, so a hook reads the multiplier and the duration base as one snapshot. The
 //!   stable config fields (`tz_bias`, `scale_dur`, `core_pid`) are written once before
 //!   the target exists. The PID REGISTRY (`pid_count`, `pids`) lets each hooked process
 //!   publish its own PID so the mechanism can find its per-process coverage section.
@@ -335,6 +337,19 @@ pub struct Ctl {
     pub a_real: i64,
     /// Time multiplier. Stage 3 uses 1 (offset only).
     pub multiplier: i64,
+    /// Duration-axis anchor (opt-in `scale_duration`), IN THE SAME SEQLOCK as the wall anchor so a
+    /// hook reads the multiplier and the duration base as one consistent snapshot - a torn read that
+    /// mixed the new multiplier with the old base would dip the axis (untouchable rule 3). The mechanism
+    /// REBASES it on every `set_multiplier` (freezes the axis at the switch, then re-anchors), so a
+    /// speed change never rewinds it, and leaves it untouched on `jump` (a wall jump must not move the
+    /// duration axis). Fake `GetTickCount64` base, in milliseconds (also feeds `GetTickCount` 32-bit).
+    pub dur_tick_c0: u64,
+    /// Fake `QueryUnbiasedInterruptTime` base, in 100 ns units (full resolution, kept separate from the
+    /// millisecond tick base so QUIT does not lose precision across rebases).
+    pub dur_quit_c0: i64,
+    /// Real QUIT base (100 ns) the duration elapsed is measured from. Distinct from `a_real`: a `jump`
+    /// re-anchors `a_real` but must leave `dur_q0` (and so the whole duration axis) alone.
+    pub dur_q0: i64,
     /// 1 = also scale the duration axis by the multiplier (the scale_duration opt-in).
     /// Stable per session: written once by the mechanism, read once by the hook.
     pub scale_dur: u32,
@@ -374,8 +389,10 @@ pub const fn cov_size() -> usize {
     core::mem::size_of::<Cov>()
 }
 
-/// Write the anchor triple under the seqlock. Caller guarantees `p` is a valid,
-/// aligned pointer into the shared section.
+/// Write the WALL anchor triple under the seqlock, leaving the duration anchor untouched. This is the
+/// `jump` writer: a wall jump moves the wall clock but must NOT move the duration axis (untouchable
+/// rule 3), so the `dur_*` fields keep their prior values. `set_multiplier` and the initial anchor use
+/// `write_anchor_full` instead. Caller guarantees `p` is a valid, aligned pointer into the shared section.
 ///
 /// # Safety
 /// `p` must point to a live, correctly aligned `Ctl`.
@@ -392,6 +409,36 @@ pub unsafe fn write_anchor(p: *mut Ctl, a_fake: i64, a_real: i64, multiplier: i6
     write_volatile(addr_of_mut!((*p).a_fake), a_fake);
     write_volatile(addr_of_mut!((*p).a_real), a_real);
     write_volatile(addr_of_mut!((*p).multiplier), multiplier);
+    fence(Ordering::Release);
+    write_volatile(sp, s.wrapping_add(1)); // even - write done
+}
+
+/// Write the FULL anchor (wall triple plus the duration anchor) under the seqlock, in one transaction
+/// so a reader never sees a new multiplier against an old duration base. This is the `prepare` (initial)
+/// and `set_multiplier` (rebase) writer; `jump` uses `write_anchor` to leave the duration axis alone.
+///
+/// # Safety
+/// `p` must point to a live, correctly aligned `Ctl`.
+#[allow(clippy::too_many_arguments)]
+pub unsafe fn write_anchor_full(
+    p: *mut Ctl,
+    a_fake: i64,
+    a_real: i64,
+    multiplier: i64,
+    dur_tick_c0: u64,
+    dur_quit_c0: i64,
+    dur_q0: i64,
+) {
+    let sp = addr_of_mut!((*p).seq);
+    let s = read_volatile(sp).wrapping_add(1);
+    write_volatile(sp, s); // odd - write in progress
+    fence(Ordering::Release);
+    write_volatile(addr_of_mut!((*p).a_fake), a_fake);
+    write_volatile(addr_of_mut!((*p).a_real), a_real);
+    write_volatile(addr_of_mut!((*p).multiplier), multiplier);
+    write_volatile(addr_of_mut!((*p).dur_tick_c0), dur_tick_c0);
+    write_volatile(addr_of_mut!((*p).dur_quit_c0), dur_quit_c0);
+    write_volatile(addr_of_mut!((*p).dur_q0), dur_q0);
     fence(Ordering::Release);
     write_volatile(sp, s.wrapping_add(1)); // even - write done
 }
@@ -419,6 +466,66 @@ pub unsafe fn read_anchor(p: *const Ctl) -> (i64, i64, i64) {
             return (a_fake, a_real, multiplier);
         }
     }
+}
+
+/// Read the duration anchor plus the multiplier under the seqlock, as ONE consistent snapshot, retrying
+/// on a concurrent write. Returns `(dur_tick_c0, dur_quit_c0, dur_q0, multiplier)`. The duration detours
+/// (`GetTickCount64` / `GetTickCount` / `QueryUnbiasedInterruptTime`) call this so the multiplier they
+/// scale by and the base they scale from can never tear apart across a `set_multiplier` (untouchable
+/// rule 3 - a mismatched pair would dip the monotonic axis).
+///
+/// # Safety
+/// `p` must point to a live, correctly aligned `Ctl`.
+pub unsafe fn read_dur(p: *const Ctl) -> (u64, i64, i64, i64) {
+    loop {
+        let s1 = read_volatile(addr_of!((*p).seq));
+        if s1 & 1 != 0 {
+            std::hint::spin_loop();
+            continue;
+        }
+        fence(Ordering::Acquire);
+        let dur_tick_c0 = read_volatile(addr_of!((*p).dur_tick_c0));
+        let dur_quit_c0 = read_volatile(addr_of!((*p).dur_quit_c0));
+        let dur_q0 = read_volatile(addr_of!((*p).dur_q0));
+        let multiplier = read_volatile(addr_of!((*p).multiplier));
+        fence(Ordering::Acquire);
+        if s1 == read_volatile(addr_of!((*p).seq)) {
+            return (dur_tick_c0, dur_quit_c0, dur_q0, multiplier);
+        }
+    }
+}
+
+/// Project the duration tick (milliseconds, `GetTickCount64` scale) at real time `real_now` (QUIT, 100 ns)
+/// from the anchor: `dur_tick_c0 + (real_now - dur_q0) * M / 10_000`. Monotonic in `real_now` for a fixed
+/// anchor; `freeze_dur` keeps it continuous across a multiplier change. `m` is clamped to >= 1, so a frozen
+/// wall clock (M = 0) still advances the duration axis at real speed (untouchable rule 3). Pure so the
+/// monotonicity is unit-tested without injection.
+pub fn dur_tick_at(dur_tick_c0: u64, dur_q0: i64, m: i64, real_now: i64) -> u64 {
+    let dm = m.max(1);
+    let dq = real_now.wrapping_sub(dur_q0);
+    dur_tick_c0.wrapping_add((dq.wrapping_mul(dm) / 10_000) as u64)
+}
+
+/// Project the fake `QueryUnbiasedInterruptTime` (100 ns) at real time `real_now` from the anchor:
+/// `dur_quit_c0 + (real_now - dur_q0) * M`. The 100 ns companion of `dur_tick_at` (QUIT keeps full
+/// resolution). `m` clamped to >= 1 (rule 3, like `dur_tick_at`).
+pub fn dur_quit_at(dur_quit_c0: i64, dur_q0: i64, m: i64, real_now: i64) -> i64 {
+    let dm = m.max(1);
+    let dq = real_now.wrapping_sub(dur_q0);
+    dur_quit_c0.wrapping_add(dq.wrapping_mul(dm))
+}
+
+/// Freeze the duration axis at real time `now` under the OLD multiplier, returning the new
+/// `(dur_tick_c0, dur_quit_c0)` bases to re-anchor at `now` (the caller sets `dur_q0 = now`). Called by
+/// `set_multiplier` so the axis stays CONTINUOUS across a speed change - the value right after the switch
+/// equals the value right before (`dur_tick_at`/`dur_quit_at` at `now`), so it never rewinds (untouchable
+/// rule 3). `old_m` is clamped to >= 1 (a frozen wall clock froze the axis at real speed, not stopped).
+/// Pure and unit-tested.
+pub fn freeze_dur(dur_tick_c0: u64, dur_quit_c0: i64, dur_q0: i64, old_m: i64, now: i64) -> (u64, i64) {
+    (
+        dur_tick_at(dur_tick_c0, dur_q0, old_m, now),
+        dur_quit_at(dur_quit_c0, dur_q0, old_m, now),
+    )
 }
 
 /// Write the session zone bias (stable field, outside the seqlock). Mechanism side.
@@ -643,6 +750,9 @@ mod tests {
             a_fake: 0,
             a_real: 0,
             multiplier: 0,
+            dur_tick_c0: 0,
+            dur_quit_c0: 0,
+            dur_q0: 0,
             scale_dur: 0,
             core_pid: 0,
             pid_count: 0,
@@ -668,6 +778,73 @@ mod tests {
             // seq is even after a completed write
             assert_eq!(ctl.seq & 1, 0);
         }
+    }
+
+    #[test]
+    fn full_anchor_round_trips_and_wall_write_preserves_duration() {
+        let mut ctl = zeroed_ctl();
+        let p = &mut ctl as *mut Ctl;
+        unsafe {
+            // write_anchor_full writes the wall triple AND the duration anchor.
+            write_anchor_full(p, 134_000_000_000_000_000, 42, 60, 5_000, 42, 42);
+            let (af, ar, m) = read_anchor(p);
+            assert_eq!((af, ar, m), (134_000_000_000_000_000, 42, 60));
+            let (tick_c0, quit_c0, q0, dm) = read_dur(p);
+            assert_eq!((tick_c0, quit_c0, q0, dm), (5_000, 42, 42, 60));
+
+            // write_anchor (the jump writer) moves the wall clock but must NOT touch the duration anchor.
+            write_anchor(p, 999, 77, 60);
+            let (af2, ar2, _) = read_anchor(p);
+            assert_eq!((af2, ar2), (999, 77));
+            let (tick_c0b, quit_c0b, q0b, _) = read_dur(p);
+            assert_eq!((tick_c0b, quit_c0b, q0b), (5_000, 42, 42), "jump must leave the duration axis alone");
+        }
+    }
+
+    #[test]
+    fn duration_axis_never_rewinds_across_multiplier_changes() {
+        // H-1 regression guard: a multiplier change must re-anchor the duration axis so it stays
+        // continuous, never dips (untouchable rule 3). Replays the mechanism's rebase math (freeze_dur
+        // then re-anchor at `now`) against a rising real clock, sampling GetTickCount64 densely.
+        let mut tick_c0: u64 = 1_000_000; // ms
+        let mut quit_c0: i64 = 10_000_000; // 100 ns
+        let mut q0: i64 = 10_000_000; // real QUIT base, 100 ns
+        let mut m: i64 = 60;
+
+        // Real QUIT (100 ns) advances by 1 ms each sample. The multiplier drops (x60 -> x10 -> freeze
+        // -> x1) then jumps back up (-> x1440); the down-steps are the ones that used to rewind.
+        let changes: &[(i64, i64)] = &[(500, 10), (900, 0), (1300, 1), (1700, 1440)]; // (sample index, new m)
+        let mut last_tick: u64 = dur_tick_at(tick_c0, q0, m, q0);
+        let mut last_quit: i64 = dur_quit_at(quit_c0, q0, m, q0);
+        let mut change_i = 0;
+        for step in 0..2_500i64 {
+            let now = 10_000_000 + step * 10_000; // +1 ms per step, in 100 ns units
+
+            if change_i < changes.len() && step == changes[change_i].0 {
+                let new_m = changes[change_i].1;
+                let (frozen_tick, frozen_quit) = freeze_dur(tick_c0, quit_c0, q0, m, now);
+                // Continuity: the value right after the switch equals the value right before it.
+                assert_eq!(frozen_tick, dur_tick_at(tick_c0, q0, m, now), "tick jumped at the switch");
+                assert_eq!(frozen_quit, dur_quit_at(quit_c0, q0, m, now), "quit jumped at the switch");
+                tick_c0 = frozen_tick;
+                quit_c0 = frozen_quit;
+                q0 = now;
+                m = new_m;
+                change_i += 1;
+            }
+
+            let tick = dur_tick_at(tick_c0, q0, m, now);
+            let quit = dur_quit_at(quit_c0, q0, m, now);
+            assert!(tick >= last_tick, "GetTickCount64 rewound: {last_tick} -> {tick} at step {step}");
+            assert!(quit >= last_quit, "QUIT rewound: {last_quit} -> {quit} at step {step}");
+            last_tick = tick;
+            last_quit = quit;
+        }
+
+        // Frozen wall (M = 0) still advances the axis at real speed (clamp to >= 1).
+        let a = dur_tick_at(1_000, 0, 0, 5_000_000);
+        let b = dur_tick_at(1_000, 0, 0, 6_000_000);
+        assert!(b > a, "a frozen wall clock must not stop the monotonic duration axis (rule 3)");
     }
 
     #[test]

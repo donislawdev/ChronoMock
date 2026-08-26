@@ -18,9 +18,9 @@ use std::time::Instant;
 
 use chrono_core::{ChannelCoverage, Coverage, SessionSpec, TimeMode};
 use chrono_ctl::{
-    cov_section_name, cov_size, ctl_size, read_anchor, read_calls, read_core_pid, read_installed,
-    read_pid, write_anchor, write_core_pid, write_scale_dur, write_tz_bias, ChannelCategory,
-    ChannelModule, Cov, Ctl, CHANNELS, MAX_COV_PIDS,
+    cov_section_name, cov_size, ctl_size, freeze_dur, read_anchor, read_calls, read_core_pid,
+    read_dur, read_installed, read_pid, write_anchor, write_anchor_full, write_core_pid,
+    write_scale_dur, write_tz_bias, ChannelCategory, ChannelModule, Cov, Ctl, CHANNELS, MAX_COV_PIDS,
 };
 use windows::core::{s, PCWSTR, PWSTR};
 use windows::Win32::Foundation::{
@@ -33,7 +33,7 @@ use windows::Win32::System::Memory::{
     VirtualFreeEx, FILE_MAP_ALL_ACCESS, MEMORY_MAPPED_VIEW_ADDRESS, MEM_COMMIT, MEM_RELEASE,
     MEM_RESERVE, PAGE_READWRITE,
 };
-use windows::Win32::System::SystemInformation::GetSystemTimeAsFileTime;
+use windows::Win32::System::SystemInformation::{GetSystemTimeAsFileTime, GetTickCount64};
 use windows::Win32::System::Threading::{
     CreateProcessW, CreateRemoteThread, GetCurrentProcessId, GetExitCodeProcess, OpenProcess,
     ResumeThread, WaitForSingleObject, CREATE_SUSPENDED, INFINITE, LPTHREAD_START_ROUTINE,
@@ -174,11 +174,19 @@ impl Session {
     /// Change the multiplier in flight, re-anchoring from the current clock so the
     /// fake time is continuous across the change (ADR-5): the fake instant now becomes
     /// the new fake anchor and the real clock now the new real anchor.
+    ///
+    /// The duration axis is re-anchored the SAME way, in the same seqlock transaction. Without it, a
+    /// smaller multiplier would retroactively rescale the whole `(real_now - dur_q0)` history and rewind
+    /// GetTickCount64/QUIT (H-1) - a violation of untouchable rule 3. `freeze_dur` captures the axis at its
+    /// current value under the OLD multiplier, then it re-bases at `now`, so it continues from there at the
+    /// new speed without ever going backward.
     pub fn set_multiplier(&self, m: i64) {
         let now = quit_now();
         let (a_fake, a_real, cur_m) = unsafe { read_anchor(self.ctl()) };
         let fake_now = a_fake.wrapping_add(now.wrapping_sub(a_real).wrapping_mul(cur_m));
-        unsafe { write_anchor(self.ctl_mut(), fake_now, now, m) };
+        let (dur_tick_c0, dur_quit_c0, dur_q0, _) = unsafe { read_dur(self.ctl()) };
+        let (frozen_tick, frozen_quit) = freeze_dur(dur_tick_c0, dur_quit_c0, dur_q0, cur_m, now);
+        unsafe { write_anchor_full(self.ctl_mut(), fake_now, now, m, frozen_tick, frozen_quit, now) };
     }
 
     /// Jump the wall clock to `to_ft` (UTC FILETIME), keeping the current multiplier.
@@ -445,7 +453,12 @@ pub fn prepare(spec: &SessionSpec, target: &Target, hook_dll: &Path) -> Result<P
         }
 
         let start_real = quit_now();
-        write_anchor(ctl, a_fake, start_real, multiplier);
+        // Initialize the duration anchor from the REAL clock (the core is not hooked, so GetTickCount64 and
+        // QUIT are genuine). GetTickCount64 gives the millisecond base, so a target's GetTickCount64 starts
+        // near the real uptime; the fake-QUIT base and the real base both start at `start_real`. The axis is
+        // re-anchored on every set_multiplier so it never rewinds (H-1). Written in the wall anchor's seqlock.
+        let dur_tick0 = GetTickCount64();
+        write_anchor_full(ctl, a_fake, start_real, multiplier, dur_tick0, start_real, start_real);
         write_tz_bias(ctl, tz_bias);
         write_scale_dur(ctl, spec.scale_duration);
         write_core_pid(ctl, GetCurrentProcessId());

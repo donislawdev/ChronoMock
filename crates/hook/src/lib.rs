@@ -61,8 +61,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::OnceLock;
 
 use chrono_ctl::{
-    bump_calls, cov_section_name, cov_size, mark_channel_installed, read_anchor, read_core_pid,
-    read_scale_dur, read_tz_bias, register_pid, scale_delay_interval, scale_timer_due,
+    bump_calls, cov_section_name, cov_size, dur_quit_at, dur_tick_at, mark_channel_installed,
+    read_anchor, read_core_pid, read_dur, read_scale_dur, read_tz_bias, register_pid,
+    scale_delay_interval, scale_timer_due,
     scale_timer_elapse, scale_timer_period, scale_timer_period_ms, scale_wait, ChannelModule, Cov,
     Ctl, CHANNELS, IDX_GDTZI, IDX_GLT, IDX_GST, IDX_GSTAFT, IDX_GSTPAFT, IDX_GTC, IDX_GTC64,
     IDX_GTZI, IDX_NTDELAY, IDX_NTQSI, IDX_NTQST, IDX_QUIT, IDX_SLEEP, IDX_SLEEPEX, IDX_STSL,
@@ -237,10 +238,6 @@ static O_TPTIMER: OnceLock<SetTpTimerFn> = OnceLock::new();
 static O_TPTIMEREX: OnceLock<SetTpTimerExFn> = OnceLock::new();
 static O_NTCUP: OnceLock<NtcupFn> = OnceLock::new();
 static O_CONNECT: OnceLock<ConnectFn> = OnceLock::new();
-
-// Duration-axis anchors, captured real (before hooking) at install time.
-static Q0: OnceLock<i64> = OnceLock::new();
-static C0_TICK: OnceLock<u64> = OnceLock::new();
 
 // Child inheritance (ADR-3): our own module handle (to inject the same DLL into a
 // child) and the CreateProcessW trampoline.
@@ -709,23 +706,29 @@ unsafe extern "system" fn h_stslex(
 }
 
 // --- Duration axis (opt-in) ----------------------------------------------------
-// Only installed when scale_duration is set. Elapsed since the real anchor Q0 is
-// scaled by dur_multiplier() (>= 1) off the trampoline QUIT. Monotonic by
-// construction. QPC and timeGetTime are left real (ADR-2).
+// Only installed when scale_duration is set. The anchor (`dur_tick_c0`, `dur_quit_c0`, `dur_q0`) lives
+// in the shared `Ctl`, initialized by the core in `prepare` and REBASED on every `set_multiplier` so a
+// speed change never rewinds the axis (H-1, untouchable rule 3). Each detour reads the base AND the
+// multiplier in one `read_dur` snapshot (they can never tear apart) and projects off the trampoline QUIT.
+// `m` is clamped to >= 1 inside `dur_tick_at`/`dur_quit_at`, so the axis keeps advancing even when the
+// wall clock is frozen. QPC and timeGetTime are left real (ADR-2).
 
 unsafe extern "system" fn h_tick() -> u64 {
     bump(IDX_GTC64);
     if detached() {
         return O_TICK.get().map(|o| o()).unwrap_or(0);
     }
-    let q0 = *Q0.get().unwrap_or(&0);
-    let dq = real_quit().wrapping_sub(q0); // 100 ns
-    let dms = dq.wrapping_mul(dur_multiplier()) / 10_000; // scale before /10000 (100ns -> ms)
-    C0_TICK.get().copied().unwrap_or(0).wrapping_add(dms as u64)
+    match ctl_ptr() {
+        Some(p) => {
+            let (dur_tick_c0, _quit_c0, dur_q0, m) = read_dur(p as *const Ctl);
+            dur_tick_at(dur_tick_c0, dur_q0, m, real_quit())
+        }
+        None => O_TICK.get().map(|o| o()).unwrap_or(0),
+    }
 }
 
 // GetTickCount (32-bit): the low 32 bits of the SAME scaled millisecond count as
-// GetTickCount64 (shares the C0_TICK base), so a target comparing the two sees them
+// GetTickCount64 (shares the dur_tick_c0 base), so a target comparing the two sees them
 // agree. Wraps at 2^32 ms like the real one - and sooner under acceleration - which is the
 // honest behavior of a fast 32-bit counter; callers handle the wrap with unsigned deltas.
 unsafe extern "system" fn h_tick32() -> u32 {
@@ -733,10 +736,13 @@ unsafe extern "system" fn h_tick32() -> u32 {
     if detached() {
         return O_TICK32.get().map(|o| o()).unwrap_or(0);
     }
-    let q0 = *Q0.get().unwrap_or(&0);
-    let dq = real_quit().wrapping_sub(q0); // 100 ns
-    let dms = dq.wrapping_mul(dur_multiplier()) / 10_000; // scale before /10000 (100ns -> ms)
-    C0_TICK.get().copied().unwrap_or(0).wrapping_add(dms as u64) as u32
+    match ctl_ptr() {
+        Some(p) => {
+            let (dur_tick_c0, _quit_c0, dur_q0, m) = read_dur(p as *const Ctl);
+            dur_tick_at(dur_tick_c0, dur_q0, m, real_quit()) as u32
+        }
+        None => O_TICK32.get().map(|o| o()).unwrap_or(0),
+    }
 }
 
 unsafe extern "system" fn h_quit(lp: *mut u64) -> i32 {
@@ -745,9 +751,15 @@ unsafe extern "system" fn h_quit(lp: *mut u64) -> i32 {
         return O_QUIT.get().map(|o| o(lp)).unwrap_or(0);
     }
     if !lp.is_null() {
-        let q0 = *Q0.get().unwrap_or(&0);
-        let dq = real_quit().wrapping_sub(q0);
-        *lp = q0.wrapping_add(dq.wrapping_mul(dur_multiplier())) as u64;
+        match ctl_ptr() {
+            Some(p) => {
+                let (_tick_c0, dur_quit_c0, dur_q0, m) = read_dur(p as *const Ctl);
+                *lp = dur_quit_at(dur_quit_c0, dur_q0, m, real_quit()) as u64;
+            }
+            // No control block (unreachable: CTL_PTR is set before these hooks install) - defer to the
+            // real value rather than fake a zero.
+            None => return O_QUIT.get().map(|o| o(lp)).unwrap_or(0),
+        }
     }
     1 // nonzero BOOL = success
 }
@@ -1522,15 +1534,11 @@ unsafe fn install() -> Result<(), String> {
     make_hook(cov, k32, ntdll, IDX_TLTST, h_tltst as *const () as *mut c_void, &O_TLTST);
     make_hook(cov, k32, ntdll, IDX_TLTSTEX, h_tltstex as *const () as *mut c_void, &O_TLTSTEX);
 
-    // Duration axis (opt-in). Capture the real anchors BEFORE creating the hooks:
-    // O_QUIT is still unset so real_quit() reads the real value, and GetTickCount64 is
-    // not patched until enable_all_hooks(). QPC / timeGetTime stay real (ADR-2).
+    // Duration axis (opt-in). The anchor lives in the shared Ctl now: the core initialized it in
+    // prepare (from the real GetTickCount64 / QUIT, before the target ran) and rebases it on every
+    // set_multiplier, so a speed change never rewinds the axis (H-1). No per-process capture here - the
+    // detours read it under the same seqlock as the wall multiplier. QPC / timeGetTime stay real (ADR-2).
     if read_scale_dur(ctl as *const Ctl) {
-        let _ = Q0.set(real_quit());
-        if let Some(tick0) = GetProcAddress(k32, s!("GetTickCount64")) {
-            let tick_fn: TickFn = std::mem::transmute(tick0);
-            let _ = C0_TICK.set(tick_fn());
-        }
         make_hook(cov, k32, ntdll, IDX_GTC64, h_tick as *const () as *mut c_void, &O_TICK);
         make_hook(cov, k32, ntdll, IDX_GTC, h_tick32 as *const () as *mut c_void, &O_TICK32);
         make_hook(cov, k32, ntdll, IDX_QUIT, h_quit as *const () as *mut c_void, &O_QUIT);
