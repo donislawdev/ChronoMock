@@ -3,17 +3,21 @@ using System.Runtime.InteropServices;
 using System.Windows;
 using Microsoft.Win32;
 using Wpf.Ui.Controls;
+using ChronoMock.App.Calc;
+using ChronoMock.Protocol;
 
 namespace ChronoMock.App;
 
 public partial class MainWindow : FluentWindow
 {
     private readonly SessionViewModel _session = new(FileSessionHistoryStore.ForApp());
+    private readonly CalculatorViewModel _calculator = new(CalcClient.ForRepo(DevPaths.RepoRoot()));
 
     public MainWindow()
     {
         InitializeComponent();
         DataContext = _session;
+        CalculatorContainer.DataContext = _calculator;
 
         // Dev convenience: pre-select the bundled sample target so the panel is usable at once. The user
         // can pick any executable instead - this default is dev scaffolding (DemoSession.DefaultTargetPath).
@@ -40,6 +44,11 @@ public partial class MainWindow : FluentWindow
         bool calculator = ModeCalculator.IsChecked == true;
         SubstitutionContainer.Visibility = calculator ? Visibility.Collapsed : Visibility.Visible;
         CalculatorContainer.Visibility = calculator ? Visibility.Visible : Visibility.Collapsed;
+        if (calculator)
+        {
+            // Compute on first reveal (not at construction, so building the window in a test spawns nothing).
+            _ = _calculator.EnsureComputedAsync();
+        }
     }
 
     private void OnChooseTargetClick(object sender, RoutedEventArgs e)

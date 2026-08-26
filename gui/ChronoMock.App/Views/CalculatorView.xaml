@@ -6,11 +6,11 @@
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              mc:Ignorable="d">
   <!--
-    Date-calculator screen (chrono-mock 7.3). Stage 4 GUI, slice G1: the three-column shell
-    (presets, builder, result) plus the reverse-analysis strip, in the app's own tokens. This slice is
-    LAYOUT ONLY. The values shown are a sample preview. Live evaluation via the calc JSON output lands in
-    the next slices (G2/G3). Colours, spacing and type come from Themes, never literals (zasady/13).
-    Text chrome is translation keys (rule 15). Sample data is inline and marked below.
+    Date-calculator screen (chrono-mock 7.3). Slice G3b: the builder (base, shift steps, calendar) and
+    the result column are LIVE, evaluated through the calc engine via the calc client (ADR-6, one engine).
+    The presets column and the reverse-analysis strip are still a static preview, wired in slices G4/G5.
+    Only shift steps have an editor yet (snap / nearest / set-time / zone follow). Colours, spacing and
+    type come from Themes, never literals (zasady/13); text chrome is translation keys (rule 15).
   -->
   <Grid Background="{DynamicResource BrushBgBase}">
     <Grid.RowDefinitions>
@@ -18,8 +18,6 @@
       <RowDefinition Height="Auto" />
     </Grid.RowDefinitions>
 
-    <!-- Three columns: presets (fixed), builder (flexible), result (fixed). Below a narrow width the
-         whole view scrolls rather than crushing the middle column (computed layout, not hard geometry). -->
     <ScrollViewer Grid.Row="0" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto">
       <Grid Margin="{StaticResource SpaceMd}" MinWidth="820">
         <Grid.ColumnDefinitions>
@@ -28,7 +26,7 @@
           <ColumnDefinition Width="320" />
         </Grid.ColumnDefinitions>
 
-        <!-- LEFT: tester presets. Click fills the builder; each carries "what this date tests". -->
+        <!-- LEFT: tester presets. Static preview until slice G4 wires the shared catalogue. -->
         <Border Grid.Column="0" Margin="{StaticResource SpaceSm}" Padding="{StaticResource SpaceLg}"
                 Background="{DynamicResource BrushBgSurface}" CornerRadius="{StaticResource RadiusMd}">
           <StackPanel>
@@ -37,8 +35,6 @@
                        Foreground="{DynamicResource BrushTextSecondary}" Margin="{StaticResource SpaceXs}" />
             <ui:TextBox Margin="{StaticResource SpaceXs}"
                         PlaceholderText="{DynamicResource calc.filter_placeholder}" />
-
-            <!-- Sample presets (preview). Bound to the shared catalogue in slice G4. -->
             <Button Margin="{StaticResource SpaceXs}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left">
               <StackPanel>
                 <TextBlock Text="Quarter end" FontSize="{StaticResource FontSizeBody}"
@@ -55,24 +51,13 @@
                            Foreground="{DynamicResource BrushTextSecondary}" />
               </StackPanel>
             </Button>
-            <Button Margin="{StaticResource SpaceXs}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left">
-              <StackPanel>
-                <TextBlock Text="Y2038 boundary" FontSize="{StaticResource FontSizeBody}"
-                           Foreground="{DynamicResource BrushTextPrimary}" />
-                <TextBlock Text="32-bit time_t limit" FontSize="{StaticResource FontSizeCaption}"
-                           Foreground="{DynamicResource BrushTextSecondary}" />
-              </StackPanel>
-            </Button>
-
-            <Button Content="{DynamicResource calc.build_from_scratch}" Margin="{StaticResource SpaceSm}"
-                    HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" />
             <TextBlock Text="{DynamicResource calc.preset_note}" TextWrapping="Wrap"
                        Margin="{StaticResource SpaceXs}"
                        FontSize="{StaticResource FontSizeCaption}" Foreground="{DynamicResource BrushTextSecondary}" />
           </StackPanel>
         </Border>
 
-        <!-- MIDDLE: expression builder. Controls only, no prose; result shown after each step. -->
+        <!-- MIDDLE: the live expression builder (base, shift steps, calendar). -->
         <Border Grid.Column="1" Margin="{StaticResource SpaceSm}" Padding="{StaticResource SpaceLg}"
                 Background="{DynamicResource BrushBgSurface}" CornerRadius="{StaticResource RadiusMd}">
           <StackPanel>
@@ -82,69 +67,73 @@
 
             <TextBlock Text="{DynamicResource calc.start_point}" Margin="{StaticResource SpaceXs}"
                        FontSize="{StaticResource FontSizeCaption}" Foreground="{DynamicResource BrushTextSecondary}" />
-            <ComboBox Margin="{StaticResource SpaceXs}" HorizontalAlignment="Left" MinWidth="240"
-                      SelectedIndex="0">
-              <ComboBoxItem Content="Today — Wed, 26 Aug 2026" />
-            </ComboBox>
+            <StackPanel Orientation="Horizontal" Margin="{StaticResource SpaceXs}">
+              <ComboBox ItemsSource="{Binding BaseKinds}" SelectedItem="{Binding SelectedBase}" MinWidth="140">
+                <ComboBox.ItemTemplate>
+                  <DataTemplate>
+                    <TextBlock Text="{Binding LabelKey, Converter={StaticResource KeyToText}}" />
+                  </DataTemplate>
+                </ComboBox.ItemTemplate>
+              </ComboBox>
+              <TextBox Text="{Binding BaseText, UpdateSourceTrigger=LostFocus}"
+                       Width="200" Margin="{StaticResource SpaceSm}"
+                       FontFamily="{StaticResource FontFamilyMono}"
+                       Visibility="{Binding IsSpecificBase, Converter={StaticResource BoolToVis}}" />
+            </StackPanel>
 
             <TextBlock Text="{DynamicResource calc.steps_header}" Margin="{StaticResource SpaceXs}"
                        FontSize="{StaticResource FontSizeCaption}" Foreground="{DynamicResource BrushTextSecondary}" />
+            <ItemsControl ItemsSource="{Binding Steps}" Margin="{StaticResource SpaceXs}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                  <Border Margin="{StaticResource SpaceXs}" Padding="{StaticResource SpaceSm}"
+                          Background="{DynamicResource BrushBgSurfaceAlt}" CornerRadius="{StaticResource RadiusSm}">
+                    <StackPanel Orientation="Horizontal">
+                      <TextBlock Text="{DynamicResource calc.kind_shift}" VerticalAlignment="Center"
+                                 FontSize="{StaticResource FontSizeCaption}"
+                                 Foreground="{DynamicResource BrushTextSecondary}" />
+                      <ComboBox ItemsSource="{Binding Signs}" SelectedItem="{Binding Sign}"
+                                Margin="{StaticResource SpaceSm}" VerticalAlignment="Center" MinWidth="48" />
+                      <TextBox Text="{Binding Amount, UpdateSourceTrigger=LostFocus}"
+                               Width="64" VerticalAlignment="Center"
+                               FontFamily="{StaticResource FontFamilyMono}" />
+                      <ComboBox ItemsSource="{Binding Units}" SelectedItem="{Binding Unit}"
+                                Margin="{StaticResource SpaceSm}" VerticalAlignment="Center" MinWidth="120">
+                        <ComboBox.ItemTemplate>
+                          <DataTemplate>
+                            <TextBlock Text="{Binding LabelKey, Converter={StaticResource KeyToText}}" />
+                          </DataTemplate>
+                        </ComboBox.ItemTemplate>
+                      </ComboBox>
+                      <Button Content="✕" Click="OnRemoveStepClick" Tag="{Binding}"
+                              Margin="{StaticResource SpaceSm}" VerticalAlignment="Center"
+                              AutomationProperties.Name="{DynamicResource calc.remove_step}"
+                              FontSize="{StaticResource FontSizeCaption}" />
+                    </StackPanel>
+                  </Border>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+            <Button Content="{DynamicResource calc.add_step}" Click="OnAddStepClick"
+                    Margin="{StaticResource SpaceXs}" HorizontalAlignment="Left" />
 
-            <!-- Sample steps (preview). Real, addable/removable step rows wired to the engine in slice G3. -->
-            <Border Margin="{StaticResource SpaceXs}" Padding="{StaticResource SpaceSm}"
-                    Background="{DynamicResource BrushBgSurfaceAlt}" CornerRadius="{StaticResource RadiusSm}">
-              <Grid>
-                <Grid.ColumnDefinitions>
-                  <ColumnDefinition Width="Auto" />
-                  <ColumnDefinition Width="*" />
-                </Grid.ColumnDefinitions>
-                <StackPanel Grid.Column="0" Orientation="Horizontal">
-                  <TextBlock Text="{DynamicResource calc.kind_snap}" VerticalAlignment="Center"
-                             FontSize="{StaticResource FontSizeCaption}" Foreground="{DynamicResource BrushTextSecondary}" />
-                  <TextBlock Text="end of quarter" Margin="{StaticResource SpaceSm}" VerticalAlignment="Center"
-                             FontSize="{StaticResource FontSizeBody}" Foreground="{DynamicResource BrushTextPrimary}" />
-                </StackPanel>
-                <TextBlock Grid.Column="1" Text="→ 2026-09-30 23:59:59" HorizontalAlignment="Right" VerticalAlignment="Center"
-                           FontFamily="{StaticResource FontFamilyMono}"
-                           FontSize="{StaticResource FontSizeCaption}" Foreground="{DynamicResource BrushStatusWorks}" />
-              </Grid>
-            </Border>
-
-            <Button Content="{DynamicResource calc.add_step}" Margin="{StaticResource SpaceXs}"
-                    HorizontalAlignment="Left" />
-
-            <!-- The five step kinds the builder offers (7.3). -->
-            <WrapPanel Margin="{StaticResource SpaceXs}">
-              <Border Margin="{StaticResource SpaceXs}" Padding="{StaticResource SpaceXs}"
-                      Background="{DynamicResource BrushBgBase}" CornerRadius="{StaticResource RadiusSm}">
-                <TextBlock Text="{DynamicResource calc.kind_shift}" FontSize="{StaticResource FontSizeCaption}"
-                           Foreground="{DynamicResource BrushTextSecondary}" />
-              </Border>
-              <Border Margin="{StaticResource SpaceXs}" Padding="{StaticResource SpaceXs}"
-                      Background="{DynamicResource BrushBgBase}" CornerRadius="{StaticResource RadiusSm}">
-                <TextBlock Text="{DynamicResource calc.kind_snap}" FontSize="{StaticResource FontSizeCaption}"
-                           Foreground="{DynamicResource BrushTextSecondary}" />
-              </Border>
-              <Border Margin="{StaticResource SpaceXs}" Padding="{StaticResource SpaceXs}"
-                      Background="{DynamicResource BrushBgBase}" CornerRadius="{StaticResource RadiusSm}">
-                <TextBlock Text="{DynamicResource calc.kind_nearest}" FontSize="{StaticResource FontSizeCaption}"
-                           Foreground="{DynamicResource BrushTextSecondary}" />
-              </Border>
-              <Border Margin="{StaticResource SpaceXs}" Padding="{StaticResource SpaceXs}"
-                      Background="{DynamicResource BrushBgBase}" CornerRadius="{StaticResource RadiusSm}">
-                <TextBlock Text="{DynamicResource calc.kind_settime}" FontSize="{StaticResource FontSizeCaption}"
-                           Foreground="{DynamicResource BrushTextSecondary}" />
-              </Border>
-              <Border Margin="{StaticResource SpaceXs}" Padding="{StaticResource SpaceXs}"
-                      Background="{DynamicResource BrushBgBase}" CornerRadius="{StaticResource RadiusSm}">
-                <TextBlock Text="{DynamicResource calc.kind_zone}" FontSize="{StaticResource FontSizeCaption}"
-                           Foreground="{DynamicResource BrushTextSecondary}" />
-              </Border>
-            </WrapPanel>
+            <StackPanel Orientation="Horizontal" Margin="{StaticResource SpaceMd}">
+              <TextBlock Text="{DynamicResource calc.field_calendar}" VerticalAlignment="Center"
+                         FontSize="{StaticResource FontSizeCaption}"
+                         Foreground="{DynamicResource BrushTextSecondary}" />
+              <ComboBox ItemsSource="{Binding Calendars}" SelectedItem="{Binding SelectedCalendar}"
+                        Margin="{StaticResource SpaceSm}" VerticalAlignment="Center" MinWidth="140">
+                <ComboBox.ItemTemplate>
+                  <DataTemplate>
+                    <TextBlock Text="{Binding LabelKey, Converter={StaticResource KeyToText}}" />
+                  </DataTemplate>
+                </ComboBox.ItemTemplate>
+              </ComboBox>
+            </StackPanel>
           </StackPanel>
         </Border>
 
-        <!-- RIGHT: result. Big date, "what this date tests", all formats with copy, metadata, zones, bridge. -->
+        <!-- RIGHT: the live result of evaluating the builder. -->
         <Border Grid.Column="2" Margin="{StaticResource SpaceSm}" Padding="{StaticResource SpaceLg}"
                 Background="{DynamicResource BrushBgSurface}" CornerRadius="{StaticResource RadiusMd}">
           <StackPanel>
@@ -152,78 +141,76 @@
                        FontSize="{StaticResource FontSizeCaption}" FontWeight="SemiBold"
                        Foreground="{DynamicResource BrushTextSecondary}" Margin="{StaticResource SpaceXs}" />
 
-            <!-- Sample result (preview) - the computed moment fills these in slice G3. -->
-            <TextBlock Text="Wednesday, 30 September 2026" TextWrapping="Wrap" Margin="{StaticResource SpaceXs}"
+            <TextBlock Margin="{StaticResource SpaceXs}" TextWrapping="Wrap"
                        FontSize="{StaticResource FontSizeTitle}" FontWeight="SemiBold"
-                       Foreground="{DynamicResource BrushTextPrimary}" />
-            <TextBlock Text="23:59:59 · America/New_York · UTC−04:00" Margin="{StaticResource SpaceXs}"
+                       Foreground="{DynamicResource BrushTextPrimary}">
+              <Run Text="{Binding ResultWeekday, Mode=OneWay}" /><Run Text="  " /><Run Text="{Binding ResultDate, Mode=OneWay}" />
+            </TextBlock>
+            <TextBlock Margin="{StaticResource SpaceXs}"
                        FontFamily="{StaticResource FontFamilyMono}"
-                       FontSize="{StaticResource FontSizeCaption}" Foreground="{DynamicResource BrushTextSecondary}" />
+                       FontSize="{StaticResource FontSizeCaption}" Foreground="{DynamicResource BrushTextSecondary}">
+              <Run Text="{Binding ResultTime, Mode=OneWay}" /><Run Text="  " /><Run Text="{Binding ResultZone, Mode=OneWay}" />
+            </TextBlock>
+
+            <TextBlock Text="{Binding Error}" TextWrapping="Wrap" Margin="{StaticResource SpaceXs}"
+                       FontSize="{StaticResource FontSizeCaption}" Foreground="{DynamicResource BrushStatusFails}"
+                       Visibility="{Binding HasError, Converter={StaticResource BoolToVis}}" />
 
             <Border Margin="{StaticResource SpaceMd}" Padding="{StaticResource SpaceMd}"
-                    Background="{DynamicResource BrushBgBase}" CornerRadius="{StaticResource RadiusSm}">
+                    Background="{DynamicResource BrushBgBase}" CornerRadius="{StaticResource RadiusSm}"
+                    Visibility="{Binding HasSignificance, Converter={StaticResource BoolToVis}}">
               <StackPanel>
                 <TextBlock Text="{DynamicResource calc.what_tests}" FontSize="{StaticResource FontSizeCaption}"
                            FontWeight="Bold" Foreground="{DynamicResource BrushAccent}" />
-                <TextBlock Text="Last day of the quarter (quarter-end)." TextWrapping="Wrap" Margin="{StaticResource SpaceXs}"
-                           FontSize="{StaticResource FontSizeBody}" Foreground="{DynamicResource BrushTextPrimary}" />
+                <ItemsControl ItemsSource="{Binding Significance}" Margin="{StaticResource SpaceXs}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                      <TextBlock Text="{Binding Converter={StaticResource KeyToText}}" TextWrapping="Wrap"
+                                 FontSize="{StaticResource FontSizeBody}" Foreground="{DynamicResource BrushTextPrimary}" />
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
               </StackPanel>
             </Border>
 
             <TextBlock Text="{DynamicResource calc.all_formats}" Margin="{StaticResource SpaceXs}"
                        FontSize="{StaticResource FontSizeCaption}" FontWeight="SemiBold"
                        Foreground="{DynamicResource BrushTextSecondary}" />
-            <StackPanel Margin="{StaticResource SpaceXs}">
-              <Grid Margin="{StaticResource SpaceXs}">
-                <Grid.ColumnDefinitions>
-                  <ColumnDefinition Width="Auto" />
-                  <ColumnDefinition Width="*" />
-                  <ColumnDefinition Width="Auto" />
-                </Grid.ColumnDefinitions>
-                <TextBlock Grid.Column="0" Text="ISO date" Width="70"
-                           FontSize="{StaticResource FontSizeCaption}" Foreground="{DynamicResource BrushTextSecondary}" />
-                <TextBlock Grid.Column="1" Text="2026-09-30"
-                           FontFamily="{StaticResource FontFamilyMono}"
-                           FontSize="{StaticResource FontSizeCaption}" Foreground="{DynamicResource BrushTextPrimary}" />
-                <Button Grid.Column="2" Content="{DynamicResource calc.copy}" FontSize="{StaticResource FontSizeCaption}" />
-              </Grid>
-              <Grid Margin="{StaticResource SpaceXs}">
-                <Grid.ColumnDefinitions>
-                  <ColumnDefinition Width="Auto" />
-                  <ColumnDefinition Width="*" />
-                  <ColumnDefinition Width="Auto" />
-                </Grid.ColumnDefinitions>
-                <TextBlock Grid.Column="0" Text="epoch (s)" Width="70"
-                           FontSize="{StaticResource FontSizeCaption}" Foreground="{DynamicResource BrushTextSecondary}" />
-                <TextBlock Grid.Column="1" Text="1790812799"
-                           FontFamily="{StaticResource FontFamilyMono}"
-                           FontSize="{StaticResource FontSizeCaption}" Foreground="{DynamicResource BrushTextPrimary}" />
-                <Button Grid.Column="2" Content="{DynamicResource calc.copy}" FontSize="{StaticResource FontSizeCaption}" />
-              </Grid>
-            </StackPanel>
+            <ItemsControl ItemsSource="{Binding Formats}" Margin="{StaticResource SpaceXs}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                  <Grid Margin="{StaticResource SpaceXs}">
+                    <Grid.ColumnDefinitions>
+                      <ColumnDefinition Width="86" />
+                      <ColumnDefinition Width="*" />
+                      <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Grid.Column="0" Text="{Binding Label}"
+                               FontSize="{StaticResource FontSizeCaption}" Foreground="{DynamicResource BrushTextSecondary}" />
+                    <TextBlock Grid.Column="1" Text="{Binding Value}" TextWrapping="Wrap"
+                               FontFamily="{StaticResource FontFamilyMono}"
+                               FontSize="{StaticResource FontSizeCaption}" Foreground="{DynamicResource BrushTextPrimary}" />
+                    <Button Grid.Column="2" Content="{DynamicResource calc.copy}" Click="OnCopyFormatClick"
+                            Tag="{Binding Value}" FontSize="{StaticResource FontSizeCaption}" />
+                  </Grid>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
 
             <TextBlock Text="{DynamicResource calc.metadata}" Margin="{StaticResource SpaceXs}"
                        FontSize="{StaticResource FontSizeCaption}" FontWeight="SemiBold"
                        Foreground="{DynamicResource BrushTextSecondary}" />
-            <TextBlock Text="Wednesday · ISO 2026-W40 · US week 40 · Q3 · day 273 · business day · not leap"
-                       TextWrapping="Wrap" Margin="{StaticResource SpaceXs}"
+            <TextBlock Text="{Binding MetadataLine}" TextWrapping="Wrap" Margin="{StaticResource SpaceXs}"
                        FontSize="{StaticResource FontSizeCaption}" Foreground="{DynamicResource BrushTextPrimary}" />
 
-            <TextBlock Text="{DynamicResource calc.other_zones}" Margin="{StaticResource SpaceXs}"
-                       FontSize="{StaticResource FontSizeCaption}" FontWeight="SemiBold"
-                       Foreground="{DynamicResource BrushTextSecondary}" />
-            <TextBlock Text="UTC 01 Oct 03:59 · Asia/Tokyo 01 Oct 12:59 (different day)"
-                       TextWrapping="Wrap" Margin="{StaticResource SpaceXs}"
-                       FontSize="{StaticResource FontSizeCaption}" Foreground="{DynamicResource BrushStatusPartial}" />
-
             <Button Content="{DynamicResource calc.use_in_substitution}" Margin="{StaticResource SpaceMd}"
-                    HorizontalAlignment="Stretch" />
+                    HorizontalAlignment="Stretch" IsEnabled="False" />
           </StackPanel>
         </Border>
       </Grid>
     </ScrollViewer>
 
-    <!-- BOTTOM: reverse analysis. Paste a date, name what it is; show BOTH readings when ambiguous. -->
+    <!-- BOTTOM: reverse analysis. Static preview until slice G5 wires it to the analyze mode. -->
     <Border Grid.Row="1" Margin="{StaticResource SpaceMd}" Padding="{StaticResource SpaceLg}"
             Background="{DynamicResource BrushBgSurface}" CornerRadius="{StaticResource RadiusMd}">
       <StackPanel>
@@ -232,7 +219,7 @@
                    Foreground="{DynamicResource BrushTextSecondary}" Margin="{StaticResource SpaceXs}" />
         <StackPanel Orientation="Horizontal">
           <TextBox Text="04/08/2008" Width="160" Margin="{StaticResource SpaceXs}"
-                   FontFamily="{StaticResource FontFamilyMono}" />
+                   FontFamily="{StaticResource FontFamilyMono}" IsEnabled="False" />
           <TextBlock Text="US → 2008-04-08 (Apr 8) · PL → 2008-08-04 (Aug 4)" VerticalAlignment="Center"
                      Margin="{StaticResource SpaceSm}"
                      FontSize="{StaticResource FontSizeCaption}" Foreground="{DynamicResource BrushStatusPartial}" />

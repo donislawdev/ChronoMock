@@ -111,7 +111,7 @@
   <sys:String x:Key="calc.preset_note">A preset is a starting point - not a certificate that your test is complete.</sys:String>
   <sys:String x:Key="calc.build_header">Build the moment</sys:String>
   <sys:String x:Key="calc.start_point">Start point</sys:String>
-  <sys:String x:Key="calc.steps_header">Steps - result after each one</sys:String>
+  <sys:String x:Key="calc.steps_header">Steps</sys:String>
   <sys:String x:Key="calc.add_step">+ Add step</sys:String>
   <sys:String x:Key="calc.kind_shift">Shift ±</sys:String>
   <sys:String x:Key="calc.kind_snap">Snap to</sys:String>
@@ -126,6 +126,42 @@
   <sys:String x:Key="calc.other_zones">Same instant, other zones</sys:String>
   <sys:String x:Key="calc.use_in_substitution">Use in substitution →</sys:String>
   <sys:String x:Key="calc.reverse_header">Analyze a pasted date</sys:String>
-  <sys:String x:Key="calc.preview_note">Layout preview - live results arrive in the next slices.</sys:String>
+  <sys:String x:Key="calc.preview_note">Presets and reverse analysis are still a preview - the builder and result are live.</sys:String>
+
+  <!-- Calculator builder (G3b): base kinds, shift units, calendars, and the significance markers. -->
+  <sys:String x:Key="calc.base.today">Today</sys:String>
+  <sys:String x:Key="calc.base.now">Now</sys:String>
+  <sys:String x:Key="calc.base.specific">Specific date</sys:String>
+  <sys:String x:Key="calc.field_calendar">Calendar:</sys:String>
+  <sys:String x:Key="calc.remove_step">Remove step</sys:String>
+
+  <sys:String x:Key="calc.unit.seconds">seconds</sys:String>
+  <sys:String x:Key="calc.unit.minutes">minutes</sys:String>
+  <sys:String x:Key="calc.unit.hours">hours</sys:String>
+  <sys:String x:Key="calc.unit.days">days</sys:String>
+  <sys:String x:Key="calc.unit.weeks">weeks</sys:String>
+  <sys:String x:Key="calc.unit.months">months</sys:String>
+  <sys:String x:Key="calc.unit.quarters">quarters</sys:String>
+  <sys:String x:Key="calc.unit.years">years</sys:String>
+  <sys:String x:Key="calc.unit.business_days">business days</sys:String>
+
+  <sys:String x:Key="calc.cal.none">(none)</sys:String>
+  <sys:String x:Key="calc.cal.us_banking">US banking</sys:String>
+  <sys:String x:Key="calc.cal.us_federal">US federal</sys:String>
+  <sys:String x:Key="calc.cal.pl">Poland</sys:String>
+
+  <sys:String x:Key="calc.sig.start_of_month">First day of the month</sys:String>
+  <sys:String x:Key="calc.sig.end_of_month">Last day of the month (month-end)</sys:String>
+  <sys:String x:Key="calc.sig.start_of_quarter">First day of the quarter</sys:String>
+  <sys:String x:Key="calc.sig.end_of_quarter">Last day of the quarter (quarter-end)</sys:String>
+  <sys:String x:Key="calc.sig.start_of_year">First day of the year</sys:String>
+  <sys:String x:Key="calc.sig.end_of_year">Last day of the year (year-end rollover)</sys:String>
+  <sys:String x:Key="calc.sig.leap_day">February 29 - leap day</sys:String>
+  <sys:String x:Key="calc.sig.last_day_of_february_common_year">February 28 - last day of February (common year, no Feb 29)</sys:String>
+  <sys:String x:Key="calc.sig.unix_epoch">Unix epoch (1970-01-01T00:00:00Z, epoch 0)</sys:String>
+  <sys:String x:Key="calc.sig.year_2038_boundary">At or past the 2038-01-19 32-bit time_t limit (Y2038)</sys:String>
+  <sys:String x:Key="calc.sig.weekend">Weekend - not a business day</sys:String>
+  <sys:String x:Key="calc.sig.public_holiday">Public holiday</sys:String>
+  <sys:String x:Key="calc.sig.observed_holiday">Observed public holiday - a day off shifted from a weekend holiday</sys:String>
 
 </ResourceDictionary>
