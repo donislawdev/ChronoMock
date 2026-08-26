@@ -113,6 +113,10 @@ public partial class MainWindow : FluentWindow
         }
     }
 
+    // Stop the running session (M-10) - so the user is not forced to close the whole window when they are
+    // done (or when the core stops responding). The target reverts to real time, the app is never killed.
+    private void OnStopClick(object sender, RoutedEventArgs e) => _session.RequestStop();
+
     // Copy the session summary to the clipboard (chrono-mock 7.2, 8.8). The summary is built in the UI
     // language; a clipboard held by another process is reported honestly, never swallowed (rule 6).
     private void OnCopySummaryClick(object sender, RoutedEventArgs e)

@@ -1,3 +1,4 @@
+using System.Threading.Channels;
 using ChronoMock.App;
 using ChronoMock.Protocol;
 
@@ -332,6 +333,48 @@ public class SessionViewModelTests
         vm.SendJump("+1d"); // idle, no client - must not throw
 
         Assert.False(vm.IsRunning);
+    }
+
+    [Fact]
+    public void Request_stop_is_a_safe_no_op_when_no_session_runs()
+    {
+        var vm = new SessionViewModel();
+
+        vm.RequestStop(); // idle, no client - must not throw
+
+        Assert.False(vm.IsRunning);
+    }
+
+    [Fact]
+    public async Task Watchdog_fires_when_the_core_stops_emitting()
+    {
+        // The core beats a `state` heartbeat every ~1 s. If it goes silent (hung with the pipe still open),
+        // the idle watchdog must fire so the UI does not hang in "running" forever. Modelled with a channel
+        // that emits once then never completes - a short timeout stands in for the real 15 s.
+        var vm = new SessionViewModel();
+        var channel = Channel.CreateUnbounded<ChronoEvent>();
+        await channel.Writer.WriteAsync(State("2038-01-19T03:14:07", "2026-08-26T00:00:00", bias: 0, multiplier: 60));
+
+        var fired = await vm.ConsumeEventsAsync(channel.Reader, TimeSpan.FromMilliseconds(150));
+
+        Assert.True(fired); // the idle watchdog fired
+        Assert.Equal("2038-01-19T03:14:07", vm.Fake.Wall); // the event before the silence was still applied
+    }
+
+    [Fact]
+    public async Task Watchdog_does_not_fire_when_the_stream_completes()
+    {
+        // A clean end (the core exited, or Stop disposed the client) completes the channel - NOT a watchdog
+        // fire, even with a generous timeout, because completion is observed immediately.
+        var vm = new SessionViewModel();
+        var channel = Channel.CreateUnbounded<ChronoEvent>();
+        await channel.Writer.WriteAsync(State("2038-01-19T03:14:07", "2026-08-26T00:00:00", bias: 0, multiplier: 60));
+        channel.Writer.Complete();
+
+        var fired = await vm.ConsumeEventsAsync(channel.Reader, TimeSpan.FromSeconds(30));
+
+        Assert.False(fired); // completed normally
+        Assert.Equal("2038-01-19T03:14:07", vm.Fake.Wall);
     }
 
     [Fact]

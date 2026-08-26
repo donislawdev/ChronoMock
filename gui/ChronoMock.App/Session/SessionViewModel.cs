@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.Globalization;
 using System.IO; // The WPF SDK trims System.IO from implicit usings (Path collides with Shapes.Path).
 using System.Text;
+using System.Threading.Channels;
 using ChronoMock.Protocol;
 
 namespace ChronoMock.App;
@@ -23,6 +24,13 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
 {
     private static readonly TimeSpan ReadyTimeout = TimeSpan.FromSeconds(10);
 
+    /// <summary>Idle watchdog window (M-10): with no core event for this long, the session is treated as
+    /// hung. The core emits a <c>state</c> heartbeat every ~1 s of REAL time regardless of mode
+    /// (flow/frozen/xN), so 15 s is 15 missed heartbeats - comfortably above the noise, and above the
+    /// worst-case latency to the FIRST event (the core's prepare: launch + inject, itself bounded by
+    /// INJECT_TIMEOUT), so a slow start never trips it.</summary>
+    private static readonly TimeSpan IdleTimeout = TimeSpan.FromSeconds(15);
+
     private CoreClient? _client;
     private long _nextCommandId = 10; // start commands use low ids; in-flight commands take the rest
     private string _statusKey = "status.idle";
@@ -37,6 +45,7 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     private bool _scaleDuration;
     private readonly ISessionHistoryStore _store;
     private bool _launched;
+    private bool _stopRequested;
     private string _historyError = string.Empty;
 
     /// <summary>Bare view-model: history is in-memory, so a default construction and unit tests touch no files.</summary>
@@ -428,6 +437,7 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
 
         Idle = false;
         _launched = false;
+        _stopRequested = false;
         LastError = string.Empty;
         ResetSession();
         SetStatus("status.connecting", SessionStatusKind.Connecting);
@@ -458,16 +468,23 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
             _launched = true; // the target is now running - this session will be recorded in history on exit
             SetStatus("status.running", SessionStatusKind.Running);
 
-            await foreach (var evt in client.Events.ReadAllAsync())
-            {
-                Apply(evt);
-            }
+            var watchdogFired = await ConsumeEventsAsync(client.Events, IdleTimeout);
 
-            // The core closed its stdout. If we did not already reach a terminal outcome, the core stopped
-            // mid-session and the target's time is now frozen (docs/08 section 7) - say so, do not hang.
-            if (!IsTerminal(StatusKind))
+            // The event stream ended. Decide the final status by WHY it ended (M-10):
+            if (_stopRequested)
             {
-                SetStatus("status.core_stopped", SessionStatusKind.CoreStopped);
+                // The user pressed Stop. Show that plainly even if the core managed a clean `ended` first -
+                // the verdict and coverage already captured still stand and are shown separately.
+                SetStatus("status.stopped", SessionStatusKind.Stopped);
+            }
+            else if (!IsTerminal(StatusKind))
+            {
+                // No terminal event arrived. Either the idle watchdog fired (the core stopped heartbeating)
+                // or the core just closed its stdout on its own (docs/08 section 7). Either way the finally
+                // stops the core, the hook self-detaches, and the target returns to real time - do not hang.
+                SetStatus(
+                    watchdogFired ? "status.core_unresponsive" : "status.core_stopped",
+                    watchdogFired ? SessionStatusKind.CoreUnresponsive : SessionStatusKind.CoreStopped);
             }
         }
         catch (Exception ex) when (ex is FileNotFoundException or InvalidOperationException
@@ -512,6 +529,59 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
             }
 
             Idle = true;
+        }
+    }
+
+    /// <summary>
+    /// Stop a running session on the user's request (M-10). Disposes the core client OFF the UI thread (it
+    /// blocks up to ~2 s waiting for the core to end, then kills it): a healthy core ends cleanly and emits
+    /// its final verdict, a hung one is killed. In both cases the hook self-detaches when the core dies, so
+    /// the target returns to real time - we never kill the application under test. The read loop then
+    /// completes and <see cref="StartAsync"/> records the session and sets the Stopped status. No-op unless a
+    /// session is running - the Stop control is only shown then, but the guard keeps a stray call safe.
+    /// </summary>
+    public void RequestStop()
+    {
+        var client = _client;
+        if (client is null || !IsRunning)
+        {
+            return;
+        }
+
+        _stopRequested = true;
+        _ = Task.Run(() => client.DisposeAsync().AsTask());
+    }
+
+    /// <summary>
+    /// Relay events until the stream ends, resetting an idle watchdog on each one. Returns <c>true</c> if the
+    /// watchdog fired - no event for <paramref name="idleTimeout"/>, i.e. the core stopped emitting its ~1 s
+    /// heartbeat and is treated as hung (M-10) - and <c>false</c> if the stream completed normally (the core
+    /// exited or was disposed). Kept separate and <c>internal</c> so the watchdog is unit-tested with a fake
+    /// channel and a short timeout, no core process needed. No ConfigureAwait, so <see cref="Apply"/> stays on
+    /// the caller's (UI) thread.
+    /// </summary>
+    internal async Task<bool> ConsumeEventsAsync(ChannelReader<ChronoEvent> events, TimeSpan idleTimeout)
+    {
+        using var idleCts = new CancellationTokenSource();
+        try
+        {
+            while (true)
+            {
+                idleCts.CancelAfter(idleTimeout); // (re)arm the idle window before each wait
+                if (!await events.WaitToReadAsync(idleCts.Token))
+                {
+                    return false; // the stream completed - the core exited or was disposed (e.g. by Stop)
+                }
+
+                while (events.TryRead(out var evt))
+                {
+                    Apply(evt);
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            return true; // the idle watchdog fired - no event within the window
         }
     }
 
@@ -853,5 +923,7 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
         is SessionStatusKind.Ended
         or SessionStatusKind.DidNotTakeEffect
         or SessionStatusKind.CoreStopped
+        or SessionStatusKind.Stopped
+        or SessionStatusKind.CoreUnresponsive
         or SessionStatusKind.Error;
 }

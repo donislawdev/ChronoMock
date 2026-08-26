@@ -244,6 +244,12 @@
             <Button Content="{DynamicResource jump.plus_hour}" Tag="+1h" Margin="{StaticResource SpaceXs}" Click="OnJumpClick" />
             <Button Content="{DynamicResource jump.plus_day}" Tag="+1d" Margin="{StaticResource SpaceXs}" Click="OnJumpClick" />
           </StackPanel>
+          <!-- Stop the session on demand (chrono-mock 7.2, M-10): the meaning is in the label, not colour
+               (zasady/13 9). It ends the core cleanly (or kills a hung one), the hook self-detaches, and the
+               target returns to real time - the app under test is never killed. -->
+          <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="{StaticResource SpaceXs}">
+            <Button Content="{DynamicResource control.stop}" Margin="{StaticResource SpaceXs}" Click="OnStopClick" />
+          </StackPanel>
         </StackPanel>
 
         <!-- Status and rate. The meaning is carried by the translated label, not by colour (zasady/13 9). -->

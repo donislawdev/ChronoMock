@@ -38,6 +38,9 @@
   <sys:String x:Key="jump.plus_hour">+1 godz.</sys:String>
   <sys:String x:Key="jump.plus_day">+1 dzień</sys:String>
 
+  <!-- Sterowanie sesją (M-10). Znaczenie niesie etykieta, nigdy sam kolor. -->
+  <sys:String x:Key="control.stop">Zatrzymaj sesję</sys:String>
+
   <!-- Session status. -->
   <sys:String x:Key="status.idle">Nie uruchomiono</sys:String>
   <sys:String x:Key="status.connecting">Uruchamianie rdzenia</sys:String>
@@ -45,6 +48,8 @@
   <sys:String x:Key="status.ended">Sesja zakończona</sys:String>
   <sys:String x:Key="status.did_not_take_effect">Nie zadziałało - cel zniknął</sys:String>
   <sys:String x:Key="status.core_stopped">Rdzeń zatrzymany - czas celu zamrożony</sys:String>
+  <sys:String x:Key="status.stopped">Sesja zatrzymana - cel wrócił do realnego czasu</sys:String>
+  <sys:String x:Key="status.core_unresponsive">Rdzeń nie odpowiada - zatrzymany, cel wrócił do realnego czasu</sys:String>
   <sys:String x:Key="status.core_missing">Nie można uruchomić sesji demo - najpierw zbuduj rozwiązanie</sys:String>
   <sys:String x:Key="status.no_ready">Brak uzgodnienia z rdzeniem</sys:String>
   <sys:String x:Key="status.error">Błąd sesji</sys:String>

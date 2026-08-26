@@ -25,6 +25,14 @@ public enum SessionStatusKind
     /// <summary>The core closed its stream mid-session - the target's time is now frozen (docs/08 section 7).</summary>
     CoreStopped,
 
+    /// <summary>The user stopped the session (the Stop control). The core was ended, its hook self-detached,
+    /// and the target returned to real time (chrono-mock 7.2, M-10).</summary>
+    Stopped,
+
+    /// <summary>The idle watchdog fired - the core stopped emitting its ~1 s heartbeat, so it was stopped as
+    /// unresponsive and the target returned to real time (M-10).</summary>
+    CoreUnresponsive,
+
     /// <summary>Setup or the protocol failed - the reason is in the status label and the error detail.</summary>
     Error,
 }
