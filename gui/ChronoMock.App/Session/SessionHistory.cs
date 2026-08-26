@@ -92,9 +92,11 @@ public sealed class FileSessionHistoryStore : ISessionHistoryStore
             var file = JsonSerializer.Deserialize<HistoryFile>(File.ReadAllText(FilePath), Options);
             return file?.Sessions ?? [];
         }
-        catch (JsonException)
+        catch (Exception e) when (e is JsonException or IOException or UnauthorizedAccessException)
         {
-            // A corrupt history must not crash the app or be deleted - start empty and leave the file be.
+            // A corrupt OR unreadable history must not crash the app or be deleted - start empty and leave
+            // the file be (the interface contract, rule 6). IOException covers a file locked by a second
+            // portable instance; UnauthorizedAccessException a read-denied location.
             return [];
         }
     }

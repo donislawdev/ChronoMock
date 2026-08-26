@@ -83,7 +83,19 @@ public sealed class CoreClient : IAsyncDisposable
     {
         ArgumentNullException.ThrowIfNull(start);
         var client = Connect(coreExePath);
-        client.Send(start);
+        try
+        {
+            client.Send(start);
+        }
+        catch
+        {
+            // The core died right after spawning, so Send threw. Dispose the client we just created before
+            // the exception propagates - the reference never escapes this method, so otherwise its process,
+            // handles, and read tasks would leak (L-12).
+            client.DisposeAsync().AsTask().GetAwaiter().GetResult();
+            throw;
+        }
+
         return client;
     }
 

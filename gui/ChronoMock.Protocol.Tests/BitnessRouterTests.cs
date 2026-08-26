@@ -42,4 +42,26 @@ public class BitnessRouterTests
         var locator = CoreLocator.ForRepo(repo);
         Assert.Throws<InvalidOperationException>(() => locator.CoreForTarget(textFile));
     }
+
+    [Fact]
+    public void A_hostile_e_lfanew_is_unknown_not_a_crash()
+    {
+        // e_lfanew = 0x7FFFFFFF: `peOffset + 6` in 32-bit arithmetic overflows to a negative value and
+        // used to slip past the bound check, then throw EndOfStreamException on the seek+read (H-3). A
+        // malformed PE must resolve to Unknown, never a thrown exception.
+        var bytes = new byte[0x40];
+        bytes[0] = 0x4D; // 'M'
+        bytes[1] = 0x5A; // 'Z'
+        BitConverter.GetBytes(0x7FFFFFFF).CopyTo(bytes, 0x3C); // e_lfanew
+        var path = Path.Combine(Path.GetTempPath(), $"chrono-pe-{Guid.NewGuid():N}.bin");
+        File.WriteAllBytes(path, bytes);
+        try
+        {
+            Assert.Equal(PeReader.Machine.Unknown, PeReader.ReadMachine(path));
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
 }

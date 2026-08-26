@@ -79,6 +79,30 @@ public class SessionViewModelTests
     }
 
     [Fact]
+    public void A_late_ended_or_error_after_a_vanish_keeps_the_did_not_take_effect_verdict()
+    {
+        // The core can emit `ended` (or `error`) right after `vanished` (the target's exit). The terminal
+        // DidNotTakeEffect must survive it, or the honest "did not take effect" is lost from the summary and
+        // the history record (M-9) - the guard used to protect only `state`, not `ended`/`error`.
+        var vm = new SessionViewModel();
+        vm.SetTarget(@"C:\apps\Ledger.exe");
+        vm.Apply(new VanishedEvent
+        {
+            V = ProtocolJson.ProtocolVersion,
+            Pid = 1234,
+            ReasonKey = "target.single_instance_suspected",
+            LivedMs = 10,
+        });
+        Assert.Equal(SessionStatusKind.DidNotTakeEffect, vm.StatusKind);
+
+        vm.Apply(new EndedEvent { V = ProtocolJson.ProtocolVersion, Clean = true });
+        Assert.Equal(SessionStatusKind.DidNotTakeEffect, vm.StatusKind); // not overwritten to Ended
+
+        Assert.Equal("undetermined", vm.BuildRecord().Verdict); // history stays honest (rule 4)
+        Assert.StartsWith("!! UNRELIABLE EVIDENCE", vm.BuildSummary(T()), StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Ended_marks_the_session_ended()
     {
         var vm = new SessionViewModel();

@@ -63,12 +63,21 @@ public static class PresetCatalog
         }
 
         var presets = new List<PresetInfo>();
-        foreach (var file in Directory.EnumerateFiles(presetsDir, "*.json"))
+        try
         {
-            if (TryParse(file, out var info))
+            foreach (var file in Directory.EnumerateFiles(presetsDir, "*.json"))
             {
-                presets.Add(info);
+                if (TryParse(file, out var info))
+                {
+                    presets.Add(info);
+                }
             }
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            // The directory became unreadable mid-enumeration (permissions, a race with a delete) - return
+            // what parsed so far rather than crash the calculator screen on reveal (L-15, rule 6). Per-file
+            // parse errors are already swallowed inside TryParse.
         }
 
         return presets;

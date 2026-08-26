@@ -565,6 +565,19 @@ public sealed class CalculatorViewModel : ObservableObject
                 Readings.Clear();
             }
         }
+        catch (Exception e)
+        {
+            // Any other failure (an incomplete reading dereferenced in ApplyAnalysis / ReadingRow) is
+            // surfaced honestly rather than swallowed by this fire-and-forget task (M-11, rule 6).
+            if (!cts.IsCancellationRequested)
+            {
+                AnalyzeError = e.Message;
+                AnalyzeHasError = true;
+                HasAnalysis = false;
+                AnalyzeAmbiguous = false;
+                Readings.Clear();
+            }
+        }
     }
 
     private void ApplyAnalysis(CalcResult result)
@@ -717,9 +730,13 @@ public sealed class CalculatorViewModel : ObservableObject
 
             ApplyMarketCalendar(preset.Market);
         }
-        catch (NotSupportedException)
+        catch (Exception ex) when (ex is NotSupportedException or InvalidOperationException
+                                       or KeyNotFoundException or FormatException)
         {
-            // A shape the builder cannot represent - be honest rather than fill a wrong moment.
+            // A shape the builder cannot represent, OR a malformed preset moment (missing base/steps, an
+            // empty step, a shift without an amount, a non-string where a token is expected) - PresetUnpack
+            // throws these on a hand-edited or user-supplied preset file. Be honest with the "needs
+            // parameters" note rather than crash the dispatcher (M-8, rule 6).
             _unpacking = false;
             ShowActivePreset(preset, culture, needsParameters: true);
             return;
@@ -857,13 +874,27 @@ public sealed class CalculatorViewModel : ObservableObject
                 CanUseInSubstitution = false;
             }
         }
+        catch (Exception e)
+        {
+            // Any other failure (a malformed/incomplete calc result dereferenced in ApplyResult) is
+            // surfaced as an honest error, never silently swallowed by this fire-and-forget task (M-11, rule 6).
+            if (!cts.IsCancellationRequested)
+            {
+                Error = e.Message;
+                HasError = true;
+                CanUseInSubstitution = false;
+            }
+        }
     }
 
     private void ApplyResult(CalcResult result)
     {
-        if (result.Moment is not { } moment)
+        // Guard the nested non-nullable pieces too, not just Moment (M-11, tied to L-11): System.Text.Json
+        // does not enforce non-nullability, so an incomplete/other-schema payload can leave Formats or
+        // Metadata null and NRE below (moment.Formats.IsoDate, moment.Metadata.Weekday). Honest error instead.
+        if (result.Moment is not { } moment || moment.Formats is null || moment.Metadata is null)
         {
-            Error = "calc returned no moment";
+            Error = "calc returned an incomplete moment";
             HasError = true;
             CanUseInSubstitution = false;
             return;

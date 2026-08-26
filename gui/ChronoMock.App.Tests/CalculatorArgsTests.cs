@@ -111,6 +111,32 @@ public class CalculatorArgsTests
         Assert.True(step.IsSnap);
     }
 
+    [Fact]
+    public void A_preset_with_a_malformed_moment_shows_needs_parameters_and_does_not_crash()
+    {
+        // A preset file missing "moment" (PresetCatalog stores default(JsonElement)), or with an empty
+        // step / a shift without an amount, makes PresetUnpack throw InvalidOperationException /
+        // KeyNotFoundException / FormatException - not NotSupportedException. Those used to escape
+        // ApplyPreset's NotSupportedException-only catch and crash the dispatcher (M-8). Now they degrade
+        // to the honest "needs parameters" note. Non-parametric + malformed never reaches a recompute, so
+        // the calc client is not invoked.
+        var vm = new CalculatorViewModel(new CalcClient(() => "chrono"));
+        var preset = new PresetInfo(
+            "broken",
+            new Dictionary<string, string> { ["en"] = "Broken" },
+            new Dictionary<string, string>(),
+            "calculator",
+            null,
+            [],
+            default); // no moment -> default(JsonElement), GetProperty("base") throws InvalidOperationException
+
+        var ex = Record.Exception(() => vm.ApplyPreset(preset));
+
+        Assert.Null(ex); // no crash
+        Assert.True(vm.HasActivePreset);
+        Assert.True(vm.ActiveNeedsParameters); // honest note instead of a wrong or absent date
+    }
+
     // A step built the way the view model builds it (real option lists), without a UI thread. The calc
     // client is never invoked here - EnsureComputedAsync is not called, so adding a step spawns nothing.
     private static StepViewModel NewStep()

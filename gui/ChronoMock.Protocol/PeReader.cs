@@ -20,39 +20,52 @@ public static class PeReader
     /// </summary>
     public static Machine ReadMachine(string exePath)
     {
-        using var stream = File.OpenRead(exePath);
-        using var reader = new BinaryReader(stream);
-
-        if (stream.Length < 0x40)
+        try
         {
+            using var stream = File.OpenRead(exePath);
+            using var reader = new BinaryReader(stream);
+
+            if (stream.Length < 0x40)
+            {
+                return Machine.Unknown;
+            }
+
+            // DOS header: 'MZ' magic at 0, e_lfanew (PE header offset) at 0x3C.
+            if (reader.ReadUInt16() != 0x5A4D)
+            {
+                return Machine.Unknown;
+            }
+
+            stream.Seek(0x3C, SeekOrigin.Begin);
+            int peOffset = reader.ReadInt32();
+            // Compute the bound in long: peOffset is read straight from the file, so `peOffset + 6` in
+            // 32-bit arithmetic overflows to a NEGATIVE value for a hostile e_lfanew near int.MaxValue,
+            // slipping past this guard and throwing EndOfStreamException on the seek+read below (H-3).
+            if (peOffset <= 0 || (long)peOffset + 6 > stream.Length)
+            {
+                return Machine.Unknown;
+            }
+
+            // PE signature "PE\0\0", then IMAGE_FILE_HEADER.Machine (u16, little-endian).
+            stream.Seek(peOffset, SeekOrigin.Begin);
+            if (reader.ReadUInt32() != 0x0000_4550)
+            {
+                return Machine.Unknown;
+            }
+
+            return reader.ReadUInt16() switch
+            {
+                0x8664 => Machine.X64, // IMAGE_FILE_MACHINE_AMD64
+                0x014C => Machine.X86, // IMAGE_FILE_MACHINE_I386
+                _ => Machine.Unknown,
+            };
+        }
+        catch (EndOfStreamException)
+        {
+            // A truncated or malformed PE is Unknown, per the contract - never a thrown exception (H-3
+            // safety net). A file-ACCESS failure (UnauthorizedAccessException, other IOException) is not
+            // caught here: it propagates so the caller reports it as an access error, not "not a PE".
             return Machine.Unknown;
         }
-
-        // DOS header: 'MZ' magic at 0, e_lfanew (PE header offset) at 0x3C.
-        if (reader.ReadUInt16() != 0x5A4D)
-        {
-            return Machine.Unknown;
-        }
-
-        stream.Seek(0x3C, SeekOrigin.Begin);
-        int peOffset = reader.ReadInt32();
-        if (peOffset <= 0 || peOffset + 6 > stream.Length)
-        {
-            return Machine.Unknown;
-        }
-
-        // PE signature "PE\0\0", then IMAGE_FILE_HEADER.Machine (u16, little-endian).
-        stream.Seek(peOffset, SeekOrigin.Begin);
-        if (reader.ReadUInt32() != 0x0000_4550)
-        {
-            return Machine.Unknown;
-        }
-
-        return reader.ReadUInt16() switch
-        {
-            0x8664 => Machine.X64, // IMAGE_FILE_MACHINE_AMD64
-            0x014C => Machine.X86, // IMAGE_FILE_MACHINE_I386
-            _ => Machine.Unknown,
-        };
     }
 }

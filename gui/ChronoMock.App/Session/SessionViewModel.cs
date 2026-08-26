@@ -371,7 +371,10 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
                 _livedMs = vd.LivedMs;
                 SetStatus("status.did_not_take_effect", SessionStatusKind.DidNotTakeEffect);
                 break;
-            case EndedEvent e:
+            // Guarded on the terminal state like `state` above (M-9): a late `ended`/`error` after a
+            // terminal outcome (e.g. `ended` arriving right after `vanished` -> DidNotTakeEffect) must not
+            // overwrite the honest "did not take effect" verdict in the summary and history.
+            case EndedEvent e when !IsTerminal(StatusKind):
                 if (e.FakeEndWall is not null)
                 {
                     // The core's authoritative end timing (docs/08 section 6) - prefer it over the last heartbeat.
@@ -383,7 +386,7 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
 
                 SetStatus("status.ended", SessionStatusKind.Ended);
                 break;
-            case ErrorEvent:
+            case ErrorEvent when !IsTerminal(StatusKind):
                 SetStatus("status.error", SessionStatusKind.Error);
                 break;
             case VerdictEvent v:
@@ -468,15 +471,25 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
             }
         }
         catch (Exception ex) when (ex is FileNotFoundException or InvalidOperationException
+                                       or UnauthorizedAccessException
                                        or System.ComponentModel.Win32Exception)
         {
-            // Setup failed: a build artifact is missing, the repo root was not found, or the core would not spawn.
+            // Setup failed: a build artifact is missing, the repo root was not found, the target file is
+            // unreadable (UnauthorizedAccessException from PeReader.File.OpenRead, M-5), or the core would
+            // not spawn.
             LastError = ex.Message;
             SetStatus("status.core_missing", SessionStatusKind.Error);
         }
         catch (IOException ex)
         {
             // The protocol pipe broke mid-session.
+            LastError = ex.Message;
+            SetStatus("status.error", SessionStatusKind.Error);
+        }
+        catch (Exception ex)
+        {
+            // Anything else - most likely a malformed core event dereferenced in Apply (M-11). Surface it
+            // as an honest error rather than let it escape `async void OnStartClick` and crash the UI thread.
             LastError = ex.Message;
             SetStatus("status.error", SessionStatusKind.Error);
         }
