@@ -35,9 +35,9 @@ use windows::Win32::System::Memory::{
 };
 use windows::Win32::System::SystemInformation::{GetSystemTimeAsFileTime, GetTickCount64};
 use windows::Win32::System::Threading::{
-    CreateProcessW, CreateRemoteThread, GetCurrentProcessId, GetExitCodeProcess, OpenProcess,
-    ResumeThread, WaitForSingleObject, CREATE_SUSPENDED, INFINITE, LPTHREAD_START_ROUTINE,
-    PROCESS_INFORMATION, PROCESS_SYNCHRONIZE, STARTUPINFOW,
+    CreateProcessW, CreateRemoteThread, GetCurrentProcessId, GetExitCodeProcess, GetExitCodeThread,
+    OpenProcess, ResumeThread, TerminateProcess, WaitForSingleObject, CREATE_SUSPENDED,
+    LPTHREAD_START_ROUTINE, PROCESS_INFORMATION, PROCESS_SYNCHRONIZE, STARTUPINFOW,
 };
 use windows::Win32::System::WindowsProgramming::QueryUnbiasedInterruptTime;
 
@@ -489,15 +489,21 @@ pub fn prepare(spec: &SessionSpec, target: &Target, hook_dll: &Path) -> Result<P
             &mut pi,
         );
         if let Err(e) = launched {
+            let _ = UnmapViewOfFile(MEMORY_MAPPED_VIEW_ADDRESS { Value: view.Value });
             let _ = CloseHandle(hmap);
             return Err(PrepareError::Launch(format!("CreateProcessW: {e:?}")));
         }
 
         // 3. Inject the hook into the suspended target.
         if let Err(e) = inject(pi.hProcess, &dll_wide) {
-            let _ = ResumeThread(pi.hThread); // let it die naturally rather than freeze
+            // Injection failed, so the target is UNHOOKED and still SUSPENDED (it never ran an instruction).
+            // Terminate it (H-2): resuming - the old "let it die naturally" - would run an unhooked process
+            // to completion reading REAL time, a silent orphan the caller never asked to run, and hand back
+            // a "session" that substituted nothing. Clean up the mapped control view too (M-2).
+            let _ = TerminateProcess(pi.hProcess, 1);
             let _ = CloseHandle(pi.hThread);
             let _ = CloseHandle(pi.hProcess);
+            let _ = UnmapViewOfFile(MEMORY_MAPPED_VIEW_ADDRESS { Value: view.Value });
             let _ = CloseHandle(hmap);
             return Err(e);
         }
@@ -518,7 +524,22 @@ pub fn prepare(spec: &SessionSpec, target: &Target, hook_dll: &Path) -> Result<P
         // install bits are already set in DllMain, so without this a target that
         // vanished right after injection would look like a false "works".
         let t0 = Instant::now();
-        let _ = ResumeThread(pi.hThread);
+        // ResumeThread returns the thread's previous suspend count, or u32::MAX (-1) on failure. A failed
+        // resume would leave the target SUSPENDED forever while WaitForSingleObject below reads it as
+        // "still alive/healthy" (M-3) - a frozen process handed back as a running session that never does
+        // anything. Terminate and fail loudly instead (the hook's mapped section dies with the target).
+        if ResumeThread(pi.hThread) == u32::MAX {
+            let _ = TerminateProcess(pi.hProcess, 1);
+            let _ = CloseHandle(pi.hThread);
+            let _ = CloseHandle(pi.hProcess);
+            if let Some((hmap_cov, addr)) = parent_cov {
+                let _ = UnmapViewOfFile(MEMORY_MAPPED_VIEW_ADDRESS { Value: addr as *mut c_void });
+                let _ = CloseHandle(hmap_cov);
+            }
+            let _ = UnmapViewOfFile(MEMORY_MAPPED_VIEW_ADDRESS { Value: view.Value });
+            let _ = CloseHandle(hmap);
+            return Err(PrepareError::Inject("ResumeThread failed - target left suspended".into()));
+        }
         let waited = WaitForSingleObject(pi.hProcess, GUARD_MS);
         let coverage = match parent_cov {
             Some((_, addr)) => gather_coverage(addr as *const Cov, installed, spec.scale_duration),
@@ -616,31 +637,70 @@ fn build_command_line(path: &str, args: &[String]) -> Vec<u16> {
     to_wide(&command_line_string(path, args))
 }
 
-/// Manual LoadLibrary injection: write the DLL path into the target and run
-/// LoadLibraryW there on a remote thread.
+/// How long to wait for the remote `LoadLibraryW` thread. The hook's `DllMain` does no heavy work (it
+/// defers the watcher off the loader lock, ADR-3), so injection is quick; a thread still stuck past this
+/// means the target's loader deadlocked (loader lock), and we treat it as an injection failure rather than
+/// hang `prepare` forever (M-1).
+const INJECT_TIMEOUT_MS: u32 = 10_000;
+
+/// Manual LoadLibrary injection: write the DLL path into the target and run `LoadLibraryW` there on a
+/// remote thread. Returns `Err` (and frees the remote page) on any failure, INCLUDING a `LoadLibraryW`
+/// that returned NULL in the target - the caller then terminates the still-suspended target rather than
+/// resume an unhooked process reading real time (H-2).
 unsafe fn inject(hproc: HANDLE, dll_wide: &[u16]) -> Result<(), PrepareError> {
     let bytes = dll_wide.len() * 2;
     let remote = VirtualAllocEx(hproc, None, bytes, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
     if remote.is_null() {
         return Err(PrepareError::Inject("VirtualAllocEx returned null".into()));
     }
-    if let Err(e) = WriteProcessMemory(hproc, remote, dll_wide.as_ptr() as *const c_void, bytes, None) {
+    // Free the remote page on EVERY failure below, not just the write error (L-6). The target is still
+    // alive here (the caller terminates it on `Err`), so an un-freed page would leak in its address space.
+    let fail = |msg: String| -> PrepareError {
         let _ = VirtualFreeEx(hproc, remote, 0, MEM_RELEASE);
-        return Err(PrepareError::Inject(format!("WriteProcessMemory: {e:?}")));
+        PrepareError::Inject(msg)
+    };
+    if let Err(e) = WriteProcessMemory(hproc, remote, dll_wide.as_ptr() as *const c_void, bytes, None) {
+        return Err(fail(format!("WriteProcessMemory: {e:?}")));
     }
-    let k32 = GetModuleHandleA(s!("kernel32.dll"))
-        .map_err(|e| PrepareError::Inject(format!("GetModuleHandleA: {e:?}")))?;
-    let loadlib = GetProcAddress(k32, s!("LoadLibraryW"))
-        .ok_or_else(|| PrepareError::Inject("no LoadLibraryW export".into()))?;
+    let k32 = match GetModuleHandleA(s!("kernel32.dll")) {
+        Ok(h) => h,
+        Err(e) => return Err(fail(format!("GetModuleHandleA: {e:?}"))),
+    };
+    let loadlib = match GetProcAddress(k32, s!("LoadLibraryW")) {
+        Some(f) => f,
+        None => return Err(fail("no LoadLibraryW export".into())),
+    };
     let start: LPTHREAD_START_ROUTINE = Some(std::mem::transmute::<
         unsafe extern "system" fn() -> isize,
         unsafe extern "system" fn(*mut c_void) -> u32,
     >(loadlib));
-    let hthread = CreateRemoteThread(hproc, None, 0, start, Some(remote as *const c_void), 0, None)
-        .map_err(|e| PrepareError::Inject(format!("CreateRemoteThread: {e:?}")))?;
-    WaitForSingleObject(hthread, INFINITE);
+    let hthread = match CreateRemoteThread(hproc, None, 0, start, Some(remote as *const c_void), 0, None) {
+        Ok(h) => h,
+        Err(e) => return Err(fail(format!("CreateRemoteThread: {e:?}"))),
+    };
+
+    // Bounded wait (M-1): a hung DllMain (loader lock) must not hang prepare forever.
+    let waited = WaitForSingleObject(hthread, INJECT_TIMEOUT_MS);
+    // The remote thread's exit code is the low 32 bits of the HMODULE LoadLibraryW returned; 0 means the
+    // DLL did not load (bad architecture, missing runtime dependency, AV block, target tearing down). We
+    // only read it when the thread actually finished. (On x64 a module base whose low 32 bits are exactly
+    // 0 - a 4 GB-aligned load - would read as 0 too; that false negative is astronomically rare, and
+    // refusing is the safe direction: a retry lands a different ASLR base, never an unhooked target.)
+    let mut exit_code: u32 = 0;
+    let got_code = waited != WAIT_TIMEOUT && GetExitCodeThread(hthread, &mut exit_code).is_ok();
     let _ = VirtualFreeEx(hproc, remote, 0, MEM_RELEASE);
     let _ = CloseHandle(hthread);
+
+    if waited == WAIT_TIMEOUT {
+        return Err(PrepareError::Inject(format!(
+            "LoadLibraryW did not return within {INJECT_TIMEOUT_MS} ms (suspected loader lock)"
+        )));
+    }
+    if !got_code || exit_code == 0 {
+        return Err(PrepareError::Inject(
+            "LoadLibraryW returned NULL in the target (the hook DLL failed to load)".into(),
+        ));
+    }
     Ok(())
 }
 
