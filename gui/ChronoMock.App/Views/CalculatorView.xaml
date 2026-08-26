@@ -40,15 +40,17 @@
             <ItemsControl ItemsSource="{Binding Presets}" Margin="{StaticResource SpaceXs}">
               <ItemsControl.ItemTemplate>
                 <DataTemplate>
-                  <Border Margin="{StaticResource SpaceXs}" Padding="{StaticResource SpaceSm}"
-                          Background="{DynamicResource BrushBgSurfaceAlt}" CornerRadius="{StaticResource RadiusSm}">
+                  <Button Click="OnPresetClick" Tag="{Binding}"
+                          Margin="{StaticResource SpaceXs}" Padding="{StaticResource SpaceSm}"
+                          HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
+                          AutomationProperties.Name="{Binding DisplayName}">
                     <StackPanel>
                       <TextBlock Text="{Binding DisplayName}" TextWrapping="Wrap"
                                  FontSize="{StaticResource FontSizeBody}" Foreground="{DynamicResource BrushTextPrimary}" />
                       <TextBlock Text="{Binding DisplayExplains}" TextWrapping="Wrap"
                                  FontSize="{StaticResource FontSizeCaption}" Foreground="{DynamicResource BrushTextSecondary}" />
                     </StackPanel>
-                  </Border>
+                  </Button>
                 </DataTemplate>
               </ItemsControl.ItemTemplate>
             </ItemsControl>
@@ -206,6 +208,24 @@
             <TextBlock Text="{DynamicResource calc.result_header}"
                        FontSize="{StaticResource FontSizeCaption}" FontWeight="SemiBold"
                        Foreground="{DynamicResource BrushTextSecondary}" Margin="{StaticResource SpaceXs}" />
+
+            <!-- Active preset provenance (7.3): the authored name and "what it tests", plus an honest note
+                 when the preset needs parameters (it does not fill the builder then). Cleared on a by-hand edit. -->
+            <Border Margin="{StaticResource SpaceXs}" Padding="{StaticResource SpaceSm}"
+                    Background="{DynamicResource BrushBgBase}" CornerRadius="{StaticResource RadiusSm}"
+                    Visibility="{Binding HasActivePreset, Converter={StaticResource BoolToVis}}">
+              <StackPanel>
+                <TextBlock Text="{Binding ActivePresetName}" TextWrapping="Wrap"
+                           FontSize="{StaticResource FontSizeBody}" FontWeight="SemiBold"
+                           Foreground="{DynamicResource BrushAccent}" />
+                <TextBlock Text="{Binding ActivePresetExplains}" TextWrapping="Wrap"
+                           FontSize="{StaticResource FontSizeCaption}" Foreground="{DynamicResource BrushTextSecondary}" />
+                <TextBlock Text="{DynamicResource calc.preset_needs_params}" TextWrapping="Wrap"
+                           Margin="{StaticResource SpaceXs}"
+                           FontSize="{StaticResource FontSizeCaption}" Foreground="{DynamicResource BrushStatusPartial}"
+                           Visibility="{Binding ActiveNeedsParameters, Converter={StaticResource BoolToVis}}" />
+              </StackPanel>
+            </Border>
 
             <TextBlock Margin="{StaticResource SpaceXs}" TextWrapping="Wrap"
                        FontSize="{StaticResource FontSizeTitle}" FontWeight="SemiBold"

@@ -21,6 +21,16 @@ public partial class CalculatorView : UserControl
 
     private void OnAddStepClick(object sender, RoutedEventArgs e) => ViewModel?.AddStep();
 
+    // Apply a preset: fill the builder from its moment (7.3). A parametric preset shows an honest note
+    // instead (the view model does not fill a wrong moment).
+    private void OnPresetClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement { Tag: PresetItemViewModel item })
+        {
+            ViewModel?.ApplyPreset(item.Info);
+        }
+    }
+
     private void OnRemoveStepClick(object sender, RoutedEventArgs e)
     {
         if (sender is FrameworkElement { Tag: StepViewModel step })

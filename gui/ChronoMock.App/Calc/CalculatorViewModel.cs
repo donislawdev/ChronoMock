@@ -176,6 +176,11 @@ public sealed class CalculatorViewModel : ObservableObject
     private readonly string? _presetsDir;
     private IReadOnlyList<PresetItemViewModel> _allPresets = [];
     private string _presetFilter = string.Empty;
+    private bool _unpacking;
+    private bool _hasActivePreset;
+    private bool _activeNeedsParameters;
+    private string _activePresetName = string.Empty;
+    private string _activePresetExplains = string.Empty;
 
     private BaseKindOption _baseKind;
     private string _baseText = "2026-01-01T00:00:00";
@@ -273,6 +278,20 @@ public sealed class CalculatorViewModel : ObservableObject
 
     /// <summary>The calculator presets, filtered to this module and the current text filter (7.3).</summary>
     public ObservableCollection<PresetItemViewModel> Presets { get; } = [];
+
+    /// <summary>Whether a preset is currently the source of the builder (its name and framing show, and it
+    /// clears the moment a field is edited by hand).</summary>
+    public bool HasActivePreset { get => _hasActivePreset; private set => Set(ref _hasActivePreset, value); }
+
+    /// <summary>Whether the active preset needs parameters and so could not fill the builder (honest note,
+    /// its inputs are a later slice).</summary>
+    public bool ActiveNeedsParameters { get => _activeNeedsParameters; private set => Set(ref _activeNeedsParameters, value); }
+
+    /// <summary>The active preset's localized name (data locale).</summary>
+    public string ActivePresetName { get => _activePresetName; private set => Set(ref _activePresetName, value); }
+
+    /// <summary>The active preset's "what this date tests" line (data locale).</summary>
+    public string ActivePresetExplains { get => _activePresetExplains; private set => Set(ref _activePresetExplains, value); }
 
     public BaseKindOption SelectedBase
     {
@@ -413,8 +432,108 @@ public sealed class CalculatorViewModel : ObservableObject
     {
         if (_computedOnce)
         {
+            // A by-hand edit means the builder is no longer "the preset", so drop its framing (rule 6).
+            // Edits made while unpacking a preset are exempt.
+            if (!_unpacking)
+            {
+                ClearActivePreset();
+            }
+
             _ = RecomputeAsync();
         }
+    }
+
+    /// <summary>Apply a preset by filling the builder from its moment, so the result recomputes through the
+    /// normal pipeline (7.3, one source of truth). A parametric preset can't be filled without values, so it
+    /// shows an honest "needs parameters" note instead of a wrong date (rule 6) - its inputs are slice G4-2.</summary>
+    public void ApplyPreset(PresetInfo preset)
+    {
+        ArgumentNullException.ThrowIfNull(preset);
+        var culture = LocalizationService.CurrentCulture;
+
+        if (preset.IsParametric)
+        {
+            ShowActivePreset(preset, culture, needsParameters: true);
+            return;
+        }
+
+        try
+        {
+            var unpacked = PresetUnpack.UnpackMoment(preset.Moment);
+            _unpacking = true;
+            while (Steps.Count > 0)
+            {
+                RemoveStep(Steps[0]);
+            }
+
+            SelectedBase = BaseKinds.First(b => b.Kind == unpacked.Base);
+            if (unpacked.Base == BaseKind.Specific)
+            {
+                BaseText = unpacked.BaseText;
+            }
+
+            foreach (var step in unpacked.Steps)
+            {
+                AddUnpackedStep(step);
+            }
+        }
+        catch (NotSupportedException)
+        {
+            // A shape the builder cannot represent (should not happen for a non-parametric catalogue
+            // preset) - be honest rather than fill a wrong moment.
+            _unpacking = false;
+            ShowActivePreset(preset, culture, needsParameters: true);
+            return;
+        }
+
+        _unpacking = false;
+        ShowActivePreset(preset, culture, needsParameters: false);
+        _ = RecomputeAsync();
+    }
+
+    private void AddUnpackedStep(UnpackedStep spec)
+    {
+        var step = new StepViewModel(StepKinds, Units, SnapTargets, NearestTargets);
+        step.PropertyChanged += OnStepChanged;
+        step.SelectedKind = StepKinds.First(k => k.Kind == spec.Kind);
+        switch (spec.Kind)
+        {
+            case StepKind.Shift:
+                step.Sign = spec.Sign;
+                step.Amount = spec.Amount;
+                step.Unit = Units.FirstOrDefault(u => u.Token == spec.UnitToken) ?? step.Unit;
+                break;
+            case StepKind.Snap:
+                step.SnapTarget = SnapTargets.FirstOrDefault(t => t.Token == spec.SnapToken) ?? step.SnapTarget;
+                break;
+            case StepKind.Nearest:
+                step.NearestTarget = NearestTargets.FirstOrDefault(t => t.Token == spec.NearestToken) ?? step.NearestTarget;
+                break;
+            case StepKind.SetTime:
+                step.SetTimeText = spec.SetTime;
+                break;
+            case StepKind.Zone:
+                step.ZoneText = spec.ZoneOffset;
+                break;
+        }
+
+        Steps.Add(step);
+    }
+
+    private void ShowActivePreset(PresetInfo preset, string culture, bool needsParameters)
+    {
+        ActivePresetName = preset.LocalizedName(culture);
+        ActivePresetExplains = preset.LocalizedExplains(culture);
+        ActiveNeedsParameters = needsParameters;
+        HasActivePreset = true;
+    }
+
+    private void ClearActivePreset()
+    {
+        HasActivePreset = false;
+        ActiveNeedsParameters = false;
+        ActivePresetName = string.Empty;
+        ActivePresetExplains = string.Empty;
     }
 
     /// <summary>Build the calc arguments for the current builder state (pure; unit-tested). Each step
