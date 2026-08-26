@@ -133,7 +133,15 @@ public sealed class FileSessionHistoryStore : ISessionHistoryStore
     {
         Directory.CreateDirectory(_directory); // no-op when it exists; throws only on a real failure
         var file = new HistoryFile { Schema = Schema, Stability = "unstable", Sessions = sessions };
-        File.WriteAllText(FilePath, JsonSerializer.Serialize(file, Options));
+        var json = JsonSerializer.Serialize(file, Options);
+
+        // Write to a sibling temp file, then move it into place (L-13). A crash mid-write then leaves the
+        // PREVIOUS history intact rather than a truncated file that the next Load reads as empty and the
+        // next Append overwrites - losing the whole log, not just the in-flight entry. File.Move(overwrite)
+        // is atomic on one volume, and the temp is beside the target so it always is.
+        var temp = FilePath + ".tmp";
+        File.WriteAllText(temp, json);
+        File.Move(temp, FilePath, overwrite: true);
     }
 
     private sealed record HistoryFile
