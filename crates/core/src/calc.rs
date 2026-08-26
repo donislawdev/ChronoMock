@@ -789,6 +789,26 @@ pub enum Significance {
 }
 
 impl Significance {
+    /// Stable machine token for the JSON calc output (chronomock.calc/1) and, later, translation keys.
+    /// It never changes with wording, unlike `label` (rule 17: contract keys are public names).
+    pub fn key(&self) -> &'static str {
+        match self {
+            Significance::StartOfMonth => "start_of_month",
+            Significance::EndOfMonth => "end_of_month",
+            Significance::StartOfQuarter => "start_of_quarter",
+            Significance::EndOfQuarter => "end_of_quarter",
+            Significance::StartOfYear => "start_of_year",
+            Significance::EndOfYear => "end_of_year",
+            Significance::LeapDay => "leap_day",
+            Significance::LastDayOfFebruaryCommonYear => "last_day_of_february_common_year",
+            Significance::UnixEpoch => "unix_epoch",
+            Significance::Year2038Boundary => "year_2038_boundary",
+            Significance::Weekend => "weekend",
+            Significance::PublicHoliday => "public_holiday",
+            Significance::ObservedHoliday => "observed_holiday",
+        }
+    }
+
     /// English human label for the CLI (docs/08 section 9a). Becomes a translation key when the
     /// calculator GUI arrives, like the rest of calc.
     pub fn label(&self) -> &'static str {
@@ -909,6 +929,15 @@ pub enum DateReading {
 }
 
 impl DateReading {
+    /// Stable machine token for the JSON calc output (chronomock.calc/1), unlike the human `label`.
+    pub fn key(&self) -> &'static str {
+        match self {
+            DateReading::Iso => "iso",
+            DateReading::UsMonthDay => "us_month_day",
+            DateReading::PlDayMonth => "pl_day_month",
+        }
+    }
+
     /// English label for the CLI (a translation key when the calculator GUI arrives).
     pub fn label(&self) -> &'static str {
         match self {
@@ -1355,6 +1384,19 @@ mod tests {
         // the calendar-independent civil landmarks still work, with no panic.
         let s = sig(&dt(40000, 1, 1, 0, 0, 0), 0);
         assert!(s.contains(&Significance::StartOfYear));
+    }
+
+    #[test]
+    fn significance_and_reading_keys_are_stable_tokens() {
+        // The JSON calc contract (chronomock.calc/1) rides on these tokens, so they are pinned here
+        // - a wording change to `label` must never silently change the machine key (rule 17).
+        assert_eq!(Significance::EndOfQuarter.key(), "end_of_quarter");
+        assert_eq!(Significance::LeapDay.key(), "leap_day");
+        assert_eq!(Significance::UnixEpoch.key(), "unix_epoch");
+        assert_eq!(Significance::ObservedHoliday.key(), "observed_holiday");
+        assert_eq!(DateReading::Iso.key(), "iso");
+        assert_eq!(DateReading::UsMonthDay.key(), "us_month_day");
+        assert_eq!(DateReading::PlDayMonth.key(), "pl_day_month");
     }
 
     // --- step_target: the substitution jump bridge ---------------------------

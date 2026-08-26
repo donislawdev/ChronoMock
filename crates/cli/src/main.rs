@@ -57,9 +57,10 @@ fn print_usage() {
 }
 
 fn print_calc_usage() {
-    eprintln!("usage: chrono calc [--base <today|now|YYYY-MM-DDTHH:MM:SS>] [--shift <±N<unit>>]... [--set-time <HH:MM:SS>] [--snap <target>] [--nearest <target>] [--to-zone <+HH:MM>] [--zone <+HH:MM>] [--calendar <us-banking|us-federal|pl>] [--format <mask>]");
+    eprintln!("usage: chrono calc [--base <today|now|YYYY-MM-DDTHH:MM:SS>] [--shift <±N<unit>>]... [--set-time <HH:MM:SS>] [--snap <target>] [--nearest <target>] [--to-zone <+HH:MM>] [--zone <+HH:MM>] [--calendar <us-banking|us-federal|pl>] [--format <mask>] [--json]");
     eprintln!("       or: chrono calc --preset <id> [--param id=value]...   (named moment, e.g. month-end, trial-first-day-after)");
     eprintln!("       or: chrono calc --analyze <pasted-date>   (interpret a date, e.g. 04/08/2008; shows both readings when ambiguous)");
+    eprintln!("       --json emits machine output (chronomock.calc/1) for any of the above");
     eprintln!("       units: s m h d w mo q y bd (minute=m, month=mo)");
 }
 
@@ -920,6 +921,9 @@ struct CalcArgs {
     preset: Option<String>,
     /// Preset parameter values from `--param id=value` (docs/04 4.2). Only meaningful with --preset.
     params: HashMap<String, String>,
+    /// Emit the result as machine JSON (chronomock.calc/1) instead of human text, so the GUI can consume
+    /// the same engine output as a thin client (ADR-6). Composes with build, --analyze, and --preset.
+    json: bool,
 }
 
 fn calc_run(argv: &[String]) -> i32 {
@@ -961,7 +965,11 @@ fn calc_run(argv: &[String]) -> i32 {
     if let Some(input) = &ca.analyze {
         return match chrono_core::calc::analyze_date(input) {
             Ok(analysis) => {
-                print!("{}", render_analysis(&analysis, input, &now, ca.zone_bias_min, calendar.as_ref()));
+                if ca.json {
+                    println!("{}", calc_analysis_json(&analysis, input, &now, ca.zone_bias_min, calendar.as_ref()));
+                } else {
+                    print!("{}", render_analysis(&analysis, input, &now, ca.zone_bias_min, calendar.as_ref()));
+                }
                 0
             }
             Err(e) => {
@@ -974,7 +982,7 @@ fn calc_run(argv: &[String]) -> i32 {
     // A named preset (docs/04 4.3) supplies the moment in place of the step flags; otherwise the
     // moment is built from the flags. The preset also carries a human header (name + "explains").
     let preset_id = ca.preset.clone();
-    let (expr, preset_header) = match preset_id {
+    let (expr, preset_header, preset_meta) = match preset_id {
         Some(pid) => match load_preset(&pid) {
             Ok(p) => {
                 // The calculator surface honours `applies_to`: a substitution-only preset
@@ -1004,22 +1012,30 @@ fn calc_run(argv: &[String]) -> i32 {
                         return e.exit_code();
                     }
                 };
+                let pj = PresetJson { id: p.id, name: p.name_en, explains: p.explains_en };
                 let header =
-                    format!("  preset:   {} - {}\n  explains: {}\n", p.id, p.name_en, p.explains_en);
-                (moment, Some(header))
+                    format!("  preset:   {} - {}\n  explains: {}\n", pj.id, pj.name, pj.explains);
+                (moment, Some(header), Some(pj))
             }
             Err(e) => {
                 eprintln!("chrono calc: {}", e.message());
                 return e.exit_code();
             }
         },
-        None => (MomentExpr { base: ca.base, steps: ca.steps }, None),
+        None => (MomentExpr { base: ca.base, steps: ca.steps }, None, None),
     };
     match chrono_core::calc::eval(
         &expr,
         &EvalContext { now, zone_bias_min: ca.zone_bias_min.unwrap_or(0), calendar: calendar.as_ref() },
     ) {
         Ok(outcome) => {
+            if ca.json {
+                println!(
+                    "{}",
+                    calc_moment_json(&outcome, &now, calendar.as_ref(), ca.format.as_deref(), preset_meta)
+                );
+                return 0;
+            }
             let mut text =
                 render_calc(&expr, &outcome, ca.zone_bias_min, &now, calendar.as_ref(), preset_header.as_deref());
             // A custom mask (7.3) adds one more line in the target app's exact format.
@@ -1039,6 +1055,195 @@ fn calc_run(argv: &[String]) -> i32 {
     }
 }
 
+// --- Machine JSON output for the calculator (chronomock.calc/1) -----------------------
+//
+// The calc engine lives in chrono-core (serde-free), so the CLI owns serialization: these DTOs are
+// populated from the core's typed results, the mirror of the calendar/preset loaders. The GUI is a
+// thin client of this contract (ADR-6), consuming the same engine output the human render shows.
+// Contract keys are public names (rule 17); a breaking change needs a schema bump (private repo now).
+// An error still goes to stderr with a non-zero exit - stdout carries a result only on success.
+
+const CALC_SCHEMA: &str = "chronomock.calc/1";
+
+#[derive(serde::Serialize)]
+struct CalcJson {
+    schema: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    moment: Option<MomentJson>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    analysis: Option<AnalysisJson>,
+}
+
+#[derive(serde::Serialize)]
+struct MomentJson {
+    /// The result moment as ISO wall-clock in `zone_bias_min`.
+    iso: String,
+    /// Result-zone bias in minutes (UTC = local + bias); a `zone` step may move it off the session zone.
+    zone_bias_min: i32,
+    base: String,
+    /// The intermediate result after each step, in order.
+    steps: Vec<String>,
+    formats: FormatsJson,
+    metadata: MetadataJson,
+    /// Stable significance tokens (Significance::key); empty when the date hits no landmark.
+    significance: Vec<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    custom_format: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    preset: Option<PresetJson>,
+}
+
+#[derive(serde::Serialize)]
+struct FormatsJson {
+    iso_date: String,
+    iso_datetime: String,
+    us: String,
+    pl: String,
+    /// Instant-based formats are null outside the representable FILETIME range (never a wrong number).
+    epoch_seconds: Option<i64>,
+    epoch_millis: Option<i64>,
+    filetime: Option<i64>,
+    rfc1123: Option<String>,
+}
+
+#[derive(serde::Serialize)]
+struct MetadataJson {
+    weekday: &'static str,
+    iso_week_year: i64,
+    iso_week: u32,
+    us_week: u32,
+    day_of_year: u32,
+    quarter: u32,
+    is_leap_year: bool,
+    days_from_today: i64,
+    /// null when no calendar was supplied; otherwise whether the date is a business day.
+    business_day: Option<bool>,
+    /// The holiday's English name, or null (no calendar, or not a holiday - business_day disambiguates).
+    holiday: Option<String>,
+}
+
+#[derive(serde::Serialize)]
+struct PresetJson {
+    id: String,
+    name: String,
+    explains: String,
+}
+
+#[derive(serde::Serialize)]
+struct AnalysisJson {
+    input: String,
+    ambiguous: bool,
+    readings: Vec<ReadingJson>,
+}
+
+#[derive(serde::Serialize)]
+struct ReadingJson {
+    /// Stable reading token (DateReading::key): iso / us_month_day / pl_day_month.
+    reading: &'static str,
+    iso: String,
+    significance: Vec<&'static str>,
+    metadata: MetadataJson,
+}
+
+fn formats_json(civil: &chrono_core::calc::CivilDateTime, bias: i32) -> FormatsJson {
+    let f = chrono_core::calc::formats(civil, bias);
+    FormatsJson {
+        iso_date: f.iso_date,
+        iso_datetime: f.iso_datetime,
+        us: f.us,
+        pl: f.pl,
+        epoch_seconds: f.epoch_seconds,
+        epoch_millis: f.epoch_millis,
+        filetime: f.filetime,
+        rfc1123: f.rfc1123,
+    }
+}
+
+fn metadata_json(
+    civil: &chrono_core::calc::CivilDateTime,
+    now: &chrono_core::calc::CivilDateTime,
+    calendar: Option<&chrono_core::calendar::Calendar>,
+) -> MetadataJson {
+    let m = chrono_core::calc::metadata(civil, now);
+    let (business_day, holiday) = match calendar {
+        Some(cal) => (
+            Some(chrono_core::calendar::is_business_day(civil, cal)),
+            chrono_core::calendar::holiday_on(civil, cal).map(|h| h.name_en.clone()),
+        ),
+        None => (None, None),
+    };
+    MetadataJson {
+        weekday: m.weekday,
+        iso_week_year: m.iso_week_year,
+        iso_week: m.iso_week,
+        us_week: m.us_week,
+        day_of_year: m.day_of_year,
+        quarter: m.quarter,
+        is_leap_year: m.is_leap_year,
+        days_from_today: m.days_from_today,
+        business_day,
+        holiday,
+    }
+}
+
+fn significance_keys(
+    civil: &chrono_core::calc::CivilDateTime,
+    bias: i32,
+    calendar: Option<&chrono_core::calendar::Calendar>,
+) -> Vec<&'static str> {
+    chrono_core::calc::significance(civil, bias, calendar).iter().map(|s| s.key()).collect()
+}
+
+fn calc_moment_json(
+    outcome: &chrono_core::calc::EvalOutcome,
+    now: &chrono_core::calc::CivilDateTime,
+    calendar: Option<&chrono_core::calendar::Calendar>,
+    format_mask: Option<&str>,
+    preset: Option<PresetJson>,
+) -> String {
+    let result = outcome.result();
+    let bias = outcome.result_bias;
+    let moment = MomentJson {
+        iso: result.to_iso(),
+        zone_bias_min: bias,
+        base: outcome.base.to_iso(),
+        steps: outcome.after_each.iter().map(|c| c.to_iso()).collect(),
+        formats: formats_json(&result, bias),
+        metadata: metadata_json(&result, now, calendar),
+        significance: significance_keys(&result, bias, calendar),
+        custom_format: format_mask.map(|m| chrono_core::calc::format_with_mask(&result, m)),
+        preset,
+    };
+    let doc = CalcJson { schema: CALC_SCHEMA, moment: Some(moment), analysis: None };
+    serde_json::to_string(&doc).unwrap_or_else(|e| format!(r#"{{"error":"serialize: {e}"}}"#))
+}
+
+fn calc_analysis_json(
+    analysis: &chrono_core::calc::DateAnalysis,
+    input: &str,
+    now: &chrono_core::calc::CivilDateTime,
+    zone_bias_min: Option<i32>,
+    calendar: Option<&chrono_core::calendar::Calendar>,
+) -> String {
+    let bias = zone_bias_min.unwrap_or(0);
+    let readings = analysis
+        .readings
+        .iter()
+        .map(|(reading, civil)| ReadingJson {
+            reading: reading.key(),
+            iso: civil.to_iso(),
+            significance: significance_keys(civil, bias, calendar),
+            metadata: metadata_json(civil, now, calendar),
+        })
+        .collect();
+    let doc = CalcJson {
+        schema: CALC_SCHEMA,
+        moment: None,
+        analysis: Some(AnalysisJson { input: input.to_string(), ambiguous: analysis.is_ambiguous(), readings }),
+    };
+    serde_json::to_string(&doc).unwrap_or_else(|e| format!(r#"{{"error":"serialize: {e}"}}"#))
+}
+
 fn parse_calc_args(argv: &[String]) -> Result<CalcArgs, String> {
     let mut base = Base::Today;
     let mut steps: Vec<Step> = Vec::new();
@@ -1048,6 +1253,7 @@ fn parse_calc_args(argv: &[String]) -> Result<CalcArgs, String> {
     let mut format: Option<String> = None;
     let mut preset: Option<String> = None;
     let mut params: HashMap<String, String> = HashMap::new();
+    let mut json = false;
     // Whether any moment-building flag appeared, so `--preset` (which supplies its own moment)
     // can reject being combined with them instead of silently ignoring one source.
     let mut saw_step_flag = false;
@@ -1122,6 +1328,7 @@ fn parse_calc_args(argv: &[String]) -> Result<CalcArgs, String> {
                 steps.push(Step::Nearest(parse_nearest(argv.get(i).ok_or("--nearest needs a target")?)?));
                 saw_step_flag = true;
             }
+            "--json" => json = true,
             other if other.starts_with("--") => return Err(format!("unknown flag '{other}'")),
             other => return Err(format!("unexpected argument '{other}'")),
         }
@@ -1144,7 +1351,7 @@ fn parse_calc_args(argv: &[String]) -> Result<CalcArgs, String> {
         return Err("--param needs --preset (parameters belong to a preset)".into());
     }
 
-    Ok(CalcArgs { base, steps, zone_bias_min, calendar, analyze, format, preset, params })
+    Ok(CalcArgs { base, steps, zone_bias_min, calendar, analyze, format, preset, params, json })
 }
 
 /// Parse a `--base` value: the keywords `today`/`now`, or an absolute civil date-time.
@@ -3029,6 +3236,48 @@ mod tests {
         assert!(text.contains("ambiguous"), "got:\n{text}");
         assert!(text.contains("US MM/DD/YYYY:  2008-04-08  (Tuesday)"), "got:\n{text}");
         assert!(text.contains("PL DD/MM/YYYY:  2008-08-04  (Monday)"), "got:\n{text}");
+    }
+
+    #[test]
+    fn calc_json_flag_parses() {
+        let ca = parse_calc_args(&["--base".into(), "2026-09-30T23:59:59".into(), "--json".into()]).unwrap();
+        assert!(ca.json);
+        assert!(!parse_calc_args(&["--base".into(), "2026-09-30T00:00:00".into()]).unwrap().json);
+    }
+
+    #[test]
+    fn calc_moment_json_carries_the_contract_fields() {
+        let base = chrono_core::calc::CivilDateTime { year: 2026, month: 9, day: 30, hour: 23, minute: 59, second: 59 };
+        let now = chrono_core::calc::CivilDateTime { year: 2026, month: 8, day: 26, hour: 0, minute: 0, second: 0 };
+        let expr = MomentExpr { base: Base::Absolute(base), steps: vec![] };
+        let outcome =
+            chrono_core::calc::eval(&expr, &EvalContext { now, zone_bias_min: 0, calendar: None }).unwrap();
+        let json = calc_moment_json(&outcome, &now, None, None, None);
+        let v: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(v["schema"], "chronomock.calc/1");
+        assert_eq!(v["moment"]["iso"], "2026-09-30T23:59:59");
+        assert_eq!(v["moment"]["formats"]["iso_date"], "2026-09-30");
+        // No calendar supplied, so the calendar-dependent metadata is null (never guessed).
+        assert!(v["moment"]["metadata"]["business_day"].is_null());
+        let sig = v["moment"]["significance"].as_array().unwrap();
+        assert!(sig.iter().any(|s| s == "end_of_quarter"), "got: {sig:?}");
+    }
+
+    #[test]
+    fn calc_analysis_json_shows_both_readings_with_stable_keys() {
+        let analysis = chrono_core::calc::analyze_date("04/08/2008").unwrap();
+        let now = chrono_core::calc::CivilDateTime { year: 2026, month: 8, day: 26, hour: 0, minute: 0, second: 0 };
+        let json = calc_analysis_json(&analysis, "04/08/2008", &now, Some(0), None);
+        let v: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(v["schema"], "chronomock.calc/1");
+        assert_eq!(v["analysis"]["ambiguous"], true);
+        let readings = v["analysis"]["readings"].as_array().unwrap();
+        assert_eq!(readings.len(), 2);
+        // `iso` is the full ISO datetime (midnight for a date reading), consistent with moment.iso.
+        assert_eq!(readings[0]["reading"], "us_month_day");
+        assert_eq!(readings[0]["iso"], "2008-04-08T00:00:00");
+        assert_eq!(readings[1]["reading"], "pl_day_month");
+        assert_eq!(readings[1]["iso"], "2008-08-04T00:00:00");
     }
 
     #[test]
