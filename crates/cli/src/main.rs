@@ -313,9 +313,20 @@ fn parse_zone_to_bias(raw: &str) -> Result<i32, String> {
     let (h, m) = rest
         .split_once(':')
         .ok_or_else(|| format!("zone must look like +HH:MM, got '{raw}'"))?;
-    let hours: i32 = h.parse().map_err(|_| format!("bad zone hours in '{raw}'"))?;
-    let mins: i32 = m.parse().map_err(|_| format!("bad zone minutes in '{raw}'"))?;
-    let offset = sign * (hours * 60 + mins);
+    // Parse as u32 so an INNER sign (e.g. `+-5:00` or `+05:-30`) is rejected, not silently taken as a
+    // negative component (M-4). Range-check hours 0..=14 (the max real offset is +14:00) and minutes
+    // 0..=59, which also keeps `hours * 60 + mins` well inside i32: the old i32 parse overflowed on a
+    // huge value and, in a release build (no overflow-checks), WRAPPED to a wrong bias - a silently
+    // wrong session time, exactly the "off by N hours" error untouchable rule 2 guards against.
+    let hours: u32 = h.parse().map_err(|_| format!("bad zone hours in '{raw}' (digits only)"))?;
+    let mins: u32 = m.parse().map_err(|_| format!("bad zone minutes in '{raw}' (digits only)"))?;
+    if hours > 14 {
+        return Err(format!("zone hours out of range in '{raw}' (0..=14)"));
+    }
+    if mins > 59 {
+        return Err(format!("zone minutes out of range in '{raw}' (0..=59)"));
+    }
+    let offset = sign * (hours as i32 * 60 + mins as i32);
     Ok(-offset)
 }
 
@@ -2740,6 +2751,27 @@ mod tests {
         assert_eq!(ok.set_after, Some((5, 60)));
         assert!(parse_run_args(&["t".into(), "--set-after".into(), "5:0".into()]).is_err());
         assert!(parse_run_args(&["t".into(), "--set-after".into(), "5:-3".into()]).is_err());
+    }
+
+    #[test]
+    fn zone_parses_valid_offsets_and_rejects_garbage() {
+        // UTC = local + bias, so a local +HH:MM gives bias -(H*60 + M). Real offsets across the range parse.
+        assert_eq!(parse_zone_to_bias("+00:00").unwrap(), 0);
+        assert_eq!(parse_zone_to_bias("+02:00").unwrap(), -120);
+        assert_eq!(parse_zone_to_bias("-05:00").unwrap(), 300);
+        assert_eq!(parse_zone_to_bias("+05:45").unwrap(), -345); // Nepal
+        assert_eq!(parse_zone_to_bias("+14:00").unwrap(), -840); // max real offset
+        assert_eq!(parse_zone_to_bias("-12:00").unwrap(), 720);
+        // An INNER sign is rejected (M-4), never silently taken as a negative component.
+        assert!(parse_zone_to_bias("+-5:00").is_err());
+        assert!(parse_zone_to_bias("+05:-30").is_err());
+        // Out of range, non-digit, missing parts - all rejected, no silent overflow/wrap.
+        assert!(parse_zone_to_bias("+99:00").is_err());
+        assert!(parse_zone_to_bias("+05:99").is_err());
+        assert!(parse_zone_to_bias("+99999999:00").is_err()); // used to overflow i32 in a release build
+        assert!(parse_zone_to_bias("05:00").is_err()); // no leading sign
+        assert!(parse_zone_to_bias("+ab:cd").is_err());
+        assert!(parse_zone_to_bias("+05").is_err()); // no minutes
     }
 
     #[test]
