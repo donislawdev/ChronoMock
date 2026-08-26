@@ -127,7 +127,10 @@
   <sys:String x:Key="calc.other_zones">Ta sama chwila, inne strefy</sys:String>
   <sys:String x:Key="calc.use_in_substitution">Użyj w podmianie →</sys:String>
   <sys:String x:Key="calc.reverse_header">Analiza wklejonej daty</sys:String>
-  <sys:String x:Key="calc.preview_note">Presety i analiza odwrotna to wciąż podgląd - konstruktor i wynik są na żywo.</sys:String>
+  <sys:String x:Key="calc.analyze_ambiguous">Niejednoznaczne - pokazane obie interpretacje</sys:String>
+  <sys:String x:Key="calc.reading.iso">ISO 8601 (jednoznaczne)</sys:String>
+  <sys:String x:Key="calc.reading.us_month_day">Odczyt US (MM/DD/RRRR)</sys:String>
+  <sys:String x:Key="calc.reading.pl_day_month">Odczyt PL (DD/MM/RRRR)</sys:String>
 
   <!-- Konstruktor kalkulatora (G3b): rodzaje bazy, jednostki shift, kalendarze i markery znaczenia. -->
   <sys:String x:Key="calc.base.today">Dziś</sys:String>

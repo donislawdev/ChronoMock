@@ -128,7 +128,10 @@
   <sys:String x:Key="calc.other_zones">Same instant, other zones</sys:String>
   <sys:String x:Key="calc.use_in_substitution">Use in substitution →</sys:String>
   <sys:String x:Key="calc.reverse_header">Analyze a pasted date</sys:String>
-  <sys:String x:Key="calc.preview_note">Presets and reverse analysis are still a preview - the builder and result are live.</sys:String>
+  <sys:String x:Key="calc.analyze_ambiguous">Ambiguous - both interpretations shown</sys:String>
+  <sys:String x:Key="calc.reading.iso">ISO 8601 (unambiguous)</sys:String>
+  <sys:String x:Key="calc.reading.us_month_day">US reading (MM/DD/YYYY)</sys:String>
+  <sys:String x:Key="calc.reading.pl_day_month">PL reading (DD/MM/YYYY)</sys:String>
 
   <!-- Calculator builder (G3b): base kinds, shift units, calendars, and the significance markers. -->
   <sys:String x:Key="calc.base.today">Today</sys:String>

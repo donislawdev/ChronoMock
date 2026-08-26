@@ -335,22 +335,50 @@
       </Grid>
     </ScrollViewer>
 
-    <!-- BOTTOM: reverse analysis. Static preview until slice G5 wires it to the analyze mode. -->
+    <!-- BOTTOM: reverse analysis (7.3) - paste a date, see how it reads, both interpretations when the
+         numeric order is ambiguous (04/08 is April 8 in the US, August 4 in Poland). -->
     <Border Grid.Row="1" Margin="{StaticResource SpaceMd}" Padding="{StaticResource SpaceLg}"
             Background="{DynamicResource BrushBgSurface}" CornerRadius="{StaticResource RadiusMd}">
       <StackPanel>
         <TextBlock Text="{DynamicResource calc.reverse_header}"
                    FontSize="{StaticResource FontSizeCaption}" FontWeight="SemiBold"
                    Foreground="{DynamicResource BrushTextSecondary}" Margin="{StaticResource SpaceXs}" />
-        <StackPanel Orientation="Horizontal">
-          <TextBox Text="04/08/2008" Width="160" Margin="{StaticResource SpaceXs}"
-                   FontFamily="{StaticResource FontFamilyMono}" IsEnabled="False" />
-          <TextBlock Text="US → 2008-04-08 (Apr 8) · PL → 2008-08-04 (Aug 4)" VerticalAlignment="Center"
-                     Margin="{StaticResource SpaceSm}"
-                     FontSize="{StaticResource FontSizeCaption}" Foreground="{DynamicResource BrushStatusPartial}" />
+        <StackPanel Orientation="Horizontal" Margin="{StaticResource SpaceXs}">
+          <TextBox Text="{Binding AnalyzeText, UpdateSourceTrigger=LostFocus}" Width="160" VerticalAlignment="Center"
+                   FontFamily="{StaticResource FontFamilyMono}"
+                   AutomationProperties.Name="{DynamicResource calc.reverse_header}" />
+          <TextBlock Text="{DynamicResource calc.analyze_ambiguous}" VerticalAlignment="Center" Margin="{StaticResource SpaceSm}"
+                     FontSize="{StaticResource FontSizeCaption}" Foreground="{DynamicResource BrushStatusPartial}"
+                     Visibility="{Binding AnalyzeAmbiguous, Converter={StaticResource BoolToVis}}" />
+          <TextBlock Text="{Binding AnalyzeError}" VerticalAlignment="Center" TextWrapping="Wrap" Margin="{StaticResource SpaceSm}"
+                     FontSize="{StaticResource FontSizeCaption}" Foreground="{DynamicResource BrushStatusFails}"
+                     Visibility="{Binding AnalyzeHasError, Converter={StaticResource BoolToVis}}" />
         </StackPanel>
-        <TextBlock Text="{DynamicResource calc.preview_note}" Margin="{StaticResource SpaceXs}"
-                   FontSize="{StaticResource FontSizeCaption}" Foreground="{DynamicResource BrushTextSecondary}" />
+        <ItemsControl ItemsSource="{Binding Readings}" Margin="{StaticResource SpaceXs}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate>
+              <StackPanel Orientation="Horizontal" Margin="{StaticResource SpaceXs}">
+                <TextBlock Text="{Binding ReadingLabelKey, Converter={StaticResource KeyToText}}" VerticalAlignment="Center" MinWidth="160"
+                           FontSize="{StaticResource FontSizeCaption}" Foreground="{DynamicResource BrushTextSecondary}" />
+                <TextBlock Text="{Binding DateLine}" VerticalAlignment="Center" Margin="{StaticResource SpaceSm}"
+                           FontSize="{StaticResource FontSizeBody}" Foreground="{DynamicResource BrushTextPrimary}" />
+                <ItemsControl ItemsSource="{Binding Significance}" VerticalAlignment="Center" Margin="{StaticResource SpaceSm}">
+                  <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                      <StackPanel Orientation="Horizontal" />
+                    </ItemsPanelTemplate>
+                  </ItemsControl.ItemsPanel>
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                      <TextBlock Text="{Binding Converter={StaticResource KeyToText}}" Margin="{StaticResource SpaceXs}"
+                                 FontSize="{StaticResource FontSizeCaption}" Foreground="{DynamicResource BrushAccent}" />
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+              </StackPanel>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
       </StackPanel>
     </Border>
   </Grid>

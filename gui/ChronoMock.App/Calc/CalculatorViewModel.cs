@@ -223,6 +223,24 @@ public sealed class ParamInputViewModel : ObservableObject
     }
 }
 
+/// <summary>One reading of an analyzed date (7.3): its interpretation label (a key), the resolved date with
+/// its weekday, and any significance markers. Built from the engine's <see cref="CalcReading"/>.</summary>
+public sealed class ReadingRow
+{
+    public ReadingRow(CalcReading reading)
+    {
+        ReadingLabelKey = $"calc.reading.{reading.Reading}";
+        var t = reading.Iso.IndexOf('T', StringComparison.Ordinal);
+        var date = t >= 0 ? reading.Iso[..t] : reading.Iso;
+        DateLine = $"{reading.Metadata.Weekday}  {date}";
+        Significance = new ObservableCollection<string>(reading.Significance.Select(key => $"calc.sig.{key}"));
+    }
+
+    public string ReadingLabelKey { get; }
+    public string DateLine { get; }
+    public ObservableCollection<string> Significance { get; }
+}
+
 /// <summary>
 /// The date-calculator screen's live state (Stage 4, GUI slice G3b/G3c/G4). Holds the builder inputs (base,
 /// steps, calendar) and the result of evaluating them through <see cref="CalcClient"/> - the same engine
@@ -257,6 +275,13 @@ public sealed class CalculatorViewModel : ObservableObject
     private bool _hasSignificance;
     private bool _computedOnce;
     private CancellationTokenSource? _cts;
+
+    private string _analyzeText = "04/08/2008";
+    private bool _hasAnalysis;
+    private bool _analyzeAmbiguous;
+    private bool _analyzeHasError;
+    private string _analyzeError = string.Empty;
+    private CancellationTokenSource? _analyzeCts;
 
     public CalculatorViewModel(CalcClient client, string? presetsDir = null)
     {
@@ -360,6 +385,27 @@ public sealed class CalculatorViewModel : ObservableObject
     /// <summary>Whether the active preset shows parameter inputs.</summary>
     public bool HasParamInputs { get => _hasParamInputs; private set => Set(ref _hasParamInputs, value); }
 
+    /// <summary>Reverse analysis (7.3): the reading(s) a pasted date resolves to, both shown when ambiguous.</summary>
+    public ObservableCollection<ReadingRow> Readings { get; } = [];
+
+    /// <summary>The pasted date to interpret (reverse analysis).</summary>
+    public string AnalyzeText
+    {
+        get => _analyzeText;
+        set
+        {
+            if (Set(ref _analyzeText, value))
+            {
+                TriggerAnalyze();
+            }
+        }
+    }
+
+    public bool HasAnalysis { get => _hasAnalysis; private set => Set(ref _hasAnalysis, value); }
+    public bool AnalyzeAmbiguous { get => _analyzeAmbiguous; private set => Set(ref _analyzeAmbiguous, value); }
+    public bool AnalyzeHasError { get => _analyzeHasError; private set => Set(ref _analyzeHasError, value); }
+    public string AnalyzeError { get => _analyzeError; private set => Set(ref _analyzeError, value); }
+
     public BaseKindOption SelectedBase
     {
         get => _baseKind;
@@ -451,7 +497,72 @@ public sealed class CalculatorViewModel : ObservableObject
 
         _computedOnce = true;
         LoadPresets();
+        _ = AnalyzeAsync(); // the reverse-analysis strip is live from the start (its default example)
         return RecomputeAsync();
+    }
+
+    /// <summary>Build the calc arguments for reverse analysis (pure; unit-tested).</summary>
+    public static IReadOnlyList<string> BuildAnalyzeArgs(string text) => ["--analyze", text.Trim()];
+
+    private void TriggerAnalyze()
+    {
+        if (_computedOnce)
+        {
+            _ = AnalyzeAsync();
+        }
+    }
+
+    private async Task AnalyzeAsync()
+    {
+        _analyzeCts?.Cancel();
+        var cts = new CancellationTokenSource();
+        _analyzeCts = cts;
+
+        try
+        {
+            var result = await _client.EvaluateAsync(BuildAnalyzeArgs(_analyzeText), cts.Token);
+            if (!cts.IsCancellationRequested)
+            {
+                ApplyAnalysis(result);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // A newer analysis superseded this one - drop it.
+        }
+        catch (CalcException e)
+        {
+            if (!cts.IsCancellationRequested)
+            {
+                AnalyzeError = e.Message;
+                AnalyzeHasError = true;
+                HasAnalysis = false;
+                AnalyzeAmbiguous = false;
+                Readings.Clear();
+            }
+        }
+    }
+
+    private void ApplyAnalysis(CalcResult result)
+    {
+        if (result.Analysis is not { } analysis)
+        {
+            AnalyzeError = "analyze returned no readings";
+            AnalyzeHasError = true;
+            HasAnalysis = false;
+            return;
+        }
+
+        AnalyzeHasError = false;
+        AnalyzeError = string.Empty;
+        AnalyzeAmbiguous = analysis.Ambiguous;
+        Readings.Clear();
+        foreach (var reading in analysis.Readings)
+        {
+            Readings.Add(new ReadingRow(reading));
+        }
+
+        HasAnalysis = Readings.Count > 0;
     }
 
     /// <summary>Load the shared preset catalogue once, keep the ones this module offers, and show them
