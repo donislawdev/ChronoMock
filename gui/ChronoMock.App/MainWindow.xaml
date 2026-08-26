@@ -78,6 +78,7 @@
             <TextBlock Text="{DynamicResource mode.label}" VerticalAlignment="Center"
                        FontSize="{StaticResource FontSizeBody}" Foreground="{DynamicResource BrushTextSecondary}" />
             <ComboBox ItemsSource="{Binding Modes}" SelectedItem="{Binding SelectedMode}"
+                      ItemContainerStyle="{StaticResource LabelKeyComboItem}"
                       Margin="{StaticResource SpaceXs}" VerticalAlignment="Center">
               <ComboBox.ItemTemplate>
                 <DataTemplate>

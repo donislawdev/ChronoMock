@@ -27,6 +27,15 @@
       <local:VerdictGlyphConverter x:Key="VerdictGlyph" />
       <local:VerdictBrushConverter x:Key="VerdictBrush" />
       <BooleanToVisibilityConverter x:Key="BoolToVis" />
+
+      <!-- Accessible name for templated combo items. A combo item's automation Name is otherwise the
+           bound record's ToString() (a screen reader would read the raw "UnitOption { Token = d, ... }"),
+           because the peer reads the data item, not the template's TextBlock. Resolve the item's LabelKey
+           to the translated label on the container, so assistive tech hears the human label (rules 15/16).
+           Based on the wpfui item style so the dark item visuals are preserved. -->
+      <Style x:Key="LabelKeyComboItem" TargetType="ComboBoxItem" BasedOn="{StaticResource {x:Type ComboBoxItem}}">
+        <Setter Property="AutomationProperties.Name" Value="{Binding LabelKey, Converter={StaticResource KeyToText}}" />
+      </Style>
     </ResourceDictionary>
   </Application.Resources>
 </Application>
