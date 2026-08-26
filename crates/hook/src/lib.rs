@@ -383,15 +383,21 @@ fn bump(idx: usize) {
     }
 }
 
-/// Convert a fake UTC FILETIME (100 ns ticks) into `*lp` as a SYSTEMTIME.
+/// Convert a fake UTC FILETIME (100 ns ticks) into `*lp` as a SYSTEMTIME. Returns whether it wrote
+/// `*lp`: `false` means `FileTimeToSystemTime` rejected the instant (e.g. a moment near the FILETIME
+/// boundary shifted by a large `tz_bias`), and the caller must defer to the real API rather than leave
+/// `*lp` holding uninitialized garbage while claiming success (L-3).
 ///
 /// # Safety
 /// `lp` must be a valid, writable pointer to a `SYSTEMTIME`.
-unsafe fn write_systemtime(lp: *mut SYSTEMTIME, ft_ticks: i64) {
+unsafe fn write_systemtime(lp: *mut SYSTEMTIME, ft_ticks: i64) -> bool {
     let ft = i64_to_ft(ft_ticks);
     let mut st = SYSTEMTIME::default();
     if FileTimeToSystemTime(&ft, &mut st).is_ok() {
         *lp = st;
+        true
+    } else {
+        false
     }
 }
 
@@ -425,28 +431,32 @@ unsafe extern "system" fn h_gstpaft(lp: *mut FILETIME) {
 
 unsafe extern "system" fn h_gst(lp: *mut SYSTEMTIME) {
     bump(IDX_GST);
-    match compute_fake() {
+    // `done` is false when there is no fake instant, the pointer is null, or the SYSTEMTIME conversion
+    // failed (L-3) - in every case defer to the real API rather than leave `*lp` as garbage.
+    let done = match compute_fake() {
         Some(t) if !lp.is_null() => write_systemtime(lp, t),
-        _ => {
-            if let Some(o) = O_GST.get() {
-                o(lp)
-            }
+        _ => false,
+    };
+    if !done {
+        if let Some(o) = O_GST.get() {
+            o(lp);
         }
     }
 }
 
 unsafe extern "system" fn h_glt(lp: *mut SYSTEMTIME) {
     bump(IDX_GLT);
-    match compute_fake() {
+    let done = match compute_fake() {
         // local = UTC_fake - Bias (UTC = local + Bias), session zone without DST.
         Some(t) if !lp.is_null() => {
             let bias_100ns = cur_tz_bias() as i64 * 60 * 10_000_000;
-            write_systemtime(lp, t - bias_100ns);
+            write_systemtime(lp, t - bias_100ns)
         }
-        _ => {
-            if let Some(o) = O_GLT.get() {
-                o(lp)
-            }
+        _ => false,
+    };
+    if !done {
+        if let Some(o) = O_GLT.get() {
+            o(lp);
         }
     }
 }
@@ -572,8 +582,9 @@ unsafe fn write_session_local(utc: *const SYSTEMTIME, local: *mut SYSTEMTIME) ->
         return false;
     }
     let bias_100ns = cur_tz_bias() as i64 * 60 * 10_000_000;
-    write_systemtime(local, ft_to_i64(ft) - bias_100ns);
-    true
+    // Propagate the SYSTEMTIME conversion result (L-3): on failure the caller defers to the original,
+    // never reporting success with `local` left unwritten.
+    write_systemtime(local, ft_to_i64(ft) - bias_100ns)
 }
 
 /// Convert a caller-supplied local SYSTEMTIME to session-UTC (local + tz_bias, the inverse
@@ -588,8 +599,8 @@ unsafe fn write_session_utc(local: *const SYSTEMTIME, utc: *mut SYSTEMTIME) -> b
         return false;
     }
     let bias_100ns = cur_tz_bias() as i64 * 60 * 10_000_000;
-    write_systemtime(utc, ft_to_i64(ft) + bias_100ns);
-    true
+    // Propagate the SYSTEMTIME conversion result (L-3): on failure the caller defers to the original.
+    write_systemtime(utc, ft_to_i64(ft) + bias_100ns)
 }
 
 /// Shift a FILETIME by the session bias: `add` for local->UTC (utc = local + bias), clear for
@@ -1271,7 +1282,12 @@ unsafe fn inject_self(hproc: HANDLE) {
     let hmod = HMODULE(addr as *mut c_void);
     let mut buf = [0u16; 260];
     let n = GetModuleFileNameW(Some(hmod), &mut buf);
-    if n == 0 {
+    // GetModuleFileNameW returns the char count WITHOUT the NUL on success, or buf.len() (260) on
+    // truncation (ERROR_INSUFFICIENT_BUFFER). Bailing on n == 0 OR n >= buf.len() keeps `(n + 1) * 2`
+    // inside the buffer: otherwise a DLL path >= 260 chars would read 2 bytes past this stack buffer
+    // (OOB read, UB) and copy a truncated, non-NUL-terminated path into the child (L-2). A too-long path
+    // just leaves the child uncovered (best-effort child inject), reported honestly by the audit.
+    if n == 0 || n as usize >= buf.len() {
         return;
     }
     let bytes = (n as usize + 1) * 2; // include the NUL terminator
@@ -1290,8 +1306,20 @@ unsafe fn inject_self(hproc: HANDLE) {
             return;
         }
     };
-    let loadlib = GetProcAddress(k32, s!("LoadLibraryW"));
-    let start: LPTHREAD_START_ROUTINE = std::mem::transmute(loadlib);
+    // Check the export before transmuting (L-5, matching mech::inject): a None from GetProcAddress would
+    // otherwise transmute to a null start routine and CreateRemoteThread would run at address 0, faulting
+    // the child. LoadLibraryW is always present in kernel32, so this only bails on a genuine anomaly.
+    let loadlib = match GetProcAddress(k32, s!("LoadLibraryW")) {
+        Some(f) => f,
+        None => {
+            let _ = VirtualFreeEx(hproc, remote, 0, MEM_RELEASE);
+            return;
+        }
+    };
+    let start: LPTHREAD_START_ROUTINE = Some(std::mem::transmute::<
+        unsafe extern "system" fn() -> isize,
+        unsafe extern "system" fn(*mut c_void) -> u32,
+    >(loadlib));
     if let Ok(hthread) =
         CreateRemoteThread(hproc, None, 0, start, Some(remote as *const c_void), 0, None)
     {
