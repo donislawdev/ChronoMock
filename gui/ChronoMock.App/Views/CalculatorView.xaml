@@ -26,7 +26,8 @@
           <ColumnDefinition Width="320" />
         </Grid.ColumnDefinitions>
 
-        <!-- LEFT: tester presets. Static preview until slice G4 wires the shared catalogue. -->
+        <!-- LEFT: tester presets from the shared catalogue (7.3). Filterable; each row shows the localized
+             name and what the date tests. Clicking a row to fill the builder is wired in slice G4-1b. -->
         <Border Grid.Column="0" Margin="{StaticResource SpaceSm}" Padding="{StaticResource SpaceLg}"
                 Background="{DynamicResource BrushBgSurface}" CornerRadius="{StaticResource RadiusMd}">
           <StackPanel>
@@ -34,23 +35,23 @@
                        FontSize="{StaticResource FontSizeCaption}" FontWeight="SemiBold"
                        Foreground="{DynamicResource BrushTextSecondary}" Margin="{StaticResource SpaceXs}" />
             <ui:TextBox Margin="{StaticResource SpaceXs}"
+                        Text="{Binding PresetFilter, UpdateSourceTrigger=PropertyChanged}"
                         PlaceholderText="{DynamicResource calc.filter_placeholder}" />
-            <Button Margin="{StaticResource SpaceXs}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left">
-              <StackPanel>
-                <TextBlock Text="Quarter end" FontSize="{StaticResource FontSizeBody}"
-                           Foreground="{DynamicResource BrushAccent}" />
-                <TextBlock Text="last day of the quarter" FontSize="{StaticResource FontSizeCaption}"
-                           Foreground="{DynamicResource BrushTextSecondary}" />
-              </StackPanel>
-            </Button>
-            <Button Margin="{StaticResource SpaceXs}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left">
-              <StackPanel>
-                <TextBlock Text="Trial: last day" FontSize="{StaticResource FontSizeBody}"
-                           Foreground="{DynamicResource BrushTextPrimary}" />
-                <TextBlock Text="last moment of the trial" FontSize="{StaticResource FontSizeCaption}"
-                           Foreground="{DynamicResource BrushTextSecondary}" />
-              </StackPanel>
-            </Button>
+            <ItemsControl ItemsSource="{Binding Presets}" Margin="{StaticResource SpaceXs}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                  <Border Margin="{StaticResource SpaceXs}" Padding="{StaticResource SpaceSm}"
+                          Background="{DynamicResource BrushBgSurfaceAlt}" CornerRadius="{StaticResource RadiusSm}">
+                    <StackPanel>
+                      <TextBlock Text="{Binding DisplayName}" TextWrapping="Wrap"
+                                 FontSize="{StaticResource FontSizeBody}" Foreground="{DynamicResource BrushTextPrimary}" />
+                      <TextBlock Text="{Binding DisplayExplains}" TextWrapping="Wrap"
+                                 FontSize="{StaticResource FontSizeCaption}" Foreground="{DynamicResource BrushTextSecondary}" />
+                    </StackPanel>
+                  </Border>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
             <TextBlock Text="{DynamicResource calc.preset_note}" TextWrapping="Wrap"
                        Margin="{StaticResource SpaceXs}"
                        FontSize="{StaticResource FontSizeCaption}" Foreground="{DynamicResource BrushTextSecondary}" />

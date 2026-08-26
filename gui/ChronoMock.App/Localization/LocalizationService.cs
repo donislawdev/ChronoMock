@@ -20,6 +20,28 @@ public static class LocalizationService
 
     private static string FolderPath => Path.Combine(AppContext.BaseDirectory, FolderName);
 
+    /// <summary>The culture whose strings are currently applied (read from the marker), or the default
+    /// when none has been applied yet. Used to pick the language of DATA - preset name/explains carry their
+    /// own {en, pl} values, unlike the interface keys (rules 15/16). </summary>
+    public static string CurrentCulture
+    {
+        get
+        {
+            if (Application.Current?.Resources.MergedDictionaries is { } merged)
+            {
+                foreach (var dictionary in merged)
+                {
+                    if (dictionary.Contains(MarkerKey) && dictionary[MarkerKey] is string culture)
+                    {
+                        return culture;
+                    }
+                }
+            }
+
+            return DefaultCulture;
+        }
+    }
+
     /// <summary>The cultures that have a strings file present, discovered by scanning the folder.</summary>
     public static IReadOnlyList<string> AvailableCultures()
     {

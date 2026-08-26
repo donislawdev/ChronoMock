@@ -11,7 +11,15 @@ namespace ChronoMock.App;
 public partial class MainWindow : FluentWindow
 {
     private readonly SessionViewModel _session = new(FileSessionHistoryStore.ForApp());
-    private readonly CalculatorViewModel _calculator = new(CalcClient.ForRepo(DevPaths.RepoRoot()));
+    private readonly CalculatorViewModel _calculator = CreateCalculator();
+
+    // The calculator is a client of the same engine (ADR-6); it also reads the shared preset catalogue and
+    // the calendars from the repo checkout (dev scaffolding, like DevPaths - replaced by real paths later).
+    private static CalculatorViewModel CreateCalculator()
+    {
+        var repoRoot = DevPaths.RepoRoot();
+        return new CalculatorViewModel(CalcClient.ForRepo(repoRoot), System.IO.Path.Combine(repoRoot, "presets"));
+    }
 
     public MainWindow()
     {

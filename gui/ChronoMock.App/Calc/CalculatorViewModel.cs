@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using ChronoMock.App.Localization;
 using ChronoMock.Protocol;
 
 namespace ChronoMock.App.Calc;
@@ -152,8 +153,19 @@ public sealed class StepViewModel : ObservableObject
     };
 }
 
+/// <summary>A preset as the left-column list shows it (7.3): the localized name and "what this date tests"
+/// subtitle, whether it needs parameters (marked - its unpack is a later slice), and the underlying
+/// <see cref="PresetInfo"/> for unpacking into the builder.</summary>
+public sealed class PresetItemViewModel(PresetInfo info, string culture)
+{
+    public PresetInfo Info { get; } = info;
+    public string DisplayName { get; } = info.LocalizedName(culture);
+    public string DisplayExplains { get; } = info.LocalizedExplains(culture);
+    public bool IsParametric => Info.IsParametric;
+}
+
 /// <summary>
-/// The date-calculator screen's live state (Stage 4, GUI slice G3b/G3c). Holds the builder inputs (base,
+/// The date-calculator screen's live state (Stage 4, GUI slice G3b/G3c/G4). Holds the builder inputs (base,
 /// steps, calendar) and the result of evaluating them through <see cref="CalcClient"/> - the same engine
 /// the CLI and substitution core use (ADR-6). Any input change recomputes; overlapping computes cancel the
 /// previous one. Manual INPC, no MVVM package (gui-and-cli-constraints), like the session panel.
@@ -161,6 +173,9 @@ public sealed class StepViewModel : ObservableObject
 public sealed class CalculatorViewModel : ObservableObject
 {
     private readonly CalcClient _client;
+    private readonly string? _presetsDir;
+    private IReadOnlyList<PresetItemViewModel> _allPresets = [];
+    private string _presetFilter = string.Empty;
 
     private BaseKindOption _baseKind;
     private string _baseText = "2026-01-01T00:00:00";
@@ -177,9 +192,10 @@ public sealed class CalculatorViewModel : ObservableObject
     private bool _computedOnce;
     private CancellationTokenSource? _cts;
 
-    public CalculatorViewModel(CalcClient client)
+    public CalculatorViewModel(CalcClient client, string? presetsDir = null)
     {
         _client = client ?? throw new ArgumentNullException(nameof(client));
+        _presetsDir = presetsDir;
 
         BaseKinds =
         [
@@ -255,6 +271,9 @@ public sealed class CalculatorViewModel : ObservableObject
     /// <summary>The output formats, each a label plus value, with a copy affordance in the view.</summary>
     public ObservableCollection<FormatRow> Formats { get; } = [];
 
+    /// <summary>The calculator presets, filtered to this module and the current text filter (7.3).</summary>
+    public ObservableCollection<PresetItemViewModel> Presets { get; } = [];
+
     public BaseKindOption SelectedBase
     {
         get => _baseKind;
@@ -291,6 +310,19 @@ public sealed class CalculatorViewModel : ObservableObject
             if (Set(ref _calendar, value))
             {
                 TriggerRecompute();
+            }
+        }
+    }
+
+    /// <summary>Free-text filter over the preset list (matches the name or the "what it tests" line).</summary>
+    public string PresetFilter
+    {
+        get => _presetFilter;
+        set
+        {
+            if (Set(ref _presetFilter, value))
+            {
+                ApplyPresetFilter();
             }
         }
     }
@@ -332,7 +364,49 @@ public sealed class CalculatorViewModel : ObservableObject
         }
 
         _computedOnce = true;
+        LoadPresets();
         return RecomputeAsync();
+    }
+
+    /// <summary>Load the shared preset catalogue once, keep the ones this module offers, and show them
+    /// (7.3). Reading happens on first reveal, never in the constructor, so building the window in a test
+    /// touches no files.</summary>
+    private void LoadPresets()
+    {
+        if (_presetsDir is null)
+        {
+            return;
+        }
+
+        var culture = LocalizationService.CurrentCulture;
+        _allPresets = PresetCatalog.Load(_presetsDir)
+            .Where(p => p.ForCalculator)
+            .Select(p => new PresetItemViewModel(p, culture))
+            .OrderBy(p => p.DisplayName, StringComparer.CurrentCulture)
+            .ToList();
+        ApplyPresetFilter();
+    }
+
+    private void ApplyPresetFilter()
+    {
+        Presets.Clear();
+        foreach (var preset in _allPresets)
+        {
+            if (PresetMatchesFilter(preset.DisplayName, preset.DisplayExplains, _presetFilter))
+            {
+                Presets.Add(preset);
+            }
+        }
+    }
+
+    /// <summary>Whether a preset with this name and "what it tests" line survives the filter: an empty
+    /// filter keeps everything, otherwise it matches either field case-insensitively. Pure and unit-tested.</summary>
+    public static bool PresetMatchesFilter(string name, string explains, string filter)
+    {
+        var f = filter.Trim();
+        return f.Length == 0
+            || name.Contains(f, StringComparison.CurrentCultureIgnoreCase)
+            || explains.Contains(f, StringComparison.CurrentCultureIgnoreCase);
     }
 
     private void TriggerRecompute()
