@@ -73,6 +73,15 @@ public class CalculatorArgsTests
     }
 
     [Fact]
+    public void A_nearest_step_emits_its_target_token()
+    {
+        var step = NewStep();
+        step.SelectedKind = step.Kinds.First(k => k.Kind == StepKind.Nearest);
+        step.NearestTarget = step.NearestTargets.First(t => t.Token == "pbd");
+        Assert.Equal(new[] { "--nearest", "pbd" }, step.ToArgs());
+    }
+
+    [Fact]
     public void Switching_a_step_to_snap_toggles_the_visible_editor()
     {
         var step = NewStep();

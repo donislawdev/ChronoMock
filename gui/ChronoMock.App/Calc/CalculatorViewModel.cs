@@ -12,12 +12,13 @@ public enum BaseKind
     Specific,
 }
 
-/// <summary>Which kind of step a builder row is (mirrors calc's typed steps). Slice G3c-1 wires
-/// <see cref="Shift"/> and <see cref="Snap"/>; nearest / set-time / zone are added by the next slices.</summary>
+/// <summary>Which kind of step a builder row is (mirrors calc's typed steps). Slices G3c-1/G3c-2 wire
+/// <see cref="Shift"/>, <see cref="Snap"/> and <see cref="Nearest"/>; set-time / zone follow.</summary>
 public enum StepKind
 {
     Shift,
     Snap,
+    Nearest,
 }
 
 /// <summary>A base option for the dropdown: the kind plus its translation key (rule 15/16 - the view
@@ -33,6 +34,10 @@ public sealed record UnitOption(string Token, string LabelKey);
 /// <summary>A snap-target option: the CLI token (<c>som</c>/<c>eom</c>/<c>soq</c>/<c>eoq</c>/<c>soy</c>/<c>eoy</c>)
 /// plus its translation key (mirrors <c>parse_snap</c>).</summary>
 public sealed record SnapTargetOption(string Token, string LabelKey);
+
+/// <summary>A nearest-target option: the CLI token (<c>nbd</c>/<c>pbd</c>) plus its translation key
+/// (mirrors <c>parse_nearest</c>). Needs a calendar - without one the engine returns a calendar error.</summary>
+public sealed record NearestTargetOption(string Token, string LabelKey);
 
 /// <summary>A calendar option: the id passed to <c>--calendar</c> (null = omit it) plus its translation key.</summary>
 public sealed record CalendarOption(string? Id, string LabelKey);
@@ -57,23 +62,28 @@ public sealed class StepViewModel : ObservableObject
     private string _amount = "1";
     private UnitOption _unit;
     private SnapTargetOption _snapTarget;
+    private NearestTargetOption _nearestTarget;
 
     public StepViewModel(
         IReadOnlyList<StepKindOption> kinds,
         IReadOnlyList<UnitOption> units,
-        IReadOnlyList<SnapTargetOption> snapTargets)
+        IReadOnlyList<SnapTargetOption> snapTargets,
+        IReadOnlyList<NearestTargetOption> nearestTargets)
     {
         Kinds = kinds;
         Units = units;
         SnapTargets = snapTargets;
-        _kind = kinds[0];             // shift - the common default
-        _unit = units[3];             // days
-        _snapTarget = snapTargets[1]; // end-of-month
+        NearestTargets = nearestTargets;
+        _kind = kinds[0];                   // shift - the common default
+        _unit = units[3];                   // days
+        _snapTarget = snapTargets[1];       // end-of-month
+        _nearestTarget = nearestTargets[0]; // next business day
     }
 
     public IReadOnlyList<StepKindOption> Kinds { get; }
     public IReadOnlyList<UnitOption> Units { get; }
     public IReadOnlyList<SnapTargetOption> SnapTargets { get; }
+    public IReadOnlyList<NearestTargetOption> NearestTargets { get; }
 
     public StepKindOption SelectedKind
     {
@@ -84,6 +94,7 @@ public sealed class StepViewModel : ObservableObject
             {
                 RaisePropertyChanged(nameof(IsShift));
                 RaisePropertyChanged(nameof(IsSnap));
+                RaisePropertyChanged(nameof(IsNearest));
             }
         }
     }
@@ -94,6 +105,9 @@ public sealed class StepViewModel : ObservableObject
     /// <summary>Whether the snap editor applies (the row's kind is Snap).</summary>
     public bool IsSnap => _kind.Kind == StepKind.Snap;
 
+    /// <summary>Whether the nearest editor applies (the row's kind is Nearest).</summary>
+    public bool IsNearest => _kind.Kind == StepKind.Nearest;
+
     // Shift fields.
     public string Sign { get => _sign; set => Set(ref _sign, value); }
     public string Amount { get => _amount; set => Set(ref _amount, value); }
@@ -102,11 +116,16 @@ public sealed class StepViewModel : ObservableObject
     // Snap field.
     public SnapTargetOption SnapTarget { get => _snapTarget; set => Set(ref _snapTarget, value); }
 
-    /// <summary>The calc flag pair for this step, e.g. <c>--shift +18y</c> or <c>--snap eoq</c>.</summary>
+    // Nearest field.
+    public NearestTargetOption NearestTarget { get => _nearestTarget; set => Set(ref _nearestTarget, value); }
+
+    /// <summary>The calc flag pair for this step, e.g. <c>--shift +18y</c>, <c>--snap eoq</c> or
+    /// <c>--nearest nbd</c>.</summary>
     public IReadOnlyList<string> ToArgs() => _kind.Kind switch
     {
         StepKind.Shift => ["--shift", $"{Sign}{Amount.Trim()}{Unit.Token}"],
         StepKind.Snap => ["--snap", _snapTarget.Token],
+        StepKind.Nearest => ["--nearest", _nearestTarget.Token],
         _ => [],
     };
 }
@@ -152,6 +171,7 @@ public sealed class CalculatorViewModel : ObservableObject
         [
             new StepKindOption(StepKind.Shift, "calc.kind_shift"),
             new StepKindOption(StepKind.Snap, "calc.kind_snap"),
+            new StepKindOption(StepKind.Nearest, "calc.kind_nearest"),
         ];
 
         Units =
@@ -177,6 +197,12 @@ public sealed class CalculatorViewModel : ObservableObject
             new SnapTargetOption("eoy", "calc.snap.eoy"),
         ];
 
+        NearestTargets =
+        [
+            new NearestTargetOption("nbd", "calc.nearest.nbd"),
+            new NearestTargetOption("pbd", "calc.nearest.pbd"),
+        ];
+
         Calendars =
         [
             new CalendarOption(null, "calc.cal.none"),
@@ -193,6 +219,7 @@ public sealed class CalculatorViewModel : ObservableObject
     public IReadOnlyList<StepKindOption> StepKinds { get; }
     public IReadOnlyList<UnitOption> Units { get; }
     public IReadOnlyList<SnapTargetOption> SnapTargets { get; }
+    public IReadOnlyList<NearestTargetOption> NearestTargets { get; }
     public IReadOnlyList<CalendarOption> Calendars { get; }
 
     public ObservableCollection<StepViewModel> Steps { get; } = [];
@@ -257,7 +284,7 @@ public sealed class CalculatorViewModel : ObservableObject
     /// <summary>Add a step (defaults to shift) and wire its edits to a recompute.</summary>
     public void AddStep()
     {
-        var step = new StepViewModel(StepKinds, Units, SnapTargets);
+        var step = new StepViewModel(StepKinds, Units, SnapTargets, NearestTargets);
         step.PropertyChanged += OnStepChanged;
         Steps.Add(step); // CollectionChanged triggers the recompute
     }

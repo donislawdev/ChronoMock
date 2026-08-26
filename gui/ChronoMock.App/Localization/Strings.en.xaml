@@ -158,6 +158,10 @@
   <sys:String x:Key="calc.snap.soy">Start of year</sys:String>
   <sys:String x:Key="calc.snap.eoy">End of year</sys:String>
 
+  <!-- Nearest-step targets (G3c-2): roll to the nearest business day in a direction. Needs a calendar. -->
+  <sys:String x:Key="calc.nearest.nbd">Next business day</sys:String>
+  <sys:String x:Key="calc.nearest.pbd">Previous business day</sys:String>
+
   <sys:String x:Key="calc.sig.start_of_month">First day of the month</sys:String>
   <sys:String x:Key="calc.sig.end_of_month">Last day of the month (month-end)</sys:String>
   <sys:String x:Key="calc.sig.start_of_quarter">First day of the quarter</sys:String>
