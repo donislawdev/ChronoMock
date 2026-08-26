@@ -12,14 +12,15 @@ public enum BaseKind
     Specific,
 }
 
-/// <summary>Which kind of step a builder row is (mirrors calc's typed steps). Slices G3c-1..3 wire
-/// <see cref="Shift"/>, <see cref="Snap"/>, <see cref="Nearest"/> and <see cref="SetTime"/>; zone follows.</summary>
+/// <summary>Which kind of step a builder row is (mirrors calc's five typed steps): shift, snap, nearest,
+/// set-time and zone (a fixed-offset re-expression of the same instant, <c>--to-zone</c>).</summary>
 public enum StepKind
 {
     Shift,
     Snap,
     Nearest,
     SetTime,
+    Zone,
 }
 
 /// <summary>A base option for the dropdown: the kind plus its translation key (rule 15/16 - the view
@@ -65,6 +66,7 @@ public sealed class StepViewModel : ObservableObject
     private SnapTargetOption _snapTarget;
     private NearestTargetOption _nearestTarget;
     private string _setTimeText = "23:59:59";
+    private string _zoneText = "+00:00";
 
     public StepViewModel(
         IReadOnlyList<StepKindOption> kinds,
@@ -98,6 +100,7 @@ public sealed class StepViewModel : ObservableObject
                 RaisePropertyChanged(nameof(IsSnap));
                 RaisePropertyChanged(nameof(IsNearest));
                 RaisePropertyChanged(nameof(IsSetTime));
+                RaisePropertyChanged(nameof(IsZone));
             }
         }
     }
@@ -114,6 +117,9 @@ public sealed class StepViewModel : ObservableObject
     /// <summary>Whether the set-time editor applies (the row's kind is SetTime).</summary>
     public bool IsSetTime => _kind.Kind == StepKind.SetTime;
 
+    /// <summary>Whether the zone editor applies (the row's kind is Zone).</summary>
+    public bool IsZone => _kind.Kind == StepKind.Zone;
+
     // Shift fields.
     public string Sign { get => _sign; set => Set(ref _sign, value); }
     public string Amount { get => _amount; set => Set(ref _amount, value); }
@@ -129,14 +135,19 @@ public sealed class StepViewModel : ObservableObject
     // out-of-range time surfaces as an honest result error rather than being clamped here.
     public string SetTimeText { get => _setTimeText; set => Set(ref _setTimeText, value); }
 
+    // Zone field: a fixed offset +HH:MM for --to-zone (re-express the same instant, not the session zone).
+    // The engine validates the shape, so a bad offset surfaces as an honest result error.
+    public string ZoneText { get => _zoneText; set => Set(ref _zoneText, value); }
+
     /// <summary>The calc flag pair for this step, e.g. <c>--shift +18y</c>, <c>--snap eoq</c>,
-    /// <c>--nearest nbd</c> or <c>--set-time 23:59:59</c>.</summary>
+    /// <c>--nearest nbd</c>, <c>--set-time 23:59:59</c> or <c>--to-zone +05:45</c>.</summary>
     public IReadOnlyList<string> ToArgs() => _kind.Kind switch
     {
         StepKind.Shift => ["--shift", $"{Sign}{Amount.Trim()}{Unit.Token}"],
         StepKind.Snap => ["--snap", _snapTarget.Token],
         StepKind.Nearest => ["--nearest", _nearestTarget.Token],
         StepKind.SetTime => ["--set-time", _setTimeText.Trim()],
+        StepKind.Zone => ["--to-zone", _zoneText.Trim()],
         _ => [],
     };
 }
@@ -184,6 +195,7 @@ public sealed class CalculatorViewModel : ObservableObject
             new StepKindOption(StepKind.Snap, "calc.kind_snap"),
             new StepKindOption(StepKind.Nearest, "calc.kind_nearest"),
             new StepKindOption(StepKind.SetTime, "calc.kind_settime"),
+            new StepKindOption(StepKind.Zone, "calc.kind_zone"),
         ];
 
         Units =

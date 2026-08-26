@@ -159,6 +159,16 @@
                                  AutomationProperties.Name="{DynamicResource calc.kind_settime}" />
                       </StackPanel>
 
+                      <!-- Zone editor: a fixed offset +HH:MM for the to-zone step - the same instant
+                           re-expressed in another zone, NOT the session zone. Engine validates the shape. -->
+                      <StackPanel Orientation="Horizontal"
+                                  Visibility="{Binding IsZone, Converter={StaticResource BoolToVis}}">
+                        <TextBox Text="{Binding ZoneText, UpdateSourceTrigger=LostFocus}"
+                                 Width="80" Margin="{StaticResource SpaceSm}" VerticalAlignment="Center"
+                                 FontFamily="{StaticResource FontFamilyMono}"
+                                 AutomationProperties.Name="{DynamicResource calc.kind_zone}" />
+                      </StackPanel>
+
                       <Button Content="✕" Click="OnRemoveStepClick" Tag="{Binding}"
                               Margin="{StaticResource SpaceSm}" VerticalAlignment="Center"
                               AutomationProperties.Name="{DynamicResource calc.remove_step}"

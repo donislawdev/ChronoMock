@@ -91,6 +91,15 @@ public class CalculatorArgsTests
     }
 
     [Fact]
+    public void A_zone_step_emits_a_to_zone_offset()
+    {
+        var step = NewStep();
+        step.SelectedKind = step.Kinds.First(k => k.Kind == StepKind.Zone);
+        step.ZoneText = "+05:45";
+        Assert.Equal(new[] { "--to-zone", "+05:45" }, step.ToArgs());
+    }
+
+    [Fact]
     public void Switching_a_step_to_snap_toggles_the_visible_editor()
     {
         var step = NewStep();
