@@ -12,13 +12,14 @@ public enum BaseKind
     Specific,
 }
 
-/// <summary>Which kind of step a builder row is (mirrors calc's typed steps). Slices G3c-1/G3c-2 wire
-/// <see cref="Shift"/>, <see cref="Snap"/> and <see cref="Nearest"/>; set-time / zone follow.</summary>
+/// <summary>Which kind of step a builder row is (mirrors calc's typed steps). Slices G3c-1..3 wire
+/// <see cref="Shift"/>, <see cref="Snap"/>, <see cref="Nearest"/> and <see cref="SetTime"/>; zone follows.</summary>
 public enum StepKind
 {
     Shift,
     Snap,
     Nearest,
+    SetTime,
 }
 
 /// <summary>A base option for the dropdown: the kind plus its translation key (rule 15/16 - the view
@@ -63,6 +64,7 @@ public sealed class StepViewModel : ObservableObject
     private UnitOption _unit;
     private SnapTargetOption _snapTarget;
     private NearestTargetOption _nearestTarget;
+    private string _setTimeText = "23:59:59";
 
     public StepViewModel(
         IReadOnlyList<StepKindOption> kinds,
@@ -95,6 +97,7 @@ public sealed class StepViewModel : ObservableObject
                 RaisePropertyChanged(nameof(IsShift));
                 RaisePropertyChanged(nameof(IsSnap));
                 RaisePropertyChanged(nameof(IsNearest));
+                RaisePropertyChanged(nameof(IsSetTime));
             }
         }
     }
@@ -108,6 +111,9 @@ public sealed class StepViewModel : ObservableObject
     /// <summary>Whether the nearest editor applies (the row's kind is Nearest).</summary>
     public bool IsNearest => _kind.Kind == StepKind.Nearest;
 
+    /// <summary>Whether the set-time editor applies (the row's kind is SetTime).</summary>
+    public bool IsSetTime => _kind.Kind == StepKind.SetTime;
+
     // Shift fields.
     public string Sign { get => _sign; set => Set(ref _sign, value); }
     public string Amount { get => _amount; set => Set(ref _amount, value); }
@@ -119,13 +125,18 @@ public sealed class StepViewModel : ObservableObject
     // Nearest field.
     public NearestTargetOption NearestTarget { get => _nearestTarget; set => Set(ref _nearestTarget, value); }
 
-    /// <summary>The calc flag pair for this step, e.g. <c>--shift +18y</c>, <c>--snap eoq</c> or
-    /// <c>--nearest nbd</c>.</summary>
+    // Set-time field: a wall-clock time HH:MM:SS. Range is validated by the engine (BadSetTime), so an
+    // out-of-range time surfaces as an honest result error rather than being clamped here.
+    public string SetTimeText { get => _setTimeText; set => Set(ref _setTimeText, value); }
+
+    /// <summary>The calc flag pair for this step, e.g. <c>--shift +18y</c>, <c>--snap eoq</c>,
+    /// <c>--nearest nbd</c> or <c>--set-time 23:59:59</c>.</summary>
     public IReadOnlyList<string> ToArgs() => _kind.Kind switch
     {
         StepKind.Shift => ["--shift", $"{Sign}{Amount.Trim()}{Unit.Token}"],
         StepKind.Snap => ["--snap", _snapTarget.Token],
         StepKind.Nearest => ["--nearest", _nearestTarget.Token],
+        StepKind.SetTime => ["--set-time", _setTimeText.Trim()],
         _ => [],
     };
 }
@@ -172,6 +183,7 @@ public sealed class CalculatorViewModel : ObservableObject
             new StepKindOption(StepKind.Shift, "calc.kind_shift"),
             new StepKindOption(StepKind.Snap, "calc.kind_snap"),
             new StepKindOption(StepKind.Nearest, "calc.kind_nearest"),
+            new StepKindOption(StepKind.SetTime, "calc.kind_settime"),
         ];
 
         Units =

@@ -149,6 +149,16 @@
                         </ComboBox>
                       </StackPanel>
 
+                      <!-- Set-time editor: a wall-clock HH:MM:SS. The engine validates the range, so a bad
+                           time surfaces as an honest result error rather than being clamped in the view. -->
+                      <StackPanel Orientation="Horizontal"
+                                  Visibility="{Binding IsSetTime, Converter={StaticResource BoolToVis}}">
+                        <TextBox Text="{Binding SetTimeText, UpdateSourceTrigger=LostFocus}"
+                                 Width="96" Margin="{StaticResource SpaceSm}" VerticalAlignment="Center"
+                                 FontFamily="{StaticResource FontFamilyMono}"
+                                 AutomationProperties.Name="{DynamicResource calc.kind_settime}" />
+                      </StackPanel>
+
                       <Button Content="✕" Click="OnRemoveStepClick" Tag="{Binding}"
                               Margin="{StaticResource SpaceSm}" VerticalAlignment="Center"
                               AutomationProperties.Name="{DynamicResource calc.remove_step}"

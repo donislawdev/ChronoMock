@@ -82,6 +82,15 @@ public class CalculatorArgsTests
     }
 
     [Fact]
+    public void A_set_time_step_emits_the_time_verbatim()
+    {
+        var step = NewStep();
+        step.SelectedKind = step.Kinds.First(k => k.Kind == StepKind.SetTime);
+        step.SetTimeText = "00:00:01";
+        Assert.Equal(new[] { "--set-time", "00:00:01" }, step.ToArgs());
+    }
+
+    [Fact]
     public void Switching_a_step_to_snap_toggles_the_visible_editor()
     {
         var step = NewStep();
