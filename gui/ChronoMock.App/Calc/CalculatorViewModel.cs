@@ -164,6 +164,65 @@ public sealed class PresetItemViewModel(PresetInfo info, string culture)
     public bool IsParametric => Info.IsParametric;
 }
 
+/// <summary>One preset-parameter input in the active-preset panel (7.3, docs/04 4.2). A <c>date</c>
+/// parameter is a text box (a bare date is midnight); a <c>duration</c> is an amount plus a unit, seeded
+/// from the file default. The label is the parameter id as a technical name (like the format labels) - the
+/// preset schema carries no localized label. Editing raises PropertyChanged so the parent re-resolves.</summary>
+public sealed class ParamInputViewModel : ObservableObject
+{
+    private string _dateText = string.Empty;
+    private string _amount;
+    private UnitOption _unit;
+
+    public ParamInputViewModel(PresetParameter param, IReadOnlyList<UnitOption> units)
+    {
+        Param = param;
+        Units = units;
+        IsDate = param.Type == "date";
+        IsDuration = param.Type == "duration";
+        Label = param.Id.Replace('_', ' ');
+        _amount = param.DefaultAmount?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "1";
+        _unit = FindUnit(param.DefaultUnit, units);
+    }
+
+    public PresetParameter Param { get; }
+    public IReadOnlyList<UnitOption> Units { get; }
+    public string Label { get; }
+    public bool IsDate { get; }
+    public bool IsDuration { get; }
+
+    public string DateText { get => _dateText; set => Set(ref _dateText, value); }
+    public string Amount { get => _amount; set => Set(ref _amount, value); }
+    public UnitOption Unit { get => _unit; set => Set(ref _unit, value); }
+
+    /// <summary>The parameter id, used to build the value map.</summary>
+    public string Id => Param.Id;
+
+    /// <summary>The resolved value, or null if a date has not been entered yet (so the preset stays unfilled).</summary>
+    public ParamValue? ToValue()
+        => IsDate
+            ? string.IsNullOrWhiteSpace(_dateText) ? null : new DateValue(_dateText.Trim())
+            : new DurationValue(_amount.Trim(), _unit.Token);
+
+    private static UnitOption FindUnit(string? unit, IReadOnlyList<UnitOption> units)
+    {
+        if (unit is null)
+        {
+            return units[3]; // days
+        }
+
+        try
+        {
+            var token = PresetUnpack.NormalizeUnit(unit);
+            return units.FirstOrDefault(u => u.Token == token) ?? units[3];
+        }
+        catch (NotSupportedException)
+        {
+            return units[3];
+        }
+    }
+}
+
 /// <summary>
 /// The date-calculator screen's live state (Stage 4, GUI slice G3b/G3c/G4). Holds the builder inputs (base,
 /// steps, calendar) and the result of evaluating them through <see cref="CalcClient"/> - the same engine
@@ -179,8 +238,10 @@ public sealed class CalculatorViewModel : ObservableObject
     private bool _unpacking;
     private bool _hasActivePreset;
     private bool _activeNeedsParameters;
+    private bool _hasParamInputs;
     private string _activePresetName = string.Empty;
     private string _activePresetExplains = string.Empty;
+    private PresetInfo? _activePreset;
 
     private BaseKindOption _baseKind;
     private string _baseText = "2026-01-01T00:00:00";
@@ -292,6 +353,12 @@ public sealed class CalculatorViewModel : ObservableObject
 
     /// <summary>The active preset's "what this date tests" line (data locale).</summary>
     public string ActivePresetExplains { get => _activePresetExplains; private set => Set(ref _activePresetExplains, value); }
+
+    /// <summary>The active preset's parameter inputs (empty for a non-parametric preset).</summary>
+    public ObservableCollection<ParamInputViewModel> ParamInputs { get; } = [];
+
+    /// <summary>Whether the active preset shows parameter inputs.</summary>
+    public bool HasParamInputs { get => _hasParamInputs; private set => Set(ref _hasParamInputs, value); }
 
     public BaseKindOption SelectedBase
     {
@@ -449,14 +516,48 @@ public sealed class CalculatorViewModel : ObservableObject
     public void ApplyPreset(PresetInfo preset)
     {
         ArgumentNullException.ThrowIfNull(preset);
-        var culture = LocalizationService.CurrentCulture;
+        _activePreset = preset;
+        PopulateParamInputs(preset);
+        ResolveActivePreset();
+    }
 
-        if (!TryResolveDefaults(preset, out var values))
+    // Build the parameter inputs for a preset (empty for a non-parametric one), seeded from the file
+    // defaults, and wire each to a re-resolve so filling a value recomputes.
+    private void PopulateParamInputs(PresetInfo preset)
+    {
+        ClearParamInputsOnly();
+        foreach (var param in preset.Parameters)
         {
-            // A parameter has no value the calculator can supply (a date with only a target-file hint) -
-            // honest note instead of a wrong moment (rule 6); entering it by hand is slice G4-2b.
-            ShowActivePreset(preset, culture, needsParameters: true);
+            var input = new ParamInputViewModel(param, Units);
+            input.PropertyChanged += OnParamChanged;
+            ParamInputs.Add(input);
+        }
+
+        HasParamInputs = ParamInputs.Count > 0;
+    }
+
+    private void OnParamChanged(object? sender, PropertyChangedEventArgs e) => ResolveActivePreset();
+
+    // Gather the parameter inputs and fill the builder from the preset's moment. A missing date leaves the
+    // inputs shown with the honest note and does not fill a wrong moment (rule 6).
+    private void ResolveActivePreset()
+    {
+        if (_activePreset is not { } preset)
+        {
             return;
+        }
+
+        var culture = LocalizationService.CurrentCulture;
+        var values = new Dictionary<string, ParamValue>();
+        foreach (var input in ParamInputs)
+        {
+            if (input.ToValue() is not { } value)
+            {
+                ShowActivePreset(preset, culture, needsParameters: true);
+                return;
+            }
+
+            values[input.Id] = value;
         }
 
         try
@@ -494,29 +595,15 @@ public sealed class CalculatorViewModel : ObservableObject
         _ = RecomputeAsync();
     }
 
-    /// <summary>Build parameter values from the file defaults so a parametric preset can resolve in the
-    /// calculator. Only a <c>duration</c> default is usable here; a <c>date</c> parameter carries just a
-    /// target-file hint (resolvable in substitution, not here), so a preset that has one is left for the
-    /// user to fill (slice G4-2b) and this returns false.</summary>
-    private static bool TryResolveDefaults(PresetInfo preset, out IReadOnlyDictionary<string, ParamValue> values)
+    private void ClearParamInputsOnly()
     {
-        var map = new Dictionary<string, ParamValue>();
-        foreach (var param in preset.Parameters)
+        foreach (var input in ParamInputs)
         {
-            if (param is { Type: "duration", DefaultAmount: int amount, DefaultUnit: string unit })
-            {
-                map[param.Id] = new DurationValue(
-                    amount.ToString(System.Globalization.CultureInfo.InvariantCulture), unit);
-            }
-            else
-            {
-                values = map;
-                return false;
-            }
+            input.PropertyChanged -= OnParamChanged;
         }
 
-        values = map;
-        return true;
+        ParamInputs.Clear();
+        HasParamInputs = false;
     }
 
     /// <summary>Select the calendar a regional preset implies (docs/05 3.5), so a market preset computes
@@ -578,6 +665,8 @@ public sealed class CalculatorViewModel : ObservableObject
         ActiveNeedsParameters = false;
         ActivePresetName = string.Empty;
         ActivePresetExplains = string.Empty;
+        _activePreset = null;
+        ClearParamInputsOnly();
     }
 
     /// <summary>Build the calc arguments for the current builder state (pure; unit-tested). Each step

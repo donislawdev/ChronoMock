@@ -109,7 +109,8 @@
   <sys:String x:Key="calc.filter_placeholder">Filter scenarios…</sys:String>
   <sys:String x:Key="calc.build_from_scratch">+ Build from scratch</sys:String>
   <sys:String x:Key="calc.preset_note">A preset is a starting point - not a certificate that your test is complete.</sys:String>
-  <sys:String x:Key="calc.preset_needs_params">This preset needs parameters - filling them in the calculator is a later step.</sys:String>
+  <sys:String x:Key="calc.preset_params_header">Parameters</sys:String>
+  <sys:String x:Key="calc.preset_needs_params">Fill in the parameters below to compute this preset.</sys:String>
   <sys:String x:Key="calc.build_header">Build the moment</sys:String>
   <sys:String x:Key="calc.start_point">Start point</sys:String>
   <sys:String x:Key="calc.steps_header">Steps</sys:String>

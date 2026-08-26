@@ -148,7 +148,9 @@ public static class PresetUnpack
         _ => throw new NotSupportedException($"unknown snap target '{token}'"),
     };
 
-    private static string NormalizeUnit(string unit) => unit switch
+    /// <summary>Map a unit token (the files' full form or the builder's short code) to the short code the
+    /// builder options use. Public so a duration parameter's default unit can pick its dropdown option.</summary>
+    public static string NormalizeUnit(string unit) => unit switch
     {
         "seconds" or "s" => "s",
         "minutes" or "m" => "m",

@@ -108,7 +108,8 @@
   <sys:String x:Key="calc.filter_placeholder">Filtruj scenariusze…</sys:String>
   <sys:String x:Key="calc.build_from_scratch">+ Zbuduj od zera</sys:String>
   <sys:String x:Key="calc.preset_note">Preset to punkt startowy - nie certyfikat kompletności testu.</sys:String>
-  <sys:String x:Key="calc.preset_needs_params">Ten preset wymaga parametrów - ich uzupełnienie w kalkulatorze to kolejny krok.</sys:String>
+  <sys:String x:Key="calc.preset_params_header">Parametry</sys:String>
+  <sys:String x:Key="calc.preset_needs_params">Uzupełnij parametry poniżej, aby policzyć ten preset.</sys:String>
   <sys:String x:Key="calc.build_header">Zbuduj moment</sys:String>
   <sys:String x:Key="calc.start_point">Punkt startowy</sys:String>
   <sys:String x:Key="calc.steps_header">Kroki</sys:String>

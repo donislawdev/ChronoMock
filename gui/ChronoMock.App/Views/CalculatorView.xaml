@@ -220,6 +220,45 @@
                            Foreground="{DynamicResource BrushAccent}" />
                 <TextBlock Text="{Binding ActivePresetExplains}" TextWrapping="Wrap"
                            FontSize="{StaticResource FontSizeCaption}" Foreground="{DynamicResource BrushTextSecondary}" />
+
+                <!-- Parameter inputs (docs/04 4.2): a date box or an amount+unit per parameter, seeded from
+                     the file defaults. Filling a required date recomputes the result. -->
+                <StackPanel Margin="{StaticResource SpaceXs}"
+                            Visibility="{Binding HasParamInputs, Converter={StaticResource BoolToVis}}">
+                  <TextBlock Text="{DynamicResource calc.preset_params_header}"
+                             FontSize="{StaticResource FontSizeCaption}" FontWeight="SemiBold"
+                             Foreground="{DynamicResource BrushTextSecondary}" />
+                  <ItemsControl ItemsSource="{Binding ParamInputs}">
+                    <ItemsControl.ItemTemplate>
+                      <DataTemplate>
+                        <StackPanel Orientation="Horizontal" Margin="{StaticResource SpaceXs}">
+                          <TextBlock Text="{Binding Label}" VerticalAlignment="Center" MinWidth="90"
+                                     FontSize="{StaticResource FontSizeCaption}" Foreground="{DynamicResource BrushTextSecondary}" />
+                          <TextBox Text="{Binding DateText, UpdateSourceTrigger=LostFocus}"
+                                   Width="150" VerticalAlignment="Center" FontFamily="{StaticResource FontFamilyMono}"
+                                   AutomationProperties.Name="{Binding Label}"
+                                   Visibility="{Binding IsDate, Converter={StaticResource BoolToVis}}" />
+                          <StackPanel Orientation="Horizontal"
+                                      Visibility="{Binding IsDuration, Converter={StaticResource BoolToVis}}">
+                            <TextBox Text="{Binding Amount, UpdateSourceTrigger=LostFocus}"
+                                     Width="56" VerticalAlignment="Center" FontFamily="{StaticResource FontFamilyMono}"
+                                     AutomationProperties.Name="{Binding Label}" />
+                            <ComboBox ItemsSource="{Binding Units}" SelectedItem="{Binding Unit}"
+                                      ItemContainerStyle="{StaticResource LabelKeyComboItem}"
+                                      Margin="{StaticResource SpaceSm}" VerticalAlignment="Center" MinWidth="110">
+                              <ComboBox.ItemTemplate>
+                                <DataTemplate>
+                                  <TextBlock Text="{Binding LabelKey, Converter={StaticResource KeyToText}}" />
+                                </DataTemplate>
+                              </ComboBox.ItemTemplate>
+                            </ComboBox>
+                          </StackPanel>
+                        </StackPanel>
+                      </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                  </ItemsControl>
+                </StackPanel>
+
                 <TextBlock Text="{DynamicResource calc.preset_needs_params}" TextWrapping="Wrap"
                            Margin="{StaticResource SpaceXs}"
                            FontSize="{StaticResource FontSizeCaption}" Foreground="{DynamicResource BrushStatusPartial}"
