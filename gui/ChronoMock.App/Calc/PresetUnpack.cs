@@ -3,6 +3,16 @@ using System.Text.Json;
 
 namespace ChronoMock.App.Calc;
 
+/// <summary>A resolved value for a preset parameter, supplied to <see cref="PresetUnpack.UnpackMoment"/> to
+/// fill a parametric base or shift.</summary>
+public abstract record ParamValue;
+
+/// <summary>A date value for a <c>date</c> parameter (becomes an absolute base). A bare date is midnight.</summary>
+public sealed record DateValue(string DateTimeText) : ParamValue;
+
+/// <summary>A magnitude and unit for a <c>duration</c> parameter (becomes a shift; the sign is the step's).</summary>
+public sealed record DurationValue(string Amount, string UnitToken) : ParamValue;
+
 /// <summary>A preset's moment expressed as builder inputs: the base and a list of steps ready to configure
 /// <see cref="StepViewModel"/>s. Each step carries the value(s) its kind reads; the others keep the same
 /// defaults a fresh step has.</summary>
@@ -29,23 +39,28 @@ public sealed record UnpackedMoment(BaseKind Base, string BaseText, IReadOnlyLis
 /// </summary>
 public static class PresetUnpack
 {
-    public static UnpackedMoment UnpackMoment(JsonElement moment)
+    private static readonly IReadOnlyDictionary<string, ParamValue> NoParameters =
+        new Dictionary<string, ParamValue>();
+
+    public static UnpackedMoment UnpackMoment(
+        JsonElement moment, IReadOnlyDictionary<string, ParamValue>? parameters = null)
     {
-        var (baseKind, baseText) = ParseBase(moment.GetProperty("base"));
+        var values = parameters ?? NoParameters;
+        var (baseKind, baseText) = ParseBase(moment.GetProperty("base"), values);
 
         var steps = new List<UnpackedStep>();
         if (moment.TryGetProperty("steps", out var stepsEl) && stepsEl.ValueKind == JsonValueKind.Array)
         {
             foreach (var step in stepsEl.EnumerateArray())
             {
-                steps.Add(ParseStep(step));
+                steps.Add(ParseStep(step, values));
             }
         }
 
         return new UnpackedMoment(baseKind, baseText, steps);
     }
 
-    private static (BaseKind, string) ParseBase(JsonElement baseEl)
+    private static (BaseKind, string) ParseBase(JsonElement baseEl, IReadOnlyDictionary<string, ParamValue> values)
     {
         if (baseEl.ValueKind == JsonValueKind.String)
         {
@@ -64,22 +79,28 @@ public static class PresetUnpack
                 return (BaseKind.Specific, abs.GetString()!);
             }
 
-            if (baseEl.TryGetProperty("parameter", out _))
+            if (baseEl.TryGetProperty("parameter", out var pn))
             {
-                throw new NotSupportedException("parametric base");
+                var id = pn.GetString()!;
+                if (values.TryGetValue(id, out var value) && value is DateValue date)
+                {
+                    return (BaseKind.Specific, NormalizeDate(date.DateTimeText));
+                }
+
+                throw new NotSupportedException($"base parameter '{id}' has no date value");
             }
         }
 
         throw new NotSupportedException("unrecognized base");
     }
 
-    private static UnpackedStep ParseStep(JsonElement step)
+    private static UnpackedStep ParseStep(JsonElement step, IReadOnlyDictionary<string, ParamValue> values)
     {
         var property = step.EnumerateObject().First();
         return property.Name switch
         {
             "snap" => new UnpackedStep(StepKind.Snap, SnapToken: NormalizeSnap(property.Value.GetString()!)),
-            "shift" => ParseShift(property.Value),
+            "shift" => ParseShift(property.Value, values),
             "set_time" => new UnpackedStep(StepKind.SetTime, SetTime: property.Value.GetString()!),
             "nearest" => new UnpackedStep(StepKind.Nearest, NearestToken: NormalizeNearest(property.Value.GetString()!)),
             "to_zone" or "zone" => new UnpackedStep(StepKind.Zone, ZoneOffset: property.Value.GetString()!),
@@ -87,18 +108,32 @@ public static class PresetUnpack
         };
     }
 
-    private static UnpackedStep ParseShift(JsonElement shift)
+    private static UnpackedStep ParseShift(JsonElement shift, IReadOnlyDictionary<string, ParamValue> values)
     {
-        if (shift.TryGetProperty("parameter", out _))
+        var sign = shift.GetProperty("sign").GetString()!;
+
+        if (shift.TryGetProperty("parameter", out var pn))
         {
-            throw new NotSupportedException("parametric shift");
+            var id = pn.GetString()!;
+            if (values.TryGetValue(id, out var value) && value is DurationValue duration)
+            {
+                return new UnpackedStep(
+                    StepKind.Shift, Sign: sign, Amount: duration.Amount, UnitToken: NormalizeUnit(duration.UnitToken));
+            }
+
+            throw new NotSupportedException($"shift parameter '{id}' has no duration value");
         }
 
-        var sign = shift.GetProperty("sign").GetString()!;
         var amount = shift.GetProperty("amount").GetInt64().ToString(CultureInfo.InvariantCulture);
         var unit = NormalizeUnit(shift.GetProperty("unit").GetString()!);
         return new UnpackedStep(StepKind.Shift, Sign: sign, Amount: amount, UnitToken: unit);
     }
+
+    // A bare date is midnight, matching the engine's parse_param_date so a date parameter resolves the same.
+    private static string NormalizeDate(string value)
+        => value.Contains('T', StringComparison.Ordinal) || value.Contains(' ', StringComparison.Ordinal)
+            ? value
+            : $"{value}T00:00:00";
 
     // The preset files carry full-form tokens (end-of-month, seconds); the builder options use the short
     // codes (eom, s). Normalize to short so the builder can select the matching option. Both forms accepted.

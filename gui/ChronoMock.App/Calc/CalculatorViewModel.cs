@@ -451,15 +451,17 @@ public sealed class CalculatorViewModel : ObservableObject
         ArgumentNullException.ThrowIfNull(preset);
         var culture = LocalizationService.CurrentCulture;
 
-        if (preset.IsParametric)
+        if (!TryResolveDefaults(preset, out var values))
         {
+            // A parameter has no value the calculator can supply (a date with only a target-file hint) -
+            // honest note instead of a wrong moment (rule 6); entering it by hand is slice G4-2b.
             ShowActivePreset(preset, culture, needsParameters: true);
             return;
         }
 
         try
         {
-            var unpacked = PresetUnpack.UnpackMoment(preset.Moment);
+            var unpacked = PresetUnpack.UnpackMoment(preset.Moment, values);
             _unpacking = true;
             while (Steps.Count > 0)
             {
@@ -476,11 +478,12 @@ public sealed class CalculatorViewModel : ObservableObject
             {
                 AddUnpackedStep(step);
             }
+
+            ApplyMarketCalendar(preset.Market);
         }
         catch (NotSupportedException)
         {
-            // A shape the builder cannot represent (should not happen for a non-parametric catalogue
-            // preset) - be honest rather than fill a wrong moment.
+            // A shape the builder cannot represent - be honest rather than fill a wrong moment.
             _unpacking = false;
             ShowActivePreset(preset, culture, needsParameters: true);
             return;
@@ -489,6 +492,47 @@ public sealed class CalculatorViewModel : ObservableObject
         _unpacking = false;
         ShowActivePreset(preset, culture, needsParameters: false);
         _ = RecomputeAsync();
+    }
+
+    /// <summary>Build parameter values from the file defaults so a parametric preset can resolve in the
+    /// calculator. Only a <c>duration</c> default is usable here; a <c>date</c> parameter carries just a
+    /// target-file hint (resolvable in substitution, not here), so a preset that has one is left for the
+    /// user to fill (slice G4-2b) and this returns false.</summary>
+    private static bool TryResolveDefaults(PresetInfo preset, out IReadOnlyDictionary<string, ParamValue> values)
+    {
+        var map = new Dictionary<string, ParamValue>();
+        foreach (var param in preset.Parameters)
+        {
+            if (param is { Type: "duration", DefaultAmount: int amount, DefaultUnit: string unit })
+            {
+                map[param.Id] = new DurationValue(
+                    amount.ToString(System.Globalization.CultureInfo.InvariantCulture), unit);
+            }
+            else
+            {
+                values = map;
+                return false;
+            }
+        }
+
+        values = map;
+        return true;
+    }
+
+    /// <summary>Select the calendar a regional preset implies (docs/05 3.5), so a market preset computes
+    /// without the user first picking one. A preset with no market leaves the calendar as it is.</summary>
+    private void ApplyMarketCalendar(string? market)
+    {
+        var id = market switch
+        {
+            "us" => "us-banking",
+            "pl" => "pl",
+            _ => null,
+        };
+        if (id is not null)
+        {
+            SelectedCalendar = Calendars.FirstOrDefault(c => c.Id == id) ?? _calendar;
+        }
     }
 
     private void AddUnpackedStep(UnpackedStep spec)

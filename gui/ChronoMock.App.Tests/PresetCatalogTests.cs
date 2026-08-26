@@ -29,6 +29,29 @@ public class PresetCatalogTests
         => Assert.True(PresetCatalog.Load(PresetsDir()).Single(p => p.Id == "trial-last-day").IsParametric);
 
     [Fact]
+    public void A_duration_parameter_is_parsed_with_its_default()
+    {
+        var payment = PresetCatalog.Load(PresetsDir()).Single(p => p.Id == "payment-due-business-days");
+
+        var param = Assert.Single(payment.Parameters);
+        Assert.Equal("days", param.Id);
+        Assert.Equal("duration", param.Type);
+        Assert.Equal(90, param.DefaultAmount);
+        Assert.Equal("business_days", param.DefaultUnit);
+    }
+
+    [Fact]
+    public void A_date_parameter_carries_its_hint_and_has_no_amount()
+    {
+        var startDate = PresetCatalog.Load(PresetsDir())
+            .Single(p => p.Id == "trial-last-day").Parameters.Single(p => p.Id == "start_date");
+
+        Assert.Equal("date", startDate.Type);
+        Assert.Equal("target_file_creation", startDate.DefaultHint);
+        Assert.Null(startDate.DefaultAmount);
+    }
+
+    [Fact]
     public void Substitution_only_presets_load_but_are_not_offered_by_the_calculator()
     {
         var rollover = PresetCatalog.Load(PresetsDir()).Single(p => p.Id == "year-rollover");

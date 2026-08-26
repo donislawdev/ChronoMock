@@ -4,11 +4,21 @@ using ChronoMock.App.Localization;
 
 namespace ChronoMock.App.Calc;
 
+/// <summary>One preset parameter (docs/04 4.2): its id, type (<c>date</c> or <c>duration</c>), the file
+/// default (a duration's amount and unit), and the default hint (e.g. <c>target_file_creation</c>, which is
+/// resolvable only in substitution where a target exists - never in the calculator).</summary>
+public sealed record PresetParameter(
+    string Id,
+    string Type,
+    int? DefaultAmount,
+    string? DefaultUnit,
+    string? DefaultHint);
+
 /// <summary>
 /// One preset from the shared catalogue (docs/04 4.2, schema <c>chronomock.preset/1</c>), as the calculator
-/// needs it: identity, the localized framing, which module it applies to, whether it takes parameters, and
-/// its moment (base + steps). The moment stays as raw JSON and is interpreted when the preset is unpacked
-/// into the builder (slice G4-1b). Name and explains are DATA locales ({en, pl}), not interface keys.
+/// needs it: identity, the localized framing, which module it applies to, its parameters, and its moment
+/// (base + steps). The moment stays as raw JSON and is interpreted when the preset is unpacked into the
+/// builder (slice G4-1b). Name and explains are DATA locales ({en, pl}), not interface keys.
 /// </summary>
 public sealed record PresetInfo(
     string Id,
@@ -16,11 +26,14 @@ public sealed record PresetInfo(
     IReadOnlyDictionary<string, string> Explains,
     string AppliesTo,
     string? Market,
-    bool IsParametric,
+    IReadOnlyList<PresetParameter> Parameters,
     JsonElement Moment)
 {
     /// <summary>Whether this preset is offered by the calculator module (<c>calculator</c> or <c>both</c>).</summary>
     public bool ForCalculator => AppliesTo is "calculator" or "both";
+
+    /// <summary>Whether this preset takes parameters (its moment refers to them by id).</summary>
+    public bool IsParametric => Parameters.Count > 0;
 
     /// <summary>The name in the given culture, falling back to the default culture (English).</summary>
     public string LocalizedName(string culture) => Localized(Name, culture);
@@ -79,20 +92,57 @@ public static class PresetCatalog
             string? market = root.TryGetProperty("market", out var m) && m.ValueKind == JsonValueKind.String
                 ? m.GetString()
                 : null;
-            var isParametric = root.TryGetProperty("parameters", out var p)
-                && p.ValueKind == JsonValueKind.Array && p.GetArrayLength() > 0;
 
             // Clone the moment so it outlives the disposed JsonDocument (used by the unpack in G4-1b).
             var moment = root.TryGetProperty("moment", out var mo) ? mo.Clone() : default;
 
             info = new PresetInfo(id, ReadLocalized(root, "name"), ReadLocalized(root, "explains"),
-                appliesTo, market, isParametric, moment);
+                appliesTo, market, ReadParameters(root), moment);
             return true;
         }
         catch (Exception e) when (e is JsonException or IOException or InvalidOperationException)
         {
             return false;
         }
+    }
+
+    private static IReadOnlyList<PresetParameter> ReadParameters(JsonElement root)
+    {
+        var list = new List<PresetParameter>();
+        if (root.TryGetProperty("parameters", out var arr) && arr.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var p in arr.EnumerateArray())
+            {
+                var id = p.TryGetProperty("id", out var idEl) ? idEl.GetString() : null;
+                var type = p.TryGetProperty("type", out var typeEl) ? typeEl.GetString() : null;
+                if (string.IsNullOrEmpty(id) || string.IsNullOrEmpty(type))
+                {
+                    continue;
+                }
+
+                int? defaultAmount = null;
+                string? defaultUnit = null;
+                if (p.TryGetProperty("default", out var def) && def.ValueKind == JsonValueKind.Object)
+                {
+                    if (def.TryGetProperty("amount", out var amount) && amount.ValueKind == JsonValueKind.Number)
+                    {
+                        defaultAmount = amount.GetInt32();
+                    }
+
+                    if (def.TryGetProperty("unit", out var unit) && unit.ValueKind == JsonValueKind.String)
+                    {
+                        defaultUnit = unit.GetString();
+                    }
+                }
+
+                var hint = p.TryGetProperty("default_hint", out var dh) && dh.ValueKind == JsonValueKind.String
+                    ? dh.GetString()
+                    : null;
+                list.Add(new PresetParameter(id, type, defaultAmount, defaultUnit, hint));
+            }
+        }
+
+        return list;
     }
 
     private static IReadOnlyDictionary<string, string> ReadLocalized(JsonElement root, string property)

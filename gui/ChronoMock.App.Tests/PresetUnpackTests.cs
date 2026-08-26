@@ -59,6 +59,43 @@ public class PresetUnpackTests
     }
 
     [Fact]
-    public void A_parametric_base_is_not_unpackable()
+    public void A_parametric_base_without_its_value_is_not_unpackable()
         => Assert.Throws<NotSupportedException>(() => PresetUnpack.UnpackMoment(Preset("trial-last-day").Moment));
+
+    [Fact]
+    public void A_duration_parameter_resolves_a_shift_from_its_value()
+    {
+        var values = new Dictionary<string, ParamValue> { ["days"] = new DurationValue("90", "business_days") };
+
+        var moment = PresetUnpack.UnpackMoment(Preset("payment-due-business-days").Moment, values);
+
+        Assert.Equal(BaseKind.Today, moment.Base);
+        var step = Assert.Single(moment.Steps);
+        Assert.Equal(StepKind.Shift, step.Kind);
+        Assert.Equal("+", step.Sign);
+        Assert.Equal("90", step.Amount);
+        Assert.Equal("bd", step.UnitToken); // full "business_days" normalized to the short code
+    }
+
+    [Fact]
+    public void A_date_parameter_resolves_an_absolute_base_with_its_shift_and_time()
+    {
+        var values = new Dictionary<string, ParamValue>
+        {
+            ["start_date"] = new DateValue("2026-01-01"),
+            ["trial_length"] = new DurationValue("30", "days"),
+        };
+
+        var moment = PresetUnpack.UnpackMoment(Preset("trial-last-day").Moment, values);
+
+        Assert.Equal(BaseKind.Specific, moment.Base);
+        Assert.Equal("2026-01-01T00:00:00", moment.BaseText); // a bare date becomes midnight
+        Assert.Equal(2, moment.Steps.Count);
+        Assert.Equal(StepKind.Shift, moment.Steps[0].Kind);
+        Assert.Equal("+", moment.Steps[0].Sign);
+        Assert.Equal("30", moment.Steps[0].Amount);
+        Assert.Equal("d", moment.Steps[0].UnitToken);
+        Assert.Equal(StepKind.SetTime, moment.Steps[1].Kind);
+        Assert.Equal("23:59:59", moment.Steps[1].SetTime);
+    }
 }
