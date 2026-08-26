@@ -149,6 +149,14 @@
   <sys:String x:Key="calc.cal.us_federal">USA federalny</sys:String>
   <sys:String x:Key="calc.cal.pl">Polska</sys:String>
 
+  <!-- Cele kroku snap (G3c-1): granica okresu, do której skacze krok. Tokeny lustrzą flagę snap. -->
+  <sys:String x:Key="calc.snap.som">Początek miesiąca</sys:String>
+  <sys:String x:Key="calc.snap.eom">Koniec miesiąca</sys:String>
+  <sys:String x:Key="calc.snap.soq">Początek kwartału</sys:String>
+  <sys:String x:Key="calc.snap.eoq">Koniec kwartału</sys:String>
+  <sys:String x:Key="calc.snap.soy">Początek roku</sys:String>
+  <sys:String x:Key="calc.snap.eoy">Koniec roku</sys:String>
+
   <sys:String x:Key="calc.sig.start_of_month">Pierwszy dzień miesiąca</sys:String>
   <sys:String x:Key="calc.sig.end_of_month">Ostatni dzień miesiąca (koniec miesiąca)</sys:String>
   <sys:String x:Key="calc.sig.start_of_quarter">Pierwszy dzień kwartału</sys:String>

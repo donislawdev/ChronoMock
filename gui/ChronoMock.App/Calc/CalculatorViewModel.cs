@@ -12,12 +12,27 @@ public enum BaseKind
     Specific,
 }
 
+/// <summary>Which kind of step a builder row is (mirrors calc's typed steps). Slice G3c-1 wires
+/// <see cref="Shift"/> and <see cref="Snap"/>; nearest / set-time / zone are added by the next slices.</summary>
+public enum StepKind
+{
+    Shift,
+    Snap,
+}
+
 /// <summary>A base option for the dropdown: the kind plus its translation key (rule 15/16 - the view
 /// renders the key, the view model stays language-agnostic).</summary>
 public sealed record BaseKindOption(BaseKind Kind, string LabelKey);
 
+/// <summary>A step-kind option for a row's kind dropdown: the kind plus its translation key.</summary>
+public sealed record StepKindOption(StepKind Kind, string LabelKey);
+
 /// <summary>A shift unit option: the CLI token (<c>y</c>, <c>mo</c>, <c>bd</c>, ...) plus its translation key.</summary>
 public sealed record UnitOption(string Token, string LabelKey);
+
+/// <summary>A snap-target option: the CLI token (<c>som</c>/<c>eom</c>/<c>soq</c>/<c>eoq</c>/<c>soy</c>/<c>eoy</c>)
+/// plus its translation key (mirrors <c>parse_snap</c>).</summary>
+public sealed record SnapTargetOption(string Token, string LabelKey);
 
 /// <summary>A calendar option: the id passed to <c>--calendar</c> (null = omit it) plus its translation key.</summary>
 public sealed record CalendarOption(string? Id, string LabelKey);
@@ -27,39 +42,80 @@ public sealed record CalendarOption(string? Id, string LabelKey);
 public sealed record FormatRow(string Label, string Value);
 
 /// <summary>
-/// One <c>shift</c> step in the builder: a sign, an amount, and a unit. Editing any field asks the parent
-/// to recompute (the "result after each step" is live, 7.3). Only shift steps are wired in this slice;
-/// snap / nearest / set-time / zone step editors follow.
+/// One step in the builder. A step carries a kind (shift / snap / ...) and the fields that kind needs;
+/// only the selected kind's editor is visible, and <see cref="ToArgs"/> emits that kind's calc flag. Editing
+/// any field raises PropertyChanged, which the parent turns into a live recompute ("result after each step",
+/// 7.3). One unified view model (not a class per kind) keeps the hand-rolled INPC style and lets the kind
+/// switch in place without swapping the item in the collection.
 /// </summary>
-public sealed class ShiftStepViewModel : ObservableObject
+public sealed class StepViewModel : ObservableObject
 {
     public static IReadOnlyList<string> Signs { get; } = ["+", "-"];
 
+    private StepKindOption _kind;
     private string _sign = "+";
     private string _amount = "1";
     private UnitOption _unit;
+    private SnapTargetOption _snapTarget;
 
-    public ShiftStepViewModel(IReadOnlyList<UnitOption> units)
+    public StepViewModel(
+        IReadOnlyList<StepKindOption> kinds,
+        IReadOnlyList<UnitOption> units,
+        IReadOnlyList<SnapTargetOption> snapTargets)
     {
+        Kinds = kinds;
         Units = units;
-        _unit = units[3]; // days - the most common default
+        SnapTargets = snapTargets;
+        _kind = kinds[0];             // shift - the common default
+        _unit = units[3];             // days
+        _snapTarget = snapTargets[1]; // end-of-month
     }
 
+    public IReadOnlyList<StepKindOption> Kinds { get; }
     public IReadOnlyList<UnitOption> Units { get; }
+    public IReadOnlyList<SnapTargetOption> SnapTargets { get; }
 
+    public StepKindOption SelectedKind
+    {
+        get => _kind;
+        set
+        {
+            if (Set(ref _kind, value))
+            {
+                RaisePropertyChanged(nameof(IsShift));
+                RaisePropertyChanged(nameof(IsSnap));
+            }
+        }
+    }
+
+    /// <summary>Whether the shift editor applies (the row's kind is Shift).</summary>
+    public bool IsShift => _kind.Kind == StepKind.Shift;
+
+    /// <summary>Whether the snap editor applies (the row's kind is Snap).</summary>
+    public bool IsSnap => _kind.Kind == StepKind.Snap;
+
+    // Shift fields.
     public string Sign { get => _sign; set => Set(ref _sign, value); }
     public string Amount { get => _amount; set => Set(ref _amount, value); }
     public UnitOption Unit { get => _unit; set => Set(ref _unit, value); }
 
-    /// <summary>The CLI shift argument, e.g. <c>+18y</c> or <c>-90bd</c>.</summary>
-    public string ToArg() => $"{Sign}{Amount.Trim()}{Unit.Token}";
+    // Snap field.
+    public SnapTargetOption SnapTarget { get => _snapTarget; set => Set(ref _snapTarget, value); }
+
+    /// <summary>The calc flag pair for this step, e.g. <c>--shift +18y</c> or <c>--snap eoq</c>.</summary>
+    public IReadOnlyList<string> ToArgs() => _kind.Kind switch
+    {
+        StepKind.Shift => ["--shift", $"{Sign}{Amount.Trim()}{Unit.Token}"],
+        StepKind.Snap => ["--snap", _snapTarget.Token],
+        _ => [],
+    };
 }
 
 /// <summary>
-/// The date-calculator screen's live state (Stage 4, GUI slice G3b). Holds the builder inputs (base,
-/// shift steps, calendar) and the result of evaluating them through <see cref="CalcClient"/> - the same
-/// engine the CLI and substitution core use (ADR-6). Any input change recomputes; overlapping computes
-/// cancel the previous one. Manual INPC, no MVVM package (gui-and-cli-constraints), like the session panel.
+/// The date-calculator screen's live state (Stage 4, GUI slice G3b/G3c). Holds the builder inputs (base,
+/// steps, calendar) and the result of evaluating them through <see cref="CalcClient"/> - the same engine
+/// the CLI and substitution core use (ADR-6). Any input change recomputes; overlapping computes cancel the
+/// previous one. Manual INPC, no MVVM package (gui-and-cli-constraints), like the session panel.
 /// </summary>
 public sealed class CalculatorViewModel : ObservableObject
 {
@@ -92,6 +148,12 @@ public sealed class CalculatorViewModel : ObservableObject
         ];
         _baseKind = BaseKinds[0];
 
+        StepKinds =
+        [
+            new StepKindOption(StepKind.Shift, "calc.kind_shift"),
+            new StepKindOption(StepKind.Snap, "calc.kind_snap"),
+        ];
+
         Units =
         [
             new UnitOption("s", "calc.unit.seconds"),
@@ -103,6 +165,16 @@ public sealed class CalculatorViewModel : ObservableObject
             new UnitOption("q", "calc.unit.quarters"),
             new UnitOption("y", "calc.unit.years"),
             new UnitOption("bd", "calc.unit.business_days"),
+        ];
+
+        SnapTargets =
+        [
+            new SnapTargetOption("som", "calc.snap.som"),
+            new SnapTargetOption("eom", "calc.snap.eom"),
+            new SnapTargetOption("soq", "calc.snap.soq"),
+            new SnapTargetOption("eoq", "calc.snap.eoq"),
+            new SnapTargetOption("soy", "calc.snap.soy"),
+            new SnapTargetOption("eoy", "calc.snap.eoy"),
         ];
 
         Calendars =
@@ -118,10 +190,12 @@ public sealed class CalculatorViewModel : ObservableObject
     }
 
     public IReadOnlyList<BaseKindOption> BaseKinds { get; }
+    public IReadOnlyList<StepKindOption> StepKinds { get; }
     public IReadOnlyList<UnitOption> Units { get; }
+    public IReadOnlyList<SnapTargetOption> SnapTargets { get; }
     public IReadOnlyList<CalendarOption> Calendars { get; }
 
-    public ObservableCollection<ShiftStepViewModel> Steps { get; } = [];
+    public ObservableCollection<StepViewModel> Steps { get; } = [];
 
     /// <summary>Translation keys of the result's significance markers ("calc.sig.&lt;key&gt;"), rendered by
     /// the view through the shared key-to-text converter (rule 15/16).</summary>
@@ -180,16 +254,16 @@ public sealed class CalculatorViewModel : ObservableObject
     public bool HasResult { get => _hasResult; private set => Set(ref _hasResult, value); }
     public bool HasSignificance { get => _hasSignificance; private set => Set(ref _hasSignificance, value); }
 
-    /// <summary>Add a shift step and wire its edits to a recompute.</summary>
+    /// <summary>Add a step (defaults to shift) and wire its edits to a recompute.</summary>
     public void AddStep()
     {
-        var step = new ShiftStepViewModel(Units);
+        var step = new StepViewModel(StepKinds, Units, SnapTargets);
         step.PropertyChanged += OnStepChanged;
         Steps.Add(step); // CollectionChanged triggers the recompute
     }
 
-    /// <summary>Remove a shift step.</summary>
-    public void RemoveStep(ShiftStepViewModel step)
+    /// <summary>Remove a step.</summary>
+    public void RemoveStep(StepViewModel step)
     {
         step.PropertyChanged -= OnStepChanged;
         Steps.Remove(step); // CollectionChanged triggers the recompute
@@ -218,9 +292,10 @@ public sealed class CalculatorViewModel : ObservableObject
         }
     }
 
-    /// <summary>Build the calc arguments for the current builder state (pure; unit-tested).</summary>
+    /// <summary>Build the calc arguments for the current builder state (pure; unit-tested). Each step
+    /// contributes its own flag pair, so the grammar is not shift-specific.</summary>
     public static IReadOnlyList<string> BuildCalcArgs(
-        BaseKind baseKind, string baseText, IEnumerable<string> stepArgs, string? calendarId)
+        BaseKind baseKind, string baseText, IEnumerable<IReadOnlyList<string>> stepArgLists, string? calendarId)
     {
         var args = new List<string> { "--base", baseKind switch
         {
@@ -228,10 +303,9 @@ public sealed class CalculatorViewModel : ObservableObject
             BaseKind.Now => "now",
             _ => baseText.Trim(),
         } };
-        foreach (var step in stepArgs)
+        foreach (var stepArgs in stepArgLists)
         {
-            args.Add("--shift");
-            args.Add(step);
+            args.AddRange(stepArgs);
         }
 
         if (calendarId is not null)
@@ -249,7 +323,7 @@ public sealed class CalculatorViewModel : ObservableObject
         var cts = new CancellationTokenSource();
         _cts = cts;
 
-        var args = BuildCalcArgs(_baseKind.Kind, _baseText, Steps.Select(s => s.ToArg()), _calendar.Id);
+        var args = BuildCalcArgs(_baseKind.Kind, _baseText, Steps.Select(s => s.ToArgs()), _calendar.Id);
         try
         {
             var result = await _client.EvaluateAsync(args, cts.Token);

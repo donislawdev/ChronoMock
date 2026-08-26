@@ -23,7 +23,7 @@ public partial class CalculatorView : UserControl
 
     private void OnRemoveStepClick(object sender, RoutedEventArgs e)
     {
-        if (sender is FrameworkElement { Tag: ShiftStepViewModel step })
+        if (sender is FrameworkElement { Tag: StepViewModel step })
         {
             ViewModel?.RemoveStep(step);
         }

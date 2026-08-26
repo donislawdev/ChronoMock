@@ -89,22 +89,47 @@
                   <Border Margin="{StaticResource SpaceXs}" Padding="{StaticResource SpaceSm}"
                           Background="{DynamicResource BrushBgSurfaceAlt}" CornerRadius="{StaticResource RadiusSm}">
                     <StackPanel Orientation="Horizontal">
-                      <TextBlock Text="{DynamicResource calc.kind_shift}" VerticalAlignment="Center"
-                                 FontSize="{StaticResource FontSizeCaption}"
-                                 Foreground="{DynamicResource BrushTextSecondary}" />
-                      <ComboBox ItemsSource="{Binding Signs}" SelectedItem="{Binding Sign}"
-                                Margin="{StaticResource SpaceSm}" VerticalAlignment="Center" MinWidth="48" />
-                      <TextBox Text="{Binding Amount, UpdateSourceTrigger=LostFocus}"
-                               Width="64" VerticalAlignment="Center"
-                               FontFamily="{StaticResource FontFamilyMono}" />
-                      <ComboBox ItemsSource="{Binding Units}" SelectedItem="{Binding Unit}"
-                                Margin="{StaticResource SpaceSm}" VerticalAlignment="Center" MinWidth="120">
+                      <!-- Kind picker: swaps which editor to its right is visible. -->
+                      <ComboBox ItemsSource="{Binding Kinds}" SelectedItem="{Binding SelectedKind}"
+                                VerticalAlignment="Center" MinWidth="120">
                         <ComboBox.ItemTemplate>
                           <DataTemplate>
                             <TextBlock Text="{Binding LabelKey, Converter={StaticResource KeyToText}}" />
                           </DataTemplate>
                         </ComboBox.ItemTemplate>
                       </ComboBox>
+
+                      <!-- Shift editor: sign, amount, unit. -->
+                      <StackPanel Orientation="Horizontal"
+                                  Visibility="{Binding IsShift, Converter={StaticResource BoolToVis}}">
+                        <ComboBox ItemsSource="{Binding Signs}" SelectedItem="{Binding Sign}"
+                                  Margin="{StaticResource SpaceSm}" VerticalAlignment="Center" MinWidth="48" />
+                        <TextBox Text="{Binding Amount, UpdateSourceTrigger=LostFocus}"
+                                 Width="64" VerticalAlignment="Center"
+                                 FontFamily="{StaticResource FontFamilyMono}" />
+                        <ComboBox ItemsSource="{Binding Units}" SelectedItem="{Binding Unit}"
+                                  Margin="{StaticResource SpaceSm}" VerticalAlignment="Center" MinWidth="120">
+                          <ComboBox.ItemTemplate>
+                            <DataTemplate>
+                              <TextBlock Text="{Binding LabelKey, Converter={StaticResource KeyToText}}" />
+                            </DataTemplate>
+                          </ComboBox.ItemTemplate>
+                        </ComboBox>
+                      </StackPanel>
+
+                      <!-- Snap editor: a period boundary target. -->
+                      <StackPanel Orientation="Horizontal"
+                                  Visibility="{Binding IsSnap, Converter={StaticResource BoolToVis}}">
+                        <ComboBox ItemsSource="{Binding SnapTargets}" SelectedItem="{Binding SnapTarget}"
+                                  Margin="{StaticResource SpaceSm}" VerticalAlignment="Center" MinWidth="180">
+                          <ComboBox.ItemTemplate>
+                            <DataTemplate>
+                              <TextBlock Text="{Binding LabelKey, Converter={StaticResource KeyToText}}" />
+                            </DataTemplate>
+                          </ComboBox.ItemTemplate>
+                        </ComboBox>
+                      </StackPanel>
+
                       <Button Content="✕" Click="OnRemoveStepClick" Tag="{Binding}"
                               Margin="{StaticResource SpaceSm}" VerticalAlignment="Center"
                               AutomationProperties.Name="{DynamicResource calc.remove_step}"

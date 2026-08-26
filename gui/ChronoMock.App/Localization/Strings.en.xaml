@@ -150,6 +150,14 @@
   <sys:String x:Key="calc.cal.us_federal">US federal</sys:String>
   <sys:String x:Key="calc.cal.pl">Poland</sys:String>
 
+  <!-- Snap-step targets (G3c-1): the period boundary the step jumps to. Tokens mirror the snap flag. -->
+  <sys:String x:Key="calc.snap.som">Start of month</sys:String>
+  <sys:String x:Key="calc.snap.eom">End of month</sys:String>
+  <sys:String x:Key="calc.snap.soq">Start of quarter</sys:String>
+  <sys:String x:Key="calc.snap.eoq">End of quarter</sys:String>
+  <sys:String x:Key="calc.snap.soy">Start of year</sys:String>
+  <sys:String x:Key="calc.snap.eoy">End of year</sys:String>
+
   <sys:String x:Key="calc.sig.start_of_month">First day of the month</sys:String>
   <sys:String x:Key="calc.sig.end_of_month">Last day of the month (month-end)</sys:String>
   <sys:String x:Key="calc.sig.start_of_quarter">First day of the quarter</sys:String>
