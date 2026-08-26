@@ -541,17 +541,66 @@ pub fn prepare(spec: &SessionSpec, target: &Target, hook_dll: &Path) -> Result<P
     }
 }
 
-/// Build a mutable command line: `"path" arg1 arg2`.
-fn build_command_line(path: &str, args: &[String]) -> Vec<u16> {
+/// Quote one argument so the target's CRT (CommandLineToArgvW) parses it back verbatim, per the
+/// standard Windows rule: double-quote when the argument is empty or holds whitespace or a quote,
+/// and double the run of backslashes that precedes a quote or the closing quote. Without this an
+/// `--args` value containing a space or quote would reach the target split or mangled (P9).
+fn quote_arg(arg: &str) -> String {
+    let needs_quotes = arg.is_empty()
+        || arg
+            .chars()
+            .any(|c| c == ' ' || c == '\t' || c == '\n' || c == '\x0b' || c == '"');
+    if !needs_quotes {
+        return arg.to_string();
+    }
+    let mut out = String::with_capacity(arg.len() + 2);
+    out.push('"');
+    let mut backslashes = 0usize;
+    for c in arg.chars() {
+        match c {
+            '\\' => backslashes += 1,
+            '"' => {
+                // Backslashes before a quote must be doubled to stay literal, then escape the quote.
+                for _ in 0..(backslashes * 2 + 1) {
+                    out.push('\\');
+                }
+                out.push('"');
+                backslashes = 0;
+            }
+            _ => {
+                for _ in 0..backslashes {
+                    out.push('\\');
+                }
+                backslashes = 0;
+                out.push(c);
+            }
+        }
+    }
+    // Trailing backslashes precede the closing quote, so double them too.
+    for _ in 0..(backslashes * 2) {
+        out.push('\\');
+    }
+    out.push('"');
+    out
+}
+
+/// The `"path" arg1 arg2` command line as text, each argument quoted with `quote_arg` so a target
+/// argument with spaces or quotes survives the round trip through CreateProcess.
+fn command_line_string(path: &str, args: &[String]) -> String {
     let mut s = String::with_capacity(path.len() + 2);
     s.push('"');
     s.push_str(path);
     s.push('"');
     for a in args {
         s.push(' ');
-        s.push_str(a);
+        s.push_str(&quote_arg(a));
     }
-    to_wide(&s)
+    s
+}
+
+/// Build a mutable command line: `"path" arg1 arg2`, wide-encoded for CreateProcessW.
+fn build_command_line(path: &str, args: &[String]) -> Vec<u16> {
+    to_wide(&command_line_string(path, args))
 }
 
 /// Manual LoadLibrary injection: write the DLL path into the target and run
@@ -580,4 +629,31 @@ unsafe fn inject(hproc: HANDLE, dll_wide: &[u16]) -> Result<(), PrepareError> {
     let _ = VirtualFreeEx(hproc, remote, 0, MEM_RELEASE);
     let _ = CloseHandle(hthread);
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn quote_arg_leaves_simple_tokens_bare() {
+        assert_eq!(quote_arg("simple"), "simple");
+        assert_eq!(quote_arg("C:\\path\\file"), "C:\\path\\file"); // backslashes without a quote stay
+        assert_eq!(quote_arg("a-b_c.txt"), "a-b_c.txt");
+    }
+
+    #[test]
+    fn quote_arg_wraps_and_escapes() {
+        assert_eq!(quote_arg("a b"), "\"a b\"");
+        assert_eq!(quote_arg(""), "\"\"");
+        assert_eq!(quote_arg("a\"b"), "\"a\\\"b\""); // an embedded quote is escaped
+        // A trailing backslash is doubled before the closing quote so it stays literal.
+        assert_eq!(quote_arg("with space\\"), "\"with space\\\\\"");
+    }
+
+    #[test]
+    fn command_line_quotes_each_arg() {
+        let cl = command_line_string("C:\\dir\\app.exe", &["a b".to_string(), "c".to_string()]);
+        assert_eq!(cl, "\"C:\\dir\\app.exe\" \"a b\" c");
+    }
 }

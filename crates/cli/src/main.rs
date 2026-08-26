@@ -124,6 +124,39 @@ fn parse_mode(raw: &str) -> Result<(String, Option<i64>), String> {
     }
 }
 
+/// Split an `--args` value into arguments, honouring double-quotes so one argument may contain
+/// spaces (`--args '"a b" c'` -> ["a b", "c"]). Whitespace outside quotes separates arguments; a
+/// quote toggles quoting and is dropped. Plain space-separated values behave exactly as before, so
+/// existing usage is unchanged; `mech`'s quoting re-quotes each token for the target's CRT (P9).
+fn split_args(raw: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut cur = String::new();
+    let mut in_quotes = false;
+    let mut has_token = false;
+    for c in raw.chars() {
+        match c {
+            '"' => {
+                in_quotes = !in_quotes;
+                has_token = true;
+            }
+            c if c.is_whitespace() && !in_quotes => {
+                if has_token {
+                    out.push(std::mem::take(&mut cur));
+                    has_token = false;
+                }
+            }
+            c => {
+                cur.push(c);
+                has_token = true;
+            }
+        }
+    }
+    if has_token {
+        out.push(cur);
+    }
+    out
+}
+
 fn parse_run_args(argv: &[String]) -> Result<RunArgs, String> {
     let mut target: Option<String> = None;
     let mut args: Vec<String> = Vec::new();
@@ -182,7 +215,7 @@ fn parse_run_args(argv: &[String]) -> Result<RunArgs, String> {
             "--args" => {
                 i += 1;
                 let raw = argv.get(i).ok_or("--args needs a value")?;
-                args = raw.split_whitespace().map(str::to_string).collect();
+                args = split_args(raw);
             }
             "--scale-duration" => {
                 scale_duration = true;
@@ -2515,6 +2548,19 @@ mod tests {
         assert!(!is_valid_catalogue_id("a/b"));
         assert!(!is_valid_catalogue_id("a\\b"));
         assert!(!is_valid_catalogue_id("c:evil"));
+    }
+
+    #[test]
+    fn args_split_plain_and_quoted() {
+        let s = |x: &str| x.to_string();
+        // Plain space-separated values behave exactly as before (backward compatible).
+        assert_eq!(split_args("a b c"), vec![s("a"), s("b"), s("c")]);
+        assert_eq!(split_args("  x   y "), vec![s("x"), s("y")]);
+        assert_eq!(split_args("out 100 10"), vec![s("out"), s("100"), s("10")]);
+        // Double-quotes group a single argument that contains spaces (the P9 fix).
+        assert_eq!(split_args("\"a b\" c"), vec![s("a b"), s("c")]);
+        assert!(split_args("").is_empty());
+        assert_eq!(split_args("\"\""), vec![s("")]); // an explicit empty argument
     }
 
     #[test]
