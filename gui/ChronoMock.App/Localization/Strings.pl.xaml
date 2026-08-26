@@ -99,4 +99,32 @@
   <sys:String x:Key="history.clear_title">Wyczyść historię</sys:String>
   <sys:String x:Key="history.clear_confirm">Wyczyścić wszystkie zapisane sesje? Tej operacji nie można cofnąć.</sys:String>
 
+  <!-- Przełącznik modułów: dwie połowy produktu (chrono-mock 6.1/7). -->
+  <sys:String x:Key="nav.substitution">Podmiana</sys:String>
+  <sys:String x:Key="nav.calculator">Kalkulator</sys:String>
+
+  <!-- Kalkulator dat (chrono-mock 7.3). Plasterek G1 to szkielet układu; więcej kluczy z podpięciem. -->
+  <sys:String x:Key="calc.presets_header">Presety</sys:String>
+  <sys:String x:Key="calc.filter_placeholder">Filtruj scenariusze…</sys:String>
+  <sys:String x:Key="calc.build_from_scratch">+ Zbuduj od zera</sys:String>
+  <sys:String x:Key="calc.preset_note">Preset to punkt startowy - nie certyfikat kompletności testu.</sys:String>
+  <sys:String x:Key="calc.build_header">Zbuduj moment</sys:String>
+  <sys:String x:Key="calc.start_point">Punkt startowy</sys:String>
+  <sys:String x:Key="calc.steps_header">Kroki - wynik po każdym</sys:String>
+  <sys:String x:Key="calc.add_step">+ Dodaj krok</sys:String>
+  <sys:String x:Key="calc.kind_shift">Przesuń ±</sys:String>
+  <sys:String x:Key="calc.kind_snap">Przeskocz do</sys:String>
+  <sys:String x:Key="calc.kind_nearest">Najbliższy</sys:String>
+  <sys:String x:Key="calc.kind_settime">Ustaw godzinę</sys:String>
+  <sys:String x:Key="calc.kind_zone">Zmień strefę</sys:String>
+  <sys:String x:Key="calc.result_header">Wynik</sys:String>
+  <sys:String x:Key="calc.what_tests">Co ta data testuje</sys:String>
+  <sys:String x:Key="calc.all_formats">Wszystkie formaty - kopiuj jednym klikiem</sys:String>
+  <sys:String x:Key="calc.copy">Kopiuj</sys:String>
+  <sys:String x:Key="calc.metadata">Metadane</sys:String>
+  <sys:String x:Key="calc.other_zones">Ta sama chwila, inne strefy</sys:String>
+  <sys:String x:Key="calc.use_in_substitution">Użyj w podmianie →</sys:String>
+  <sys:String x:Key="calc.reverse_header">Analiza wklejonej daty</sys:String>
+  <sys:String x:Key="calc.preview_note">Podgląd układu - żywe wyniki w kolejnych plasterkach.</sys:String>
+
 </ResourceDictionary>

@@ -23,4 +23,13 @@ public class WindowBuildTests
         var title = WpfTestHost.InvokeSettled(() => new MainWindow().Title);
         Assert.Equal("Chrono Mock", title);
     }
+
+    [Fact]
+    public void CalculatorView_constructs_with_the_theme_applied()
+    {
+        // The calculator screen (slice G1) resolves every StaticResource (spacing, type, the new mono
+        // family) and DynamicResource (brushes) from the merged dictionaries, exactly as at runtime.
+        var view = WpfTestHost.InvokeSettled(() => new ChronoMock.App.Views.CalculatorView());
+        Assert.NotNull(view);
+    }
 }

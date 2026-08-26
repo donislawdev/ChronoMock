@@ -100,4 +100,32 @@
   <sys:String x:Key="history.clear_title">Clear history</sys:String>
   <sys:String x:Key="history.clear_confirm">Clear all recorded sessions? This cannot be undone.</sys:String>
 
+  <!-- Module switch: the two halves of the product (chrono-mock 6.1/7). -->
+  <sys:String x:Key="nav.substitution">Substitution</sys:String>
+  <sys:String x:Key="nav.calculator">Calculator</sys:String>
+
+  <!-- Date calculator (chrono-mock 7.3). Slice G1 is the layout shell; more keys arrive with the wiring. -->
+  <sys:String x:Key="calc.presets_header">Presets</sys:String>
+  <sys:String x:Key="calc.filter_placeholder">Filter scenarios…</sys:String>
+  <sys:String x:Key="calc.build_from_scratch">+ Build from scratch</sys:String>
+  <sys:String x:Key="calc.preset_note">A preset is a starting point - not a certificate that your test is complete.</sys:String>
+  <sys:String x:Key="calc.build_header">Build the moment</sys:String>
+  <sys:String x:Key="calc.start_point">Start point</sys:String>
+  <sys:String x:Key="calc.steps_header">Steps - result after each one</sys:String>
+  <sys:String x:Key="calc.add_step">+ Add step</sys:String>
+  <sys:String x:Key="calc.kind_shift">Shift ±</sys:String>
+  <sys:String x:Key="calc.kind_snap">Snap to</sys:String>
+  <sys:String x:Key="calc.kind_nearest">Nearest</sys:String>
+  <sys:String x:Key="calc.kind_settime">Set time</sys:String>
+  <sys:String x:Key="calc.kind_zone">Change zone</sys:String>
+  <sys:String x:Key="calc.result_header">Result</sys:String>
+  <sys:String x:Key="calc.what_tests">What this date tests</sys:String>
+  <sys:String x:Key="calc.all_formats">All formats - one click to copy</sys:String>
+  <sys:String x:Key="calc.copy">Copy</sys:String>
+  <sys:String x:Key="calc.metadata">Metadata</sys:String>
+  <sys:String x:Key="calc.other_zones">Same instant, other zones</sys:String>
+  <sys:String x:Key="calc.use_in_substitution">Use in substitution →</sys:String>
+  <sys:String x:Key="calc.reverse_header">Analyze a pasted date</sys:String>
+  <sys:String x:Key="calc.preview_note">Layout preview - live results arrive in the next slices.</sys:String>
+
 </ResourceDictionary>

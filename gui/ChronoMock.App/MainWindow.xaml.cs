@@ -28,6 +28,20 @@ public partial class MainWindow : FluentWindow
         Closed += async (_, _) => await _session.DisposeAsync();
     }
 
+    // Swap the visible module: substitution panel vs calculator view. The default radio's Checked fires
+    // during InitializeComponent, before the content elements exist, so both are null-checked here.
+    private void OnModeChanged(object sender, RoutedEventArgs e)
+    {
+        if (SubstitutionContainer is null || CalculatorContainer is null)
+        {
+            return;
+        }
+
+        bool calculator = ModeCalculator.IsChecked == true;
+        SubstitutionContainer.Visibility = calculator ? Visibility.Collapsed : Visibility.Visible;
+        CalculatorContainer.Visibility = calculator ? Visibility.Visible : Visibility.Collapsed;
+    }
+
     private void OnChooseTargetClick(object sender, RoutedEventArgs e)
     {
         var dialog = new OpenFileDialog

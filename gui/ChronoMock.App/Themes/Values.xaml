@@ -18,6 +18,10 @@
   <Thickness x:Key="SpaceXxl">32</Thickness>
 
   <!-- Typography: a fixed set of size roles, not a free axis. Caption is the legibility floor. -->
+  <!-- Monospace family for data columns (timestamps, epoch, FILETIME) so digits align (calculator 7.3).
+       A named design value, not a literal per view (zasady/13 2.1). Consolas ships on the TFM floor
+       (Win10 1809), so it always resolves. The default UI face stays Segoe (no key needed for it). -->
+  <FontFamily x:Key="FontFamilyMono">Consolas</FontFamily>
   <sys:Double x:Key="FontSizeCaption">12</sys:Double>
   <sys:Double x:Key="FontSizeBody">14</sys:Double>
   <sys:Double x:Key="FontSizeSubtitle">18</sys:Double>

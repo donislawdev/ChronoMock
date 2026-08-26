@@ -3,10 +3,11 @@
                  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
                  xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
                  xmlns:controls="clr-namespace:ChronoMock.App.Controls"
+                 xmlns:views="clr-namespace:ChronoMock.App.Views"
                  Title="{DynamicResource app.title}"
-                 Width="720"
+                 Width="1040"
                  Height="800"
-                 MinWidth="480"
+                 MinWidth="640"
                  MinHeight="360"
                  Background="{DynamicResource BrushBgBase}"
                  ExtendsContentIntoTitleBar="True"
@@ -15,14 +16,29 @@
   <Grid>
     <Grid.RowDefinitions>
       <RowDefinition Height="Auto" />
+      <RowDefinition Height="Auto" />
       <RowDefinition Height="*" />
     </Grid.RowDefinitions>
 
     <ui:TitleBar Grid.Row="0" Title="{DynamicResource app.title}" />
 
+    <!-- Module switch: the two halves of the product (substitution, calculator) share one window. The
+         calculator is a separate view swapped into the content cell below. Meaning is carried by the
+         label, never colour alone (zasady/13 9), and both options are keyboard-reachable radio buttons. -->
+    <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Center" Margin="{StaticResource SpaceSm}">
+      <RadioButton x:Name="ModeSubstitution" GroupName="AppMode" IsChecked="True" Checked="OnModeChanged"
+                   Content="{DynamicResource nav.substitution}" Margin="{StaticResource SpaceXs}" />
+      <RadioButton x:Name="ModeCalculator" GroupName="AppMode" Checked="OnModeChanged"
+                   Content="{DynamicResource nav.calculator}" Margin="{StaticResource SpaceXs}" />
+    </StackPanel>
+
+    <!-- Content cell: the substitution panel (default) and the calculator view occupy the same cell,
+         toggled by the module switch above. -->
+    <Grid Grid.Row="2">
+
     <!-- The whole panel scrolls when it does not fit, so no row is ever clipped at a small window size or
          a large system scale (zasady/13 2.1 - computed layout over hard geometry). -->
-    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+    <ScrollViewer x:Name="SubstitutionContainer" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
       <Grid Margin="{StaticResource SpaceXl}">
         <Grid.RowDefinitions>
           <RowDefinition Height="Auto" />
@@ -328,5 +344,9 @@
         </Expander>
       </Grid>
     </ScrollViewer>
+
+      <!-- Date calculator (chrono-mock 7.3), hidden until the module switch selects it. -->
+      <views:CalculatorView x:Name="CalculatorContainer" Visibility="Collapsed" />
+    </Grid>
   </Grid>
 </ui:FluentWindow>
