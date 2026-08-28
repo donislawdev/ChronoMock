@@ -6,12 +6,14 @@
 //! This module is the transport + JSON-RPC layer. Target detection, launch, the time shim, and the
 //! session/report wiring live in sibling modules (built in later slices).
 
+mod launch;
 mod ws;
 
 use serde_json::Value;
 use std::io::{self, BufRead, Read, Write};
 use std::net::TcpStream;
 
+pub use launch::{is_chromium_target, launch_chromium};
 pub use ws::WsClient;
 
 /// One decoded CDP message: either a reply to a command we sent, or an event the browser pushed.

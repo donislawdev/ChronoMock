@@ -41,6 +41,7 @@ fn main() {
         Some("run") => driver_run(&args[2..]),
         Some("calc") => calc_run(&args[2..]),
         Some("__cdp-probe") => cdp_probe(&args[2..]),
+        Some("__cdp-launch") => cdp_launch_probe(&args[2..]),
         Some("--help") | Some("-h") | None => {
             print_usage();
             0
@@ -122,6 +123,54 @@ fn cdp_probe(argv: &[String]) -> i32 {
         }
     }
     0
+}
+
+/// Hidden probe (CDP slice C2 verification): detect a Chromium/Electron target, launch it under our
+/// own isolated profile and debug port, connect, and clean up. Proves detection + launch end to end
+/// (the tool starts the app itself, unlike the C1 probe which attached to an already-running port).
+fn cdp_launch_probe(argv: &[String]) -> i32 {
+    let Some(target) = argv.first() else {
+        eprintln!("usage: chrono __cdp-launch <target-exe>");
+        return 1;
+    };
+    if !cdp::is_chromium_target(target) {
+        println!("not a chromium target: {target}");
+        return 1;
+    }
+    println!("chromium target detected: {target}");
+
+    let launched = match cdp::launch_chromium(target, &[]) {
+        Ok(l) => l,
+        Err(e) => {
+            eprintln!("chrono: {e}");
+            return 3;
+        }
+    };
+    println!("debug port: {}", launched.port);
+
+    let code = match cdp::CdpClient::connect_to_port("127.0.0.1", launched.port) {
+        Ok(mut c) => match c.call("Browser.getVersion", serde_json::json!({}), None) {
+            Ok(v) => {
+                println!(
+                    "browser: {}",
+                    v.get("product").and_then(serde_json::Value::as_str).unwrap_or("?")
+                );
+                0
+            }
+            Err(e) => {
+                eprintln!("chrono: Browser.getVersion: {e}");
+                3
+            }
+        },
+        Err(e) => {
+            eprintln!("chrono: connect: {e}");
+            3
+        }
+    };
+
+    launched.shutdown();
+    println!("shut down and cleaned up");
+    code
 }
 
 // ---------------------------------------------------------------------------
