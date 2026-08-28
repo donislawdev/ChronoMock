@@ -42,6 +42,7 @@ fn main() {
         Some("calc") => calc_run(&args[2..]),
         Some("__cdp-probe") => cdp_probe(&args[2..]),
         Some("__cdp-launch") => cdp_launch_probe(&args[2..]),
+        Some("__cdp-shim") => cdp_shim_probe(&args[2..]),
         Some("--help") | Some("-h") | None => {
             print_usage();
             0
@@ -171,6 +172,139 @@ fn cdp_launch_probe(argv: &[String]) -> i32 {
     launched.shutdown();
     println!("shut down and cleaned up");
     code
+}
+
+fn now_epoch_ms() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0)
+}
+
+/// Hidden probe (CDP slice C3 verification): launch a Chromium target, auto-attach to every context,
+/// inject the time shim through the production path, then (Pomotroid-specific) drive its worker timer
+/// and measure whether the app's own countdown accelerates by the multiplier. Proves the shim reaches
+/// the sandboxed worker and speeds it up - the whole point of Chromium mode.
+fn cdp_shim_probe(argv: &[String]) -> i32 {
+    let Some(target) = argv.first() else {
+        eprintln!("usage: chrono __cdp-shim <target-exe> [multiplier]");
+        return 1;
+    };
+    let mult: i64 = argv.get(1).and_then(|s| s.parse().ok()).unwrap_or(60);
+    if !cdp::is_chromium_target(target) {
+        println!("not a chromium target: {target}");
+        return 1;
+    }
+
+    let launched = match cdp::launch_chromium(target, &[]) {
+        Ok(l) => l,
+        Err(e) => {
+            eprintln!("chrono: {e}");
+            return 3;
+        }
+    };
+    let mut client = match cdp::CdpClient::connect_to_port("127.0.0.1", launched.port) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("chrono: connect: {e}");
+            launched.shutdown();
+            return 3;
+        }
+    };
+
+    // Pure acceleration for the proof: fake start = real start (the absolute wall moment is C5).
+    let now = now_epoch_ms();
+    let shim = cdp::build_shim(now, now, mult);
+    println!("multiplier: x{mult}, injecting shim into all contexts...");
+
+    if let Err(e) = client.call(
+        "Target.setAutoAttach",
+        serde_json::json!({ "autoAttach": true, "waitForDebuggerOnStart": true, "flatten": true }),
+        None,
+    ) {
+        eprintln!("chrono: setAutoAttach: {e}");
+        launched.shutdown();
+        return 3;
+    }
+
+    // Drain attach events, shimming each context. Break once the Pomodoro worker is covered.
+    let mut worker_sid: Option<String> = None;
+    for _ in 0..50 {
+        match client.next() {
+            Ok(cdp::Msg::Event { method, params, .. }) if method == "Target.attachedToTarget" => {
+                let sid = params["sessionId"].as_str().unwrap_or("").to_string();
+                let ty = params["targetInfo"]["type"].as_str().unwrap_or("").to_string();
+                let url = params["targetInfo"]["url"].as_str().unwrap_or("").to_string();
+                if !cdp::is_shimmable(&ty) {
+                    continue;
+                }
+                let r = if cdp::is_worker(&ty) {
+                    cdp::inject_worker(&mut client, &sid, &shim)
+                } else {
+                    cdp::inject_page(&mut client, &sid, &shim)
+                };
+                match r {
+                    Ok(()) => println!("  shimmed {ty} :: {}", short_url(&url)),
+                    Err(e) => println!("  FAILED  {ty}: {e}"),
+                }
+                if cdp::is_worker(&ty) && url.contains(".worker.js") {
+                    worker_sid = Some(sid);
+                    break;
+                }
+            }
+            Ok(_) => {}
+            Err(e) => {
+                eprintln!("chrono: event loop: {e}");
+                break;
+            }
+        }
+    }
+
+    let Some(sid) = worker_sid else {
+        println!("no timer worker found (this proof needs Pomotroid); shim still installed on contexts above");
+        launched.shutdown();
+        return 1;
+    };
+
+    // Measurement stimulus (Pomotroid-specific): capture the worker's own elapsed via its postMessage,
+    // then drive create+start. The shim already scaled setInterval, so elapsed should climb by x{mult}.
+    let cap = "if(!globalThis.__cap){var _pm=self.postMessage;self.postMessage=function(m){try{if(m&&m.event==='tick'){globalThis.__last=m.elapsed;}}catch(e){}return _pm.call(self,m);};globalThis.__cap=true;globalThis.__last=0;} 'cap'";
+    let trigger = "self.onmessage({data:{event:'create',min:25}});self.onmessage({data:{event:'start'}});'go'";
+    let _ = client.call("Runtime.evaluate", serde_json::json!({ "expression": cap, "returnByValue": true }), Some(&sid));
+    let start = std::time::Instant::now();
+    let _ = client.call("Runtime.evaluate", serde_json::json!({ "expression": trigger, "returnByValue": true }), Some(&sid));
+
+    println!("measuring the app's own countdown:");
+    let mut last_elapsed = 0i64;
+    for _ in 0..6 {
+        std::thread::sleep(std::time::Duration::from_millis(500));
+        let read = client.call("Runtime.evaluate", serde_json::json!({ "expression": "globalThis.__last||0", "returnByValue": true }), Some(&sid));
+        if let Ok(v) = read {
+            last_elapsed = v.get("result").and_then(|r| r.get("value")).and_then(serde_json::Value::as_i64).unwrap_or(0);
+            let real = start.elapsed().as_secs_f64();
+            println!("  real {real:.2}s -> app countdown advanced {last_elapsed}s");
+        }
+    }
+    let real = start.elapsed().as_secs_f64();
+    let rate = if real > 0.0 { last_elapsed as f64 / real } else { 0.0 };
+    println!("=== app-time/real-time = ~{rate:.1}x (expected ~{mult}x) ===");
+
+    launched.shutdown();
+    if rate > (mult as f64) * 0.5 {
+        println!("PROVEN: the shim accelerated the sandboxed worker countdown.");
+        0
+    } else {
+        println!("NOT PROVEN: no meaningful speed-up.");
+        1
+    }
+}
+
+fn short_url(url: &str) -> &str {
+    if url.len() > 66 {
+        &url[..66]
+    } else {
+        url
+    }
 }
 
 // ---------------------------------------------------------------------------

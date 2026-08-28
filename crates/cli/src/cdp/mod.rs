@@ -7,6 +7,7 @@
 //! session/report wiring live in sibling modules (built in later slices).
 
 mod launch;
+mod session;
 mod ws;
 
 use serde_json::Value;
@@ -14,6 +15,7 @@ use std::io::{self, BufRead, Read, Write};
 use std::net::TcpStream;
 
 pub use launch::{is_chromium_target, launch_chromium};
+pub use session::{build_shim, inject_page, inject_worker, is_shimmable, is_worker};
 pub use ws::WsClient;
 
 /// One decoded CDP message: either a reply to a command we sent, or an event the browser pushed.
@@ -81,8 +83,6 @@ impl CdpClient {
     }
 
     /// Return the next message (a queued one first), for an event-driven loop. Blocks on the socket.
-    /// Used by the auto-attach event loop in slice C3.
-    #[allow(dead_code)]
     pub fn next(&mut self) -> io::Result<Msg> {
         if let Some(m) = self.queued.pop_front() {
             return Ok(m);
