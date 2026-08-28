@@ -18,20 +18,35 @@ use std::io;
 /// so M = 1 is a pure wall offset and M > 1 accelerates.
 const SHIM_TEMPLATE: &str = r#"(function(){
   if (globalThis.__chronomock) { return 'already'; }
-  var M = __MULT__;
+  var M = __MULT__;                 /* 0 = frozen, 1 = flow (wall offset only), N = accelerate */
   var fakeStart = __FAKE_START__;
   var realStart = __REAL_START__;
-  var _now = Date.now.bind(Date);
+  var TS = M || 1;                  /* duration scale: frozen keeps timers real, only the wall freezes */
+  var _OrigDate = Date;
+  var _now = _OrigDate.now.bind(_OrigDate);
   var C = { si: 0, st: 0, now: 0, perf: 0 };
   function fakeNow(){ return Math.round(fakeStart + (_now() - realStart) * M); }
-  try { Date.now = function(){ C.now++; return fakeNow(); }; } catch (e) {}
+
+  /* Replace Date so new Date() (no args) and Date.now() read the session clock; every other form
+     (parsing, explicit fields) is unchanged, and instanceof / the prototype are preserved. */
+  function CMDate() {
+    if (!(this instanceof CMDate)) { return _OrigDate.apply(null, arguments); }
+    if (arguments.length === 0) { return new _OrigDate(fakeNow()); }
+    return new (Function.prototype.bind.apply(_OrigDate, [null].concat([].slice.call(arguments))))();
+  }
+  CMDate.prototype = _OrigDate.prototype;
+  CMDate.now = function(){ C.now++; return fakeNow(); };
+  CMDate.parse = _OrigDate.parse;
+  CMDate.UTC = _OrigDate.UTC;
+  try { globalThis.Date = CMDate; } catch (e) { try { Date.now = CMDate.now; } catch (e2) {} }
+
   var _si = globalThis.setInterval, _st = globalThis.setTimeout;
-  if (_si) { globalThis.setInterval = function(fn, d){ C.si++; var a = [].slice.call(arguments, 2); return _si.apply(globalThis, [fn, (d || 0) / M].concat(a)); }; }
-  if (_st) { globalThis.setTimeout = function(fn, d){ C.st++; var a = [].slice.call(arguments, 2); return _st.apply(globalThis, [fn, (d || 0) / M].concat(a)); }; }
+  if (_si) { globalThis.setInterval = function(fn, d){ C.si++; var a = [].slice.call(arguments, 2); return _si.apply(globalThis, [fn, (d || 0) / TS].concat(a)); }; }
+  if (_st) { globalThis.setTimeout = function(fn, d){ C.st++; var a = [].slice.call(arguments, 2); return _st.apply(globalThis, [fn, (d || 0) / TS].concat(a)); }; }
   try {
     if (typeof performance !== 'undefined' && performance.now) {
       var _pn = performance.now.bind(performance), _ps = _pn();
-      performance.now = function(){ C.perf++; return (_pn() - _ps) * M; };
+      performance.now = function(){ C.perf++; return (_pn() - _ps) * TS; };
     }
   } catch (e) {}
   globalThis.__chronomock = { M: M, fakeStart: fakeStart, realStart: realStart, counts: C };

@@ -43,6 +43,7 @@ fn main() {
         Some("__cdp-probe") => cdp_probe(&args[2..]),
         Some("__cdp-launch") => cdp_launch_probe(&args[2..]),
         Some("__cdp-shim") => cdp_shim_probe(&args[2..]),
+        Some("__cdp-date") => cdp_date_probe(&args[2..]),
         Some("--help") | Some("-h") | None => {
             print_usage();
             0
@@ -306,6 +307,86 @@ fn cdp_shim_probe(argv: &[String]) -> i32 {
     }
 }
 
+/// Hidden probe (CDP slice C5 verification): shim a target's page at a given fake moment and read its
+/// Date back, confirming new Date()/Date.now() see the session clock (not just setInterval scaling).
+fn cdp_date_probe(argv: &[String]) -> i32 {
+    let (Some(target), Some(iso)) = (argv.first(), argv.get(1)) else {
+        eprintln!("usage: chrono __cdp-date <target-exe> <YYYY-MM-DDTHH:MM:SS>");
+        return 1;
+    };
+    if !cdp::is_chromium_target(target) {
+        println!("not a chromium target: {target}");
+        return 1;
+    }
+    let real = now_epoch_ms();
+    let fake = moment_epoch_ms(iso, Some(0)).unwrap_or(real); // the probe treats the moment as UTC
+    let shim = cdp::build_shim(fake, real, 1); // flow: a wall offset, no acceleration
+
+    let launched = match cdp::launch_chromium(target, &[]) {
+        Ok(l) => l,
+        Err(e) => {
+            eprintln!("chrono: {e}");
+            return 3;
+        }
+    };
+    let mut client = match cdp::CdpClient::connect_to_port("127.0.0.1", launched.port) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("chrono: connect: {e}");
+            launched.shutdown();
+            return 3;
+        }
+    };
+    if client
+        .call("Target.setAutoAttach", serde_json::json!({ "autoAttach": true, "waitForDebuggerOnStart": true, "flatten": true }), None)
+        .is_err()
+    {
+        launched.shutdown();
+        return 3;
+    }
+
+    let mut page_sid: Option<String> = None;
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    while page_sid.is_none() && std::time::Instant::now() < deadline {
+        match client.poll() {
+            Ok(Some(cdp::Msg::Event { method, params, .. })) if method == "Target.attachedToTarget" => {
+                let sid = params["sessionId"].as_str().unwrap_or("").to_string();
+                let ty = params["targetInfo"]["type"].as_str().unwrap_or("").to_string();
+                if ty == "page" && !sid.is_empty() && cdp::inject_page(&mut client, &sid, &shim).is_ok() {
+                    page_sid = Some(sid);
+                }
+            }
+            Ok(_) => {}
+            Err(e) => {
+                eprintln!("chrono: {e}");
+                break;
+            }
+        }
+    }
+
+    let code = if let Some(sid) = page_sid {
+        let expr = "JSON.stringify([new Date().toISOString(), new Date().getUTCFullYear(), Date.now()])";
+        match client.call("Runtime.evaluate", serde_json::json!({ "expression": expr, "returnByValue": true }), Some(&sid)) {
+            Ok(v) => {
+                let reads = v.get("result").and_then(|r| r.get("value")).and_then(serde_json::Value::as_str).unwrap_or("?");
+                println!("requested moment: {iso}");
+                println!("page reads [new Date().toISOString(), getUTCFullYear(), Date.now()]: {reads}");
+                0
+            }
+            Err(e) => {
+                eprintln!("chrono: eval: {e}");
+                3
+            }
+        }
+    } else {
+        println!("no page attached");
+        1
+    };
+
+    launched.shutdown();
+    code
+}
+
 fn short_url(url: &str) -> &str {
     if url.len() > 66 {
         &url[..66]
@@ -381,8 +462,13 @@ fn driver_run_cdp(ra: &RunArgs, resolved_at: Option<String>, mode: &str, multipl
         .as_deref()
         .and_then(|iso| moment_epoch_ms(iso, ra.zone_bias_min))
         .unwrap_or(real_start);
-    // flow = x1 (a plain wall offset); xN accelerates. Frozen is a later slice (C5).
-    let mult = if mode == "multiplier" { multiplier.unwrap_or(1).max(1) } else { 1 };
+    // flow = x1 (a plain wall offset), xN accelerates, frozen = x0 (the wall is held; the shim keeps
+    // timers real via TS = M || 1).
+    let mult = match mode {
+        "multiplier" => multiplier.unwrap_or(1).max(1),
+        "frozen" => 0,
+        _ => 1, // flow
+    };
     let shim = cdp::build_shim(fake_start, real_start, mult);
 
     let mut launched = match cdp::launch_chromium(&ra.target, &ra.args) {
