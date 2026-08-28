@@ -22,20 +22,26 @@ const SHIM_TEMPLATE: &str = r#"(function(){
   var fakeStart = __FAKE_START__;
   var realStart = __REAL_START__;
   var _now = Date.now.bind(Date);
+  var C = { si: 0, st: 0, now: 0, perf: 0 };
   function fakeNow(){ return Math.round(fakeStart + (_now() - realStart) * M); }
-  try { Date.now = function(){ return fakeNow(); }; } catch (e) {}
+  try { Date.now = function(){ C.now++; return fakeNow(); }; } catch (e) {}
   var _si = globalThis.setInterval, _st = globalThis.setTimeout;
-  if (_si) { globalThis.setInterval = function(fn, d){ var a = [].slice.call(arguments, 2); return _si.apply(globalThis, [fn, (d || 0) / M].concat(a)); }; }
-  if (_st) { globalThis.setTimeout = function(fn, d){ var a = [].slice.call(arguments, 2); return _st.apply(globalThis, [fn, (d || 0) / M].concat(a)); }; }
+  if (_si) { globalThis.setInterval = function(fn, d){ C.si++; var a = [].slice.call(arguments, 2); return _si.apply(globalThis, [fn, (d || 0) / M].concat(a)); }; }
+  if (_st) { globalThis.setTimeout = function(fn, d){ C.st++; var a = [].slice.call(arguments, 2); return _st.apply(globalThis, [fn, (d || 0) / M].concat(a)); }; }
   try {
     if (typeof performance !== 'undefined' && performance.now) {
       var _pn = performance.now.bind(performance), _ps = _pn();
-      performance.now = function(){ return (_pn() - _ps) * M; };
+      performance.now = function(){ C.perf++; return (_pn() - _ps) * M; };
     }
   } catch (e) {}
-  globalThis.__chronomock = { M: M, fakeStart: fakeStart, realStart: realStart };
+  globalThis.__chronomock = { M: M, fakeStart: fakeStart, realStart: realStart, counts: C };
   return 'installed';
 })()"#;
+
+/// Read a context's per-API call counts (or `null` if the shim is not installed there). The counts
+/// make an honest "covered means the app actually called it" report, the same way the native audit
+/// counts channel queries - an override that was installed but never exercised is not "covered".
+pub const COUNTS_EXPR: &str = "(globalThis.__chronomock && globalThis.__chronomock.counts) || null";
 
 /// Build the shim source for a session clock: `fake_start_ms`/`real_start_ms` are Unix-epoch ms, `mult`
 /// the speed-up (>= 1). The browser's own `Date.now` supplies "real now" at run time, so all contexts

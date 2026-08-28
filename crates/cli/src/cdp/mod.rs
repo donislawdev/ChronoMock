@@ -13,9 +13,10 @@ mod ws;
 use serde_json::Value;
 use std::io::{self, BufRead, Read, Write};
 use std::net::TcpStream;
+use std::time::{Duration, Instant};
 
 pub use launch::{is_chromium_target, launch_chromium};
-pub use session::{build_shim, inject_page, inject_worker, is_shimmable, is_worker};
+pub use session::{build_shim, inject_page, inject_worker, is_shimmable, is_worker, COUNTS_EXPR};
 pub use ws::WsClient;
 
 /// One decoded CDP message: either a reply to a command we sent, or an event the browser pushed.
@@ -66,9 +67,11 @@ impl CdpClient {
         }
         self.ws.send_text(&Value::Object(req).to_string())?;
 
+        // A reply should come promptly; poll until it does, bounded so a hung target cannot block us.
+        let deadline = Instant::now() + Duration::from_secs(20);
         loop {
-            match self.read_msg()? {
-                Msg::Response { id: rid, result, error } if rid == id => {
+            match self.poll_msg()? {
+                Some(Msg::Response { id: rid, result, error }) if rid == id => {
                     return match error {
                         Some(e) => Err(io::Error::other(format!(
                             "CDP {method} failed: {}",
@@ -77,36 +80,49 @@ impl CdpClient {
                         None => Ok(result),
                     };
                 }
-                other => self.queued.push_back(other),
+                Some(other) => self.queued.push_back(other),
+                None => {
+                    if Instant::now() >= deadline {
+                        return Err(io::Error::new(
+                            io::ErrorKind::TimedOut,
+                            format!("CDP {method} timed out waiting for a reply"),
+                        ));
+                    }
+                }
             }
         }
     }
 
-    /// Return the next message (a queued one first), for an event-driven loop. Blocks on the socket.
-    pub fn next(&mut self) -> io::Result<Msg> {
+    /// Poll for the next message (a queued one first), returning `None` when the poll interval elapsed
+    /// with nothing ready - so an event loop can check target liveness between events. Blocks at most
+    /// one poll interval on the socket.
+    pub fn poll(&mut self) -> io::Result<Option<Msg>> {
         if let Some(m) = self.queued.pop_front() {
-            return Ok(m);
+            return Ok(Some(m));
         }
-        self.read_msg()
+        self.poll_msg()
     }
 
-    fn read_msg(&mut self) -> io::Result<Msg> {
-        let text = self.ws.recv_text()?;
+    fn poll_msg(&mut self) -> io::Result<Option<Msg>> {
+        let Some(text) = self.ws.poll_text()? else {
+            return Ok(None);
+        };
         let v: Value = serde_json::from_str(&text)
             .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, format!("bad CDP JSON: {e}")))?;
-        if let Some(id) = v.get("id").and_then(Value::as_u64) {
-            Ok(Msg::Response {
+        let msg = if let Some(id) = v.get("id").and_then(Value::as_u64) {
+            Msg::Response {
                 id,
                 result: v.get("result").cloned().unwrap_or(Value::Null),
                 error: v.get("error").cloned(),
-            })
+            }
         } else {
-            Ok(Msg::Event {
+            Msg::Event {
                 method: v.get("method").and_then(Value::as_str).unwrap_or("").to_string(),
                 params: v.get("params").cloned().unwrap_or(Value::Null),
                 session_id: v.get("sessionId").and_then(Value::as_str).map(str::to_string),
-            })
-        }
+            }
+        };
+        Ok(Some(msg))
     }
 }
 

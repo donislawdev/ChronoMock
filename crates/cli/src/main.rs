@@ -227,11 +227,12 @@ fn cdp_shim_probe(argv: &[String]) -> i32 {
         return 3;
     }
 
-    // Drain attach events, shimming each context. Break once the Pomodoro worker is covered.
+    // Drain attach events, shimming each context. Stop once the Pomodoro worker is covered.
     let mut worker_sid: Option<String> = None;
-    for _ in 0..50 {
-        match client.next() {
-            Ok(cdp::Msg::Event { method, params, .. }) if method == "Target.attachedToTarget" => {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
+    while worker_sid.is_none() && std::time::Instant::now() < deadline {
+        match client.poll() {
+            Ok(Some(cdp::Msg::Event { method, params, .. })) if method == "Target.attachedToTarget" => {
                 let sid = params["sessionId"].as_str().unwrap_or("").to_string();
                 let ty = params["targetInfo"]["type"].as_str().unwrap_or("").to_string();
                 let url = params["targetInfo"]["url"].as_str().unwrap_or("").to_string();
@@ -249,10 +250,9 @@ fn cdp_shim_probe(argv: &[String]) -> i32 {
                 }
                 if cdp::is_worker(&ty) && url.contains(".worker.js") {
                     worker_sid = Some(sid);
-                    break;
                 }
             }
-            Ok(_) => {}
+            Ok(_) => {} // another message, or a poll timeout - keep waiting
             Err(e) => {
                 eprintln!("chrono: event loop: {e}");
                 break;
@@ -289,6 +289,13 @@ fn cdp_shim_probe(argv: &[String]) -> i32 {
     let rate = if real > 0.0 { last_elapsed as f64 / real } else { 0.0 };
     println!("=== app-time/real-time = ~{rate:.1}x (expected ~{mult}x) ===");
 
+    // Validate the audit read path (used by `chrono run`): the worker called setInterval, so its
+    // count must be > 0.
+    if let Ok(v) = client.call("Runtime.evaluate", serde_json::json!({ "expression": cdp::COUNTS_EXPR, "returnByValue": true }), Some(&sid)) {
+        let counts = v.get("result").and_then(|r| r.get("value")).map(|x| x.to_string()).unwrap_or_else(|| "null".into());
+        println!("worker call counts (audit read): {counts}");
+    }
+
     launched.shutdown();
     if rate > (mult as f64) * 0.5 {
         println!("PROVEN: the shim accelerated the sandboxed worker countdown.");
@@ -305,6 +312,225 @@ fn short_url(url: &str) -> &str {
     } else {
         url
     }
+}
+
+/// FILETIME ticks (100 ns since 1601) at the Unix epoch (1970-01-01T00:00:00Z).
+const FT_UNIX_EPOCH: i64 = 116_444_736_000_000_000;
+
+/// Unix-epoch ms for a session moment (local-in-zone, internally UTC - rule 2), reusing the core's
+/// anchor math so the CDP and native paths agree on the instant. `None` if the moment is out of the
+/// representable range.
+fn moment_epoch_ms(local: &str, bias: Option<i32>) -> Option<i64> {
+    let m = Moment { local: local.to_string(), tz_bias_min: bias };
+    let ft = chrono_core::moment_to_filetime_utc(&m).ok()?;
+    Some((ft - FT_UNIX_EPOCH) / 10_000)
+}
+
+/// Session-zone wall-clock text for a Unix-epoch ms instant, via the core formatter (one source of
+/// truth for the civil half).
+fn epoch_ms_to_wall(epoch_ms: i64, bias: i32) -> String {
+    let ft = epoch_ms.saturating_mul(10_000).saturating_add(FT_UNIX_EPOCH);
+    filetime_utc_to_wall(ft, bias)
+}
+
+/// One shimmed JS context of a Chromium target: the coverage unit of a CDP session (rule 4 - never
+/// summed across contexts).
+struct CdpContext {
+    index: u32,
+    session_id: String,
+    ty: String,
+}
+
+/// Read each live context's per-API call counts and merge them (by max, so a peak survives a reload)
+/// into `counts`, keyed by `(context index, "type api")`. Returns whether any context answered - a
+/// dead context (the app closed) simply errors and is skipped, so the audit stays honest.
+fn poll_counts(
+    client: &mut cdp::CdpClient,
+    contexts: &[CdpContext],
+    counts: &mut std::collections::BTreeMap<(u32, String), u64>,
+) -> bool {
+    let mut any = false;
+    for c in contexts {
+        let read = client.call(
+            "Runtime.evaluate",
+            serde_json::json!({ "expression": cdp::COUNTS_EXPR, "returnByValue": true }),
+            Some(&c.session_id),
+        );
+        if let Ok(v) = read {
+            if let Some(obj) = v.get("result").and_then(|x| x.get("value")).and_then(serde_json::Value::as_object) {
+                any = true;
+                for (api, key) in [("setInterval", "si"), ("setTimeout", "st"), ("Date.now", "now"), ("performance.now", "perf")] {
+                    if let Some(n) = obj.get(key).and_then(serde_json::Value::as_u64) {
+                        let entry = counts.entry((c.index, format!("{} {}", c.ty, api))).or_insert(0);
+                        *entry = (*entry).max(n);
+                    }
+                }
+            }
+        }
+    }
+    any
+}
+
+/// The Chromium/Electron driver (F1-F4): launch the target under our own profile + debug port, drive
+/// its JS engine over CDP to install the time shim in every context, then report exactly as the
+/// native path does. This is the parallel mechanism the native hook cannot be - it reaches the
+/// sandboxed renderer's worker and never touches QPC.
+fn driver_run_cdp(ra: &RunArgs, resolved_at: Option<String>, mode: &str, multiplier: Option<i64>) -> i32 {
+    let real_start = now_epoch_ms();
+    let fake_start = resolved_at
+        .as_deref()
+        .and_then(|iso| moment_epoch_ms(iso, ra.zone_bias_min))
+        .unwrap_or(real_start);
+    // flow = x1 (a plain wall offset); xN accelerates. Frozen is a later slice (C5).
+    let mult = if mode == "multiplier" { multiplier.unwrap_or(1).max(1) } else { 1 };
+    let shim = cdp::build_shim(fake_start, real_start, mult);
+
+    let mut launched = match cdp::launch_chromium(&ra.target, &ra.args) {
+        Ok(l) => l,
+        Err(e) => {
+            eprintln!("chrono: {e}");
+            return Verdict::Fails.exit_code();
+        }
+    };
+    let mut client = match cdp::CdpClient::connect_to_port("127.0.0.1", launched.port) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("chrono: cannot attach over CDP: {e}");
+            launched.shutdown();
+            return Verdict::Fails.exit_code();
+        }
+    };
+    if let Err(e) = client.call(
+        "Target.setAutoAttach",
+        serde_json::json!({ "autoAttach": true, "waitForDebuggerOnStart": true, "flatten": true }),
+        None,
+    ) {
+        eprintln!("chrono: cannot set up auto-attach: {e}");
+        launched.shutdown();
+        return Verdict::Fails.exit_code();
+    }
+
+    // Install the shim into every context as it attaches, and keep the session alive (re-injecting
+    // new windows/workers) until the app closes or the tick budget elapses. Counts are polled while
+    // the session runs, so even an interactive session that ends on close still has an audit.
+    let mut contexts: Vec<CdpContext> = Vec::new();
+    let mut counts: std::collections::BTreeMap<(u32, String), u64> = std::collections::BTreeMap::new();
+    let mut failed = 0usize;
+    let mut next_index = 0u32;
+    let mut app_closed = false;
+    let session_start = Instant::now();
+    let mut last_audit = Instant::now();
+    loop {
+        if !launched.is_running() {
+            app_closed = true;
+            break;
+        }
+        if ra.ticks > 0 && session_start.elapsed().as_secs() >= ra.ticks {
+            break;
+        }
+        match client.poll() {
+            Ok(Some(cdp::Msg::Event { method, params, .. })) if method == "Target.attachedToTarget" => {
+                let sid = params["sessionId"].as_str().unwrap_or("").to_string();
+                let ty = params["targetInfo"]["type"].as_str().unwrap_or("").to_string();
+                if sid.is_empty() || !cdp::is_shimmable(&ty) {
+                    continue;
+                }
+                next_index += 1;
+                let injected = if cdp::is_worker(&ty) {
+                    cdp::inject_worker(&mut client, &sid, &shim)
+                } else {
+                    cdp::inject_page(&mut client, &sid, &shim)
+                };
+                match injected {
+                    Ok(()) => contexts.push(CdpContext { index: next_index, session_id: sid, ty }),
+                    Err(_) => failed += 1,
+                }
+            }
+            Ok(_) => {
+                // Another event, or an idle poll: sample call counts about once a second.
+                if last_audit.elapsed() >= Duration::from_secs(1) {
+                    poll_counts(&mut client, &contexts, &mut counts);
+                    last_audit = Instant::now();
+                }
+            }
+            Err(_) => {
+                app_closed = true; // the connection dropped, i.e. the app exited
+                break;
+            }
+        }
+    }
+    poll_counts(&mut client, &contexts, &mut counts); // final best-effort read
+    let audited = !counts.is_empty();
+
+    // Coverage = APIs the app actually called (count > 0), per context (honest "covered", like native).
+    let mut covered: Vec<(u32, String, u64)> = counts
+        .into_iter()
+        .filter(|(_, n)| *n > 0)
+        .map(|((idx, ch), n)| (idx, ch, n))
+        .collect();
+    covered.sort();
+
+    let verdict = if contexts.is_empty() {
+        Verdict::Fails
+    } else if !covered.is_empty() {
+        if failed > 0 {
+            Verdict::Partial
+        } else {
+            Verdict::Works
+        }
+    } else {
+        Verdict::Undetermined
+    };
+    let (token, reason) = match &verdict {
+        Verdict::Works => ("works", "chromium.contexts_covered"),
+        Verdict::Partial => ("partial", "chromium.contexts_partial"),
+        Verdict::Fails => ("fails", "chromium.no_contexts"),
+        Verdict::Undetermined => ("undetermined", "chromium.no_time_calls"),
+    };
+
+    let mut warnings = vec!["chromium.launched_with_debug_port".to_string()];
+    if app_closed && !audited {
+        warnings.push("chromium.app_closed_before_audit".to_string());
+    }
+
+    let real_ms = session_start.elapsed().as_millis() as i64;
+    let fake_ms = real_ms.saturating_mul(mult);
+    let timing = Some((
+        epoch_ms_to_wall(fake_start + fake_ms, ra.zone_bias_min.unwrap_or(0)),
+        real_ms,
+        fake_ms,
+    ));
+
+    let report = SessionReport {
+        target: ra.target.clone(),
+        session_verdict: Some((token.to_string(), reason.to_string(), contexts.len() as u32)),
+        parent_verdict: None,
+        vanished: None,
+        warnings,
+        uncovered: Vec::new(),
+        covered,
+        observed: Vec::new(),
+        timing,
+        cdp: true,
+    };
+
+    if let Some(path) = &ra.report {
+        let params = EvidenceParams {
+            moment: resolved_at.clone().unwrap_or_else(|| "(default)".into()),
+            zone: ra.zone_bias_min.map(format_bias).unwrap_or_else(|| "(host default)".into()),
+            mode: mode_label(mode, multiplier),
+        };
+        match std::fs::write(path, render_evidence(&report, &params)) {
+            Ok(()) => eprintln!("chrono: evidence written to {path}"),
+            Err(e) => eprintln!("chrono: cannot write evidence to {path}: {e}"),
+        }
+    }
+
+    launched.shutdown();
+    if !ra.json {
+        print!("{}", render_report(&report));
+    }
+    verdict.exit_code()
 }
 
 // ---------------------------------------------------------------------------
@@ -748,6 +974,13 @@ fn driver_run(argv: &[String]) -> i32 {
         (resolved, ra.mode.clone(), ra.multiplier, ra.scale_duration)
     };
 
+    // A Chromium/Electron target takes the CDP path instead of the native core: the hook cannot
+    // reach a sandboxed renderer's worker, and Chromium timers are QPC-based which ADR-2 leaves real.
+    // We drive the target's own JS engine over the DevTools protocol instead (F1-F4).
+    if cdp::is_chromium_target(&ra.target) {
+        return driver_run_cdp(&ra, resolved_at, &mode, multiplier);
+    }
+
     let exe = match std::env::current_exe() {
         Ok(p) => p,
         Err(e) => {
@@ -898,6 +1131,7 @@ fn driver_run(argv: &[String]) -> i32 {
         covered,
         observed,
         timing,
+        cdp: false,
     };
     if let Some(path) = &ra.report {
         let params = EvidenceParams {
@@ -948,6 +1182,9 @@ struct SessionReport {
     /// Last state heartbeat seen: (fake wall reached, real ms elapsed, fake ms elapsed), or None
     /// when the session was too short for a heartbeat. View-only, sampled from the state stream.
     timing: Option<(String, i64, i64)>,
+    /// Whether this was a Chromium (CDP) session: its coverage unit is a JS context, not an OS
+    /// process, so the report says "context" instead of "pid".
+    cdp: bool,
 }
 
 /// One-line English headline for a verdict wire token. Upper-case so success and failure are
@@ -978,6 +1215,10 @@ fn describe_reason(key: &str) -> &'static str {
         "session.family_undetermined" | "coverage.undetermined" => {
             "no process read a covered time channel"
         }
+        "chromium.contexts_covered" => "every JS context ran on the session clock",
+        "chromium.contexts_partial" => "some JS contexts ran on the session clock, some could not be reached",
+        "chromium.no_time_calls" => "the shim was installed, but the app called no JS time API",
+        "chromium.no_contexts" => "no JS context could be shimmed",
         _ => "",
     }
 }
@@ -995,6 +1236,12 @@ fn describe_warning(key: &str) -> String {
         }
         "source.network_at_start" => {
             "the target opened a network connection - it may read time from a server, which no local hook can cover"
+        }
+        "chromium.launched_with_debug_port" => {
+            "an Electron/Chromium app: launched with a remote-debugging port and a clean isolated profile, not your real one"
+        }
+        "chromium.app_closed_before_audit" => {
+            "the app closed before the audit could read final call counts - the coverage below may be incomplete"
         }
         _ => "",
     };
@@ -1019,6 +1266,10 @@ fn calls_label(n: u64) -> String {
 fn render_report(r: &SessionReport) -> String {
     let mut out = String::from("Chrono Mock - session report\n");
     out.push_str(&format!("  target:   {}\n", r.target));
+    // A Chromium session's coverage unit is a JS context, not an OS process (rule 4 - never sum
+    // across units either way).
+    let unit = if r.cdp { "context" } else { "pid" };
+    let units = if r.cdp { "contexts" } else { "processes" };
 
     // Headline priority: a vanish is an honest non-effect, then the family verdict, then the
     // parent verdict as a fallback for an older core, then nothing.
@@ -1029,7 +1280,7 @@ fn render_report(r: &SessionReport) -> String {
         ));
     } else if let Some((verdict, reason_key, count)) = &r.session_verdict {
         out.push_str(&format!(
-            "  verdict:  {}  (processes: {count})\n",
+            "  verdict:  {}  ({units}: {count})\n",
             verdict_headline(verdict)
         ));
         let why = describe_reason(reason_key);
@@ -1057,21 +1308,21 @@ fn render_report(r: &SessionReport) -> String {
     if !r.covered.is_empty() {
         out.push_str("  covered channels (substituted, with call counts):\n");
         for (pid, ch, calls) in &r.covered {
-            out.push_str(&format!("            - pid {pid}: {ch} ({})\n", calls_label(*calls)));
+            out.push_str(&format!("            - {unit} {pid}: {ch} ({})\n", calls_label(*calls)));
         }
     }
 
     if !r.observed.is_empty() {
         out.push_str("  observed channels (hooked but left real):\n");
         for (pid, ch, calls) in &r.observed {
-            out.push_str(&format!("            - pid {pid}: {ch} ({})\n", calls_label(*calls)));
+            out.push_str(&format!("            - {unit} {pid}: {ch} ({})\n", calls_label(*calls)));
         }
     }
 
     if !r.uncovered.is_empty() {
         out.push_str("  uncovered channels (queried but not covered):\n");
         for (pid, ch) in &r.uncovered {
-            out.push_str(&format!("            - pid {pid}: {ch}\n"));
+            out.push_str(&format!("            - {unit} {pid}: {ch}\n"));
         }
     }
 
@@ -3099,7 +3350,24 @@ mod tests {
             covered: vec![],
             observed: vec![],
             timing: None,
+            cdp: false,
         }
+    }
+
+    #[test]
+    fn cdp_report_labels_the_unit_as_context() {
+        let r = SessionReport {
+            session_verdict: Some(("works".into(), "chromium.contexts_covered".into(), 2)),
+            covered: vec![(1, "page setInterval".into(), 5)],
+            warnings: vec!["chromium.launched_with_debug_port".into()],
+            cdp: true,
+            ..empty_report()
+        };
+        let out = render_report(&r);
+        assert!(out.contains("contexts: 2"), "got:\n{out}");
+        assert!(out.contains("- context 1: page setInterval"), "got:\n{out}");
+        assert!(out.contains("JS context ran on the session clock"), "got:\n{out}");
+        assert!(out.contains("remote-debugging port"), "got:\n{out}");
     }
 
     #[test]

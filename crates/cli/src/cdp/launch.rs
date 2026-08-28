@@ -31,6 +31,12 @@ pub struct LaunchedChromium {
 }
 
 impl LaunchedChromium {
+    /// Whether the launched instance is still running. Reaps it if it has exited (so a later shutdown
+    /// is a clean no-op). Lets the driver end the session when the user closes the app.
+    pub fn is_running(&mut self) -> bool {
+        matches!(self.child.try_wait(), Ok(None))
+    }
+
     /// Terminate the launched instance and remove its temp profile. Best-effort: a QA tool must not
     /// leave a process or temp files behind, but a cleanup hiccup is not worth failing the session.
     pub fn shutdown(mut self) {
