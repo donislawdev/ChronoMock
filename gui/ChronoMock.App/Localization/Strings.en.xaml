@@ -52,6 +52,7 @@
   <sys:String x:Key="status.stopped">Session stopped - the target is back on real time</sys:String>
   <sys:String x:Key="status.core_unresponsive">Core not responding - stopped, the target is back on real time</sys:String>
   <sys:String x:Key="status.core_missing">Cannot start the demo session - build the solution first</sys:String>
+  <sys:String x:Key="status.chromium_use_cli">Electron/Chromium app - the GUI panel does not drive it yet. Run it in Chromium mode from the CLI:</sys:String>
   <sys:String x:Key="status.no_ready">No handshake from the core</sys:String>
   <sys:String x:Key="status.error">Session error</sys:String>
 

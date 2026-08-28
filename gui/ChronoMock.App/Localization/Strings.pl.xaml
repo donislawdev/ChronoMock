@@ -51,6 +51,7 @@
   <sys:String x:Key="status.stopped">Sesja zatrzymana - cel wrócił do realnego czasu</sys:String>
   <sys:String x:Key="status.core_unresponsive">Rdzeń nie odpowiada - zatrzymany, cel wrócił do realnego czasu</sys:String>
   <sys:String x:Key="status.core_missing">Nie można uruchomić sesji demo - najpierw zbuduj rozwiązanie</sys:String>
+  <sys:String x:Key="status.chromium_use_cli">Aplikacja Electron/Chromium - panel GUI jeszcze jej nie obsługuje. Uruchom w trybie Chromium z CLI:</sys:String>
   <sys:String x:Key="status.no_ready">Brak uzgodnienia z rdzeniem</sys:String>
   <sys:String x:Key="status.error">Błąd sesji</sys:String>
 

@@ -435,6 +435,17 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
             return;
         }
 
+        // An Electron/Chromium target is not driven by the native core: its timer often lives in a
+        // sandboxed renderer the hook cannot reach (ADR-8). Rather than start a native session that
+        // would look like it worked without accelerating (untouchable rule 4), refuse honestly and hand
+        // off the CLI command that does run it in Chromium mode. The GUI panel does not drive CDP yet.
+        if (ChromiumTarget.IsChromium(TargetPath!))
+        {
+            LastError = ChromiumTarget.CliCommand(TargetPath!);
+            SetStatus("status.chromium_use_cli", SessionStatusKind.Error);
+            return;
+        }
+
         Idle = false;
         _launched = false;
         _stopRequested = false;
