@@ -29,6 +29,9 @@ use chrono_proto::{
     PROTOCOL_VERSION,
 };
 
+/// The Chromium/Electron substitution mechanism (CDP faketime), a parallel path to the native core.
+mod cdp;
+
 const CORE_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 fn main() {
@@ -37,6 +40,7 @@ fn main() {
         Some("__core") => core_mode(),
         Some("run") => driver_run(&args[2..]),
         Some("calc") => calc_run(&args[2..]),
+        Some("__cdp-probe") => cdp_probe(&args[2..]),
         Some("--help") | Some("-h") | None => {
             print_usage();
             0
@@ -70,6 +74,54 @@ fn this_bitness() -> &'static str {
     } else {
         "x86"
     }
+}
+
+/// Hidden probe (CDP slice C1 verification): connect to a running Chromium/Electron debug port and
+/// print what CDP sees. Not a user command - it proves the WebSocket + JSON-RPC transport against a
+/// real target before the launch, shim, and report wiring are built on top.
+fn cdp_probe(argv: &[String]) -> i32 {
+    let port: u16 = match argv.first().and_then(|s| s.parse().ok()) {
+        Some(p) => p,
+        None => {
+            eprintln!("usage: chrono __cdp-probe <port>");
+            return 1;
+        }
+    };
+    let mut client = match cdp::CdpClient::connect_to_port("127.0.0.1", port) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("chrono: cannot connect to CDP on port {port}: {e}");
+            return 3;
+        }
+    };
+    match client.call("Browser.getVersion", serde_json::json!({}), None) {
+        Ok(v) => println!(
+            "browser: {}",
+            v.get("product").and_then(serde_json::Value::as_str).unwrap_or("?")
+        ),
+        Err(e) => {
+            eprintln!("chrono: Browser.getVersion: {e}");
+            return 3;
+        }
+    }
+    match client.call("Target.getTargets", serde_json::json!({}), None) {
+        Ok(v) => {
+            let empty = Vec::new();
+            let infos = v.get("targetInfos").and_then(serde_json::Value::as_array).unwrap_or(&empty);
+            println!("targets: {}", infos.len());
+            for t in infos {
+                let ty = t.get("type").and_then(serde_json::Value::as_str).unwrap_or("?");
+                let url = t.get("url").and_then(serde_json::Value::as_str).unwrap_or("");
+                let shown = if url.len() > 70 { &url[..70] } else { url };
+                println!("  - {ty} :: {shown}");
+            }
+        }
+        Err(e) => {
+            eprintln!("chrono: Target.getTargets: {e}");
+            return 3;
+        }
+    }
+    0
 }
 
 // ---------------------------------------------------------------------------
