@@ -57,6 +57,23 @@ public class CalculatorArgsTests
     }
 
     [Fact]
+    public void A_custom_format_mask_appends_the_format_flag_after_the_calendar()
+    {
+        var args = CalculatorViewModel.BuildCalcArgs(
+            BaseKind.Today, string.Empty, [], "pl", "dd.MM.yyyy");
+        Assert.Equal(
+            new[] { "--base", "today", "--calendar", "pl", "--format", "dd.MM.yyyy" },
+            args);
+    }
+
+    [Fact]
+    public void A_blank_custom_format_mask_is_omitted()
+    {
+        var args = CalculatorViewModel.BuildCalcArgs(BaseKind.Today, string.Empty, [], null, "   ");
+        Assert.Equal(new[] { "--base", "today" }, args);
+    }
+
+    [Fact]
     public void A_new_step_defaults_to_a_days_shift()
     {
         var step = NewStep();

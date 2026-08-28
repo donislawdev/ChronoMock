@@ -274,6 +274,9 @@ public sealed class CalculatorViewModel : ObservableObject
     private bool _hasResult;
     private bool _hasSignificance;
     private bool _canUseInSubstitution;
+    private string _customFormatMask = string.Empty;
+    private string _customFormatResult = string.Empty;
+    private bool _hasCustomFormat;
     private string _resultMomentLocal = string.Empty;
     private int _resultZoneBias;
     private bool _computedOnce;
@@ -471,6 +474,29 @@ public sealed class CalculatorViewModel : ObservableObject
     public bool HasError { get => _hasError; private set => Set(ref _hasError, value); }
     public bool HasResult { get => _hasResult; private set => Set(ref _hasResult, value); }
     public bool HasSignificance { get => _hasSignificance; private set => Set(ref _hasSignificance, value); }
+
+    /// <summary>An optional custom output-format mask (.NET/Java tokens, case-sensitive - M is month, m is
+    /// minute), so the tester can hit the exact string the tested app's field expects (7.3). Empty means no
+    /// custom-format row. Editing it recomputes but keeps any active preset (it reformats the same moment, it
+    /// does not change it - unlike a builder edit, which drops the preset framing).</summary>
+    public string CustomFormatMask
+    {
+        get => _customFormatMask;
+        set
+        {
+            if (Set(ref _customFormatMask, value) && _computedOnce)
+            {
+                _ = RecomputeAsync();
+            }
+        }
+    }
+
+    /// <summary>The result rendered through <see cref="CustomFormatMask"/> (the engine's <c>custom_format</c>).
+    /// Built from the civil date, so it renders even when epoch/FILETIME are out of range.</summary>
+    public string CustomFormatResult { get => _customFormatResult; private set => Set(ref _customFormatResult, value); }
+
+    /// <summary>Whether a custom-format result is present (a non-empty mask produced a value), gating its row.</summary>
+    public bool HasCustomFormat { get => _hasCustomFormat; private set => Set(ref _hasCustomFormat, value); }
 
     /// <summary>Whether the current result can go to the substitution panel: a valid moment whose zone the
     /// substitution offers, so it transfers with its zone and never as a bare local date (rule 2).</summary>
@@ -824,7 +850,11 @@ public sealed class CalculatorViewModel : ObservableObject
     /// <summary>Build the calc arguments for the current builder state (pure; unit-tested). Each step
     /// contributes its own flag pair, so the grammar is not shift-specific.</summary>
     public static IReadOnlyList<string> BuildCalcArgs(
-        BaseKind baseKind, string baseText, IEnumerable<IReadOnlyList<string>> stepArgLists, string? calendarId)
+        BaseKind baseKind,
+        string baseText,
+        IEnumerable<IReadOnlyList<string>> stepArgLists,
+        string? calendarId,
+        string? customFormatMask = null)
     {
         var args = new List<string> { "--base", baseKind switch
         {
@@ -843,6 +873,14 @@ public sealed class CalculatorViewModel : ObservableObject
             args.Add(calendarId);
         }
 
+        // A blank mask means no custom format (an empty --format argument is a usage error), so it is only
+        // appended when the tester actually typed a mask. Trimmed like the other builder fields.
+        if (!string.IsNullOrWhiteSpace(customFormatMask))
+        {
+            args.Add("--format");
+            args.Add(customFormatMask.Trim());
+        }
+
         return args;
     }
 
@@ -852,7 +890,8 @@ public sealed class CalculatorViewModel : ObservableObject
         var cts = new CancellationTokenSource();
         _cts = cts;
 
-        var args = BuildCalcArgs(_baseKind.Kind, _baseText, Steps.Select(s => s.ToArgs()), _calendar.Id);
+        var args = BuildCalcArgs(
+            _baseKind.Kind, _baseText, Steps.Select(s => s.ToArgs()), _calendar.Id, _customFormatMask);
         try
         {
             var result = await _client.EvaluateAsync(args, cts.Token);
@@ -927,6 +966,12 @@ public sealed class CalculatorViewModel : ObservableObject
         Formats.Add(new FormatRow("epoch (ms)", OutOfRange(f.EpochMillis)));
         Formats.Add(new FormatRow("FILETIME", OutOfRange(f.Filetime)));
         Formats.Add(new FormatRow("RFC 1123", f.Rfc1123 ?? "(out of range)"));
+
+        // The custom format is present only when a mask was passed (--format). It comes from the civil date,
+        // so unlike epoch/FILETIME it never falls out of range.
+        var custom = moment.CustomFormat ?? string.Empty;
+        CustomFormatResult = custom;
+        HasCustomFormat = custom.Length > 0;
 
         MetadataLine = BuildMetadataLine(moment.Metadata);
         HasResult = true;

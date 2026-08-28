@@ -129,6 +129,8 @@
   <sys:String x:Key="calc.what_tests">What this date tests</sys:String>
   <sys:String x:Key="calc.all_formats">All formats - one click to copy</sys:String>
   <sys:String x:Key="calc.copy">Copy</sys:String>
+  <sys:String x:Key="calc.custom_format">Custom format</sys:String>
+  <sys:String x:Key="calc.custom_format_hint">e.g. yyyy-MM-dd HH:mm:ss</sys:String>
   <sys:String x:Key="calc.metadata">Metadata</sys:String>
   <sys:String x:Key="calc.other_zones">Same instant, other zones</sys:String>
   <sys:String x:Key="calc.use_in_substitution">Use in substitution →</sys:String>

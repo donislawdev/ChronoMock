@@ -128,6 +128,8 @@
   <sys:String x:Key="calc.what_tests">Co ta data testuje</sys:String>
   <sys:String x:Key="calc.all_formats">Wszystkie formaty - kopiuj jednym klikiem</sys:String>
   <sys:String x:Key="calc.copy">Kopiuj</sys:String>
+  <sys:String x:Key="calc.custom_format">Format własny</sys:String>
+  <sys:String x:Key="calc.custom_format_hint">np. yyyy-MM-dd HH:mm:ss</sys:String>
   <sys:String x:Key="calc.metadata">Metadane</sys:String>
   <sys:String x:Key="calc.other_zones">Ta sama chwila, inne strefy</sys:String>
   <sys:String x:Key="calc.use_in_substitution">Użyj w podmianie →</sys:String>

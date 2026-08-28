@@ -322,6 +322,29 @@
               </ItemsControl.ItemTemplate>
             </ItemsControl>
 
+            <!-- Custom output format (7.3): a .NET/Java-token mask so the tester can hit the exact string the
+                 tested app's field expects. Built from the civil date, so it renders even when epoch/FILETIME
+                 are out of range. An empty mask hides the result row (no format flag is sent). -->
+            <TextBlock Text="{DynamicResource calc.custom_format}" Margin="{StaticResource SpaceXs}"
+                       FontSize="{StaticResource FontSizeCaption}" FontWeight="SemiBold"
+                       Foreground="{DynamicResource BrushTextSecondary}" />
+            <ui:TextBox Margin="{StaticResource SpaceXs}" FontFamily="{StaticResource FontFamilyMono}"
+                        Text="{Binding CustomFormatMask, UpdateSourceTrigger=LostFocus}"
+                        PlaceholderText="{DynamicResource calc.custom_format_hint}"
+                        AutomationProperties.Name="{DynamicResource calc.custom_format}" />
+            <Grid Margin="{StaticResource SpaceXs}"
+                  Visibility="{Binding HasCustomFormat, Converter={StaticResource BoolToVis}}">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+              </Grid.ColumnDefinitions>
+              <TextBlock Grid.Column="0" Text="{Binding CustomFormatResult}" TextWrapping="Wrap"
+                         FontFamily="{StaticResource FontFamilyMono}"
+                         FontSize="{StaticResource FontSizeCaption}" Foreground="{DynamicResource BrushTextPrimary}" />
+              <Button Grid.Column="1" Content="{DynamicResource calc.copy}" Click="OnCopyFormatClick"
+                      Tag="{Binding CustomFormatResult}" FontSize="{StaticResource FontSizeCaption}" />
+            </Grid>
+
             <TextBlock Text="{DynamicResource calc.metadata}" Margin="{StaticResource SpaceXs}"
                        FontSize="{StaticResource FontSizeCaption}" FontWeight="SemiBold"
                        Foreground="{DynamicResource BrushTextSecondary}" />
