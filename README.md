@@ -115,7 +115,7 @@ _Generated from the internal test suite on 2026-08-19 (x64 and x86)._
 | .NET (Framework and modern) | experimental | measured on x64, x86 | Time calls go through Win32 exports and are covered, including the session time zone. Stopwatch stays on the real high-resolution counter |
 | Java (JVM) | experimental | measured on x64, x86 | Wall clock and elapsed time are covered. The session time zone is not reached - a known gap. nanoTime stays on the real high-resolution counter |
 | Applications reading time from the network | out of scope by definition | the audit detects it | connect observed, warned |
-| Electron / Chromium | not supported | declared (not exercised) | Multi-process sandboxed architecture blocks injection into renderers |
+| Electron / Chromium | experimental (Chromium mode) | measured (Pomotroid, x64) | A separate mechanism, not injection: the app is launched with a debug port and a clean isolated profile, and its own JS time APIs are put on the session clock over the DevTools protocol - reaching the sandboxed renderer and its Web Workers, where the timer often lives. The session zone follows the host zone (the instant is faked, not the local-time getters) |
 | UWP / MSIX (Store apps) | not supported | declared (not exercised) | Packaging and launch model |
 | ARM64 | out of scope through v1.0 | declared (not exercised) | To be revisited |
 
