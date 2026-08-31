@@ -77,6 +77,7 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     private int _processCount;
     private bool _coverageKnown;
     private bool _coverageCaptured;
+    private bool _isCdp;
     private IReadOnlyList<string> _covered = [];
     private IReadOnlyList<string> _observed = [];
     private IReadOnlyList<string> _uncovered = [];
@@ -309,6 +310,7 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
             if (Set(ref _processCount, value))
             {
                 RaisePropertyChanged(nameof(IsFamily));
+                RaisePropertyChanged(nameof(HasCoverageNote));
             }
         }
     }
@@ -317,7 +319,35 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     public bool IsFamily => _processCount > 1;
 
     /// <summary>True once a coverage report has arrived - the audit block stays hidden until then.</summary>
-    public bool CoverageKnown { get => _coverageKnown; private set => Set(ref _coverageKnown, value); }
+    public bool CoverageKnown
+    {
+        get => _coverageKnown;
+        private set { if (Set(ref _coverageKnown, value)) { RaisePropertyChanged(nameof(HasCoverageNote)); } }
+    }
+
+    /// <summary>True when this session is driven over CDP (a Chromium/Electron target, ADR-9). The coverage
+    /// unit is then a JS context, not an OS process, so the audit accumulates every context and the note
+    /// reflects that. Set once at start from the plan.</summary>
+    public bool IsCdp
+    {
+        get => _isCdp;
+        private set
+        {
+            if (Set(ref _isCdp, value))
+            {
+                RaisePropertyChanged(nameof(CoverageNoteKey));
+                RaisePropertyChanged(nameof(HasCoverageNote));
+            }
+        }
+    }
+
+    /// <summary>Translation key for the coverage note: a CDP session shows every JS context, a native
+    /// family session shows the parent process only (rule 4 - neither is summed).</summary>
+    public string CoverageNoteKey => _isCdp ? "coverage.contexts_note" : "coverage.family_note";
+
+    /// <summary>Whether to show the coverage note: for CDP once coverage arrived (it spans contexts), for
+    /// native only when the session spanned a process family.</summary>
+    public bool HasCoverageNote => _isCdp ? _coverageKnown : IsFamily;
 
     /// <summary>Covered channels, formatted "channel  xN", from the parent process (never summed, rule 4).</summary>
     public IReadOnlyList<string> Covered
@@ -407,9 +437,20 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
                 ProcessCount = sv.ProcessCount;
                 SetVerdict(VerdictKinds.Parse(sv.Verdict), sv.ReasonKey);
                 break;
+            case CoverageEvent c when _isCdp:
+                // CDP emits one coverage per JS context - accumulate them all (each context's counts stay
+                // its own, never summed across contexts, rule 4); union the warnings and uncovered lists.
+                // The channel strings already carry the context type ("page setInterval"), so the reader
+                // can tell contexts apart without a per-context breakdown.
+                Covered = [.. _covered, .. c.Covered.Select(FormatChannel)];
+                Observed = [.. _observed, .. c.Observed.Select(FormatChannel)];
+                Uncovered = [.. _uncovered, .. c.Uncovered.Where(u => !_uncovered.Contains(u))];
+                Warnings = [.. _warnings, .. c.WarningKeys.Where(w => !_warnings.Contains(w))];
+                CoverageKnown = true;
+                break;
             case CoverageEvent c when !_coverageCaptured:
-                // Show the PARENT's coverage (the first event). Children's coverage is never summed into it
-                // (untouchable rule 4); a per-process family breakdown is a later slice.
+                // Native: show the PARENT's coverage (the first event). Children's coverage is never summed
+                // into it (untouchable rule 4); a per-process family breakdown is a later slice.
                 _coverageCaptured = true;
                 Covered = c.Covered.Select(FormatChannel).ToList();
                 Observed = c.Observed.Select(FormatChannel).ToList();
@@ -435,17 +476,6 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
             return;
         }
 
-        // An Electron/Chromium target is not driven by the native core: its timer often lives in a
-        // sandboxed renderer the hook cannot reach (ADR-8). Rather than start a native session that
-        // would look like it worked without accelerating (untouchable rule 4), refuse honestly and hand
-        // off the CLI command that does run it in Chromium mode. The GUI panel does not drive CDP yet.
-        if (ChromiumTarget.IsChromium(TargetPath!))
-        {
-            LastError = ChromiumTarget.CliCommand(TargetPath!);
-            SetStatus("status.chromium_use_cli", SessionStatusKind.Error);
-            return;
-        }
-
         Idle = false;
         _launched = false;
         _stopRequested = false;
@@ -457,6 +487,7 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
         try
         {
             var plan = SessionPlan.Build(TargetPath!, BuildTime());
+            IsCdp = plan.IsCdp;
             client = CoreClient.Connect(plan.CorePath);
             _client = client;
 
@@ -467,7 +498,10 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
                 return;
             }
 
-            var gate = HandshakeGate.Check(ready, ProtocolJson.ProtocolVersion, plan.Machine);
+            // A Chromium (CDP) session skips the bitness check - we do not inject, so the core's bitness is
+            // irrelevant (docs/08 section 3, ADR-9). The protocol version is still checked.
+            var gate = HandshakeGate.Check(
+                ready, ProtocolJson.ProtocolVersion, plan.Machine, checkBitness: !plan.IsCdp);
             if (!gate.IsOk)
             {
                 // Refuse before the target is ever launched (docs/08 section 3, zasady/13 section 11).
@@ -647,6 +681,7 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
 
         CoverageKnown = false;
         _coverageCaptured = false;
+        IsCdp = false;
         Covered = [];
         Observed = [];
         Uncovered = [];

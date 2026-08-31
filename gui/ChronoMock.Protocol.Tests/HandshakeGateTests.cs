@@ -63,4 +63,29 @@ public class HandshakeGateTests
         Assert.False(result.IsOk);
         Assert.Equal(HandshakeGate.BitnessMismatchKey, result.ReasonKey);
     }
+
+    [Fact]
+    public void Cdp_session_skips_the_bitness_check()
+    {
+        // A Chromium (CDP) session does not inject, so the core's bitness is irrelevant: an x64 core
+        // driving an x86 Electron over CDP is fine, and the gate must not refuse it (ADR-9).
+        var result = HandshakeGate.Check(
+            Ready(ProtocolJson.ProtocolVersion, "x64"), ProtocolJson.ProtocolVersion,
+            PeReader.Machine.X86, checkBitness: false);
+
+        Assert.True(result.IsOk);
+        Assert.Null(result.ReasonKey);
+    }
+
+    [Fact]
+    public void Cdp_session_still_checks_the_protocol_version()
+    {
+        // Skipping the bitness check does not skip the protocol check - a version mismatch is still refused.
+        var result = HandshakeGate.Check(
+            Ready(ProtocolJson.ProtocolVersion + 1, "x64"), ProtocolJson.ProtocolVersion,
+            PeReader.Machine.X86, checkBitness: false);
+
+        Assert.False(result.IsOk);
+        Assert.Equal(HandshakeGate.ProtocolMismatchKey, result.ReasonKey);
+    }
 }

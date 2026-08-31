@@ -52,7 +52,6 @@
   <sys:String x:Key="status.stopped">Session stopped - the target is back on real time</sys:String>
   <sys:String x:Key="status.core_unresponsive">Core not responding - stopped, the target is back on real time</sys:String>
   <sys:String x:Key="status.core_missing">Cannot start the demo session - build the solution first</sys:String>
-  <sys:String x:Key="status.chromium_use_cli">Electron/Chromium app - the GUI panel does not drive it yet. Run it in Chromium mode from the CLI:</sys:String>
   <sys:String x:Key="status.no_ready">No handshake from the core</sys:String>
   <sys:String x:Key="status.error">Session error</sys:String>
 
@@ -78,6 +77,17 @@
   <sys:String x:Key="coverage.uncovered">Uncovered channels</sys:String>
   <sys:String x:Key="coverage.warnings">Warnings</sys:String>
   <sys:String x:Key="coverage.family_note">Family session - showing the parent process coverage.</sys:String>
+  <sys:String x:Key="coverage.contexts_note">Chromium session - showing every JS context (page and workers), never summed.</sys:String>
+
+  <!-- Chromium/Electron (CDP) mode, ADR-8/ADR-9: verdict reasons and warnings the CDP core emits. The
+       coverage unit is a JS context, not an OS process. -->
+  <sys:String x:Key="chromium.contexts_covered">Every JS context ran on the session clock.</sys:String>
+  <sys:String x:Key="chromium.contexts_partial">Some JS contexts ran on the session clock; some could not be reached.</sys:String>
+  <sys:String x:Key="chromium.no_time_calls">The shim was installed, but the app called no JS time API.</sys:String>
+  <sys:String x:Key="chromium.no_contexts">No JS context could be shimmed.</sys:String>
+  <sys:String x:Key="chromium.launched_with_debug_port">Electron/Chromium app: launched with a remote-debugging port and a clean isolated profile, not your real one.</sys:String>
+  <sys:String x:Key="chromium.app_closed_before_audit">The app closed before the audit could read final call counts - the coverage may be incomplete.</sys:String>
+  <sys:String x:Key="chromium.rate_change_affects_running_timers">The speed changed in flight: new timers and the clock reflect it at once, but a setInterval already running keeps its old cadence.</sys:String>
 
   <!-- Copy session summary (chrono-mock 7.2, 8.8). A paste-into-ticket report; a non-works session leads
        with the unreliable-evidence banner. Keys ending in a template carry {0}-style placeholders. -->

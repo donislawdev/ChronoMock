@@ -34,8 +34,15 @@ public static class HandshakeGate
     /// <summary>
     /// Check a <c>ready</c> event against the protocol version the client speaks and the bitness it launched
     /// the core for. The caller must NOT send <c>start</c> unless the result <see cref="Result.IsOk"/>.
+    /// <para>
+    /// <paramref name="checkBitness"/> is false for a Chromium (CDP) session: there we do not inject, so the
+    /// core's bitness is irrelevant (an x64 core drives an x86 Electron over CDP just as well). The protocol
+    /// version is always checked. Skipping the bitness check is honest - the constraint genuinely does not
+    /// apply - rather than relying on the driver happening to pick a matching-bitness core.
+    /// </para>
     /// </summary>
-    public static Result Check(ReadyEvent ready, int expectedProtocol, PeReader.Machine expectedMachine)
+    public static Result Check(
+        ReadyEvent ready, int expectedProtocol, PeReader.Machine expectedMachine, bool checkBitness = true)
     {
         ArgumentNullException.ThrowIfNull(ready);
 
@@ -44,7 +51,7 @@ public static class HandshakeGate
             return new Result(GateOutcome.ProtocolMismatch, ProtocolMismatchKey);
         }
 
-        if (!BitnessMatches(ready.Bitness, expectedMachine))
+        if (checkBitness && !BitnessMatches(ready.Bitness, expectedMachine))
         {
             return new Result(GateOutcome.BitnessMismatch, BitnessMismatchKey);
         }

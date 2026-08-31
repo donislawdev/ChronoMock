@@ -51,7 +51,6 @@
   <sys:String x:Key="status.stopped">Sesja zatrzymana - cel wrócił do realnego czasu</sys:String>
   <sys:String x:Key="status.core_unresponsive">Rdzeń nie odpowiada - zatrzymany, cel wrócił do realnego czasu</sys:String>
   <sys:String x:Key="status.core_missing">Nie można uruchomić sesji demo - najpierw zbuduj rozwiązanie</sys:String>
-  <sys:String x:Key="status.chromium_use_cli">Aplikacja Electron/Chromium - panel GUI jeszcze jej nie obsługuje. Uruchom w trybie Chromium z CLI:</sys:String>
   <sys:String x:Key="status.no_ready">Brak uzgodnienia z rdzeniem</sys:String>
   <sys:String x:Key="status.error">Błąd sesji</sys:String>
 
@@ -77,6 +76,17 @@
   <sys:String x:Key="coverage.uncovered">Nieobjęte kanały</sys:String>
   <sys:String x:Key="coverage.warnings">Ostrzeżenia</sys:String>
   <sys:String x:Key="coverage.family_note">Sesja rodziny - pokazano pokrycie procesu rodzica.</sys:String>
+  <sys:String x:Key="coverage.contexts_note">Sesja Chromium - pokazano każdy kontekst JS (stronę i workery), nigdy sumowane.</sys:String>
+
+  <!-- Tryb Chromium/Electron (CDP), ADR-8/ADR-9: powody werdyktu i ostrzeżenia z rdzenia CDP. Jednostką
+       pokrycia jest kontekst JS, nie proces systemowy. -->
+  <sys:String x:Key="chromium.contexts_covered">Każdy kontekst JS działał na zegarze sesji.</sys:String>
+  <sys:String x:Key="chromium.contexts_partial">Część kontekstów JS działała na zegarze sesji, części nie udało się objąć.</sys:String>
+  <sys:String x:Key="chromium.no_time_calls">Shim został wstrzyknięty, ale aplikacja nie wywołała żadnego API czasu JS.</sys:String>
+  <sys:String x:Key="chromium.no_contexts">Nie udało się objąć żadnego kontekstu JS.</sys:String>
+  <sys:String x:Key="chromium.launched_with_debug_port">Aplikacja Electron/Chromium: uruchomiona z portem zdalnego debugowania i czystym izolowanym profilem, nie Twoim prawdziwym.</sys:String>
+  <sys:String x:Key="chromium.app_closed_before_audit">Aplikacja zamknęła się, zanim audyt zdążył odczytać końcowe liczniki wywołań - pokrycie może być niepełne.</sys:String>
+  <sys:String x:Key="chromium.rate_change_affects_running_timers">Prędkość zmieniła się w locie: nowe timery i zegar odzwierciedlają ją od razu, ale już działający setInterval zachowuje stare tempo.</sys:String>
 
   <!-- Kopiowanie podsumowania sesji (chrono-mock 7.2, 8.8). Raport do wklejenia w zgłoszenie; sesja inna
        niż „działa" prowadzi banerem nierzetelności. Klucze z szablonem niosą pola {0}. -->

@@ -4,11 +4,10 @@ namespace ChronoMock.App;
 
 /// <summary>
 /// Detects an Electron/Chromium target the same way the CLI does (cdp::is_chromium_target): its folder
-/// ships the Chromium runtime. Such a target is not driven by the native core - its time-dependent logic
-/// runs in a sandboxed renderer the hook cannot reach, and Chromium timers are QPC-based (ADR-2). The
-/// CLI runs it over the DevTools protocol instead (ADR-8); the GUI panel does not drive that yet, so it
-/// must refuse honestly rather than start a native session that would look like it worked without
-/// accelerating (untouchable rule 4).
+/// ships the Chromium runtime. Such a target is not driven by the native hook - its time-dependent logic
+/// runs in a sandboxed renderer the hook cannot reach, and Chromium timers are QPC-based (ADR-2). The core
+/// auto-detects it and drives it over the DevTools protocol instead (ADR-8/ADR-9), speaking the same
+/// machine protocol; the GUI routes it there (skips the bitness gate, labels coverage as JS contexts).
 /// </summary>
 internal static class ChromiumTarget
 {
@@ -27,8 +26,4 @@ internal static class ChromiumTarget
                           || File.Exists(Path.Combine(dir, "snapshot_blob.bin"));
         return hasIcu && hasSnapshot;
     }
-
-    /// <summary>The CLI command that runs a Chromium target in Chromium mode, for the honest hand-off
-    /// message (the user copies it). Quoted so a path with spaces works.</summary>
-    public static string CliCommand(string targetPath) => $"chrono run \"{targetPath}\" --mode x60";
 }

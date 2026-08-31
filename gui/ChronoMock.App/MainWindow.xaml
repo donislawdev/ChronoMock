@@ -153,12 +153,12 @@
                       Visibility="{Binding CoverageKnown, Converter={StaticResource BoolToVis}}">
           <StackPanel>
             <TextBlock Margin="{StaticResource SpaceXs}"
-                       Text="{DynamicResource coverage.family_note}"
+                       Text="{Binding CoverageNoteKey, Converter={StaticResource KeyToText}}"
                        TextAlignment="Center"
                        TextWrapping="Wrap"
                        FontSize="{StaticResource FontSizeCaption}"
                        Foreground="{DynamicResource BrushTextSecondary}"
-                       Visibility="{Binding IsFamily, Converter={StaticResource BoolToVis}}" />
+                       Visibility="{Binding HasCoverageNote, Converter={StaticResource BoolToVis}}" />
 
             <StackPanel Margin="{StaticResource SpaceXs}"
                         Visibility="{Binding HasCovered, Converter={StaticResource BoolToVis}}">
