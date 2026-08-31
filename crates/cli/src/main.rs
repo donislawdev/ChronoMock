@@ -2783,10 +2783,11 @@ fn cdp_session(target: TargetSpec, time: TimeSpec, reader: BufReader<std::io::St
         "frozen" => 0,
         _ => 1,
     };
-    let shim = cdp::build_shim(fake_start_ms, real_start_ms, mult);
     // The live session clock, computed Rust-side and kept in step with the shim: set_multiplier and
-    // jump re-anchor it here and push the new origin to every context. A flag records whether a rate
-    // change happened in flight, so the end report can carry the honest running-timer caveat (rule 4).
+    // jump re-anchor it here and push the new origin to every context. The shim is built PER ATTACH from
+    // this clock's current origin (below), so a context that attaches after an in-flight change starts on
+    // the same clock as the others. A flag records whether a rate change happened in flight, so the end
+    // report can carry the honest running-timer caveat (rule 4).
     let mut clock = CdpClock::new(fake_start_ms, real_start_ms, mult, bias);
     let mut rate_changed_in_flight = false;
 
@@ -2935,6 +2936,11 @@ fn cdp_session(target: TargetSpec, time: TimeSpec, reader: BufReader<std::io::St
                 let ty = params["targetInfo"]["type"].as_str().unwrap_or("").to_string();
                 if !sid.is_empty() && cdp::is_shimmable(&ty) {
                     next_index += 1;
+                    // Build the shim from the clock's CURRENT origin, not the session's initial values, so
+                    // a context attaching after an in-flight rate change or jump starts on the same clock
+                    // as every other context (one absolute origin; rule 3). Before any change this is
+                    // identical to the initial shim.
+                    let shim = cdp::build_shim(clock.wall_fake0, clock.wall_real0, clock.mult);
                     let injected = if cdp::is_worker(&ty) {
                         cdp::inject_worker(&mut client, &sid, &shim)
                     } else {
