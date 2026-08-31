@@ -1162,6 +1162,9 @@ fn describe_warning(key: &str) -> String {
         "chromium.app_closed_before_audit" => {
             "the app closed before the audit could read final call counts - the coverage below may be incomplete"
         }
+        "chromium.rate_change_affects_running_timers" => {
+            "the speed changed in flight: new timers and the clock reflect it at once, but a setInterval already running keeps its old cadence"
+        }
         _ => "",
     };
     if text.is_empty() {
@@ -2781,6 +2784,11 @@ fn cdp_session(target: TargetSpec, time: TimeSpec, reader: BufReader<std::io::St
         _ => 1,
     };
     let shim = cdp::build_shim(fake_start_ms, real_start_ms, mult);
+    // The live session clock, computed Rust-side and kept in step with the shim: set_multiplier and
+    // jump re-anchor it here and push the new origin to every context. A flag records whether a rate
+    // change happened in flight, so the end report can carry the honest running-timer caveat (rule 4).
+    let mut clock = CdpClock::new(fake_start_ms, real_start_ms, mult, bias);
+    let mut rate_changed_in_flight = false;
 
     // Launch under our own isolated profile + debug port, then attach. Any failure is an honest error
     // event plus exit 2 (could not launch/attach), never a faked verdict.
@@ -2879,19 +2887,41 @@ fn cdp_session(target: TargetSpec, time: TimeSpec, reader: BufReader<std::io::St
             match rx.try_recv() {
                 Ok(Command::End { .. }) => break 'session,
                 Ok(Command::Query { id, .. }) => {
-                    emit(&cdp_state_event(fake_start_ms, real_start_ms, mult, bias));
+                    emit(&clock.state_event_at(now_epoch_ms()));
                     emit(&Event::Ack { v: PROTOCOL_VERSION, id });
                 }
-                Ok(Command::SetMultiplier { id, .. }) | Ok(Command::Jump { id, .. }) => {
-                    // Slice C7 makes these live (re-anchor + re-evaluate the shim in every context).
-                    // Until then, an honest not-yet-supported error, never a silent drop (rule 6).
-                    emit(&Event::Error {
-                        v: PROTOCOL_VERSION,
-                        id: Some(id),
-                        code: 1,
-                        key: "cdp.inflight_not_yet".into(),
-                        origin: "core".into(),
-                    });
+                Ok(Command::SetMultiplier { id, multiplier, .. }) => {
+                    // Re-anchor the clock (wall and duration both continue from now at the new rate) and
+                    // push the new origin + rate to every context. New timers pick up the rate at once;
+                    // Date.now/new Date/performance.now reflect it immediately - only an already-queued
+                    // setInterval keeps its old cadence, which the end report warns about (rule 4).
+                    let now = now_epoch_ms();
+                    let (fake0, real0, m) = clock.set_multiplier_at(multiplier, now);
+                    cdp_broadcast(&mut client, &contexts, &cdp_set_multiplier_expr(fake0, real0, m));
+                    rate_changed_in_flight = true;
+                    emit(&Event::Ack { v: PROTOCOL_VERSION, id });
+                    emit(&clock.state_event_at(now_epoch_ms()));
+                }
+                Ok(Command::Jump { id, to, .. }) => {
+                    // Move the wall to a new fake instant (absolute, or a relative delta on the current
+                    // fake time), leaving the duration axis untouched (rule 3). A bad moment is an honest
+                    // error, never a silent no-op (rule 6).
+                    let now = now_epoch_ms();
+                    match cdp_resolve_jump(&clock, &to, now) {
+                        Ok(new_fake) => {
+                            let (fake0, real0) = clock.jump_to_at(new_fake, now);
+                            cdp_broadcast(&mut client, &contexts, &cdp_jump_expr(fake0, real0));
+                            emit(&Event::Ack { v: PROTOCOL_VERSION, id });
+                            emit(&clock.state_event_at(now_epoch_ms()));
+                        }
+                        Err(key) => emit(&Event::Error {
+                            v: PROTOCOL_VERSION,
+                            id: Some(id),
+                            code: 1,
+                            key: key.into(),
+                            origin: "core".into(),
+                        }),
+                    }
                 }
                 Ok(_) => {} // Start or another command: ignore
                 Err(mpsc::TryRecvError::Empty) => break,
@@ -2924,7 +2954,7 @@ fn cdp_session(target: TargetSpec, time: TimeSpec, reader: BufReader<std::io::St
         }
         // ~1 s heartbeat (also when frozen) and ~1 s coverage sampling.
         if Instant::now() >= deadline {
-            emit(&cdp_state_event(fake_start_ms, real_start_ms, mult, bias));
+            emit(&clock.state_event_at(now_epoch_ms()));
             deadline = Instant::now() + heartbeat;
         }
         if last_audit.elapsed() >= Duration::from_secs(1) {
@@ -2965,6 +2995,12 @@ fn cdp_session(target: TargetSpec, time: TimeSpec, reader: BufReader<std::io::St
     if app_closed && !audited {
         warnings.push("chromium.app_closed_before_audit".to_string());
     }
+    if rate_changed_in_flight {
+        // Honest caveat: a rate change reaches Date.now/new Date/performance.now and every NEW timer at
+        // once, but a setInterval already scheduled at the old rate keeps its old cadence - the JS engine
+        // had already queued it (rule 4). The native hook has no equivalent gap (it divides Ctl live).
+        warnings.push("chromium.rate_change_affects_running_timers".to_string());
+    }
 
     // Emit one `coverage` per attached context (pid = context index), never summed across contexts
     // (rule 4). The invasive-launch warning rides on the FIRST event, and if no context attached at
@@ -3003,11 +3039,14 @@ fn cdp_session(target: TargetSpec, time: TimeSpec, reader: BufReader<std::io::St
         process_count: contexts.len() as u32,
     });
 
-    // Session timing from the one epoch origin, then tear down our instance (kill + remove the temp
-    // profile), reporting any cleanup residue honestly via `ended.residue_keys` (rules 4, 6).
-    let real_ms = now_epoch_ms() - real_start_ms;
-    let fake_ms = real_ms.saturating_mul(mult);
-    let fake_end_wall = epoch_ms_to_wall(fake_start_ms + fake_ms, bias);
+    // Session timing from the live clock (correct across any in-flight rate changes and jumps): real is
+    // the whole session, fake is the elapsed duration, and the end wall is where the fake clock landed.
+    // Then tear down our instance (kill + remove the temp profile), reporting any cleanup residue
+    // honestly via `ended.residue_keys` (rules 4, 6).
+    let end_now = now_epoch_ms();
+    let real_ms = end_now - clock.session_real0;
+    let fake_ms = clock.elapsed_fake_ms(end_now);
+    let fake_end_wall = epoch_ms_to_wall(clock.fake_wall_ms(end_now), bias);
     let residue = launched.shutdown_with_residue();
     emit(&Event::Ended {
         v: PROTOCOL_VERSION,
@@ -3021,29 +3060,138 @@ fn cdp_session(target: TargetSpec, time: TimeSpec, reader: BufReader<std::io::St
     verdict.exit_code()
 }
 
-/// The elapsed (fake, real) ms of a CDP session for a given clock reading: real is wall time since the
-/// origin, fake is that scaled by the multiplier (0 = frozen, 1 = flow, N = accelerate). Pure, so the
-/// scaling and the freeze are unit-tested without a browser.
-fn cdp_elapsed(real_start_ms: i64, now_ms: i64, mult: i64) -> (i64, i64) {
-    let real_ms = now_ms - real_start_ms;
-    let fake_ms = real_ms.saturating_mul(mult);
-    (fake_ms, real_ms)
+/// The live clock of a CDP session, computed entirely Rust-side so the panel matches the app's own
+/// `Date.now()` with no browser round-trip. The wall origin (`wall_fake0` at `wall_real0`, rate `mult`)
+/// is re-anchored on a rate change or a jump and pushed identically to every JS context, so all
+/// contexts and the panel share one absolute origin. A separate duration accumulator keeps
+/// `elapsed_fake` an honest integral of the rate over time - a jump moves the wall but adds no elapsed
+/// duration - mirroring the native split between elapsed time and the fake wall reached.
+struct CdpClock {
+    wall_fake0: i64,
+    wall_real0: i64,
+    mult: i64,
+    bias: i32,
+    session_real0: i64,
+    dur_fake_accum: i64,
+    dur_real0: i64,
 }
 
-/// A `state` event for a CDP session, computed entirely Rust-side from the one epoch-ms clock origin
-/// the shim also uses - so the panel's fake clock matches the app's own `Date.now()`, no browser
-/// round-trip. Frozen (mult = 0) holds the fake wall at its start; flow (mult = 1) tracks real time at
-/// the offset; xN accelerates.
-fn cdp_state_event(fake_start_ms: i64, real_start_ms: i64, mult: i64, bias: i32) -> Event {
-    let (fake_ms, real_ms) = cdp_elapsed(real_start_ms, now_epoch_ms(), mult);
-    Event::State {
-        v: PROTOCOL_VERSION,
-        fake: Clock { wall: epoch_ms_to_wall(fake_start_ms + fake_ms, bias), zone_bias_min: bias },
-        real: Clock { wall: epoch_ms_to_wall(real_start_ms + real_ms, bias), zone_bias_min: bias },
-        multiplier: mult,
-        elapsed_fake_ms: fake_ms,
-        elapsed_real_ms: real_ms,
+impl CdpClock {
+    fn new(fake0_ms: i64, real0_ms: i64, mult: i64, bias: i32) -> Self {
+        CdpClock {
+            wall_fake0: fake0_ms,
+            wall_real0: real0_ms,
+            mult,
+            bias,
+            session_real0: real0_ms,
+            dur_fake_accum: 0,
+            dur_real0: real0_ms,
+        }
     }
+
+    /// The fake wall instant (epoch ms) at `now`: the current segment's origin plus scaled real time.
+    /// Frozen (mult 0) holds it at the origin; xN accelerates.
+    fn fake_wall_ms(&self, now: i64) -> i64 {
+        self.wall_fake0 + (now - self.wall_real0).saturating_mul(self.mult)
+    }
+
+    /// Fake duration elapsed (the integral of the rate): the accumulator plus the current segment. A
+    /// jump does not touch this, so a wall discontinuity is never counted as elapsed time.
+    fn elapsed_fake_ms(&self, now: i64) -> i64 {
+        self.dur_fake_accum + (now - self.dur_real0).saturating_mul(self.mult)
+    }
+
+    /// A `state` event at `now` (passed in so the mapping is pure and unit-testable).
+    fn state_event_at(&self, now: i64) -> Event {
+        Event::State {
+            v: PROTOCOL_VERSION,
+            fake: Clock {
+                wall: epoch_ms_to_wall(self.fake_wall_ms(now), self.bias),
+                zone_bias_min: self.bias,
+            },
+            real: Clock { wall: epoch_ms_to_wall(now, self.bias), zone_bias_min: self.bias },
+            multiplier: self.mult,
+            elapsed_fake_ms: self.elapsed_fake_ms(now),
+            elapsed_real_ms: now - self.session_real0,
+        }
+    }
+
+    /// Re-anchor for a new multiplier at `now`: the wall and the duration both continue from where they
+    /// are, so neither jumps (rule 3); only the future rate changes. A negative rate would run the wall
+    /// backward, which is never valid, so it clamps to 0 (freeze). Returns (fake0, real0, mult) to push
+    /// to the shim.
+    fn set_multiplier_at(&mut self, m: i64, now: i64) -> (i64, i64, i64) {
+        self.dur_fake_accum += (now - self.dur_real0).saturating_mul(self.mult);
+        self.dur_real0 = now;
+        self.wall_fake0 = self.fake_wall_ms(now);
+        self.wall_real0 = now;
+        self.mult = m.max(0);
+        (self.wall_fake0, self.wall_real0, self.mult)
+    }
+
+    /// Re-anchor for a jump to a new fake wall at `now`: the wall moves and continues at the same rate;
+    /// the duration axis is untouched, so a backward jump never rewinds elapsed time (rule 3). Returns
+    /// (fake0, real0) to push to the shim.
+    fn jump_to_at(&mut self, new_fake_ms: i64, now: i64) -> (i64, i64) {
+        self.wall_fake0 = new_fake_ms;
+        self.wall_real0 = now;
+        (self.wall_fake0, self.wall_real0)
+    }
+}
+
+/// Resolve a CDP jump target to a fake epoch-ms instant: an absolute moment in the session zone, or a
+/// relative delta applied to the CURRENT fake instant through the shared calc evaluator (the same
+/// grammar as `calc` and the native jump). Returns a translation key on a bad moment (rule 6).
+fn cdp_resolve_jump(clock: &CdpClock, to: &MomentSpec, now: i64) -> Result<i64, &'static str> {
+    if to.kind == "relative" {
+        let delta = to.delta.as_deref().ok_or("moment.invalid")?;
+        let cur_wall = epoch_ms_to_wall(clock.fake_wall_ms(now), clock.bias);
+        let cur_civil = chrono_core::calc::parse_civil_datetime(&cur_wall).map_err(|_| "moment.invalid")?;
+        let step = parse_shift(delta).map_err(|_| "moment.invalid")?;
+        let expr = MomentExpr { base: Base::Now, steps: vec![step] };
+        let outcome = chrono_core::calc::eval(
+            &expr,
+            &EvalContext { now: cur_civil, zone_bias_min: 0, calendar: None },
+        )
+        .map_err(jump_error_key)?;
+        moment_epoch_ms(&outcome.result().to_iso(), Some(clock.bias)).ok_or("moment.invalid")
+    } else {
+        let local = to.local.as_deref().ok_or("moment.invalid")?;
+        moment_epoch_ms(local, Some(clock.bias)).ok_or("moment.invalid")
+    }
+}
+
+/// Evaluate a JS expression in every attached context (best-effort: a context that just closed errors
+/// and is skipped, so an in-flight update stays honest for the rest).
+fn cdp_broadcast(client: &mut cdp::CdpClient, contexts: &[CdpContext], expr: &str) {
+    for ctx in contexts {
+        let _ = client.call(
+            "Runtime.evaluate",
+            serde_json::json!({ "expression": expr, "returnByValue": true }),
+            Some(&ctx.session_id),
+        );
+    }
+}
+
+/// The JS to push a new wall origin AND rate into a context's `__chronomock`, re-anchoring its local
+/// duration axis first so `performance.now` stays continuous across the rate change (rule 3). The wall
+/// origin (fake0, real0, mult) is the driver's, identical for every context, so all contexts stay in
+/// step.
+fn cdp_set_multiplier_expr(fake0: i64, real0: i64, mult: i64) -> String {
+    format!(
+        "(function(){{var S=globalThis.__chronomock;if(!S)return 'no-shim';\
+         var p=S._realPerf?S._realPerf():0;S.perfBase=(S.perfBase||0)+(p-S.perfAnchorReal)*(S.M||1);\
+         S.perfAnchorReal=p;S.fakeStart={fake0};S.realStart={real0};S.M={mult};return 'ok';}})()"
+    )
+}
+
+/// The JS to push a new wall origin into a context's `__chronomock` for a jump - wall only; the rate
+/// and the duration axis are untouched, so a backward jump never rewinds elapsed time (rule 3).
+fn cdp_jump_expr(fake0: i64, real0: i64) -> String {
+    format!(
+        "(function(){{var S=globalThis.__chronomock;if(!S)return 'no-shim';\
+         S.fakeStart={fake0};S.realStart={real0};return 'ok';}})()"
+    )
 }
 
 fn core_mode() -> i32 {
@@ -3444,13 +3592,52 @@ mod tests {
     use super::*;
 
     #[test]
-    fn cdp_elapsed_scales_flows_and_freezes() {
-        // xN: real ms scale by the multiplier (this is the acceleration the panel and the shim share).
-        assert_eq!(cdp_elapsed(1_000_000, 1_001_000, 60), (60_000, 1_000));
-        // flow (x1): the fake clock tracks real time at the offset.
-        assert_eq!(cdp_elapsed(1_000_000, 1_002_000, 1), (2_000, 2_000));
-        // frozen (x0): the fake clock never advances, however much real time passes.
-        assert_eq!(cdp_elapsed(1_000_000, 1_005_000, 0), (0, 5_000));
+    fn cdp_clock_scales_and_holds_frozen() {
+        // xN: at +1000 ms real the fake wall advanced 60000 ms, and elapsed_fake is 60000.
+        let c = CdpClock::new(1_000_000, 500_000, 60, 0);
+        assert_eq!(c.fake_wall_ms(501_000), 1_060_000);
+        assert_eq!(c.elapsed_fake_ms(501_000), 60_000);
+        // frozen (x0): the wall never moves, however much real time passes.
+        let f = CdpClock::new(1_000_000, 500_000, 0, 0);
+        assert_eq!(f.fake_wall_ms(505_000), 1_000_000);
+        assert_eq!(f.elapsed_fake_ms(505_000), 0);
+    }
+
+    #[test]
+    fn cdp_clock_rate_change_is_continuous_and_accumulates() {
+        let mut c = CdpClock::new(1_000_000, 500_000, 60, 0);
+        // Run 1000 ms at x60, then switch to x120 at now = 501_000.
+        let (fake0, real0, m) = c.set_multiplier_at(120, 501_000);
+        assert_eq!(m, 120);
+        // The wall is continuous across the change: the fake instant at the switch is unchanged.
+        assert_eq!(fake0, 1_060_000);
+        assert_eq!(real0, 501_000);
+        assert_eq!(c.fake_wall_ms(501_000), 1_060_000);
+        // 500 ms more at x120: wall += 60000, elapsed_fake = 60000 (seg 1) + 60000 (seg 2).
+        assert_eq!(c.fake_wall_ms(501_500), 1_120_000);
+        assert_eq!(c.elapsed_fake_ms(501_500), 120_000);
+    }
+
+    #[test]
+    fn cdp_clock_jump_moves_wall_not_duration() {
+        let mut c = CdpClock::new(1_000_000, 500_000, 60, 0);
+        let now = 501_000;
+        let target = c.fake_wall_ms(now) + 86_400_000; // jump forward one day
+        c.jump_to_at(target, now);
+        assert_eq!(c.fake_wall_ms(now), target); // the wall jumped
+        // But elapsed duration did not: still 60000 ms of fake time passed, not a day.
+        assert_eq!(c.elapsed_fake_ms(now), 60_000);
+        // A backward jump does not rewind elapsed duration either (rule 3).
+        c.jump_to_at(1_000_000, now);
+        assert_eq!(c.elapsed_fake_ms(now), 60_000);
+    }
+
+    #[test]
+    fn cdp_clock_negative_rate_clamps_to_freeze() {
+        let mut c = CdpClock::new(1_000_000, 500_000, 60, 0);
+        let (_, _, m) = c.set_multiplier_at(-5, 501_000);
+        assert_eq!(m, 0); // never runs the wall backward
+        assert_eq!(c.fake_wall_ms(502_000), c.fake_wall_ms(509_000)); // frozen after
     }
 
     #[test]

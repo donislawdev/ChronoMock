@@ -16,16 +16,30 @@ use std::io;
 /// A guard (`__chronomock`) makes re-injection (a page reload re-runs the add-script hook) a no-op,
 /// so the originals are wrapped exactly once. `fakeNow` is `fakeStart + (realNow - realStart) * M`,
 /// so M = 1 is a pure wall offset and M > 1 accelerates.
+///
+/// The clock (`M`/`fakeStart`/`realStart` and the duration anchor) lives in the mutable `__chronomock`
+/// object, and every override reads it live, so the driver can change the rate or jump the wall in
+/// flight by writing new values (slice C7) - the CDP equivalent of the native hook re-reading `Ctl`.
+/// A rate change re-anchors the duration axis (`perfBase`/`perfAnchorReal`) so `performance.now` stays
+/// continuous and never runs backward when M drops (untouchable rule 3). It cannot, however, reschedule
+/// a `setInterval` already queued at the old rate - that stays at its old cadence (the driver warns).
 const SHIM_TEMPLATE: &str = r#"(function(){
   if (globalThis.__chronomock) { return 'already'; }
-  var M = __MULT__;                 /* 0 = frozen, 1 = flow (wall offset only), N = accelerate */
-  var fakeStart = __FAKE_START__;
-  var realStart = __REAL_START__;
-  var TS = M || 1;                  /* duration scale: frozen keeps timers real, only the wall freezes */
   var _OrigDate = Date;
   var _now = _OrigDate.now.bind(_OrigDate);
-  var C = { si: 0, st: 0, now: 0, perf: 0 };
-  function fakeNow(){ return Math.round(fakeStart + (_now() - realStart) * M); }
+  var _perf = (typeof performance !== 'undefined' && performance.now) ? performance.now.bind(performance) : null;
+  var S = {
+    M: __MULT__,                    /* 0 = frozen, 1 = flow (wall offset only), N = accelerate */
+    fakeStart: __FAKE_START__,
+    realStart: __REAL_START__,
+    perfBase: 0,                    /* accumulated scaled duration up to the last rate change */
+    perfAnchorReal: _perf ? _perf() : 0,
+    _realNow: _now,
+    _realPerf: _perf,
+    counts: { si: 0, st: 0, now: 0, perf: 0 }
+  };
+  globalThis.__chronomock = S;
+  function fakeNow(){ return Math.round(S.fakeStart + (_now() - S.realStart) * S.M); }
 
   /* Replace Date so new Date() (no args) and Date.now() read the session clock; every other form
      (parsing, explicit fields) is unchanged, and instanceof / the prototype are preserved. */
@@ -35,21 +49,19 @@ const SHIM_TEMPLATE: &str = r#"(function(){
     return new (Function.prototype.bind.apply(_OrigDate, [null].concat([].slice.call(arguments))))();
   }
   CMDate.prototype = _OrigDate.prototype;
-  CMDate.now = function(){ C.now++; return fakeNow(); };
+  CMDate.now = function(){ S.counts.now++; return fakeNow(); };
   CMDate.parse = _OrigDate.parse;
   CMDate.UTC = _OrigDate.UTC;
   try { globalThis.Date = CMDate; } catch (e) { try { Date.now = CMDate.now; } catch (e2) {} }
 
+  /* setInterval/setTimeout read the duration scale (M || 1) live, so a NEW timer picks up the current
+     rate; one already scheduled keeps its old cadence (the kernel already queued it). */
   var _si = globalThis.setInterval, _st = globalThis.setTimeout;
-  if (_si) { globalThis.setInterval = function(fn, d){ C.si++; var a = [].slice.call(arguments, 2); return _si.apply(globalThis, [fn, (d || 0) / TS].concat(a)); }; }
-  if (_st) { globalThis.setTimeout = function(fn, d){ C.st++; var a = [].slice.call(arguments, 2); return _st.apply(globalThis, [fn, (d || 0) / TS].concat(a)); }; }
-  try {
-    if (typeof performance !== 'undefined' && performance.now) {
-      var _pn = performance.now.bind(performance), _ps = _pn();
-      performance.now = function(){ C.perf++; return (_pn() - _ps) * TS; };
-    }
-  } catch (e) {}
-  globalThis.__chronomock = { M: M, fakeStart: fakeStart, realStart: realStart, counts: C };
+  if (_si) { globalThis.setInterval = function(fn, d){ S.counts.si++; var a = [].slice.call(arguments, 2); return _si.apply(globalThis, [fn, (d || 0) / (S.M || 1)].concat(a)); }; }
+  if (_st) { globalThis.setTimeout = function(fn, d){ S.counts.st++; var a = [].slice.call(arguments, 2); return _st.apply(globalThis, [fn, (d || 0) / (S.M || 1)].concat(a)); }; }
+  if (_perf) {
+    performance.now = function(){ S.counts.perf++; return S.perfBase + (_perf() - S.perfAnchorReal) * (S.M || 1); };
+  }
   return 'installed';
 })()"#;
 
@@ -136,9 +148,9 @@ mod tests {
     #[test]
     fn shim_substitutes_its_parameters() {
         let s = build_shim(1_700_000_000_000, 1_600_000_000_000, 60);
-        assert!(s.contains("var M = 60;"));
-        assert!(s.contains("var fakeStart = 1700000000000;"));
-        assert!(s.contains("var realStart = 1600000000000;"));
+        assert!(s.contains("M: 60,"));
+        assert!(s.contains("fakeStart: 1700000000000,"));
+        assert!(s.contains("realStart: 1600000000000,"));
         assert!(!s.contains("__MULT__"));
         assert!(!s.contains("__FAKE_START__"));
     }
