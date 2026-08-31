@@ -39,10 +39,41 @@ impl LaunchedChromium {
 
     /// Terminate the launched instance and remove its temp profile. Best-effort: a QA tool must not
     /// leave a process or temp files behind, but a cleanup hiccup is not worth failing the session.
-    pub fn shutdown(mut self) {
+    pub fn shutdown(self) {
+        let _ = self.shutdown_with_residue();
+    }
+
+    /// Like [`shutdown`] but reports cleanup residue: an empty vec means the process was terminated and
+    /// the temp profile removed cleanly; a non-empty vec names what was left behind (e.g. the profile
+    /// could not be removed because the OS had not released its file handles yet) so a session can
+    /// report it honestly via `ended.residue_keys` instead of leaving a silent mess (untouchable rules
+    /// 4 and 6).
+    pub fn shutdown_with_residue(mut self) -> Vec<String> {
         let _ = self.child.kill();
         let _ = self.child.wait();
-        let _ = std::fs::remove_dir_all(&self.user_data_dir);
+        // Chromium's own child processes (renderer, GPU) briefly outlive the main process we killed and
+        // keep file locks on the profile, so an immediate remove races and fails. They self-terminate a
+        // few hundred ms after the parent dies (broken IPC channel), so retry over ~half a second, each
+        // attempt continuing to clear whatever the previous one could not. Only if the profile is STILL
+        // on disk after the retries do we report it honestly, rather than pretend it was clean or
+        // false-alarm on a dir that vanished just after the last attempt (rules 4, 6). The common case
+        // succeeds on the first try with no delay.
+        for attempt in 0..5 {
+            if !self.user_data_dir.exists() {
+                return Vec::new();
+            }
+            if std::fs::remove_dir_all(&self.user_data_dir).is_ok() {
+                return Vec::new();
+            }
+            if attempt < 4 {
+                std::thread::sleep(Duration::from_millis(120));
+            }
+        }
+        if self.user_data_dir.exists() {
+            vec!["cleanup.chromium_profile_left".to_string()]
+        } else {
+            Vec::new()
+        }
     }
 }
 
