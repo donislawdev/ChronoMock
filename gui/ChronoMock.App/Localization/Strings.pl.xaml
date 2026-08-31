@@ -31,6 +31,8 @@
   <sys:String x:Key="action.start">Start</sys:String>
   <sys:String x:Key="action.choose_target">Wybierz…</sys:String>
   <sys:String x:Key="action.freeze">Zamroź</sys:String>
+  <sys:String x:Key="action.jump_to">Skocz do</sys:String>
+  <sys:String x:Key="action.set_speed">Ustaw</sys:String>
 
   <!-- Skoki w locie (jednostki w Tag przycisku). -->
   <sys:String x:Key="jump.minus_day">-1 dzień</sys:String>

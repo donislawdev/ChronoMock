@@ -60,6 +60,51 @@ public class SessionViewModelTests
         Assert.Equal(SessionStatusKind.Running, vm.StatusKind);
     }
 
+    private static ErrorEvent Error(string key) => new()
+    {
+        V = ProtocolJson.ProtocolVersion,
+        Id = 11,
+        Code = 1,
+        Key = key,
+        Origin = "core",
+    };
+
+    [Fact]
+    public void In_flight_error_while_running_is_surfaced_without_ending_the_session()
+    {
+        var vm = new SessionViewModel();
+        vm.Apply(State("2038-01-19T03:14:07", "2026-08-24T20:30:00", bias: 0, multiplier: 60)); // -> Running
+
+        vm.Apply(Error("moment.invalid")); // e.g. a bad in-flight jump moment
+
+        // The one command is rejected, but the session stays live and the error is shown (rule 6).
+        Assert.Equal(SessionStatusKind.Running, vm.StatusKind);
+        Assert.Equal("moment.invalid", vm.InFlightErrorKey);
+        Assert.True(vm.HasInFlightError);
+    }
+
+    [Fact]
+    public void Error_before_the_session_is_running_is_terminal()
+    {
+        var vm = new SessionViewModel(); // Idle - a start-time error (bad start moment, launch failed)
+
+        vm.Apply(Error("target.launch_failed"));
+
+        Assert.Equal(SessionStatusKind.Error, vm.StatusKind);
+        Assert.False(vm.HasInFlightError); // not surfaced as an in-flight notice - it is fatal
+    }
+
+    [Fact]
+    public void State_syncs_the_mode_dropdown_to_the_live_multiplier()
+    {
+        var vm = new SessionViewModel(); // default mode is x60
+
+        vm.Apply(State("2038-01-19T03:14:07", "2026-08-24T20:30:00", bias: 0, multiplier: 1440));
+
+        // The dropdown reflects the live speed when it matches a preset, so it never drifts from reality.
+        Assert.Equal(1440, vm.SelectedMode.Multiplier);
+    }
+
     [Fact]
     public void Vanished_marks_did_not_take_effect_and_is_not_resurrected_by_a_late_state()
     {

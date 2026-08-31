@@ -113,6 +113,20 @@ public partial class MainWindow : FluentWindow
         }
     }
 
+    // In-flight jump to the ABSOLUTE moment currently in the At field (in the session zone).
+    private void OnJumpToClick(object sender, RoutedEventArgs e) => _session.JumpToEnteredMoment();
+
+    // In-flight arbitrary speed: parse the custom-speed box (accepts "500" or "x500") and set it.
+    private void OnSetSpeedClick(object sender, RoutedEventArgs e)
+    {
+        var raw = CustomSpeedBox.Text?.Trim().TrimStart('x', 'X', '×');
+        if (long.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var multiplier)
+            && multiplier >= 0)
+        {
+            _session.SendMultiplier(multiplier);
+        }
+    }
+
     // Stop the running session (M-10) - so the user is not forced to close the whole window when they are
     // done (or when the core stops responding). The target reverts to real time, the app is never killed.
     private void OnStopClick(object sender, RoutedEventArgs e) => _session.RequestStop();

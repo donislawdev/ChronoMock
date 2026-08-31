@@ -52,9 +52,11 @@
         </Grid.RowDefinitions>
 
         <!-- Setup: what to run (target), when (moment in the session zone), how fast (mode). chrono-mock 7.1.
-             The whole block is disabled while a session runs - changing time in-flight is a later slice. -->
-        <StackPanel Grid.Row="0" IsEnabled="{Binding IsIdle}">
-          <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="{StaticResource SpaceXs}">
+             Target, zone and scale-duration are start-only (locked while running); the moment and mode stay
+             editable and act live in flight (moment -> jump to it, mode -> set_multiplier). -->
+        <StackPanel Grid.Row="0">
+          <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="{StaticResource SpaceXs}"
+                      IsEnabled="{Binding IsIdle}">
             <TextBlock Text="{DynamicResource target.label}" VerticalAlignment="Center"
                        FontSize="{StaticResource FontSizeBody}" Foreground="{DynamicResource BrushTextSecondary}" />
             <TextBlock Text="{Binding TargetName}" Margin="{StaticResource SpaceXs}" VerticalAlignment="Center"
@@ -65,20 +67,30 @@
           <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="{StaticResource SpaceXs}">
             <TextBlock Text="{DynamicResource moment.label}" VerticalAlignment="Center"
                        FontSize="{StaticResource FontSizeBody}" Foreground="{DynamicResource BrushTextSecondary}" />
-            <TextBox Text="{Binding MomentText, UpdateSourceTrigger=PropertyChanged}"
+            <TextBox x:Name="MomentBox"
+                     Text="{Binding MomentText, UpdateSourceTrigger=PropertyChanged}"
                      Width="190" Margin="{StaticResource SpaceXs}" VerticalAlignment="Center"
+                     IsEnabled="{Binding CanEditTime}"
                      FontSize="{StaticResource FontSizeBody}" />
+            <!-- In-flight: jump the wall to the ABSOLUTE moment on the left (visible only while running).
+                 Disabled for a malformed moment; the core validates deeper and reports a bad one without
+                 ending the session (per-command error). -->
+            <Button Content="{DynamicResource action.jump_to}" Click="OnJumpToClick"
+                    IsEnabled="{Binding MomentValid}" VerticalAlignment="Center"
+                    Visibility="{Binding IsRunning, Converter={StaticResource BoolToVis}}" />
             <TextBlock Text="{DynamicResource zone.label}" Margin="{StaticResource SpaceSm}" VerticalAlignment="Center"
                        FontSize="{StaticResource FontSizeBody}" Foreground="{DynamicResource BrushTextSecondary}" />
             <ComboBox ItemsSource="{Binding Zones}" SelectedItem="{Binding SelectedZone}" DisplayMemberPath="Label"
+                      IsEnabled="{Binding IsIdle}"
                       Margin="{StaticResource SpaceXs}" VerticalAlignment="Center" />
           </StackPanel>
 
           <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="{StaticResource SpaceXs}">
             <TextBlock Text="{DynamicResource mode.label}" VerticalAlignment="Center"
                        FontSize="{StaticResource FontSizeBody}" Foreground="{DynamicResource BrushTextSecondary}" />
-            <ComboBox ItemsSource="{Binding Modes}" SelectedItem="{Binding SelectedMode}"
+            <ComboBox x:Name="ModeBox" ItemsSource="{Binding Modes}" SelectedItem="{Binding SelectedMode}"
                       ItemContainerStyle="{StaticResource LabelKeyComboItem}"
+                      IsEnabled="{Binding CanEditTime}"
                       Margin="{StaticResource SpaceXs}" VerticalAlignment="Center">
               <ComboBox.ItemTemplate>
                 <DataTemplate>
@@ -92,6 +104,7 @@
                inside the target runs N times faster, not just the wall clock. Maps to wire scale_duration. -->
           <CheckBox Content="{DynamicResource mode.scale_duration}"
                     IsChecked="{Binding ScaleDuration}"
+                    IsEnabled="{Binding IsIdle}"
                     HorizontalAlignment="Center" Margin="{StaticResource SpaceXs}"
                     FontSize="{StaticResource FontSizeBody}" Foreground="{DynamicResource BrushTextSecondary}" />
 
@@ -237,6 +250,11 @@
             <Button Content="{DynamicResource mode.x60}" Tag="60" Margin="{StaticResource SpaceXs}" Click="OnSpeedClick" />
             <Button Content="{DynamicResource mode.x1440}" Tag="1440" Margin="{StaticResource SpaceXs}" Click="OnSpeedClick" />
             <Button Content="{DynamicResource action.freeze}" Tag="0" Margin="{StaticResource SpaceSm}" Click="OnSpeedClick" />
+            <!-- Arbitrary speed: type any N and Set (the preset buttons and the Mode dropdown cover the
+                 common ones; this is for a value like x500). -->
+            <TextBox x:Name="CustomSpeedBox" Width="56" Margin="{StaticResource SpaceSm}" VerticalAlignment="Center"
+                     FontSize="{StaticResource FontSizeBody}" />
+            <Button Content="{DynamicResource action.set_speed}" Click="OnSetSpeedClick" VerticalAlignment="Center" />
           </StackPanel>
           <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="{StaticResource SpaceXs}">
             <Button Content="{DynamicResource jump.minus_day}" Tag="-1d" Margin="{StaticResource SpaceXs}" Click="OnJumpClick" />
@@ -278,6 +296,13 @@
           <TextBlock Text="{Binding LastError}"
                      FontSize="{StaticResource FontSizeCaption}"
                      Foreground="{DynamicResource BrushTextSecondary}"
+                     HorizontalAlignment="Center"
+                     TextWrapping="Wrap" />
+          <!-- A per-command in-flight error (e.g. a bad jump moment): shown without ending the session. -->
+          <TextBlock Text="{Binding InFlightErrorKey, Converter={StaticResource KeyToText}}"
+                     Visibility="{Binding HasInFlightError, Converter={StaticResource BoolToVis}}"
+                     FontSize="{StaticResource FontSizeCaption}"
+                     Foreground="{DynamicResource BrushStatusPartial}"
                      HorizontalAlignment="Center"
                      TextWrapping="Wrap" />
         </StackPanel>

@@ -32,6 +32,8 @@
   <sys:String x:Key="action.start">Start</sys:String>
   <sys:String x:Key="action.choose_target">Choose…</sys:String>
   <sys:String x:Key="action.freeze">Freeze</sys:String>
+  <sys:String x:Key="action.jump_to">Jump to</sys:String>
+  <sys:String x:Key="action.set_speed">Set</sys:String>
 
   <!-- In-flight jump deltas (units carried in the button Tag). -->
   <sys:String x:Key="jump.minus_day">-1 day</sys:String>

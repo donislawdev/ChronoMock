@@ -47,6 +47,12 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     private bool _launched;
     private bool _stopRequested;
     private string _historyError = string.Empty;
+    // Snapshot of the start moment/mode, taken at Start, so history and the summary record what was
+    // REQUESTED even after the moment or speed is changed in flight (rule 4 - the record is the start).
+    private string _startMomentText = string.Empty;
+    private ModeOption? _startMode;
+    private string _inFlightErrorKey = string.Empty;
+    private bool _applyingMultiplier; // guard: syncing the Mode dropdown from a state event must not re-send
 
     /// <summary>Bare view-model: history is in-memory, so a default construction and unit tests touch no files.</summary>
     public SessionViewModel() : this(new InMemorySessionHistoryStore())
@@ -107,6 +113,7 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
             {
                 RaisePropertyChanged(nameof(IsRunning));
                 RaisePropertyChanged(nameof(CanCopySummary));
+                RaisePropertyChanged(nameof(CanEditTime));
             }
         }
     }
@@ -123,6 +130,18 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
 
     /// <summary>The raw failure detail when something went wrong - shown verbatim so a failure is never silent.</summary>
     public string LastError { get => _lastError; private set => Set(ref _lastError, value); }
+
+    /// <summary>Translation key for a per-command in-flight error (e.g. an invalid jump moment), empty when
+    /// none. Unlike a fatal error it does NOT end the session - the core rejected one command and kept
+    /// running, so the panel surfaces it and stays live (rule 6).</summary>
+    public string InFlightErrorKey
+    {
+        get => _inFlightErrorKey;
+        private set { if (Set(ref _inFlightErrorKey, value)) { RaisePropertyChanged(nameof(HasInFlightError)); } }
+    }
+
+    /// <summary>True when a per-command in-flight error is being shown.</summary>
+    public bool HasInFlightError => _inFlightErrorKey.Length > 0;
 
     /// <summary>Translation key for the copy-summary feedback ("copy.done" / "copy.failed"), empty until a
     /// copy is attempted. A clipboard failure is surfaced, never swallowed (rule 6).</summary>
@@ -200,7 +219,35 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
 
     public ZoneOption SelectedZone { get => _selectedZone; set => Set(ref _selectedZone, value); }
 
-    public ModeOption SelectedMode { get => _selectedMode; set => Set(ref _selectedMode, value); }
+    public ModeOption SelectedMode
+    {
+        get => _selectedMode;
+        set
+        {
+            if (Set(ref _selectedMode, value) && IsRunning && !_applyingMultiplier && value is not null)
+            {
+                // Live: changing the mode while running sends set_multiplier (flow -> x1, frozen -> x0,
+                // xN -> N). The guard skips the send when we are only syncing the dropdown from a state
+                // event (SyncModeToMultiplier), so a heartbeat never bounces back as a command.
+                SendMultiplier(value.Mode switch { "frozen" => 0, "flow" => 1, _ => value.Multiplier ?? 1 });
+            }
+        }
+    }
+
+    /// <summary>Reflect the live multiplier in the Mode dropdown when it matches a preset, so the control
+    /// does not drift from reality after a preset button or custom-speed change. A custom value with no
+    /// matching preset leaves the dropdown as-is (<see cref="MultiplierText"/> shows the true speed).</summary>
+    private void SyncModeToMultiplier(long multiplier)
+    {
+        var match = TimeInputs.Modes.FirstOrDefault(
+            m => (m.Mode switch { "frozen" => 0L, "flow" => 1L, _ => m.Multiplier ?? 1 }) == multiplier);
+        if (match is not null && !ReferenceEquals(match, _selectedMode))
+        {
+            _applyingMultiplier = true;
+            SelectedMode = match;
+            _applyingMultiplier = false;
+        }
+    }
 
     /// <summary>Scale the duration axis too (chrono-mock 11.1 pt 4): with a multiplier, timers, sleeps and
     /// tick counts advance N times as well, so a countdown or animation runs N times faster - not just the
@@ -227,6 +274,7 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
             return;
         }
 
+        InFlightErrorKey = string.Empty;
         try
         {
             client.Send(new SetMultiplierCommand { Id = _nextCommandId++, Multiplier = multiplier });
@@ -250,6 +298,7 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
             return;
         }
 
+        InFlightErrorKey = string.Empty; // a fresh attempt clears any prior in-flight error
         try
         {
             client.Send(new JumpCommand
@@ -264,9 +313,54 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
         }
     }
 
+    /// <summary>
+    /// Jump the fake clock to an ABSOLUTE moment (entered in the session zone, rule 2) while running - the
+    /// in-flight counterpart of the start moment. The core re-anchors the wall and validates the moment,
+    /// reporting a bad one (DST gap, non-leap Feb 29, out of range) as a per-command error that does NOT
+    /// end the session (see <see cref="Apply"/>). No-op unless a session is running.
+    /// </summary>
+    public void SendJumpAbsolute(string momentLocal, int zoneBiasMinutes)
+    {
+        var client = _client;
+        if (client is null || !IsRunning)
+        {
+            return;
+        }
+
+        InFlightErrorKey = string.Empty;
+        try
+        {
+            client.Send(new JumpCommand
+            {
+                Id = _nextCommandId++,
+                To = new MomentSpec { Kind = "absolute", Local = momentLocal, TzBiasMin = zoneBiasMinutes },
+            });
+        }
+        catch (IOException)
+        {
+            // The core is already gone - the read loop will surface the end; nothing to do here.
+        }
+    }
+
+    /// <summary>Jump the wall to the moment currently in the At field, in the session zone (rule 2). No-op
+    /// if the moment is malformed (the Jump button is disabled then) or no session is running.</summary>
+    public void JumpToEnteredMoment()
+    {
+        if (TryParseMoment(_momentText, out var canonical))
+        {
+            SendJumpAbsolute(canonical, SelectedZone.BiasMinutes);
+        }
+    }
+
     /// <summary>True when no session is running - the setup inputs bind their enabled state to this, so the
     /// user can still fix an invalid moment (which disables Start but not the fields).</summary>
     public bool IsIdle => _idle;
+
+    /// <summary>Whether the time inputs (moment and mode) may be edited. When idle they set the START
+    /// config; while a session runs they act live (moment -> jump, mode -> set_multiplier). Locked only
+    /// during the brief connecting/ending transitions. Target, zone and scale-duration stay start-only
+    /// (zone cannot re-render in flight, scale-duration has no in-flight command).</summary>
+    public bool CanEditTime => _idle || IsRunning;
 
     /// <summary>Backs <see cref="CanStart"/> and <see cref="IsIdle"/>: true when no session is running.</summary>
     private bool Idle
@@ -278,6 +372,7 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
             {
                 RaisePropertyChanged(nameof(CanStart));
                 RaisePropertyChanged(nameof(IsIdle));
+                RaisePropertyChanged(nameof(CanEditTime));
             }
         }
     }
@@ -400,6 +495,7 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
                 Real.Wall = s.Real.Wall;
                 Real.Zone = ZoneLabel.FromBiasMinutes(s.Real.ZoneBiasMin);
                 MultiplierText = $"x{s.Multiplier}";
+                SyncModeToMultiplier(s.Multiplier);
                 _elapsedRealMs = s.ElapsedRealMs;
                 _elapsedFakeMs = s.ElapsedFakeMs;
                 _hasTiming = true;
@@ -425,7 +521,13 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
 
                 SetStatus("status.ended", SessionStatusKind.Ended);
                 break;
+            case ErrorEvent err when StatusKind == SessionStatusKind.Running:
+                // A per-command error (e.g. an invalid in-flight jump moment): the core rejects the one
+                // command and keeps running, so surface it and STAY live - never end the session (rule 6).
+                InFlightErrorKey = err.Key;
+                break;
             case ErrorEvent when !IsTerminal(StatusKind):
+                // A start-time error (bad start moment, launch/inject failed): the session did not start.
                 SetStatus("status.error", SessionStatusKind.Error);
                 break;
             case VerdictEvent v:
@@ -486,6 +588,12 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
         CoreClient? client = null;
         try
         {
+            // Snapshot the start moment and mode NOW, before they can be changed in flight, so history and
+            // the summary always report what was REQUESTED (rule 4), not the last in-flight change.
+            TryParseMoment(_momentText, out var startCanonical);
+            _startMomentText = startCanonical.Length > 0 ? startCanonical : _momentText;
+            _startMode = SelectedMode;
+
             var plan = SessionPlan.Build(TargetPath!, BuildTime());
             IsCdp = plan.IsCdp;
             client = CoreClient.Connect(plan.CorePath);
@@ -694,6 +802,7 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
         _vanishReasonKey = string.Empty;
         _livedMs = 0;
         CopyFeedbackKey = string.Empty;
+        InFlightErrorKey = string.Empty;
     }
 
     private static string FormatChannel(CoveredChannel channel) => $"{channel.Channel}  ×{channel.Calls}";
@@ -786,8 +895,11 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
         AppendList(sb, translate, "coverage.uncovered", _uncovered, translateItems: false);
         AppendList(sb, translate, "coverage.warnings", _warnings, translateItems: true);
 
+        // The "requested" line is the START request (snapshot), even if the moment or speed changed live.
+        var reqMoment = _startMomentText.Length > 0 ? _startMomentText : _momentText;
+        var reqMode = _startMode ?? SelectedMode;
         sb.Append("  ")
-          .Append(Fmt(translate("report.requested"), _momentText, SelectedZone.Label, translate(SelectedMode.LabelKey)))
+          .Append(Fmt(translate("report.requested"), reqMoment, SelectedZone.Label, translate(reqMode.LabelKey)))
           .Append('\n');
 
         return sb.ToString();
@@ -826,14 +938,24 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     /// target is faked), so DateTime.UtcNow is the true end time.</summary>
     internal SessionRecord BuildRecord()
     {
-        TryParseMoment(_momentText, out var canonical);
+        // Record the START moment and mode (snapshot), not any in-flight change (rule 4). The zone is
+        // start-only (never changed in flight), so the live SelectedZone is the start zone. The snapshot
+        // is already canonical; the fallback (no session started, e.g. a unit test) canonicalizes too.
+        var mode = _startMode ?? SelectedMode;
+        var moment = _startMomentText;
+        if (moment.Length == 0)
+        {
+            TryParseMoment(_momentText, out var canonical);
+            moment = canonical.Length > 0 ? canonical : _momentText;
+        }
+
         return new SessionRecord
         {
             TargetPath = _targetPath ?? string.Empty,
-            MomentLocal = canonical.Length > 0 ? canonical : _momentText,
+            MomentLocal = moment,
             TzBiasMin = SelectedZone.BiasMinutes,
-            Mode = SelectedMode.Mode,
-            Multiplier = SelectedMode.Multiplier,
+            Mode = mode.Mode,
+            Multiplier = mode.Multiplier,
             Verdict = RecordedVerdict(),
             EndedAtUtc = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture),
         };
