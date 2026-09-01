@@ -3,6 +3,7 @@ name = "chrono-cli"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+build = "build.rs"
 
 # The friendly driver AND the hidden core mode live in one binary. `chrono run`
 # spawns `chrono __core` and talks NDJSON over stdio (ADR-6). The CLI is the
@@ -21,3 +22,9 @@ serde_json = { workspace = true }
 # Only for the Rule 16 architecture guard test (reads chrono-core's manifest).
 [dev-dependencies]
 toml = "0.8"
+
+# Build-time only: embeds the application icon into chrono.exe via the Windows SDK resource
+# compiler. Not linked into the shipped binary (like cc), so it needs no third-party notice.
+# Rule 8 licence sieve: MIT OR Apache-2.0, verified by `cargo deny check licenses`.
+[build-dependencies]
+winresource = "0.1"

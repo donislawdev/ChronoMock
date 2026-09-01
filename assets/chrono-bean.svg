@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <defs>
+    <radialGradient id="bean" cx="62%" cy="28%" r="85%">
+      <stop offset="0%" stop-color="#E4573F"/>
+      <stop offset="42%" stop-color="#C0392B"/>
+      <stop offset="100%" stop-color="#6E1414"/>
+    </radialGradient>
+  </defs>
+  <g>
+    <path d="
+      M 140 46
+      C 178 48, 204 82, 202 128
+      C 200 174, 180 210, 146 210
+      C 118 210, 98 192, 94 166
+      C 90 150, 120 142, 122 128
+      C 124 114, 92 106, 96 84
+      C 100 60, 112 46, 140 46 Z"
+      fill="url(#bean)" stroke="#560E0E" stroke-width="4"/>
+    <ellipse cx="150" cy="92" rx="20" ry="40" fill="#FFFFFF" opacity="0.20"
+             transform="rotate(-28 150 92)"/>
+  </g>
+</svg>

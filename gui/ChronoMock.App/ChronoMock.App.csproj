@@ -21,6 +21,9 @@
     <!-- Drop the .NET/WPF framework satellite resource assemblies for languages we do not ship (Stage 5).
          Our own EN/PL strings are loose Content (Localization/), not satellites, so they are unaffected. -->
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+    <!-- The application (assembly) icon - the shared red kidney-bean branding. WPF also uses it as
+         the default window icon (title bar and taskbar) when Window.Icon is not set. -->
+    <ApplicationIcon>..\..\assets\chrono.ico</ApplicationIcon>
   </PropertyGroup>
 
   <ItemGroup>
