@@ -63,8 +63,18 @@ public class SessionViewModelTests
     private static ErrorEvent Error(string key) => new()
     {
         V = ProtocolJson.ProtocolVersion,
-        Id = 11,
+        Id = 11, // an in-flight command id (>= FirstInFlightCommandId): a jump/set_multiplier rejection
         Code = 1,
+        Key = key,
+        Origin = "core",
+    };
+
+    // A start/fatal error answers the START command (id 1) or is unsolicited (no id) - never an in-flight id.
+    private static ErrorEvent StartError(string key, long? id = 1) => new()
+    {
+        V = ProtocolJson.ProtocolVersion,
+        Id = id,
+        Code = 3,
         Key = key,
         Origin = "core",
     };
@@ -88,10 +98,48 @@ public class SessionViewModelTests
     {
         var vm = new SessionViewModel(); // Idle - a start-time error (bad start moment, launch failed)
 
-        vm.Apply(Error("target.launch_failed"));
+        vm.Apply(StartError("target.launch_failed"));
 
         Assert.Equal(SessionStatusKind.Error, vm.StatusKind);
         Assert.False(vm.HasInFlightError); // not surfaced as an in-flight notice - it is fatal
+    }
+
+    [Fact]
+    public void A_failed_start_while_running_is_fatal_and_shows_its_reason_not_session_ended()
+    {
+        // The panel enters "running" optimistically right after `start`, before any heartbeat. When
+        // injection fails, the core sends error{id:1} (answering the start command) then an `ended` that is
+        // clean even on failure. The error must land as a FAILURE carrying its specific reason as the
+        // headline, and the trailing `ended` must NOT overwrite it to "Session ended" (RELEASE-001).
+        var vm = new SessionViewModel();
+        vm.SetTarget(@"C:\apps\Ledger.exe");
+        vm.Apply(State("2038-01-19T03:14:07", "2026-08-24T20:30:00", bias: 0, multiplier: 60)); // optimistic running
+        Assert.Equal(SessionStatusKind.Running, vm.StatusKind);
+
+        vm.Apply(StartError("target.inject_failed"));
+
+        Assert.Equal(SessionStatusKind.Error, vm.StatusKind);   // a failure, not still running or "ended"
+        Assert.Equal("target.inject_failed", vm.StatusKey);     // the specific reason IS the headline
+        Assert.False(vm.HasInFlightError);                      // never demoted to a small in-flight notice
+
+        vm.Apply(new EndedEvent { V = ProtocolJson.ProtocolVersion, Clean = true }); // clean even on failure
+        Assert.Equal(SessionStatusKind.Error, vm.StatusKind);   // the honest failure stands
+        Assert.Equal("target.inject_failed", vm.StatusKey);
+    }
+
+    [Fact]
+    public void An_unsolicited_error_with_no_id_is_a_fatal_start_error_not_an_in_flight_notice()
+    {
+        // A protocol-level failure (no command, bad command, expected start) carries no id. Even while the
+        // panel is optimistically running, it is a start/fatal error, never an in-flight command rejection.
+        var vm = new SessionViewModel();
+        vm.Apply(State("2038-01-19T03:14:07", "2026-08-24T20:30:00", bias: 0, multiplier: 60)); // running
+
+        vm.Apply(StartError("protocol.expected_start", id: null));
+
+        Assert.Equal(SessionStatusKind.Error, vm.StatusKind);
+        Assert.Equal("protocol.expected_start", vm.StatusKey);
+        Assert.False(vm.HasInFlightError);
     }
 
     [Fact]

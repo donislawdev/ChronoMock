@@ -64,6 +64,21 @@
   <sys:String x:Key="status.no_ready">Brak uzgodnienia z rdzeniem</sys:String>
   <sys:String x:Key="status.error">Błąd sesji</sys:String>
 
+  <!-- Powody awarii rdzenia (RELEASE-001). Gdy błąd startu/fatalny kończy sesję, jego konkretny powód
+       staje się nagłówkiem statusu, więc nieudany start nigdy nie czyta się jak „Sesja zakończona".
+       Sformułowane jako zdania o awarii, bo SĄ linią statusu. Emitowane przez rdzeń (crates/cli, crates/mech). -->
+  <sys:String x:Key="core.hook_dll_missing">Brak haka czasu - aplikacja nie została uruchomiona z fałszywym zegarem (zainstaluj Chrono Mock ponownie).</sys:String>
+  <sys:String x:Key="time.bad_mode">Nieobsługiwany tryb czasu - sesja nie wystartowała.</sys:String>
+  <sys:String x:Key="moment.invalid">Nieprawidłowy moment (luka czasu letniego, 29 lutego w roku nieprzestępnym albo poza zakresem) - sesja nie wystartowała.</sys:String>
+  <sys:String x:Key="session.control_failed">Nie udało się utworzyć kanału sterowania sesji - podmiana nie zadziałała.</sys:String>
+  <sys:String x:Key="target.launch_failed">Nie udało się uruchomić celu - podmiana nie zadziałała.</sys:String>
+  <sys:String x:Key="target.inject_failed">Nie udało się wstrzyknąć haka czasu - podmiana nie zadziałała (mógł ją zablokować antywirus albo utwardzony cel).</sys:String>
+  <sys:String x:Key="target.attach_failed">Nie udało się podłączyć do aplikacji Chromium/Electron - podmiana nie zadziałała.</sys:String>
+  <sys:String x:Key="session.already_active">Inna sesja Chrono Mock już działa - tylko jedna naraz.</sys:String>
+  <sys:String x:Key="protocol.no_command">Rdzeń nie otrzymał komendy - sesja nie wystartowała.</sys:String>
+  <sys:String x:Key="protocol.bad_command">Rdzeń otrzymał błędną komendę - sesja nie wystartowała.</sys:String>
+  <sys:String x:Key="protocol.expected_start">Rdzeń oczekiwał komendy start - sesja nie wystartowała.</sys:String>
+
   <!-- Odmowy bramki uzgodnienia (zgłaszane, zanim cel zostanie uruchomiony). -->
   <sys:String x:Key="handshake.protocol_mismatch">Niezgodna wersja protokołu - nie uruchomiono</sys:String>
   <sys:String x:Key="handshake.bitness_mismatch">Niezgodna bitowość rdzenia - nie uruchomiono</sys:String>

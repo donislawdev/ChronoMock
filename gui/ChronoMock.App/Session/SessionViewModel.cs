@@ -31,8 +31,14 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     /// INJECT_TIMEOUT), so a slow start never trips it.</summary>
     private static readonly TimeSpan IdleTimeout = TimeSpan.FromSeconds(15);
 
+    /// <summary>The start command uses id 1 (see <see cref="SessionPlan"/>); in-flight commands (jump,
+    /// set_multiplier) take ids from here up. An error's id tells the two apart (RELEASE-001): an id at or
+    /// above this answers one of OUR in-flight commands, while id 1 (or none) is the response to the start
+    /// command or an unsolicited failure - a start/fatal error, never an in-flight rejection.</summary>
+    private const long FirstInFlightCommandId = 10;
+
     private CoreClient? _client;
-    private long _nextCommandId = 10; // start commands use low ids; in-flight commands take the rest
+    private long _nextCommandId = FirstInFlightCommandId;
     private string _statusKey = "status.idle";
     private SessionStatusKind _statusKind = SessionStatusKind.Idle;
     private string _multiplierText = string.Empty;
@@ -506,14 +512,21 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
 
                 SetStatus("status.ended", SessionStatusKind.Ended);
                 break;
-            case ErrorEvent err when StatusKind == SessionStatusKind.Running:
+            case ErrorEvent err when StatusKind == SessionStatusKind.Running && IsInFlightError(err):
                 // A per-command error (e.g. an invalid in-flight jump moment): the core rejects the one
-                // command and keeps running, so surface it and STAY live - never end the session (rule 6).
+                // command WE sent - its id echoes our command's - and keeps running, so surface it and STAY
+                // live, never end the session (rule 6).
                 InFlightErrorKey = err.Key;
                 break;
-            case ErrorEvent when !IsTerminal(StatusKind):
-                // A start-time error (bad start moment, launch/inject failed): the session did not start.
-                SetStatus("status.error", SessionStatusKind.Error);
+            case ErrorEvent err when !IsTerminal(StatusKind):
+                // A start-time or fatal error (bad start moment, hook DLL missing, launch/inject/attach
+                // failed). The session never became live: the status was set to "running" optimistically
+                // right after `start`, but this error answers the START command (id 1) or is unsolicited (no
+                // id) - NOT an in-flight rejection (RELEASE-001). Land on a failure status carrying the
+                // core's specific translated reason as the headline, so a failed start never reads as
+                // "Session ended". The core then emits `ended` (clean is true even here), but the terminal
+                // status ignores it (the guard above), so the honest failure stands.
+                SetStatus(err.Key, SessionStatusKind.Error);
                 break;
             case VerdictEvent v:
                 // The per-process verdict, at start. It gates refuse_start and is the first indicator shown.
@@ -1057,4 +1070,9 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
         or SessionStatusKind.Stopped
         or SessionStatusKind.CoreUnresponsive
         or SessionStatusKind.Error;
+
+    /// <summary>True when an error event answers one of OUR in-flight commands (jump/set_multiplier),
+    /// whose ids run from <see cref="FirstInFlightCommandId"/> up. A start/fatal error instead carries the
+    /// start command's id (1) or none, so it is never treated as an in-flight rejection (RELEASE-001).</summary>
+    private static bool IsInFlightError(ErrorEvent err) => err.Id is >= FirstInFlightCommandId;
 }

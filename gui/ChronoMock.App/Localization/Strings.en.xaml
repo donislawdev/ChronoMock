@@ -65,6 +65,21 @@
   <sys:String x:Key="status.no_ready">No handshake from the core</sys:String>
   <sys:String x:Key="status.error">Session error</sys:String>
 
+  <!-- Core failure reasons (RELEASE-001). When a start/fatal error ends a session, its specific reason
+       becomes the status headline, so a failed start never reads as "Session ended". Phrased as failure
+       statements because they ARE the status line. Emitted by the core (crates/cli, crates/mech). -->
+  <sys:String x:Key="core.hook_dll_missing">The time hook is missing - the app was not launched under a fake clock (reinstall Chrono Mock).</sys:String>
+  <sys:String x:Key="time.bad_mode">Unsupported time mode - the session did not start.</sys:String>
+  <sys:String x:Key="moment.invalid">That moment is not valid (a daylight-saving gap, Feb 29 in a common year, or out of range) - the session did not start.</sys:String>
+  <sys:String x:Key="session.control_failed">Could not set up the session's control channel - the substitution did not take effect.</sys:String>
+  <sys:String x:Key="target.launch_failed">Could not launch the target - the substitution did not take effect.</sys:String>
+  <sys:String x:Key="target.inject_failed">Could not inject the time hook - the substitution did not take effect (an antivirus or a hardened target may have blocked it).</sys:String>
+  <sys:String x:Key="target.attach_failed">Could not attach to the Chromium/Electron app - the substitution did not take effect.</sys:String>
+  <sys:String x:Key="session.already_active">Another Chrono Mock session is already running - only one at a time.</sys:String>
+  <sys:String x:Key="protocol.no_command">The core received no command - the session did not start.</sys:String>
+  <sys:String x:Key="protocol.bad_command">The core received a malformed command - the session did not start.</sys:String>
+  <sys:String x:Key="protocol.expected_start">The core expected a start command - the session did not start.</sys:String>
+
   <!-- Handshake gate refusals (surfaced before the target is launched). -->
   <sys:String x:Key="handshake.protocol_mismatch">Protocol version mismatch - not started</sys:String>
   <sys:String x:Key="handshake.bitness_mismatch">Core bitness mismatch - not started</sys:String>
