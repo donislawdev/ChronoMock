@@ -18,6 +18,9 @@
          ChronoMock.App (the project-name default is unaffected by AssemblyName), so no code moves. -->
     <AssemblyName>ChronoMock</AssemblyName>
     <RootNamespace>ChronoMock.App</RootNamespace>
+    <!-- Drop the .NET/WPF framework satellite resource assemblies for languages we do not ship (Stage 5).
+         Our own EN/PL strings are loose Content (Localization/), not satellites, so they are unaffected. -->
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
   </PropertyGroup>
 
   <ItemGroup>

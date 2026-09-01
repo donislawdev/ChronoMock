@@ -37,10 +37,16 @@ internal sealed record SessionPlan(string CorePath, PeReader.Machine Machine, St
 
     /// <summary>
     /// The bundled sample target, pre-selected so the panel is usable at once in a dev checkout, or null
-    /// when the solution has not been built (then the user must pick a target). Dev scaffolding.
+    /// when the solution has not been built (then the user must pick a target). Dev scaffolding: a shipped
+    /// portable install has no sample and no repo root, so it returns null at once without touching DevPaths.
     /// </summary>
     public static string? DefaultTargetPath()
     {
+        if (AppPaths.IsPortable)
+        {
+            return null;
+        }
+
         try
         {
             return DevPaths.TestTargetExe(DevPaths.RepoRoot());

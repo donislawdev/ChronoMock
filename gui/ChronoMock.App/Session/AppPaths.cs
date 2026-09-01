@@ -16,9 +16,10 @@ internal static class AppPaths
     /// The shipped layout's marker: the x64 core sits at &lt;exe&gt;/core/x64/chrono.exe. A dev checkout
     /// builds the GUI into gui/.../bin/... with no core/ beside it, so this is false there and we use the
     /// cargo outputs. The x64 core is always present in a shipped build (the host is x64), so it is a
-    /// reliable marker even for an x86 target (whose core lives under core/x86/).
+    /// reliable marker even for an x86 target (whose core lives under core/x86/). Also used to suppress
+    /// dev-only scaffolding (the pre-selected sample target) in a shipped build.
     /// </summary>
-    private static bool IsPortable
+    internal static bool IsPortable
         => File.Exists(Path.Combine(AppContext.BaseDirectory, "core", "x64", "chrono.exe"));
 
     /// <summary>Root holding calendars/ and presets/ (and, when portable, core/).</summary>
