@@ -128,7 +128,9 @@ Copy-Item -Path (Join-Path $root 'presets') -Destination $stage -Recurse
 # 3d. Licence and third-party notices - their licences require the notice to travel with every copy.
 Copy-Item -LiteralPath (Join-Path $root 'LICENSE') -Destination $stage
 Copy-Item -LiteralPath (Join-Path $root 'THIRD-PARTY-NOTICES.md') -Destination $stage
-Copy-Item -LiteralPath (Join-Path $root 'README.md') -Destination $stage
+# The package ships its own getting-started, not the marketing README (which is written for the public
+# repo and would tell a teammate who just unzipped this "nothing to download yet"). Mirrors cli-readme.md.
+Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'gui-readme.md') -Destination (Join-Path $stage 'README.md')
 
 # --- 4. Zip the portable folder (a teammate unzips one ChronoMock/ folder). ---------------------
 Write-Host '== zip =='

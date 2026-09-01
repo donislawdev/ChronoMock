@@ -3,8 +3,8 @@
 **Run any Windows application as if it were a different date - without touching the system clock.**
 Speed time up, and a 30-day expiry test takes half an hour instead of 30 days.
 
-> **Status: pre-alpha. Nothing to download yet.**
-> The core time-substitution layer has passed its technical feasibility gate, and the substitution core (Stage 1) is implemented and covered by an internal test suite. There is no released build yet.
+> **Status: internal preview.**
+> A portable build is distributed to QA teams; there is no public release yet. The core time-substitution layer has passed its technical feasibility gate, and the substitution core (Stage 1) is implemented and covered by an internal test suite.
 
 ---
 
@@ -27,7 +27,7 @@ So date-dependent tests get skipped, and "the licence never expires" ships to th
 Time is shifted **for one process only**. The domain, certificates and every other application keep seeing the real date and keep working.
 
 - **Absolute or relative time** - a specific moment, or `+30 days`, `−1 year`
-- **Time modes** - flowing normally from the shifted point, frozen, **accelerated or slowed (×0.1 to ×1440)**
+- **Time modes** - flowing normally from the shifted point, frozen, or accelerated any whole number of times (e.g. ×60, ×1440)
 - **Independent time zone** per process, without touching the system zone
 - **Jump forward or backward mid-session** - including the backward jump a laptop performs after resyncing with a time server, which breaks anything that measures elapsed time without guarding against negative values
 - **Child process inheritance** - installers and launchers spawn children, and without this the test is incomplete
@@ -64,7 +64,7 @@ A silent failure is the one outcome this tool refuses to produce. An application
 The other half of date testing is knowing *which* date to use. Chrono Mock includes a calculator that speaks in QA terms rather than arithmetic:
 
 - **Build the expression from controls, not from a sentence** - a starting point plus steps (`− 18 years`, `− 1 day`, `set time 23:59:59`), with the intermediate result shown after each step
-- **Presets that explain what they catch** - age-of-majority boundary, trial end, quarter close, the nonexistent hour on a DST spring-forward, epoch 0, the 2038 boundary
+- **Presets that explain what they catch** - trial end, month-end and quarter close, year-end rollover, epoch 0, the 2038 boundary
 - **Every format at once**, one click to copy - ISO 8601, `MM/dd/yyyy`, `dd.MM.yyyy`, epoch seconds and milliseconds, `FILETIME`, RFC 1123, and a custom mask to match whatever the application under test expects
 - **Reverse direction** - paste a date from a log and get *"3 days before quarter end"*, *"Saturday, not a business day"*. When the format is ambiguous, both readings are shown rather than one guessed
 - **Business days and holidays** - United States and Poland at launch, including the US rule where a holiday landing on a Saturday is observed on the preceding Friday
