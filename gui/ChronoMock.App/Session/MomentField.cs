@@ -76,6 +76,14 @@ public sealed class MomentField : ObservableObject
     /// <summary>The time-field error message key, or empty when the time part is fine.</summary>
     public string TimeErrorKey => HasTimeError ? ErrorKey : string.Empty;
 
+    /// <summary>True when the composed moment is malformed (either part, or an empty date). Consumers show
+    /// <see cref="ActiveErrorKey"/> BELOW the whole input row rather than inside the control, so a message
+    /// appearing never changes the row height or knocks the inputs out of line with their neighbours.</summary>
+    public bool HasError => !IsValid;
+
+    /// <summary>The active error message key (the failing part's message), empty when the moment is valid.</summary>
+    public string ActiveErrorKey => IsValid ? string.Empty : ErrorKey;
+
     /// <summary>Raised after every recompute, so an owner can re-raise its own derived state (e.g. CanStart).</summary>
     public event EventHandler? Changed;
 
@@ -138,6 +146,8 @@ public sealed class MomentField : ObservableObject
         RaisePropertyChanged(nameof(HasTimeError));
         RaisePropertyChanged(nameof(DateErrorKey));
         RaisePropertyChanged(nameof(TimeErrorKey));
+        RaisePropertyChanged(nameof(HasError));
+        RaisePropertyChanged(nameof(ActiveErrorKey));
         RaisePropertyChanged(nameof(SelectedDate));
         Changed?.Invoke(this, EventArgs.Empty);
     }

@@ -28,11 +28,6 @@
   <sys:Double x:Key="FontSizeTitle">24</sys:Double>
   <sys:Double x:Key="FontSizeClock">34</sys:Double>
 
-  <!-- Inline caption/label margin for a top-aligned input row: the left/right gap plus a top offset that
-       drops the label text onto the field text line (the row is top-aligned so an inline validation
-       message can grow downward without shifting the controls). zasady/13 2.1 - named, not a raw number. -->
-  <Thickness x:Key="LabelInlineMargin">8,9,8,0</Thickness>
-
   <!-- Radii and stroke. -->
   <CornerRadius x:Key="RadiusSm">4</CornerRadius>
   <CornerRadius x:Key="RadiusMd">8</CornerRadius>

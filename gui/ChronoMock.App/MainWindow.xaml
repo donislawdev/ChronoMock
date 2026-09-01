@@ -64,33 +64,40 @@
             <Button Margin="{StaticResource SpaceSm}" Content="{DynamicResource action.choose_target}" Click="OnChooseTargetClick" />
           </StackPanel>
 
-          <!-- Every item in this row is TOP-aligned so the inline validation message under the date field
-               grows downward without shifting the buttons or the zone (they stay level with the date box).
-               The labels take a top offset (LabelInlineMargin) so their text sits on the field text line. -->
+          <!-- One centred line: At label, the date/calendar/time input, the Today/Now quick fills, the
+               in-flight Jump, and the zone. The validation message is a SEPARATE line below (not inside the
+               date control), so it never changes this row's height or knocks the inputs out of alignment. -->
           <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="{StaticResource SpaceXs}">
-            <TextBlock Text="{DynamicResource moment.label}" VerticalAlignment="Top" Margin="{StaticResource LabelInlineMargin}"
+            <TextBlock Text="{DynamicResource moment.label}" VerticalAlignment="Center"
                        FontSize="{StaticResource FontSizeBody}" Foreground="{DynamicResource BrushTextSecondary}" />
             <controls:MomentInput DataContext="{Binding Moment}"
                                   IsEnabled="{Binding DataContext.CanEditTime, RelativeSource={RelativeSource AncestorType={x:Type ui:FluentWindow}}}"
-                                  Margin="{StaticResource SpaceXs}" VerticalAlignment="Top" />
+                                  Margin="{StaticResource SpaceXs}" VerticalAlignment="Center" />
             <!-- Quick fills: Today (midnight) and Now, both computed in the SESSION zone (rule 2), never the
                  OS clock - the panel passes its selected zone's bias so the control stays zone-agnostic. -->
             <Button Content="{DynamicResource action.today}" Click="OnTodayClick"
-                    IsEnabled="{Binding CanEditTime}" Margin="{StaticResource SpaceXs}" VerticalAlignment="Top" />
+                    IsEnabled="{Binding CanEditTime}" Margin="{StaticResource SpaceXs}" VerticalAlignment="Center" />
             <Button Content="{DynamicResource action.now}" Click="OnNowClick"
-                    IsEnabled="{Binding CanEditTime}" Margin="{StaticResource SpaceXs}" VerticalAlignment="Top" />
+                    IsEnabled="{Binding CanEditTime}" Margin="{StaticResource SpaceXs}" VerticalAlignment="Center" />
             <!-- In-flight: jump the wall to the ABSOLUTE moment on the left (visible only while running).
                  Disabled for a malformed moment; the core validates deeper and reports a bad one without
                  ending the session (per-command error). -->
             <Button Content="{DynamicResource action.jump_to}" Click="OnJumpToClick"
-                    IsEnabled="{Binding Moment.IsValid}" VerticalAlignment="Top" Margin="{StaticResource SpaceXs}"
+                    IsEnabled="{Binding Moment.IsValid}" VerticalAlignment="Center" Margin="{StaticResource SpaceXs}"
                     Visibility="{Binding IsRunning, Converter={StaticResource BoolToVis}}" />
-            <TextBlock Text="{DynamicResource zone.label}" Margin="{StaticResource LabelInlineMargin}" VerticalAlignment="Top"
+            <TextBlock Text="{DynamicResource zone.label}" Margin="{StaticResource SpaceSm}" VerticalAlignment="Center"
                        FontSize="{StaticResource FontSizeBody}" Foreground="{DynamicResource BrushTextSecondary}" />
             <ComboBox ItemsSource="{Binding Zones}" SelectedItem="{Binding SelectedZone}" DisplayMemberPath="Label"
                       IsEnabled="{Binding IsIdle}"
-                      Margin="{StaticResource SpaceXs}" VerticalAlignment="Top" />
+                      Margin="{StaticResource SpaceXs}" VerticalAlignment="Center" />
           </StackPanel>
+          <!-- Validation message BELOW the whole At row: centred, in the partial-status colour, meaning in
+               the text. Kept out of the input control so its appearance never shifts the row (rule: steady
+               layout). -->
+          <TextBlock Text="{Binding Moment.ActiveErrorKey, Converter={StaticResource KeyToText}}"
+                     Visibility="{Binding Moment.HasError, Converter={StaticResource BoolToVis}}"
+                     HorizontalAlignment="Center" Margin="{StaticResource SpaceXs}" TextWrapping="Wrap"
+                     FontSize="{StaticResource FontSizeCaption}" Foreground="{DynamicResource BrushStatusPartial}" />
 
           <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="{StaticResource SpaceXs}">
             <TextBlock Text="{DynamicResource mode.label}" VerticalAlignment="Center"

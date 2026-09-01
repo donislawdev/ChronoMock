@@ -304,7 +304,11 @@ public sealed class CalculatorViewModel : ObservableObject
         // The Specific-date base is the shared MomentInput over a MomentField (locale-safe ISO, rule 2),
         // seeded to the default the calculator first shows. Editing it recomputes like the old text box did.
         Base.LoadCanonical("2026-01-01T00:00:00");
-        Base.Changed += (_, _) => TriggerRecompute();
+        Base.Changed += (_, _) =>
+        {
+            RaisePropertyChanged(nameof(ShowBaseError));
+            TriggerRecompute();
+        };
 
         StepKinds =
         [
@@ -424,6 +428,7 @@ public sealed class CalculatorViewModel : ObservableObject
             if (Set(ref _baseKind, value))
             {
                 RaisePropertyChanged(nameof(IsSpecificBase));
+                RaisePropertyChanged(nameof(ShowBaseError));
                 TriggerRecompute();
             }
         }
@@ -431,6 +436,10 @@ public sealed class CalculatorViewModel : ObservableObject
 
     /// <summary>Whether the "specific date" text box applies (the base is an explicit date).</summary>
     public bool IsSpecificBase => _baseKind.Kind == BaseKind.Specific;
+
+    /// <summary>Whether to show the base's validation message: only for a Specific base that is malformed.
+    /// Shown BELOW the start-point row so it never shifts the row (mirrors the substitution At row).</summary>
+    public bool ShowBaseError => IsSpecificBase && Base.HasError;
 
     /// <summary>The Specific-date base as a MomentField, edited through the shared MomentInput control (an
     /// ISO date box plus a calendar popup, locale-safe, rule 2). Used only when the base kind is Specific;
