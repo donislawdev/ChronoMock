@@ -154,6 +154,28 @@ public class CalculatorArgsTests
         Assert.True(vm.ActiveNeedsParameters); // honest note instead of a wrong or absent date
     }
 
+    // The Specific base now reads a locale-safe MomentField (the shared MomentInput), seeded to the default
+    // the calculator first showed. Constructing the view model spawns nothing (compute is on first reveal),
+    // and editing the field before reveal only stages state.
+    [Fact]
+    public void Base_seeds_to_the_default_specific_moment()
+    {
+        var vm = new CalculatorViewModel(new CalcClient(() => "chrono"));
+        Assert.Equal("2026-01-01T00:00:00", vm.Base.Canonical);
+    }
+
+    [Fact]
+    public void Specific_base_uses_the_moment_field_canonical()
+    {
+        var vm = new CalculatorViewModel(new CalcClient(() => "chrono"));
+        vm.Base.DateText = "2030-05-05";
+        vm.Base.TimeText = "12:30";
+        Assert.True(vm.Base.IsValid);
+        Assert.Equal(
+            new[] { "--base", "2030-05-05T12:30:00" },
+            CalculatorViewModel.BuildCalcArgs(BaseKind.Specific, vm.Base.Canonical, [], null));
+    }
+
     // A step built the way the view model builds it (real option lists), without a UI thread. The calc
     // client is never invoked here - EnsureComputedAsync is not called, so adding a step spawns nothing.
     private static StepViewModel NewStep()

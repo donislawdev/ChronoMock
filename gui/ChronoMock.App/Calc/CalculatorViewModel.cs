@@ -262,7 +262,6 @@ public sealed class CalculatorViewModel : ObservableObject
     private PresetInfo? _activePreset;
 
     private BaseKindOption _baseKind;
-    private string _baseText = "2026-01-01T00:00:00";
     private CalendarOption _calendar;
     private string _resultWeekday = string.Empty;
     private string _resultDate = "-";
@@ -301,6 +300,11 @@ public sealed class CalculatorViewModel : ObservableObject
             new BaseKindOption(BaseKind.Specific, "calc.base.specific"),
         ];
         _baseKind = BaseKinds[0];
+
+        // The Specific-date base is the shared MomentInput over a MomentField (locale-safe ISO, rule 2),
+        // seeded to the default the calculator first shows. Editing it recomputes like the old text box did.
+        Base.LoadCanonical("2026-01-01T00:00:00");
+        Base.Changed += (_, _) => TriggerRecompute();
 
         StepKinds =
         [
@@ -428,17 +432,10 @@ public sealed class CalculatorViewModel : ObservableObject
     /// <summary>Whether the "specific date" text box applies (the base is an explicit date).</summary>
     public bool IsSpecificBase => _baseKind.Kind == BaseKind.Specific;
 
-    public string BaseText
-    {
-        get => _baseText;
-        set
-        {
-            if (Set(ref _baseText, value))
-            {
-                TriggerRecompute();
-            }
-        }
-    }
+    /// <summary>The Specific-date base as a MomentField, edited through the shared MomentInput control (an
+    /// ISO date box plus a calendar popup, locale-safe, rule 2). Used only when the base kind is Specific;
+    /// Today/Now need no text. Editing it recomputes and drops any active preset framing (via Changed).</summary>
+    public ChronoMock.App.MomentField Base { get; } = new();
 
     public CalendarOption SelectedCalendar
     {
@@ -746,7 +743,7 @@ public sealed class CalculatorViewModel : ObservableObject
             SelectedBase = BaseKinds.First(b => b.Kind == unpacked.Base);
             if (unpacked.Base == BaseKind.Specific)
             {
-                BaseText = unpacked.BaseText;
+                Base.LoadCanonical(unpacked.BaseText);
             }
 
             foreach (var step in unpacked.Steps)
@@ -887,11 +884,21 @@ public sealed class CalculatorViewModel : ObservableObject
     private async Task RecomputeAsync()
     {
         _cts?.Cancel();
+
+        // A Specific base that is not a well-formed moment yet must not spawn a broken --base: the MomentInput
+        // shows the precise inline reason, and the result is cleared rather than left stale (rule 6). Today
+        // and Now carry no base text, so they always compute.
+        if (_baseKind.Kind == BaseKind.Specific && !Base.IsValid)
+        {
+            ClearResult();
+            return;
+        }
+
         var cts = new CancellationTokenSource();
         _cts = cts;
 
         var args = BuildCalcArgs(
-            _baseKind.Kind, _baseText, Steps.Select(s => s.ToArgs()), _calendar.Id, _customFormatMask);
+            _baseKind.Kind, Base.Canonical, Steps.Select(s => s.ToArgs()), _calendar.Id, _customFormatMask);
         try
         {
             var result = await _client.EvaluateAsync(args, cts.Token);
@@ -980,6 +987,26 @@ public sealed class CalculatorViewModel : ObservableObject
         _resultMomentLocal = moment.Iso;
         _resultZoneBias = moment.ZoneBiasMin;
         CanUseInSubstitution = CanTransferZone(moment.ZoneBiasMin);
+    }
+
+    /// <summary>Clear the result column to an honest empty state, used when a Specific base is not a valid
+    /// moment yet: the MomentInput already shows why, so the result must not keep a stale value (rule 6).</summary>
+    private void ClearResult()
+    {
+        HasError = false;
+        Error = string.Empty;
+        HasResult = false;
+        CanUseInSubstitution = false;
+        ResultWeekday = string.Empty;
+        ResultDate = "-";
+        ResultTime = string.Empty;
+        ResultZone = string.Empty;
+        MetadataLine = string.Empty;
+        Significance.Clear();
+        HasSignificance = false;
+        Formats.Clear();
+        CustomFormatResult = string.Empty;
+        HasCustomFormat = false;
     }
 
     private static string BuildMetadataLine(CalcMetadata m)

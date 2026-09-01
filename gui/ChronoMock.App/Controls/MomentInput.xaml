@@ -8,9 +8,11 @@
        DatePicker, whose text parsing follows the OS locale. Bound to a MomentField DataContext. -->
   <StackPanel>
     <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+      <!-- Wide enough for YYYY-MM-DD plus the wpfui clear button that appears on focus (Width 120 clipped
+           the last digit while focused). -->
       <ui:TextBox Text="{Binding DateText, UpdateSourceTrigger=PropertyChanged}"
                   PlaceholderText="{DynamicResource moment.date_placeholder}"
-                  Width="120" FontFamily="{StaticResource FontFamilyMono}"
+                  Width="148" FontFamily="{StaticResource FontFamilyMono}"
                   VerticalAlignment="Center" />
 
       <ToggleButton x:Name="CalendarToggle" Content="📅"
