@@ -30,7 +30,7 @@ internal sealed record SessionPlan(string CorePath, PeReader.Machine Machine, St
             throw new InvalidOperationException($"cannot determine the bitness of '{targetPath}'");
         }
 
-        var corePath = CoreLocator.ForRepo(DevPaths.RepoRoot()).CoreForTarget(targetPath);
+        var corePath = AppPaths.SubstitutionCores.CoreForTarget(targetPath);
         var start = new StartCommand { Id = 1, Target = new TargetSpec { Path = targetPath }, Time = time };
         return new SessionPlan(corePath, machine, start, ChromiumTarget.IsChromium(targetPath));
     }

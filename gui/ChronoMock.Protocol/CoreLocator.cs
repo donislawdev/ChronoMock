@@ -34,4 +34,13 @@ public sealed class CoreLocator
         PeReader.Machine.X86 => Path.Combine(repoRoot, "target", "i686-pc-windows-msvc", "release", "chrono.exe"),
         _ => throw new InvalidOperationException($"unsupported bitness {machine}"),
     });
+
+    /// <summary>Portable-install factory (the shipped layout, Stage 5): the cores sit under
+    /// <paramref name="baseDir"/>/core/&lt;arch&gt;/, each beside its matching-bitness chrono_hook.dll.</summary>
+    public static CoreLocator ForPortable(string baseDir) => new(machine => machine switch
+    {
+        PeReader.Machine.X64 => Path.Combine(baseDir, "core", "x64", "chrono.exe"),
+        PeReader.Machine.X86 => Path.Combine(baseDir, "core", "x86", "chrono.exe"),
+        _ => throw new InvalidOperationException($"unsupported bitness {machine}"),
+    });
 }

@@ -42,6 +42,13 @@ public sealed class CalcClient
     public static CalcClient ForRepo(string repoRoot)
         => new(() => Path.Combine(repoRoot, "target", "release", "chrono.exe"), repoRoot);
 
+    /// <summary>Portable-install factory (the shipped layout, Stage 5): the x64 core at
+    /// <paramref name="baseDir"/>/core/x64/chrono.exe (calc is pure computation, bitness does not matter),
+    /// run from <paramref name="baseDir"/> so its root-level <c>calendars/</c> and <c>presets/</c> resolve
+    /// via the <c>./</c> lookup.</summary>
+    public static CalcClient ForPortable(string baseDir)
+        => new(() => Path.Combine(baseDir, "core", "x64", "chrono.exe"), baseDir);
+
     /// <summary>
     /// Evaluate a calc invocation. <paramref name="calcArgs"/> are the flags after <c>calc</c> (e.g.
     /// <c>--base</c>, <c>--shift</c>, <c>--calendar</c>, <c>--analyze</c>); <c>calc</c> and <c>--json</c>

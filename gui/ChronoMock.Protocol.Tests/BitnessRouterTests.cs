@@ -35,6 +35,22 @@ public class BitnessRouterTests
     }
 
     [Fact]
+    public void Portable_locator_routes_each_bitness_to_the_core_subdir()
+    {
+        // The shipped layout (Stage 5) puts the cores at <baseDir>/core/<arch>/chrono.exe. The base dir
+        // need not exist - we assert only the mapping - so the built cores serve purely as x86/x64 PE
+        // fixtures for the target-bitness read.
+        var repo = RepoPaths.RepoRoot();
+        var baseDir = Path.Combine(repo, "dist");
+        var locator = CoreLocator.ForPortable(baseDir);
+
+        Assert.Equal(
+            Path.Combine(baseDir, "core", "x86", "chrono.exe"), locator.CoreForTarget(RepoPaths.X86Core(repo)));
+        Assert.Equal(
+            Path.Combine(baseDir, "core", "x64", "chrono.exe"), locator.CoreForTarget(RepoPaths.X64Core(repo)));
+    }
+
+    [Fact]
     public void Non_pe_input_is_a_loud_error_not_a_guess()
     {
         var repo = RepoPaths.RepoRoot();

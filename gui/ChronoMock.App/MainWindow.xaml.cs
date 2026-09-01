@@ -13,13 +13,11 @@ public partial class MainWindow : FluentWindow
     private readonly SessionViewModel _session = new(FileSessionHistoryStore.ForApp());
     private readonly CalculatorViewModel _calculator = CreateCalculator();
 
-    // The calculator is a client of the same engine (ADR-6); it also reads the shared preset catalogue and
-    // the calendars from the repo checkout (dev scaffolding, like DevPaths - replaced by real paths later).
+    // The calculator is a client of the same engine (ADR-6); it reads the shared preset catalogue and the
+    // calendars from the portable install beside the exe, or from the cargo outputs in a dev checkout - the
+    // layout seam lives in AppPaths, not here.
     private static CalculatorViewModel CreateCalculator()
-    {
-        var repoRoot = DevPaths.RepoRoot();
-        return new CalculatorViewModel(CalcClient.ForRepo(repoRoot), System.IO.Path.Combine(repoRoot, "presets"));
-    }
+        => new(AppPaths.CalcClient, AppPaths.PresetsDir);
 
     public MainWindow()
     {
