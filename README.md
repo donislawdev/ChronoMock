@@ -105,6 +105,25 @@ Chrono Mock leaves nothing behind in your system - no persistent hooks, no regis
 
 ---
 
+## Antivirus and Microsoft Defender
+
+Chrono Mock shifts time by injecting a small library into the target process. That is a
+legitimate, documented Windows technique - and it is also one that malware uses, so
+antivirus software, Microsoft Defender included, may flag or quarantine the injected
+library or block the injection outright. This is a false positive triggered by the
+technique, not by anything the tool does to your machine.
+
+If a session fails to start and Defender reports a threat, add a Defender exclusion for
+the Chrono Mock folder (Windows Security, Virus and threat protection, Manage settings,
+Exclusions), or run it on a machine where you are permitted to do so. The tool is open
+source under GPL-3.0 - the injected library is `chrono_hook.dll`, built from the code in
+this repository, and you can rebuild it yourself.
+
+The Chromium / Electron mode does not inject at all. It launches the target with a debug
+port and a clean isolated profile (see the support matrix), so it is not affected by this.
+
+---
+
 ## Support matrix
 
 _Generated from the internal test suite on 2026-08-19 (x64 and x86)._
