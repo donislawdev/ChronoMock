@@ -17,6 +17,7 @@
         <ui:ControlsDictionary />
         <ResourceDictionary Source="Themes/Values.xaml" />
         <ResourceDictionary Source="Themes/Colours.xaml" />
+        <ResourceDictionary Source="Themes/Controls.xaml" />
       </ResourceDictionary.MergedDictionaries>
 
       <!-- App-wide so both the window and the clock tiles resolve it. Renders a translation key (as the

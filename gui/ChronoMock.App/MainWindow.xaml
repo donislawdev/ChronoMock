@@ -64,29 +64,32 @@
             <Button Margin="{StaticResource SpaceSm}" Content="{DynamicResource action.choose_target}" Click="OnChooseTargetClick" />
           </StackPanel>
 
+          <!-- Every item in this row is TOP-aligned so the inline validation message under the date field
+               grows downward without shifting the buttons or the zone (they stay level with the date box).
+               The labels take a top offset (LabelInlineMargin) so their text sits on the field text line. -->
           <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="{StaticResource SpaceXs}">
-            <TextBlock Text="{DynamicResource moment.label}" VerticalAlignment="Center"
+            <TextBlock Text="{DynamicResource moment.label}" VerticalAlignment="Top" Margin="{StaticResource LabelInlineMargin}"
                        FontSize="{StaticResource FontSizeBody}" Foreground="{DynamicResource BrushTextSecondary}" />
             <controls:MomentInput DataContext="{Binding Moment}"
                                   IsEnabled="{Binding DataContext.CanEditTime, RelativeSource={RelativeSource AncestorType={x:Type ui:FluentWindow}}}"
-                                  Margin="{StaticResource SpaceXs}" VerticalAlignment="Center" />
+                                  Margin="{StaticResource SpaceXs}" VerticalAlignment="Top" />
             <!-- Quick fills: Today (midnight) and Now, both computed in the SESSION zone (rule 2), never the
                  OS clock - the panel passes its selected zone's bias so the control stays zone-agnostic. -->
             <Button Content="{DynamicResource action.today}" Click="OnTodayClick"
-                    IsEnabled="{Binding CanEditTime}" Margin="{StaticResource SpaceXs}" VerticalAlignment="Center" />
+                    IsEnabled="{Binding CanEditTime}" Margin="{StaticResource SpaceXs}" VerticalAlignment="Top" />
             <Button Content="{DynamicResource action.now}" Click="OnNowClick"
-                    IsEnabled="{Binding CanEditTime}" Margin="{StaticResource SpaceXs}" VerticalAlignment="Center" />
+                    IsEnabled="{Binding CanEditTime}" Margin="{StaticResource SpaceXs}" VerticalAlignment="Top" />
             <!-- In-flight: jump the wall to the ABSOLUTE moment on the left (visible only while running).
                  Disabled for a malformed moment; the core validates deeper and reports a bad one without
                  ending the session (per-command error). -->
             <Button Content="{DynamicResource action.jump_to}" Click="OnJumpToClick"
-                    IsEnabled="{Binding Moment.IsValid}" VerticalAlignment="Center"
+                    IsEnabled="{Binding Moment.IsValid}" VerticalAlignment="Top" Margin="{StaticResource SpaceXs}"
                     Visibility="{Binding IsRunning, Converter={StaticResource BoolToVis}}" />
-            <TextBlock Text="{DynamicResource zone.label}" Margin="{StaticResource SpaceSm}" VerticalAlignment="Center"
+            <TextBlock Text="{DynamicResource zone.label}" Margin="{StaticResource LabelInlineMargin}" VerticalAlignment="Top"
                        FontSize="{StaticResource FontSizeBody}" Foreground="{DynamicResource BrushTextSecondary}" />
             <ComboBox ItemsSource="{Binding Zones}" SelectedItem="{Binding SelectedZone}" DisplayMemberPath="Label"
                       IsEnabled="{Binding IsIdle}"
-                      Margin="{StaticResource SpaceXs}" VerticalAlignment="Center" />
+                      Margin="{StaticResource SpaceXs}" VerticalAlignment="Top" />
           </StackPanel>
 
           <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="{StaticResource SpaceXs}">

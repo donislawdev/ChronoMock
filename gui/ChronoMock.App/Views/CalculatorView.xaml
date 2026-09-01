@@ -71,9 +71,11 @@
 
             <TextBlock Text="{DynamicResource calc.start_point}" Margin="{StaticResource SpaceXs}"
                        FontSize="{StaticResource FontSizeCaption}" Foreground="{DynamicResource BrushTextSecondary}" />
+            <!-- Top-aligned like the substitution At row: the Specific-date MomentInput's inline error grows
+                 downward without shifting the base-kind picker beside it. -->
             <StackPanel Orientation="Horizontal" Margin="{StaticResource SpaceXs}">
               <ComboBox ItemsSource="{Binding BaseKinds}" SelectedItem="{Binding SelectedBase}"
-                        ItemContainerStyle="{StaticResource LabelKeyComboItem}" MinWidth="140">
+                        ItemContainerStyle="{StaticResource LabelKeyComboItem}" MinWidth="140" VerticalAlignment="Top">
                 <ComboBox.ItemTemplate>
                   <DataTemplate>
                     <TextBlock Text="{Binding LabelKey, Converter={StaticResource KeyToText}}" />
@@ -84,7 +86,7 @@
                    the same control the substitution panel uses. Its DataContext is the base MomentField, so
                    Visibility binds to the view model through the CalculatorView, not the field. -->
               <controls:MomentInput DataContext="{Binding Base}"
-                                    Margin="{StaticResource SpaceSm}" VerticalAlignment="Center"
+                                    Margin="{StaticResource SpaceSm}" VerticalAlignment="Top"
                                     Visibility="{Binding DataContext.IsSpecificBase, RelativeSource={RelativeSource AncestorType={x:Type UserControl}}, Converter={StaticResource BoolToVis}}" />
             </StackPanel>
 

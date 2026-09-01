@@ -15,7 +15,7 @@
                   Width="148" FontFamily="{StaticResource FontFamilyMono}"
                   VerticalAlignment="Center" />
 
-      <ToggleButton x:Name="CalendarToggle" Content="📅"
+      <ToggleButton x:Name="CalendarToggle" Style="{StaticResource CalendarToggleStyle}"
                     Margin="{StaticResource SpaceXs}" VerticalAlignment="Center"
                     AutomationProperties.Name="{DynamicResource action.pick_date}" />
       <Popup IsOpen="{Binding IsChecked, ElementName=CalendarToggle}" StaysOpen="False"
