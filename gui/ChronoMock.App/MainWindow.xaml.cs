@@ -114,6 +114,15 @@ public partial class MainWindow : FluentWindow
     // In-flight jump to the ABSOLUTE moment currently in the At field (in the session zone).
     private void OnJumpToClick(object sender, RoutedEventArgs e) => _session.JumpToEnteredMoment();
 
+    // Quick-fill the At field with today (midnight) or now, in the SESSION zone (rule 2) - the selected
+    // zone's bias, not the OS local time. Works idle (sets the start moment) and while running (the user
+    // then presses Jump to).
+    private void OnTodayClick(object sender, RoutedEventArgs e)
+        => _session.Moment.SetToday(_session.SelectedZone.BiasMinutes);
+
+    private void OnNowClick(object sender, RoutedEventArgs e)
+        => _session.Moment.SetNow(_session.SelectedZone.BiasMinutes);
+
     // In-flight arbitrary speed: parse the custom-speed box (accepts "500" or "x500") and set it.
     private void OnSetSpeedClick(object sender, RoutedEventArgs e)
     {

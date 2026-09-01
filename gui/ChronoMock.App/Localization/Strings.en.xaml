@@ -24,6 +24,8 @@
   <sys:String x:Key="moment.date_invalid">That date does not exist.</sys:String>
   <sys:String x:Key="moment.time_format">Use HH:MM (24-hour).</sys:String>
   <sys:String x:Key="action.pick_date">Pick a date</sys:String>
+  <sys:String x:Key="action.today">Today</sys:String>
+  <sys:String x:Key="action.now">Now</sys:String>
   <sys:String x:Key="zone.label">Zone:</sys:String>
   <sys:String x:Key="mode.label">Mode:</sys:String>
   <sys:String x:Key="mode.flow">Flowing</sys:String>

@@ -83,6 +83,40 @@ public sealed class MomentField : ObservableObject
     public void LoadCanonical(string? canonical)
     {
         var (date, time) = MomentParse.Split(canonical);
+        Fill(date, time);
+    }
+
+    /// <summary>Fill the field with midnight today in the SESSION zone (a fixed offset, rule 2 - relative to
+    /// the session zone, never the OS clock's local time). The bias comes from the panel's selected zone.</summary>
+    public void SetToday(int biasMinutes) => SetToday(biasMinutes, DateTime.UtcNow);
+
+    /// <summary>Fill the field with the current wall time in the SESSION zone (rule 2). The bias comes from
+    /// the panel's selected zone; the OS locale never enters, so a Polish box and a US VM produce the same text.</summary>
+    public void SetNow(int biasMinutes) => SetNow(biasMinutes, DateTime.UtcNow);
+
+    // Testable cores: "now in the session zone" is UTC shifted by the zone offset (UTC = local + bias, so
+    // local = UTC - bias). InvariantCulture throughout, so the result never follows the OS date format. The
+    // injected clock keeps the tests deterministic across the midnight and second boundaries.
+    internal void SetToday(int biasMinutes, DateTime utcNow)
+    {
+        var local = utcNow.AddMinutes(-biasMinutes);
+        Fill(local.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture), string.Empty);
+    }
+
+    internal void SetNow(int biasMinutes, DateTime utcNow)
+    {
+        var local = utcNow.AddMinutes(-biasMinutes);
+        // Keep seconds only when non-zero, matching Split's tidy convention (a plain HH:mm most of the time).
+        var time = local.Second == 0
+            ? local.ToString("HH:mm", CultureInfo.InvariantCulture)
+            : local.ToString("HH:mm:ss", CultureInfo.InvariantCulture);
+        Fill(local.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture), time);
+    }
+
+    // Set both fields at once and recompute once, raising the two text properties so a bound control
+    // refreshes. Shared by LoadCanonical, SetToday and SetNow.
+    private void Fill(string date, string time)
+    {
         _dateText = date;
         _timeText = time;
         RaisePropertyChanged(nameof(DateText));

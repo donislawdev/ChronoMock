@@ -23,6 +23,8 @@
   <sys:String x:Key="moment.date_invalid">Taka data nie istnieje.</sys:String>
   <sys:String x:Key="moment.time_format">Użyj HH:MM (format 24h).</sys:String>
   <sys:String x:Key="action.pick_date">Wybierz datę</sys:String>
+  <sys:String x:Key="action.today">Dziś</sys:String>
+  <sys:String x:Key="action.now">Teraz</sys:String>
   <sys:String x:Key="zone.label">Strefa:</sys:String>
   <sys:String x:Key="mode.label">Tryb:</sys:String>
   <sys:String x:Key="mode.flow">Płynący</sys:String>

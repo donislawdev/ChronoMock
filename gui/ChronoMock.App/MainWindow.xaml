@@ -70,6 +70,12 @@
             <controls:MomentInput DataContext="{Binding Moment}"
                                   IsEnabled="{Binding DataContext.CanEditTime, RelativeSource={RelativeSource AncestorType={x:Type ui:FluentWindow}}}"
                                   Margin="{StaticResource SpaceXs}" VerticalAlignment="Center" />
+            <!-- Quick fills: Today (midnight) and Now, both computed in the SESSION zone (rule 2), never the
+                 OS clock - the panel passes its selected zone's bias so the control stays zone-agnostic. -->
+            <Button Content="{DynamicResource action.today}" Click="OnTodayClick"
+                    IsEnabled="{Binding CanEditTime}" Margin="{StaticResource SpaceXs}" VerticalAlignment="Center" />
+            <Button Content="{DynamicResource action.now}" Click="OnNowClick"
+                    IsEnabled="{Binding CanEditTime}" Margin="{StaticResource SpaceXs}" VerticalAlignment="Center" />
             <!-- In-flight: jump the wall to the ABSOLUTE moment on the left (visible only while running).
                  Disabled for a malformed moment; the core validates deeper and reports a bad one without
                  ending the session (per-command error). -->
