@@ -95,6 +95,18 @@
   <sys:String x:Key="verdict.fails.meaning">Podmiana nie objęła kluczowych kanałów - sesja odrzucona jako niewiarygodna.</sys:String>
   <sys:String x:Key="verdict.undetermined.meaning">Nie dało się ustalić pokrycia - traktowane jako niepotwierdzone, nigdy jako działające.</sys:String>
 
+  <!-- Klucze powodów werdyktu emitowane przez rdzeń (VerdictEvent / SessionVerdict reason_key), pokazywane
+       przy werdykcie innym niż działa. Warianty rodziny (session.family_*) lustrzą per-procesowe i są
+       emitowane dla agregatu rodziny na końcu. Brzmienie lustrzy raport CLI (describe_reason). RELEASE-002. -->
+  <sys:String x:Key="coverage.time_channels_covered">Każdy proces, który odczytał czas, widział zegar sesji.</sys:String>
+  <sys:String x:Key="coverage.time_channels_partial">Część kanałów czasu objęto, część odpytano ale nie objęto.</sys:String>
+  <sys:String x:Key="coverage.time_channels_uncovered">Czas był odpytywany, ale nie objęto żadnego kanału.</sys:String>
+  <sys:String x:Key="coverage.undetermined">Żaden proces nie odczytał objętego kanału czasu.</sys:String>
+  <sys:String x:Key="session.family_covered">Każdy proces, który odczytał czas, widział zegar sesji.</sys:String>
+  <sys:String x:Key="session.family_partial">Część kanałów czasu objęto, część odpytano ale nie objęto.</sys:String>
+  <sys:String x:Key="session.family_uncovered">Czas był odpytywany, ale nie objęto żadnego kanału.</sys:String>
+  <sys:String x:Key="session.family_undetermined">Żaden proces nie odczytał objętego kanału czasu.</sys:String>
+
   <!-- Pokrycie / podgląd audytu (chrono-mock 7.2). Nazwy kanałów to surowe identyfikatory API, nietłumaczone. -->
   <sys:String x:Key="coverage.covered">Objęte kanały</sys:String>
   <sys:String x:Key="coverage.observed">Obserwowane (podpięte, pozostawione realne)</sys:String>
@@ -102,6 +114,15 @@
   <sys:String x:Key="coverage.warnings">Ostrzeżenia</sys:String>
   <sys:String x:Key="coverage.family_note">Sesja rodziny - pokazano pokrycie procesu rodzica.</sys:String>
   <sys:String x:Key="coverage.contexts_note">Sesja Chromium - pokazano każdy kontekst JS (stronę i workery), nigdy sumowane.</sys:String>
+
+  <!-- Klucze ostrzeżeń pokrycia emitowane przez rdzeń (CoverageEvent warning_keys) oraz powód zniknięcia
+       (VanishedEvent reason_key, pokazywany w report.vanish_detail). Brzmienie lustrzy raport CLI
+       (describe_warning). Ostrzeżenia Chromium (CDP) są w sekcji niżej. RELEASE-002. -->
+  <sys:String x:Key="source.network_at_start">Cel otworzył połączenie sieciowe - może czytać czas z serwera, którego żaden lokalny hak nie obejmie.</sys:String>
+  <sys:String x:Key="wait.object_waits_not_scaled">Oczekiwania na obiekty są podpięte, ale pozostawione realne - limit czasu I/O lub sprzętu nie jest skracany.</sys:String>
+  <sys:String x:Key="timer.multimedia_not_scaled">Timer multimedialny (timeSetEvent) jest obserwowany, ale nie skalowany.</sys:String>
+  <sys:String x:Key="inheritance.ntcreateuserprocess_child_maybe_uncovered">Dziecko utworzone bezpośrednio przez NtCreateUserProcess może nie być objęte.</sys:String>
+  <sys:String x:Key="target.single_instance_suspected">zakończył się zaraz po injekcji, zanim podmianę dało się potwierdzić</sys:String>
 
   <!-- Tryb Chromium/Electron (CDP), ADR-8/ADR-9: powody werdyktu i ostrzeżenia z rdzenia CDP. Jednostką
        pokrycia jest kontekst JS, nie proces systemowy. -->

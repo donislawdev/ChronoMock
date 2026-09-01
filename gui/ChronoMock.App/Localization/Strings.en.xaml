@@ -96,6 +96,18 @@
   <sys:String x:Key="verdict.fails.meaning">The swap did not cover the key channels - the session was refused as unreliable.</sys:String>
   <sys:String x:Key="verdict.undetermined.meaning">Coverage could not be determined - treated as unproven, never as working.</sys:String>
 
+  <!-- Verdict reason keys the core sends over the wire (VerdictEvent / SessionVerdict reason_key), shown
+       under a non-works verdict. The family variants (session.family_*) mirror the per-process ones and are
+       emitted for the family aggregate at end. Wording mirrors the CLI report (describe_reason). RELEASE-002. -->
+  <sys:String x:Key="coverage.time_channels_covered">Every process that read time saw the session clock.</sys:String>
+  <sys:String x:Key="coverage.time_channels_partial">Some time channels were covered, some were queried but not covered.</sys:String>
+  <sys:String x:Key="coverage.time_channels_uncovered">Time was queried but no channel was covered.</sys:String>
+  <sys:String x:Key="coverage.undetermined">No process read a covered time channel.</sys:String>
+  <sys:String x:Key="session.family_covered">Every process that read time saw the session clock.</sys:String>
+  <sys:String x:Key="session.family_partial">Some time channels were covered, some were queried but not covered.</sys:String>
+  <sys:String x:Key="session.family_uncovered">Time was queried but no channel was covered.</sys:String>
+  <sys:String x:Key="session.family_undetermined">No process read a covered time channel.</sys:String>
+
   <!-- Coverage / audit preview (chrono-mock 7.2). Channel names are raw API identifiers, not translated. -->
   <sys:String x:Key="coverage.covered">Covered channels</sys:String>
   <sys:String x:Key="coverage.observed">Observed (hooked, left real)</sys:String>
@@ -103,6 +115,15 @@
   <sys:String x:Key="coverage.warnings">Warnings</sys:String>
   <sys:String x:Key="coverage.family_note">Family session - showing the parent process coverage.</sys:String>
   <sys:String x:Key="coverage.contexts_note">Chromium session - showing every JS context (page and workers), never summed.</sys:String>
+
+  <!-- Coverage warning keys the core raises (CoverageEvent warning_keys), and the vanish reason
+       (VanishedEvent reason_key, shown inside report.vanish_detail). Wording mirrors the CLI report
+       (describe_warning). The Chromium (CDP) warnings live in the section below. RELEASE-002. -->
+  <sys:String x:Key="source.network_at_start">The target opened a network connection - it may read time from a server, which no local hook can cover.</sys:String>
+  <sys:String x:Key="wait.object_waits_not_scaled">Object waits are hooked but left real - an I/O or hardware timeout is not shortened.</sys:String>
+  <sys:String x:Key="timer.multimedia_not_scaled">The multimedia timer (timeSetEvent) is observed but not scaled.</sys:String>
+  <sys:String x:Key="inheritance.ntcreateuserprocess_child_maybe_uncovered">A child spawned directly via NtCreateUserProcess may not be covered.</sys:String>
+  <sys:String x:Key="target.single_instance_suspected">exited right after injection, before the swap could be confirmed</sys:String>
 
   <!-- Chromium/Electron (CDP) mode, ADR-8/ADR-9: verdict reasons and warnings the CDP core emits. The
        coverage unit is a JS context, not an OS process. -->
