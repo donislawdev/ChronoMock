@@ -6,7 +6,10 @@
       <stop offset="100%" stop-color="#6E1414"/>
     </radialGradient>
   </defs>
-  <g>
+  <!-- Scale the bean up around its own centre (bbox ~ x[88,206] y[44,212], centre 147,128) so it fills the
+       icon canvas instead of floating small in the middle - it was ~44% wide / ~64% tall, which read as a
+       tiny icon next to others in the taskbar and Explorer. -->
+  <g transform="translate(128,128) scale(1.38) translate(-147,-128)">
     <path d="
       M 140 46
       C 178 48, 204 82, 202 128
