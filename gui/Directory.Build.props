@@ -13,5 +13,16 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
     <NeutralLanguage>en</NeutralLanguage>
+    <!-- Product identity and version for every gui/ assembly (shows in the exe's Details tab).
+         Single source for the GUI stack. The version WILL change across releases - bump it here
+         (and the Rust workspace version in the root Cargo.toml, which drives the CLI exe). The
+         assistant does not bump it on its own (untouchable rule 18). -->
+    <Version>0.1.0</Version>
+    <Company>DonislawDev</Company>
+    <Authors>DonislawDev</Authors>
+    <Product>Chrono Mock</Product>
+    <Copyright>Copyright (C) 2026 DonislawDev. Licensed under GPL-3.0-only.</Copyright>
+    <!-- Keep ProductVersion a clean "0.1.0" - do not append the git commit hash to it. -->
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
   </PropertyGroup>
 </Project>

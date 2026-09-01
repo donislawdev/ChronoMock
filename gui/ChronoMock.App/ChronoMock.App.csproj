@@ -24,6 +24,10 @@
     <!-- The application (assembly) icon - the shared red kidney-bean branding. WPF also uses it as
          the default window icon (title bar and taskbar) when Window.Icon is not set. -->
     <ApplicationIcon>..\..\assets\chrono.ico</ApplicationIcon>
+    <!-- FileDescription for ChronoMock.exe (Explorer and Task Manager) comes from AssemblyTitle,
+         not Description (which maps to the version resource's Comments field). -->
+    <AssemblyTitle>Chrono Mock</AssemblyTitle>
+    <Description>Chrono Mock - run a Windows app at a fake date, accelerate time, and calculate test dates.</Description>
   </PropertyGroup>
 
   <ItemGroup>

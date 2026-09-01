@@ -18,5 +18,16 @@ fn main() {
 
     let mut res = winresource::WindowsResource::new();
     res.set_icon(icon.to_str().expect("icon path is valid UTF-8"));
-    res.compile().expect("embed the application icon into chrono.exe");
+
+    // Version-resource strings (the exe's Details tab in Explorer, and Task Manager). The version
+    // numbers come from CARGO_PKG_VERSION, which winresource reads by default - it tracks the
+    // workspace version in the root Cargo.toml, so a release bump there flows through with no edit
+    // here. Only the identity strings, which have no Cargo equivalent, are set explicitly.
+    res.set("ProductName", "Chrono Mock");
+    res.set("FileDescription", "Chrono Mock CLI - fake-date app runner and test-date calculator");
+    res.set("CompanyName", "DonislawDev");
+    res.set("LegalCopyright", "Copyright (C) 2026 DonislawDev. Licensed under GPL-3.0-only.");
+    res.set("OriginalFilename", "chrono.exe");
+
+    res.compile().expect("embed the application icon and version resource into chrono.exe");
 }
