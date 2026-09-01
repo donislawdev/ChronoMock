@@ -73,7 +73,8 @@
                        FontSize="{StaticResource FontSizeCaption}" Foreground="{DynamicResource BrushTextSecondary}" />
             <StackPanel Orientation="Horizontal" Margin="{StaticResource SpaceXs}">
               <ComboBox ItemsSource="{Binding BaseKinds}" SelectedItem="{Binding SelectedBase}"
-                        ItemContainerStyle="{StaticResource LabelKeyComboItem}" MinWidth="140" VerticalAlignment="Center">
+                        ItemContainerStyle="{StaticResource LabelKeyComboItem}" MinWidth="140" VerticalAlignment="Center"
+                        ToolTip="{DynamicResource tip.base_kind}">
                 <ComboBox.ItemTemplate>
                   <DataTemplate>
                     <TextBlock Text="{Binding LabelKey, Converter={StaticResource KeyToText}}" />
@@ -191,6 +192,7 @@
               </ItemsControl.ItemTemplate>
             </ItemsControl>
             <Button Content="{DynamicResource calc.add_step}" Click="OnAddStepClick"
+                    ToolTip="{DynamicResource tip.add_step}"
                     Margin="{StaticResource SpaceXs}" HorizontalAlignment="Left" />
 
             <StackPanel Orientation="Horizontal" Margin="{StaticResource SpaceMd}">
@@ -198,7 +200,7 @@
                          FontSize="{StaticResource FontSizeCaption}"
                          Foreground="{DynamicResource BrushTextSecondary}" />
               <ComboBox ItemsSource="{Binding Calendars}" SelectedItem="{Binding SelectedCalendar}"
-                        ItemContainerStyle="{StaticResource LabelKeyComboItem}"
+                        ItemContainerStyle="{StaticResource LabelKeyComboItem}" ToolTip="{DynamicResource tip.calc_calendar}"
                         Margin="{StaticResource SpaceSm}" VerticalAlignment="Center" MinWidth="140">
                 <ComboBox.ItemTemplate>
                   <DataTemplate>
@@ -340,6 +342,7 @@
             <ui:TextBox Margin="{StaticResource SpaceXs}" FontFamily="{StaticResource FontFamilyMono}"
                         Text="{Binding CustomFormatMask, UpdateSourceTrigger=LostFocus}"
                         PlaceholderText="{DynamicResource calc.custom_format_hint}"
+                        ToolTip="{DynamicResource tip.custom_format}"
                         AutomationProperties.Name="{DynamicResource calc.custom_format}" />
             <Grid Margin="{StaticResource SpaceXs}"
                   Visibility="{Binding HasCustomFormat, Converter={StaticResource BoolToVis}}">
@@ -362,6 +365,7 @@
 
             <Button Content="{DynamicResource calc.use_in_substitution}" Margin="{StaticResource SpaceMd}"
                     HorizontalAlignment="Stretch" Click="OnUseInSubstitutionClick"
+                    ToolTip="{DynamicResource tip.use_in_substitution}"
                     IsEnabled="{Binding CanUseInSubstitution}" />
           </StackPanel>
         </Border>
@@ -378,7 +382,7 @@
                    Foreground="{DynamicResource BrushTextSecondary}" Margin="{StaticResource SpaceXs}" />
         <StackPanel Orientation="Horizontal" Margin="{StaticResource SpaceXs}">
           <TextBox Text="{Binding AnalyzeText, UpdateSourceTrigger=LostFocus}" Width="160" VerticalAlignment="Center"
-                   FontFamily="{StaticResource FontFamilyMono}"
+                   FontFamily="{StaticResource FontFamilyMono}" ToolTip="{DynamicResource tip.analyze}"
                    AutomationProperties.Name="{DynamicResource calc.reverse_header}" />
           <TextBlock Text="{DynamicResource calc.analyze_ambiguous}" VerticalAlignment="Center" Margin="{StaticResource SpaceSm}"
                      FontSize="{StaticResource FontSizeCaption}" Foreground="{DynamicResource BrushStatusPartial}"

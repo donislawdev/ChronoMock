@@ -61,7 +61,8 @@
                        FontSize="{StaticResource FontSizeBody}" Foreground="{DynamicResource BrushTextSecondary}" />
             <TextBlock Text="{Binding TargetName}" Margin="{StaticResource SpaceXs}" VerticalAlignment="Center"
                        FontSize="{StaticResource FontSizeBody}" Foreground="{DynamicResource BrushTextPrimary}" />
-            <Button Margin="{StaticResource SpaceSm}" Content="{DynamicResource action.choose_target}" Click="OnChooseTargetClick" />
+            <Button Margin="{StaticResource SpaceSm}" Content="{DynamicResource action.choose_target}"
+                    ToolTip="{DynamicResource tip.choose_target}" Click="OnChooseTargetClick" />
           </StackPanel>
 
           <!-- One centred line: At label, the date/calendar/time input, the Today/Now quick fills, the
@@ -76,19 +77,22 @@
             <!-- Quick fills: Today (midnight) and Now, both computed in the SESSION zone (rule 2), never the
                  OS clock - the panel passes its selected zone's bias so the control stays zone-agnostic. -->
             <Button Content="{DynamicResource action.today}" Click="OnTodayClick"
+                    ToolTip="{DynamicResource tip.today}"
                     IsEnabled="{Binding CanEditTime}" Margin="{StaticResource SpaceXs}" VerticalAlignment="Center" />
             <Button Content="{DynamicResource action.now}" Click="OnNowClick"
+                    ToolTip="{DynamicResource tip.now}"
                     IsEnabled="{Binding CanEditTime}" Margin="{StaticResource SpaceXs}" VerticalAlignment="Center" />
             <!-- In-flight: jump the wall to the ABSOLUTE moment on the left (visible only while running).
                  Disabled for a malformed moment; the core validates deeper and reports a bad one without
                  ending the session (per-command error). -->
             <Button Content="{DynamicResource action.jump_to}" Click="OnJumpToClick"
+                    ToolTip="{DynamicResource tip.jump_to}"
                     IsEnabled="{Binding Moment.IsValid}" VerticalAlignment="Center" Margin="{StaticResource SpaceXs}"
                     Visibility="{Binding IsRunning, Converter={StaticResource BoolToVis}}" />
             <TextBlock Text="{DynamicResource zone.label}" Margin="{StaticResource SpaceSm}" VerticalAlignment="Center"
                        FontSize="{StaticResource FontSizeBody}" Foreground="{DynamicResource BrushTextSecondary}" />
             <ComboBox ItemsSource="{Binding Zones}" SelectedItem="{Binding SelectedZone}" DisplayMemberPath="Label"
-                      IsEnabled="{Binding IsIdle}"
+                      IsEnabled="{Binding IsIdle}" ToolTip="{DynamicResource tip.zone}"
                       Margin="{StaticResource SpaceXs}" VerticalAlignment="Center" />
           </StackPanel>
           <!-- Validation message BELOW the whole At row: centred, in the partial-status colour, meaning in
@@ -104,7 +108,7 @@
                        FontSize="{StaticResource FontSizeBody}" Foreground="{DynamicResource BrushTextSecondary}" />
             <ComboBox x:Name="ModeBox" ItemsSource="{Binding Modes}" SelectedItem="{Binding SelectedMode}"
                       ItemContainerStyle="{StaticResource LabelKeyComboItem}"
-                      IsEnabled="{Binding CanEditTime}"
+                      IsEnabled="{Binding CanEditTime}" ToolTip="{DynamicResource tip.mode}"
                       Margin="{StaticResource SpaceXs}" VerticalAlignment="Center">
               <ComboBox.ItemTemplate>
                 <DataTemplate>
@@ -118,14 +122,15 @@
                inside the target runs N times faster, not just the wall clock. Maps to wire scale_duration. -->
           <CheckBox Content="{DynamicResource mode.scale_duration}"
                     IsChecked="{Binding ScaleDuration}"
-                    IsEnabled="{Binding IsIdle}"
+                    IsEnabled="{Binding IsIdle}" ToolTip="{DynamicResource tip.scale_duration}"
                     HorizontalAlignment="Center" Margin="{StaticResource SpaceXs}"
                     FontSize="{StaticResource FontSizeBody}" Foreground="{DynamicResource BrushTextSecondary}" />
 
         </StackPanel>
 
         <Button Grid.Row="1" Margin="{StaticResource SpaceSm}" HorizontalAlignment="Center"
-                Content="{DynamicResource action.start}" IsEnabled="{Binding CanStart}" Click="OnStartClick" />
+                Content="{DynamicResource action.start}" IsEnabled="{Binding CanStart}" Click="OnStartClick"
+                ToolTip="{DynamicResource tip.start}" ToolTipService.ShowOnDisabled="True" />
 
         <!-- The two clocks: fake and real, each from the same tile template, each with its explicit zone. -->
         <Grid Grid.Row="2" VerticalAlignment="Center">
@@ -259,12 +264,14 @@
             <Button Content="{DynamicResource mode.x10}" Tag="10" Margin="{StaticResource SpaceXs}" Click="OnSpeedClick" />
             <Button Content="{DynamicResource mode.x60}" Tag="60" Margin="{StaticResource SpaceXs}" Click="OnSpeedClick" />
             <Button Content="{DynamicResource mode.x1440}" Tag="1440" Margin="{StaticResource SpaceXs}" Click="OnSpeedClick" />
-            <Button Content="{DynamicResource action.freeze}" Tag="0" Margin="{StaticResource SpaceSm}" Click="OnSpeedClick" />
+            <Button Content="{DynamicResource action.freeze}" Tag="0" Margin="{StaticResource SpaceSm}"
+                    ToolTip="{DynamicResource tip.freeze}" Click="OnSpeedClick" />
             <!-- Arbitrary speed: type any N and Set (the preset buttons and the Mode dropdown cover the
                  common ones; this is for a value like x500). -->
             <TextBox x:Name="CustomSpeedBox" Width="56" Margin="{StaticResource SpaceSm}" VerticalAlignment="Center"
                      FontSize="{StaticResource FontSizeBody}" />
-            <Button Content="{DynamicResource action.set_speed}" Click="OnSetSpeedClick" VerticalAlignment="Center" />
+            <Button Content="{DynamicResource action.set_speed}" Click="OnSetSpeedClick" VerticalAlignment="Center"
+                    ToolTip="{DynamicResource tip.set_speed}" />
           </StackPanel>
           <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="{StaticResource SpaceXs}">
             <Button Content="{DynamicResource jump.minus_day}" Tag="-1d" Margin="{StaticResource SpaceXs}" Click="OnJumpClick" />
@@ -276,7 +283,8 @@
                (zasady/13 9). It ends the core cleanly (or kills a hung one), the hook self-detaches, and the
                target returns to real time - the app under test is never killed. -->
           <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="{StaticResource SpaceXs}">
-            <Button Content="{DynamicResource control.stop}" Margin="{StaticResource SpaceXs}" Click="OnStopClick" />
+            <Button Content="{DynamicResource control.stop}" Margin="{StaticResource SpaceXs}"
+                    ToolTip="{DynamicResource tip.stop}" Click="OnStopClick" />
           </StackPanel>
         </StackPanel>
 
@@ -287,6 +295,7 @@
           <Button Content="{DynamicResource action.copy_summary}"
                   Margin="{StaticResource SpaceXs}"
                   HorizontalAlignment="Center"
+                  ToolTip="{DynamicResource tip.copy_summary}"
                   Visibility="{Binding CanCopySummary, Converter={StaticResource BoolToVis}}"
                   Click="OnCopySummaryClick" />
           <TextBlock Text="{Binding CopyFeedbackKey, Converter={StaticResource KeyToText}}"

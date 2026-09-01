@@ -92,4 +92,24 @@
     </Setter>
   </Style>
 
+  <!-- Tooltip: dark surface, readable text, wrapped - the default WPF tooltip is a light-yellow box that
+       is jarring and low-contrast on the dark base. Content is a translation key's text (rule 15). -->
+  <Style TargetType="ToolTip">
+    <Setter Property="Foreground" Value="{DynamicResource BrushTextPrimary}" />
+    <Setter Property="Background" Value="{DynamicResource BrushBgSurfaceAlt}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource BrushStroke}" />
+    <Setter Property="MaxWidth" Value="320" />
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="ToolTip">
+          <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                  BorderThickness="1" CornerRadius="4" Padding="10,6" SnapsToDevicePixels="True">
+            <TextBlock Text="{TemplateBinding Content}" TextWrapping="Wrap"
+                       Foreground="{TemplateBinding Foreground}" FontSize="{DynamicResource FontSizeCaption}" />
+          </Border>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+
 </ResourceDictionary>

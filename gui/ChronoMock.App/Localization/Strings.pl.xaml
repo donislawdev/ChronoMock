@@ -208,4 +208,26 @@
   <sys:String x:Key="calc.sig.public_holiday">Święto</sys:String>
   <sys:String x:Key="calc.sig.observed_holiday">Obchodzone święto - dzień wolny przesunięty z weekendowego święta</sys:String>
 
+  <!-- Podpowiedzi (pomoc po najechaniu). Klucze, nie literały (reguła 15); w języku interfejsu. -->
+  <sys:String x:Key="tip.choose_target">Wybierz aplikację do uruchomienia z podmienionym zegarem.</sys:String>
+  <sys:String x:Key="tip.date_field">Wpisz datę jako YYYY-MM-DD albo wybierz z kalendarza.</sys:String>
+  <sys:String x:Key="tip.time_field">Godzina jako HH:MM (24h). Pusto oznacza północ.</sys:String>
+  <sys:String x:Key="tip.today">Wstaw dzisiejszą datę (strefa sesji), o północy.</sys:String>
+  <sys:String x:Key="tip.now">Wstaw bieżącą datę i godzinę (strefa sesji).</sys:String>
+  <sys:String x:Key="tip.zone">Strefa czasowa sesji - stały offset bez zmiany czasu. Moment jest w niej liczony.</sys:String>
+  <sys:String x:Key="tip.mode">Jak szybko idzie podmieniony zegar: płynnie, zamrożony, albo N razy szybciej.</sys:String>
+  <sys:String x:Key="tip.scale_duration">Przyśpiesz też liczniki, uśpienia i odliczania w aplikacji - nie tylko zegar ścienny.</sys:String>
+  <sys:String x:Key="tip.start">Uruchom cel z podmienionym zegarem. Wymaga celu i poprawnego momentu.</sys:String>
+  <sys:String x:Key="tip.jump_to">W trakcie sesji: przeskocz podmieniony zegar do momentu po lewej.</sys:String>
+  <sys:String x:Key="tip.freeze">Zamroź podmieniony zegar, by przestał iść.</sys:String>
+  <sys:String x:Key="tip.set_speed">Ustaw dowolną prędkość, np. 500.</sys:String>
+  <sys:String x:Key="tip.stop">Zatrzymaj sesję. Aplikacja wraca do prawdziwego czasu - nie jest zamykana.</sys:String>
+  <sys:String x:Key="tip.copy_summary">Skopiuj gotowe podsumowanie sesji do zgłoszenia.</sys:String>
+  <sys:String x:Key="tip.base_kind">Od czego zaczyna się obliczenie: dziś, teraz, albo konkretna data.</sys:String>
+  <sys:String x:Key="tip.add_step">Dodaj krok: przesuń, przyciągnij, najbliższy dzień roboczy, ustaw czas, zmień strefę.</sys:String>
+  <sys:String x:Key="tip.calc_calendar">Kalendarz świąt i dni roboczych używany przez kroki dni roboczych i najbliższy.</sys:String>
+  <sys:String x:Key="tip.custom_format">Sformatuj wynik własną maską (tokeny .NET/Java).</sys:String>
+  <sys:String x:Key="tip.analyze">Wklej datę, by zobaczyć jak się czyta - obie interpretacje, gdy niejednoznaczna.</sys:String>
+  <sys:String x:Key="tip.use_in_substitution">Wyślij ten moment do panelu podmiany.</sys:String>
+
 </ResourceDictionary>

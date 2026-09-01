@@ -13,11 +13,13 @@
          the last digit while focused). -->
     <ui:TextBox Text="{Binding DateText, UpdateSourceTrigger=PropertyChanged}"
                 PlaceholderText="{DynamicResource moment.date_placeholder}"
+                ToolTip="{DynamicResource tip.date_field}"
                 Width="148" FontFamily="{StaticResource FontFamilyMono}"
                 VerticalAlignment="Center" />
 
     <ToggleButton x:Name="CalendarToggle" Style="{StaticResource CalendarToggleStyle}"
                   Margin="{StaticResource SpaceXs}" VerticalAlignment="Center"
+                  ToolTip="{DynamicResource action.pick_date}"
                   AutomationProperties.Name="{DynamicResource action.pick_date}" />
     <Popup IsOpen="{Binding IsChecked, ElementName=CalendarToggle}" StaysOpen="False"
            PlacementTarget="{Binding ElementName=CalendarToggle}" Placement="Bottom" AllowsTransparency="True">
@@ -29,6 +31,7 @@
 
     <ui:TextBox Text="{Binding TimeText, UpdateSourceTrigger=PropertyChanged}"
                 PlaceholderText="{DynamicResource moment.time_placeholder}"
+                ToolTip="{DynamicResource tip.time_field}"
                 Width="84" FontFamily="{StaticResource FontFamilyMono}"
                 Margin="{StaticResource SpaceXs}" VerticalAlignment="Center" />
   </StackPanel>

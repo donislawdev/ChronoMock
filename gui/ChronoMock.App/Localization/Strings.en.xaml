@@ -209,4 +209,26 @@
   <sys:String x:Key="calc.sig.public_holiday">Public holiday</sys:String>
   <sys:String x:Key="calc.sig.observed_holiday">Observed public holiday - a day off shifted from a weekend holiday</sys:String>
 
+  <!-- Tooltips (hover help). Keys, not literals (rule 15); shown in the current language. -->
+  <sys:String x:Key="tip.choose_target">Pick the application to run under the fake clock.</sys:String>
+  <sys:String x:Key="tip.date_field">Type the date as YYYY-MM-DD, or pick it from the calendar.</sys:String>
+  <sys:String x:Key="tip.time_field">Time as HH:MM (24-hour). Empty means midnight.</sys:String>
+  <sys:String x:Key="tip.today">Fill in today's date (session zone), at midnight.</sys:String>
+  <sys:String x:Key="tip.now">Fill in the current date and time (session zone).</sys:String>
+  <sys:String x:Key="tip.zone">The session time zone - a fixed offset with no daylight saving. The moment is read in it.</sys:String>
+  <sys:String x:Key="tip.mode">How fast the fake clock runs: flowing at real speed, frozen, or N times faster.</sys:String>
+  <sys:String x:Key="tip.scale_duration">Also speed up timers, sleeps and countdowns inside the app - not just the wall clock.</sys:String>
+  <sys:String x:Key="tip.start">Launch the target under the fake clock. Needs a target and a valid moment.</sys:String>
+  <sys:String x:Key="tip.jump_to">While running: jump the fake clock to the moment on the left.</sys:String>
+  <sys:String x:Key="tip.freeze">Freeze the fake clock so it stops advancing.</sys:String>
+  <sys:String x:Key="tip.set_speed">Set any custom speed, e.g. 500.</sys:String>
+  <sys:String x:Key="tip.stop">Stop the session. The app returns to real time - it is not closed.</sys:String>
+  <sys:String x:Key="tip.copy_summary">Copy a paste-ready session summary for a ticket.</sys:String>
+  <sys:String x:Key="tip.base_kind">Where the calculation starts: today, now, or a specific date.</sys:String>
+  <sys:String x:Key="tip.add_step">Add a step: shift, snap, nearest business day, set time, or change zone.</sys:String>
+  <sys:String x:Key="tip.calc_calendar">The holiday and business-day calendar used by business-day and nearest steps.</sys:String>
+  <sys:String x:Key="tip.custom_format">Render the result with your own format mask (.NET/Java tokens).</sys:String>
+  <sys:String x:Key="tip.analyze">Paste a date to see how it reads - both interpretations when it is ambiguous.</sys:String>
+  <sys:String x:Key="tip.use_in_substitution">Send this moment to the substitution panel.</sys:String>
+
 </ResourceDictionary>
