@@ -14,6 +14,10 @@
     <IsPackable>false</IsPackable>
     <!-- AnyCPU is deliberate: the GUI launches the right-bitness core, it never matches the target itself. -->
     <Platforms>AnyCPU</Platforms>
+    <!-- The shipped launcher is ChronoMock.exe, not ChronoMock.App.exe (Stage 5). RootNamespace stays
+         ChronoMock.App (the project-name default is unaffected by AssemblyName), so no code moves. -->
+    <AssemblyName>ChronoMock</AssemblyName>
+    <RootNamespace>ChronoMock.App</RootNamespace>
   </PropertyGroup>
 
   <ItemGroup>

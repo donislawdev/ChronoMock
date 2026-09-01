@@ -13,6 +13,8 @@
 # Rust
 /target/
 **/*.rs.bk
+# Assembled portable distribution (packaging/build-dist.ps1)
+/dist/
 # .NET
 [Bb]in/
 [Oo]bj/
