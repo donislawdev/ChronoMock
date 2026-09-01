@@ -17,7 +17,13 @@
 
   <!-- Time inputs (chrono-mock 7.1). The moment is the local time in the session zone (rule 2). -->
   <sys:String x:Key="moment.label">At:</sys:String>
-  <sys:String x:Key="moment.invalid">Enter a moment like 2038-01-19T03:14:07 (date and time).</sys:String>
+  <sys:String x:Key="moment.date_placeholder">YYYY-MM-DD</sys:String>
+  <sys:String x:Key="moment.time_placeholder">HH:MM</sys:String>
+  <sys:String x:Key="moment.date_empty">Enter a date.</sys:String>
+  <sys:String x:Key="moment.date_format">Use the form YYYY-MM-DD.</sys:String>
+  <sys:String x:Key="moment.date_invalid">That date does not exist.</sys:String>
+  <sys:String x:Key="moment.time_format">Use HH:MM (24-hour).</sys:String>
+  <sys:String x:Key="action.pick_date">Pick a date</sys:String>
   <sys:String x:Key="zone.label">Zone:</sys:String>
   <sys:String x:Key="mode.label">Mode:</sys:String>
   <sys:String x:Key="mode.flow">Flowing</sys:String>

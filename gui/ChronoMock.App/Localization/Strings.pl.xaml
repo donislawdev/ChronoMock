@@ -16,7 +16,13 @@
 
   <!-- Wejścia czasu (chrono-mock 7.1). Moment to czas lokalny w strefie sesji (reguła 2). -->
   <sys:String x:Key="moment.label">Moment:</sys:String>
-  <sys:String x:Key="moment.invalid">Wpisz moment w formie 2038-01-19T03:14:07 (data i godzina).</sys:String>
+  <sys:String x:Key="moment.date_placeholder">YYYY-MM-DD</sys:String>
+  <sys:String x:Key="moment.time_placeholder">HH:MM</sys:String>
+  <sys:String x:Key="moment.date_empty">Podaj datę.</sys:String>
+  <sys:String x:Key="moment.date_format">Użyj formatu YYYY-MM-DD.</sys:String>
+  <sys:String x:Key="moment.date_invalid">Taka data nie istnieje.</sys:String>
+  <sys:String x:Key="moment.time_format">Użyj HH:MM (format 24h).</sys:String>
+  <sys:String x:Key="action.pick_date">Wybierz datę</sys:String>
   <sys:String x:Key="zone.label">Strefa:</sys:String>
   <sys:String x:Key="mode.label">Tryb:</sys:String>
   <sys:String x:Key="mode.flow">Płynący</sys:String>

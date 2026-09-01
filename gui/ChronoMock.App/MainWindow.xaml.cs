@@ -67,7 +67,7 @@ public partial class MainWindow : FluentWindow
     {
         if (_session.IsIdle)
         {
-            _session.MomentText = momentLocal;
+            _session.Moment.LoadCanonical(momentLocal);
             _session.SelectedZone =
                 _session.Zones.FirstOrDefault(z => z.BiasMinutes == zoneBias) ?? _session.SelectedZone;
         }

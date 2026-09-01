@@ -193,17 +193,22 @@ public class SessionViewModelTests
         Assert.Equal(-120, vm.SelectedZone.BiasMinutes); // UTC+02:00
         Assert.Equal("multiplier", vm.SelectedMode.Mode);
         Assert.Equal(60, vm.SelectedMode.Multiplier);
-        Assert.True(vm.MomentValid);
+        Assert.True(vm.Moment.IsValid);
     }
 
     [Theory]
-    [InlineData("2038-01-19T03:14:07", true)]
-    [InlineData("2038-01-19 03:14:07", true)]   // a space separator is accepted too
-    [InlineData("2038-02-29T00:00:00", false)]  // 2038 is not a leap year
-    [InlineData("not a date", false)]
-    [InlineData("", false)]
-    public void Moment_validity_follows_the_text(string text, bool valid)
-        => Assert.Equal(valid, new SessionViewModel { MomentText = text }.MomentValid);
+    [InlineData("2038-01-19", "03:14:07", true)]
+    [InlineData("2038-01-19", "", true)]        // date only - the time defaults to midnight
+    [InlineData("2038-02-29", "00:00", false)]  // 2038 is not a leap year
+    [InlineData("not a date", "", false)]
+    [InlineData("", "", false)]
+    public void Moment_validity_follows_the_fields(string date, string time, bool valid)
+    {
+        var vm = new SessionViewModel();
+        vm.Moment.DateText = date;
+        vm.Moment.TimeText = time;
+        Assert.Equal(valid, vm.Moment.IsValid);
+    }
 
     [Fact]
     public void An_invalid_moment_disables_start_even_with_a_target()
@@ -212,16 +217,18 @@ public class SessionViewModelTests
         vm.SetTarget(@"C:\apps\Ledger.exe");
         Assert.True(vm.CanStart);
 
-        vm.MomentText = "nonsense";
+        vm.Moment.DateText = "nonsense";
 
-        Assert.False(vm.MomentValid);
+        Assert.False(vm.Moment.IsValid);
         Assert.False(vm.CanStart);
     }
 
     [Fact]
     public void Build_time_maps_the_inputs_to_the_wire()
     {
-        var vm = new SessionViewModel { MomentText = "2040-06-15 08:30:00" };
+        var vm = new SessionViewModel();
+        vm.Moment.DateText = "2040-06-15";
+        vm.Moment.TimeText = "08:30";
         vm.SelectedZone = vm.Zones.First(z => z.BiasMinutes == 300); // UTC-05:00
         vm.SelectedMode = vm.Modes.First(m => m.Mode == "frozen");
 
@@ -572,7 +579,8 @@ public class SessionViewModelTests
     {
         var vm = new SessionViewModel();
         vm.SetTarget(@"C:\apps\Ledger.exe");
-        vm.MomentText = "2040-06-15 08:30:00";
+        vm.Moment.DateText = "2040-06-15";
+        vm.Moment.TimeText = "08:30";
         vm.SelectedZone = vm.Zones.First(z => z.BiasMinutes == 300);
         vm.SelectedMode = vm.Modes.First(m => m.Mode == "frozen");
         vm.Apply(Verdict("works", "verdict.works.covered"));
@@ -612,7 +620,7 @@ public class SessionViewModelTests
         vm.LoadFromHistory(HistoryRecord("Ledger", moment: "2040-06-15T08:30:00", bias: 300, mode: "frozen", multiplier: null));
 
         Assert.Equal(@"C:\apps\Ledger.exe", vm.TargetPath);
-        Assert.Equal("2040-06-15T08:30:00", vm.MomentText);
+        Assert.Equal("2040-06-15T08:30:00", vm.Moment.Canonical);
         Assert.Equal(300, vm.SelectedZone.BiasMinutes);
         Assert.Equal("frozen", vm.SelectedMode.Mode);
         Assert.Equal(SessionStatusKind.Idle, vm.StatusKind); // rule 7: fills the form, never starts a session

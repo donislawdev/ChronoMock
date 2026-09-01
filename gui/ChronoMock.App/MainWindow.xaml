@@ -67,16 +67,14 @@
           <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="{StaticResource SpaceXs}">
             <TextBlock Text="{DynamicResource moment.label}" VerticalAlignment="Center"
                        FontSize="{StaticResource FontSizeBody}" Foreground="{DynamicResource BrushTextSecondary}" />
-            <TextBox x:Name="MomentBox"
-                     Text="{Binding MomentText, UpdateSourceTrigger=PropertyChanged}"
-                     Width="190" Margin="{StaticResource SpaceXs}" VerticalAlignment="Center"
-                     IsEnabled="{Binding CanEditTime}"
-                     FontSize="{StaticResource FontSizeBody}" />
+            <controls:MomentInput DataContext="{Binding Moment}"
+                                  IsEnabled="{Binding DataContext.CanEditTime, RelativeSource={RelativeSource AncestorType={x:Type ui:FluentWindow}}}"
+                                  Margin="{StaticResource SpaceXs}" VerticalAlignment="Center" />
             <!-- In-flight: jump the wall to the ABSOLUTE moment on the left (visible only while running).
                  Disabled for a malformed moment; the core validates deeper and reports a bad one without
                  ending the session (per-command error). -->
             <Button Content="{DynamicResource action.jump_to}" Click="OnJumpToClick"
-                    IsEnabled="{Binding MomentValid}" VerticalAlignment="Center"
+                    IsEnabled="{Binding Moment.IsValid}" VerticalAlignment="Center"
                     Visibility="{Binding IsRunning, Converter={StaticResource BoolToVis}}" />
             <TextBlock Text="{DynamicResource zone.label}" Margin="{StaticResource SpaceSm}" VerticalAlignment="Center"
                        FontSize="{StaticResource FontSizeBody}" Foreground="{DynamicResource BrushTextSecondary}" />
@@ -108,10 +106,6 @@
                     HorizontalAlignment="Center" Margin="{StaticResource SpaceXs}"
                     FontSize="{StaticResource FontSizeBody}" Foreground="{DynamicResource BrushTextSecondary}" />
 
-          <TextBlock Text="{DynamicResource moment.invalid}" TextAlignment="Center" Margin="{StaticResource SpaceXs}"
-                     TextWrapping="Wrap"
-                     FontSize="{StaticResource FontSizeCaption}" Foreground="{DynamicResource BrushStatusPartial}"
-                     Visibility="{Binding MomentInvalid, Converter={StaticResource BoolToVis}}" />
         </StackPanel>
 
         <Button Grid.Row="1" Margin="{StaticResource SpaceSm}" HorizontalAlignment="Center"

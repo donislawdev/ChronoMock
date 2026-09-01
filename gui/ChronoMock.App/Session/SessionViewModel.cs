@@ -39,7 +39,9 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     private string _lastError = string.Empty;
     private bool _idle = true;
     private string? _targetPath;
-    private string _momentText = "2038-01-19T03:14:07";
+    /// <summary>The editable moment (a date and optional time in the session zone, rule 2). The shared
+    /// MomentInput control binds to it, and MomentParse composes it culture-invariantly (locale-safe).</summary>
+    public MomentField Moment { get; } = new();
     private ZoneOption _selectedZone;
     private ModeOption _selectedMode;
     private bool _scaleDuration;
@@ -66,6 +68,10 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
         // Defaults match the moment/mode the panel shipped with before these inputs existed.
         _selectedZone = TimeInputs.Zones.First(z => z.BiasMinutes == -120); // UTC+02:00
         _selectedMode = TimeInputs.Modes.First(m => m.Multiplier == 60);    // x60
+
+        // Ship with the same default moment the panel had before these inputs existed.
+        Moment.LoadCanonical("2038-01-19T03:14:07");
+        Moment.Changed += (_, _) => RaisePropertyChanged(nameof(CanStart));
 
         History.CollectionChanged += (_, _) => RaisePropertyChanged(nameof(HasHistory));
         foreach (var record in _store.Load())
@@ -189,27 +195,6 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     /// <summary>True once a target has been chosen - Start stays disabled until then.</summary>
     public bool HasTarget => _targetPath is not null;
 
-    /// <summary>The moment the target should see, entered in the session zone (rule 2, chrono-mock 9.5).</summary>
-    public string MomentText
-    {
-        get => _momentText;
-        set
-        {
-            if (Set(ref _momentText, value))
-            {
-                RaisePropertyChanged(nameof(MomentValid));
-                RaisePropertyChanged(nameof(MomentInvalid));
-                RaisePropertyChanged(nameof(CanStart));
-            }
-        }
-    }
-
-    /// <summary>True when the entered moment parses as a well-formed date and time. The core does the deep
-    /// validation (DST gap, non-leap Feb 29, range) and reports it as an error (docs/08 section 5).</summary>
-    public bool MomentValid => TryParseMoment(_momentText, out _);
-
-    /// <summary>Convenience for showing the input hint - the inverse of <see cref="MomentValid"/>.</summary>
-    public bool MomentInvalid => !MomentValid;
 
     /// <summary>The session-zone options (fixed offsets, MVP markets).</summary>
     public IReadOnlyList<ZoneOption> Zones => TimeInputs.Zones;
@@ -256,7 +241,7 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     public bool ScaleDuration { get => _scaleDuration; set => Set(ref _scaleDuration, value); }
 
     /// <summary>True when a session may be started: nothing is running, a target is chosen, moment is valid.</summary>
-    public bool CanStart => _idle && HasTarget && MomentValid;
+    public bool CanStart => _idle && HasTarget && Moment.IsValid;
 
     /// <summary>Choose the target executable to run (from the picker, or the dev default).</summary>
     public void SetTarget(string path) => TargetPath = path;
@@ -346,9 +331,9 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     /// if the moment is malformed (the Jump button is disabled then) or no session is running.</summary>
     public void JumpToEnteredMoment()
     {
-        if (TryParseMoment(_momentText, out var canonical))
+        if (Moment.IsValid)
         {
-            SendJumpAbsolute(canonical, SelectedZone.BiasMinutes);
+            SendJumpAbsolute(Moment.Canonical, SelectedZone.BiasMinutes);
         }
     }
 
@@ -590,8 +575,7 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
         {
             // Snapshot the start moment and mode NOW, before they can be changed in flight, so history and
             // the summary always report what was REQUESTED (rule 4), not the last in-flight change.
-            TryParseMoment(_momentText, out var startCanonical);
-            _startMomentText = startCanonical.Length > 0 ? startCanonical : _momentText;
+            _startMomentText = Moment.Canonical;
             _startMode = SelectedMode;
 
             var plan = SessionPlan.Build(TargetPath!, BuildTime());
@@ -811,7 +795,7 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     /// (rule 2, chrono-mock 9.5); the core turns it into UTC and validates it (docs/08 section 5).</summary>
     internal TimeSpec BuildTime()
     {
-        TryParseMoment(_momentText, out var canonical);
+        var canonical = Moment.Canonical;
         return new TimeSpec
         {
             Moment = new MomentSpec { Kind = "absolute", Local = canonical, TzBiasMin = SelectedZone.BiasMinutes },
@@ -896,7 +880,7 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
         AppendList(sb, translate, "coverage.warnings", _warnings, translateItems: true);
 
         // The "requested" line is the START request (snapshot), even if the moment or speed changed live.
-        var reqMoment = _startMomentText.Length > 0 ? _startMomentText : _momentText;
+        var reqMoment = _startMomentText.Length > 0 ? _startMomentText : Moment.Canonical;
         var reqMode = _startMode ?? SelectedMode;
         sb.Append("  ")
           .Append(Fmt(translate("report.requested"), reqMoment, SelectedZone.Label, translate(reqMode.LabelKey)))
@@ -942,12 +926,7 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
         // start-only (never changed in flight), so the live SelectedZone is the start zone. The snapshot
         // is already canonical; the fallback (no session started, e.g. a unit test) canonicalizes too.
         var mode = _startMode ?? SelectedMode;
-        var moment = _startMomentText;
-        if (moment.Length == 0)
-        {
-            TryParseMoment(_momentText, out var canonical);
-            moment = canonical.Length > 0 ? canonical : _momentText;
-        }
+        var moment = _startMomentText.Length > 0 ? _startMomentText : Moment.Canonical;
 
         return new SessionRecord
         {
@@ -1043,28 +1022,12 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
         }
 
         SetTarget(record.TargetPath);
-        MomentText = record.MomentLocal;
+        Moment.LoadCanonical(record.MomentLocal);
         SelectedZone = TimeInputs.Zones.FirstOrDefault(z => z.BiasMinutes == record.TzBiasMin) ?? SelectedZone;
         SelectedMode = TimeInputs.Modes.FirstOrDefault(
             m => m.Mode == record.Mode && m.Multiplier == record.Multiplier) ?? SelectedMode;
     }
 
-    // Accept an ISO moment with a 'T' or a space separator. This is a well-formed-ness check only - the
-    // deep validation (DST gap, non-leap Feb 29, range) belongs to the core (docs/08 section 5).
-    private static readonly string[] MomentFormats = ["yyyy-MM-ddTHH:mm:ss", "yyyy-MM-dd HH:mm:ss"];
-
-    private static bool TryParseMoment(string? text, out string canonical)
-    {
-        canonical = string.Empty;
-        if (DateTime.TryParseExact(
-                text?.Trim(), MomentFormats, CultureInfo.InvariantCulture, DateTimeStyles.None, out var moment))
-        {
-            canonical = moment.ToString("yyyy-MM-ddTHH:mm:ss", CultureInfo.InvariantCulture);
-            return true;
-        }
-
-        return false;
-    }
 
     private void SetStatus(string key, SessionStatusKind kind)
     {

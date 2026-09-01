@@ -1,0 +1,45 @@
+<UserControl x:Class="ChronoMock.App.Controls.MomentInput"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml">
+  <!-- Shared moment input (chrono-mock 7.1): an ISO date field plus a calendar popup, an optional 24h time
+       field, and inline per-part errors. The value is composed culture-invariantly by MomentField, so a
+       Polish box and a US VM read a typed date identically (rule 2) - that is why this is NOT a WPF
+       DatePicker, whose text parsing follows the OS locale. Bound to a MomentField DataContext. -->
+  <StackPanel>
+    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+      <ui:TextBox Text="{Binding DateText, UpdateSourceTrigger=PropertyChanged}"
+                  PlaceholderText="{DynamicResource moment.date_placeholder}"
+                  Width="120" FontFamily="{StaticResource FontFamilyMono}"
+                  VerticalAlignment="Center" />
+
+      <ToggleButton x:Name="CalendarToggle" Content="📅"
+                    Margin="{StaticResource SpaceXs}" VerticalAlignment="Center"
+                    AutomationProperties.Name="{DynamicResource action.pick_date}" />
+      <Popup IsOpen="{Binding IsChecked, ElementName=CalendarToggle}" StaysOpen="False"
+             PlacementTarget="{Binding ElementName=CalendarToggle}" Placement="Bottom" AllowsTransparency="True">
+        <Border Background="{DynamicResource BrushBgSurfaceAlt}"
+                CornerRadius="{StaticResource RadiusSm}" Padding="{StaticResource SpaceXs}">
+          <Calendar SelectedDate="{Binding SelectedDate, Mode=TwoWay}" SelectedDatesChanged="OnDatePicked" />
+        </Border>
+      </Popup>
+
+      <ui:TextBox Text="{Binding TimeText, UpdateSourceTrigger=PropertyChanged}"
+                  PlaceholderText="{DynamicResource moment.time_placeholder}"
+                  Width="84" FontFamily="{StaticResource FontFamilyMono}"
+                  Margin="{StaticResource SpaceXs}" VerticalAlignment="Center" />
+    </StackPanel>
+
+    <!-- Inline validation, one message per part, in the partial-status colour (meaning is in the text). -->
+    <StackPanel Orientation="Horizontal">
+      <TextBlock Text="{Binding DateErrorKey, Converter={StaticResource KeyToText}}"
+                 Visibility="{Binding HasDateError, Converter={StaticResource BoolToVis}}"
+                 Margin="{StaticResource SpaceXs}" TextWrapping="Wrap"
+                 FontSize="{StaticResource FontSizeCaption}" Foreground="{DynamicResource BrushStatusPartial}" />
+      <TextBlock Text="{Binding TimeErrorKey, Converter={StaticResource KeyToText}}"
+                 Visibility="{Binding HasTimeError, Converter={StaticResource BoolToVis}}"
+                 Margin="{StaticResource SpaceXs}" TextWrapping="Wrap"
+                 FontSize="{StaticResource FontSizeCaption}" Foreground="{DynamicResource BrushStatusPartial}" />
+    </StackPanel>
+  </StackPanel>
+</UserControl>
