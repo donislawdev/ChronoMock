@@ -16,7 +16,17 @@
             LICENSE   THIRD-PARTY-NOTICES.md   README.md
         dist/ChronoMock-win-x64.zip   the same folder, zipped
 
-    The launcher resolves this layout through AppPaths (the x64 core beside it under core/
+    It also assembles a lean CLI-only package (no .NET runtime, just the self-contained Rust
+    binaries and data) for scripting and CI:
+
+        dist/chrono-cli/
+            chrono.exe  chrono_hook.dll        the 64-bit tool (run + calc)
+            x86/  chrono.exe  chrono_hook.dll  the 32-bit tool (for 32-bit targets)
+            calendars/*.json   presets/*.json
+            LICENSE   THIRD-PARTY-NOTICES.md   README.md
+        dist/chrono-cli-win.zip       the same folder, zipped
+
+    The launcher resolves the GUI layout through AppPaths (the x64 core beside it under core/
     is the portable marker). The native cores are self-contained already (static CRT, ADR-1).
 
     Run with PowerShell 7 (pwsh). Every missing piece is a hard stop - a half-assembled
@@ -42,6 +52,8 @@ $dist = Join-Path $root 'dist'
 $stage = Join-Path $dist 'ChronoMock'
 $publish = Join-Path $root 'target/publish-gui'
 $zip = Join-Path $dist 'ChronoMock-win-x64.zip'
+$cliStage = Join-Path $dist 'chrono-cli'
+$cliZip = Join-Path $dist 'chrono-cli-win.zip'
 
 function Assert-Exists([string] $path, [string] $why) {
     if (-not (Test-Path -LiteralPath $path)) {
@@ -122,6 +134,31 @@ Copy-Item -LiteralPath (Join-Path $root 'README.md') -Destination $stage
 Write-Host '== zip =='
 Compress-Archive -Path $stage -DestinationPath $zip -Force
 
+# --- 4b. Assemble the lean CLI-only package (chrono, both bitnesses, no .NET runtime). The Rust
+#         binaries are self-contained (static CRT, ADR-1), so this needs no framework. The CLI is
+#         a first-class surface (equal to the GUI), not just the GUI's internal core. ------------
+Write-Host '== assemble dist/chrono-cli =='
+$cliX86 = Join-Path $cliStage 'x86'
+New-Item -ItemType Directory -Path $cliStage | Out-Null
+New-Item -ItemType Directory -Path $cliX86 | Out-Null
+# x64 at the root (the default tool), x86 in a subfolder (for 32-bit targets).
+Copy-Item -LiteralPath $x64core -Destination $cliStage
+Copy-Item -LiteralPath $x64hook -Destination $cliStage
+Copy-Item -LiteralPath $x86core -Destination $cliX86
+Copy-Item -LiteralPath $x86hook -Destination $cliX86
+# Data beside the x64 exe, so chrono's next-to-exe lookup resolves with no working-directory trick.
+Copy-Item -Path (Join-Path $root 'calendars') -Destination $cliStage -Recurse
+Copy-Item -Path (Join-Path $root 'presets') -Destination $cliStage -Recurse
+# A second copy beside the x86 exe (a few KB of JSON), so the 32-bit tool resolves calendars and
+# presets next-to-exe as well, regardless of the working directory.
+Copy-Item -Path (Join-Path $root 'calendars') -Destination $cliX86 -Recurse
+Copy-Item -Path (Join-Path $root 'presets') -Destination $cliX86 -Recurse
+Copy-Item -LiteralPath (Join-Path $root 'LICENSE') -Destination $cliStage
+Copy-Item -LiteralPath (Join-Path $root 'THIRD-PARTY-NOTICES.md') -Destination $cliStage
+Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'cli-readme.md') -Destination (Join-Path $cliStage 'README.md')
+Write-Host '== zip cli =='
+Compress-Archive -Path $cliStage -DestinationPath $cliZip -Force
+
 # --- 5. Summary. --------------------------------------------------------------------------------
 $folderBytes = (Get-ChildItem -LiteralPath $stage -Recurse -File | Measure-Object -Property Length -Sum).Sum
 $zipBytes = (Get-Item -LiteralPath $zip).Length
@@ -131,3 +168,8 @@ Write-Host 'distribution assembled:'
 Write-Host ("  folder   : {0}  ({1:N0} files, {2:N1} MB)" -f $stage, $fileCount, ($folderBytes / 1MB))
 Write-Host ("  launcher : {0}" -f (Join-Path $stage 'ChronoMock.exe'))
 Write-Host ("  zip      : {0}  ({1:N1} MB)" -f $zip, ($zipBytes / 1MB))
+$cliBytes = (Get-ChildItem -LiteralPath $cliStage -Recurse -File | Measure-Object -Property Length -Sum).Sum
+$cliZipBytes = (Get-Item -LiteralPath $cliZip).Length
+$cliFileCount = (Get-ChildItem -LiteralPath $cliStage -Recurse -File | Measure-Object).Count
+Write-Host ("  cli      : {0}  ({1:N0} files, {2:N1} MB)" -f $cliStage, $cliFileCount, ($cliBytes / 1MB))
+Write-Host ("  cli zip  : {0}  ({1:N1} MB)" -f $cliZip, ($cliZipBytes / 1MB))
