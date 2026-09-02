@@ -2303,7 +2303,19 @@ fn calendar_from_text(text: &str) -> Result<chrono_core::calendar::Calendar, Str
             dto.schema
         ));
     }
-    let weekend = dto.weekend.iter().map(|w| weekday_index(w)).collect::<Result<Vec<_>, _>>()?;
+    let mut weekend = dto.weekend.iter().map(|w| weekday_index(w)).collect::<Result<Vec<_>, _>>()?;
+    // Duplicates are harmless to the engine (membership is a contains) but they hide a typo, and
+    // they make the count below meaningless - so fold them away before counting.
+    weekend.sort_unstable();
+    weekend.dedup();
+    // A week with no working day leaves "+1 business day" with nothing to land on. The engine now
+    // bounds its walk instead of hanging (S-1), but a file this broken should never reach it: say
+    // which field is wrong, here, where the author can fix it.
+    if weekend.len() >= 7 {
+        return Err(
+            "calendar 'weekend' lists all seven days - no business day would ever exist".to_string()
+        );
+    }
     let holidays = dto
         .holidays
         .into_iter()
@@ -3797,6 +3809,25 @@ mod tests {
     fn read_data(rel: &str) -> String {
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..").join(rel);
         std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("cannot read {}: {e}", path.display()))
+    }
+
+    /// S-1, first line. Calendars are the one catalogue outsiders are invited to write, so a file
+    /// that makes "next business day" unanswerable has to be refused where its author can see it -
+    /// not walked into by the engine. Duplicated weekend days are folded first, so the check counts
+    /// distinct days and a repeated "saturday" is not mistaken for a full week.
+    #[test]
+    fn calendar_with_every_day_as_weekend_is_refused() {
+        let all_week = r#"{"schema":"chronomock.calendar/1","id":"x","country":"XX",
+            "weekend":["monday","tuesday","wednesday","thursday","friday","saturday","sunday"],
+            "observed":"none","holidays":[]}"#;
+        let err = calendar_from_text(all_week).expect_err("a week with no working day is refused");
+        assert!(err.contains("weekend"), "the message must name the field: {err}");
+
+        // Duplicates alone are not an error - they fold, and the calendar still works.
+        let dupes = r#"{"schema":"chronomock.calendar/1","id":"x","country":"XX",
+            "weekend":["saturday","saturday","sunday"],"observed":"none","holidays":[]}"#;
+        let cal = calendar_from_text(dupes).expect("duplicate weekend days fold");
+        assert_eq!(cal.weekend.len(), 2);
     }
 
     #[test]

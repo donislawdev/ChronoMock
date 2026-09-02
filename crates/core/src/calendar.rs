@@ -221,7 +221,20 @@ pub fn add_business_days(start: &CivilDateTime, n: i64, cal: &Calendar) -> Optio
     let mut d = days(start.year, start.month, start.day);
     let step = if n >= 0 { 1 } else { -1 };
     let mut remaining = n.abs();
+    // Bound the WALK, not just the requested count. `remaining` falls only on a business day, so a
+    // calendar that has none - every weekday marked weekend, which a data file can say, and calendars
+    // are the one part of this tool outsiders are invited to write - spins here forever at 100% CPU
+    // with nothing to interrupt it. `nearest_business_day` has carried such a bound since it was
+    // written; this walk did not. Seven calendar days per business day plus a year of slack clears
+    // every real calendar (the worst shipped case is a long weekend wrapped around a holiday), and a
+    // file that needs more than that is degenerate: report it as the same "no result" the caller
+    // already handles, rather than hanging.
+    let mut budget = n.abs().saturating_mul(7).saturating_add(400);
     while remaining > 0 {
+        if budget == 0 {
+            return None;
+        }
+        budget -= 1;
         d += step;
         if is_business_day_days(d, cal) {
             remaining -= 1;
@@ -391,6 +404,42 @@ mod tests {
         assert_eq!(add_business_days(&dt(2026, 7, 10), 1, &cal).unwrap(), dt(2026, 7, 13));
         // 2026-07-06 is a Monday; +5 business days is the next Monday.
         assert_eq!(add_business_days(&dt(2026, 7, 6), 5, &cal).unwrap(), dt(2026, 7, 13));
+    }
+
+    /// S-1 regression. A calendar with every weekday marked weekend has no business day to land
+    /// on, so the walk could never finish - it spun at 100% CPU with no way to interrupt it, and
+    /// through the GUI it took a `chrono calc` process down with it. Now the walk is bounded and
+    /// says "no result" like any other unsatisfiable shift. The loader rejects such a file too,
+    /// so this is the second line, not the first.
+    #[test]
+    fn add_business_days_terminates_on_a_calendar_with_no_business_day() {
+        let cal = Calendar {
+            id: "degenerate".into(),
+            country: "XX".into(),
+            weekend: vec![0, 1, 2, 3, 4, 5, 6],
+            observed: Observed::None,
+            holidays: vec![],
+        };
+        assert!(add_business_days(&dt(2026, 7, 6), 1, &cal).is_none());
+        assert!(add_business_days(&dt(2026, 7, 6), -1, &cal).is_none());
+        assert!(add_business_days(&dt(2026, 7, 6), 5000, &cal).is_none());
+        // Zero steps never enters the walk, so it still resolves to the start day.
+        assert_eq!(add_business_days(&dt(2026, 7, 6), 0, &cal).unwrap(), dt(2026, 7, 6));
+    }
+
+    /// The bound must not clip a legal calendar: with six weekend days a business day costs seven
+    /// calendar days, which is exactly the budget's per-day allowance.
+    #[test]
+    fn add_business_days_still_walks_a_six_day_weekend() {
+        let cal = Calendar {
+            id: "one-day-week".into(),
+            country: "XX".into(),
+            weekend: vec![0, 1, 2, 3, 4, 5],
+            observed: Observed::None,
+            holidays: vec![],
+        };
+        // Only Saturday works. 2026-07-06 is a Monday, so +2 business days is the second Saturday.
+        assert_eq!(add_business_days(&dt(2026, 7, 6), 2, &cal).unwrap(), dt(2026, 7, 18));
     }
 
     #[test]
