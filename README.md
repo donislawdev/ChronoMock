@@ -4,7 +4,7 @@
 Speed time up, and a 30-day expiry test takes half an hour instead of 30 days.
 
 > **Status: internal preview.**
-> A portable build is distributed to QA teams; there is no public release yet. The core time-substitution layer has passed its technical feasibility gate, and the substitution core (Stage 1) is implemented and covered by an internal test suite.
+> A portable build is distributed to QA teams - there is no public release yet. The core time-substitution layer has passed its technical feasibility gate, and the substitution core (Stage 1) is implemented and covered by an internal test suite.
 
 ---
 
