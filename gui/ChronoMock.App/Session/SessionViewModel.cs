@@ -277,6 +277,31 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     }
 
     /// <summary>
+    /// Parse a custom speed ("500" or "x500") and apply it in flight. A malformed or negative value
+    /// surfaces an in-flight error rather than doing nothing silently (rule 6). Parsing is culture-invariant
+    /// (a Polish box and a US one read "500" the same). No-op unless a session is running.
+    /// </summary>
+    public void SetCustomSpeed(string? raw)
+    {
+        if (!IsRunning)
+        {
+            return;
+        }
+
+        InFlightErrorKey = string.Empty; // a fresh attempt clears any prior in-flight error
+        var trimmed = raw?.Trim().TrimStart('x', 'X', '×');
+        if (long.TryParse(trimmed, NumberStyles.Integer, CultureInfo.InvariantCulture, out var multiplier)
+            && multiplier >= 0)
+        {
+            SendMultiplier(multiplier);
+        }
+        else
+        {
+            InFlightErrorKey = "speed.invalid";
+        }
+    }
+
+    /// <summary>
     /// Jump the fake clock by a relative delta (e.g. "+1d", "-2h" - units s/m/h/d/w). The core adds it to
     /// the current fake time and re-anchors; a backward jump never rewinds the duration axis (rule 3). The
     /// core validates the delta and reports a bad one as an error. No-op unless a session is running.

@@ -366,6 +366,7 @@
             <Button Content="{DynamicResource calc.use_in_substitution}" Margin="{StaticResource SpaceMd}"
                     HorizontalAlignment="Stretch" Click="OnUseInSubstitutionClick"
                     ToolTip="{DynamicResource tip.use_in_substitution}"
+                    ToolTipService.ShowOnDisabled="True"
                     IsEnabled="{Binding CanUseInSubstitution}" />
           </StackPanel>
         </Border>

@@ -483,6 +483,32 @@ public class SessionViewModelTests
     }
 
     [Fact]
+    public void Custom_speed_surfaces_an_error_for_a_bad_value_and_clears_it_on_a_good_one()
+    {
+        var vm = new SessionViewModel();
+        vm.Apply(State("2038-01-19T03:14:07", "2026-09-02T00:00:00", bias: 0, multiplier: 60)); // running
+
+        vm.SetCustomSpeed("not a number");
+        Assert.Equal("speed.invalid", vm.InFlightErrorKey); // a bad value is surfaced, not a silent no-op
+        Assert.True(vm.HasInFlightError);
+
+        vm.SetCustomSpeed("500"); // a fresh, valid attempt clears the error
+        Assert.False(vm.HasInFlightError);
+        Assert.True(vm.IsRunning); // and never ends the session
+    }
+
+    [Fact]
+    public void Custom_speed_is_a_safe_no_op_when_no_session_runs()
+    {
+        var vm = new SessionViewModel();
+
+        vm.SetCustomSpeed("abc"); // idle, no client - must not throw or set an error
+
+        Assert.False(vm.HasInFlightError);
+        Assert.False(vm.IsRunning);
+    }
+
+    [Fact]
     public async Task Watchdog_fires_when_the_core_stops_emitting()
     {
         // The core beats a `state` heartbeat every ~1 s. If it goes silent (hung with the pipe still open),

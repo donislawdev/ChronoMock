@@ -123,16 +123,10 @@ public partial class MainWindow : FluentWindow
     private void OnNowClick(object sender, RoutedEventArgs e)
         => _session.Moment.SetNow(_session.SelectedZone.BiasMinutes);
 
-    // In-flight arbitrary speed: parse the custom-speed box (accepts "500" or "x500") and set it.
+    // In-flight arbitrary speed: the view model parses the custom-speed box ("500" or "x500") and either
+    // applies it or surfaces an in-flight error, so a bad value is not a silent no-op (rule 6, RELEASE P3).
     private void OnSetSpeedClick(object sender, RoutedEventArgs e)
-    {
-        var raw = CustomSpeedBox.Text?.Trim().TrimStart('x', 'X', '×');
-        if (long.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var multiplier)
-            && multiplier >= 0)
-        {
-            _session.SendMultiplier(multiplier);
-        }
-    }
+        => _session.SetCustomSpeed(CustomSpeedBox.Text);
 
     // Stop the running session (M-10) - so the user is not forced to close the whole window when they are
     // done (or when the core stops responding). The target reverts to real time, the app is never killed.

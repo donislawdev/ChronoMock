@@ -43,6 +43,7 @@
   <sys:String x:Key="action.freeze">Zamroź</sys:String>
   <sys:String x:Key="action.jump_to">Skocz do</sys:String>
   <sys:String x:Key="action.set_speed">Ustaw</sys:String>
+  <sys:String x:Key="speed.invalid">Wpisz liczbę całkowitą, np. 500.</sys:String>
 
   <!-- Skoki w locie (jednostki w Tag przycisku). -->
   <sys:String x:Key="jump.minus_day">-1 dzień</sys:String>
@@ -291,6 +292,6 @@
   <sys:String x:Key="tip.calc_calendar">Kalendarz świąt i dni roboczych używany przez kroki dni roboczych i najbliższy.</sys:String>
   <sys:String x:Key="tip.custom_format">Sformatuj wynik własną maską (tokeny .NET/Java).</sys:String>
   <sys:String x:Key="tip.analyze">Wklej datę, by zobaczyć jak się czyta - obie interpretacje, gdy niejednoznaczna.</sys:String>
-  <sys:String x:Key="tip.use_in_substitution">Wyślij ten moment do panelu podmiany.</sys:String>
+  <sys:String x:Key="tip.use_in_substitution">Wyślij ten moment do panelu podmiany. Dostępne tylko, gdy jego strefa jest jedną z oferowanych stref sesji.</sys:String>
 
 </ResourceDictionary>

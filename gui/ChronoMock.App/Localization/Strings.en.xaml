@@ -44,6 +44,7 @@
   <sys:String x:Key="action.freeze">Freeze</sys:String>
   <sys:String x:Key="action.jump_to">Jump to</sys:String>
   <sys:String x:Key="action.set_speed">Set</sys:String>
+  <sys:String x:Key="speed.invalid">Enter a whole number, e.g. 500.</sys:String>
 
   <!-- In-flight jump deltas (units carried in the button Tag). -->
   <sys:String x:Key="jump.minus_day">-1 day</sys:String>
@@ -292,6 +293,6 @@
   <sys:String x:Key="tip.calc_calendar">The holiday and business-day calendar used by business-day and nearest steps.</sys:String>
   <sys:String x:Key="tip.custom_format">Render the result with your own format mask (.NET/Java tokens).</sys:String>
   <sys:String x:Key="tip.analyze">Paste a date to see how it reads - both interpretations when it is ambiguous.</sys:String>
-  <sys:String x:Key="tip.use_in_substitution">Send this moment to the substitution panel.</sys:String>
+  <sys:String x:Key="tip.use_in_substitution">Send this moment to the substitution panel. Available only when its zone is one of the offered session zones.</sys:String>
 
 </ResourceDictionary>
