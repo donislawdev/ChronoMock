@@ -38,8 +38,9 @@ use windows::Win32::System::Memory::{
 use windows::Win32::System::SystemInformation::{GetSystemTimeAsFileTime, GetTickCount64};
 use windows::Win32::System::Threading::{
     CreateMutexW, CreateProcessW, CreateRemoteThread, GetCurrentProcessId, GetExitCodeProcess,
-    GetExitCodeThread, ResumeThread, TerminateProcess, WaitForSingleObject, CREATE_SUSPENDED,
-    LPTHREAD_START_ROUTINE, PROCESS_INFORMATION, STARTUPINFOW,
+    GetExitCodeThread, OpenProcess, ResumeThread, TerminateProcess, WaitForSingleObject,
+    CREATE_SUSPENDED, LPTHREAD_START_ROUTINE, PROCESS_INFORMATION, PROCESS_SYNCHRONIZE,
+    STARTUPINFOW,
 };
 use windows::Win32::System::Performance::QueryPerformanceCounter;
 use windows::Win32::System::WindowsProgramming::QueryUnbiasedInterruptTime;
@@ -305,6 +306,25 @@ fn qpc_now() -> i64 {
         let _ = QueryPerformanceCounter(&mut t);
     }
     t
+}
+
+/// Whether a process with this pid is still running. "Cannot open" and "already signalled" both mean
+/// gone. PID reuse is a hazard in the usual direction: a recycled pid reads as alive, so a caller
+/// deciding whether to clean something up errs toward leaving it - never toward destroying something
+/// that belongs to a live process. The mechanism layer owns this because it is the only layer that
+/// touches the OS (docs/07), so the CDP driver in `cli` borrows it rather than growing its own
+/// Win32 dependency.
+pub fn process_is_alive(pid: u32) -> bool {
+    unsafe {
+        match OpenProcess(PROCESS_SYNCHRONIZE, false, pid) {
+            Ok(h) => {
+                let alive = WaitForSingleObject(h, 0) == WAIT_TIMEOUT;
+                let _ = CloseHandle(h);
+                alive
+            }
+            Err(_) => false,
+        }
+    }
 }
 
 /// Exclusive right to run a session, held for the session's whole life. Closing the handle is

@@ -104,18 +104,42 @@ pub fn launch_chromium(target: &str, args: &[String]) -> io::Result<LaunchedChro
     };
 
     let port_file = user_data_dir.join("DevToolsActivePort");
-    let deadline = Instant::now() + Duration::from_secs(15);
+    let mut deadline = Instant::now() + Duration::from_secs(15);
+    // Set once the process we spawned has exited, so its code can go into the error message.
+    let mut child_exit: Option<String> = None;
     loop {
         if let Some(port) = read_active_port(&port_file) {
             return Ok(LaunchedChromium { child, port, user_data_dir });
+        }
+        // A target that dies immediately - wrong flags, not a Chromium app after all, a crash on
+        // startup - used to cost the full 15 s and then a guess for an error message. Watch the
+        // child instead. It does NOT end the wait outright: some launchers exit after handing off to
+        // another process, which is exactly the shape that would still open the port. So the exit
+        // shortens the wait to a grace period rather than failing on the spot, and names the exit
+        // code if the port never appears.
+        if child_exit.is_none() {
+            if let Ok(Some(status)) = child.try_wait() {
+                child_exit = Some(match status.code() {
+                    Some(c) => format!(" (it exited with code {c})"),
+                    None => " (it exited)".to_string(),
+                });
+                let grace = Instant::now() + Duration::from_secs(2);
+                if grace < deadline {
+                    deadline = grace;
+                }
+            }
         }
         if Instant::now() >= deadline {
             let _ = child.kill();
             let _ = child.wait();
             let _ = std::fs::remove_dir_all(&user_data_dir);
+            let detail = child_exit.unwrap_or_default();
             return Err(io::Error::new(
                 io::ErrorKind::TimedOut,
-                "chromium did not open a debug port (remote debugging disabled, or not a Chromium app?)",
+                format!(
+                    "chromium did not open a debug port{detail} \
+                     (remote debugging disabled, or not a Chromium app?)"
+                ),
             ));
         }
         std::thread::sleep(Duration::from_millis(150));
@@ -129,21 +153,46 @@ fn read_active_port(port_file: &Path) -> Option<u16> {
     (port != 0).then_some(port)
 }
 
-/// Best-effort sweep of profile directories a force-killed driver left behind (P3, pre-release audit). A
-/// live session's Chromium holds file locks on its profile, so `remove_dir_all` fails and leaves it be;
-/// only an orphaned (unlocked) `chrono-cdp-*` profile is removed. Called before this session makes its own.
+/// Best-effort sweep of profile directories a force-killed driver left behind (P3, pre-release audit).
+///
+/// Only profiles whose OWNING DRIVER is gone are removed. The earlier version sweeps every
+/// `chrono-cdp-*` directory and relied on "a live profile is locked, so removal fails" - which is
+/// only half true: `remove_dir_all` walks a Windows directory file by file and stops at the first
+/// locked one, after deleting everything it reached. Chromium keeps handles on a few profile files
+/// (LOCK, Cookies, part of Local Storage) but not on the hundreds of others, so a PARALLEL live
+/// session would be gutted mid-run - non-deterministic behaviour in the app under test, which is the
+/// worst possible failure for a tool whose output is evidence. Nothing else enforces one CDP session
+/// at a time (the native lock does not cover this path), so parallel sessions are allowed by the rest
+/// of the code and must be respected here.
+///
+/// The directory name carries the driver's pid (`chrono-cdp-<pid>-<nanos>`), so ownership is
+/// readable. A recycled pid reads as alive and the directory is left alone - stale bytes on disk
+/// beat destroying a live session's profile. A name that does not parse is left alone too.
 fn sweep_orphan_profiles() {
     let Ok(entries) = std::fs::read_dir(std::env::temp_dir()) else {
         return;
     };
     for entry in entries.flatten() {
         let path = entry.path();
-        if path.is_dir()
-            && path.file_name().and_then(|n| n.to_str()).is_some_and(|n| n.starts_with("chrono-cdp-"))
-        {
-            let _ = std::fs::remove_dir_all(&path); // best effort - a live profile is locked and survives
+        if !path.is_dir() {
+            continue;
+        }
+        let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+            continue;
+        };
+        match owner_pid_of_profile(name) {
+            Some(pid) if !chrono_mech::process_is_alive(pid) => {
+                let _ = std::fs::remove_dir_all(&path); // best effort - a locked leftover survives
+            }
+            _ => {} // not ours, unparseable, or owned by a live driver: leave it
         }
     }
+}
+
+/// The driver pid encoded in a profile directory name (`chrono-cdp-<pid>-<nanos>`), or `None` when
+/// the name is not one of ours or does not carry a readable pid.
+fn owner_pid_of_profile(name: &str) -> Option<u32> {
+    name.strip_prefix("chrono-cdp-")?.split('-').next()?.parse().ok()
 }
 
 fn unique_temp_dir() -> PathBuf {
@@ -190,5 +239,42 @@ mod tests {
         std::fs::write(&f, "0\n").unwrap();
         assert_eq!(read_active_port(&f), None);
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// S-5, the naming half: ownership has to be readable out of the directory name, or the sweep
+    /// cannot tell a dead driver's leftovers from a live parallel session's profile.
+    #[test]
+    fn a_profile_directory_names_its_owning_driver() {
+        assert_eq!(owner_pid_of_profile("chrono-cdp-4321-99887766"), Some(4321));
+        // Our own generator must stay parseable - the two are a pair.
+        let mine = unique_temp_dir();
+        let name = mine.file_name().unwrap().to_str().unwrap();
+        assert_eq!(owner_pid_of_profile(name), Some(std::process::id()));
+        // Anything else is left alone rather than guessed at.
+        assert_eq!(owner_pid_of_profile("chrono-cdp-notapid-1"), None);
+        assert_eq!(owner_pid_of_profile("chrome-user-data"), None);
+        assert_eq!(owner_pid_of_profile("chrono-cdp-"), None);
+    }
+
+    /// S-5, the decision half. The sweep must remove a dead driver's profile and keep one whose
+    /// driver is still running - the old version removed every `chrono-cdp-*` directory it could
+    /// walk into, which gutted a parallel live session's profile file by file.
+    #[test]
+    fn the_sweep_spares_a_live_drivers_profile_and_removes_a_dead_ones() {
+        // This process is alive by definition, so a directory named after it stands for a parallel
+        // session. Pid 0 is never a live user process, so it stands for a dead driver's leftovers.
+        let live = std::env::temp_dir().join(format!("chrono-cdp-{}-sweeptest", std::process::id()));
+        let dead = std::env::temp_dir().join("chrono-cdp-0-sweeptest");
+        for d in [&live, &dead] {
+            std::fs::create_dir_all(d).unwrap();
+            std::fs::write(d.join("Preferences"), b"{}").unwrap();
+        }
+        sweep_orphan_profiles();
+        let live_kept = live.exists();
+        let dead_gone = !dead.exists();
+        std::fs::remove_dir_all(&live).ok();
+        std::fs::remove_dir_all(&dead).ok();
+        assert!(live_kept, "a live driver's profile must survive the sweep");
+        assert!(dead_gone, "a dead driver's profile is what the sweep is for");
     }
 }
