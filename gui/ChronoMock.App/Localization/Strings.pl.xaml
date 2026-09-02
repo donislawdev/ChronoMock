@@ -144,6 +144,9 @@
   <sys:String x:Key="runtime.python_perfcounter_qpc">perf_counter tej aplikacji Python używa QueryPerformanceCounter, który zostaje realny, więc licznik na perf_counter nie skaluje - w Pythonie 3.13+ monotonic też używa QPC (time.time i zegar ścienny skalują).</sys:String>
   <sys:String x:Key="runtime.dotnet_stopwatch_qpc">Stopwatch tej aplikacji .NET używa QueryPerformanceCounter, który zostaje realny, więc licznik na Stopwatch nie skaluje (DateTime i Environment.TickCount tak).</sys:String>
   <sys:String x:Key="runtime.java_nanotime_qpc">System.nanoTime tej aplikacji Java używa QueryPerformanceCounter, który zostaje realny, więc licznik na nanoTime nie skaluje (System.currentTimeMillis tak).</sys:String>
+  <!-- Pokazywane, gdy skalowanie QPC jest WŁĄCZONE (opcja scale-qpc, odwrócenie ADR-2): zegar
+       monotoniczny/elapsed teraz skaluje, ale cel liczący render z QPC może wyglądać na zniekształcony. -->
+  <sys:String x:Key="qpc.scaled_render_may_distort">QueryPerformanceCounter jest skalowany, więc zegar monotoniczny/elapsed oparty na QPC przyspiesza - ale cel liczący render lub animację z QPC może wyglądać na zniekształcony.</sys:String>
 
   <!-- Tryb Chromium/Electron (CDP), ADR-8/ADR-9: powody werdyktu i ostrzeżenia z rdzenia CDP. Jednostką
        pokrycia jest kontekst JS, nie proces systemowy. -->

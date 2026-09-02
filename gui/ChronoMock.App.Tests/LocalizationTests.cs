@@ -49,6 +49,8 @@ public class LocalizationTests
         // monotonic/elapsed clock stands on QPC and does not scale.
         "runtime.python_monotonic_qpc", "runtime.python_perfcounter_qpc",
         "runtime.dotnet_stopwatch_qpc", "runtime.java_nanotime_qpc",
+        // QPC scaling render caution (A2), shown when --scale-qpc replaces the runtime.*_qpc warnings.
+        "qpc.scaled_render_may_distort",
         // Cleanup residue (EndedEvent residue_keys) - a teardown that could not finish (CDP temp profile).
         "cleanup.chromium_profile_left",
         // Vanish reason (VanishedEvent reason_key, shown inside report.vanish_detail).

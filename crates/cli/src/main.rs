@@ -1188,6 +1188,9 @@ fn describe_warning(key: &str) -> String {
         "runtime.java_nanotime_qpc" => {
             "this Java app's System.nanoTime uses QueryPerformanceCounter, which is left real, so a nanoTime timer does not scale (System.currentTimeMillis does)"
         }
+        "qpc.scaled_render_may_distort" => {
+            "QueryPerformanceCounter is being scaled (--scale-qpc), so a QPC-timed monotonic/elapsed clock accelerates - but a target that times its rendering or animation off QPC may look distorted"
+        }
         _ => "",
     };
     if text.is_empty() {
@@ -1203,7 +1206,15 @@ fn describe_warning(key: &str) -> String {
 /// target (and its PyInstaller `_internal/` folder): no QPC hook (ADR-2 holds), no process inspection.
 /// Best-effort: a runtime unpacked at runtime (PyInstaller onefile) or launched as `java -jar` is not
 /// caught here, and a false positive only adds a "may not scale" note, never a false verdict (rules 4, 6).
-fn detect_runtime_warnings(target_path: &std::path::Path) -> Vec<String> {
+fn detect_runtime_warnings(target_path: &std::path::Path, scale_qpc: bool) -> Vec<String> {
+    // Under --scale-qpc the QPC axis IS scaled (A1), so a "monotonic/elapsed does not scale" warning would
+    // be WRONG (B1 suppressed - it would contradict the feature). Instead warn once that scaling QPC can
+    // distort a target that times its rendering off QPC (games, animation) - the render risk ADR-2 guarded
+    // against. This holds for any target, so it does not depend on the runtime fingerprint below.
+    if scale_qpc {
+        return vec!["qpc.scaled_render_may_distort".to_string()];
+    }
+
     fn add(keys: &mut Vec<String>, key: &str) {
         if !keys.iter().any(|k| k == key) {
             keys.push(key.to_string());
@@ -3421,8 +3432,9 @@ fn core_mode() -> i32 {
 
     // Detect the target's runtime up front (static, no QPC hook, no process inspection) so the first
     // coverage can warn that its monotonic/elapsed clocks stand on QPC and do not scale - the failure a
-    // Python/.NET/Java timer hits under a fast clock (B1, ADR-2).
-    let runtime_warnings = detect_runtime_warnings(std::path::Path::new(&target.path));
+    // Python/.NET/Java timer hits under a fast clock (B1, ADR-2). When --scale-qpc is on, this instead
+    // cautions about render distortion (A2), since the QPC axis now scales.
+    let runtime_warnings = detect_runtime_warnings(std::path::Path::new(&target.path), spec.scale_qpc);
 
     match chrono_mech::prepare(&spec, &m_target, &hook) {
         Ok(prepared) => {
@@ -4887,7 +4899,7 @@ mod tests {
         let target = dir.join("App.exe");
         std::fs::write(&target, b"").unwrap();
 
-        let keys = detect_runtime_warnings(&target);
+        let keys = detect_runtime_warnings(&target, false);
         assert!(keys.iter().any(|k| k == "runtime.python_monotonic_qpc"));
         assert!(!keys.iter().any(|k| k == "runtime.python_perfcounter_qpc"));
         std::fs::remove_dir_all(&dir).ok();
@@ -4902,7 +4914,7 @@ mod tests {
         let target = dir.join("App.exe");
         std::fs::write(&target, b"").unwrap();
 
-        let keys = detect_runtime_warnings(&target);
+        let keys = detect_runtime_warnings(&target, false);
         assert!(keys.iter().any(|k| k == "runtime.python_perfcounter_qpc"));
         assert!(!keys.iter().any(|k| k == "runtime.python_monotonic_qpc"));
         std::fs::remove_dir_all(&dir).ok();
@@ -4916,7 +4928,7 @@ mod tests {
         std::fs::write(net.join("App.deps.json"), b"{}").unwrap();
         let net_target = net.join("App.exe");
         std::fs::write(&net_target, b"").unwrap();
-        assert!(detect_runtime_warnings(&net_target).iter().any(|k| k == "runtime.dotnet_stopwatch_qpc"));
+        assert!(detect_runtime_warnings(&net_target, false).iter().any(|k| k == "runtime.dotnet_stopwatch_qpc"));
         std::fs::remove_dir_all(&net).ok();
 
         // Java via the target exe name (a plain launcher).
@@ -4924,7 +4936,7 @@ mod tests {
         std::fs::create_dir_all(&java).unwrap();
         let java_target = java.join("java.exe");
         std::fs::write(&java_target, b"").unwrap();
-        assert!(detect_runtime_warnings(&java_target).iter().any(|k| k == "runtime.java_nanotime_qpc"));
+        assert!(detect_runtime_warnings(&java_target, false).iter().any(|k| k == "runtime.java_nanotime_qpc"));
         std::fs::remove_dir_all(&java).ok();
 
         // A native target with no runtime markers gets no warning (honest silence, rule 4).
@@ -4932,7 +4944,35 @@ mod tests {
         std::fs::create_dir_all(&native).unwrap();
         let native_target = native.join("Native.exe");
         std::fs::write(&native_target, b"").unwrap();
-        assert!(detect_runtime_warnings(&native_target).is_empty());
+        assert!(detect_runtime_warnings(&native_target, false).is_empty());
+        std::fs::remove_dir_all(&native).ok();
+    }
+
+    #[test]
+    fn scale_qpc_replaces_runtime_warning_with_a_render_caution() {
+        // A2: under --scale-qpc the QPC axis scales, so the "does not scale" warning would be wrong. Even a
+        // Python target that would otherwise get runtime.python_monotonic_qpc gets ONLY the render caution.
+        let dir = unique_temp_dir("chrono-rt-qpc");
+        std::fs::create_dir_all(dir.join("_internal")).unwrap();
+        std::fs::write(dir.join("_internal").join("python314.dll"), b"").unwrap();
+        let target = dir.join("App.exe");
+        std::fs::write(&target, b"").unwrap();
+
+        let keys = detect_runtime_warnings(&target, true);
+        assert_eq!(keys, vec!["qpc.scaled_render_may_distort".to_string()]);
+        assert!(!keys.iter().any(|k| k == "runtime.python_monotonic_qpc"));
+
+        // And a native target under --scale-qpc still gets the render caution (QPC scales for any target).
+        let native = unique_temp_dir("chrono-rt-qpc-native");
+        std::fs::create_dir_all(&native).unwrap();
+        let native_target = native.join("Native.exe");
+        std::fs::write(&native_target, b"").unwrap();
+        assert_eq!(
+            detect_runtime_warnings(&native_target, true),
+            vec!["qpc.scaled_render_may_distort".to_string()]
+        );
+
+        std::fs::remove_dir_all(&dir).ok();
         std::fs::remove_dir_all(&native).ok();
     }
 }
