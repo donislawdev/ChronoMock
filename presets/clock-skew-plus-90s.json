@@ -1,0 +1,19 @@
+{
+  "schema": "chronomock.preset/1",
+  "stability": "unstable",
+  "id": "clock-skew-plus-90s",
+  "name": { "en": "Clock skew, +90 s", "pl": "Rozjazd zegara, +90 s" },
+  "explains": {
+    "en": "Does the app cope when its clock runs 90 seconds ahead of real time - a 2FA/TOTP code or a signed token rejected as expired or from the future?",
+    "pl": "Czy aplikacja radzi sobie, gdy jej zegar wyprzedza rzeczywisty o 90 sekund - kod 2FA/TOTP albo podpisany token odrzucony jako wygasły lub z przyszłości?"
+  },
+  "applies_to": "substitution",
+  "market": null,
+  "moment": {
+    "base": "now",
+    "steps": [
+      { "shift": { "sign": "+", "amount": 90, "unit": "seconds" } }
+    ]
+  },
+  "time_mode": { "multiplier": 1, "scale_duration_clock": false }
+}

@@ -3801,6 +3801,7 @@ mod tests {
             "license-expired-year-ago",
             "date-before-install",
             "payment-due-business-days",
+            "clock-skew-plus-90s",
         ];
         for id in ids {
             let text = read_data(&format!("presets/{id}.json"));
@@ -3822,6 +3823,11 @@ mod tests {
         // month-end snaps today (2026-02-15) to the last day of February - a common year, so the 28th.
         let month_end = eval_preset("month-end", &no_cal);
         assert_eq!((month_end.year, month_end.month, month_end.day), (2026, 2, 28));
+
+        // clock-skew-plus-90s carries base "now" (not "today"): the +90 s shift is measured from the
+        // current instant WITH its seconds, so 12:00:00 + 90 s crosses the minute to 12:01:30. A base of
+        // "today" (midnight) would make the 2FA skew meaningless - this pins that the preset uses "now".
+        assert_eq!(eval_preset("clock-skew-plus-90s", &no_cal).to_iso(), "2026-02-15T12:01:30");
 
         // payment-due-business-days is calendar-aware: +90 business days from today lands on a different
         // day per market, which is the whole point of a calendar-aware preset. Anchor at 2026-06-01 so the
