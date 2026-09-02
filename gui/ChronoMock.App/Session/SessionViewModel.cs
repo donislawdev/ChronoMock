@@ -51,6 +51,7 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     private ZoneOption _selectedZone;
     private ModeOption _selectedMode;
     private bool _scaleDuration;
+    private bool _scaleQpc;
     private readonly ISessionHistoryStore _store;
     private readonly IDiagnosticsLog _diagnosticsLog;
     private bool _launched;
@@ -258,6 +259,12 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     /// wall clock. Off by default (the wall clock alone covers date-dependent behaviour); a duration-based
     /// target like a countdown needs it. Maps to the wire <c>scale_duration</c> the core already accepts.</summary>
     public bool ScaleDuration { get => _scaleDuration; set => Set(ref _scaleDuration, value); }
+
+    /// <summary>Also scale QueryPerformanceCounter (ADR-2 reversal, opt-in). QPC backs the monotonic/elapsed
+    /// clock of Python 3.13+ (monotonic/perf_counter), .NET (Stopwatch) and Java (nanoTime); with this on,
+    /// a timer built on those accelerates too. SEPARATE from ScaleDuration because scaling QPC can distort a
+    /// target that times its rendering off QPC. Off by default (ADR-2). Maps to the wire <c>scale_qpc</c>.</summary>
+    public bool ScaleQpc { get => _scaleQpc; set => Set(ref _scaleQpc, value); }
 
     /// <summary>True when a session may be started: nothing is running, a target is chosen, moment is valid.</summary>
     public bool CanStart => _idle && HasTarget && Moment.IsValid;
@@ -934,6 +941,7 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
             Mode = SelectedMode.Mode,
             Multiplier = SelectedMode.Multiplier,
             ScaleDuration = _scaleDuration,
+            ScaleQpc = _scaleQpc,
         };
     }
 

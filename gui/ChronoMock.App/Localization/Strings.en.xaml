@@ -45,6 +45,7 @@
   <sys:String x:Key="mode.x60">×60</sys:String>
   <sys:String x:Key="mode.x1440">×1440</sys:String>
   <sys:String x:Key="mode.scale_duration">Scale duration too</sys:String>
+  <sys:String x:Key="mode.scale_qpc">Scale QPC too</sys:String>
 
   <!-- Actions. -->
   <sys:String x:Key="action.start">Start</sys:String>
@@ -313,6 +314,7 @@
   <sys:String x:Key="tip.zone">The session time zone - a fixed offset with no daylight saving. The moment is read in it.</sys:String>
   <sys:String x:Key="tip.mode">How fast the fake clock runs: flowing at real speed, frozen, or N times faster.</sys:String>
   <sys:String x:Key="tip.scale_duration">Also speed up timers, sleeps and countdowns inside the app - not just the wall clock.</sys:String>
+  <sys:String x:Key="tip.scale_qpc">Also speed up QPC-based clocks (Python monotonic, .NET Stopwatch, Java nanoTime). May distort an app that times its rendering off QPC.</sys:String>
   <sys:String x:Key="tip.start">Launch the target under the fake clock. Needs a target and a valid moment.</sys:String>
   <sys:String x:Key="tip.jump_to">While running: jump the fake clock to the moment on the left.</sys:String>
   <sys:String x:Key="tip.freeze">Freeze the fake clock so it stops advancing.</sys:String>

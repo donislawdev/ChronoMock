@@ -44,6 +44,7 @@
   <sys:String x:Key="mode.x60">×60</sys:String>
   <sys:String x:Key="mode.x1440">×1440</sys:String>
   <sys:String x:Key="mode.scale_duration">Skaluj też czas trwania</sys:String>
+  <sys:String x:Key="mode.scale_qpc">Skaluj też QPC</sys:String>
 
   <!-- Actions. -->
   <sys:String x:Key="action.start">Start</sys:String>
@@ -312,6 +313,7 @@
   <sys:String x:Key="tip.zone">Strefa czasowa sesji - stały offset bez zmiany czasu. Moment jest w niej liczony.</sys:String>
   <sys:String x:Key="tip.mode">Jak szybko idzie podmieniony zegar: płynnie, zamrożony, albo N razy szybciej.</sys:String>
   <sys:String x:Key="tip.scale_duration">Przyśpiesz też liczniki, uśpienia i odliczania w aplikacji - nie tylko zegar ścienny.</sys:String>
+  <sys:String x:Key="tip.scale_qpc">Przyśpiesz też zegary na QPC (Python monotonic, .NET Stopwatch, Java nanoTime). Może zniekształcić aplikację liczącą render z QPC.</sys:String>
   <sys:String x:Key="tip.start">Uruchom cel z podmienionym zegarem. Wymaga celu i poprawnego momentu.</sys:String>
   <sys:String x:Key="tip.jump_to">W trakcie sesji: przeskocz podmieniony zegar do momentu po lewej.</sys:String>
   <sys:String x:Key="tip.freeze">Zamroź podmieniony zegar, by przestał iść.</sys:String>

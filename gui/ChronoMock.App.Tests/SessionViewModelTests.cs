@@ -328,6 +328,7 @@ public class SessionViewModelTests
         Assert.Equal("frozen", time.Mode);
         Assert.Null(time.Multiplier);
         Assert.False(time.ScaleDuration); // off by default
+        Assert.False(time.ScaleQpc); // off by default (ADR-2)
     }
 
     [Fact]
@@ -340,6 +341,19 @@ public class SessionViewModelTests
 
         vm.ScaleDuration = false;
         Assert.False(vm.BuildTime().ScaleDuration);
+    }
+
+    [Fact]
+    public void Build_time_carries_the_scale_qpc_toggle()
+    {
+        // The QPC toggle (A3, ADR-2 reversal) flows to the wire so a QPC-based timer (Python monotonic,
+        // .NET Stopwatch, Java nanoTime) accelerates with the multiplier too. Separate from scale_duration.
+        var vm = new SessionViewModel { ScaleQpc = true };
+        Assert.True(vm.BuildTime().ScaleQpc);
+        Assert.False(vm.BuildTime().ScaleDuration); // independent of scale_duration
+
+        vm.ScaleQpc = false;
+        Assert.False(vm.BuildTime().ScaleQpc);
     }
 
     [Fact]

@@ -30,6 +30,11 @@ public sealed record TimeSpec
 
     [JsonPropertyName("multiplier")] public long? Multiplier { get; init; }
     [JsonPropertyName("scale_duration")] public bool ScaleDuration { get; init; }
+
+    /// <summary>Also scale QueryPerformanceCounter (ADR-2 reversal, opt-in). Separate from ScaleDuration
+    /// because scaling QPC also scales a target's QPC-timed rendering. Additive: an older core defaults it
+    /// to false (QPC left real).</summary>
+    [JsonPropertyName("scale_qpc")] public bool ScaleQpc { get; init; }
 }
 
 /// <summary>One clock reading: wall-clock text plus the session zone it is expressed in.</summary>

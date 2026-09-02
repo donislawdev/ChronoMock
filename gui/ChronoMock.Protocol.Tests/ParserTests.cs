@@ -97,8 +97,28 @@ public class ParserTests
         var json = start.ToNdjson();
         Assert.Contains("\"type\":\"start\"", json, StringComparison.Ordinal);
         Assert.Contains("\"scale_duration\":false", json, StringComparison.Ordinal);
+        Assert.Contains("\"scale_qpc\":false", json, StringComparison.Ordinal);
         Assert.Contains("\"tz_bias_min\":0", json, StringComparison.Ordinal);
         Assert.DoesNotContain("\"cwd\"", json, StringComparison.Ordinal); // null is omitted on write
         Assert.DoesNotContain("\"multiplier\"", json, StringComparison.Ordinal); // null is omitted on write
+    }
+
+    [Fact]
+    public void Start_command_carries_scale_qpc_when_set()
+    {
+        var start = new StartCommand
+        {
+            Id = 1,
+            Target = new TargetSpec { Path = "C:/app.exe" },
+            Time = new TimeSpec
+            {
+                Moment = new MomentSpec { Kind = "absolute", Local = "2038-01-19T03:14:07", TzBiasMin = 0 },
+                Mode = "multiplier",
+                Multiplier = 60,
+                ScaleQpc = true,
+            },
+        };
+
+        Assert.Contains("\"scale_qpc\":true", start.ToNdjson(), StringComparison.Ordinal);
     }
 }

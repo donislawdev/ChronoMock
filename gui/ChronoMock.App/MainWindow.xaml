@@ -132,6 +132,15 @@
                     HorizontalAlignment="Center" Margin="{StaticResource SpaceXs}"
                     FontSize="{StaticResource FontSizeBody}" Foreground="{DynamicResource BrushTextSecondary}" />
 
+          <!-- Scale QueryPerformanceCounter too (ADR-2 reversal, opt-in): a QPC-based monotonic/elapsed clock
+               (Python monotonic, .NET Stopwatch, Java nanoTime) accelerates as well. Separate because it can
+               distort a target that times its rendering off QPC. Maps to wire scale_qpc. -->
+          <CheckBox Content="{DynamicResource mode.scale_qpc}"
+                    IsChecked="{Binding ScaleQpc}"
+                    IsEnabled="{Binding IsIdle}" ToolTip="{DynamicResource tip.scale_qpc}"
+                    HorizontalAlignment="Center" Margin="{StaticResource SpaceXs}"
+                    FontSize="{StaticResource FontSizeBody}" Foreground="{DynamicResource BrushTextSecondary}" />
+
         </StackPanel>
 
         <Button Grid.Row="1" Margin="{StaticResource SpaceSm}" HorizontalAlignment="Center"
