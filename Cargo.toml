@@ -33,3 +33,22 @@ chrono-core = { path = "crates/core" }
 chrono-ctl = { path = "crates/ctl" }
 chrono-mech = { path = "crates/mech" }
 chrono-proto = { path = "crates/proto" }
+
+# Catch integer overflow in the release build too, not only in dev (RELEASE-008). For a tool whose whole
+# job is exact time arithmetic (rules 2, 3), a silent wrap in an unaudited path would produce the WRONG
+# TIME instead of a loud failure (against rule 6). The critical paths are already `checked_`; this turns a
+# panic on any OTHER overflow into an honest crash rather than a quiet wrong answer.
+[profile.release]
+overflow-checks = true
+
+# ...except the injected detour call graph. The hook is a cdylib whose detours run inside the target
+# process behind an `extern "system"` boundary, and it calls the shared control block (`chrono-ctl`) on the
+# hot path. A Rust panic unwinding across that FFI boundary into the target's own code is undefined
+# behaviour (there is no `panic = "abort"`), so these two must NEVER panic on overflow. They run on moments
+# already validated in range upstream (`moment_to_filetime_utc` is checked, and the session refuses an
+# out-of-range moment), so they do not overflow in practice, and their arithmetic stays wrapping/defined.
+[profile.release.package.chrono-hook]
+overflow-checks = false
+
+[profile.release.package.chrono-ctl]
+overflow-checks = false
