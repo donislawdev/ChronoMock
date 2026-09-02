@@ -1,3 +1,4 @@
+using System.IO;
 using System.Threading.Channels;
 using ChronoMock.App;
 using ChronoMock.Protocol;
@@ -140,6 +141,42 @@ public class SessionViewModelTests
         Assert.Equal(SessionStatusKind.Error, vm.StatusKind);
         Assert.Equal("protocol.expected_start", vm.StatusKey);
         Assert.False(vm.HasInFlightError);
+    }
+
+    [Fact]
+    public async Task A_non_PE_target_reads_as_unsupported_not_core_missing()
+    {
+        // A non-executable target fails in SessionPlan.Build (before the core spawns), so StartAsync
+        // classifies it as an unsupported executable, not a broken core install (RELEASE-007). No core is
+        // launched, so this runs without one.
+        var vm = new SessionViewModel();
+        var path = Path.Combine(Path.GetTempPath(), $"chrono-{Guid.NewGuid():N}.txt");
+        File.WriteAllText(path, "not a PE");
+        try
+        {
+            vm.SetTarget(path);
+            await vm.StartAsync();
+
+            Assert.Equal(SessionStatusKind.Error, vm.StatusKind);
+            Assert.Equal("status.target_unsupported", vm.StatusKey);
+            Assert.True(vm.IsIdle); // returned to idle, nothing left running
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public async Task A_missing_target_reads_as_unreadable_not_core_missing()
+    {
+        var vm = new SessionViewModel();
+        vm.SetTarget(Path.Combine(Path.GetTempPath(), $"chrono-missing-{Guid.NewGuid():N}.exe"));
+
+        await vm.StartAsync();
+
+        Assert.Equal(SessionStatusKind.Error, vm.StatusKind);
+        Assert.Equal("status.target_unreadable", vm.StatusKey);
     }
 
     [Fact]

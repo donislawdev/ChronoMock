@@ -13,7 +13,9 @@
   <!-- Target selection (chrono-mock 7.1). The dialog strings are keyed too (rule 15). -->
   <sys:String x:Key="target.label">Target:</sys:String>
   <sys:String x:Key="target.dialog_title">Choose target</sys:String>
-  <sys:String x:Key="target.dialog_filter">Executables (*.exe)|*.exe|All files (*.*)|*.*</sys:String>
+  <!-- Only .exe: native injection needs a PE and CDP needs an Electron/Chromium .exe. Narrowing the
+       filter keeps a user from picking a .lnk/.bat/.txt that could only fail (RELEASE-007). -->
+  <sys:String x:Key="target.dialog_filter">Executables (*.exe)|*.exe</sys:String>
 
   <!-- Time inputs (chrono-mock 7.1). The moment is the local time in the session zone (rule 2). -->
   <sys:String x:Key="moment.label">At:</sys:String>
@@ -61,7 +63,9 @@
   <sys:String x:Key="status.core_stopped">Core stopped - the target time is frozen</sys:String>
   <sys:String x:Key="status.stopped">Session stopped - the target is back on real time</sys:String>
   <sys:String x:Key="status.core_unresponsive">Core not responding - stopped, the target is back on real time</sys:String>
-  <sys:String x:Key="status.core_missing">Cannot start the demo session - build the solution first</sys:String>
+  <sys:String x:Key="status.core_missing">The Chrono Mock core could not be started - the installation may be incomplete</sys:String>
+  <sys:String x:Key="status.target_unsupported">That file is not a supported executable - choose a .exe application</sys:String>
+  <sys:String x:Key="status.target_unreadable">The target could not be read - it may have been moved or is not accessible</sys:String>
   <sys:String x:Key="status.no_ready">No handshake from the core</sys:String>
   <sys:String x:Key="status.error">Session error</sys:String>
 

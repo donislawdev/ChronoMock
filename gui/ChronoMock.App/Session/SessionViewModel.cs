@@ -591,7 +591,28 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
             _startMomentText = Moment.Canonical;
             _startMode = SelectedMode;
 
-            var plan = SessionPlan.Build(TargetPath!, BuildTime());
+            // Build the plan by reading the target's PE header. Classify a TARGET problem here (RELEASE-007)
+            // so it is not reported as a broken core install: a non-PE file yields InvalidOperationException
+            // ("cannot determine the bitness"), while a missing or unreadable file propagates from PeReader
+            // as an IO/access error (it does not swallow those - only a malformed PE becomes Unknown).
+            SessionPlan plan;
+            try
+            {
+                plan = SessionPlan.Build(TargetPath!, BuildTime());
+            }
+            catch (InvalidOperationException ex)
+            {
+                LastError = ex.Message;
+                SetStatus("status.target_unsupported", SessionStatusKind.Error);
+                return;
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                LastError = ex.Message;
+                SetStatus("status.target_unreadable", SessionStatusKind.Error);
+                return;
+            }
+
             IsCdp = plan.IsCdp;
             client = CoreClient.Connect(plan.CorePath);
             _client = client;
@@ -641,9 +662,9 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
                                        or UnauthorizedAccessException
                                        or System.ComponentModel.Win32Exception)
         {
-            // Setup failed: a build artifact is missing, the repo root was not found, the target file is
-            // unreadable (UnauthorizedAccessException from PeReader.File.OpenRead, M-5), or the core would
-            // not spawn.
+            // The core itself could not be started: its executable is missing or would not spawn (a broken
+            // or incomplete install). Target-file problems were already classified above and returned, so
+            // reaching here means the core, not the target (RELEASE-007).
             LastError = ex.Message;
             SetStatus("status.core_missing", SessionStatusKind.Error);
         }

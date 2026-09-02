@@ -12,7 +12,9 @@
   <!-- Wybór celu (chrono-mock 7.1). Teksty dialogu też jako klucze (reguła 15). -->
   <sys:String x:Key="target.label">Cel:</sys:String>
   <sys:String x:Key="target.dialog_title">Wybierz cel</sys:String>
-  <sys:String x:Key="target.dialog_filter">Pliki wykonywalne (*.exe)|*.exe|Wszystkie pliki (*.*)|*.*</sys:String>
+  <!-- Tylko .exe: natywna injekcja wymaga PE, a CDP aplikacji Electron/Chromium .exe. Zawężenie filtra
+       chroni przed wyborem .lnk/.bat/.txt, który mógłby tylko zawieść (RELEASE-007). -->
+  <sys:String x:Key="target.dialog_filter">Pliki wykonywalne (*.exe)|*.exe</sys:String>
 
   <!-- Wejścia czasu (chrono-mock 7.1). Moment to czas lokalny w strefie sesji (reguła 2). -->
   <sys:String x:Key="moment.label">Moment:</sys:String>
@@ -60,7 +62,9 @@
   <sys:String x:Key="status.core_stopped">Rdzeń zatrzymany - czas celu zamrożony</sys:String>
   <sys:String x:Key="status.stopped">Sesja zatrzymana - cel wrócił do realnego czasu</sys:String>
   <sys:String x:Key="status.core_unresponsive">Rdzeń nie odpowiada - zatrzymany, cel wrócił do realnego czasu</sys:String>
-  <sys:String x:Key="status.core_missing">Nie można uruchomić sesji demo - najpierw zbuduj rozwiązanie</sys:String>
+  <sys:String x:Key="status.core_missing">Nie udało się uruchomić rdzenia Chrono Mock - instalacja może być niekompletna</sys:String>
+  <sys:String x:Key="status.target_unsupported">To nie jest wspierany plik wykonywalny - wybierz aplikację .exe</sys:String>
+  <sys:String x:Key="status.target_unreadable">Nie udało się odczytać celu - mógł zostać przeniesiony albo jest niedostępny</sys:String>
   <sys:String x:Key="status.no_ready">Brak uzgodnienia z rdzeniem</sys:String>
   <sys:String x:Key="status.error">Błąd sesji</sys:String>
 
