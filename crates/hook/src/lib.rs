@@ -62,9 +62,9 @@ use std::sync::OnceLock;
 
 use chrono_ctl::{
     bump_calls, cov_section_name, cov_size, dur_qpc_at, dur_quit_at, dur_tick_at,
-    mark_channel_installed, read_anchor, read_core_pid, read_dur, read_qpc, read_scale_dur,
-    read_scale_qpc, read_tz_bias, register_pid, scale_delay_interval, scale_timer_due,
-    scale_timer_elapse, scale_timer_period, scale_timer_period_ms, scale_wait, ChannelModule, Cov,
+    read_anchor, read_core_pid, read_dur, read_qpc, read_scale_dur, read_scale_qpc, read_tz_bias,
+    register_pid, scale_delay_interval, scale_timer_due, scale_timer_elapse, scale_timer_period,
+    scale_timer_period_ms, scale_wait, set_channels_installed, ChannelModule, Cov,
     Ctl, CHANNELS, IDX_GDTZI, IDX_GLT, IDX_GST, IDX_GSTAFT, IDX_GSTPAFT, IDX_GTC, IDX_GTC64,
     IDX_GTZI, IDX_NTDELAY, IDX_NTQSI, IDX_NTQST, IDX_QUIT, IDX_SLEEP, IDX_SLEEPEX, IDX_STSL,
     IDX_STSLEX, IDX_FTLFT, IDX_LFTFT, IDX_TLTST, IDX_TLTSTEX, IDX_WFSO, IDX_WFSOEX, IDX_WFMO,
@@ -1450,14 +1450,19 @@ fn log(msg: &str) {
 
 /// Resolve, create, and record one channel's detour. Best-effort: a missing export
 /// or a failed hook logs and leaves the bit unset (honest partial), never aborts the
-/// rest. The export name and module come from `CHANNELS[idx]` - single source. The
-/// installed bit is marked in this process's own `Cov`; with no coverage section
-/// (`cov` is None) the detour is still installed, it just goes unreported.
+/// rest. The export name and module come from `CHANNELS[idx]` - single source.
+///
+/// The bit goes into `pending`, NOT into this process's `Cov`: `MinHook::create_hook` only
+/// PREPARES a trampoline, and the detour goes live only at `enable_all_hooks`. `install`
+/// publishes `pending` to the `Cov` after that call succeeds, so a target whose hooks were
+/// prepared but never enabled (an AV blocking the code-section write, a CFG conflict) reports
+/// zero covered channels instead of a full set that never ran - rule 4, the audit never claims
+/// a channel it did not cover.
 ///
 /// # Safety
-/// `cov`, when Some, must point to a live `Cov`; `detour` must be correct for `slot`.
+/// `detour` must be correct for `slot`.
 unsafe fn make_hook<T: Copy>(
-    cov: Option<*mut Cov>,
+    pending: &mut u64,
     k32: HMODULE,
     ntdll: HMODULE,
     idx: usize,
@@ -1513,9 +1518,7 @@ unsafe fn make_hook<T: Copy>(
     match MinHook::create_hook(target as *const () as *mut c_void, detour) {
         Ok(original) => {
             let _ = slot.set(std::mem::transmute_copy::<*mut c_void, T>(&original));
-            if let Some(c) = cov {
-                mark_channel_installed(c, ch.bit);
-            }
+            *pending |= ch.bit;
         }
         Err(e) => log(&format!("[chrono_hook] create_hook {} failed: {e:?}", ch.name)),
     }
@@ -1586,45 +1589,49 @@ unsafe fn install() -> Result<(), String> {
     let k32 = GetModuleHandleA(s!("kernel32.dll")).map_err(|e| format!("{e:?}"))?;
     let ntdll = GetModuleHandleA(s!("ntdll.dll")).map_err(|e| format!("{e:?}"))?;
 
-    make_hook(cov, k32, ntdll, IDX_GSTAFT, h_gstaft as *const () as *mut c_void, &O_GSTAFT);
-    make_hook(cov, k32, ntdll, IDX_GSTPAFT, h_gstpaft as *const () as *mut c_void, &O_GSTPAFT);
-    make_hook(cov, k32, ntdll, IDX_GST, h_gst as *const () as *mut c_void, &O_GST);
-    make_hook(cov, k32, ntdll, IDX_GLT, h_glt as *const () as *mut c_void, &O_GLT);
-    make_hook(cov, k32, ntdll, IDX_NTQST, h_ntqst as *const () as *mut c_void, &O_NTQST);
-    make_hook(cov, k32, ntdll, IDX_NTQSI, h_ntqsi as *const () as *mut c_void, &O_NTQSI);
-    make_hook(cov, k32, ntdll, IDX_GTZI, h_gtzi as *const () as *mut c_void, &O_GTZI);
-    make_hook(cov, k32, ntdll, IDX_GDTZI, h_gdtzi as *const () as *mut c_void, &O_GDTZI);
-    make_hook(cov, k32, ntdll, IDX_STSL, h_stsl as *const () as *mut c_void, &O_STSL);
-    make_hook(cov, k32, ntdll, IDX_STSLEX, h_stslex as *const () as *mut c_void, &O_STSLEX);
-    make_hook(cov, k32, ntdll, IDX_FTLFT, h_ftlft as *const () as *mut c_void, &O_FTLFT);
-    make_hook(cov, k32, ntdll, IDX_LFTFT, h_lftft as *const () as *mut c_void, &O_LFTFT);
-    make_hook(cov, k32, ntdll, IDX_TLTST, h_tltst as *const () as *mut c_void, &O_TLTST);
-    make_hook(cov, k32, ntdll, IDX_TLTSTEX, h_tltstex as *const () as *mut c_void, &O_TLTSTEX);
+    // Channels whose detour was CREATED. Published to the Cov only after enable_all_hooks succeeds -
+    // until then no detour is live, and a bit that says otherwise would be the audit lying (rule 4).
+    let mut pending: u64 = 0;
+
+    make_hook(&mut pending, k32, ntdll, IDX_GSTAFT, h_gstaft as *const () as *mut c_void, &O_GSTAFT);
+    make_hook(&mut pending, k32, ntdll, IDX_GSTPAFT, h_gstpaft as *const () as *mut c_void, &O_GSTPAFT);
+    make_hook(&mut pending, k32, ntdll, IDX_GST, h_gst as *const () as *mut c_void, &O_GST);
+    make_hook(&mut pending, k32, ntdll, IDX_GLT, h_glt as *const () as *mut c_void, &O_GLT);
+    make_hook(&mut pending, k32, ntdll, IDX_NTQST, h_ntqst as *const () as *mut c_void, &O_NTQST);
+    make_hook(&mut pending, k32, ntdll, IDX_NTQSI, h_ntqsi as *const () as *mut c_void, &O_NTQSI);
+    make_hook(&mut pending, k32, ntdll, IDX_GTZI, h_gtzi as *const () as *mut c_void, &O_GTZI);
+    make_hook(&mut pending, k32, ntdll, IDX_GDTZI, h_gdtzi as *const () as *mut c_void, &O_GDTZI);
+    make_hook(&mut pending, k32, ntdll, IDX_STSL, h_stsl as *const () as *mut c_void, &O_STSL);
+    make_hook(&mut pending, k32, ntdll, IDX_STSLEX, h_stslex as *const () as *mut c_void, &O_STSLEX);
+    make_hook(&mut pending, k32, ntdll, IDX_FTLFT, h_ftlft as *const () as *mut c_void, &O_FTLFT);
+    make_hook(&mut pending, k32, ntdll, IDX_LFTFT, h_lftft as *const () as *mut c_void, &O_LFTFT);
+    make_hook(&mut pending, k32, ntdll, IDX_TLTST, h_tltst as *const () as *mut c_void, &O_TLTST);
+    make_hook(&mut pending, k32, ntdll, IDX_TLTSTEX, h_tltstex as *const () as *mut c_void, &O_TLTSTEX);
 
     // Duration axis (opt-in). The anchor lives in the shared Ctl now: the core initialized it in
     // prepare (from the real GetTickCount64 / QUIT, before the target ran) and rebases it on every
     // set_multiplier, so a speed change never rewinds the axis (H-1). No per-process capture here - the
     // detours read it under the same seqlock as the wall multiplier. QPC / timeGetTime stay real (ADR-2).
     if read_scale_dur(ctl as *const Ctl) {
-        make_hook(cov, k32, ntdll, IDX_GTC64, h_tick as *const () as *mut c_void, &O_TICK);
-        make_hook(cov, k32, ntdll, IDX_GTC, h_tick32 as *const () as *mut c_void, &O_TICK32);
-        make_hook(cov, k32, ntdll, IDX_QUIT, h_quit as *const () as *mut c_void, &O_QUIT);
-        make_hook(cov, k32, ntdll, IDX_SLEEP, h_sleep as *const () as *mut c_void, &O_SLEEP);
-        make_hook(cov, k32, ntdll, IDX_SLEEPEX, h_sleepex as *const () as *mut c_void, &O_SLEEPEX);
-        make_hook(cov, k32, ntdll, IDX_NTDELAY, h_ntdelay as *const () as *mut c_void, &O_NTDELAY);
-        make_hook(cov, k32, ntdll, IDX_WFSO, h_wfso as *const () as *mut c_void, &O_WFSO);
-        make_hook(cov, k32, ntdll, IDX_WFSOEX, h_wfsoex as *const () as *mut c_void, &O_WFSOEX);
-        make_hook(cov, k32, ntdll, IDX_WFMO, h_wfmo as *const () as *mut c_void, &O_WFMO);
-        make_hook(cov, k32, ntdll, IDX_WFMOEX, h_wfmoex as *const () as *mut c_void, &O_WFMOEX);
-        make_hook(cov, k32, ntdll, IDX_SOAW, h_soaw as *const () as *mut c_void, &O_SOAW);
-        make_hook(cov, k32, ntdll, IDX_MWFMO, h_mwfmo as *const () as *mut c_void, &O_MWFMO);
-        make_hook(cov, k32, ntdll, IDX_MWFMOEX, h_mwfmoex as *const () as *mut c_void, &O_MWFMOEX);
-        make_hook(cov, k32, ntdll, IDX_SWT, h_swt as *const () as *mut c_void, &O_SWT);
-        make_hook(cov, k32, ntdll, IDX_SWTEX, h_swtex as *const () as *mut c_void, &O_SWTEX);
-        make_hook(cov, k32, ntdll, IDX_SETTIMER, h_settimer as *const () as *mut c_void, &O_SETTIMER);
-        make_hook(cov, k32, ntdll, IDX_TIMESETEVENT, h_timesetevent as *const () as *mut c_void, &O_TIMESETEVENT);
-        make_hook(cov, k32, ntdll, IDX_TPTIMER, h_set_tp_timer as *const () as *mut c_void, &O_TPTIMER);
-        make_hook(cov, k32, ntdll, IDX_TPTIMEREX, h_set_tp_timer_ex as *const () as *mut c_void, &O_TPTIMEREX);
+        make_hook(&mut pending, k32, ntdll, IDX_GTC64, h_tick as *const () as *mut c_void, &O_TICK);
+        make_hook(&mut pending, k32, ntdll, IDX_GTC, h_tick32 as *const () as *mut c_void, &O_TICK32);
+        make_hook(&mut pending, k32, ntdll, IDX_QUIT, h_quit as *const () as *mut c_void, &O_QUIT);
+        make_hook(&mut pending, k32, ntdll, IDX_SLEEP, h_sleep as *const () as *mut c_void, &O_SLEEP);
+        make_hook(&mut pending, k32, ntdll, IDX_SLEEPEX, h_sleepex as *const () as *mut c_void, &O_SLEEPEX);
+        make_hook(&mut pending, k32, ntdll, IDX_NTDELAY, h_ntdelay as *const () as *mut c_void, &O_NTDELAY);
+        make_hook(&mut pending, k32, ntdll, IDX_WFSO, h_wfso as *const () as *mut c_void, &O_WFSO);
+        make_hook(&mut pending, k32, ntdll, IDX_WFSOEX, h_wfsoex as *const () as *mut c_void, &O_WFSOEX);
+        make_hook(&mut pending, k32, ntdll, IDX_WFMO, h_wfmo as *const () as *mut c_void, &O_WFMO);
+        make_hook(&mut pending, k32, ntdll, IDX_WFMOEX, h_wfmoex as *const () as *mut c_void, &O_WFMOEX);
+        make_hook(&mut pending, k32, ntdll, IDX_SOAW, h_soaw as *const () as *mut c_void, &O_SOAW);
+        make_hook(&mut pending, k32, ntdll, IDX_MWFMO, h_mwfmo as *const () as *mut c_void, &O_MWFMO);
+        make_hook(&mut pending, k32, ntdll, IDX_MWFMOEX, h_mwfmoex as *const () as *mut c_void, &O_MWFMOEX);
+        make_hook(&mut pending, k32, ntdll, IDX_SWT, h_swt as *const () as *mut c_void, &O_SWT);
+        make_hook(&mut pending, k32, ntdll, IDX_SWTEX, h_swtex as *const () as *mut c_void, &O_SWTEX);
+        make_hook(&mut pending, k32, ntdll, IDX_SETTIMER, h_settimer as *const () as *mut c_void, &O_SETTIMER);
+        make_hook(&mut pending, k32, ntdll, IDX_TIMESETEVENT, h_timesetevent as *const () as *mut c_void, &O_TIMESETEVENT);
+        make_hook(&mut pending, k32, ntdll, IDX_TPTIMER, h_set_tp_timer as *const () as *mut c_void, &O_TPTIMER);
+        make_hook(&mut pending, k32, ntdll, IDX_TPTIMEREX, h_set_tp_timer_ex as *const () as *mut c_void, &O_TPTIMEREX);
     }
 
     // QPC axis (opt-in `scale_qpc`, ADR-2 reversal). SEPARATE from scale_duration because scaling QPC also
@@ -1648,12 +1655,12 @@ unsafe fn install() -> Result<(), String> {
     // Direct process creation (ADR-3, observed): hook NtCreateUserProcess ALWAYS - not gated by
     // scale_duration, since process creation is watched regardless. It only counts a direct call and
     // forwards untouched; the SPAWNING guard keeps the CreateProcess* funnel from counting here.
-    make_hook(cov, k32, ntdll, IDX_NTCUP, h_ntcup as *const () as *mut c_void, &O_NTCUP);
+    make_hook(&mut pending, k32, ntdll, IDX_NTCUP, h_ntcup as *const () as *mut c_void, &O_NTCUP);
 
     // Suspected time source (Etap 2, observed): hook ws2_32 connect ALWAYS - the network is watched
     // regardless of scale_duration. It only counts a connection (a suspected server time source we cannot
     // cover) and forwards untouched; the audit warns source.network_at_start.
-    make_hook(cov, k32, ntdll, IDX_CONNECT, h_connect as *const () as *mut c_void, &O_CONNECT);
+    make_hook(&mut pending, k32, ntdll, IDX_CONNECT, h_connect as *const () as *mut c_void, &O_CONNECT);
 
     // Child inheritance (ADR-3): hook CreateProcessW and CreateProcessA so the whole
     // process tree joins the session whichever spawn API the parent uses. Not coverage
@@ -1682,7 +1689,23 @@ unsafe fn install() -> Result<(), String> {
         }
     }
 
-    MinHook::enable_all_hooks().map_err(|e| format!("enable_all_hooks: {e:?}"))?;
+    // Enable every prepared detour, THEN publish what is actually live. Until this call returns Ok,
+    // the trampolines exist but no detour runs, so nothing may be claimed as covered. If it fails
+    // (an AV blocking the write to the code section, a CFG conflict, another hooking library in the
+    // process) the target keeps running on real time - DllMain cannot undo a load - so the honest
+    // report is zero covered channels, which the mechanism turns into a failing verdict rather than
+    // a silent "works" over a session that substituted nothing (rule 4).
+    if let Err(e) = MinHook::enable_all_hooks() {
+        if let Some(c) = cov {
+            // Explicit, not merely "we never wrote": the section is named after our PID and Windows
+            // recycles PIDs, so it can be a section the core still holds open from an earlier child.
+            set_channels_installed(c, 0);
+        }
+        return Err(format!("enable_all_hooks: {e:?}"));
+    }
+    if let Some(c) = cov {
+        set_channels_installed(c, pending);
+    }
 
     // Publish our PID LAST - after the coverage section exists and the hooks are
     // installed - so the mechanism never reads a pid whose ChronoCov.<pid> is not yet

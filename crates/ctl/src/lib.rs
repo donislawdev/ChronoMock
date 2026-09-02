@@ -712,14 +712,17 @@ pub unsafe fn read_pid(p: *const Ctl, i: usize) -> u32 {
     read_volatile(slotp)
 }
 
-/// Mark a channel as installed (hook side, per-process `Cov`). OR-in, so several
-/// channels accumulate.
+/// Publish the set of installed channels (hook side, per-process `Cov`). A whole-mask WRITE,
+/// not an OR-in: the hook side collects bits locally while it creates the detours and publishes
+/// them only once every detour is actually ENABLED, so a failure part-way through can publish
+/// nothing (mask 0) instead of leaving a half-set claim behind. A bit here means "this channel's
+/// detour is live", and the audit reads it as such - so it must never be set for a detour that was
+/// merely prepared (rule 4: the audit never claims a channel it did not cover).
 ///
 /// # Safety
 /// `p` must point to a live, correctly aligned `Cov`.
-pub unsafe fn mark_channel_installed(p: *mut Cov, channel: u64) {
-    let cur = read_volatile(addr_of!((*p).installed_channels));
-    write_volatile(addr_of_mut!((*p).installed_channels), cur | channel);
+pub unsafe fn set_channels_installed(p: *mut Cov, mask: u64) {
+    write_volatile(addr_of_mut!((*p).installed_channels), mask);
 }
 
 /// Read the installed-channels bitmask (mechanism side, per-process `Cov`).
@@ -1059,11 +1062,16 @@ mod tests {
         let p = &mut cov as *mut Cov;
         unsafe {
             assert_eq!(read_installed(p), 0);
-            mark_channel_installed(p, CH_GSTAFT);
-            mark_channel_installed(p, CH_NTQST);
+            set_channels_installed(p, CH_GSTAFT | CH_NTQST);
             assert_eq!(read_installed(p) & CH_GSTAFT, CH_GSTAFT);
             assert_eq!(read_installed(p) & CH_NTQST, CH_NTQST);
             assert_eq!(read_installed(p) & CH_GLT, 0);
+
+            // A whole-mask write, so a later publish REPLACES the claim rather than adding to it.
+            // That is what lets the hook publish nothing when enabling the detours failed.
+            set_channels_installed(p, 0);
+            assert_eq!(read_installed(p), 0);
+            set_channels_installed(p, CH_GSTAFT | CH_NTQST);
 
             bump_calls(p, IDX_GSTAFT);
             bump_calls(p, IDX_GSTAFT);

@@ -763,4 +763,34 @@ mod tests {
         let cl = command_line_string("C:\\dir\\app.exe", &["a b".to_string(), "c".to_string()]);
         assert_eq!(cl, "\"C:\\dir\\app.exe\" \"a b\" c");
     }
+
+    fn zeroed_cov() -> Cov {
+        Cov { installed_channels: 0, calls: [0; chrono_ctl::CHANNEL_COUNT] }
+    }
+
+    /// S-2 regression. A hook that PREPARED its detours but never enabled them (an AV blocking
+    /// the code-section write, a CFG conflict) publishes an empty mask. That must read as a
+    /// failing verdict - never as a session reported "works" while nothing was substituted.
+    /// The old order set the bits at `create_hook` time, so this exact case produced a full
+    /// covered list with zero calls and a Works verdict (untouchable rule 4).
+    #[test]
+    fn empty_install_mask_reads_as_a_failing_verdict() {
+        let cov = zeroed_cov();
+        let gathered = unsafe { gather_coverage(&cov as *const Cov, 0, false) };
+        assert!(gathered.covered.is_empty(), "nothing may be claimed as covered");
+        assert!(!gathered.uncovered.is_empty(), "always-present channels are a real gap");
+        assert_eq!(chrono_core::verdict_from_coverage(&gathered), chrono_core::Verdict::Fails);
+    }
+
+    /// The paired direction, so the guard above cannot pass by reporting nothing at all: a full
+    /// mask still yields covered channels and a Works verdict.
+    #[test]
+    fn full_install_mask_reads_as_works() {
+        let cov = zeroed_cov();
+        let all = CHANNELS.iter().fold(0u64, |acc, ch| acc | ch.bit);
+        let gathered = unsafe { gather_coverage(&cov as *const Cov, all, false) };
+        assert!(!gathered.covered.is_empty(), "a live mask must report covered channels");
+        assert!(gathered.uncovered.is_empty(), "nothing is missing when every bit is set");
+        assert_eq!(chrono_core::verdict_from_coverage(&gathered), chrono_core::Verdict::Works);
+    }
 }
