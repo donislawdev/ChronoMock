@@ -25,7 +25,8 @@ use chrono_ctl::{
 };
 use windows::core::{s, PCWSTR, PWSTR};
 use windows::Win32::Foundation::{
-    CloseHandle, GetLastError, ERROR_ALREADY_EXISTS, HANDLE, INVALID_HANDLE_VALUE, WAIT_TIMEOUT,
+    CloseHandle, GetLastError, ERROR_ALREADY_EXISTS, HANDLE, INVALID_HANDLE_VALUE, WAIT_ABANDONED,
+    WAIT_OBJECT_0, WAIT_TIMEOUT,
 };
 use windows::Win32::System::Diagnostics::Debug::WriteProcessMemory;
 use windows::Win32::System::LibraryLoader::{GetModuleHandleA, GetProcAddress};
@@ -36,9 +37,9 @@ use windows::Win32::System::Memory::{
 };
 use windows::Win32::System::SystemInformation::{GetSystemTimeAsFileTime, GetTickCount64};
 use windows::Win32::System::Threading::{
-    CreateProcessW, CreateRemoteThread, GetCurrentProcessId, GetExitCodeProcess, GetExitCodeThread,
-    OpenProcess, ResumeThread, TerminateProcess, WaitForSingleObject, CREATE_SUSPENDED,
-    LPTHREAD_START_ROUTINE, PROCESS_INFORMATION, PROCESS_SYNCHRONIZE, STARTUPINFOW,
+    CreateMutexW, CreateProcessW, CreateRemoteThread, GetCurrentProcessId, GetExitCodeProcess,
+    GetExitCodeThread, ResumeThread, TerminateProcess, WaitForSingleObject, CREATE_SUSPENDED,
+    LPTHREAD_START_ROUTINE, PROCESS_INFORMATION, STARTUPINFOW,
 };
 use windows::Win32::System::Performance::QueryPerformanceCounter;
 use windows::Win32::System::WindowsProgramming::QueryUnbiasedInterruptTime;
@@ -107,6 +108,9 @@ pub struct Session {
     /// session so a child's evidence survives its exit. Also the record of which PIDs
     /// have been reported, so `poll_new_coverage` emits each process exactly once.
     cov_maps: Vec<CovMap>,
+    /// The session lock, held for as long as the session lives. Dropped last, so a second core
+    /// cannot start until this one has released the control block it was using.
+    _lock: SessionLock,
 }
 
 /// Both clocks at one instant, in raw UTC FILETIME ticks. The core formats them.
@@ -303,21 +307,70 @@ fn qpc_now() -> i64 {
     t
 }
 
-/// Whether a prior session's core (this pid) is still running. Cannot open, or already signaled,
-/// means gone. PID reuse is a small hazard: a reused pid reads as alive and we refuse rather than
-/// reclaim - the safe direction (refuse), never a wrong reclaim of a live session.
+/// Exclusive right to run a session, held for the session's whole life. Closing the handle is
+/// enough to give the lock up - deliberately no `ReleaseMutex`, because mutex ownership is per
+/// THREAD and the core does not promise that `prepare` and `end` run on the same one, whereas
+/// closing a handle is safe from any thread and the kernel drops ownership when the last handle
+/// goes (a killed core included). Held in `Session` so every early `return Err` in `prepare`
+/// releases it by `Drop` - a lock that leaked on an error path would lock the machine out of
+/// starting a session until the core exits.
+struct SessionLock(HANDLE);
+
+impl Drop for SessionLock {
+    fn drop(&mut self) {
+        unsafe {
+            let _ = CloseHandle(self.0);
+        }
+    }
+}
+
+/// The pid of the core running the session named in the control block, or 0 when there is none to
+/// read (no section yet, or a core that has not published its pid). Used only to name the other
+/// session in a refusal message - the refusal itself comes from the lock, never from this value.
 ///
 /// # Safety
-/// Calls the Win32 process APIs; `pid` is otherwise unconstrained.
-unsafe fn core_is_alive(pid: u32) -> bool {
-    match OpenProcess(PROCESS_SYNCHRONIZE, false, pid) {
-        Ok(h) => {
-            let alive = WaitForSingleObject(h, 0) == WAIT_TIMEOUT;
-            let _ = CloseHandle(h);
-            alive
-        }
-        Err(_) => false,
+/// Maps and unmaps the control section; safe to call with no session running.
+unsafe fn read_active_core_pid() -> u32 {
+    let Ok(hmap) = OpenFileMappingW(FILE_MAP_ALL_ACCESS.0, false, windows::core::w!("Local\\ChronoCtl"))
+    else {
+        return 0;
+    };
+    let view = MapViewOfFile(hmap, FILE_MAP_ALL_ACCESS, 0, 0, ctl_size());
+    let pid = if view.Value.is_null() { 0 } else { read_core_pid(view.Value as *const Ctl) };
+    if !view.Value.is_null() {
+        let _ = UnmapViewOfFile(MEMORY_MAPPED_VIEW_ADDRESS { Value: view.Value });
     }
+    let _ = CloseHandle(hmap);
+    pid
+}
+
+/// Take the session lock, or report who holds it. A named mutex rather than inference from the
+/// control block's contents: the previous design read `core_pid`, which `prepare` writes LAST, so
+/// a core still initializing published 0 and a second core read that as "orphan" and zeroed a LIVE
+/// session's anchor - the target then saw 1601-01-01, frozen, with no error at all (untouchable
+/// rules 2 and 3). The kernel releases a mutex when its owner dies, kill -9 included, so an
+/// abandoned lock is exactly the orphan signal, with no pid guessing and no pid-reuse hazard.
+///
+/// # Safety
+/// Calls the Win32 synchronization APIs.
+unsafe fn take_session_lock() -> Result<SessionLock, PrepareError> {
+    let h = CreateMutexW(None, false, windows::core::w!("Local\\ChronoCtl.lock"))
+        .map_err(|e| PrepareError::Control(format!("CreateMutexW: {e:?}")))?;
+    let lock = SessionLock(h);
+    if lock_is_ours(WaitForSingleObject(h, 0)) {
+        Ok(lock)
+    } else {
+        Err(PrepareError::SessionActive(read_active_core_pid()))
+    }
+}
+
+/// Whether a zero-timeout wait on the session mutex left US holding it. `WAIT_OBJECT_0` is the
+/// plain case. `WAIT_ABANDONED` also means ours: the previous owner died without releasing, which
+/// is precisely the orphan case we want to reclaim rather than refuse - the whole reason the lock
+/// beats reading a pid out of shared memory. Anything else (`WAIT_TIMEOUT`, a failed wait) means a
+/// live core holds it, and refusing is the safe direction.
+fn lock_is_ours(state: windows::Win32::Foundation::WAIT_EVENT) -> bool {
+    state == WAIT_OBJECT_0 || state == WAIT_ABANDONED
 }
 
 /// Build one process's coverage from its `Cov` section: the install bitmask and the
@@ -445,6 +498,11 @@ pub fn prepare(spec: &SessionSpec, target: &Target, hook_dll: &Path) -> Result<P
     let dll_wide = to_wide(&hook_dll.to_string_lossy());
 
     unsafe {
+        // 0. Session lock, before anything shared is touched. Everything below - the decision to
+        // reclaim, the zeroing, the anchor writes - happens under it, so no second core can observe
+        // a half-initialized session and mistake it for an orphan.
+        let lock = take_session_lock()?;
+
         // 1. Session control memory. CreateFileMapping zero-initializes it.
         let hmap = CreateFileMappingW(
             INVALID_HANDLE_VALUE,
@@ -465,18 +523,14 @@ pub fn prepare(spec: &SessionSpec, target: &Target, hook_dll: &Path) -> Result<P
         }
         let ctl = view.Value as *mut Ctl;
 
-        // Concurrent-session vs orphan. A surviving section whose core is alive is a real second
-        // session - refuse (one session at a time, fixed name). A surviving section whose core is
-        // dead is an orphan from a killed core (its target self-detached to real time); reclaim it
-        // by zeroing the whole block so no stale PID registry or anchor leaks into the new session.
+        // A surviving section can only be an orphan here: we hold the session lock, so no live core
+        // owns it - it was left by a killed core whose target self-detached to real time, or by one
+        // that exited while the target still held the mapping alive. Reclaim it by zeroing the whole
+        // block so no stale PID registry or anchor leaks into the new session. The refusal for a real
+        // second session happened at the lock, not here - reading `core_pid` to decide would race
+        // with a core that has not written it yet.
         let mut orphan_reclaimed = false;
         if already_existed {
-            let prev_core = read_core_pid(ctl as *const Ctl);
-            if prev_core != 0 && core_is_alive(prev_core) {
-                let _ = UnmapViewOfFile(MEMORY_MAPPED_VIEW_ADDRESS { Value: view.Value });
-                let _ = CloseHandle(hmap);
-                return Err(PrepareError::SessionActive(prev_core));
-            }
             std::ptr::write_bytes(ctl as *mut u8, 0, ctl_size());
             orphan_reclaimed = true;
         }
@@ -604,6 +658,7 @@ pub fn prepare(spec: &SessionSpec, target: &Target, hook_dll: &Path) -> Result<P
             tz_bias,
             scale_duration: spec.scale_duration,
             cov_maps,
+            _lock: lock,
         };
         Ok(Prepared { coverage, session, vanished_lived_ms, orphan_reclaimed })
     }
@@ -780,6 +835,19 @@ mod tests {
         assert!(gathered.covered.is_empty(), "nothing may be claimed as covered");
         assert!(!gathered.uncovered.is_empty(), "always-present channels are a real gap");
         assert_eq!(chrono_core::verdict_from_coverage(&gathered), chrono_core::Verdict::Fails);
+    }
+
+    /// S-3 regression. The session lock decides orphan-versus-live, and an abandoned mutex (the
+    /// owner died, kill -9 included) must read as OURS - the old design inferred this from a
+    /// `core_pid` that `prepare` writes LAST, so a core still initializing looked like an orphan
+    /// and a second core zeroed its anchor mid-session (the target then read 1601-01-01, frozen,
+    /// with no error - untouchable rules 2 and 3).
+    #[test]
+    fn abandoned_lock_is_ours_and_a_held_one_is_not() {
+        assert!(lock_is_ours(WAIT_OBJECT_0), "a free lock is ours");
+        assert!(lock_is_ours(WAIT_ABANDONED), "a dead owner's lock is ours - that is the orphan");
+        assert!(!lock_is_ours(WAIT_TIMEOUT), "a live core holding it must refuse us");
+        assert!(!lock_is_ours(windows::Win32::Foundation::WAIT_FAILED), "a failed wait refuses too");
     }
 
     /// The paired direction, so the guard above cannot pass by reporting nothing at all: a full

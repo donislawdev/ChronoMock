@@ -3770,6 +3770,14 @@ fn map_prepare_error(e: chrono_mech::PrepareError) -> (i32, &'static str, &'stat
         P::Control(m) => (3, "session.control_failed", "mechanism", m),
         P::Launch(m) => (2, "target.launch_failed", "mechanism", m),
         P::Inject(m) => (2, "target.inject_failed", "mechanism", m),
+        // pid 0 = the other core holds the session lock but has not published its pid yet (it is
+        // still starting). Naming "pid 0" would be a lie, so say what is actually known.
+        P::SessionActive(0) => (
+            3,
+            "session.already_active",
+            "mechanism",
+            "another session's core is starting or running - one session at a time".to_string(),
+        ),
         P::SessionActive(pid) => (
             3,
             "session.already_active",
