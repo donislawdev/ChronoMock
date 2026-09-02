@@ -717,6 +717,109 @@ public class SessionViewModelTests
     }
 
     [Fact]
+    public void A_failed_session_captures_diagnostics_and_writes_a_log()
+    {
+        // The main RELEASE-012 case: an injection blocked (Defender/AV). The block is captured for the Copy
+        // button and the same block is written to the log file.
+        var log = new RecordingDiagnosticsLog();
+        var vm = new SessionViewModel(new InMemorySessionHistoryStore(), log);
+        vm.SetTarget(@"C:\apps\Foo.exe");
+        vm.Apply(new ErrorEvent
+        {
+            V = ProtocolJson.ProtocolVersion,
+            Id = 1,
+            Code = 1,
+            Key = "target.inject_failed",
+            Origin = "core",
+        });
+
+        vm.CaptureDiagnostics(new[] { "core stderr: chrono core: inject failed: access denied" });
+
+        Assert.True(vm.HasDiagnostics);
+        Assert.Contains("Chrono Mock diagnostics", vm.DiagnosticsText, StringComparison.Ordinal);
+        Assert.Contains("target.inject_failed", vm.DiagnosticsText, StringComparison.Ordinal);
+        Assert.Contains(@"C:\apps\Foo.exe", vm.DiagnosticsText, StringComparison.Ordinal);
+        Assert.Contains("inject failed: access denied", vm.DiagnosticsText, StringComparison.Ordinal);
+        Assert.Equal(vm.DiagnosticsText, log.LastSaved); // the same block was written to the log
+        Assert.Equal(@"C:\logs\diagnostics-x.log", vm.DiagnosticsSavedPath);
+        Assert.True(vm.HasDiagnosticsSaved);
+    }
+
+    [Fact]
+    public void A_clean_works_session_captures_no_diagnostics()
+    {
+        var log = new RecordingDiagnosticsLog();
+        var vm = new SessionViewModel(new InMemorySessionHistoryStore(), log);
+        vm.SetTarget(@"C:\apps\Foo.exe");
+        vm.Apply(Verdict("works", "verdict.works.covered"));
+        vm.Apply(new EndedEvent { V = ProtocolJson.ProtocolVersion, Clean = true });
+
+        vm.CaptureDiagnostics(new[] { "core stderr: some noise" });
+
+        Assert.False(vm.HasDiagnostics);
+        Assert.Equal(string.Empty, vm.DiagnosticsText);
+        Assert.Null(log.LastSaved); // nothing written on a clean success - the happy path stays quiet
+        Assert.False(vm.HasDiagnosticsSaved);
+    }
+
+    [Fact]
+    public void A_vanished_session_captures_a_block_even_with_no_core_output()
+    {
+        var vm = new SessionViewModel();
+        vm.SetTarget(@"C:\apps\Foo.exe");
+        vm.Apply(new VanishedEvent
+        {
+            V = ProtocolJson.ProtocolVersion,
+            Pid = 1,
+            ReasonKey = "target.single_instance_suspected",
+            LivedMs = 5,
+        });
+
+        vm.CaptureDiagnostics(Array.Empty<string>());
+
+        Assert.True(vm.HasDiagnostics); // a vanish is not a clean success, so a block is still captured
+        Assert.Contains("DidNotTakeEffect", vm.DiagnosticsText, StringComparison.Ordinal);
+        Assert.Contains("(no diagnostic output)", vm.DiagnosticsText, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void The_diagnostics_block_names_the_requested_moment_zone_and_mode()
+    {
+        // Defaults: moment 2038-01-19T03:14:07, zone UTC+02:00, mode x60.
+        var vm = new SessionViewModel();
+        vm.SetTarget(@"C:\apps\Foo.exe");
+
+        var block = vm.BuildDiagnosticsBlock(new[] { "core stderr: hi" });
+
+        Assert.Contains("2038-01-19T03:14:07", block, StringComparison.Ordinal);
+        Assert.Contains("zone UTC+02:00", block, StringComparison.Ordinal);
+        Assert.Contains("mode x60", block, StringComparison.Ordinal);
+        Assert.Contains("core stderr: hi", block, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_read_only_medium_still_captures_diagnostics_without_a_saved_path()
+    {
+        // The log file could not be written (read-only), but the in-memory copy behind the button stands.
+        var log = new RecordingDiagnosticsLog { PathToReturn = null };
+        var vm = new SessionViewModel(new InMemorySessionHistoryStore(), log);
+        vm.SetTarget(@"C:\apps\Foo.exe");
+        vm.Apply(new ErrorEvent
+        {
+            V = ProtocolJson.ProtocolVersion,
+            Id = 1,
+            Code = 1,
+            Key = "core.hook_dll_missing",
+            Origin = "core",
+        });
+
+        vm.CaptureDiagnostics(new[] { "core stderr: hook dll missing" });
+
+        Assert.True(vm.HasDiagnostics);        // the button still works
+        Assert.False(vm.HasDiagnosticsSaved);  // but no file path to show
+    }
+
+    [Fact]
     public void The_summary_echoes_the_requested_moment_zone_and_mode()
     {
         // Defaults: moment 2038-01-19T03:14:07, zone UTC+02:00, mode ×60.
@@ -919,4 +1022,18 @@ public class SessionViewModelTests
         Pid = pid,
         Covered = [new CoveredChannel { Channel = channel, Calls = calls }],
     };
+
+    // A fake diagnostics log: records the block it was asked to save and returns a canned path (or null to
+    // simulate a read-only medium), so CaptureDiagnostics is tested without touching the file system.
+    private sealed class RecordingDiagnosticsLog : IDiagnosticsLog
+    {
+        public string? LastSaved { get; private set; }
+        public string? PathToReturn { get; init; } = @"C:\logs\diagnostics-x.log";
+
+        public string? Save(string content)
+        {
+            LastSaved = content;
+            return PathToReturn;
+        }
+    }
 }

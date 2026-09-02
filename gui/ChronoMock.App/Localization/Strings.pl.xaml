@@ -155,8 +155,11 @@
   <!-- Kopiowanie podsumowania sesji (chrono-mock 7.2, 8.8). Raport do wklejenia w zgłoszenie; sesja inna
        niż „działa" prowadzi banerem nierzetelności. Klucze z szablonem niosą pola {0}. -->
   <sys:String x:Key="action.copy_summary">Kopiuj podsumowanie</sys:String>
+  <sys:String x:Key="action.copy_diagnostics">Kopiuj diagnostykę</sys:String>
   <sys:String x:Key="copy.done">Skopiowano do schowka</sys:String>
   <sys:String x:Key="copy.failed">Nie można skopiować - schowek jest zajęty</sys:String>
+  <!-- Gdzie zapisano log diagnostyczny (RELEASE-012); ścieżka następuje po tym prefiksie. -->
+  <sys:String x:Key="diagnostics.saved">Diagnostykę zapisano do</sys:String>
   <sys:String x:Key="report.unreliable_banner">!! DOWÓD NIERZETELNY - podmiana czasu nie zadziałała w pełni. Nie cytuj tego jako dowodu zachowania.</sys:String>
   <sys:String x:Key="report.title">Chrono Mock - raport sesji</sys:String>
   <sys:String x:Key="report.target">cel</sys:String>
@@ -304,6 +307,7 @@
   <sys:String x:Key="tip.set_speed">Ustaw dowolną prędkość, np. 500.</sys:String>
   <sys:String x:Key="tip.stop">Zatrzymaj sesję. Aplikacja wraca do prawdziwego czasu - nie jest zamykana.</sys:String>
   <sys:String x:Key="tip.copy_summary">Skopiuj gotowe podsumowanie sesji do zgłoszenia.</sys:String>
+  <sys:String x:Key="tip.copy_diagnostics">Skopiuj diagnostykę rdzenia (jego stderr), by dołączyć do zgłoszenia.</sys:String>
   <sys:String x:Key="tip.base_kind">Od czego zaczyna się obliczenie: dziś, teraz, albo konkretna data.</sys:String>
   <sys:String x:Key="tip.add_step">Dodaj krok: przesuń, przyciągnij, najbliższy dzień roboczy, ustaw czas, zmień strefę.</sys:String>
   <sys:String x:Key="tip.calc_calendar">Kalendarz świąt i dni roboczych używany przez kroki dni roboczych i najbliższy.</sys:String>

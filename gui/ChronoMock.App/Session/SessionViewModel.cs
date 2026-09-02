@@ -52,6 +52,7 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     private ModeOption _selectedMode;
     private bool _scaleDuration;
     private readonly ISessionHistoryStore _store;
+    private readonly IDiagnosticsLog _diagnosticsLog;
     private bool _launched;
     private bool _stopRequested;
     private string _historyError = string.Empty;
@@ -62,14 +63,16 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     private string _inFlightErrorKey = string.Empty;
     private bool _applyingMultiplier; // guard: syncing the Mode dropdown from a state event must not re-send
 
-    /// <summary>Bare view-model: history is in-memory, so a default construction and unit tests touch no files.</summary>
+    /// <summary>Bare view-model: history is in-memory and the diagnostics log is a no-op, so a default
+    /// construction and unit tests touch no files.</summary>
     public SessionViewModel() : this(new InMemorySessionHistoryStore())
     {
     }
 
-    public SessionViewModel(ISessionHistoryStore history)
+    public SessionViewModel(ISessionHistoryStore history, IDiagnosticsLog? diagnosticsLog = null)
     {
         _store = history;
+        _diagnosticsLog = diagnosticsLog ?? new NoOpDiagnosticsLog();
 
         // Defaults match the moment/mode the panel shipped with before these inputs existed.
         _selectedZone = TimeInputs.Zones.First(z => z.BiasMinutes == -120); // UTC+02:00
@@ -112,6 +115,11 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     // could not remove (today only a CDP temp profile). Surfaced honestly, never dropped (rule 6).
     private int? _targetExitCode;
     private IReadOnlyList<string> _residueKeys = [];
+    // Diagnostics captured when a session ends in anything but a clean success (RELEASE-012): the core's
+    // stderr and parse errors, composed into a block the user can copy and that is also written to a log
+    // file beside the exe. Empty on a clean works session, so the button and log stay out of the happy path.
+    private string _diagnosticsText = string.Empty;
+    private string _diagnosticsSavedPath = string.Empty;
     private string _copyFeedbackKey = string.Empty;
 
     public ClockView Fake { get; } = new("clock.fake");
@@ -515,6 +523,28 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
 
     public bool HasResidue => _residueKeys.Count > 0;
 
+    /// <summary>The captured diagnostics block (core stderr and parse errors, with a header naming the
+    /// status, target, and requested moment) for the Copy-diagnostics action. Empty on a clean success, so
+    /// the button is hidden on the happy path (RELEASE-012).</summary>
+    public string DiagnosticsText
+    {
+        get => _diagnosticsText;
+        private set { if (Set(ref _diagnosticsText, value)) { RaisePropertyChanged(nameof(HasDiagnostics)); } }
+    }
+
+    public bool HasDiagnostics => _diagnosticsText.Length > 0;
+
+    /// <summary>Path of the diagnostics log file written for this session, or empty when none was written
+    /// (a clean success, or a read-only medium where the in-memory copy still stands). Shown so the user
+    /// knows which file to attach to a report.</summary>
+    public string DiagnosticsSavedPath
+    {
+        get => _diagnosticsSavedPath;
+        private set { if (Set(ref _diagnosticsSavedPath, value)) { RaisePropertyChanged(nameof(HasDiagnosticsSaved)); } }
+    }
+
+    public bool HasDiagnosticsSaved => _diagnosticsSavedPath.Length > 0;
+
     public bool HasCovered => _covered.Count > 0;
 
     public bool HasObserved => _observed.Count > 0;
@@ -750,6 +780,13 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
             {
                 // DisposeAsync blocks briefly (it waits for the core to exit), so keep it off the UI thread.
                 await Task.Run(() => client.DisposeAsync().AsTask());
+
+                // Now that dispose has drained the core's stderr, capture diagnostics for support if the
+                // session was anything but a clean success (RELEASE-012). A clean works session captures
+                // nothing. (On a Stop the client was already disposed off-thread, so this is best-effort -
+                // but a stopped healthy session has no error stderr to lose.)
+                CaptureDiagnostics(client.Diagnostics);
+
                 if (ReferenceEquals(_client, client))
                 {
                     _client = null;
@@ -878,6 +915,8 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
         _livedMs = 0;
         TargetExitCode = null;
         ResidueKeys = [];
+        DiagnosticsText = string.Empty;
+        DiagnosticsSavedPath = string.Empty;
         CopyFeedbackKey = string.Empty;
         InFlightErrorKey = string.Empty;
     }
@@ -987,6 +1026,65 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
         sb.Append("  ")
           .Append(Fmt(translate("report.requested"), reqMoment, SelectedZone.Label, translate(reqMode.LabelKey)))
           .Append('\n');
+
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// Capture the core's diagnostics for support when a session ended in anything but a clean success
+    /// (RELEASE-012): compose the block, expose it for the Copy-diagnostics button, and write it to a log
+    /// file beside the exe. A clean works session leaves nothing, so the happy path stays quiet. Called from
+    /// the StartAsync finally AFTER the client is disposed, so the core's stderr has been fully drained.
+    /// Internal so a unit test can drive it with a fake line list and a fake log (no core process).
+    /// </summary>
+    internal void CaptureDiagnostics(IEnumerable<string> lines)
+    {
+        if (IsReliable)
+        {
+            return; // a clean works session needs no diagnostics - keep the button and the log out of it
+        }
+
+        var block = BuildDiagnosticsBlock(lines);
+        DiagnosticsText = block;
+        // Best-effort file: a read-only medium returns null, and the in-memory copy behind the button stands.
+        var path = _diagnosticsLog.Save(block);
+        if (path is not null)
+        {
+            DiagnosticsSavedPath = path;
+        }
+    }
+
+    /// <summary>Compose the diagnostics block: a header naming the status, target, and requested moment, then
+    /// the core's stderr and parse-error lines verbatim. English and stable, like the core's own stderr and
+    /// the CLI report - it is a technical artifact for a bug report, not interface text (rule 15 governs the
+    /// UI; this is data). Pure over the view state, so it is unit tested with a fake line list.</summary>
+    internal string BuildDiagnosticsBlock(IEnumerable<string> lines)
+    {
+        var mode = _startMode ?? SelectedMode;
+        var moment = _startMomentText.Length > 0 ? _startMomentText : Moment.Canonical;
+        var modeToken = mode.Mode switch { "frozen" => "frozen", "flow" => "flow", _ => $"x{mode.Multiplier ?? 1}" };
+
+        var sb = new StringBuilder();
+        sb.Append("Chrono Mock diagnostics\n");
+        sb.Append("  when:      ")
+          .Append(DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture)).Append('\n');
+        sb.Append("  status:    ").Append(_statusKind).Append(" (").Append(_statusKey).Append(")\n");
+        sb.Append("  target:    ").Append(_targetPath ?? "(none)").Append('\n');
+        sb.Append("  requested: ").Append(moment)
+          .Append(" (zone ").Append(SelectedZone.Label).Append(", mode ").Append(modeToken).Append(")\n");
+
+        sb.Append("  core output:\n");
+        var any = false;
+        foreach (var line in lines)
+        {
+            sb.Append("    ").Append(line).Append('\n');
+            any = true;
+        }
+
+        if (!any)
+        {
+            sb.Append("    (no diagnostic output)\n");
+        }
 
         return sb.ToString();
     }

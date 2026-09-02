@@ -297,18 +297,37 @@
         <!-- Status and rate. The meaning is carried by the translated label, not by colour (zasady/13 9). -->
         <StackPanel Grid.Row="6" Margin="{StaticResource SpaceMd}" HorizontalAlignment="Center">
           <!-- Copy the paste-into-ticket session summary (chrono-mock 7.2, 8.8), available once a session has
-               started. A non-works session's summary leads with an unreliable-evidence banner. -->
-          <Button Content="{DynamicResource action.copy_summary}"
-                  Margin="{StaticResource SpaceXs}"
-                  HorizontalAlignment="Center"
-                  ToolTip="{DynamicResource tip.copy_summary}"
-                  Visibility="{Binding CanCopySummary, Converter={StaticResource BoolToVis}}"
-                  Click="OnCopySummaryClick" />
+               started. A non-works session's summary leads with an unreliable-evidence banner. Beside it, for
+               a session that did not cleanly succeed, Copy diagnostics puts the core's stderr on the clipboard
+               for a support ticket (RELEASE-012). Both buttons share the copy feedback line below. -->
+          <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+            <Button Content="{DynamicResource action.copy_summary}"
+                    Margin="{StaticResource SpaceXs}"
+                    ToolTip="{DynamicResource tip.copy_summary}"
+                    Visibility="{Binding CanCopySummary, Converter={StaticResource BoolToVis}}"
+                    Click="OnCopySummaryClick" />
+            <Button Content="{DynamicResource action.copy_diagnostics}"
+                    Margin="{StaticResource SpaceXs}"
+                    ToolTip="{DynamicResource tip.copy_diagnostics}"
+                    Visibility="{Binding HasDiagnostics, Converter={StaticResource BoolToVis}}"
+                    Click="OnCopyDiagnosticsClick" />
+          </StackPanel>
           <TextBlock Text="{Binding CopyFeedbackKey, Converter={StaticResource KeyToText}}"
                      Margin="{StaticResource SpaceXs}"
                      HorizontalAlignment="Center"
                      FontSize="{StaticResource FontSizeCaption}"
                      Foreground="{DynamicResource BrushTextSecondary}" />
+          <!-- Where the diagnostics log was written, so the user knows which file to attach to a report. Only
+               shown when a file was actually saved (a read-only medium leaves the Copy button as the path). -->
+          <TextBlock Visibility="{Binding HasDiagnosticsSaved, Converter={StaticResource BoolToVis}}"
+                     Margin="{StaticResource SpaceXs}"
+                     HorizontalAlignment="Center"
+                     TextAlignment="Center"
+                     TextWrapping="Wrap"
+                     FontSize="{StaticResource FontSizeCaption}"
+                     Foreground="{DynamicResource BrushTextSecondary}">
+            <Run Text="{DynamicResource diagnostics.saved}" /><Run Text="{Binding DiagnosticsSavedPath, StringFormat=' {0}', Mode=OneWay}" />
+          </TextBlock>
           <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
             <TextBlock Text="{Binding StatusKey, Converter={StaticResource KeyToText}}"
                        FontSize="{StaticResource FontSizeBody}"

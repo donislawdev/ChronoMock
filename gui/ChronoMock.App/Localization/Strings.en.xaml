@@ -156,8 +156,11 @@
   <!-- Copy session summary (chrono-mock 7.2, 8.8). A paste-into-ticket report; a non-works session leads
        with the unreliable-evidence banner. Keys ending in a template carry {0}-style placeholders. -->
   <sys:String x:Key="action.copy_summary">Copy summary</sys:String>
+  <sys:String x:Key="action.copy_diagnostics">Copy diagnostics</sys:String>
   <sys:String x:Key="copy.done">Copied to clipboard</sys:String>
   <sys:String x:Key="copy.failed">Could not copy - the clipboard is busy</sys:String>
+  <!-- Where the diagnostics log was written (RELEASE-012); the path follows this prefix. -->
+  <sys:String x:Key="diagnostics.saved">Diagnostics saved to</sys:String>
   <sys:String x:Key="report.unreliable_banner">!! UNRELIABLE EVIDENCE - the time substitution did not fully take effect. Do not cite this as proof of behavior.</sys:String>
   <sys:String x:Key="report.title">Chrono Mock - session report</sys:String>
   <sys:String x:Key="report.target">target</sys:String>
@@ -305,6 +308,7 @@
   <sys:String x:Key="tip.set_speed">Set any custom speed, e.g. 500.</sys:String>
   <sys:String x:Key="tip.stop">Stop the session. The app returns to real time - it is not closed.</sys:String>
   <sys:String x:Key="tip.copy_summary">Copy a paste-ready session summary for a ticket.</sys:String>
+  <sys:String x:Key="tip.copy_diagnostics">Copy the core diagnostics (its stderr) to attach to a support ticket.</sys:String>
   <sys:String x:Key="tip.base_kind">Where the calculation starts: today, now, or a specific date.</sys:String>
   <sys:String x:Key="tip.add_step">Add a step: shift, snap, nearest business day, set time, or change zone.</sys:String>
   <sys:String x:Key="tip.calc_calendar">The holiday and business-day calendar used by business-day and nearest steps.</sys:String>

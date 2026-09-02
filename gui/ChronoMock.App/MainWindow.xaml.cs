@@ -10,7 +10,8 @@ namespace ChronoMock.App;
 
 public partial class MainWindow : FluentWindow
 {
-    private readonly SessionViewModel _session = new(FileSessionHistoryStore.ForApp());
+    private readonly SessionViewModel _session =
+        new(FileSessionHistoryStore.ForApp(), FileDiagnosticsLog.ForApp());
     private readonly CalculatorViewModel _calculator = CreateCalculator();
 
     // The calculator is a client of the same engine (ADR-6); it reads the shared preset catalogue and the
@@ -136,6 +137,12 @@ public partial class MainWindow : FluentWindow
     // language; a clipboard held by another process is reported honestly, never swallowed (rule 6).
     private void OnCopySummaryClick(object sender, RoutedEventArgs e)
         => _session.NoteCopy(TrySetClipboard(_session.BuildSummary(Text)));
+
+    // Copy the diagnostics block to the clipboard (RELEASE-012): the core's stderr and parse errors, so a QA
+    // report has something to attach when an injection is blocked. Shown only for a non-clean session; same
+    // clipboard-failure honesty as Copy summary (rule 6).
+    private void OnCopyDiagnosticsClick(object sender, RoutedEventArgs e)
+        => _session.NoteCopy(TrySetClipboard(_session.DiagnosticsText));
 
     private static bool TrySetClipboard(string text)
     {
