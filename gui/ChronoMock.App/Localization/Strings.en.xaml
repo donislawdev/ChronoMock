@@ -138,6 +138,14 @@
   <sys:String x:Key="inheritance.ntcreateuserprocess_child_maybe_uncovered">A child spawned directly via NtCreateUserProcess may not be covered.</sys:String>
   <sys:String x:Key="target.single_instance_suspected">exited right after injection, before the swap could be confirmed</sys:String>
 
+  <!-- Runtime detected statically from the target's files (B1): its monotonic/elapsed clocks stand on
+       QueryPerformanceCounter, which stays real (ADR-2), so a timer built on them does not scale even
+       though the wall clock does. Wording mirrors the CLI describe_warning. -->
+  <sys:String x:Key="runtime.python_monotonic_qpc">This Python app measures time with perf_counter and monotonic - both use QueryPerformanceCounter on Python 3.13+, which is left real, so a timer built on them does not scale (time.time and the wall clock do).</sys:String>
+  <sys:String x:Key="runtime.python_perfcounter_qpc">This Python app's perf_counter uses QueryPerformanceCounter, which is left real, so a perf_counter timer does not scale - on Python 3.13+ monotonic uses QPC too (time.time and the wall clock do scale).</sys:String>
+  <sys:String x:Key="runtime.dotnet_stopwatch_qpc">This .NET app's Stopwatch uses QueryPerformanceCounter, which is left real, so a Stopwatch timer does not scale (DateTime and Environment.TickCount do).</sys:String>
+  <sys:String x:Key="runtime.java_nanotime_qpc">This Java app's System.nanoTime uses QueryPerformanceCounter, which is left real, so a nanoTime timer does not scale (System.currentTimeMillis does).</sys:String>
+
   <!-- Chromium/Electron (CDP) mode, ADR-8/ADR-9: verdict reasons and warnings the CDP core emits. The
        coverage unit is a JS context, not an OS process. -->
   <sys:String x:Key="chromium.contexts_covered">Every JS context ran on the session clock.</sys:String>

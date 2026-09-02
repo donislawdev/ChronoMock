@@ -45,6 +45,10 @@ public class LocalizationTests
         "timer.multimedia_not_scaled", "inheritance.ntcreateuserprocess_child_maybe_uncovered",
         "chromium.launched_with_debug_port", "chromium.app_closed_before_audit",
         "chromium.rate_change_affects_running_timers",
+        // Runtime detection warnings the driver appends to coverage (B1): a Python/.NET/Java target whose
+        // monotonic/elapsed clock stands on QPC and does not scale.
+        "runtime.python_monotonic_qpc", "runtime.python_perfcounter_qpc",
+        "runtime.dotnet_stopwatch_qpc", "runtime.java_nanotime_qpc",
         // Cleanup residue (EndedEvent residue_keys) - a teardown that could not finish (CDP temp profile).
         "cleanup.chromium_profile_left",
         // Vanish reason (VanishedEvent reason_key, shown inside report.vanish_detail).

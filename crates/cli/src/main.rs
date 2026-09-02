@@ -1165,6 +1165,18 @@ fn describe_warning(key: &str) -> String {
         "chromium.rate_change_affects_running_timers" => {
             "the speed changed in flight: new timers and the clock reflect it at once, but a setInterval already running keeps its old cadence"
         }
+        "runtime.python_monotonic_qpc" => {
+            "this Python app measures time with perf_counter and monotonic - both use QueryPerformanceCounter on Python 3.13+, which is left real, so a timer built on them does not scale (time.time and the wall clock do)"
+        }
+        "runtime.python_perfcounter_qpc" => {
+            "this Python app's perf_counter uses QueryPerformanceCounter, which is left real, so a perf_counter timer does not scale - on Python 3.13+ monotonic uses QPC too (time.time and the wall clock do scale)"
+        }
+        "runtime.dotnet_stopwatch_qpc" => {
+            "this .NET app's Stopwatch uses QueryPerformanceCounter, which is left real, so a Stopwatch timer does not scale (DateTime and Environment.TickCount do)"
+        }
+        "runtime.java_nanotime_qpc" => {
+            "this Java app's System.nanoTime uses QueryPerformanceCounter, which is left real, so a nanoTime timer does not scale (System.currentTimeMillis does)"
+        }
         _ => "",
     };
     if text.is_empty() {
@@ -1172,6 +1184,87 @@ fn describe_warning(key: &str) -> String {
     } else {
         format!("{text} ({key})")
     }
+}
+
+/// Statically detect the target's language runtime and warn that its monotonic/elapsed clocks stand on
+/// QueryPerformanceCounter, which is left real (ADR-2) and so does not scale - the failure the user hit
+/// when a Python/.NET/Java timer stayed still under a fast clock. This reads only file NAMES beside the
+/// target (and its PyInstaller `_internal/` folder): no QPC hook (ADR-2 holds), no process inspection.
+/// Best-effort: a runtime unpacked at runtime (PyInstaller onefile) or launched as `java -jar` is not
+/// caught here, and a false positive only adds a "may not scale" note, never a false verdict (rules 4, 6).
+fn detect_runtime_warnings(target_path: &std::path::Path) -> Vec<String> {
+    fn add(keys: &mut Vec<String>, key: &str) {
+        if !keys.iter().any(|k| k == key) {
+            keys.push(key.to_string());
+        }
+    }
+
+    let mut keys: Vec<String> = Vec::new();
+
+    // The target executable's own name is a strong signal - a plain interpreter launcher.
+    if let Some(name) = target_path.file_name().and_then(|n| n.to_str()) {
+        match name.to_ascii_lowercase().as_str() {
+            "python.exe" | "pythonw.exe" => add(&mut keys, "runtime.python_perfcounter_qpc"),
+            "java.exe" | "javaw.exe" => add(&mut keys, "runtime.java_nanotime_qpc"),
+            _ => {}
+        }
+    }
+
+    // Runtime DLLs and manifests shipped beside the exe, and in PyInstaller's `_internal/` folder.
+    let mut dirs: Vec<std::path::PathBuf> = Vec::new();
+    if let Some(parent) = target_path.parent() {
+        dirs.push(parent.to_path_buf());
+        dirs.push(parent.join("_internal"));
+    }
+    for dir in dirs {
+        let entries = match std::fs::read_dir(&dir) {
+            Ok(e) => e,
+            Err(_) => continue, // a missing _internal/ is normal, not an error
+        };
+        for entry in entries.flatten() {
+            let name = match entry.file_name().to_str() {
+                Some(n) => n.to_ascii_lowercase(),
+                None => continue,
+            };
+            if let Some(minor) = python_dll_minor(&name) {
+                // Python 3.13+ moved monotonic onto QPC too (CPython PR 116781); earlier, only
+                // perf_counter is on QPC and monotonic (GetTickCount64) still scales.
+                add(
+                    &mut keys,
+                    if minor >= 13 {
+                        "runtime.python_monotonic_qpc"
+                    } else {
+                        "runtime.python_perfcounter_qpc"
+                    },
+                );
+            } else if name == "python3.dll" || name == "python.dll" {
+                add(&mut keys, "runtime.python_perfcounter_qpc"); // stable-ABI dll, version unknown
+            } else if name == "coreclr.dll" || name == "clr.dll" || name.ends_with(".deps.json") {
+                add(&mut keys, "runtime.dotnet_stopwatch_qpc");
+            } else if name == "jvm.dll" {
+                add(&mut keys, "runtime.java_nanotime_qpc");
+            }
+        }
+    }
+
+    // A PyInstaller bundle ships BOTH python3.dll (stable ABI, version unknown) and python3XX.dll, so
+    // both python keys can fire. The monotonic warning already names perf_counter, so drop the narrower
+    // perf_counter-only key when the monotonic one is present - one clear warning, not two overlapping.
+    if keys.iter().any(|k| k == "runtime.python_monotonic_qpc") {
+        keys.retain(|k| k != "runtime.python_perfcounter_qpc");
+    }
+
+    keys
+}
+
+/// Parse the CPython minor version from a versioned dll name: "python314.dll" -> Some(14), "python39.dll"
+/// -> Some(9). Returns None for "python3.dll" (stable ABI, no minor) or any non-matching name.
+fn python_dll_minor(name: &str) -> Option<u32> {
+    let rest = name.strip_prefix("python3").and_then(|s| s.strip_suffix(".dll"))?;
+    if rest.is_empty() {
+        return None; // "python3.dll" - stable ABI, minor unknown
+    }
+    rest.parse::<u32>().ok()
 }
 
 /// "1 call" vs "N calls" - a bare plural reads wrong in a report a user pastes into a bug ticket.
@@ -2732,20 +2825,27 @@ fn emit(ev: &Event) {
 }
 
 /// Emit a `coverage` event for one process (parent or a child), tagged with its pid.
-/// Coverage is reliable (never coalesced) - one event per process, never summed.
-fn emit_coverage(pid: u32, cov: &chrono_core::Coverage) {
+/// Coverage is reliable (never coalesced) - one event per process, never summed. `extra_warnings` are
+/// driver-side warning keys (e.g. the detected runtime, B1) appended to the core's own, de-duplicated.
+fn emit_coverage(pid: u32, cov: &chrono_core::Coverage, extra_warnings: &[String]) {
     let to_wire = |cs: &[chrono_core::ChannelCoverage]| -> Vec<CoveredChannel> {
         cs.iter()
             .map(|c| CoveredChannel { channel: c.channel.clone(), calls: c.calls })
             .collect()
     };
+    let mut warning_keys = cov.warning_keys.clone();
+    for w in extra_warnings {
+        if !warning_keys.contains(w) {
+            warning_keys.push(w.clone());
+        }
+    }
     emit(&Event::Coverage {
         v: PROTOCOL_VERSION,
         pid,
         covered: to_wire(&cov.covered),
         observed: to_wire(&cov.observed),
         uncovered: cov.uncovered.clone(),
-        warning_keys: cov.warning_keys.clone(),
+        warning_keys,
     });
 }
 
@@ -3308,6 +3408,11 @@ fn core_mode() -> i32 {
         cwd: target.cwd.as_deref(),
     };
 
+    // Detect the target's runtime up front (static, no QPC hook, no process inspection) so the first
+    // coverage can warn that its monotonic/elapsed clocks stand on QPC and do not scale - the failure a
+    // Python/.NET/Java timer hits under a fast clock (B1, ADR-2).
+    let runtime_warnings = detect_runtime_warnings(std::path::Path::new(&target.path));
+
     match chrono_mech::prepare(&spec, &m_target, &hook) {
         Ok(prepared) => {
             // Surface an orphan reclaim so it is not silent (a prior core had died and left its
@@ -3318,7 +3423,7 @@ fn core_mode() -> i32 {
             let verdict = verdict_from_coverage(&prepared.coverage);
             // The parent's own coverage (its pid). Children that join later report
             // separately from run_session, each with its own pid and counts.
-            emit_coverage(prepared.session.pid, &prepared.coverage);
+            emit_coverage(prepared.session.pid, &prepared.coverage, &runtime_warnings);
 
             // Single-instance vanish (ADR-4): the target exited within the guard
             // window right after injection. Report it honestly with exit 12 rather
@@ -3510,7 +3615,9 @@ fn fold_children(
     pids: &mut HashSet<u32>,
 ) {
     for (pid, cov) in session.poll_new_coverage() {
-        emit_coverage(pid, &cov);
+        // Children carry no driver-side runtime warning - the parent's coverage already reported the
+        // runtime for the family, and a runtime warning is not summed across processes (rule 4).
+        emit_coverage(pid, &cov, &[]);
         *family = family.combine(verdict_from_coverage(&cov));
         pids.insert(pid);
     }
@@ -4732,5 +4839,88 @@ mod tests {
         ])
         .unwrap();
         assert_eq!(ok.params.get("start_date").map(String::as_str), Some("2026-01-01"));
+    }
+
+    // ---- Runtime detection (B1): a Python/.NET/Java target whose monotonic/elapsed clock is on QPC ----
+
+    fn unique_temp_dir(prefix: &str) -> std::path::PathBuf {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let mut p = std::env::temp_dir();
+        p.push(format!("{prefix}-{nanos}-{:?}", std::thread::current().id()));
+        p
+    }
+
+    #[test]
+    fn python_dll_minor_parses_versioned_names() {
+        assert_eq!(python_dll_minor("python314.dll"), Some(14));
+        assert_eq!(python_dll_minor("python313.dll"), Some(13));
+        assert_eq!(python_dll_minor("python39.dll"), Some(9));
+        assert_eq!(python_dll_minor("python3.dll"), None); // stable ABI, no minor
+        assert_eq!(python_dll_minor("python.dll"), None);
+        assert_eq!(python_dll_minor("kernel32.dll"), None);
+    }
+
+    #[test]
+    fn detect_runtime_flags_python_313_plus_monotonic() {
+        // PyInstaller onedir ships BOTH python3.dll (stable ABI) and python3XX.dll, exactly like the real
+        // BeanNetworkTester bundle. Python 3.14 -> monotonic warning, and the narrower perf_counter-only
+        // key (from python3.dll) is dropped so there is one clear warning, not two overlapping ones.
+        let dir = unique_temp_dir("chrono-rt-py313");
+        std::fs::create_dir_all(dir.join("_internal")).unwrap();
+        std::fs::write(dir.join("_internal").join("python3.dll"), b"").unwrap();
+        std::fs::write(dir.join("_internal").join("python314.dll"), b"").unwrap();
+        let target = dir.join("App.exe");
+        std::fs::write(&target, b"").unwrap();
+
+        let keys = detect_runtime_warnings(&target);
+        assert!(keys.iter().any(|k| k == "runtime.python_monotonic_qpc"));
+        assert!(!keys.iter().any(|k| k == "runtime.python_perfcounter_qpc"));
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn detect_runtime_flags_python_312_perfcounter_only() {
+        // Python 3.12: only perf_counter is on QPC; monotonic (GetTickCount64) still scales.
+        let dir = unique_temp_dir("chrono-rt-py312");
+        std::fs::create_dir_all(dir.join("_internal")).unwrap();
+        std::fs::write(dir.join("_internal").join("python312.dll"), b"").unwrap();
+        let target = dir.join("App.exe");
+        std::fs::write(&target, b"").unwrap();
+
+        let keys = detect_runtime_warnings(&target);
+        assert!(keys.iter().any(|k| k == "runtime.python_perfcounter_qpc"));
+        assert!(!keys.iter().any(|k| k == "runtime.python_monotonic_qpc"));
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn detect_runtime_flags_dotnet_java_and_stays_silent_on_native() {
+        // .NET via a sibling manifest.
+        let net = unique_temp_dir("chrono-rt-net");
+        std::fs::create_dir_all(&net).unwrap();
+        std::fs::write(net.join("App.deps.json"), b"{}").unwrap();
+        let net_target = net.join("App.exe");
+        std::fs::write(&net_target, b"").unwrap();
+        assert!(detect_runtime_warnings(&net_target).iter().any(|k| k == "runtime.dotnet_stopwatch_qpc"));
+        std::fs::remove_dir_all(&net).ok();
+
+        // Java via the target exe name (a plain launcher).
+        let java = unique_temp_dir("chrono-rt-java");
+        std::fs::create_dir_all(&java).unwrap();
+        let java_target = java.join("java.exe");
+        std::fs::write(&java_target, b"").unwrap();
+        assert!(detect_runtime_warnings(&java_target).iter().any(|k| k == "runtime.java_nanotime_qpc"));
+        std::fs::remove_dir_all(&java).ok();
+
+        // A native target with no runtime markers gets no warning (honest silence, rule 4).
+        let native = unique_temp_dir("chrono-rt-native");
+        std::fs::create_dir_all(&native).unwrap();
+        let native_target = native.join("Native.exe");
+        std::fs::write(&native_target, b"").unwrap();
+        assert!(detect_runtime_warnings(&native_target).is_empty());
+        std::fs::remove_dir_all(&native).ok();
     }
 }

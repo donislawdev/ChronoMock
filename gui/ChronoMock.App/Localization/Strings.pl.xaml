@@ -137,6 +137,14 @@
   <sys:String x:Key="inheritance.ntcreateuserprocess_child_maybe_uncovered">Dziecko utworzone bezpośrednio przez NtCreateUserProcess może nie być objęte.</sys:String>
   <sys:String x:Key="target.single_instance_suspected">zakończył się zaraz po injekcji, zanim podmianę dało się potwierdzić</sys:String>
 
+  <!-- Runtime wykryty statycznie z plików celu (B1): jego zegary monotoniczne/elapsed stoją na
+       QueryPerformanceCounter, który zostaje realny (ADR-2), więc licznik na nich oparty nie skaluje,
+       choć zegar ścienny tak. Brzmienie lustrzące CLI describe_warning. -->
+  <sys:String x:Key="runtime.python_monotonic_qpc">Ta aplikacja Python mierzy czas przez perf_counter i monotonic - oba używają QueryPerformanceCounter w Pythonie 3.13+, który zostaje realny, więc licznik na nich oparty nie skaluje (time.time i zegar ścienny tak).</sys:String>
+  <sys:String x:Key="runtime.python_perfcounter_qpc">perf_counter tej aplikacji Python używa QueryPerformanceCounter, który zostaje realny, więc licznik na perf_counter nie skaluje - w Pythonie 3.13+ monotonic też używa QPC (time.time i zegar ścienny skalują).</sys:String>
+  <sys:String x:Key="runtime.dotnet_stopwatch_qpc">Stopwatch tej aplikacji .NET używa QueryPerformanceCounter, który zostaje realny, więc licznik na Stopwatch nie skaluje (DateTime i Environment.TickCount tak).</sys:String>
+  <sys:String x:Key="runtime.java_nanotime_qpc">System.nanoTime tej aplikacji Java używa QueryPerformanceCounter, który zostaje realny, więc licznik na nanoTime nie skaluje (System.currentTimeMillis tak).</sys:String>
+
   <!-- Tryb Chromium/Electron (CDP), ADR-8/ADR-9: powody werdyktu i ostrzeżenia z rdzenia CDP. Jednostką
        pokrycia jest kontekst JS, nie proces systemowy. -->
   <sys:String x:Key="chromium.contexts_covered">Każdy kontekst JS działał na zegarze sesji.</sys:String>
