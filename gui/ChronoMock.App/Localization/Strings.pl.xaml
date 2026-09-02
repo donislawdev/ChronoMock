@@ -28,6 +28,14 @@
   <sys:String x:Key="action.today">Dziś</sys:String>
   <sys:String x:Key="action.now">Teraz</sys:String>
   <sys:String x:Key="zone.label">Strefa:</sys:String>
+  <!-- Nazwy rynków pokazywane obok każdego offsetu w dropdownie strefy, żeby nie był samą liczbą. -->
+  <sys:String x:Key="zone.utc">Uniwersalny czas koordynowany</sys:String>
+  <sys:String x:Key="zone.pl_standard">Polska (czas zimowy)</sys:String>
+  <sys:String x:Key="zone.pl_summer">Polska (czas letni)</sys:String>
+  <sys:String x:Key="zone.us_eastern">USA wschodni</sys:String>
+  <sys:String x:Key="zone.us_central">USA centralny</sys:String>
+  <sys:String x:Key="zone.us_mountain">USA górski</sys:String>
+  <sys:String x:Key="zone.us_pacific">USA pacyficzny</sys:String>
   <sys:String x:Key="mode.label">Tryb:</sys:String>
   <sys:String x:Key="mode.flow">Płynący</sys:String>
   <sys:String x:Key="mode.frozen">Zamrożony</sys:String>

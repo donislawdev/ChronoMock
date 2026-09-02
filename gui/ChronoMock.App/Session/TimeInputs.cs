@@ -1,8 +1,9 @@
 namespace ChronoMock.App;
 
 /// <summary>A session-zone option: a fixed UTC offset (the session zone carries no DST, rule 2),
-/// labelled by its offset so the label never drifts from the bias.</summary>
-public sealed record ZoneOption(int BiasMinutes, string Label);
+/// labelled by its offset so the label never drifts from the bias, plus a translation-key hint naming the
+/// market the offset belongs to (shown beside the offset in the dropdown so it is not just a bare number).</summary>
+public sealed record ZoneOption(int BiasMinutes, string Label, string HintKey);
 
 /// <summary>A time-mode option: flowing, frozen, or an xN multiplier, named by a translation key.</summary>
 public sealed record ModeOption(string LabelKey, string Mode, long? Multiplier);
@@ -15,13 +16,13 @@ public static class TimeInputs
 {
     public static IReadOnlyList<ZoneOption> Zones { get; } =
     [
-        Zone(0),      // UTC
-        Zone(-60),    // UTC+01:00 - Poland, standard time
-        Zone(-120),   // UTC+02:00 - Poland, summer time
-        Zone(300),    // UTC-05:00 - US Eastern
-        Zone(360),    // UTC-06:00 - US Central
-        Zone(420),    // UTC-07:00 - US Mountain
-        Zone(480),    // UTC-08:00 - US Pacific
+        Zone(0, "zone.utc"),
+        Zone(-60, "zone.pl_standard"),  // UTC+01:00 - Poland, standard time
+        Zone(-120, "zone.pl_summer"),   // UTC+02:00 - Poland, summer time
+        Zone(300, "zone.us_eastern"),   // UTC-05:00
+        Zone(360, "zone.us_central"),   // UTC-06:00
+        Zone(420, "zone.us_mountain"),  // UTC-07:00
+        Zone(480, "zone.us_pacific"),   // UTC-08:00
     ];
 
     public static IReadOnlyList<ModeOption> Modes { get; } =
@@ -33,5 +34,6 @@ public static class TimeInputs
         new("mode.x1440", "multiplier", 1440),
     ];
 
-    private static ZoneOption Zone(int biasMinutes) => new(biasMinutes, ZoneLabel.FromBiasMinutes(biasMinutes));
+    private static ZoneOption Zone(int biasMinutes, string hintKey) =>
+        new(biasMinutes, ZoneLabel.FromBiasMinutes(biasMinutes), hintKey);
 }

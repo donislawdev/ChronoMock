@@ -29,6 +29,14 @@
   <sys:String x:Key="action.today">Today</sys:String>
   <sys:String x:Key="action.now">Now</sys:String>
   <sys:String x:Key="zone.label">Zone:</sys:String>
+  <!-- Market-name hints shown beside each offset in the zone dropdown, so it is not a bare number. -->
+  <sys:String x:Key="zone.utc">Coordinated Universal Time</sys:String>
+  <sys:String x:Key="zone.pl_standard">Poland (standard)</sys:String>
+  <sys:String x:Key="zone.pl_summer">Poland (summer)</sys:String>
+  <sys:String x:Key="zone.us_eastern">US Eastern</sys:String>
+  <sys:String x:Key="zone.us_central">US Central</sys:String>
+  <sys:String x:Key="zone.us_mountain">US Mountain</sys:String>
+  <sys:String x:Key="zone.us_pacific">US Pacific</sys:String>
   <sys:String x:Key="mode.label">Mode:</sys:String>
   <sys:String x:Key="mode.flow">Flowing</sys:String>
   <sys:String x:Key="mode.frozen">Frozen</sys:String>

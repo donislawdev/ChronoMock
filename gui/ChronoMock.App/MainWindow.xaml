@@ -91,9 +91,15 @@
                     Visibility="{Binding IsRunning, Converter={StaticResource BoolToVis}}" />
             <TextBlock Text="{DynamicResource zone.label}" Margin="{StaticResource SpaceSm}" VerticalAlignment="Center"
                        FontSize="{StaticResource FontSizeBody}" Foreground="{DynamicResource BrushTextSecondary}" />
-            <ComboBox ItemsSource="{Binding Zones}" SelectedItem="{Binding SelectedZone}" DisplayMemberPath="Label"
+            <ComboBox ItemsSource="{Binding Zones}" SelectedItem="{Binding SelectedZone}"
                       IsEnabled="{Binding IsIdle}" ToolTip="{DynamicResource tip.zone}"
-                      Margin="{StaticResource SpaceXs}" VerticalAlignment="Center" />
+                      Margin="{StaticResource SpaceXs}" VerticalAlignment="Center">
+              <ComboBox.ItemTemplate>
+                <DataTemplate>
+                  <TextBlock><Run Text="{Binding Label, Mode=OneWay}" /><Run Text="  ·  " /><Run Text="{Binding HintKey, Converter={StaticResource KeyToText}, Mode=OneWay}" /></TextBlock>
+                </DataTemplate>
+              </ComboBox.ItemTemplate>
+            </ComboBox>
           </StackPanel>
           <!-- Validation message BELOW the whole At row: centred, in the partial-status colour, meaning in
                the text. Kept out of the input control so its appearance never shifts the row (rule: steady
