@@ -389,12 +389,12 @@ fn cdp_date_probe(argv: &[String]) -> i32 {
     code
 }
 
-fn short_url(url: &str) -> &str {
-    if url.len() > 66 {
-        &url[..66]
-    } else {
-        url
-    }
+/// A URL trimmed for a diagnostic line. By CHARACTERS, not bytes: `&url[..66]` panics when byte 66
+/// lands inside a multi-byte character, and a debug URL can carry a profile path with a non-ASCII user
+/// name. Only the hidden probes print this, so it was never on a user path - but a panic to shorten a
+/// log line is a poor trade either way.
+fn short_url(url: &str) -> String {
+    url.chars().take(66).collect()
 }
 
 /// FILETIME ticks (100 ns since 1601) at the Unix epoch (1970-01-01T00:00:00Z).
@@ -3754,6 +3754,10 @@ fn run_session(
     let mut target_exit: Option<i32> = None;
 
     loop {
+        // Both deadlines are also checked after handling a command, not only when the wait times out.
+        // With commands arriving back to back, `wait` is zero and recv_timeout keeps returning a command
+        // rather than a timeout - so `state` stopped being emitted for as long as the client kept
+        // talking, and the GUI's idle watchdog would call a perfectly healthy core unresponsive.
         let wait = deadline.min(child_deadline).saturating_duration_since(Instant::now());
         match rx.recv_timeout(wait) {
             Ok(Command::End { .. }) => break,
@@ -3797,24 +3801,25 @@ fn run_session(
                 }
             }
             Ok(_) => {} // Start or a not-yet-supported command: ignore
-            Err(mpsc::RecvTimeoutError::Timeout) => {
-                let now = Instant::now();
-                if now >= child_deadline {
-                    fold_children(&mut session, &mut family, &mut family_pids);
-                    child_deadline = now + child_poll;
-                }
-                // The heartbeat keeps its own once-a-second cadence: `state` and the liveness check
-                // stay exactly as often as the protocol says, whatever the child poll does.
-                if now >= deadline {
-                    emit(&state_event(&session));
-                    if !session.is_alive() {
-                        target_exit = session.exit_code();
-                        break;
-                    }
-                    deadline = now + heartbeat;
-                }
-            }
+            Err(mpsc::RecvTimeoutError::Timeout) => {} // the tick below handles it
             Err(mpsc::RecvTimeoutError::Disconnected) => break, // stdin closed
+        }
+
+        let now = Instant::now();
+        if now >= child_deadline {
+            fold_children(&mut session, &mut family, &mut family_pids);
+            child_deadline = now + child_poll;
+        }
+        // The heartbeat keeps its own once-a-second cadence: `state` and the liveness check stay
+        // exactly as often as the protocol says, whatever else the loop is doing.
+        if now >= deadline {
+            emit(&state_event(&session));
+            if !session.is_alive() {
+                target_exit = session.exit_code();
+                break;
+            }
+
+            deadline = now + heartbeat;
         }
     }
 
@@ -4036,6 +4041,22 @@ mod tests {
             {"id":"w","name":{"en":"A","local":"A"},"rule":{"type":"fixed","month":1,"day":1},
              "valid_from":2030,"valid_to":2020,"source":"t"}]}"#;
         assert!(calendar_from_text(inverted).expect_err("inverted window").contains("valid_from"));
+    }
+
+    /// S-20. The trim was `&url[..66]`, which panics when byte 66 lands inside a multi-byte character -
+    /// and a debug URL can carry a profile path with a non-ASCII user name. Only the hidden probes print
+    /// this, so it never sat on a user path, but a panic to shorten a log line is a poor trade.
+    #[test]
+    fn a_non_ascii_url_is_trimmed_by_characters_not_bytes() {
+        // Each of these is two bytes, so a byte slice at 66 would land mid-character.
+        let url = format!("ws://127.0.0.1:9333/devtools/page/{}", "ó".repeat(60));
+        let short = short_url(&url);
+        assert_eq!(short.chars().count(), 66);
+        assert!(url.starts_with(&short));
+
+        // A short URL is returned whole, and ASCII behaves exactly as before.
+        assert_eq!(short_url("ws://127.0.0.1:9333/x"), "ws://127.0.0.1:9333/x");
+        assert_eq!(short_url(&"a".repeat(100)).len(), 66);
     }
 
     #[test]

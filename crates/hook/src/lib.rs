@@ -74,7 +74,7 @@ use chrono_ctl::{
 use minhook::MinHook;
 use windows::core::{s, w, PCSTR, PCWSTR};
 use windows::Win32::Foundation::{
-    CloseHandle, FILETIME, HANDLE, HMODULE, INVALID_HANDLE_VALUE, SYSTEMTIME,
+    CloseHandle, FILETIME, HANDLE, HMODULE, INVALID_HANDLE_VALUE, SYSTEMTIME, WAIT_FAILED,
 };
 use windows::Win32::System::Diagnostics::Debug::{OutputDebugStringA, WriteProcessMemory};
 use windows::Win32::System::LibraryLoader::{
@@ -474,8 +474,10 @@ unsafe extern "system" fn h_ntqst(lp: *mut i64) -> i32 {
             *lp = t;
             0 // STATUS_SUCCESS
         }
-        Some(_) => 0,
-        None => O_NTQST.get().map(|o| o(lp)).unwrap_or(0),
+        // A null output pointer: the real NtQuerySystemTime answers STATUS_ACCESS_VIOLATION. Reporting
+        // success while writing nothing would let the caller read whatever was in that memory as a time.
+        Some(_) => STATUS_ACCESS_VIOLATION,
+        None => O_NTQST.get().map(|o| o(lp)).unwrap_or(STATUS_UNSUCCESSFUL),
     }
 }
 
@@ -498,7 +500,7 @@ const TOD_CURRENTTIME_OFFSET: usize = 8;
 unsafe extern "system" fn h_ntqsi(class: i32, info: *mut c_void, len: u32, retlen: *mut u32) -> i32 {
     let o = match O_NTQSI.get() {
         Some(o) => o,
-        None => return 0, // unreachable: O_NTQSI is set before enable_all_hooks
+        None => return STATUS_UNSUCCESSFUL, // no trampoline: the buffer would be left unfilled, so do not report success
     };
     let status = o(class, info, len, retlen); // always call the original: it fills the whole struct
     if class == SYSTEM_TIME_OF_DAY_INFORMATION {
@@ -618,7 +620,17 @@ unsafe fn write_session_utc(local: *const SYSTEMTIME, utc: *mut SYSTEMTIME) -> b
 unsafe fn shift_filetime(src: *const FILETIME, dst: *mut FILETIME, add: bool) -> i32 {
     let bias_100ns = cur_tz_bias() as i64 * 60 * 10_000_000;
     let ticks = ft_to_i64(*src);
-    *dst = i64_to_ft(if add { ticks + bias_100ns } else { ticks - bias_100ns });
+    // FILETIME 0 is the very common "no time recorded", and a positive bias pushes it below zero -
+    // which, read back as the unsigned value it is, becomes a date tens of thousands of years out.
+    // The old code wrapped there and still returned success, so the caller had no way to notice.
+    // Out of range now means "we cannot express this", reported as failure so the caller falls back
+    // to the original, exactly as `write_systemtime` already does (L-3). This crate runs with
+    // overflow-checks off (a panic across the FFI detour boundary is UB), so the check is explicit.
+    let shifted = match if add { ticks.checked_add(bias_100ns) } else { ticks.checked_sub(bias_100ns) } {
+        Some(v) if v >= 0 => v,
+        _ => return 0,
+    };
+    *dst = i64_to_ft(shifted);
     1
 }
 
@@ -847,7 +859,11 @@ fn try_enter_wait(idx: usize) -> Option<(i64, WaitGuard)> {
     }
     bump(idx);
     if detached() {
-        return None; // core gone: real time
+        // The core is gone, so this wait runs real - but it still cascades internally (Sleep funnels
+        // into NtDelayExecution), and without the guard the inner call counted as a second top-level
+        // call. The guard is held here too, so one application wait is one tally either way (rule 4).
+        SCALING_WAIT.set(true);
+        return Some((1, WaitGuard)); // multiplier 1 = real time, unchanged
     }
     SCALING_WAIT.set(true);
     Some((dur_multiplier(), WaitGuard))
@@ -882,7 +898,7 @@ unsafe extern "system" fn h_sleepex(ms: u32, alertable: i32) -> u32 {
 unsafe extern "system" fn h_ntdelay(alertable: u8, interval: *const i64) -> i32 {
     let o = match O_NTDELAY.get() {
         Some(o) => o,
-        None => return 0,
+        None => return STATUS_UNSUCCESSFUL, // no trampoline: no delay happened, so do not report success
     };
     match try_enter_wait(IDX_NTDELAY) {
         Some((m, _guard)) => {
@@ -937,7 +953,7 @@ fn enter_observed_wait(idx: usize) -> Option<ObservedWaitGuard> {
 unsafe extern "system" fn h_wfso(handle: HANDLE, ms: u32) -> u32 {
     let o = match O_WFSO.get() {
         Some(o) => o,
-        None => return 0, // unreachable: O_WFSO is set before enable_all_hooks
+        None => return WAIT_FAILED.0, // no trampoline: fail the wait, never claim it was signalled
     };
     let _g = enter_observed_wait(IDX_WFSO);
     o(handle, ms)
@@ -946,7 +962,7 @@ unsafe extern "system" fn h_wfso(handle: HANDLE, ms: u32) -> u32 {
 unsafe extern "system" fn h_wfsoex(handle: HANDLE, ms: u32, alertable: i32) -> u32 {
     let o = match O_WFSOEX.get() {
         Some(o) => o,
-        None => return 0,
+        None => return WAIT_FAILED.0, // no trampoline: fail the wait, never claim it was signalled
     };
     let _g = enter_observed_wait(IDX_WFSOEX);
     o(handle, ms, alertable)
@@ -955,7 +971,7 @@ unsafe extern "system" fn h_wfsoex(handle: HANDLE, ms: u32, alertable: i32) -> u
 unsafe extern "system" fn h_wfmo(count: u32, handles: *const HANDLE, wait_all: i32, ms: u32) -> u32 {
     let o = match O_WFMO.get() {
         Some(o) => o,
-        None => return 0,
+        None => return WAIT_FAILED.0, // no trampoline: fail the wait, never claim it was signalled
     };
     let _g = enter_observed_wait(IDX_WFMO);
     o(count, handles, wait_all, ms)
@@ -970,7 +986,7 @@ unsafe extern "system" fn h_wfmoex(
 ) -> u32 {
     let o = match O_WFMOEX.get() {
         Some(o) => o,
-        None => return 0,
+        None => return WAIT_FAILED.0, // no trampoline: fail the wait, never claim it was signalled
     };
     let _g = enter_observed_wait(IDX_WFMOEX);
     o(count, handles, wait_all, ms, alertable)
@@ -979,7 +995,7 @@ unsafe extern "system" fn h_wfmoex(
 unsafe extern "system" fn h_soaw(signal: HANDLE, wait: HANDLE, ms: u32, alertable: i32) -> u32 {
     let o = match O_SOAW.get() {
         Some(o) => o,
-        None => return 0,
+        None => return WAIT_FAILED.0, // no trampoline: fail the wait, never claim it was signalled
     };
     let _g = enter_observed_wait(IDX_SOAW);
     o(signal, wait, ms, alertable)
@@ -997,7 +1013,7 @@ unsafe extern "system" fn h_mwfmo(
 ) -> u32 {
     let o = match O_MWFMO.get() {
         Some(o) => o,
-        None => return 0,
+        None => return WAIT_FAILED.0, // no trampoline: fail the wait, never claim it was signalled
     };
     let _g = enter_observed_wait(IDX_MWFMO);
     o(count, handles, wait_all, ms, wake_mask)
@@ -1012,7 +1028,7 @@ unsafe extern "system" fn h_mwfmoex(
 ) -> u32 {
     let o = match O_MWFMOEX.get() {
         Some(o) => o,
-        None => return 0,
+        None => return WAIT_FAILED.0, // no trampoline: fail the wait, never claim it was signalled
     };
     let _g = enter_observed_wait(IDX_MWFMOEX);
     o(count, handles, ms, wake_mask, flags)
@@ -1244,6 +1260,8 @@ unsafe extern "system" fn h_set_tp_timer_ex(
 /// trampoline is set (unreachable). Negative NTSTATUS = failure, so the caller does not treat an
 /// un-created process as a success.
 const STATUS_UNSUCCESSFUL: i32 = 0xC000_0001u32 as i32;
+/// What the real NtQuerySystemTime answers for a null output pointer.
+const STATUS_ACCESS_VIOLATION: i32 = 0xC000_0005u32 as i32;
 
 thread_local! {
     static SPAWNING: Cell<bool> = const { Cell::new(false) };
@@ -1553,6 +1571,10 @@ unsafe fn install() -> Result<(), String> {
         .map_err(|e| format!("OpenFileMappingW: {e:?}"))?;
     let view = MapViewOfFile(hmap, FILE_MAP_ALL_ACCESS, 0, 0, chrono_ctl::ctl_size());
     if view.Value.is_null() {
+        // Close the mapping we opened a line ago. Once the view is mapped the handle is deliberately
+        // kept for the process's life (the view outlives it either way), but on this path there is no
+        // view - the handle would just sit there for as long as the target runs.
+        let _ = CloseHandle(hmap);
         return Err("MapViewOfFile returned null".into());
     }
     let ctl = view.Value as *mut Ctl;
@@ -1601,8 +1623,22 @@ unsafe fn install() -> Result<(), String> {
         }
     };
 
-    let k32 = GetModuleHandleA(s!("kernel32.dll")).map_err(|e| format!("{e:?}"))?;
-    let ntdll = GetModuleHandleA(s!("ntdll.dll")).map_err(|e| format!("{e:?}"))?;
+    // These two cannot realistically fail (both modules are mapped into every Win32 process before any
+    // DLL of ours loads), but the `?` used to walk out past the coverage mapping created just above and
+    // leak it. Name the failure and take the same exit as any other install error.
+    let (k32, ntdll) = match (
+        GetModuleHandleA(s!("kernel32.dll")),
+        GetModuleHandleA(s!("ntdll.dll")),
+    ) {
+        (Ok(k), Ok(n)) => (k, n),
+        (k, n) => {
+            if let Some(c) = cov {
+                set_channels_installed(c, 0);
+            }
+
+            return Err(format!("GetModuleHandleA: kernel32 {k:?}, ntdll {n:?}"));
+        }
+    };
 
     // Channels whose detour was CREATED. Published to the Cov only after enable_all_hooks succeeds -
     // until then no detour is live, and a bit that says otherwise would be the audit lying (rule 4).

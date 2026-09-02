@@ -327,7 +327,19 @@ impl Session {
     /// Release our own handles, including every mapped coverage section. The target
     /// keeps its own mapped views, so its hooks keep working after we detach (full
     /// residue cleanup is a later slice).
+    ///
+    /// Kept as the explicit way to end a session (it reads as one at every call site), but the release
+    /// itself lives in `Drop`: every path out of the core called this today, and the first `?` or early
+    /// `return` added next to one would have leaked the process handle, the control mapping and every
+    /// coverage section - silently, since nothing observes a leaked handle until the machine is short of
+    /// them.
     pub fn end(self) {
+        drop(self);
+    }
+}
+
+impl Drop for Session {
+    fn drop(&mut self) {
         unsafe {
             for cm in &self.cov_maps {
                 let _ = UnmapViewOfFile(MEMORY_MAPPED_VIEW_ADDRESS {
@@ -809,13 +821,40 @@ fn quote_arg(arg: &str) -> String {
     out
 }
 
+/// Quote a target path for the command line. Reuses `quote_arg` - one escaping rule for the whole
+/// line, not two - but ALWAYS ends up wrapped: `CreateProcessW` resolves an unquoted path containing
+/// spaces ambiguously, so the quotes are not optional here even when the escaping is a no-op.
+fn quote_path(path: &str) -> String {
+    let quoted = quote_arg(path);
+    if quoted.starts_with('"') {
+        return quoted; // already wrapped and escaped
+    }
+
+    // quote_arg leaves a token with no space or quote bare, so the wrapping is ours to add - and a
+    // trailing backslash would then escape the closing quote (`"C:\dir\"` reads as a path plus an
+    // unterminated quote). Double that run, the same rule quote_arg applies inside a wrapped argument.
+    let trailing = quoted.chars().rev().take_while(|&c| c == '\\').count();
+    let mut out = String::with_capacity(quoted.len() + trailing + 2);
+    out.push('"');
+    out.push_str(&quoted);
+    for _ in 0..trailing {
+        out.push('\\');
+    }
+
+    out.push('"');
+    out
+}
+
 /// The `"path" arg1 arg2` command line as text, each argument quoted with `quote_arg` so a target
 /// argument with spaces or quotes survives the round trip through CreateProcess.
 fn command_line_string(path: &str, args: &[String]) -> String {
+    // The path goes through the same quoting as the arguments. It was wrapped in bare quotes, so a path
+    // containing one would have ended the quoted section early and split the command line somewhere the
+    // caller never intended. Windows does not allow a quote in a file name, so this is defence rather
+    // than a fix - but one rule for every part of the line beats two, and quote_arg leaves an ordinary
+    // path exactly as the bare wrapping did.
     let mut s = String::with_capacity(path.len() + 2);
-    s.push('"');
-    s.push_str(path);
-    s.push('"');
+    s.push_str(&quote_path(path));
     for a in args {
         s.push(' ');
         s.push_str(&quote_arg(a));
@@ -919,6 +958,20 @@ mod tests {
     fn command_line_quotes_each_arg() {
         let cl = command_line_string("C:\\dir\\app.exe", &["a b".to_string(), "c".to_string()]);
         assert_eq!(cl, "\"C:\\dir\\app.exe\" \"a b\" c");
+    }
+
+    /// S-36. The path was wrapped in bare quotes, so one inside it ended the quoted section early and
+    /// split the command line somewhere the caller never meant. Windows forbids a quote in a file name,
+    /// so this is defence - but the path now goes through the same escaping as every argument, and an
+    /// ordinary path still comes out exactly as the bare wrapping produced it.
+    #[test]
+    fn a_quote_in_the_target_path_cannot_break_the_command_line() {
+        assert_eq!(quote_path("C:\\dir\\app.exe"), "\"C:\\dir\\app.exe\"");
+        assert_eq!(quote_path("C:\\my apps\\app.exe"), "\"C:\\my apps\\app.exe\"");
+        // The quote is escaped rather than closing the wrapper.
+        assert_eq!(quote_path("C:\\od\"d\\app.exe"), "\"C:\\od\\\"d\\app.exe\"");
+        // A trailing backslash is doubled so it cannot escape the closing quote.
+        assert_eq!(quote_path("C:\\dir\\"), "\"C:\\dir\\\\\"");
     }
 
     fn zeroed_cov() -> Cov {

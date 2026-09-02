@@ -192,9 +192,13 @@ impl WsClient {
 
     /// Send a masked control frame (pong) with a small payload.
     fn write_control(&mut self, opcode: u8, payload: &[u8]) -> io::Result<()> {
+        // RFC 6455 caps a control payload at 125 bytes, but a peer can break that and `take_frame` does
+        // not check it - and `len as u8` then wrapped, so the pong announced a length it did not carry
+        // and the byte stream went out of step from there on. Echo only what fits.
+        let payload = &payload[..payload.len().min(125)];
         let mut frame = Vec::with_capacity(payload.len() + 6);
         frame.push(0x80 | opcode);
-        frame.push(0x80 | payload.len() as u8); // control payloads are <= 125 bytes
+        frame.push(0x80 | payload.len() as u8);
         let mask = self.next_mask();
         frame.extend_from_slice(&mask);
         for (i, byte) in payload.iter().enumerate() {
