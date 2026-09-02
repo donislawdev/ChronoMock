@@ -443,29 +443,46 @@ pub unsafe fn write_anchor_full(
     write_volatile(sp, s.wrapping_add(1)); // even - write done
 }
 
+/// How many times a seqlock reader retries before it gives up and returns a fallback (RELEASE-009). A write
+/// is a handful of instructions held for nanoseconds and happens only on `set_multiplier`/`jump` (rare,
+/// user-driven), so a live writer settles in a few spins - this bound is astronomically above that. It
+/// exists only to cap the pathological case where the core is force-killed between the odd and even `seq`
+/// writes, which would otherwise leave a reader spinning at 100% CPU forever.
+const SEQLOCK_READ_TRIES: usize = 1_000_000;
+
 /// Read the anchor triple under the seqlock, retrying on a concurrent write.
 ///
 /// # Safety
 /// `p` must point to a live, correctly aligned `Ctl`.
 pub unsafe fn read_anchor(p: *const Ctl) -> (i64, i64, i64) {
-    loop {
+    for _ in 0..SEQLOCK_READ_TRIES {
         let s1 = read_volatile(addr_of!((*p).seq));
-        if s1 & 1 != 0 {
-            std::hint::spin_loop();
-            continue;
+        if s1 & 1 == 0 {
+            // Acquire fences: the data reads are ordered after the s1 (seq) read and before the s2 read,
+            // so a torn read racing a concurrent writer is caught by the s1 == s2 check below. See
+            // write_anchor for why Release/Acquire is zero-cost on x86/x64 yet correct on a weak ISA.
+            fence(Ordering::Acquire);
+            let a_fake = read_volatile(addr_of!((*p).a_fake));
+            let a_real = read_volatile(addr_of!((*p).a_real));
+            let multiplier = read_volatile(addr_of!((*p).multiplier));
+            fence(Ordering::Acquire);
+            if s1 == read_volatile(addr_of!((*p).seq)) {
+                return (a_fake, a_real, multiplier);
+            }
         }
-        // Acquire fences: the data reads are ordered after the s1 (seq) read and before the s2 read,
-        // so a torn read racing a concurrent writer is caught by the s1 == s2 check below. See
-        // write_anchor for why Release/Acquire is zero-cost on x86/x64 yet correct on a weak ISA.
-        fence(Ordering::Acquire);
-        let a_fake = read_volatile(addr_of!((*p).a_fake));
-        let a_real = read_volatile(addr_of!((*p).a_real));
-        let multiplier = read_volatile(addr_of!((*p).multiplier));
-        fence(Ordering::Acquire);
-        if s1 == read_volatile(addr_of!((*p).seq)) {
-            return (a_fake, a_real, multiplier);
-        }
+        std::hint::spin_loop();
     }
+    // The seqlock never settled within the bound: the writer (the core) was force-killed mid-write, leaving
+    // `seq` odd forever (RELEASE-009). Do not spin at 100% CPU - read the fields once and return them. A
+    // dead writer's fields are stable (a rare one-time tear is far better than a permanent hang); the
+    // self-detach watcher flips DETACHED right after the core dies, so the detour stops reading this block
+    // on its next call and the target falls back to real time.
+    fence(Ordering::Acquire);
+    (
+        read_volatile(addr_of!((*p).a_fake)),
+        read_volatile(addr_of!((*p).a_real)),
+        read_volatile(addr_of!((*p).multiplier)),
+    )
 }
 
 /// Read the duration anchor plus the multiplier under the seqlock, as ONE consistent snapshot, retrying
@@ -477,22 +494,29 @@ pub unsafe fn read_anchor(p: *const Ctl) -> (i64, i64, i64) {
 /// # Safety
 /// `p` must point to a live, correctly aligned `Ctl`.
 pub unsafe fn read_dur(p: *const Ctl) -> (u64, i64, i64, i64) {
-    loop {
+    for _ in 0..SEQLOCK_READ_TRIES {
         let s1 = read_volatile(addr_of!((*p).seq));
-        if s1 & 1 != 0 {
-            std::hint::spin_loop();
-            continue;
+        if s1 & 1 == 0 {
+            fence(Ordering::Acquire);
+            let dur_tick_c0 = read_volatile(addr_of!((*p).dur_tick_c0));
+            let dur_quit_c0 = read_volatile(addr_of!((*p).dur_quit_c0));
+            let dur_q0 = read_volatile(addr_of!((*p).dur_q0));
+            let multiplier = read_volatile(addr_of!((*p).multiplier));
+            fence(Ordering::Acquire);
+            if s1 == read_volatile(addr_of!((*p).seq)) {
+                return (dur_tick_c0, dur_quit_c0, dur_q0, multiplier);
+            }
         }
-        fence(Ordering::Acquire);
-        let dur_tick_c0 = read_volatile(addr_of!((*p).dur_tick_c0));
-        let dur_quit_c0 = read_volatile(addr_of!((*p).dur_quit_c0));
-        let dur_q0 = read_volatile(addr_of!((*p).dur_q0));
-        let multiplier = read_volatile(addr_of!((*p).multiplier));
-        fence(Ordering::Acquire);
-        if s1 == read_volatile(addr_of!((*p).seq)) {
-            return (dur_tick_c0, dur_quit_c0, dur_q0, multiplier);
-        }
+        std::hint::spin_loop();
     }
+    // A force-killed writer left `seq` odd forever - fall back rather than hang (see read_anchor, RELEASE-009).
+    fence(Ordering::Acquire);
+    (
+        read_volatile(addr_of!((*p).dur_tick_c0)),
+        read_volatile(addr_of!((*p).dur_quit_c0)),
+        read_volatile(addr_of!((*p).dur_q0)),
+        read_volatile(addr_of!((*p).multiplier)),
+    )
 }
 
 /// Project the duration tick (milliseconds, `GetTickCount64` scale) at real time `real_now` (QUIT, 100 ns)

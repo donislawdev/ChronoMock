@@ -283,6 +283,12 @@ unsafe fn wait_raw(h: HANDLE, ms: u32) {
     }
 }
 
+/// How long to wait for a freshly injected child's `LoadLibraryW` thread before giving up (RELEASE-009).
+/// A finite bound, mirroring `mech::INJECT_TIMEOUT_MS`, so a child that deadlocks in its loader (loader
+/// lock) cannot hang the PARENT's `CreateProcess*` detour forever - the parent returns and the child, if
+/// it is wedged, is already broken on its own account.
+const CHILD_INJECT_TIMEOUT_MS: u32 = 10_000;
+
 // --- Self-detach: revert to real time when the core vanishes --------------------
 // The core writes its PID into the control block; we open a SYNCHRONIZE handle to it.
 // On the first time call we spawn a watcher that blocks on that handle. When the core
@@ -1323,7 +1329,8 @@ unsafe fn inject_self(hproc: HANDLE) {
     if let Ok(hthread) =
         CreateRemoteThread(hproc, None, 0, start, Some(remote as *const c_void), 0, None)
     {
-        wait_raw(hthread, INFINITE);
+        // Finite wait (RELEASE-009): a child wedged in loader lock must not hang the parent's detour.
+        wait_raw(hthread, CHILD_INJECT_TIMEOUT_MS);
         let _ = CloseHandle(hthread);
     }
     let _ = VirtualFreeEx(hproc, remote, 0, MEM_RELEASE);
