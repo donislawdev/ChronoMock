@@ -3853,6 +3853,7 @@ mod tests {
             "clock-skew-plus-90s",
             "feb-29",
             "age-of-majority",
+            "fiscal-year-end",
         ];
         for id in ids {
             let text = read_data(&format!("presets/{id}.json"));
@@ -3892,6 +3893,13 @@ mod tests {
         let aom_vals = resolve_parameters(&aom.parameters, &param_map(&[("birth_date", "2008-03-15")]), None).unwrap();
         let aom_expr = resolve_moment(aom.moment, &aom_vals).unwrap();
         assert_eq!(chrono_core::calc::eval(&aom_expr, &no_cal).unwrap().result().to_iso(), "2026-03-14T00:00:00");
+
+        // fiscal-year-end takes a fiscal-year start date and returns its last day (start + 1 year - 1 day),
+        // never a hardcoded 31 December (docs/05 3.4). US federal 2025-10-01 -> 2026-09-30.
+        let fye = parse_preset(&read_data("presets/fiscal-year-end.json")).unwrap();
+        let fye_vals = resolve_parameters(&fye.parameters, &param_map(&[("fiscal_year_start", "2025-10-01")]), None).unwrap();
+        let fye_expr = resolve_moment(fye.moment, &fye_vals).unwrap();
+        assert_eq!(chrono_core::calc::eval(&fye_expr, &no_cal).unwrap().result().to_iso(), "2026-09-30T00:00:00");
 
         // payment-due-business-days is calendar-aware: +90 business days from today lands on a different
         // day per market, which is the whole point of a calendar-aware preset. Anchor at 2026-06-01 so the

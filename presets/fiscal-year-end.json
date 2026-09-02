@@ -1,0 +1,22 @@
+{
+  "schema": "chronomock.preset/1",
+  "stability": "unstable",
+  "id": "fiscal-year-end",
+  "name": { "en": "Last day of fiscal year", "pl": "Ostatni dzień roku obrotowego" },
+  "explains": {
+    "en": "Does the app close the fiscal year on the right day - the day before the fiscal-year start you set, not calendar 31 December?",
+    "pl": "Czy aplikacja zamyka rok obrotowy we właściwym dniu - dzień przed ustawionym początkiem roku obrotowego, a nie 31 grudnia kalendarzowego?"
+  },
+  "applies_to": "calculator",
+  "market": null,
+  "parameters": [
+    { "id": "fiscal_year_start", "type": "date" }
+  ],
+  "moment": {
+    "base": { "parameter": "fiscal_year_start" },
+    "steps": [
+      { "shift": { "sign": "+", "amount": 1, "unit": "years" } },
+      { "shift": { "sign": "-", "amount": 1, "unit": "days" } }
+    ]
+  }
+}
