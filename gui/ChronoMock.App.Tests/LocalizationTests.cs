@@ -1,3 +1,4 @@
+using System.IO; // The WPF SDK trims System.IO from implicit usings (Path collides with Shapes.Path).
 using System.Windows;
 using ChronoMock.App.Localization;
 
@@ -85,4 +86,27 @@ public class LocalizationTests
 
     private static HashSet<string> KeysOf(ResourceDictionary dictionary)
         => dictionary.Keys.Cast<object>().Select(key => key.ToString()!).ToHashSet(StringComparer.Ordinal);
+
+    /// <summary>
+    /// S-31 regression. The culture is sliced out of the file name, and the glob can match a name too
+    /// short to slice - "Strings.xaml" beside the real ones. That threw instead of skipping the file,
+    /// which matters because this list feeds the language picker.
+    /// </summary>
+    [Fact]
+    public void A_file_name_too_short_to_carry_a_culture_is_skipped_not_thrown_on()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "chrono-loc-tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            File.WriteAllText(Path.Combine(dir, "Strings.xaml"), "<x/>");
+            File.WriteAllText(Path.Combine(dir, "Strings.de.xaml"), "<x/>");
+            var cultures = LocalizationService.AvailableCulturesIn(dir);
+            Assert.Equal(new[] { "de" }, cultures);
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
 }

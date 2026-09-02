@@ -71,6 +71,7 @@
   <sys:String x:Key="status.ended">Session ended</sys:String>
   <sys:String x:Key="status.did_not_take_effect">Did not take effect - the target vanished</sys:String>
   <sys:String x:Key="status.core_stopped">Core stopped - the target time is frozen</sys:String>
+  <sys:String x:Key="status.stopping">Stopping - returning the target to real time</sys:String>
   <sys:String x:Key="status.stopped">Session stopped - the target is back on real time</sys:String>
   <sys:String x:Key="status.core_unresponsive">Core not responding - stopped, the target is back on real time</sys:String>
   <sys:String x:Key="status.core_missing">The Chrono Mock core could not be started - the installation may be incomplete</sys:String>

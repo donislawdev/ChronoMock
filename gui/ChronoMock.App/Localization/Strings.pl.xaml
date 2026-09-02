@@ -70,6 +70,7 @@
   <sys:String x:Key="status.ended">Sesja zakończona</sys:String>
   <sys:String x:Key="status.did_not_take_effect">Nie zadziałało - cel zniknął</sys:String>
   <sys:String x:Key="status.core_stopped">Rdzeń zatrzymany - czas celu zamrożony</sys:String>
+  <sys:String x:Key="status.stopping">Zatrzymywanie - cel wraca do czasu realnego</sys:String>
   <sys:String x:Key="status.stopped">Sesja zatrzymana - cel wrócił do realnego czasu</sys:String>
   <sys:String x:Key="status.core_unresponsive">Rdzeń nie odpowiada - zatrzymany, cel wrócił do realnego czasu</sys:String>
   <sys:String x:Key="status.core_missing">Nie udało się uruchomić rdzenia Chrono Mock - instalacja może być niekompletna</sys:String>

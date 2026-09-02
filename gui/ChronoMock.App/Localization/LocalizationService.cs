@@ -43,17 +43,28 @@ public static class LocalizationService
     }
 
     /// <summary>The cultures that have a strings file present, discovered by scanning the folder.</summary>
-    public static IReadOnlyList<string> AvailableCultures()
+    public static IReadOnlyList<string> AvailableCultures() => AvailableCulturesIn(FolderPath);
+
+    /// <summary>The scan itself, over an explicit folder - the shipped layout goes through
+    /// <see cref="AvailableCultures"/>, and this overload lets the odd-name cases be tested directly.</summary>
+    public static IReadOnlyList<string> AvailableCulturesIn(string folderPath)
     {
-        if (!Directory.Exists(FolderPath))
+        if (!Directory.Exists(folderPath))
         {
             return [];
         }
 
         var cultures = new List<string>();
-        foreach (var file in Directory.EnumerateFiles(FolderPath, $"{FilePrefix}*{FileSuffix}"))
+        foreach (var file in Directory.EnumerateFiles(folderPath, $"{FilePrefix}*{FileSuffix}"))
         {
             var name = Path.GetFileName(file);
+            // The glob can match a name too short to slice (a bare "Strings.xaml" beside the real ones):
+            // the range would then throw rather than skip an unusable file.
+            if (name.Length <= FilePrefix.Length + FileSuffix.Length)
+            {
+                continue;
+            }
+
             var culture = name[FilePrefix.Length..^FileSuffix.Length];
             if (culture.Length > 0)
             {

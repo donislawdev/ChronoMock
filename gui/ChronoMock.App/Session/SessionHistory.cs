@@ -110,6 +110,10 @@ public sealed class FileSessionHistoryStore : ISessionHistoryStore
 
     private string FilePath => Path.Combine(_directory, FileName);
 
+    /// <summary>Distinguishes concurrent writes from within one process, as the process id does between
+    /// instances - together they make every scratch file name unique.</summary>
+    private static int _tempCounter;
+
     public IReadOnlyList<SessionRecord> Load()
     {
         if (!File.Exists(FilePath))
@@ -169,9 +173,50 @@ public sealed class FileSessionHistoryStore : ISessionHistoryStore
         // PREVIOUS history intact rather than a truncated file that the next Load reads as empty and the
         // next Append overwrites - losing the whole log, not just the in-flight entry. File.Move(overwrite)
         // is atomic on one volume, and the temp is beside the target so it always is.
-        var temp = FilePath + ".tmp";
-        File.WriteAllText(temp, json);
-        File.Move(temp, FilePath, overwrite: true);
+        // The scratch name carries this process's id and a counter, because a fixed one collides between
+        // two portable instances writing at once: both open the same path and one fails, losing its entry.
+        var temp = $"{FilePath}.{Environment.ProcessId}.{Interlocked.Increment(ref _tempCounter)}.tmp";
+        try
+        {
+            File.WriteAllText(temp, json);
+            MoveWithRetry(temp, FilePath);
+        }
+        catch
+        {
+            // Never leave the scratch file behind on a failed write - the caller surfaces the error.
+            try
+            {
+                File.Delete(temp);
+            }
+            catch (IOException)
+            {
+                // Nothing more to do: it is a temp file in a directory we may not be able to write.
+            }
+
+            throw;
+        }
+    }
+
+    /// <summary>Replace the history file, retrying briefly while the destination is momentarily locked.
+    /// A unique scratch name is not enough on its own: the replace itself contends, and Windows answers a
+    /// simultaneous move onto the same destination with a sharing violation. History is written once at the
+    /// end of a session, so a few short retries cover the overlap; if it still will not go, the error is
+    /// reported rather than swallowed.</summary>
+    private static void MoveWithRetry(string temp, string destination)
+    {
+        const int attempts = 6;
+        for (var i = 1; ; i++)
+        {
+            try
+            {
+                File.Move(temp, destination, overwrite: true);
+                return;
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException && i < attempts)
+            {
+                Thread.Sleep(20 * i);
+            }
+        }
     }
 
     private sealed record HistoryFile

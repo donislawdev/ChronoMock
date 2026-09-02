@@ -31,6 +31,25 @@ public sealed class SessionHistoryStoreTests : IDisposable
         EndedAtUtc = "2026-08-25T09:00:00Z",
     };
 
+    /// <summary>
+    /// S-33 regression. The scratch file used one fixed name, so two portable instances writing at the
+    /// same moment collided: one threw an IOException that surfaced as a history error and lost its entry.
+    /// Concurrent appends must all complete, and leave no scratch files behind.
+    /// </summary>
+    [Fact]
+    public async Task Concurrent_appends_do_not_collide_on_the_scratch_file()
+    {
+        Directory.CreateDirectory(_dir);
+        var writers = Enumerable.Range(0, 8)
+            .Select(i => Task.Run(() => new FileSessionHistoryStore(_dir).Append(Record($"app{i}"))))
+            .ToArray();
+
+        await Task.WhenAll(writers); // a collision would surface here as an IOException
+
+        Assert.NotEmpty(new FileSessionHistoryStore(_dir).Load());
+        Assert.Empty(Directory.GetFiles(_dir, "*.tmp"));
+    }
+
     [Fact]
     public void Append_then_load_round_trips_the_records_in_order()
     {

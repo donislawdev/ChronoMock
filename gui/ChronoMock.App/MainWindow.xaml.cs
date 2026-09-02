@@ -39,7 +39,25 @@ public partial class MainWindow : FluentWindow
 
         // Closing the window ends the session: disposing the client stops the core, and the hook
         // self-detaches so the target reverts to real time on its own (plasterek 10) - we never kill it.
-        Closed += async (_, _) => await _session.DisposeAsync();
+        // Done in Closing, with a bounded wait, rather than as an async-void handler on Closed: WPF does
+        // not await such a handler, so the process could exit mid-shutdown. It survived on the core seeing
+        // EOF on stdin and cleaning up by itself, which is luck, not a design. The wait is bounded because
+        // a window must always close - a core that will not end is killed by the dispose path anyway.
+        Closing += OnWindowClosing;
+    }
+
+    private void OnWindowClosing(object? sender, System.ComponentModel.CancelEventArgs e)
+    {
+        Closing -= OnWindowClosing;
+        try
+        {
+            _session.DisposeAsync().AsTask().Wait(TimeSpan.FromSeconds(3));
+        }
+        catch (AggregateException)
+        {
+            // The core was already gone, or refused to end - either way the window still closes and the
+            // hook self-detaches, so the target is not left on a fake clock.
+        }
     }
 
     // Swap the visible module: substitution panel vs calculator view. The default radio's Checked fires

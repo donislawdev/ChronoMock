@@ -290,9 +290,12 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
         {
             client.Send(new SetMultiplierCommand { Id = _nextCommandId++, Multiplier = multiplier });
         }
-        catch (IOException)
+        catch (Exception e) when (e is IOException or ObjectDisposedException or InvalidOperationException)
         {
-            // The core is already gone - the read loop will surface the end; nothing to do here.
+            // The core is already gone, or its stdin was disposed by a Stop racing this click. Neither is
+            // an error worth a dialog - the read loop surfaces the end. ObjectDisposedException derives
+            // from InvalidOperationException, NOT from IOException, so catching IOException alone let it
+            // reach the dispatcher handler and pop a message box after a perfectly ordinary Stop.
         }
     }
 
@@ -343,9 +346,12 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
                 To = new MomentSpec { Kind = "relative", Delta = delta },
             });
         }
-        catch (IOException)
+        catch (Exception e) when (e is IOException or ObjectDisposedException or InvalidOperationException)
         {
-            // The core is already gone - the read loop will surface the end; nothing to do here.
+            // The core is already gone, or its stdin was disposed by a Stop racing this click. Neither is
+            // an error worth a dialog - the read loop surfaces the end. ObjectDisposedException derives
+            // from InvalidOperationException, NOT from IOException, so catching IOException alone let it
+            // reach the dispatcher handler and pop a message box after a perfectly ordinary Stop.
         }
     }
 
@@ -372,9 +378,12 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
                 To = new MomentSpec { Kind = "absolute", Local = momentLocal, TzBiasMin = zoneBiasMinutes },
             });
         }
-        catch (IOException)
+        catch (Exception e) when (e is IOException or ObjectDisposedException or InvalidOperationException)
         {
-            // The core is already gone - the read loop will surface the end; nothing to do here.
+            // The core is already gone, or its stdin was disposed by a Stop racing this click. Neither is
+            // an error worth a dialog - the read loop surfaces the end. ObjectDisposedException derives
+            // from InvalidOperationException, NOT from IOException, so catching IOException alone let it
+            // reach the dispatcher handler and pop a message box after a perfectly ordinary Stop.
         }
     }
 
@@ -821,6 +830,10 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
         }
 
         _stopRequested = true;
+        // Drop out of Running immediately. Shutdown is asynchronous and takes up to the core's grace
+        // period, and until now IsRunning stayed true throughout - so a click on Jump or a speed button
+        // in that window reached a stream that was already closing and threw where nothing caught it.
+        SetStatus("status.stopping", SessionStatusKind.Stopping);
         _ = Task.Run(() => client.DisposeAsync().AsTask());
     }
 
@@ -1106,8 +1119,20 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
 
     // Format a possibly-missing template safely: a resolver that returns the raw key (no placeholders)
     // leaves it unchanged, because string.Format ignores extra arguments when there are no holes to fill.
+    // It does NOT ignore a hole with no argument ({5} of three) or an unbalanced brace, and translation
+    // files are loose files anyone may edit - so a bad one degrades to the raw template instead of taking
+    // down the summary that was being built.
     private static string Fmt(string template, params object[] args)
-        => string.Format(CultureInfo.InvariantCulture, template, args);
+    {
+        try
+        {
+            return string.Format(CultureInfo.InvariantCulture, template, args);
+        }
+        catch (FormatException)
+        {
+            return template;
+        }
+    }
 
     private static void AppendList(
         StringBuilder sb, Func<string, string> translate, string headerKey,

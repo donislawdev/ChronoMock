@@ -25,6 +25,12 @@ public enum SessionStatusKind
     /// <summary>The core closed its stream mid-session - the target's time is now frozen (docs/08 section 7).</summary>
     CoreStopped,
 
+    /// <summary>Stop was pressed and the core is being shut down - the session is no longer live, but its
+    /// end has not been recorded yet. A distinct state because the shutdown is not instant (the core gets a
+    /// grace period), and during it the in-flight controls must already be gone: sending on a closing
+    /// stream throws, and "Running" with dead buttons reads as a hang.</summary>
+    Stopping,
+
     /// <summary>The user stopped the session (the Stop control). The core was ended, its hook self-detached,
     /// and the target returned to real time (chrono-mock 7.2, M-10).</summary>
     Stopped,
