@@ -173,7 +173,6 @@
   <!-- Date calculator (chrono-mock 7.3). Slice G1 is the layout shell; more keys arrive with the wiring. -->
   <sys:String x:Key="calc.presets_header">Presets</sys:String>
   <sys:String x:Key="calc.filter_placeholder">Filter scenarios…</sys:String>
-  <sys:String x:Key="calc.build_from_scratch">+ Build from scratch</sys:String>
   <sys:String x:Key="calc.preset_note">A preset is a starting point - not a certificate that your test is complete.</sys:String>
   <sys:String x:Key="calc.preset_params_header">Parameters</sys:String>
   <sys:String x:Key="calc.preset_needs_params">Fill in the parameters below to compute this preset.</sys:String>
@@ -193,7 +192,6 @@
   <sys:String x:Key="calc.custom_format">Custom format</sys:String>
   <sys:String x:Key="calc.custom_format_hint">e.g. yyyy-MM-dd HH:mm:ss</sys:String>
   <sys:String x:Key="calc.metadata">Metadata</sys:String>
-  <sys:String x:Key="calc.other_zones">Same instant, other zones</sys:String>
   <sys:String x:Key="calc.use_in_substitution">Use in substitution →</sys:String>
   <sys:String x:Key="calc.reverse_header">Analyze a pasted date</sys:String>
   <sys:String x:Key="calc.analyze_ambiguous">Ambiguous - both interpretations shown</sys:String>

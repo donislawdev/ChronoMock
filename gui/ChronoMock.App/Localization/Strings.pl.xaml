@@ -172,7 +172,6 @@
   <!-- Kalkulator dat (chrono-mock 7.3). Plasterek G1 to szkielet układu; więcej kluczy z podpięciem. -->
   <sys:String x:Key="calc.presets_header">Presety</sys:String>
   <sys:String x:Key="calc.filter_placeholder">Filtruj scenariusze…</sys:String>
-  <sys:String x:Key="calc.build_from_scratch">+ Zbuduj od zera</sys:String>
   <sys:String x:Key="calc.preset_note">Preset to punkt startowy - nie certyfikat kompletności testu.</sys:String>
   <sys:String x:Key="calc.preset_params_header">Parametry</sys:String>
   <sys:String x:Key="calc.preset_needs_params">Uzupełnij parametry poniżej, aby policzyć ten preset.</sys:String>
@@ -192,7 +191,6 @@
   <sys:String x:Key="calc.custom_format">Format własny</sys:String>
   <sys:String x:Key="calc.custom_format_hint">np. yyyy-MM-dd HH:mm:ss</sys:String>
   <sys:String x:Key="calc.metadata">Metadane</sys:String>
-  <sys:String x:Key="calc.other_zones">Ta sama chwila, inne strefy</sys:String>
   <sys:String x:Key="calc.use_in_substitution">Użyj w podmianie →</sys:String>
   <sys:String x:Key="calc.reverse_header">Analiza wklejonej daty</sys:String>
   <sys:String x:Key="calc.analyze_ambiguous">Niejednoznaczne - pokazane obie interpretacje</sys:String>
