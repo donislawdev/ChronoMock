@@ -160,7 +160,7 @@ impl WsClient {
     /// Assemble a complete text message from buffered frames, answering pings along the way. Returns
     /// `None` when the buffer does not yet hold a full frame (the caller reads more).
     fn take_message(&mut self) -> io::Result<Option<String>> {
-        while let Some((fin, opcode, payload)) = take_frame(&mut self.rbuf) {
+        while let Some((fin, opcode, payload)) = take_frame(&mut self.rbuf)? {
             match opcode {
                 0x0..=0x2 => {
                     // continuation (0x0) | text (0x1) | binary (0x2) - accumulate until FIN.
@@ -218,10 +218,12 @@ const MAX_WS_BYTES: usize = 16 * 1024 * 1024;
 
 /// Parse and remove one complete WebSocket frame from the front of `buf`, if the buffer holds one.
 /// Server frames are usually unmasked, but the mask bit is honoured either way. Returns
-/// `(fin, opcode, unmasked_payload)`, or `None` when more bytes are needed.
-fn take_frame(buf: &mut Vec<u8>) -> Option<(bool, u8, Vec<u8>)> {
+/// `Ok(Some((fin, opcode, unmasked_payload)))`, `Ok(None)` when more bytes are needed, or `Err`
+/// when the header itself is unusable - a claimed length past the cap, which cannot be answered by
+/// waiting for more bytes because those bytes will never come.
+fn take_frame(buf: &mut Vec<u8>) -> io::Result<Option<(bool, u8, Vec<u8>)>> {
     if buf.len() < 2 {
-        return None;
+        return Ok(None);
     }
     let b0 = buf[0];
     let b1 = buf[1];
@@ -230,28 +232,43 @@ fn take_frame(buf: &mut Vec<u8>) -> Option<(bool, u8, Vec<u8>)> {
     let masked = b1 & 0x80 != 0;
     let len7 = (b1 & 0x7f) as usize;
 
-    let (payload_len, header_len) = match len7 {
+    let (payload_len, header_len): (u64, usize) = match len7 {
         126 => {
             if buf.len() < 4 {
-                return None;
+                return Ok(None);
             }
-            (u16::from_be_bytes([buf[2], buf[3]]) as usize, 4)
+            (u16::from_be_bytes([buf[2], buf[3]]) as u64, 4)
         }
         127 => {
             if buf.len() < 10 {
-                return None;
+                return Ok(None);
             }
             let mut b = [0u8; 8];
             b.copy_from_slice(&buf[2..10]);
-            (u64::from_be_bytes(b) as usize, 10)
+            // Kept as u64 deliberately: `as usize` would silently truncate a 64-bit claim on x86,
+            // which the support matrix ships, and the check below would then pass on a bogus length.
+            (u64::from_be_bytes(b), 10)
         }
-        n => (n, 2),
+        n => (n as u64, 2),
     };
+
+    // A header may claim any length up to u64::MAX, and the addition below is not checked - release
+    // builds run with overflow-checks on, so such a claim PANICKED the core mid-session, leaving the
+    // launched Chromium holding a debug port and a temp profile with nobody left to clean them up.
+    // The cap is the same one `fill` and `take_message` enforce, applied here where the claim first
+    // appears. This cannot be answered with `Ok(None)` ("read more"): the bytes will never arrive.
+    if payload_len > MAX_WS_BYTES as u64 {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "websocket frame header claims a payload beyond the size cap",
+        ));
+    }
+    let payload_len = payload_len as usize;
 
     let mask_len = if masked { 4 } else { 0 };
     let total = header_len + mask_len + payload_len;
     if buf.len() < total {
-        return None;
+        return Ok(None);
     }
 
     let mask = if masked {
@@ -266,7 +283,7 @@ fn take_frame(buf: &mut Vec<u8>) -> Option<(bool, u8, Vec<u8>)> {
         }
     }
     buf.drain(..total);
-    Some((fin, opcode, payload))
+    Ok(Some((fin, opcode, payload)))
 }
 
 fn find_subslice(haystack: &[u8], needle: &[u8]) -> Option<usize> {
@@ -291,10 +308,33 @@ mod tests {
         f
     }
 
+    /// S-4 regression. A 127 length marker is followed by a full u64, and the frame total was added
+    /// unchecked - a claim near u64::MAX overflowed usize and PANICKED the core (release builds keep
+    /// overflow-checks on), which killed a live Chromium session and left its debug port and temp
+    /// profile behind. Verified before the fix: "attempt to add with overflow".
+    #[test]
+    fn a_frame_claiming_an_impossible_length_is_refused_not_panicked() {
+        // 0x82 = FIN + binary, 0xFF = mask bit + len7 127 (a u64 length follows).
+        let mut buf = vec![0x82u8, 0xFF];
+        buf.extend_from_slice(&u64::MAX.to_be_bytes());
+        let err = take_frame(&mut buf).expect_err("an impossible length must be refused");
+        assert_eq!(err.kind(), io::ErrorKind::InvalidData);
+
+        // Just past the cap is refused too - the boundary, not only the extreme.
+        let mut over = vec![0x82u8, 0x7F];
+        over.extend_from_slice(&(MAX_WS_BYTES as u64 + 1).to_be_bytes());
+        assert!(take_frame(&mut over).is_err());
+
+        // Exactly at the cap is a legal claim: no error, just "not enough bytes yet".
+        let mut at_cap = vec![0x82u8, 0x7F];
+        at_cap.extend_from_slice(&(MAX_WS_BYTES as u64).to_be_bytes());
+        assert!(take_frame(&mut at_cap).expect("a legal claim is not an error").is_none());
+    }
+
     #[test]
     fn takes_a_short_frame() {
         let mut buf = server_frame(b"{\"id\":1}", true);
-        let (fin, op, payload) = take_frame(&mut buf).unwrap();
+        let (fin, op, payload) = take_frame(&mut buf).unwrap().unwrap();
         assert!(fin);
         assert_eq!(op, 0x1);
         assert_eq!(payload, b"{\"id\":1}");
@@ -305,7 +345,7 @@ mod tests {
     fn takes_a_16bit_length_frame() {
         let big = vec![b'x'; 1000];
         let mut buf = server_frame(&big, true);
-        let (_, _, payload) = take_frame(&mut buf).unwrap();
+        let (_, _, payload) = take_frame(&mut buf).unwrap().unwrap();
         assert_eq!(payload.len(), 1000);
     }
 
@@ -313,7 +353,7 @@ mod tests {
     fn returns_none_until_the_frame_is_complete() {
         let full = server_frame(b"hello", true);
         let mut partial = full[..4].to_vec(); // header + part of payload
-        assert!(take_frame(&mut partial).is_none());
+        assert!(take_frame(&mut partial).unwrap().is_none());
         assert_eq!(partial.len(), 4); // nothing consumed
     }
 
@@ -321,11 +361,11 @@ mod tests {
     fn leaves_trailing_bytes_of_the_next_frame() {
         let mut buf = server_frame(b"AB", true);
         buf.extend_from_slice(&server_frame(b"CD", true));
-        let (_, _, first) = take_frame(&mut buf).unwrap();
+        let (_, _, first) = take_frame(&mut buf).unwrap().unwrap();
         assert_eq!(first, b"AB");
-        let (_, _, second) = take_frame(&mut buf).unwrap();
+        let (_, _, second) = take_frame(&mut buf).unwrap().unwrap();
         assert_eq!(second, b"CD");
-        assert!(take_frame(&mut buf).is_none());
+        assert!(take_frame(&mut buf).unwrap().is_none());
     }
 
     #[test]
@@ -338,7 +378,7 @@ mod tests {
         for (i, b) in payload.iter().enumerate() {
             buf.push(b ^ mask[i & 3]);
         }
-        let (_, _, got) = take_frame(&mut buf).unwrap();
+        let (_, _, got) = take_frame(&mut buf).unwrap().unwrap();
         assert_eq!(got, payload);
     }
 }

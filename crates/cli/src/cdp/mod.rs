@@ -35,6 +35,26 @@ pub struct CdpClient {
     ws: WsClient,
     next_id: u64,
     queued: std::collections::VecDeque<Msg>,
+    /// Set once the queue has had to drop an event, so the notice is printed a single time rather
+    /// than on every subsequent drop.
+    queue_overflow_warned: bool,
+}
+
+/// Cap on events parked while waiting for a command reply. CDP events are small and the session
+/// loop drains them, so this is far above any healthy rate - it exists so a runaway target cannot
+/// grow the deque without limit (the same defence-in-depth as `MAX_WS_BYTES`, one layer up).
+const MAX_QUEUED_EVENTS: usize = 10_000;
+
+/// Push onto a bounded queue, dropping the oldest entry when it is already full. Returns whether a
+/// drop happened, so the caller can say so once. Split out from the client so the bound is testable
+/// without a socket.
+fn push_bounded(queue: &mut std::collections::VecDeque<Msg>, msg: Msg) -> bool {
+    let dropped = queue.len() >= MAX_QUEUED_EVENTS;
+    if dropped {
+        queue.pop_front();
+    }
+    queue.push_back(msg);
+    dropped
 }
 
 impl CdpClient {
@@ -49,7 +69,12 @@ impl CdpClient {
             .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "no webSocketDebuggerUrl in /json/version"))?;
         let (ws_host, ws_port, ws_path) = parse_ws_url(url)?;
         let ws = WsClient::connect(&ws_host, ws_port, &ws_path)?;
-        Ok(CdpClient { ws, next_id: 1, queued: std::collections::VecDeque::new() })
+        Ok(CdpClient {
+            ws,
+            next_id: 1,
+            queued: std::collections::VecDeque::new(),
+            queue_overflow_warned: false,
+        })
     }
 
     /// Send a command and block until its reply arrives, queuing any events seen in between. Returns
@@ -70,6 +95,17 @@ impl CdpClient {
         // A reply should come promptly; poll until it does, bounded so a hung target cannot block us.
         let deadline = Instant::now() + Duration::from_secs(20);
         loop {
+            // Checked every pass, not only when the socket goes quiet. A target that keeps pushing
+            // events - a page logging in a loop, a worker chattering - would otherwise never let the
+            // deadline branch run, and a command whose reply never comes (a dead sessionId, say)
+            // would block the whole session loop indefinitely: no heartbeat, no `end`, no liveness
+            // check, and the GUI's 15 s watchdog calling a healthy core unresponsive.
+            if Instant::now() >= deadline {
+                return Err(io::Error::new(
+                    io::ErrorKind::TimedOut,
+                    format!("CDP {method} timed out waiting for a reply"),
+                ));
+            }
             match self.poll_msg()? {
                 Some(Msg::Response { id: rid, result, error }) if rid == id => {
                     return match error {
@@ -80,16 +116,23 @@ impl CdpClient {
                         None => Ok(result),
                     };
                 }
-                Some(other) => self.queued.push_back(other),
-                None => {
-                    if Instant::now() >= deadline {
-                        return Err(io::Error::new(
-                            io::ErrorKind::TimedOut,
-                            format!("CDP {method} timed out waiting for a reply"),
-                        ));
-                    }
-                }
+                Some(other) => self.queue_event(other),
+                None => {}
             }
+        }
+    }
+
+    /// Park an event seen while waiting for a reply, bounded. The queue is drained by the session
+    /// loop, but nothing guarantees it drains as fast as a chatty target fills it, so an unbounded
+    /// deque would grow with the target's event rate. Past the cap the OLDEST event is dropped:
+    /// events are diagnostics here (coverage comes from polled counters), so losing the stalest one
+    /// costs less than growing without limit - and the drop says so once, rather than silently.
+    fn queue_event(&mut self, msg: Msg) {
+        if push_bounded(&mut self.queued, msg) && !self.queue_overflow_warned {
+            self.queue_overflow_warned = true;
+            eprintln!(
+                "chrono core: CDP event queue hit {MAX_QUEUED_EVENTS} - dropping the oldest events"
+            );
         }
     }
 
@@ -215,5 +258,34 @@ mod tests {
     fn rejects_non_ws_url() {
         assert!(parse_ws_url("http://127.0.0.1:9333/x").is_err());
         assert!(parse_ws_url("ws://127.0.0.1/x").is_err()); // no port
+    }
+
+    fn event(n: u64) -> Msg {
+        Msg::Event { method: format!("E{n}"), params: Value::from(n), session_id: None }
+    }
+
+    fn method_of(m: &Msg) -> String {
+        match m {
+            Msg::Event { method, .. } => method.clone(),
+            Msg::Response { .. } => "response".to_string(),
+        }
+    }
+
+    /// S-15 regression. Events parked while waiting for a command reply used to accumulate without
+    /// any bound, so a chatty target grew the deque with its own event rate. Now the queue is capped
+    /// and the OLDEST is dropped - the newest events are the ones still worth having.
+    #[test]
+    fn the_event_queue_is_bounded_and_drops_the_oldest() {
+        let mut q = std::collections::VecDeque::new();
+        for n in 0..MAX_QUEUED_EVENTS as u64 {
+            assert!(!push_bounded(&mut q, event(n)), "nothing is dropped below the cap");
+        }
+        assert_eq!(q.len(), MAX_QUEUED_EVENTS);
+        assert_eq!(method_of(q.front().unwrap()), "E0");
+
+        assert!(push_bounded(&mut q, event(9_999_999)), "past the cap a drop is reported");
+        assert_eq!(q.len(), MAX_QUEUED_EVENTS, "the queue does not grow past the cap");
+        assert_eq!(method_of(q.front().unwrap()), "E1", "the oldest went, not the newest");
+        assert_eq!(method_of(q.back().unwrap()), "E9999999");
     }
 }
