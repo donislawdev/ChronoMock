@@ -74,9 +74,39 @@ public sealed class FileSessionHistoryStore : ISessionHistoryStore
 
     public FileSessionHistoryStore(string directory) => _directory = directory;
 
-    /// <summary>The store for the running app: a history folder next to the executable (portable).</summary>
+    /// <summary>The store for the running app: a history folder next to the executable (portable). When that
+    /// location is read-only - a USB stick, or Program Files without admin - fall back to a per-user
+    /// writable folder so the log still saves instead of every session reporting a write error.</summary>
     public static FileSessionHistoryStore ForApp()
-        => new(Path.Combine(AppContext.BaseDirectory, "history"));
+    {
+        var exeHistory = Path.Combine(AppContext.BaseDirectory, "history");
+        var perUser = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ChronoMock", "history");
+        return new FileSessionHistoryStore(ChooseWritableDir(exeHistory, perUser, IsWritable));
+    }
+
+    /// <summary>Pick <paramref name="preferred"/> when it is writable, else <paramref name="fallback"/>. The
+    /// writability check is injected so the choice is unit-tested without a real read-only medium.</summary>
+    internal static string ChooseWritableDir(string preferred, string fallback, Func<string, bool> isWritable)
+        => isWritable(preferred) ? preferred : fallback;
+
+    /// <summary>Whether a directory can be created and written to, by actually probing it (a directory's
+    /// read-only attribute does not stop file creation on Windows, so a real write is the only honest test).</summary>
+    private static bool IsWritable(string dir)
+    {
+        try
+        {
+            Directory.CreateDirectory(dir);
+            var probe = Path.Combine(dir, ".write-probe");
+            File.WriteAllText(probe, string.Empty);
+            File.Delete(probe);
+            return true;
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            return false;
+        }
+    }
 
     private string FilePath => Path.Combine(_directory, FileName);
 

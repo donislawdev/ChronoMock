@@ -99,6 +99,20 @@ public sealed class SessionHistoryStoreTests : IDisposable
     }
 
     [Fact]
+    public void Chooses_the_preferred_history_directory_when_it_is_writable()
+        => Assert.Equal(
+            @"X:\exe\history",
+            FileSessionHistoryStore.ChooseWritableDir(@"X:\exe\history", @"Y:\user\history", _ => true));
+
+    [Fact]
+    public void Falls_back_to_the_per_user_directory_when_the_preferred_is_read_only()
+        // A read-only medium (a USB stick, Program Files without admin) cannot hold the log next to the exe,
+        // so history saves to a per-user location instead of failing every session.
+        => Assert.Equal(
+            @"Y:\user\history",
+            FileSessionHistoryStore.ChooseWritableDir(@"X:\exe\history", @"Y:\user\history", _ => false));
+
+    [Fact]
     public void Append_keeps_only_the_most_recent_maximum()
     {
         var store = new FileSessionHistoryStore(_dir);
