@@ -7,7 +7,14 @@ namespace ChronoMock.Protocol.Tests;
 /// with real injection on the host (an own target, allowed there). Proves the client handshakes, relays
 /// the two clocks, reports the verdict, and its exit code equals the session verdict - the whole 3.1
 /// walking skeleton, measured not assumed. Reads are bounded by a timeout so a hung core fails loudly.
+/// <para>
+/// Environmentally coupled (RELEASE-010): needs a release-built x64 core, the test target, and injection
+/// allowed (Defender off on the host). Tagged Category=Integration so the hermetic gate
+/// (<c>dotnet test --filter "Category!=Integration"</c>) can run everywhere while these run only on a
+/// prepared Windows host, alongside the native harness (tools/probes/run-targets.ps1).
+/// </para>
 /// </summary>
+[Trait("Category", "Integration")]
 public class ConformanceTests
 {
     private static readonly TimeSpan ReadTimeout = TimeSpan.FromSeconds(20);

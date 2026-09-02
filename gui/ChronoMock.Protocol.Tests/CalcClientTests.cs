@@ -75,6 +75,7 @@ public class CalcClientTests
     }
 
     [Fact]
+    [Trait("Category", "Integration")] // spawns the real chrono - excluded from the hermetic gate (RELEASE-010)
     public async Task Evaluates_against_the_real_core()
     {
         // Spawns the REAL chrono calc, proving the GUI client and the engine's JSON contract agree end
@@ -89,6 +90,7 @@ public class CalcClientTests
     }
 
     [Fact]
+    [Trait("Category", "Integration")] // spawns the real chrono - excluded from the hermetic gate (RELEASE-010)
     public async Task Reports_a_usage_error_as_an_exception_with_the_exit_code()
     {
         var client = CalcClient.ForRepo(RepoPaths.RepoRoot());
