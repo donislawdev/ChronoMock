@@ -20,10 +20,16 @@ public sealed class CoreClient : IAsyncDisposable
 {
     private static readonly UTF8Encoding Utf8NoBom = new(encoderShouldEmitUTF8Identifier: false);
 
+    /// <summary>How many diagnostic lines are kept. The core's stderr is unbounded in principle (a chatty
+    /// target, a long session), and the whole queue is later joined into one string for the diagnostics
+    /// block, so it is capped and the OLDEST lines go - a failure is explained by what happened last.</summary>
+    private const int MaxDiagnostics = 2000;
+
     private readonly Process _process;
     private readonly Channel<ChronoEvent> _events =
         Channel.CreateUnbounded<ChronoEvent>(new UnboundedChannelOptions { SingleWriter = true });
     private readonly ConcurrentQueue<string> _diagnostics = new();
+    private int _diagnosticsDropped;
     private readonly object _stdinLock = new();
     private readonly Task _readLoop;
     private readonly Task _stderrDrain;
@@ -103,6 +109,10 @@ public sealed class CoreClient : IAsyncDisposable
     public void Send(Command command)
     {
         ArgumentNullException.ThrowIfNull(command);
+        // One documented exception after dispose, thrown here rather than surfacing from deep inside a
+        // closed stream - callers that guard on a running session (the GUI's in-flight controls) can race
+        // Dispose, and a predictable type is what lets them catch it.
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
         var line = command.ToNdjson();
         lock (_stdinLock)
         {
@@ -143,7 +153,7 @@ public sealed class CoreClient : IAsyncDisposable
                 }
                 catch (JsonException ex)
                 {
-                    _diagnostics.Enqueue($"parse error: {ex.Message} :: {line}");
+                    AddDiagnostic($"parse error: {ex.Message} :: {line}");
                     continue;
                 }
 
@@ -165,7 +175,7 @@ public sealed class CoreClient : IAsyncDisposable
         string? line;
         while ((line = await stderr.ReadLineAsync().ConfigureAwait(false)) is not null)
         {
-            _diagnostics.Enqueue($"core stderr: {line}");
+            AddDiagnostic($"core stderr: {line}");
         }
     }
 
@@ -202,8 +212,14 @@ public sealed class CoreClient : IAsyncDisposable
                 // Give the core a moment to end cleanly, then take down just the core (not the target
                 // tree). The hook self-detaches when the core dies (plasterek 10), so the target reverts
                 // to real time on its own - we never kill the application under test.
-                if (!_process.WaitForExit(2000))
+                using var grace = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+                try
                 {
+                    await _process.WaitForExitAsync(grace.Token).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                    // Did not end within the grace period: take down just the core, never the target tree.
                     _process.Kill(entireProcessTree: false);
                 }
             }
@@ -218,6 +234,20 @@ public sealed class CoreClient : IAsyncDisposable
         _process.Dispose();
     }
 
+    /// <summary>Append one diagnostic line, dropping the oldest past the cap and leaving a single marker
+    /// so a truncated block never reads as a complete one.</summary>
+    private void AddDiagnostic(string line)
+    {
+        _diagnostics.Enqueue(line);
+        while (_diagnostics.Count > MaxDiagnostics && _diagnostics.TryDequeue(out _))
+        {
+            if (Interlocked.Exchange(ref _diagnosticsDropped, 1) == 0)
+            {
+                _diagnostics.Enqueue($"[older diagnostics dropped - keeping the last {MaxDiagnostics} lines]");
+            }
+        }
+    }
+
     private async Task AwaitQuietly(Task task)
     {
         try
@@ -226,7 +256,7 @@ public sealed class CoreClient : IAsyncDisposable
         }
         catch (Exception ex)
         {
-            _diagnostics.Enqueue($"background task: {ex.Message}");
+            AddDiagnostic($"background task: {ex.Message}");
         }
     }
 }

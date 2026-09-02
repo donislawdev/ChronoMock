@@ -25,6 +25,12 @@ public sealed class CalcClient
 {
     private static readonly UTF8Encoding Utf8NoBom = new(encoderShouldEmitUTF8Identifier: false);
 
+    /// <summary>How long one calc invocation may take before it is killed. Calc is pure computation and
+    /// finishes in well under a second, so this is a safety net, not a budget: without it a core that
+    /// cannot finish (a degenerate calendar used to spin forever - see the business-day walk) left the
+    /// calculator frozen with no explanation and a CPU-burning orphan behind it.</summary>
+    private static readonly TimeSpan CalcTimeout = TimeSpan.FromSeconds(10);
+
     private readonly Func<string> _chronoPath;
     private readonly string? _workingDirectory;
 
@@ -94,7 +100,29 @@ public sealed class CalcClient
         // Drain both pipes concurrently before awaiting exit, so a full pipe buffer cannot deadlock.
         var stdoutTask = process.StandardOutput.ReadToEndAsync(ct);
         var stderrTask = process.StandardError.ReadToEndAsync(ct);
-        await process.WaitForExitAsync(ct).ConfigureAwait(false);
+
+        // Bounded wait, and the child is killed on the way out either way. `using var process` disposes
+        // the managed wrapper, NOT the running process - a cancelled call (every keystroke supersedes the
+        // previous one) used to leave chrono.exe running, so a burst of typing left a pile of orphans.
+        using var attempt = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        attempt.CancelAfter(CalcTimeout);
+        try
+        {
+            await process.WaitForExitAsync(attempt.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            KillQuietly(process);
+            await ObserveQuietly(stdoutTask, stderrTask).ConfigureAwait(false);
+            if (ct.IsCancellationRequested)
+            {
+                throw; // the caller superseded this call - its own concern, not an error
+            }
+
+            throw new CalcException(
+                $"calc did not finish within {CalcTimeout.TotalSeconds:0} s and was stopped", -1);
+        }
+
         var stdout = await stdoutTask.ConfigureAwait(false);
         var stderr = await stderrTask.ConfigureAwait(false);
 
@@ -116,5 +144,34 @@ public sealed class CalcClient
         }
 
         return result ?? throw new CalcException("calc produced no JSON output", 0);
+    }
+
+    /// <summary>Kill the child and its tree, ignoring the races that make it moot (it exited on its own
+    /// between the timeout and here, or was never started).</summary>
+    private static void KillQuietly(Process process)
+    {
+        try
+        {
+            process.Kill(entireProcessTree: true);
+        }
+        catch (Exception e) when (e is InvalidOperationException or NotSupportedException
+                                      or System.ComponentModel.Win32Exception)
+        {
+            // Already gone, or the OS refused - either way there is nothing left to do about it.
+        }
+    }
+
+    /// <summary>Await the two pipe readers so neither becomes an unobserved faulted task. Their outcome
+    /// is worthless here (the call already failed), so every result and fault is discarded.</summary>
+    private static async Task ObserveQuietly(Task<string> stdout, Task<string> stderr)
+    {
+        try
+        {
+            await Task.WhenAll(stdout, stderr).ConfigureAwait(false);
+        }
+        catch
+        {
+            // Cancelled or faulted with the killed process - immaterial, but must not go unobserved.
+        }
     }
 }
