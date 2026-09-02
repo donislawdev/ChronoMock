@@ -59,6 +59,18 @@ public class PresetUnpackTests
     }
 
     [Fact]
+    public void The_feb_29_preset_unpacks_to_today_plus_a_next_leap_day_nearest_step()
+    {
+        // feb-29: [nearest next-leap-day] - the leap-day target, pure arithmetic, needs no calendar.
+        var moment = PresetUnpack.UnpackMoment(Preset("feb-29").Moment);
+
+        Assert.Equal(BaseKind.Today, moment.Base);
+        var step = Assert.Single(moment.Steps);
+        Assert.Equal(StepKind.Nearest, step.Kind);
+        Assert.Equal("next-leap-day", step.NearestToken);
+    }
+
+    [Fact]
     public void A_parametric_base_without_its_value_is_not_unpackable()
         => Assert.Throws<NotSupportedException>(() => PresetUnpack.UnpackMoment(Preset("trial-last-day").Moment));
 

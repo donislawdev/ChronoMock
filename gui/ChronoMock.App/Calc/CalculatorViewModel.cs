@@ -38,8 +38,9 @@ public sealed record UnitOption(string Token, string LabelKey);
 /// plus its translation key (mirrors <c>parse_snap</c>).</summary>
 public sealed record SnapTargetOption(string Token, string LabelKey);
 
-/// <summary>A nearest-target option: the CLI token (<c>nbd</c>/<c>pbd</c>) plus its translation key
-/// (mirrors <c>parse_nearest</c>). Needs a calendar - without one the engine returns a calendar error.</summary>
+/// <summary>A nearest-target option: the CLI token (<c>nbd</c>/<c>pbd</c>/<c>next-leap-day</c>) plus its
+/// translation key (mirrors <c>parse_nearest</c>). The business-day targets need a calendar (without one the
+/// engine returns a calendar error); the leap-day target is pure arithmetic and needs none.</summary>
 public sealed record NearestTargetOption(string Token, string LabelKey);
 
 /// <summary>A calendar option: the id passed to <c>--calendar</c> (null = omit it) plus its translation key.</summary>
@@ -355,6 +356,7 @@ public sealed class CalculatorViewModel : ObservableObject
         [
             new NearestTargetOption("nbd", "calc.nearest.nbd"),
             new NearestTargetOption("pbd", "calc.nearest.pbd"),
+            new NearestTargetOption("next-leap-day", "calc.nearest.leap"),
         ];
 
         Calendars =

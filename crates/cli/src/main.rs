@@ -1954,8 +1954,11 @@ fn parse_nearest(raw: &str) -> Result<NearestTarget, String> {
     Ok(match raw {
         "next-business-day" | "nbd" => NearestTarget::NextBusinessDay,
         "prev-business-day" | "previous-business-day" | "pbd" => NearestTarget::PrevBusinessDay,
+        "next-leap-day" | "next-feb-29" | "nld" => NearestTarget::NextLeapDay,
         other => {
-            return Err(format!("unknown nearest target '{other}' (next-business-day, prev-business-day)"))
+            return Err(format!(
+                "unknown nearest target '{other}' (next-business-day, prev-business-day, next-leap-day)"
+            ))
         }
     })
 }
@@ -3802,6 +3805,7 @@ mod tests {
             "date-before-install",
             "payment-due-business-days",
             "clock-skew-plus-90s",
+            "feb-29",
         ];
         for id in ids {
             let text = read_data(&format!("presets/{id}.json"));
@@ -3828,6 +3832,11 @@ mod tests {
         // current instant WITH its seconds, so 12:00:00 + 90 s crosses the minute to 12:01:30. A base of
         // "today" (midnight) would make the 2FA skew meaningless - this pins that the preset uses "now".
         assert_eq!(eval_preset("clock-skew-plus-90s", &no_cal).to_iso(), "2026-02-15T12:01:30");
+
+        // feb-29 uses nearest next-leap-day, pure arithmetic with NO calendar: from 2026-02-15 the next
+        // 29 February is 2028 (2026 and 2027 are common years). Proves the leap-day nearest target
+        // resolves without a --calendar, unlike the business-day targets.
+        assert_eq!(eval_preset("feb-29", &no_cal).to_iso(), "2028-02-29T00:00:00");
 
         // payment-due-business-days is calendar-aware: +90 business days from today lands on a different
         // day per market, which is the whole point of a calendar-aware preset. Anchor at 2026-06-01 so the

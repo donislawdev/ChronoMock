@@ -1,0 +1,19 @@
+{
+  "schema": "chronomock.preset/1",
+  "stability": "unstable",
+  "id": "feb-29",
+  "name": { "en": "29 February", "pl": "29 lutego" },
+  "explains": {
+    "en": "Does the app handle 29 February - the leap day that exists only every four years, where 'one year later' has no matching date?",
+    "pl": "Czy aplikacja radzi sobie z 29 lutego - dniem przestępnym istniejącym raz na cztery lata, gdzie 'za rok' nie ma odpowiadającej daty?"
+  },
+  "applies_to": "both",
+  "market": null,
+  "moment": {
+    "base": "today",
+    "steps": [
+      { "nearest": "next-leap-day" }
+    ]
+  },
+  "time_mode": { "multiplier": 1, "scale_duration_clock": false }
+}

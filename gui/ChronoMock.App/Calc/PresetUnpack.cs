@@ -168,6 +168,7 @@ public static class PresetUnpack
     {
         "next-business-day" or "nbd" => "nbd",
         "prev-business-day" or "previous-business-day" or "pbd" => "pbd",
+        "next-leap-day" or "next-feb-29" or "nld" => "next-leap-day",
         _ => throw new NotSupportedException($"unknown nearest target '{target}'"),
     };
 }

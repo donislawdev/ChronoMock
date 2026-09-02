@@ -118,6 +118,9 @@ pub enum NearestTarget {
     NextBusinessDay,
     /// The nearest business day on or before the current date.
     PrevBusinessDay,
+    /// The next 29 February on or after the current date (itself if the date is a leap day) - the
+    /// nearest future leap day. Pure calendar arithmetic, so it needs no holiday calendar.
+    NextLeapDay,
 }
 
 impl NearestTarget {
@@ -126,6 +129,7 @@ impl NearestTarget {
         match self {
             NearestTarget::NextBusinessDay => "next business day",
             NearestTarget::PrevBusinessDay => "previous business day",
+            NearestTarget::NextLeapDay => "next 29 February",
         }
     }
 }
@@ -288,9 +292,14 @@ fn apply_step(
             Ok(CivilDateTime { hour: *hour, minute: *minute, second: *second, ..cur })
         }
         Step::Snap(target) => Ok(apply_snap(cur, *target)),
-        Step::Nearest(target) => match calendar {
-            Some(cal) => apply_nearest(cur, *target, cal, index),
-            None => Err(EvalError::NeedsCalendar { index }),
+        Step::Nearest(target) => match target {
+            // The leap day is pure arithmetic (the next Feb 29), so it needs no holiday calendar -
+            // unlike the business-day targets, which do.
+            NearestTarget::NextLeapDay => Ok(apply_nearest_leap_day(cur)),
+            NearestTarget::NextBusinessDay | NearestTarget::PrevBusinessDay => match calendar {
+                Some(cal) => apply_nearest(cur, *target, cal, index),
+                None => Err(EvalError::NeedsCalendar { index }),
+            },
         },
         // `eval` intercepts `Zone` (it needs the running zone bias, which this per-civil helper
         // does not carry). This arm is reached only from the substitution jump path, which cannot
@@ -327,6 +336,23 @@ fn apply_nearest(
 ) -> Result<CivilDateTime, EvalError> {
     let forward = matches!(target, NearestTarget::NextBusinessDay);
     crate::calendar::nearest_business_day(&cur, forward, cal).ok_or(EvalError::NotFound { index })
+}
+
+/// Jump to the next 29 February on or after `cur` (itself if `cur` is already a leap day). The year
+/// advances one at a time, not by a blind +4, so the century rule (2100 is a common year, 2000 is
+/// not) is decided by `is_leap`. The time of day is kept. Pure arithmetic - no holiday calendar.
+fn apply_nearest_leap_day(cur: CivilDateTime) -> CivilDateTime {
+    // Is this year's Feb 29 still ahead of (or equal to) cur? Only when cur is on or before Feb 29 -
+    // i.e. in January, or in February (whose last day is at most the 29th).
+    let on_or_before_feb29 = cur.month < 2 || (cur.month == 2 && cur.day <= 29);
+    let mut year = cur.year;
+    if !(is_leap(year) && on_or_before_feb29) {
+        year += 1;
+        while !is_leap(year) {
+            year += 1;
+        }
+    }
+    CivilDateTime { year, month: 2, day: 29, ..cur }
 }
 
 /// Jump to the boundary of the calendar period containing `cur`. A "start" is the first day at
@@ -1283,6 +1309,25 @@ mod tests {
             eval(&expr, &EvalContext { now: dt(2000, 1, 1, 0, 0, 0), zone_bias_min: 0, calendar: Some(&cal) })
                 .unwrap();
         assert_eq!(out.result(), dt(2026, 7, 6, 0, 0, 0));
+    }
+
+    #[test]
+    fn nearest_leap_day_needs_no_calendar_and_finds_next_feb29() {
+        let leap = |base| {
+            let expr = MomentExpr { base: abs(base), steps: vec![Step::Nearest(NearestTarget::NextLeapDay)] };
+            // No calendar: the leap day is pure arithmetic, so eval_at (calendar None) must succeed.
+            eval_at(&expr, dt(2000, 1, 1, 0, 0, 0)).unwrap().result()
+        };
+        // Common year -> the next leap day is 2028.
+        assert_eq!(leap(dt(2026, 1, 15, 0, 0, 0)), dt(2028, 2, 29, 0, 0, 0));
+        // Leap year, before Feb 29 -> this year's, keeping the time of day.
+        assert_eq!(leap(dt(2028, 2, 10, 9, 30, 0)), dt(2028, 2, 29, 9, 30, 0));
+        // On Feb 29 itself -> kept (on-or-after includes today).
+        assert_eq!(leap(dt(2028, 2, 29, 0, 0, 0)), dt(2028, 2, 29, 0, 0, 0));
+        // Leap year, past Feb 29 -> rolls to the next leap year, 2032.
+        assert_eq!(leap(dt(2028, 3, 1, 0, 0, 0)), dt(2032, 2, 29, 0, 0, 0));
+        // Century rule: 2100 is a common year, so 2097 rolls to 2104, not 2100.
+        assert_eq!(leap(dt(2097, 5, 1, 0, 0, 0)), dt(2104, 2, 29, 0, 0, 0));
     }
 
     #[test]
