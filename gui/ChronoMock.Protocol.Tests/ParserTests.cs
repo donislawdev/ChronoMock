@@ -52,6 +52,35 @@ public class ParserTests
     }
 
     [Fact]
+    public void Parses_ended_with_target_exit_code_and_residue()
+    {
+        // Native end: the app exited on its own (a real exit code), teardown was clean (no residue) -
+        // exactly the shape crates/cli emits at main.rs run_session.
+        var native = """{"type":"ended","v":1,"clean":true,"residue_keys":[],"target_exit_code":3,"elapsed_real_ms":1500,"elapsed_fake_ms":90000,"fake_end_wall":"2038-01-20T00:00:00"}""";
+        var n = Assert.IsType<EndedEvent>(EventParser.Parse(native));
+        Assert.Equal(3, n.TargetExitCode);
+        Assert.Empty(n.ResidueKeys);
+
+        // CDP end: no target exit code (null), but the temp profile could not be removed - the shape the
+        // CDP driver emits when shutdown_with_residue reports a leftover.
+        var cdp = """{"type":"ended","v":1,"clean":false,"residue_keys":["cleanup.chromium_profile_left"],"target_exit_code":null,"elapsed_real_ms":500,"elapsed_fake_ms":30000,"fake_end_wall":"2038-01-19T03:14:07"}""";
+        var c = Assert.IsType<EndedEvent>(EventParser.Parse(cdp));
+        Assert.Null(c.TargetExitCode);
+        Assert.Equal(["cleanup.chromium_profile_left"], c.ResidueKeys);
+        Assert.False(c.Clean);
+    }
+
+    [Fact]
+    public void Ended_from_before_the_new_fields_still_parses()
+    {
+        // Additive evolution: an older `ended` with neither field parses, defaulting to empty/none.
+        var line = """{"type":"ended","v":1,"clean":true,"elapsed_real_ms":0,"elapsed_fake_ms":0}""";
+        var evt = Assert.IsType<EndedEvent>(EventParser.Parse(line));
+        Assert.Null(evt.TargetExitCode);
+        Assert.Empty(evt.ResidueKeys);
+    }
+
+    [Fact]
     public void Start_command_serializes_to_the_expected_wire()
     {
         var start = new StartCommand

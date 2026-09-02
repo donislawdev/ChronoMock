@@ -148,6 +148,11 @@
   <sys:String x:Key="chromium.app_closed_before_audit">The app closed before the audit could read final call counts - the coverage may be incomplete.</sys:String>
   <sys:String x:Key="chromium.rate_change_affects_running_timers">The speed changed in flight: new timers and the clock reflect it at once, but a setInterval already running keeps its old cadence.</sys:String>
 
+  <!-- Cleanup residue the core reports in `ended.residue_keys` when a teardown could not finish (rules 4, 6).
+       Today only a CDP session raises one (the temporary browser profile could not be removed); a native
+       session always ends clean. Rendered verbatim in the panel and the summary. -->
+  <sys:String x:Key="cleanup.chromium_profile_left">The temporary Chromium profile could not be removed - delete it by hand if it lingers in your temp folder.</sys:String>
+
   <!-- Copy session summary (chrono-mock 7.2, 8.8). A paste-into-ticket report; a non-works session leads
        with the unreliable-evidence banner. Keys ending in a template carry {0}-style placeholders. -->
   <sys:String x:Key="action.copy_summary">Copy summary</sys:String>
@@ -164,6 +169,10 @@
   <sys:String x:Key="report.session">session</sys:String>
   <sys:String x:Key="report.session_reached">fake clock reached {0}</sys:String>
   <sys:String x:Key="report.elapsed">real {0}s, fake {1}s</sys:String>
+  <!-- The target's own exit code (informational; native sessions where the app exited on its own) and any
+       cleanup residue the core could not remove - both surfaced from `ended` so a session never hides them. -->
+  <sys:String x:Key="report.target_exit">target exited with code</sys:String>
+  <sys:String x:Key="report.cleanup">not fully cleaned up</sys:String>
   <sys:String x:Key="report.requested">requested: {0} (zone {1}, mode {2})</sys:String>
 
   <!-- Session history (chrono-mock 7.2, 8.8, 11.1 pt 13). Local-only; clicking an entry fills the setup

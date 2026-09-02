@@ -107,6 +107,11 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     private string _fakeEndWall = string.Empty;
     private string _vanishReasonKey = string.Empty;
     private long _livedMs;
+    // Final-state facts the core reports in `ended` (RELEASE audit): the target's own exit code (native
+    // sessions where the app exited on its own; null for Stop/end and for CDP) and any cleanup residue it
+    // could not remove (today only a CDP temp profile). Surfaced honestly, never dropped (rule 6).
+    private int? _targetExitCode;
+    private IReadOnlyList<string> _residueKeys = [];
     private string _copyFeedbackKey = string.Empty;
 
     public ClockView Fake { get; } = new("clock.fake");
@@ -488,6 +493,28 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
         private set { if (Set(ref _warnings, value)) { RaisePropertyChanged(nameof(HasWarnings)); } }
     }
 
+    /// <summary>The target's own exit code, from <c>ended.target_exit_code</c> - present only for a native
+    /// session whose app exited on its own (null for a Stop/end or a CDP session). Informational, never a
+    /// verdict; shown so the reader can tell "the app closed itself (code N)" from "the session was stopped".</summary>
+    public int? TargetExitCode
+    {
+        get => _targetExitCode;
+        private set { if (Set(ref _targetExitCode, value)) { RaisePropertyChanged(nameof(HasTargetExit)); } }
+    }
+
+    public bool HasTargetExit => _targetExitCode.HasValue;
+
+    /// <summary>Cleanup residue translation keys from <c>ended.residue_keys</c> - what a teardown could not
+    /// remove (today only a CDP temp profile that stayed locked). Empty on a clean end; rendered as
+    /// warnings so a session reports the mess it left rather than hiding it (rule 6).</summary>
+    public IReadOnlyList<string> ResidueKeys
+    {
+        get => _residueKeys;
+        private set { if (Set(ref _residueKeys, value)) { RaisePropertyChanged(nameof(HasResidue)); } }
+    }
+
+    public bool HasResidue => _residueKeys.Count > 0;
+
     public bool HasCovered => _covered.Count > 0;
 
     public bool HasObserved => _observed.Count > 0;
@@ -535,6 +562,11 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
                     _hasTiming = true;
                 }
 
+                // Surface the target's own exit code and any cleanup residue the core reported, rather than
+                // dropping them (rule 6): the exit code tells a self-closed app from a stopped session, and
+                // residue names what a teardown left behind (a CDP temp profile that stayed locked).
+                TargetExitCode = e.TargetExitCode;
+                ResidueKeys = e.ResidueKeys;
                 SetStatus("status.ended", SessionStatusKind.Ended);
                 break;
             case ErrorEvent err when StatusKind == SessionStatusKind.Running && IsInFlightError(err):
@@ -844,6 +876,8 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
         _fakeEndWall = string.Empty;
         _vanishReasonKey = string.Empty;
         _livedMs = 0;
+        TargetExitCode = null;
+        ResidueKeys = [];
         CopyFeedbackKey = string.Empty;
         InFlightErrorKey = string.Empty;
     }
@@ -932,11 +966,20 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
               .Append('\n');
         }
 
+        // The target's own exit code, if the app exited on its own (informational, not a verdict).
+        if (_targetExitCode is int code)
+        {
+            sb.Append("  ").Append(translate("report.target_exit")).Append(' ')
+              .Append(code.ToString(CultureInfo.InvariantCulture)).Append('\n');
+        }
+
         // Channel names are raw API identifiers (not translated); warnings are keys the core raised.
         AppendList(sb, translate, "coverage.covered", _covered, translateItems: false);
         AppendList(sb, translate, "coverage.observed", _observed, translateItems: false);
         AppendList(sb, translate, "coverage.uncovered", _uncovered, translateItems: false);
         AppendList(sb, translate, "coverage.warnings", _warnings, translateItems: true);
+        // Cleanup residue the core could not remove (ended.residue_keys) - reported, never hidden (rule 6).
+        AppendList(sb, translate, "report.cleanup", _residueKeys, translateItems: true);
 
         // The "requested" line is the START request (snapshot), even if the moment or speed changed live.
         var reqMoment = _startMomentText.Length > 0 ? _startMomentText : Moment.Canonical;

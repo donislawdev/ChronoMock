@@ -330,6 +330,28 @@
                      Foreground="{DynamicResource BrushStatusPartial}"
                      HorizontalAlignment="Center"
                      TextWrapping="Wrap" />
+          <!-- Final-state notes from `ended`: the target's own exit code (informational, shown when the app
+               exited on its own) and any cleanup residue the core could not remove (a locked CDP temp
+               profile). Both surfaced honestly instead of dropped (rule 6). -->
+          <TextBlock Visibility="{Binding HasTargetExit, Converter={StaticResource BoolToVis}}"
+                     FontSize="{StaticResource FontSizeCaption}"
+                     Foreground="{DynamicResource BrushTextSecondary}"
+                     HorizontalAlignment="Center">
+            <Run Text="{DynamicResource report.target_exit}" /><Run Text="{Binding TargetExitCode, StringFormat=' {0}', Mode=OneWay}" />
+          </TextBlock>
+          <ItemsControl ItemsSource="{Binding ResidueKeys}"
+                        Visibility="{Binding HasResidue, Converter={StaticResource BoolToVis}}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate>
+                <TextBlock Text="{Binding Converter={StaticResource KeyToText}}"
+                           FontSize="{StaticResource FontSizeCaption}"
+                           Foreground="{DynamicResource BrushStatusPartial}"
+                           HorizontalAlignment="Center"
+                           TextAlignment="Center"
+                           TextWrapping="Wrap" />
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
         </StackPanel>
 
         <!-- Session history (chrono-mock 7.2, 8.8, 11.1 pt 13), shown once there is a recorded session.

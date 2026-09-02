@@ -45,6 +45,8 @@ public class LocalizationTests
         "timer.multimedia_not_scaled", "inheritance.ntcreateuserprocess_child_maybe_uncovered",
         "chromium.launched_with_debug_port", "chromium.app_closed_before_audit",
         "chromium.rate_change_affects_running_timers",
+        // Cleanup residue (EndedEvent residue_keys) - a teardown that could not finish (CDP temp profile).
+        "cleanup.chromium_profile_left",
         // Vanish reason (VanishedEvent reason_key, shown inside report.vanish_detail).
         "target.single_instance_suspected",
         // Start/fatal error keys, surfaced as the status headline (RELEASE-001).

@@ -36,6 +36,9 @@ public class SessionViewModelTests
             ["report.session_reached"] = "fake clock reached {0}",
             ["report.elapsed"] = "real {0}s, fake {1}s",
             ["report.processes"] = "processes: {0}",
+            ["report.target_exit"] = "target exited with code",
+            ["report.cleanup"] = "not fully cleaned up",
+            ["cleanup.chromium_profile_left"] = "temp profile left behind",
             ["report.requested"] = "requested: {0} (zone {1}, mode {2})",
             ["mode.x60"] = "×60",
         };
@@ -642,6 +645,75 @@ public class SessionViewModelTests
 
         Assert.Contains("fake clock reached 2038-01-19T03:14:07", summary, StringComparison.Ordinal);
         Assert.Contains("real 1.0s, fake 60.0s", summary, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Ended_surfaces_the_target_exit_code_in_state_and_summary()
+    {
+        // A native session whose app exited on its own carries target_exit_code (informational, not a verdict).
+        var vm = new SessionViewModel();
+        vm.SetTarget(@"C:\apps\Ledger.exe");
+        vm.Apply(State("2038-01-19T03:14:07", "2026-08-25T00:00:00", bias: 0, multiplier: 60));
+        vm.Apply(new EndedEvent
+        {
+            V = ProtocolJson.ProtocolVersion,
+            Clean = true,
+            TargetExitCode = 3,
+            FakeEndWall = "2038-01-20T00:00:00",
+        });
+
+        Assert.True(vm.HasTargetExit);
+        Assert.Equal(3, vm.TargetExitCode!.Value);
+        Assert.Contains("target exited with code 3", vm.BuildSummary(T()), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Ended_from_a_stop_or_cdp_has_no_exit_code()
+    {
+        // A Stop/end (and every CDP session) ends with target_exit_code null: show nothing, claim nothing.
+        var vm = new SessionViewModel();
+        vm.SetTarget(@"C:\apps\Ledger.exe");
+        vm.Apply(State("2038-01-19T03:14:07", "2026-08-25T00:00:00", bias: 0, multiplier: 60));
+        vm.Apply(new EndedEvent { V = ProtocolJson.ProtocolVersion, Clean = true });
+
+        Assert.False(vm.HasTargetExit);
+        Assert.Null(vm.TargetExitCode);
+        Assert.DoesNotContain("target exited with code", vm.BuildSummary(T()), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Ended_surfaces_cleanup_residue_in_state_and_summary()
+    {
+        // A CDP teardown that could not remove its temp profile reports residue - shown, never hidden (rule 6).
+        var vm = new SessionViewModel();
+        vm.SetTarget(@"C:\apps\Electron.exe");
+        vm.Apply(State("2038-01-19T03:14:07", "2026-08-25T00:00:00", bias: 0, multiplier: 60));
+        vm.Apply(new EndedEvent
+        {
+            V = ProtocolJson.ProtocolVersion,
+            Clean = false,
+            ResidueKeys = ["cleanup.chromium_profile_left"],
+            FakeEndWall = "2038-01-20T00:00:00",
+        });
+
+        Assert.True(vm.HasResidue);
+        Assert.Equal(["cleanup.chromium_profile_left"], vm.ResidueKeys);
+        var summary = vm.BuildSummary(T());
+        Assert.Contains("not fully cleaned up (1):", summary, StringComparison.Ordinal);
+        Assert.Contains("temp profile left behind", summary, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_clean_end_leaves_no_residue()
+    {
+        var vm = new SessionViewModel();
+        vm.SetTarget(@"C:\apps\Ledger.exe");
+        vm.Apply(State("2038-01-19T03:14:07", "2026-08-25T00:00:00", bias: 0, multiplier: 60));
+        vm.Apply(new EndedEvent { V = ProtocolJson.ProtocolVersion, Clean = true });
+
+        Assert.False(vm.HasResidue);
+        Assert.Empty(vm.ResidueKeys);
+        Assert.DoesNotContain("not fully cleaned up", vm.BuildSummary(T()), StringComparison.Ordinal);
     }
 
     [Fact]

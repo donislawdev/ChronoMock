@@ -147,6 +147,11 @@
   <sys:String x:Key="chromium.app_closed_before_audit">Aplikacja zamknęła się, zanim audyt zdążył odczytać końcowe liczniki wywołań - pokrycie może być niepełne.</sys:String>
   <sys:String x:Key="chromium.rate_change_affects_running_timers">Prędkość zmieniła się w locie: nowe timery i zegar odzwierciedlają ją od razu, ale już działający setInterval zachowuje stare tempo.</sys:String>
 
+  <!-- Pozostałości sprzątania, które rdzeń zgłasza w `ended.residue_keys`, gdy zamknięcie nie zdążyło się
+       dokończyć (reguły 4, 6). Dziś tylko sesja CDP je podnosi (nie udało się usunąć tymczasowego profilu
+       przeglądarki); sesja natywna zawsze kończy się czysto. Renderowane dosłownie w panelu i podsumowaniu. -->
+  <sys:String x:Key="cleanup.chromium_profile_left">Nie udało się usunąć tymczasowego profilu Chromium - usuń go ręcznie, jeśli został w folderze tymczasowym.</sys:String>
+
   <!-- Kopiowanie podsumowania sesji (chrono-mock 7.2, 8.8). Raport do wklejenia w zgłoszenie; sesja inna
        niż „działa" prowadzi banerem nierzetelności. Klucze z szablonem niosą pola {0}. -->
   <sys:String x:Key="action.copy_summary">Kopiuj podsumowanie</sys:String>
@@ -163,6 +168,10 @@
   <sys:String x:Key="report.session">sesja</sys:String>
   <sys:String x:Key="report.session_reached">fałszywy zegar osiągnął {0}</sys:String>
   <sys:String x:Key="report.elapsed">realnie {0}s, fałszywie {1}s</sys:String>
+  <!-- Własny kod wyjścia celu (informacyjny; sesje natywne, gdzie aplikacja zamknęła się sama) oraz
+       pozostałości, których rdzeń nie usunął - jedno i drugie z `ended`, żeby sesja niczego nie ukryła. -->
+  <sys:String x:Key="report.target_exit">cel zakończył się kodem</sys:String>
+  <sys:String x:Key="report.cleanup">nie sprzątnięto do końca</sys:String>
   <sys:String x:Key="report.requested">żądano: {0} (strefa {1}, tryb {2})</sys:String>
 
   <!-- Historia sesji (chrono-mock 7.2, 8.8, 11.1 pkt 13). Tylko lokalnie; klik wpisu wypełnia formularz
