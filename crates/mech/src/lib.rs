@@ -36,6 +36,7 @@ use windows::Win32::System::Memory::{
     MEM_RESERVE, PAGE_READWRITE,
 };
 use windows::Win32::System::SystemInformation::{GetSystemTimeAsFileTime, GetTickCount64};
+use windows::Win32::System::Time::{GetTimeZoneInformation, TIME_ZONE_INFORMATION};
 use windows::Win32::System::Threading::{
     CreateMutexW, CreateProcessW, CreateRemoteThread, GetCurrentProcessId, GetExitCodeProcess,
     GetExitCodeThread, OpenProcess, ResumeThread, TerminateProcess, WaitForSingleObject,
@@ -97,10 +98,19 @@ pub struct Session {
     ctl_addr: usize,
     hmap: HANDLE,
     hprocess: HANDLE,
-    /// Real (QUIT) and fake anchors captured at session start, so elapsed_* stays
-    /// measured from the start even after a later re-anchor.
+    /// The real (QUIT) anchor captured at session start, so real elapsed stays measured from the start
+    /// even after a later re-anchor. The fake side no longer has a matching field: it is integrated
+    /// below rather than read off the wall anchor, which is what a jump used to corrupt.
     start_real: i64,
-    start_fake: i64,
+    /// Fake time elapsed BEFORE the current rate segment, in 100 ns ticks, plus the real instant that
+    /// segment began. Together they make "how much fake time this session has run" an integral of the
+    /// rate over real time - which is what the phrase means, and what the CDP clock already computed.
+    /// Reading it off the wall anchor instead made a backward jump report NEGATIVE elapsed (the anchor
+    /// moves, the start does not), and that number goes into `ended`, the session report and the
+    /// exported evidence. A jump deliberately does not touch these: it moves the wall, it does not
+    /// unspend time already spent.
+    fake_elapsed_before: std::cell::Cell<i64>,
+    rate_segment_real0: std::cell::Cell<i64>,
     tz_bias: i32,
     /// The duration axis is opt-in; coverage gathering needs it to know whether the
     /// Duration channels are expected.
@@ -155,9 +165,23 @@ impl Session {
             real_ft: real_system_filetime(),
             multiplier: m,
             tz_bias: self.tz_bias,
-            elapsed_fake_ms: fake_ft.wrapping_sub(self.start_fake) / 10_000,
+            elapsed_fake_ms: self.fake_elapsed_ticks(now_real, m) / 10_000,
             elapsed_real_ms: now_real.wrapping_sub(self.start_real) / 10_000,
         }
+    }
+
+    /// Fake ticks elapsed since the session started: what was banked in earlier rate segments, plus the
+    /// current segment at the rate in force. Frozen (m = 0) contributes nothing, which is correct - a
+    /// frozen clock spends no fake time.
+    fn fake_elapsed_ticks(&self, now_real: i64, m: i64) -> i64 {
+        let segment = now_real.wrapping_sub(self.rate_segment_real0.get()).wrapping_mul(m);
+        self.fake_elapsed_before.get().wrapping_add(segment)
+    }
+
+    /// End the current rate segment at `now_real`, banking its fake time.
+    fn close_rate_segment(&self, now_real: i64, m: i64) {
+        self.fake_elapsed_before.set(self.fake_elapsed_ticks(now_real, m));
+        self.rate_segment_real0.set(now_real);
     }
 
     /// Whether the target process is still running.
@@ -194,6 +218,9 @@ impl Session {
         let now = quit_now();
         let now_qpc = qpc_now();
         let (a_fake, a_real, cur_m) = unsafe { read_anchor(self.ctl()) };
+        // Bank the fake time spent at the OLD rate before the new one starts, so elapsed stays an
+        // integral over the whole session instead of being rescaled by whatever the latest rate is.
+        self.close_rate_segment(now, cur_m);
         let fake_now = a_fake.wrapping_add(now.wrapping_sub(a_real).wrapping_mul(cur_m));
         let (dur_tick_c0, dur_quit_c0, dur_q0, _) = unsafe { read_dur(self.ctl()) };
         let (frozen_tick, frozen_quit) = freeze_dur(dur_tick_c0, dur_quit_c0, dur_q0, cur_m, now);
@@ -326,6 +353,28 @@ fn qpc_now() -> i64 {
         let _ = QueryPerformanceCounter(&mut t);
     }
     t
+}
+
+/// The host's CURRENT effective UTC offset, in the Win32 sense (UTC = local + bias), daylight saving
+/// included as it stands right now. Used for the one case where the session must not shift anything:
+/// a `run` with no moment asked for, where the session clock is meant to be the real one - reading the
+/// moment as UTC there would hand the target a local time off by the host's own offset, the silent
+/// "wrong by N hours" untouchable rule 2 exists to prevent. An entered moment is unaffected: it stays
+/// in the session zone the caller names.
+pub fn host_tz_bias_min() -> i32 {
+    // 0 = TIME_ZONE_ID_UNKNOWN (the zone has no DST rules), 1 = STANDARD, 2 = DAYLIGHT,
+    // TIME_ZONE_ID_INVALID (u32::MAX) on failure. Anything but DAYLIGHT/STANDARD leaves the base bias,
+    // which is the honest answer when the season is unknown and 0 when the call failed - never a guess.
+    const TZ_STANDARD: u32 = 1;
+    const TZ_DAYLIGHT: u32 = 2;
+    let mut tzi = TIME_ZONE_INFORMATION::default();
+    unsafe {
+        match GetTimeZoneInformation(&mut tzi) {
+            TZ_DAYLIGHT => tzi.Bias + tzi.DaylightBias,
+            TZ_STANDARD => tzi.Bias + tzi.StandardBias,
+            _ => tzi.Bias,
+        }
+    }
 }
 
 /// Whether a process with this pid is still running. "Cannot open" and "already signalled" both mean
@@ -694,7 +743,8 @@ pub fn prepare(spec: &SessionSpec, target: &Target, hook_dll: &Path) -> Result<P
             hmap,
             hprocess: pi.hProcess,
             start_real,
-            start_fake: a_fake,
+            fake_elapsed_before: std::cell::Cell::new(0),
+            rate_segment_real0: std::cell::Cell::new(start_real),
             tz_bias,
             scale_duration: spec.scale_duration,
             cov_maps,

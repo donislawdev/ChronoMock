@@ -1318,17 +1318,32 @@ unsafe fn inject_self(hproc: HANDLE) {
         return;
     }
     let hmod = HMODULE(addr as *mut c_void);
-    let mut buf = [0u16; 260];
-    let n = GetModuleFileNameW(Some(hmod), &mut buf);
-    // GetModuleFileNameW returns the char count WITHOUT the NUL on success, or buf.len() (260) on
-    // truncation (ERROR_INSUFFICIENT_BUFFER). Bailing on n == 0 OR n >= buf.len() keeps `(n + 1) * 2`
-    // inside the buffer: otherwise a DLL path >= 260 chars would read 2 bytes past this stack buffer
-    // (OOB read, UB) and copy a truncated, non-NUL-terminated path into the child (L-2). A too-long path
-    // just leaves the child uncovered (best-effort child inject), reported honestly by the audit.
-    if n == 0 || n as usize >= buf.len() {
-        return;
-    }
-    let bytes = (n as usize + 1) * 2; // include the NUL terminator
+    // GetModuleFileNameW returns the char count WITHOUT the NUL on success, or the buffer length on
+    // truncation (ERROR_INSUFFICIENT_BUFFER) - it never says how much room it needed. A single MAX_PATH
+    // buffer therefore silently disabled child inheritance for any install whose path reached 260 chars,
+    // which is reachable for a portable tool (a long user name plus an unpacked release folder plus
+    // the core folder and the hook DLL gets close on its own, and a network share goes past). Grow up
+    // to the Win32 extended-path limit, so the length of a folder name is not what decides whether the
+    // audit covers a child.
+    let mut buf = vec![0u16; 260];
+    let n = loop {
+        let n = GetModuleFileNameW(Some(hmod), &mut buf) as usize;
+        if n == 0 {
+            log("[chrono_hook] GetModuleFileNameW failed, child not injected");
+            return;
+        }
+        if n < buf.len() {
+            break n;
+        }
+        if buf.len() >= 32_768 {
+            // Past the extended-path maximum: give up, but SAY so - the audit will report the child as
+            // uncovered, and without this line nobody could tell why (rule 6).
+            log("[chrono_hook] own module path exceeds the path limit, child not injected");
+            return;
+        }
+        buf.resize(buf.len() * 4, 0);
+    };
+    let bytes = (n + 1) * 2; // include the NUL terminator
     let remote = VirtualAllocEx(hproc, None, bytes, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
     if remote.is_null() {
         return;

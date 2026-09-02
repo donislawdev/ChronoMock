@@ -59,6 +59,7 @@ fn main() {
 
 fn print_usage() {
     eprintln!("usage: chrono run <target> [--at <local-moment>] [--preset <id>] [--param id=value]... [--zone <+HH:MM>] [--mode <flow|frozen|xN>] [--scale-duration] [--ticks N] [--set-after T:M] [--jump-after T:moment] [--args \"...\"] [--report <path>] [--json]");
+    eprintln!("       without --at (or --preset) the session clock starts at the real current time, so `--mode xN` alone just runs the target faster");
     eprintln!("       (--preset supplies the moment and mode from presets/<id>.json, exclusive of --at/--mode/--scale-duration; --param fills its parameters, a trial start_date defaults to the target's file date)");
     print_calc_usage();
 }
@@ -420,6 +421,8 @@ struct CdpContext {
     index: u32,
     session_id: String,
     ty: String,
+    /// The CDP targetId, kept because `Target.targetDestroyed` names a target, not a session.
+    target_id: String,
 }
 
 /// Read each live context's per-API call counts and merge them (by max, so a peak survives a reload)
@@ -826,7 +829,7 @@ fn driver_run(argv: &[String]) -> i32 {
     // The moment AND the time mode come either from a named preset (docs/04 4.3) or from the flags.
     // A preset is resolved driver-side here - the same way a relative --at is - so the core still
     // receives an absolute moment and a plain mode, and never learns that a preset existed.
-    let (resolved_at, mode, multiplier, scale_duration) = if let Some(pid) = &ra.preset {
+    let (resolved_at, mode, multiplier, scale_duration, session_bias) = if let Some(pid) = &ra.preset {
         match load_preset(pid) {
             Ok(p) => {
                 // The substitution surface honours applies_to: a calculator-only preset is not a
@@ -875,6 +878,7 @@ fn driver_run(argv: &[String]) -> i32 {
                         p.time_mode.mode.clone(),
                         p.time_mode.multiplier,
                         p.time_mode.scale_duration,
+                        ra.zone_bias_min,
                     ),
                     Err(e) => {
                         eprintln!("chrono: preset '{}' moment: {}", p.id, describe_calc_error(&e));
@@ -888,7 +892,20 @@ fn driver_run(argv: &[String]) -> i32 {
             }
         }
     } else {
-        // Resolve a relative --at (now + delta) to an absolute moment before we spawn.
+        // With no moment asked for, the session zone follows the HOST when the caller named none. Reading
+        // "now" as UTC there would hand the target a local time off by the host's own offset - a session
+        // meant to change nothing would quietly move the clock by two hours here, which is exactly the
+        // failure untouchable rule 2 names. An explicit --zone still wins, and an entered --at is
+        // untouched: that moment is in the session zone the caller chose, as before.
+        let now_bias = ra.zone_bias_min.unwrap_or_else(chrono_mech::host_tz_bias_min);
+
+        // Resolve a relative --at (now + delta) to an absolute moment before we spawn. With no --at at
+        // all, the session clock starts at the real current time - the same thing the Chromium path
+        // already does with the same command line. Until now the two mechanisms disagreed: on a native
+        // target the empty moment travelled all the way into the core and came back as "moment must be
+        // YYYY-MM-DDTHH:MM:SS, got ''" - an error about a flag the usage line calls optional, raised as
+        // far from the user's mistake as it could be. It also makes `chrono run app.exe --mode x60`
+        // mean what it reads as: run this application faster without moving its date.
         let resolved = match &ra.at {
             Some(raw) => match resolve_at(raw, ra.zone_bias_min) {
                 Ok(s) => Some(s),
@@ -898,9 +915,19 @@ fn driver_run(argv: &[String]) -> i32 {
                     return 1;
                 }
             },
-            None => None,
+            None => match resolve_now_civil(Some(now_bias)) {
+                Ok(now) => Some(now.to_iso()),
+                Err(e) => {
+                    eprintln!("chrono: {e}");
+                    return 1;
+                }
+            },
         };
-        (resolved, ra.mode.clone(), ra.multiplier, ra.scale_duration)
+        // The zone the moment above was read in has to travel with it: the core turns local + bias into
+        // the UTC anchor, so a moment resolved in the host zone paired with a bias of 0 would land an
+        // offset away from the instant it names.
+        let session_bias = if ra.at.is_some() { ra.zone_bias_min } else { Some(now_bias) };
+        (resolved, ra.mode.clone(), ra.multiplier, ra.scale_duration, session_bias)
     };
 
     // A Chromium/Electron target is auto-detected by `__core` itself (ADR-9): the core takes the CDP
@@ -943,7 +970,7 @@ fn driver_run(argv: &[String]) -> i32 {
             moment: MomentSpec {
                 kind: "absolute".into(),
                 local: resolved_at.clone(),
-                tz_bias_min: ra.zone_bias_min,
+                tz_bias_min: session_bias,
                 delta: None,
             },
             mode: mode.clone(),
@@ -2249,15 +2276,56 @@ fn observed_from(s: &str) -> Result<chrono_core::calendar::Observed, String> {
     })
 }
 
-fn rule_from(dto: RuleDto) -> Result<chrono_core::calendar::HolidayRule, String> {
+/// Validate and map one holiday rule. The engine trusts its inputs, and a calendar is a data file from
+/// outside the build - the one documented extension point of this tool - so an out-of-range field must be
+/// refused HERE, naming the field. Left unchecked it does not fail, which is worse: `days_from_civil`
+/// happily rolls month 13 into the next January and day 40 into the following month, so the calendar
+/// silently marks the wrong dates as holidays and every business-day answer built on it is quietly wrong.
+fn rule_from(id: &str, dto: RuleDto) -> Result<chrono_core::calendar::HolidayRule, String> {
     use chrono_core::calendar::HolidayRule;
     Ok(match dto {
-        RuleDto::Fixed { month, day } => HolidayRule::Fixed { month, day },
+        RuleDto::Fixed { month, day } => {
+            check_month(id, month)?;
+            // 1..=31 for the day, not the month's real length: a rule may legitimately name Feb 29,
+            // and the engine resolves an impossible date per year. Beyond 31 is a typo in any month.
+            if !(1..=31).contains(&day) {
+                return Err(format!("holiday '{id}': day {day} out of range (1..=31)"));
+            }
+
+            HolidayRule::Fixed { month, day }
+        }
         RuleDto::NthWeekday { month, weekday, order } => {
+            check_month(id, month)?;
+            // -1 = "the last such weekday in the month"; 1..=5 counts from the start (5 exists only in
+            // some months, which the engine already resolves). Anything else silently lands in another
+            // month, e.g. order 9 walking past the end.
+            if order != -1 && !(1..=5).contains(&order) {
+                return Err(format!(
+                    "holiday '{id}': order {order} out of range (-1 for last, or 1..=5)"
+                ));
+            }
+
             HolidayRule::NthWeekday { month, weekday: weekday_index(&weekday)?, order }
         }
-        RuleDto::EasterOffset { offset } => HolidayRule::EasterOffset { offset },
+        RuleDto::EasterOffset { offset } => {
+            // A year either side of Easter covers every real observance (Corpus Christi is +60).
+            if !(-366..=366).contains(&offset) {
+                return Err(format!(
+                    "holiday '{id}': easter offset {offset} out of range (-366..=366 days)"
+                ));
+            }
+
+            HolidayRule::EasterOffset { offset }
+        }
     })
+}
+
+fn check_month(id: &str, month: u32) -> Result<(), String> {
+    if !(1..=12).contains(&month) {
+        return Err(format!("holiday '{id}': month {month} out of range (1..=12)"));
+    }
+
+    Ok(())
 }
 
 /// Locate a calendar file: next to the executable (portable layout), else in ./calendars.
@@ -2319,15 +2387,35 @@ fn calendar_from_text(text: &str) -> Result<chrono_core::calendar::Calendar, Str
             "calendar 'weekend' lists all seven days - no business day would ever exist".to_string()
         );
     }
+    let mut seen_ids: Vec<String> = Vec::new();
     let holidays = dto
         .holidays
         .into_iter()
         .map(|h| {
+            // A duplicate id makes the audit ambiguous - `holiday_on` names one of them and the reader
+            // cannot tell which. Cheap to catch, impossible to diagnose later.
+            if seen_ids.contains(&h.id) {
+                return Err(format!("duplicate holiday id '{}'", h.id));
+            }
+
+            // An inverted window silently means "never a holiday", which reads as a missing entry
+            // rather than as the mistake it is.
+            if let (Some(from), Some(to)) = (h.valid_from, h.valid_to) {
+                if from > to {
+                    return Err(format!(
+                        "holiday '{}': valid_from {from} is after valid_to {to}",
+                        h.id
+                    ));
+                }
+            }
+
+            seen_ids.push(h.id.clone());
+            let rule = rule_from(&h.id, h.rule)?;
             Ok(chrono_core::calendar::Holiday {
                 id: h.id,
                 name_en: h.name.en,
                 name_local: h.name.local,
-                rule: rule_from(h.rule)?,
+                rule,
                 valid_from: h.valid_from,
                 valid_to: h.valid_to,
                 source: h.source,
@@ -3126,6 +3214,7 @@ fn cdp_session(target: TargetSpec, time: TimeSpec, reader: BufReader<std::io::St
             Ok(Some(cdp::Msg::Event { method, params, .. })) if method == "Target.attachedToTarget" => {
                 let sid = params["sessionId"].as_str().unwrap_or("").to_string();
                 let ty = params["targetInfo"]["type"].as_str().unwrap_or("").to_string();
+                let tid = params["targetInfo"]["targetId"].as_str().unwrap_or("").to_string();
                 if !sid.is_empty() && cdp::is_shimmable(&ty) {
                     next_index += 1;
                     // Build the shim from the clock's CURRENT origin, not the session's initial values, so
@@ -3139,10 +3228,32 @@ fn cdp_session(target: TargetSpec, time: TimeSpec, reader: BufReader<std::io::St
                         cdp::inject_page(&mut client, &sid, &shim)
                     };
                     match injected {
-                        Ok(()) => contexts.push(CdpContext { index: next_index, session_id: sid, ty }),
+                        Ok(()) => contexts.push(CdpContext {
+                            index: next_index,
+                            session_id: sid,
+                            ty,
+                            target_id: tid,
+                        }),
                         Err(_) => failed += 1,
                     }
                 }
+            }
+            // A context that went away - a reload, a closed window, a recycled worker. Drop it from the
+            // poll list: nothing else did, so the list only ever grew, and every dead entry still got a
+            // Runtime.evaluate every second. That inflated the reported context count, and a command to a
+            // dead session that draws no reply at all costs the full 20 s deadline INSIDE the session
+            // loop - no heartbeat, no `end`, no liveness check for that whole time. Its counts stay in
+            // `counts` (keyed by context index, not by session), so the audit loses nothing.
+            Ok(Some(cdp::Msg::Event { method, params, .. }))
+                if method == "Target.detachedFromTarget" || method == "Target.targetDestroyed" =>
+            {
+                let sid = params["sessionId"].as_str().unwrap_or("");
+                let tid = params["targetId"].as_str().unwrap_or("");
+                contexts.retain(|c| {
+                    let gone = (!sid.is_empty() && c.session_id == sid)
+                        || (!tid.is_empty() && c.target_id == tid);
+                    !gone
+                });
             }
             Ok(_) => {}
             Err(_) => {
@@ -3846,6 +3957,62 @@ mod tests {
             "weekend":["saturday","saturday","sunday"],"observed":"none","holidays":[]}"#;
         let cal = calendar_from_text(dupes).expect("duplicate weekend days fold");
         assert_eq!(cal.weekend.len(), 2);
+    }
+
+    /// S-17. Every rule field is refused out of range, naming the holiday and the field. Unchecked,
+    /// none of these fail loudly - the civil-date maths rolls month 13 into January and day 40 into the
+    /// next month, so the calendar quietly marks the WRONG dates and every business-day answer built on
+    /// it is wrong with it. Calendars are the documented third-party extension point, so this is the
+    /// place where a broken file has to stop.
+    #[test]
+    fn calendar_rules_out_of_range_are_refused_with_the_field_named() {
+        let cal = |rule: &str| {
+            format!(
+                r#"{{"schema":"chronomock.calendar/1","id":"x","country":"XX","weekend":["saturday","sunday"],
+                "observed":"none","holidays":[{{"id":"bad","name":{{"en":"B","local":"B"}},
+                "rule":{rule},"source":"test"}}]}}"#
+            )
+        };
+
+        for (rule, needle) in [
+            (r#"{"type":"fixed","month":13,"day":1}"#, "month 13"),
+            (r#"{"type":"fixed","month":1,"day":40}"#, "day 40"),
+            (r#"{"type":"nth_weekday","month":1,"weekday":"monday","order":9}"#, "order 9"),
+            (r#"{"type":"nth_weekday","month":0,"weekday":"monday","order":1}"#, "month 0"),
+            (r#"{"type":"easter_offset","offset":5000}"#, "5000"),
+        ] {
+            let err = calendar_from_text(&cal(rule)).expect_err("out of range must be refused");
+            assert!(err.contains("bad"), "the message must name the holiday: {err}");
+            assert!(err.contains(needle), "the message must name the value: {err}");
+        }
+
+        // The legitimate neighbours of those bounds still parse.
+        for rule in [
+            r#"{"type":"fixed","month":2,"day":29}"#,
+            r#"{"type":"nth_weekday","month":12,"weekday":"monday","order":-1}"#,
+            r#"{"type":"nth_weekday","month":5,"weekday":"monday","order":5}"#,
+            r#"{"type":"easter_offset","offset":60}"#,
+        ] {
+            calendar_from_text(&cal(rule)).unwrap_or_else(|e| panic!("{rule} should parse: {e}"));
+        }
+    }
+
+    /// S-17, the whole-file checks: a repeated id makes the audit ambiguous (holiday_on names one of
+    /// them and the reader cannot tell which), and an inverted validity window means "never a holiday",
+    /// which reads as a missing entry instead of the mistake it is.
+    #[test]
+    fn duplicate_holiday_ids_and_inverted_validity_windows_are_refused() {
+        let dupes = r#"{"schema":"chronomock.calendar/1","id":"x","country":"XX",
+            "weekend":["saturday","sunday"],"observed":"none","holidays":[
+            {"id":"same","name":{"en":"A","local":"A"},"rule":{"type":"fixed","month":1,"day":1},"source":"t"},
+            {"id":"same","name":{"en":"B","local":"B"},"rule":{"type":"fixed","month":2,"day":2},"source":"t"}]}"#;
+        assert!(calendar_from_text(dupes).expect_err("duplicate id").contains("same"));
+
+        let inverted = r#"{"schema":"chronomock.calendar/1","id":"x","country":"XX",
+            "weekend":["saturday","sunday"],"observed":"none","holidays":[
+            {"id":"w","name":{"en":"A","local":"A"},"rule":{"type":"fixed","month":1,"day":1},
+             "valid_from":2030,"valid_to":2020,"source":"t"}]}"#;
+        assert!(calendar_from_text(inverted).expect_err("inverted window").contains("valid_from"));
     }
 
     #[test]
