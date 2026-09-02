@@ -231,13 +231,22 @@ public sealed class ReadingRow
     {
         ReadingLabelKey = $"calc.reading.{reading.Reading}";
         var t = reading.Iso.IndexOf('T', StringComparison.Ordinal);
-        var date = t >= 0 ? reading.Iso[..t] : reading.Iso;
-        DateLine = $"{reading.Metadata.Weekday}  {date}";
+        Date = t >= 0 ? reading.Iso[..t] : reading.Iso;
+        // The engine sends the weekday name in English; map it to a key so the view renders it in the
+        // current language (rule 15), rather than baking an English literal into a bound string. Kept as a
+        // key (not resolved here) so this row stays language-neutral and unit-testable without a WPF host.
+        WeekdayKey = CalculatorViewModel.WeekdayKey(reading.Metadata.Weekday);
         Significance = new ObservableCollection<string>(reading.Significance.Select(key => $"calc.sig.{key}"));
     }
 
     public string ReadingLabelKey { get; }
-    public string DateLine { get; }
+
+    /// <summary>Translation key for the weekday name, rendered via KeyToText. Paired with <see cref="Date"/>.</summary>
+    public string WeekdayKey { get; }
+
+    /// <summary>The resolved date (no time), shown next to the weekday.</summary>
+    public string Date { get; }
+
     public ObservableCollection<string> Significance { get; }
 }
 
@@ -961,7 +970,9 @@ public sealed class CalculatorViewModel : ObservableObject
         var t = moment.Iso.IndexOf('T', StringComparison.Ordinal);
         ResultDate = t >= 0 ? moment.Iso[..t] : moment.Iso;
         ResultTime = t >= 0 ? moment.Iso[(t + 1)..] : string.Empty;
-        ResultWeekday = moment.Metadata.Weekday;
+        // The engine sends the weekday in English; render it in the current language (rule 15). Resolved
+        // here (not exposed as a key) because it is one part of the result column the view binds as text.
+        ResultWeekday = Tr(WeekdayKey(moment.Metadata.Weekday));
         ResultZone = OffsetLabel(moment.ZoneBiasMin);
 
         Significance.Clear();
@@ -974,14 +985,16 @@ public sealed class CalculatorViewModel : ObservableObject
 
         Formats.Clear();
         var f = moment.Formats;
-        Formats.Add(new FormatRow("ISO date", f.IsoDate));
-        Formats.Add(new FormatRow("ISO datetime", f.IsoDatetime));
-        Formats.Add(new FormatRow("US", f.Us));
-        Formats.Add(new FormatRow("PL", f.Pl));
-        Formats.Add(new FormatRow("epoch (s)", OutOfRange(f.EpochSeconds)));
-        Formats.Add(new FormatRow("epoch (ms)", OutOfRange(f.EpochMillis)));
-        Formats.Add(new FormatRow("FILETIME", OutOfRange(f.Filetime)));
-        Formats.Add(new FormatRow("RFC 1123", f.Rfc1123 ?? "(out of range)"));
+        // Format labels are translated (rule 15); the values are data. Format NAMES (US, PL, FILETIME,
+        // RFC 1123) are proper nouns, so their PL text keeps them as-is.
+        Formats.Add(new FormatRow(Tr("calc.fmt.iso_date"), f.IsoDate));
+        Formats.Add(new FormatRow(Tr("calc.fmt.iso_datetime"), f.IsoDatetime));
+        Formats.Add(new FormatRow(Tr("calc.fmt.us"), f.Us));
+        Formats.Add(new FormatRow(Tr("calc.fmt.pl"), f.Pl));
+        Formats.Add(new FormatRow(Tr("calc.fmt.epoch_s"), OutOfRange(f.EpochSeconds)));
+        Formats.Add(new FormatRow(Tr("calc.fmt.epoch_ms"), OutOfRange(f.EpochMillis)));
+        Formats.Add(new FormatRow(Tr("calc.fmt.filetime"), OutOfRange(f.Filetime)));
+        Formats.Add(new FormatRow(Tr("calc.fmt.rfc1123"), f.Rfc1123 ?? Tr("calc.out_of_range")));
 
         // The custom format is present only when a mask was passed (--format). It comes from the civil date,
         // so unlike epoch/FILETIME it never falls out of range.
@@ -1020,30 +1033,41 @@ public sealed class CalculatorViewModel : ObservableObject
 
     private static string BuildMetadataLine(CalcMetadata m)
     {
+        // Labels are translated (rule 15); ISO and Q are universal notation, and the numbers and holiday
+        // name are data. The weekday comes from the engine in English, mapped to a key and resolved.
         var parts = new List<string>
         {
-            m.Weekday,
+            Tr(WeekdayKey(m.Weekday)),
             $"ISO {m.IsoWeekYear}-W{m.IsoWeek:D2}",
-            $"US week {m.UsWeek}",
+            $"{Tr("calc.md.us_week")} {m.UsWeek}",
             $"Q{m.Quarter}",
-            $"day {m.DayOfYear}",
-            m.IsLeapYear ? "leap year" : "common year",
+            $"{Tr("calc.md.day")} {m.DayOfYear}",
+            Tr(m.IsLeapYear ? "calc.md.leap_year" : "calc.md.common_year"),
         };
         if (m.BusinessDay is { } business)
         {
-            parts.Add(business ? "business day" : "not a business day");
+            parts.Add(Tr(business ? "calc.md.business_day" : "calc.md.not_business_day"));
         }
 
         if (m.Holiday is { } holiday)
         {
-            parts.Add(holiday);
+            parts.Add(holiday); // the holiday name follows the DATA locale (the calendar), not the UI (rule 15)
         }
 
         return string.Join(" · ", parts);
     }
 
+    /// <summary>Translation key for a weekday name the engine emits in English (e.g. "Monday" ->
+    /// "calc.weekday.monday"). An unrecognised name falls through to KeyToText's honest key-as-text.</summary>
+    internal static string WeekdayKey(string engineWeekday)
+        => $"calc.weekday.{engineWeekday.ToLowerInvariant()}";
+
+    /// <summary>Resolve a translation key to text in the current language, for the composed result strings
+    /// (metadata line, weekday, format labels) that the view binds as text rather than as a key.</summary>
+    private static string Tr(string key) => TranslationKeyConverter.Resolve(key);
+
     private static string OutOfRange(long? value)
-        => value?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "(out of range)";
+        => value?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? Tr("calc.out_of_range");
 
     /// <summary>A "+HH:MM" / "-HH:MM" offset for a session bias (UTC = local + bias, so the offset is -bias).</summary>
     private static string OffsetLabel(int biasMin)

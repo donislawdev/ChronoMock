@@ -22,7 +22,10 @@ public class ReverseAnalysisTests
         var row = new ReadingRow(reading);
 
         Assert.Equal("calc.reading.us_month_day", row.ReadingLabelKey);
-        Assert.Equal("Tuesday  2008-04-08", row.DateLine);
+        // The weekday is a translation key (mapped from the engine's English name), rendered via KeyToText;
+        // the date is data. Kept as a key so the row stays language-neutral and testable without WPF.
+        Assert.Equal("calc.weekday.tuesday", row.WeekdayKey);
+        Assert.Equal("2008-04-08", row.Date);
         Assert.Equal(new[] { "calc.sig.end_of_quarter" }, row.Significance);
     }
 }

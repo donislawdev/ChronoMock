@@ -397,8 +397,8 @@
               <StackPanel Orientation="Horizontal" Margin="{StaticResource SpaceXs}">
                 <TextBlock Text="{Binding ReadingLabelKey, Converter={StaticResource KeyToText}}" VerticalAlignment="Center" MinWidth="160"
                            FontSize="{StaticResource FontSizeCaption}" Foreground="{DynamicResource BrushTextSecondary}" />
-                <TextBlock Text="{Binding DateLine}" VerticalAlignment="Center" Margin="{StaticResource SpaceSm}"
-                           FontSize="{StaticResource FontSizeBody}" Foreground="{DynamicResource BrushTextPrimary}" />
+                <TextBlock VerticalAlignment="Center" Margin="{StaticResource SpaceSm}"
+                           FontSize="{StaticResource FontSizeBody}" Foreground="{DynamicResource BrushTextPrimary}"><Run Text="{Binding WeekdayKey, Converter={StaticResource KeyToText}, Mode=OneWay}" /><Run Text="  " /><Run Text="{Binding Date, Mode=OneWay}" /></TextBlock>
                 <ItemsControl ItemsSource="{Binding Significance}" VerticalAlignment="Center" Margin="{StaticResource SpaceSm}">
                   <ItemsControl.ItemsPanel>
                     <ItemsPanelTemplate>

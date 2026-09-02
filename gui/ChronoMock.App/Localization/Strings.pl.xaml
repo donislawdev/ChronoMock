@@ -244,6 +244,31 @@
   <sys:String x:Key="calc.sig.public_holiday">Święto</sys:String>
   <sys:String x:Key="calc.sig.observed_holiday">Obchodzone święto - dzień wolny przesunięty z weekendowego święta</sys:String>
 
+  <!-- Render wyniku kalkulatora (RELEASE-006): dzień tygodnia (mapowany z angielskiej nazwy z silnika),
+       etykiety formatów, linia metadanych i marker poza-zakresem - klucze, nie literały C# (reguła 15). -->
+  <sys:String x:Key="calc.weekday.monday">Poniedziałek</sys:String>
+  <sys:String x:Key="calc.weekday.tuesday">Wtorek</sys:String>
+  <sys:String x:Key="calc.weekday.wednesday">Środa</sys:String>
+  <sys:String x:Key="calc.weekday.thursday">Czwartek</sys:String>
+  <sys:String x:Key="calc.weekday.friday">Piątek</sys:String>
+  <sys:String x:Key="calc.weekday.saturday">Sobota</sys:String>
+  <sys:String x:Key="calc.weekday.sunday">Niedziela</sys:String>
+  <sys:String x:Key="calc.fmt.iso_date">Data ISO</sys:String>
+  <sys:String x:Key="calc.fmt.iso_datetime">Data-czas ISO</sys:String>
+  <sys:String x:Key="calc.fmt.us">US</sys:String>
+  <sys:String x:Key="calc.fmt.pl">PL</sys:String>
+  <sys:String x:Key="calc.fmt.epoch_s">epoch (s)</sys:String>
+  <sys:String x:Key="calc.fmt.epoch_ms">epoch (ms)</sys:String>
+  <sys:String x:Key="calc.fmt.filetime">FILETIME</sys:String>
+  <sys:String x:Key="calc.fmt.rfc1123">RFC 1123</sys:String>
+  <sys:String x:Key="calc.out_of_range">(poza zakresem)</sys:String>
+  <sys:String x:Key="calc.md.us_week">tydzień US</sys:String>
+  <sys:String x:Key="calc.md.day">dzień</sys:String>
+  <sys:String x:Key="calc.md.leap_year">rok przestępny</sys:String>
+  <sys:String x:Key="calc.md.common_year">rok zwykły</sys:String>
+  <sys:String x:Key="calc.md.business_day">dzień roboczy</sys:String>
+  <sys:String x:Key="calc.md.not_business_day">nie dzień roboczy</sys:String>
+
   <!-- Podpowiedzi (pomoc po najechaniu). Klucze, nie literały (reguła 15); w języku interfejsu. -->
   <sys:String x:Key="tip.choose_target">Wybierz aplikację do uruchomienia z podmienionym zegarem.</sys:String>
   <sys:String x:Key="tip.date_field">Wpisz datę jako YYYY-MM-DD albo wybierz z kalendarza.</sys:String>

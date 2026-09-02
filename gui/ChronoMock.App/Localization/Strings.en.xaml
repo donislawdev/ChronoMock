@@ -245,6 +245,31 @@
   <sys:String x:Key="calc.sig.public_holiday">Public holiday</sys:String>
   <sys:String x:Key="calc.sig.observed_holiday">Observed public holiday - a day off shifted from a weekend holiday</sys:String>
 
+  <!-- Calculator result rendering (RELEASE-006): the weekday (mapped from the engine's English name), the
+       format labels, the metadata line and the out-of-range marker - keys, not C# literals (rule 15). -->
+  <sys:String x:Key="calc.weekday.monday">Monday</sys:String>
+  <sys:String x:Key="calc.weekday.tuesday">Tuesday</sys:String>
+  <sys:String x:Key="calc.weekday.wednesday">Wednesday</sys:String>
+  <sys:String x:Key="calc.weekday.thursday">Thursday</sys:String>
+  <sys:String x:Key="calc.weekday.friday">Friday</sys:String>
+  <sys:String x:Key="calc.weekday.saturday">Saturday</sys:String>
+  <sys:String x:Key="calc.weekday.sunday">Sunday</sys:String>
+  <sys:String x:Key="calc.fmt.iso_date">ISO date</sys:String>
+  <sys:String x:Key="calc.fmt.iso_datetime">ISO datetime</sys:String>
+  <sys:String x:Key="calc.fmt.us">US</sys:String>
+  <sys:String x:Key="calc.fmt.pl">PL</sys:String>
+  <sys:String x:Key="calc.fmt.epoch_s">epoch (s)</sys:String>
+  <sys:String x:Key="calc.fmt.epoch_ms">epoch (ms)</sys:String>
+  <sys:String x:Key="calc.fmt.filetime">FILETIME</sys:String>
+  <sys:String x:Key="calc.fmt.rfc1123">RFC 1123</sys:String>
+  <sys:String x:Key="calc.out_of_range">(out of range)</sys:String>
+  <sys:String x:Key="calc.md.us_week">US week</sys:String>
+  <sys:String x:Key="calc.md.day">day</sys:String>
+  <sys:String x:Key="calc.md.leap_year">leap year</sys:String>
+  <sys:String x:Key="calc.md.common_year">common year</sys:String>
+  <sys:String x:Key="calc.md.business_day">business day</sys:String>
+  <sys:String x:Key="calc.md.not_business_day">not a business day</sys:String>
+
   <!-- Tooltips (hover help). Keys, not literals (rule 15); shown in the current language. -->
   <sys:String x:Key="tip.choose_target">Pick the application to run under the fake clock.</sys:String>
   <sys:String x:Key="tip.date_field">Type the date as YYYY-MM-DD, or pick it from the calendar.</sys:String>
