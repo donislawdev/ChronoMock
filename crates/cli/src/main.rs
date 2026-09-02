@@ -2170,8 +2170,14 @@ fn find_calendar_file(id: &str) -> Result<std::path::PathBuf, String> {
 fn load_calendar(id: &str) -> Result<chrono_core::calendar::Calendar, String> {
     let path = find_calendar_file(id)?;
     let text = std::fs::read_to_string(&path).map_err(|e| format!("cannot read {}: {e}", path.display()))?;
-    let dto: CalendarDto =
-        serde_json::from_str(&text).map_err(|e| format!("bad calendar JSON in {}: {e}", path.display()))?;
+    calendar_from_text(&text).map_err(|e| format!("{e} (in {})", path.display()))
+}
+
+/// Parse and validate a calendar from its JSON text, mapping the `chronomock.calendar/1` schema to the
+/// engine's types. Separated from the on-disk lookup (symmetry with `parse_preset`) so the shipped
+/// calendars can be golden-tested against the real engine without the file-resolution step.
+fn calendar_from_text(text: &str) -> Result<chrono_core::calendar::Calendar, String> {
+    let dto: CalendarDto = serde_json::from_str(text).map_err(|e| format!("bad calendar JSON: {e}"))?;
     // An unknown major schema version is refused, not half-understood (docs/04 section 3.1).
     if dto.schema != "chronomock.calendar/1" {
         return Err(format!(
@@ -3596,6 +3602,107 @@ fn map_prepare_error(e: chrono_mech::PrepareError) -> (i32, &'static str, &'stat
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // Read a shipped data file from the repo (CARGO_MANIFEST_DIR is crates/cli). The golden tests below
+    // exercise the REAL calendars/ and presets/ that ship, through the real engine - so a typo in a
+    // holiday date, a wrong valid_from, or a broken observation rule fails the suite (RELEASE-004).
+    fn read_data(rel: &str) -> String {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..").join(rel);
+        std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("cannot read {}: {e}", path.display()))
+    }
+
+    #[test]
+    fn shipped_calendars_parse_and_hit_golden_dates() {
+        use chrono_core::calc::CivilDateTime;
+        use chrono_core::calendar::{holiday_on, is_business_day};
+        let d = |y: i64, m: u32, day: u32| CivilDateTime {
+            year: y,
+            month: m,
+            day,
+            hour: 0,
+            minute: 0,
+            second: 0,
+        };
+
+        let pl = calendar_from_text(&read_data("calendars/pl.json")).expect("pl parses");
+        // Easter Monday 2026 = 2026-04-06 (Easter Sunday 2026-04-05): the easter_offset computus.
+        assert_eq!(holiday_on(&d(2026, 4, 6), &pl).map(|h| h.id.as_str()), Some("easter_monday"));
+        // Corpus Christi 2026 = Easter + 60 days = 2026-06-04: a larger easter_offset.
+        assert_eq!(holiday_on(&d(2026, 6, 4), &pl).map(|h| h.id.as_str()), Some("corpus_christi"));
+        // Epiphany was restored as a Polish public holiday from 2011 (valid_from:2011; law of 24 Sept
+        // 2010, abolished 1960): a holiday in 2026, NOT in 2010.
+        assert_eq!(holiday_on(&d(2026, 1, 6), &pl).map(|h| h.id.as_str()), Some("epiphany"));
+        assert!(holiday_on(&d(2010, 1, 6), &pl).is_none());
+        // Christmas Eve became a non-working day from 2025 (valid_from:2025): a holiday in 2025, not 2024.
+        assert_eq!(holiday_on(&d(2025, 12, 24), &pl).map(|h| h.id.as_str()), Some("christmas_eve"));
+        assert!(holiday_on(&d(2024, 12, 24), &pl).is_none());
+
+        let fed = calendar_from_text(&read_data("calendars/us-federal.json")).expect("us-federal parses");
+        let bank = calendar_from_text(&read_data("calendars/us-banking.json")).expect("us-banking parses");
+        // One country, two calendars: Independence Day 2026 falls on Saturday (Jul 4), so it is observed
+        // on Friday Jul 3 federally (sat->fri) - not a business day - while banking (sun->mon only) does
+        // not shift a Saturday holiday, so the same Friday IS a business day.
+        assert!(!is_business_day(&d(2026, 7, 3), &fed));
+        assert!(is_business_day(&d(2026, 7, 3), &bank));
+        // Juneteenth is a federal holiday from 2021 (valid_from:2021): a holiday in 2021, not in 2020.
+        assert_eq!(holiday_on(&d(2021, 6, 19), &fed).map(|h| h.id.as_str()), Some("juneteenth"));
+        assert!(holiday_on(&d(2020, 6, 19), &fed).is_none());
+        // MLK Day 2026 = the third Monday of January = 2026-01-19: an nth_weekday rule.
+        assert_eq!(holiday_on(&d(2026, 1, 19), &fed).map(|h| h.id.as_str()), Some("mlk_day"));
+        // Banking observes a Sunday holiday on the Monday: New Year 2023-01-01 (Sun) -> Mon 2023-01-02.
+        assert!(!is_business_day(&d(2023, 1, 2), &bank));
+    }
+
+    #[test]
+    fn shipped_presets_parse_and_hit_golden_dates() {
+        use chrono_core::calc::{CivilDateTime, EvalContext};
+        let now = CivilDateTime { year: 2026, month: 2, day: 15, hour: 12, minute: 0, second: 0 };
+
+        // Every shipped preset parses (a malformed one, or a bad schema/field, fails here).
+        let ids = [
+            "month-end",
+            "quarter-end",
+            "epoch-zero",
+            "year-2038",
+            "trial-first-day-after",
+            "trial-last-day",
+            "year-rollover",
+            "license-expired-year-ago",
+            "date-before-install",
+            "payment-due-business-days",
+        ];
+        for id in ids {
+            let text = read_data(&format!("presets/{id}.json"));
+            parse_preset(&text).unwrap_or_else(|e| panic!("preset {id} parses: {}", e.message()));
+        }
+
+        // Evaluate a preset with its default parameters, through the real resolve + engine path.
+        let eval_preset = |id: &str, ctx: &EvalContext| {
+            let p = parse_preset(&read_data(&format!("presets/{id}.json"))).unwrap();
+            let values = resolve_parameters(&p.parameters, &HashMap::new(), None).unwrap();
+            let expr = resolve_moment(p.moment, &values).unwrap();
+            chrono_core::calc::eval(&expr, ctx).unwrap().result()
+        };
+
+        let no_cal = EvalContext { now, zone_bias_min: 0, calendar: None };
+        // Absolute-base presets are exact.
+        assert_eq!(eval_preset("epoch-zero", &no_cal).to_iso(), "1970-01-01T00:00:00");
+        assert_eq!(eval_preset("year-2038", &no_cal).to_iso(), "2038-01-19T03:14:07");
+        // month-end snaps today (2026-02-15) to the last day of February - a common year, so the 28th.
+        let month_end = eval_preset("month-end", &no_cal);
+        assert_eq!((month_end.year, month_end.month, month_end.day), (2026, 2, 28));
+
+        // payment-due-business-days is calendar-aware: +90 business days from today lands on a different
+        // day per market, which is the whole point of a calendar-aware preset. Anchor at 2026-06-01 so the
+        // window spans US Labor Day (first Monday of September, a US weekday holiday Poland does not have),
+        // guaranteeing the two markets diverge; if the calendar were ignored they would be identical.
+        let now_pay = CivilDateTime { year: 2026, month: 6, day: 1, hour: 12, minute: 0, second: 0 };
+        let bank = calendar_from_text(&read_data("calendars/us-banking.json")).unwrap();
+        let pl = calendar_from_text(&read_data("calendars/pl.json")).unwrap();
+        let due_us = eval_preset("payment-due-business-days", &EvalContext { now: now_pay, zone_bias_min: 0, calendar: Some(&bank) });
+        let due_pl = eval_preset("payment-due-business-days", &EvalContext { now: now_pay, zone_bias_min: 0, calendar: Some(&pl) });
+        assert_ne!(due_us.to_iso(), due_pl.to_iso(), "US and PL must diverge over 90 business days");
+    }
 
     #[test]
     fn cdp_clock_scales_and_holds_frozen() {
