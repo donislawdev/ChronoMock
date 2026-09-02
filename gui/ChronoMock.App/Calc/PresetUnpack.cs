@@ -13,6 +13,10 @@ public sealed record DateValue(string DateTimeText) : ParamValue;
 /// <summary>A magnitude and unit for a <c>duration</c> parameter (becomes a shift; the sign is the step's).</summary>
 public sealed record DurationValue(string Amount, string UnitToken) : ParamValue;
 
+/// <summary>A boundary label for a <c>variant</c> parameter (day_before / on_day / day_after) - becomes a
+/// sign-less shift by a signed day offset (docs/05 3.6), carrying its own direction.</summary>
+public sealed record VariantValue(string Label) : ParamValue;
+
 /// <summary>A preset's moment expressed as builder inputs: the base and a list of steps ready to configure
 /// <see cref="StepViewModel"/>s. Each step carries the value(s) its kind reads; the others keep the same
 /// defaults a fresh step has.</summary>
@@ -110,24 +114,43 @@ public static class PresetUnpack
 
     private static UnpackedStep ParseShift(JsonElement shift, IReadOnlyDictionary<string, ParamValue> values)
     {
-        var sign = shift.GetProperty("sign").GetString()!;
-
+        // A parametric shift takes its shape from a parameter: a duration gives magnitude + unit (the
+        // step's sign carries direction), a variant gives a signed day offset (carrying its own sign, so
+        // the step has no sign). The sign field is read only where it is actually needed.
         if (shift.TryGetProperty("parameter", out var pn))
         {
             var id = pn.GetString()!;
-            if (values.TryGetValue(id, out var value) && value is DurationValue duration)
+            if (values.TryGetValue(id, out var value))
             {
-                return new UnpackedStep(
-                    StepKind.Shift, Sign: sign, Amount: duration.Amount, UnitToken: NormalizeUnit(duration.UnitToken));
+                switch (value)
+                {
+                    case DurationValue duration:
+                        return new UnpackedStep(StepKind.Shift, Sign: shift.GetProperty("sign").GetString()!,
+                            Amount: duration.Amount, UnitToken: NormalizeUnit(duration.UnitToken));
+                    case VariantValue variant:
+                        var (vsign, vamount) = VariantShift(variant.Label);
+                        return new UnpackedStep(StepKind.Shift, Sign: vsign, Amount: vamount, UnitToken: "d");
+                }
             }
 
-            throw new NotSupportedException($"shift parameter '{id}' has no duration value");
+            throw new NotSupportedException($"shift parameter '{id}' has no duration or variant value");
         }
 
+        var sign = shift.GetProperty("sign").GetString()!;
         var amount = shift.GetProperty("amount").GetInt64().ToString(CultureInfo.InvariantCulture);
         var unit = NormalizeUnit(shift.GetProperty("unit").GetString()!);
         return new UnpackedStep(StepKind.Shift, Sign: sign, Amount: amount, UnitToken: unit);
     }
+
+    /// <summary>Map a boundary-variant label to a (sign, day amount) shift (docs/05 3.6): day_before is
+    /// -1 day, on_day is +0, day_after is +1. Mirrors the CLI's variant_days.</summary>
+    private static (string Sign, string Amount) VariantShift(string label) => label switch
+    {
+        "day_before" => ("-", "1"),
+        "on_day" => ("+", "0"),
+        "day_after" => ("+", "1"),
+        _ => throw new NotSupportedException($"unknown variant '{label}'"),
+    };
 
     // A bare date is midnight, matching the engine's parse_param_date so a date parameter resolves the same.
     private static string NormalizeDate(string value)

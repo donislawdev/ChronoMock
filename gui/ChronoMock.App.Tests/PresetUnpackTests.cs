@@ -71,6 +71,42 @@ public class PresetUnpackTests
     }
 
     [Fact]
+    public void The_age_of_majority_preset_unpacks_a_variant_into_a_signless_shift()
+    {
+        // birth_date base, then +18y, then the boundary variant (day_before -> "- 1 day", its own sign).
+        var values = new Dictionary<string, ParamValue>
+        {
+            ["birth_date"] = new DateValue("2008-03-15"),
+            ["boundary"] = new VariantValue("day_before"),
+        };
+
+        var moment = PresetUnpack.UnpackMoment(Preset("age-of-majority").Moment, values);
+
+        Assert.Equal(BaseKind.Specific, moment.Base);
+        Assert.Equal("2008-03-15T00:00:00", moment.BaseText);
+        Assert.Equal(2, moment.Steps.Count);
+        Assert.Equal(("+", "18", "y"), (moment.Steps[0].Sign, moment.Steps[0].Amount, moment.Steps[0].UnitToken));
+        Assert.Equal(StepKind.Shift, moment.Steps[1].Kind);
+        Assert.Equal(("-", "1", "d"), (moment.Steps[1].Sign, moment.Steps[1].Amount, moment.Steps[1].UnitToken));
+    }
+
+    [Theory]
+    [InlineData("on_day", "+", "0")]
+    [InlineData("day_after", "+", "1")]
+    public void A_variant_resolves_to_its_signed_day_offset(string label, string sign, string amount)
+    {
+        var values = new Dictionary<string, ParamValue>
+        {
+            ["birth_date"] = new DateValue("2008-03-15"),
+            ["boundary"] = new VariantValue(label),
+        };
+
+        var moment = PresetUnpack.UnpackMoment(Preset("age-of-majority").Moment, values);
+
+        Assert.Equal((sign, amount, "d"), (moment.Steps[1].Sign, moment.Steps[1].Amount, moment.Steps[1].UnitToken));
+    }
+
+    [Fact]
     public void A_parametric_base_without_its_value_is_not_unpackable()
         => Assert.Throws<NotSupportedException>(() => PresetUnpack.UnpackMoment(Preset("trial-last-day").Moment));
 

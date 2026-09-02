@@ -12,7 +12,8 @@ public sealed record PresetParameter(
     string Type,
     long? DefaultAmount, // i64, matching the CLI/core contract (docs/04 4.2) - not Int32 (RELEASE-011)
     string? DefaultUnit,
-    string? DefaultHint);
+    string? DefaultHint,
+    string? DefaultVariant = null); // a variant parameter's default label (day_before/on_day/day_after)
 
 /// <summary>
 /// One preset from the shared catalogue (docs/04 4.2, schema <c>chronomock.preset/1</c>), as the calculator
@@ -135,27 +136,36 @@ public static class PresetCatalog
 
                 long? defaultAmount = null;
                 string? defaultUnit = null;
-                if (p.TryGetProperty("default", out var def) && def.ValueKind == JsonValueKind.Object)
+                string? defaultVariant = null;
+                if (p.TryGetProperty("default", out var def))
                 {
-                    // Read as i64 to match the contract (the CLI and core read amount as i64) and to never
-                    // throw: TryGetInt64 returns false for a fractional or out-of-range number, leaving the
-                    // default unset instead of crashing the whole catalogue on one bad file (RELEASE-011).
-                    if (def.TryGetProperty("amount", out var amount) && amount.ValueKind == JsonValueKind.Number
-                        && amount.TryGetInt64(out var amt))
+                    if (def.ValueKind == JsonValueKind.Object)
                     {
-                        defaultAmount = amt;
-                    }
+                        // Read as i64 to match the contract (the CLI and core read amount as i64) and to never
+                        // throw: TryGetInt64 returns false for a fractional or out-of-range number, leaving the
+                        // default unset instead of crashing the whole catalogue on one bad file (RELEASE-011).
+                        if (def.TryGetProperty("amount", out var amount) && amount.ValueKind == JsonValueKind.Number
+                            && amount.TryGetInt64(out var amt))
+                        {
+                            defaultAmount = amt;
+                        }
 
-                    if (def.TryGetProperty("unit", out var unit) && unit.ValueKind == JsonValueKind.String)
+                        if (def.TryGetProperty("unit", out var unit) && unit.ValueKind == JsonValueKind.String)
+                        {
+                            defaultUnit = unit.GetString();
+                        }
+                    }
+                    else if (def.ValueKind == JsonValueKind.String)
                     {
-                        defaultUnit = unit.GetString();
+                        // A variant parameter's default is its label (day_before/on_day/day_after), not an object.
+                        defaultVariant = def.GetString();
                     }
                 }
 
                 var hint = p.TryGetProperty("default_hint", out var dh) && dh.ValueKind == JsonValueKind.String
                     ? dh.GetString()
                     : null;
-                list.Add(new PresetParameter(id, type, defaultAmount, defaultUnit, hint));
+                list.Add(new PresetParameter(id, type, defaultAmount, defaultUnit, hint, defaultVariant));
             }
         }
 

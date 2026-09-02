@@ -2377,11 +2377,13 @@ struct Parameter {
     default_hint: Option<String>,
 }
 
-/// A parameter's type. `date` fills a base; `duration` fills a shift. (`variant`/`int` are later.)
+/// A parameter's type. `date` fills a base; `duration` and `variant` fill a shift (a `variant` by a
+/// signed day offset - docs/05 3.6). (`int` is later.)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ParamKind {
     Date,
     Duration,
+    Variant,
 }
 
 /// A resolved parameter value, ready to substitute into the moment.
@@ -2389,6 +2391,9 @@ enum ParamKind {
 enum ParamValue {
     Date(chrono_core::calc::CivilDateTime),
     Duration { amount: i64, unit: Unit },
+    /// A boundary variant (docs/05 3.6) resolved to a signed day offset: day_before -1, on_day 0,
+    /// day_after +1. It fills a shift and carries its own direction, so that shift step needs no sign.
+    Variant(i64),
 }
 
 /// A preset's time mode, resolved to the substitution surface's wire shape (the same `mode` /
@@ -2527,11 +2532,13 @@ enum StepDto {
     Zone(String),
 }
 
-/// A `shift` step in a preset: either a literal `{ sign, amount, unit }` or a parametric
-/// `{ sign, parameter }` (docs/04 4.2), resolved from a `duration` parameter.
+/// A `shift` step in a preset: a literal `{ sign, amount, unit }`, a parametric `{ sign, parameter }`
+/// resolved from a `duration`, or a parametric `{ parameter }` resolved from a `variant` (docs/04 4.2).
+/// The sign is optional because a `variant` parameter carries its own direction (docs/05 3.6).
 #[derive(Debug, Deserialize)]
 struct ShiftDto {
-    sign: String,
+    #[serde(default)]
+    sign: Option<String>,
     #[serde(default)]
     amount: Option<i64>,
     #[serde(default)]
@@ -2562,6 +2569,9 @@ fn base_from(dto: BaseDto, values: &HashMap<String, ParamValue>) -> Result<Base,
             Some(ParamValue::Duration { .. }) => {
                 Err(PresetError::BadFile(format!("base parameter '{id}' must be a date, not a duration")))
             }
+            Some(ParamValue::Variant(_)) => {
+                Err(PresetError::BadFile(format!("base parameter '{id}' must be a date, not a variant")))
+            }
             None => Err(PresetError::BadFile(format!("base parameter '{id}' has no value"))),
         },
         BaseDto::Object { absolute: Some(s), parameter: None } => {
@@ -2587,21 +2597,24 @@ fn step_from(dto: StepDto, values: &HashMap<String, ParamValue>) -> Result<Step,
 }
 
 fn shift_from(s: ShiftDto, values: &HashMap<String, ParamValue>) -> Result<Step, PresetError> {
-    let sign = match s.sign.as_str() {
-        "+" => Sign::Plus,
-        "-" => Sign::Minus,
-        other => return Err(PresetError::BadFile(format!("shift sign must be + or -, got '{other}'"))),
-    };
-    // A parametric shift takes its magnitude and unit from a `duration` parameter (docs/04 4.2).
+    // A parametric shift takes its shape from a parameter: a `duration` gives magnitude and unit (the
+    // step's sign carries direction), a `variant` gives a signed day offset (carrying its own sign).
     if let Some(id) = &s.parameter {
         return match values.get(id) {
-            Some(ParamValue::Duration { amount, unit }) => Ok(Step::Shift { sign, amount: *amount, unit: *unit }),
+            Some(ParamValue::Duration { amount, unit }) => {
+                Ok(Step::Shift { sign: parse_shift_sign(&s.sign)?, amount: *amount, unit: *unit })
+            }
+            Some(ParamValue::Variant(days)) => {
+                let sign = if *days < 0 { Sign::Minus } else { Sign::Plus };
+                Ok(Step::Shift { sign, amount: days.abs(), unit: Unit::Days })
+            }
             Some(ParamValue::Date(_)) => {
-                Err(PresetError::BadFile(format!("shift parameter '{id}' must be a duration, not a date")))
+                Err(PresetError::BadFile(format!("shift parameter '{id}' must be a duration or variant, not a date")))
             }
             None => Err(PresetError::BadFile(format!("shift parameter '{id}' has no value"))),
         };
     }
+    let sign = parse_shift_sign(&s.sign)?;
     let amount = s.amount.ok_or_else(|| PresetError::BadFile("shift needs an amount or a parameter".into()))?;
     if amount < 0 {
         return Err(PresetError::BadFile("shift amount must be non-negative (the sign carries direction)".into()));
@@ -2609,6 +2622,18 @@ fn shift_from(s: ShiftDto, values: &HashMap<String, ParamValue>) -> Result<Step,
     let unit_str = s.unit.ok_or_else(|| PresetError::BadFile("shift needs a unit".into()))?;
     let unit = parse_unit(&unit_str).ok_or_else(|| PresetError::BadFile(format!("unknown unit '{unit_str}' in shift")))?;
     Ok(Step::Shift { sign, amount, unit })
+}
+
+/// Parse a shift step's `sign` field (`+`/`-`). Required for a literal or `duration`-parametric shift;
+/// a `variant`-parametric shift omits it (the variant carries its own direction), so this runs only
+/// where a sign is actually needed.
+fn parse_shift_sign(sign: &Option<String>) -> Result<Sign, PresetError> {
+    match sign.as_deref() {
+        Some("+") => Ok(Sign::Plus),
+        Some("-") => Ok(Sign::Minus),
+        Some(other) => Err(PresetError::BadFile(format!("shift sign must be + or -, got '{other}'"))),
+        None => Err(PresetError::BadFile("shift needs a sign (+ or -)".into())),
+    }
 }
 
 /// Parse a preset from JSON WITHOUT resolving its moment (pure - no I/O, no parameter values). The
@@ -2641,9 +2666,10 @@ fn parse_parameter(dto: ParameterDto) -> Result<Parameter, PresetError> {
     let kind = match dto.kind.as_str() {
         "date" => ParamKind::Date,
         "duration" => ParamKind::Duration,
+        "variant" => ParamKind::Variant,
         other => {
             return Err(PresetError::NotBuilt(format!(
-                "parameter '{}' has type '{other}', which calc does not resolve yet (built: date, duration)",
+                "parameter '{}' has type '{other}', which calc does not resolve yet (built: date, duration, variant)",
                 dto.id
             )))
         }
@@ -2668,6 +2694,12 @@ fn param_value_from_json(id: &str, kind: ParamKind, v: &serde_json::Value) -> Re
             let d: DurationDto = serde_json::from_value(v.clone())
                 .map_err(|_| PresetError::BadFile(format!("parameter '{id}' default must be {{ amount, unit }}")))?;
             duration_value(id, d.amount, &d.unit)
+        }
+        ParamKind::Variant => {
+            let s = v
+                .as_str()
+                .ok_or_else(|| PresetError::BadFile(format!("parameter '{id}' default must be a variant label")))?;
+            Ok(ParamValue::Variant(variant_days(id, s)?))
         }
     }
 }
@@ -2754,6 +2786,20 @@ fn parse_param_value(id: &str, kind: ParamKind, raw: &str) -> Result<ParamValue,
                 .map_err(|_| PresetError::BadFile(format!("parameter '{id}': bad duration '{raw}' (want e.g. 30days)")))?;
             duration_value(id, amount, unit_str)
         }
+        ParamKind::Variant => Ok(ParamValue::Variant(variant_days(id, raw)?)),
+    }
+}
+
+/// Map a boundary-variant label to its signed day offset (docs/05 3.6): the day before, on, or after
+/// the boundary. The three labels are the contract - an unknown one is a usage error, never a guess.
+fn variant_days(id: &str, label: &str) -> Result<i64, PresetError> {
+    match label {
+        "day_before" => Ok(-1),
+        "on_day" => Ok(0),
+        "day_after" => Ok(1),
+        other => Err(PresetError::BadFile(format!(
+            "parameter '{id}': unknown variant '{other}' (day_before, on_day, day_after)"
+        ))),
     }
 }
 
@@ -3806,6 +3852,7 @@ mod tests {
             "payment-due-business-days",
             "clock-skew-plus-90s",
             "feb-29",
+            "age-of-majority",
         ];
         for id in ids {
             let text = read_data(&format!("presets/{id}.json"));
@@ -3837,6 +3884,14 @@ mod tests {
         // 29 February is 2028 (2026 and 2027 are common years). Proves the leap-day nearest target
         // resolves without a --calendar, unlike the business-day targets.
         assert_eq!(eval_preset("feb-29", &no_cal).to_iso(), "2028-02-29T00:00:00");
+
+        // age-of-majority is parametric and calculator-only: a birth date + the default day_before
+        // variant is the day before the 18th birthday. 2008-03-15 + 18y = 2026-03-15, day_before ->
+        // 2026-03-14. Exercises the whole variant path (parse + resolve + sign-less shift).
+        let aom = parse_preset(&read_data("presets/age-of-majority.json")).unwrap();
+        let aom_vals = resolve_parameters(&aom.parameters, &param_map(&[("birth_date", "2008-03-15")]), None).unwrap();
+        let aom_expr = resolve_moment(aom.moment, &aom_vals).unwrap();
+        assert_eq!(chrono_core::calc::eval(&aom_expr, &no_cal).unwrap().result().to_iso(), "2026-03-14T00:00:00");
 
         // payment-due-business-days is calendar-aware: +90 business days from today lands on a different
         // day per market, which is the whole point of a calendar-aware preset. Anchor at 2026-06-01 so the
@@ -4592,19 +4647,48 @@ mod tests {
         assert_eq!(e.exit_code(), 1);
     }
 
-    /// A parameter type not built yet (variant/int) is the honest "not built" (exit 5) at parse time,
-    /// never guessed.
+    /// A parameter type not built yet (int) is the honest "not built" (exit 5) at parse time, never
+    /// guessed. (variant is now built - slice for age-of-majority.)
     #[test]
     fn preset_unbuilt_param_type_is_not_built() {
         let json = r#"{
             "schema": "chronomock.preset/1", "id": "age",
             "name": { "en": "n" }, "explains": { "en": "e" }, "applies_to": "calculator",
-            "parameters": [ { "id": "variant", "type": "variant" } ],
+            "parameters": [ { "id": "count", "type": "int" } ],
             "moment": { "base": "today", "steps": [] }
         }"#;
         let e = parse_preset(json).unwrap_err();
         assert!(matches!(e, PresetError::NotBuilt(_)));
         assert_eq!(e.exit_code(), 5);
+    }
+
+    /// A variant parameter resolves its label to a signed day offset that fills a sign-less shift step
+    /// (docs/05 3.6): day_before -1, on_day 0, day_after +1. The shift carries the variant's direction.
+    #[test]
+    fn variant_parameter_fills_a_signless_shift() {
+        use chrono_core::calc::{eval, CivilDateTime, EvalContext};
+        let json = r#"{
+            "schema": "chronomock.preset/1", "id": "b",
+            "name": { "en": "n" }, "explains": { "en": "e" }, "applies_to": "calculator",
+            "parameters": [ { "id": "boundary", "type": "variant", "default": "day_before" } ],
+            "moment": { "base": { "absolute": "2026-03-15T00:00:00" },
+                        "steps": [ { "shift": { "parameter": "boundary" } } ] }
+        }"#;
+        let ctx = EvalContext {
+            now: CivilDateTime { year: 2000, month: 1, day: 1, hour: 0, minute: 0, second: 0 },
+            zone_bias_min: 0,
+            calendar: None,
+        };
+        // Re-parse per case because resolve_moment consumes the raw moment (MomentDto is not Clone).
+        let resolve = |cli: &[(&str, &str)]| {
+            let p = parse_preset(json).unwrap();
+            let vals = resolve_parameters(&p.parameters, &param_map(cli), None).unwrap();
+            let expr = resolve_moment(p.moment, &vals).unwrap();
+            eval(&expr, &ctx).unwrap().result().to_iso()
+        };
+        assert_eq!(resolve(&[]), "2026-03-14T00:00:00"); // default day_before -> the day before
+        assert_eq!(resolve(&[("boundary", "day_after")]), "2026-03-16T00:00:00");
+        assert_eq!(resolve(&[("boundary", "on_day")]), "2026-03-15T00:00:00"); // on_day -> unchanged
     }
 
     /// docs/04 4.1: a preset describes TIME, never a TARGET. There is no path field in the model, so

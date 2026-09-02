@@ -44,6 +44,22 @@ public class ParamInputTests
     }
 
     [Fact]
+    public void A_variant_input_seeds_its_default_label_and_yields_a_variant_value()
+    {
+        var input = new ParamInputViewModel(
+            new PresetParameter("boundary", "variant", null, null, null, "day_before"), Units());
+
+        Assert.True(input.IsVariant);
+        Assert.Equal("day_before", input.Variant.Token); // seeded from the file default
+
+        var value = Assert.IsType<VariantValue>(input.ToValue());
+        Assert.Equal("day_before", value.Label);
+
+        input.Variant = input.VariantOptions.First(v => v.Token == "day_after");
+        Assert.Equal("day_after", Assert.IsType<VariantValue>(input.ToValue()!).Label);
+    }
+
+    [Fact]
     public void The_label_humanizes_the_parameter_id()
         => Assert.Equal(
             "install date",

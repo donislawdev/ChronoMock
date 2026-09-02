@@ -265,6 +265,9 @@
   <sys:String x:Key="calc.nearest.nbd">Następny dzień roboczy</sys:String>
   <sys:String x:Key="calc.nearest.pbd">Poprzedni dzień roboczy</sys:String>
   <sys:String x:Key="calc.nearest.leap">Następny 29 lutego</sys:String>
+  <sys:String x:Key="calc.variant.day_before">Dzień przed</sys:String>
+  <sys:String x:Key="calc.variant.on_day">W dniu</sys:String>
+  <sys:String x:Key="calc.variant.day_after">Dzień po</sys:String>
 
   <sys:String x:Key="calc.sig.start_of_month">Pierwszy dzień miesiąca</sys:String>
   <sys:String x:Key="calc.sig.end_of_month">Ostatni dzień miesiąca (koniec miesiąca)</sys:String>

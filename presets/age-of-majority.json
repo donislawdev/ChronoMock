@@ -1,0 +1,23 @@
+{
+  "schema": "chronomock.preset/1",
+  "stability": "unstable",
+  "id": "age-of-majority",
+  "name": { "en": "Age-of-majority boundary", "pl": "Granica pełnoletności" },
+  "explains": {
+    "en": "Does the app apply the age-of-majority boundary correctly - admitting someone exactly on their 18th birthday, and refusing them the day before?",
+    "pl": "Czy aplikacja poprawnie stosuje granicę pełnoletności - dopuszcza kogoś dokładnie w 18. urodziny i odmawia dzień wcześniej?"
+  },
+  "applies_to": "calculator",
+  "market": null,
+  "parameters": [
+    { "id": "birth_date", "type": "date" },
+    { "id": "boundary", "type": "variant", "default": "day_before" }
+  ],
+  "moment": {
+    "base": { "parameter": "birth_date" },
+    "steps": [
+      { "shift": { "sign": "+", "amount": 18, "unit": "years" } },
+      { "shift": { "parameter": "boundary" } }
+    ]
+  }
+}

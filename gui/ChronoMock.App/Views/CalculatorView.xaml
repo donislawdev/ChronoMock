@@ -264,6 +264,17 @@
                               </ComboBox.ItemTemplate>
                             </ComboBox>
                           </StackPanel>
+                          <ComboBox ItemsSource="{Binding VariantOptions}" SelectedItem="{Binding Variant}"
+                                    ItemContainerStyle="{StaticResource LabelKeyComboItem}"
+                                    VerticalAlignment="Center" MinWidth="150"
+                                    AutomationProperties.Name="{Binding Label}"
+                                    Visibility="{Binding IsVariant, Converter={StaticResource BoolToVis}}">
+                            <ComboBox.ItemTemplate>
+                              <DataTemplate>
+                                <TextBlock Text="{Binding LabelKey, Converter={StaticResource KeyToText}}" />
+                              </DataTemplate>
+                            </ComboBox.ItemTemplate>
+                          </ComboBox>
                         </StackPanel>
                       </DataTemplate>
                     </ItemsControl.ItemTemplate>

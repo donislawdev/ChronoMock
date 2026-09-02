@@ -169,11 +169,22 @@ public sealed class PresetItemViewModel(PresetInfo info, string culture)
 /// parameter is a text box (a bare date is midnight); a <c>duration</c> is an amount plus a unit, seeded
 /// from the file default. The label is the parameter id as a technical name (like the format labels) - the
 /// preset schema carries no localized label. Editing raises PropertyChanged so the parent re-resolves.</summary>
+public sealed record VariantOption(string Token, string LabelKey);
+
 public sealed class ParamInputViewModel : ObservableObject
 {
+    /// <summary>The boundary-variant options (docs/05 3.6), shared by every variant parameter input.</summary>
+    public static IReadOnlyList<VariantOption> VariantChoices { get; } =
+    [
+        new VariantOption("day_before", "calc.variant.day_before"),
+        new VariantOption("on_day", "calc.variant.on_day"),
+        new VariantOption("day_after", "calc.variant.day_after"),
+    ];
+
     private string _dateText = string.Empty;
     private string _amount;
     private UnitOption _unit;
+    private VariantOption _variant;
 
     public ParamInputViewModel(PresetParameter param, IReadOnlyList<UnitOption> units)
     {
@@ -181,9 +192,11 @@ public sealed class ParamInputViewModel : ObservableObject
         Units = units;
         IsDate = param.Type == "date";
         IsDuration = param.Type == "duration";
+        IsVariant = param.Type == "variant";
         Label = param.Id.Replace('_', ' ');
         _amount = param.DefaultAmount?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "1";
         _unit = FindUnit(param.DefaultUnit, units);
+        _variant = VariantChoices.FirstOrDefault(v => v.Token == param.DefaultVariant) ?? VariantChoices[0];
     }
 
     public PresetParameter Param { get; }
@@ -191,19 +204,30 @@ public sealed class ParamInputViewModel : ObservableObject
     public string Label { get; }
     public bool IsDate { get; }
     public bool IsDuration { get; }
+    public bool IsVariant { get; }
+    public IReadOnlyList<VariantOption> VariantOptions => VariantChoices;
 
     public string DateText { get => _dateText; set => Set(ref _dateText, value); }
     public string Amount { get => _amount; set => Set(ref _amount, value); }
     public UnitOption Unit { get => _unit; set => Set(ref _unit, value); }
+    public VariantOption Variant { get => _variant; set => Set(ref _variant, value); }
 
     /// <summary>The parameter id, used to build the value map.</summary>
     public string Id => Param.Id;
 
-    /// <summary>The resolved value, or null if a date has not been entered yet (so the preset stays unfilled).</summary>
+    /// <summary>The resolved value, or null if a date has not been entered yet (so the preset stays unfilled).
+    /// A variant always has a value (it defaults to a selected option), as does a duration.</summary>
     public ParamValue? ToValue()
-        => IsDate
+    {
+        if (IsVariant)
+        {
+            return new VariantValue(_variant.Token);
+        }
+
+        return IsDate
             ? string.IsNullOrWhiteSpace(_dateText) ? null : new DateValue(_dateText.Trim())
             : new DurationValue(_amount.Trim(), _unit.Token);
+    }
 
     private static UnitOption FindUnit(string? unit, IReadOnlyList<UnitOption> units)
     {
