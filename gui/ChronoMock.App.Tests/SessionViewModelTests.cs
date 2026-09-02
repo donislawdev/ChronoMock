@@ -45,6 +45,41 @@ public class SessionViewModelTests
         return key => map.TryGetValue(key, out var value) ? value : key;
     }
 
+    /// <summary>
+    /// S-12. The README promises that a "does not work" verdict stops the target instead of handing back
+    /// a session whose evidence would be about the real clock. The core now refuses and says so on the
+    /// wire; the panel has to show that as a terminal state, not as a running session - refuse_start was
+    /// declared in the event type but never read by anything.
+    /// </summary>
+    [Fact]
+    public void A_refused_start_is_terminal_and_unreliable_not_a_running_session()
+    {
+        var vm = new SessionViewModel(new InMemorySessionHistoryStore());
+        vm.Apply(State("2038-01-19T03:14:07", "2026-08-24T20:30:00", bias: 0, multiplier: 1));
+        Assert.True(vm.IsRunning);
+
+        vm.Apply(Verdict("fails", "coverage.time_channels_uncovered", refuseStart: true));
+
+        Assert.False(vm.IsRunning);
+        Assert.Equal(SessionStatusKind.Refused, vm.StatusKind);
+        Assert.Equal("status.refused", vm.StatusKey);
+        // The summary must still lead with the unreliable-evidence banner (chrono-mock 8.8).
+        Assert.StartsWith("report.unreliable_banner", vm.BuildSummary(k => k), StringComparison.Ordinal);
+    }
+
+    /// <summary>The same verdict WITHOUT the refusal (the user ticked "run even if it does not work")
+    /// keeps the session running - the override has to actually override.</summary>
+    [Fact]
+    public void A_failing_verdict_without_refusal_keeps_the_session_running()
+    {
+        var vm = new SessionViewModel(new InMemorySessionHistoryStore());
+        vm.Apply(State("2038-01-19T03:14:07", "2026-08-24T20:30:00", bias: 0, multiplier: 1));
+        vm.Apply(Verdict("fails", "coverage.time_channels_uncovered"));
+
+        Assert.True(vm.IsRunning);
+        Assert.NotEqual(SessionStatusKind.Refused, vm.StatusKind);
+    }
+
     [Fact]
     public void State_event_fills_both_clocks_with_explicit_zones_and_rate()
     {
@@ -1023,11 +1058,12 @@ public class SessionViewModelTests
             EndedAtUtc = "2026-08-25T09:00:00Z",
         };
 
-    private static VerdictEvent Verdict(string verdict, string reasonKey) => new()
+    private static VerdictEvent Verdict(string verdict, string reasonKey, bool refuseStart = false) => new()
     {
         V = ProtocolJson.ProtocolVersion,
         Verdict = verdict,
         ReasonKey = reasonKey,
+        RefuseStart = refuseStart,
     };
 
     private static CoverageEvent Coverage(int pid, string channel, long calls) => new()

@@ -1,0 +1,326 @@
+// Polskie teksty interfejsu. Klucze sa stabilne i angielskie, wartosci to tekst widoczny.
+// Nowy jezyk to kopia tego pliku nazwana Strings.<kultura>.json z przetlumaczonymi
+// wartosciami - bez rekompilacji (regula nietykalna 15). JSON z komentarzami //: ten plik
+// jest DANYMI i tak jest czytany. Wczesniej byl XAML-em parsowanym przez XamlReader, ktory
+// tworzy obiekty, wiec wykonywal sie jak kod - luzny plik obok exe nie moze tego robic.
+{
+
+  "app.title": "Chrono Mock",
+
+  // Clock roles.
+  "clock.fake": "Zegar fałszywy",
+  "clock.real": "Zegar rzeczywisty",
+
+  // Wybór celu (chrono-mock 7.1). Teksty dialogu też jako klucze (reguła 15).
+  "target.label": "Cel:",
+  "target.dialog_title": "Wybierz cel",
+
+  // Tylko .exe: natywna injekcja wymaga PE, a CDP aplikacji Electron/Chromium .exe. Zawężenie filtra chroni przed wyborem .lnk/.bat/.txt, który mógłby tylko zawieść (RELEASE-007).
+  "target.dialog_filter": "Pliki wykonywalne (*.exe)|*.exe",
+
+  // Wejścia czasu (chrono-mock 7.1). Moment to czas lokalny w strefie sesji (reguła 2).
+  "moment.label": "Moment:",
+  "moment.date_placeholder": "YYYY-MM-DD",
+  "moment.time_placeholder": "HH:MM",
+  "moment.date_empty": "Podaj datę.",
+  "moment.date_format": "Użyj formatu YYYY-MM-DD.",
+  "moment.date_invalid": "Taka data nie istnieje.",
+  "moment.time_format": "Użyj HH:MM (format 24h).",
+  "action.pick_date": "Wybierz datę",
+  "action.today": "Dziś",
+  "action.now": "Teraz",
+  "zone.label": "Strefa:",
+
+  // Nazwy rynków pokazywane obok każdego offsetu w dropdownie strefy, żeby nie był samą liczbą.
+  "zone.utc": "Uniwersalny czas koordynowany",
+  "zone.pl_standard": "Polska (czas zimowy)",
+  "zone.pl_summer": "Polska (czas letni)",
+  "zone.us_eastern": "USA wschodni",
+  "zone.us_central": "USA centralny",
+  "zone.us_mountain": "USA górski",
+  "zone.us_pacific": "USA pacyficzny",
+  "mode.label": "Tryb:",
+  "mode.flow": "Płynący",
+  "mode.frozen": "Zamrożony",
+  "mode.x1": "×1",
+  "mode.x10": "×10",
+  "mode.x60": "×60",
+  "mode.x1440": "×1440",
+  "mode.scale_duration": "Skaluj też czas trwania",
+  "mode.scale_qpc": "Skaluj też QPC",
+  "mode.force": "Uruchom nawet gdy nie działa",
+
+  // Actions.
+  "action.start": "Start",
+  "action.choose_target": "Wybierz…",
+  "action.freeze": "Zamroź",
+  "action.jump_to": "Skocz do",
+  "action.set_speed": "Ustaw",
+  "speed.invalid": "Wpisz liczbę całkowitą, np. 500.",
+
+  // Skoki w locie (jednostki w Tag przycisku).
+  "jump.minus_day": "-1 dzień",
+  "jump.minus_hour": "-1 godz.",
+  "jump.plus_hour": "+1 godz.",
+  "jump.plus_day": "+1 dzień",
+
+  // Sterowanie sesją (M-10). Znaczenie niesie etykieta, nigdy sam kolor.
+  "control.stop": "Zatrzymaj sesję",
+
+  // Session status.
+  "status.idle": "Nie uruchomiono",
+  "status.connecting": "Uruchamianie rdzenia",
+  "status.running": "Działa",
+  "status.ended": "Sesja zakończona",
+  "status.did_not_take_effect": "Nie zadziałało - cel zniknął",
+  "status.core_stopped": "Rdzeń zatrzymany - czas celu zamrożony",
+  "status.stopping": "Zatrzymywanie - cel wraca do czasu realnego",
+  "status.refused": "Odmowa - podmiana nie zadziałała, więc cel został zatrzymany",
+  "status.stopped": "Sesja zatrzymana - cel wrócił do realnego czasu",
+  "status.core_unresponsive": "Rdzeń nie odpowiada - zatrzymany, cel wrócił do realnego czasu",
+  "status.core_missing": "Nie udało się uruchomić rdzenia Chrono Mock - instalacja może być niekompletna",
+  "status.target_unsupported": "To nie jest wspierany plik wykonywalny - wybierz aplikację .exe",
+  "status.target_unreadable": "Nie udało się odczytać celu - mógł zostać przeniesiony albo jest niedostępny",
+  "status.no_ready": "Brak uzgodnienia z rdzeniem",
+  "status.error": "Błąd sesji",
+
+  // Powody awarii rdzenia (RELEASE-001). Gdy błąd startu/fatalny kończy sesję, jego konkretny powód staje się nagłówkiem statusu, więc nieudany start nigdy nie czyta się jak „Sesja zakończona". Sformułowane jako zdania o awarii, bo SĄ linią statusu. Emitowane przez rdzeń (crates/cli, crates/mech).
+  "core.hook_dll_missing": "Brak haka czasu - aplikacja nie została uruchomiona z fałszywym zegarem (zainstaluj Chrono Mock ponownie).",
+  "time.bad_mode": "Nieobsługiwany tryb czasu - sesja nie wystartowała.",
+  "moment.invalid": "Nieprawidłowy moment (luka czasu letniego, 29 lutego w roku nieprzestępnym albo poza zakresem) - sesja nie wystartowała.",
+  "session.control_failed": "Nie udało się utworzyć kanału sterowania sesji - podmiana nie zadziałała.",
+  "target.launch_failed": "Nie udało się uruchomić celu - podmiana nie zadziałała.",
+  "target.inject_failed": "Nie udało się wstrzyknąć haka czasu - podmiana nie zadziałała (mógł ją zablokować antywirus albo utwardzony cel).",
+  "target.attach_failed": "Nie udało się podłączyć do aplikacji Chromium/Electron - podmiana nie zadziałała.",
+  "session.already_active": "Inna sesja Chrono Mock już działa - tylko jedna naraz.",
+  "protocol.no_command": "Rdzeń nie otrzymał komendy - sesja nie wystartowała.",
+  "protocol.bad_command": "Rdzeń otrzymał błędną komendę - sesja nie wystartowała.",
+  "protocol.expected_start": "Rdzeń oczekiwał komendy start - sesja nie wystartowała.",
+
+  // Odmowy bramki uzgodnienia (zgłaszane, zanim cel zostanie uruchomiony).
+  "handshake.protocol_mismatch": "Niezgodna wersja protokołu - nie uruchomiono",
+  "handshake.bitness_mismatch": "Niezgodna bitowość rdzenia - nie uruchomiono",
+
+  // Werdykt weryfikatora (chrono-mock 7.1). Etykieta w parze z glifem i kolorem.
+  "verdict.works": "Działa",
+  "verdict.partial": "Częściowo",
+  "verdict.fails": "Nie działa",
+  "verdict.undetermined": "Nieokreślony",
+  "verdict.unknown": "Nieznany",
+
+  // Jedno zdanie „co to znaczy dla testu" dla werdyktu innego niż działa.
+  "verdict.partial.meaning": "Część kanałów czasu nie została objęta - ich odczyty są prawdziwe, więc test może być niewiarygodny.",
+  "verdict.fails.meaning": "Podmiana nie objęła kluczowych kanałów - sesja odrzucona jako niewiarygodna.",
+  "verdict.undetermined.meaning": "Nie dało się ustalić pokrycia - traktowane jako niepotwierdzone, nigdy jako działające.",
+
+  // Klucze powodów werdyktu emitowane przez rdzeń (VerdictEvent / SessionVerdict reason_key), pokazywane przy werdykcie innym niż działa. Warianty rodziny (session.family_*) lustrzą per-procesowe i są emitowane dla agregatu rodziny na końcu. Brzmienie lustrzy raport CLI (describe_reason). RELEASE-002.
+  "coverage.time_channels_covered": "Każdy proces, który odczytał czas, widział zegar sesji.",
+  "coverage.time_channels_partial": "Część kanałów czasu objęto, część odpytano ale nie objęto.",
+  "coverage.time_channels_uncovered": "Czas był odpytywany, ale nie objęto żadnego kanału.",
+  "coverage.undetermined": "Żaden proces nie odczytał objętego kanału czasu.",
+  "session.family_covered": "Każdy proces, który odczytał czas, widział zegar sesji.",
+  "session.family_partial": "Część kanałów czasu objęto, część odpytano ale nie objęto.",
+  "session.family_uncovered": "Czas był odpytywany, ale nie objęto żadnego kanału.",
+  "session.family_undetermined": "Żaden proces nie odczytał objętego kanału czasu.",
+
+  // Pokrycie / podgląd audytu (chrono-mock 7.2). Nazwy kanałów to surowe identyfikatory API, nietłumaczone.
+  "coverage.covered": "Objęte kanały",
+  "coverage.observed": "Obserwowane (podpięte, pozostawione realne)",
+  "coverage.uncovered": "Nieobjęte kanały",
+  "coverage.warnings": "Ostrzeżenia",
+  "coverage.family_note": "Sesja rodziny - pokazano pokrycie procesu rodzica.",
+  "coverage.contexts_note": "Sesja Chromium - pokazano każdy kontekst JS (stronę i workery), nigdy sumowane.",
+
+  // Klucze ostrzeżeń pokrycia emitowane przez rdzeń (CoverageEvent warning_keys) oraz powód zniknięcia (VanishedEvent reason_key, pokazywany w report.vanish_detail). Brzmienie lustrzy raport CLI (describe_warning). Ostrzeżenia Chromium (CDP) są w sekcji niżej. RELEASE-002.
+  "source.network_at_start": "Cel otworzył połączenie sieciowe - może czytać czas z serwera, którego żaden lokalny hak nie obejmie.",
+  "wait.object_waits_not_scaled": "Oczekiwania na obiekty są podpięte, ale pozostawione realne - limit czasu I/O lub sprzętu nie jest skracany.",
+  "timer.multimedia_not_scaled": "Timer multimedialny (timeSetEvent) jest obserwowany, ale nie skalowany.",
+  "inheritance.ntcreateuserprocess_child_maybe_uncovered": "Dziecko utworzone bezpośrednio przez NtCreateUserProcess może nie być objęte.",
+  "inheritance.child_vanished_before_audit": "Proces potomny zakończył się, zanim dało się odczytać jego dowód - nie wiadomo, czy widział zegar sesji.",
+  "target.single_instance_suspected": "zakończył się zaraz po injekcji, zanim podmianę dało się potwierdzić",
+
+  // Runtime wykryty statycznie z plików celu (B1): jego zegary monotoniczne/elapsed stoją na QueryPerformanceCounter, który zostaje realny (ADR-2), więc licznik na nich oparty nie skaluje, choć zegar ścienny tak. Brzmienie lustrzące CLI describe_warning.
+  "runtime.python_monotonic_qpc": "Ta aplikacja Python mierzy czas przez perf_counter i monotonic - oba używają QueryPerformanceCounter w Pythonie 3.13+, który zostaje realny, więc licznik na nich oparty nie skaluje (time.time i zegar ścienny tak).",
+  "runtime.python_perfcounter_qpc": "perf_counter tej aplikacji Python używa QueryPerformanceCounter, który zostaje realny, więc licznik na perf_counter nie skaluje - w Pythonie 3.13+ monotonic też używa QPC (time.time i zegar ścienny skalują).",
+  "runtime.dotnet_stopwatch_qpc": "Stopwatch tej aplikacji .NET używa QueryPerformanceCounter, który zostaje realny, więc licznik na Stopwatch nie skaluje (DateTime i Environment.TickCount tak).",
+  "runtime.java_nanotime_qpc": "System.nanoTime tej aplikacji Java używa QueryPerformanceCounter, który zostaje realny, więc licznik na nanoTime nie skaluje (System.currentTimeMillis tak).",
+
+  // Pokazywane, gdy skalowanie QPC jest WŁĄCZONE (opcja scale-qpc, odwrócenie ADR-2): zegar monotoniczny/elapsed teraz skaluje, ale cel liczący render z QPC może wyglądać na zniekształcony.
+  "qpc.scaled_render_may_distort": "QueryPerformanceCounter jest skalowany, więc zegar monotoniczny/elapsed oparty na QPC przyspiesza - ale cel liczący render lub animację z QPC może wyglądać na zniekształcony.",
+
+  // Tryb Chromium/Electron (CDP), ADR-8/ADR-9: powody werdyktu i ostrzeżenia z rdzenia CDP. Jednostką pokrycia jest kontekst JS, nie proces systemowy.
+  "chromium.contexts_covered": "Każdy kontekst JS działał na zegarze sesji.",
+  "chromium.contexts_partial": "Część kontekstów JS działała na zegarze sesji, części nie udało się objąć.",
+  "chromium.no_time_calls": "Shim został wstrzyknięty, ale aplikacja nie wywołała żadnego API czasu JS.",
+  "chromium.no_contexts": "Nie udało się objąć żadnego kontekstu JS.",
+  "chromium.launched_with_debug_port": "Aplikacja Electron/Chromium: uruchomiona z portem zdalnego debugowania i czystym izolowanym profilem, nie Twoim prawdziwym.",
+  "chromium.app_closed_before_audit": "Aplikacja zamknęła się, zanim audyt zdążył odczytać końcowe liczniki wywołań - pokrycie może być niepełne.",
+  "chromium.rate_change_affects_running_timers": "Prędkość zmieniła się w locie: nowe timery i zegar odzwierciedlają ją od razu, ale już działający setInterval zachowuje stare tempo.",
+
+  // Pozostałości sprzątania, które rdzeń zgłasza w `ended.residue_keys`, gdy zamknięcie nie zdążyło się dokończyć (reguły 4, 6). Dziś tylko sesja CDP je podnosi (nie udało się usunąć tymczasowego profilu przeglądarki); sesja natywna zawsze kończy się czysto. Renderowane dosłownie w panelu i podsumowaniu.
+  "cleanup.chromium_profile_left": "Nie udało się usunąć tymczasowego profilu Chromium - usuń go ręcznie, jeśli został w folderze tymczasowym.",
+
+  // Kopiowanie podsumowania sesji (chrono-mock 7.2, 8.8). Raport do wklejenia w zgłoszenie; sesja inna niż „działa" prowadzi banerem nierzetelności. Klucze z szablonem niosą pola {0}.
+  "action.copy_summary": "Kopiuj podsumowanie",
+  "action.copy_diagnostics": "Kopiuj diagnostykę",
+  "copy.done": "Skopiowano do schowka",
+  "copy.failed": "Nie można skopiować - schowek jest zajęty",
+
+  // Gdzie zapisano log diagnostyczny (RELEASE-012); ścieżka następuje po tym prefiksie.
+  "diagnostics.saved": "Diagnostykę zapisano do",
+  "report.unreliable_banner": "!! DOWÓD NIERZETELNY - podmiana czasu nie zadziałała w pełni. Nie cytuj tego jako dowodu zachowania.",
+  "report.title": "Chrono Mock - raport sesji",
+  "report.target": "cel",
+  "report.verdict": "werdykt",
+  "report.no_verdict": "brak werdyktu",
+  "report.did_not_take_effect": "NIE ZADZIAŁAŁO - cel zniknął zaraz po wstrzyknięciu",
+  "report.vanish_detail": "podejrzenie aplikacji jednoinstancyjnej: {0} - działał {1} ms",
+  "report.processes": "procesy: {0}",
+  "report.session": "sesja",
+  "report.session_reached": "fałszywy zegar osiągnął {0}",
+  "report.elapsed": "realnie {0}s, fałszywie {1}s",
+
+  // Własny kod wyjścia celu (informacyjny; sesje natywne, gdzie aplikacja zamknęła się sama) oraz pozostałości, których rdzeń nie usunął - jedno i drugie z `ended`, żeby sesja niczego nie ukryła.
+  "report.target_exit": "cel zakończył się kodem",
+  "report.cleanup": "nie sprzątnięto do końca",
+  "report.requested": "żądano: {0} (strefa {1}, tryb {2})",
+
+  // Historia sesji (chrono-mock 7.2, 8.8, 11.1 pkt 13). Tylko lokalnie; klik wpisu wypełnia formularz setup i nigdy nie uruchamia sesji (reguła nietykalna 7, docs/04 §6).
+  "history.header": "Historia",
+  "history.save_failed": "Nie udało się zapisać do historii:",
+  "history.delete": "Usuń tę sesję",
+  "history.clear": "Wyczyść",
+  "history.clear_title": "Wyczyść historię",
+  "history.clear_confirm": "Wyczyścić wszystkie zapisane sesje? Tej operacji nie można cofnąć.",
+
+  // Przełącznik modułów: dwie połowy produktu (chrono-mock 6.1/7).
+  "nav.substitution": "Podmiana",
+  "nav.calculator": "Kalkulator",
+
+  // Kalkulator dat (chrono-mock 7.3). Plasterek G1 to szkielet układu; więcej kluczy z podpięciem.
+  "calc.presets_header": "Presety",
+  "calc.filter_placeholder": "Filtruj scenariusze…",
+  "calc.preset_note": "Preset to punkt startowy - nie certyfikat kompletności testu.",
+  "calc.preset_params_header": "Parametry",
+  "calc.preset_needs_params": "Uzupełnij parametry poniżej, aby policzyć ten preset.",
+  "calc.build_header": "Zbuduj moment",
+  "calc.start_point": "Punkt startowy",
+  "calc.steps_header": "Kroki",
+  "calc.add_step": "+ Dodaj krok",
+  "calc.kind_shift": "Przesuń ±",
+  "calc.kind_snap": "Przeskocz do",
+  "calc.kind_nearest": "Najbliższy",
+  "calc.kind_settime": "Ustaw godzinę",
+  "calc.kind_zone": "Zmień strefę",
+  "calc.result_header": "Wynik",
+  "calc.what_tests": "Co ta data testuje",
+  "calc.all_formats": "Wszystkie formaty - kopiuj jednym klikiem",
+  "calc.copy": "Kopiuj",
+  "calc.custom_format": "Format własny",
+  "calc.custom_format_hint": "np. yyyy-MM-dd HH:mm:ss",
+  "calc.metadata": "Metadane",
+  "calc.use_in_substitution": "Użyj w podmianie →",
+  "calc.reverse_header": "Analiza wklejonej daty",
+  "calc.analyze_ambiguous": "Niejednoznaczne - pokazane obie interpretacje",
+  "calc.reading.iso": "ISO 8601 (jednoznaczne)",
+  "calc.reading.us_month_day": "Odczyt US (MM/DD/RRRR)",
+  "calc.reading.pl_day_month": "Odczyt PL (DD/MM/RRRR)",
+
+  // Konstruktor kalkulatora (G3b): rodzaje bazy, jednostki shift, kalendarze i markery znaczenia.
+  "calc.base.today": "Dziś",
+  "calc.base.now": "Teraz",
+  "calc.base.specific": "Konkretna data",
+  "calc.field_calendar": "Kalendarz:",
+  "calc.remove_step": "Usuń krok",
+  "calc.unit.seconds": "sekundy",
+  "calc.unit.minutes": "minuty",
+  "calc.unit.hours": "godziny",
+  "calc.unit.days": "dni",
+  "calc.unit.weeks": "tygodnie",
+  "calc.unit.months": "miesiące",
+  "calc.unit.quarters": "kwartały",
+  "calc.unit.years": "lata",
+  "calc.unit.business_days": "dni robocze",
+  "calc.cal.none": "(brak)",
+  "calc.cal.us_banking": "USA bankowy",
+  "calc.cal.us_federal": "USA federalny",
+  "calc.cal.pl": "Polska",
+
+  // Cele kroku snap (G3c-1): granica okresu, do której skacze krok. Tokeny lustrzą flagę snap.
+  "calc.snap.som": "Początek miesiąca",
+  "calc.snap.eom": "Koniec miesiąca",
+  "calc.snap.soq": "Początek kwartału",
+  "calc.snap.eoq": "Koniec kwartału",
+  "calc.snap.soy": "Początek roku",
+  "calc.snap.eoy": "Koniec roku",
+
+  // Cele kroku nearest (G3c-2): dostrojenie do najbliższego dnia roboczego w danym kierunku. Wymaga kalendarza.
+  "calc.nearest.nbd": "Następny dzień roboczy",
+  "calc.nearest.pbd": "Poprzedni dzień roboczy",
+  "calc.nearest.leap": "Następny 29 lutego",
+  "calc.variant.day_before": "Dzień przed",
+  "calc.variant.on_day": "W dniu",
+  "calc.variant.day_after": "Dzień po",
+  "calc.sig.start_of_month": "Pierwszy dzień miesiąca",
+  "calc.sig.end_of_month": "Ostatni dzień miesiąca (koniec miesiąca)",
+  "calc.sig.start_of_quarter": "Pierwszy dzień kwartału",
+  "calc.sig.end_of_quarter": "Ostatni dzień kwartału (koniec kwartału)",
+  "calc.sig.start_of_year": "Pierwszy dzień roku",
+  "calc.sig.end_of_year": "Ostatni dzień roku (przełom roku)",
+  "calc.sig.leap_day": "29 lutego - dzień przestępny",
+  "calc.sig.last_day_of_february_common_year": "28 lutego - ostatni dzień lutego (rok zwykły, bez 29 lutego)",
+  "calc.sig.unix_epoch": "Epoka Unix (1970-01-01T00:00:00Z, epoch 0)",
+  "calc.sig.year_2038_boundary": "Na granicy 32-bitowego time_t 2038-01-19 lub za nią (Y2038)",
+  "calc.sig.weekend": "Weekend - nie jest dniem roboczym",
+  "calc.sig.public_holiday": "Święto",
+  "calc.sig.observed_holiday": "Obchodzone święto - dzień wolny przesunięty z weekendowego święta",
+
+  // Render wyniku kalkulatora (RELEASE-006): dzień tygodnia (mapowany z angielskiej nazwy z silnika), etykiety formatów, linia metadanych i marker poza-zakresem - klucze, nie literały C# (reguła 15).
+  "calc.weekday.monday": "Poniedziałek",
+  "calc.weekday.tuesday": "Wtorek",
+  "calc.weekday.wednesday": "Środa",
+  "calc.weekday.thursday": "Czwartek",
+  "calc.weekday.friday": "Piątek",
+  "calc.weekday.saturday": "Sobota",
+  "calc.weekday.sunday": "Niedziela",
+  "calc.fmt.iso_date": "Data ISO",
+  "calc.fmt.iso_datetime": "Data-czas ISO",
+  "calc.fmt.us": "US",
+  "calc.fmt.pl": "PL",
+  "calc.fmt.epoch_s": "epoch (s)",
+  "calc.fmt.epoch_ms": "epoch (ms)",
+  "calc.fmt.filetime": "FILETIME",
+  "calc.fmt.rfc1123": "RFC 1123",
+  "calc.out_of_range": "(poza zakresem)",
+  "calc.md.us_week": "tydzień US",
+  "calc.md.day": "dzień",
+  "calc.md.leap_year": "rok przestępny",
+  "calc.md.common_year": "rok zwykły",
+  "calc.md.business_day": "dzień roboczy",
+  "calc.md.not_business_day": "nie dzień roboczy",
+
+  // Podpowiedzi (pomoc po najechaniu). Klucze, nie literały (reguła 15); w języku interfejsu.
+  "tip.choose_target": "Wybierz aplikację do uruchomienia z podmienionym zegarem.",
+  "tip.date_field": "Wpisz datę jako YYYY-MM-DD albo wybierz z kalendarza.",
+  "tip.time_field": "Godzina jako HH:MM (24h). Pusto oznacza północ.",
+  "tip.today": "Wstaw dzisiejszą datę (strefa sesji), o północy.",
+  "tip.now": "Wstaw bieżącą datę i godzinę (strefa sesji).",
+  "tip.zone": "Strefa czasowa sesji - stały offset bez zmiany czasu. Moment jest w niej liczony.",
+  "tip.mode": "Jak szybko idzie podmieniony zegar: płynnie, zamrożony, albo N razy szybciej.",
+  "tip.scale_duration": "Przyśpiesz też liczniki, uśpienia i odliczania w aplikacji - nie tylko zegar ścienny.",
+  "tip.scale_qpc": "Przyśpiesz też zegary na QPC (Python monotonic, .NET Stopwatch, Java nanoTime). Może zniekształcić aplikację liczącą render z QPC.",
+  "tip.force": "Domyślnie wyłączone. Gdy werdykt otwierający mówi, że podmiana nie zadziałała, cel jest zatrzymywany zamiast oddany do pracy - jego dowód dotyczyłby realnego zegara. Zaznacz, aby mimo to uruchomić; sesja jest wtedy wszędzie oznaczona jako nierzetelna.",
+  "tip.start": "Uruchom cel z podmienionym zegarem. Wymaga celu i poprawnego momentu.",
+  "tip.jump_to": "W trakcie sesji: przeskocz podmieniony zegar do momentu po lewej.",
+  "tip.freeze": "Zamroź podmieniony zegar, by przestał iść.",
+  "tip.set_speed": "Ustaw dowolną prędkość, np. 500.",
+  "tip.stop": "Zatrzymaj sesję. Aplikacja wraca do prawdziwego czasu - nie jest zamykana.",
+  "tip.copy_summary": "Skopiuj gotowe podsumowanie sesji do zgłoszenia.",
+  "tip.copy_diagnostics": "Skopiuj diagnostykę rdzenia (jego stderr), by dołączyć do zgłoszenia.",
+  "tip.base_kind": "Od czego zaczyna się obliczenie: dziś, teraz, albo konkretna data.",
+  "tip.add_step": "Dodaj krok: przesuń, przyciągnij, najbliższy dzień roboczy, ustaw czas, zmień strefę.",
+  "tip.calc_calendar": "Kalendarz świąt i dni roboczych używany przez kroki dni roboczych i najbliższy.",
+  "tip.custom_format": "Sformatuj wynik własną maską (tokeny .NET/Java).",
+  "tip.analyze": "Wklej datę, by zobaczyć jak się czyta - obie interpretacje, gdy niejednoznaczna.",
+  "tip.use_in_substitution": "Wyślij ten moment do panelu podmiany. Dostępne tylko, gdy jego strefa jest jedną z oferowanych stref sesji."
+}

@@ -79,6 +79,12 @@ pub enum Command {
         id: u64,
         target: TargetSpec,
         time: TimeSpec,
+        /// Run the session even when the opening verdict says the substitution did not take effect.
+        /// Without it the core stops the target and refuses (`refuse_start`), because a target that
+        /// looks time-shifted but is not is worse than one that never launched. Additive: an older
+        /// client that omits it gets the refusal, which is the safe direction.
+        #[serde(default)]
+        force: bool,
     },
     /// Ask for an immediate `state` snapshot (`what` is a stable key, e.g. "state").
     Query {
@@ -226,6 +232,19 @@ pub fn parse_command(line: &str) -> Result<Command, serde_json::Error> {
 mod tests {
     use super::*;
 
+    /// S-12. `force` is additive: a client built before it existed sends no such field, and must parse
+    /// into the REFUSING default - the safe direction. A missing flag must never mean "run anyway".
+    #[test]
+    fn a_start_without_force_defaults_to_refusing() {
+        let line = r#"{"type":"start","v":1,"id":1,"target":{"path":"C:/app.exe","args":[],"cwd":null},
+            "time":{"moment":{"kind":"absolute","local":"2038-01-19T03:14:07","tz_bias_min":0,"delta":null},
+            "mode":"flow","multiplier":null,"scale_duration":false,"scale_qpc":false}}"#;
+        match parse_command(line).expect("an older client's start still parses") {
+            Command::Start { force, .. } => assert!(!force, "a missing force must not run anyway"),
+            _ => panic!("expected a start command"),
+        }
+    }
+
     #[test]
     fn command_start_round_trips() {
         let cmd = Command::Start {
@@ -244,6 +263,7 @@ mod tests {
                 scale_duration: false,
                 scale_qpc: false,
             },
+            force: false,
         };
         let line = serde_json::to_string(&cmd).unwrap();
         assert!(line.contains(r#""type":"start""#));

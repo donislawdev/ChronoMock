@@ -19,7 +19,7 @@ internal sealed record SessionPlan(string CorePath, PeReader.Machine Machine, St
     /// but flag the plan so the handshake gate skips the bitness check.
     /// </para>
     /// </summary>
-    public static SessionPlan Build(string targetPath, TimeSpec time)
+    public static SessionPlan Build(string targetPath, TimeSpec time, bool force = false)
     {
         ArgumentException.ThrowIfNullOrEmpty(targetPath);
         ArgumentNullException.ThrowIfNull(time);
@@ -31,7 +31,13 @@ internal sealed record SessionPlan(string CorePath, PeReader.Machine Machine, St
         }
 
         var corePath = AppPaths.SubstitutionCores.CoreForTarget(targetPath);
-        var start = new StartCommand { Id = 1, Target = new TargetSpec { Path = targetPath }, Time = time };
+        var start = new StartCommand
+        {
+            Id = 1,
+            Target = new TargetSpec { Path = targetPath },
+            Time = time,
+            Force = force,
+        };
         return new SessionPlan(corePath, machine, start, ChromiumTarget.IsChromium(targetPath));
     }
 

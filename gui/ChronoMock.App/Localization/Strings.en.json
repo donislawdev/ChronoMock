@@ -1,0 +1,326 @@
+// English interface strings. Keys are stable and English; values are the display text.
+// A new language is a copy of this file named Strings.<culture>.json with the values
+// translated - no recompile (untouchable rule 15). JSON with // comments: this file is
+// DATA, read as data. It used to be XAML parsed by XamlReader, which instantiates types
+// and therefore ran as code - a loose file next to the exe must never be able to do that.
+{
+
+  "app.title": "Chrono Mock",
+
+  // Clock roles.
+  "clock.fake": "Fake clock",
+  "clock.real": "Real clock",
+
+  // Target selection (chrono-mock 7.1). The dialog strings are keyed too (rule 15).
+  "target.label": "Target:",
+  "target.dialog_title": "Choose target",
+
+  // Only .exe: native injection needs a PE and CDP needs an Electron/Chromium .exe. Narrowing the filter keeps a user from picking a .lnk/.bat/.txt that could only fail (RELEASE-007).
+  "target.dialog_filter": "Executables (*.exe)|*.exe",
+
+  // Time inputs (chrono-mock 7.1). The moment is the local time in the session zone (rule 2).
+  "moment.label": "At:",
+  "moment.date_placeholder": "YYYY-MM-DD",
+  "moment.time_placeholder": "HH:MM",
+  "moment.date_empty": "Enter a date.",
+  "moment.date_format": "Use the form YYYY-MM-DD.",
+  "moment.date_invalid": "That date does not exist.",
+  "moment.time_format": "Use HH:MM (24-hour).",
+  "action.pick_date": "Pick a date",
+  "action.today": "Today",
+  "action.now": "Now",
+  "zone.label": "Zone:",
+
+  // Market-name hints shown beside each offset in the zone dropdown, so it is not a bare number.
+  "zone.utc": "Coordinated Universal Time",
+  "zone.pl_standard": "Poland (standard)",
+  "zone.pl_summer": "Poland (summer)",
+  "zone.us_eastern": "US Eastern",
+  "zone.us_central": "US Central",
+  "zone.us_mountain": "US Mountain",
+  "zone.us_pacific": "US Pacific",
+  "mode.label": "Mode:",
+  "mode.flow": "Flowing",
+  "mode.frozen": "Frozen",
+  "mode.x1": "×1",
+  "mode.x10": "×10",
+  "mode.x60": "×60",
+  "mode.x1440": "×1440",
+  "mode.scale_duration": "Scale duration too",
+  "mode.scale_qpc": "Scale QPC too",
+  "mode.force": "Run even if it does not work",
+
+  // Actions.
+  "action.start": "Start",
+  "action.choose_target": "Choose…",
+  "action.freeze": "Freeze",
+  "action.jump_to": "Jump to",
+  "action.set_speed": "Set",
+  "speed.invalid": "Enter a whole number, e.g. 500.",
+
+  // In-flight jump deltas (units carried in the button Tag).
+  "jump.minus_day": "-1 day",
+  "jump.minus_hour": "-1 hour",
+  "jump.plus_hour": "+1 hour",
+  "jump.plus_day": "+1 day",
+
+  // Session control (M-10). Meaning is carried by the label, never by colour alone.
+  "control.stop": "Stop session",
+
+  // Session status. Meaning is carried by this label, never by colour alone.
+  "status.idle": "Not started",
+  "status.connecting": "Starting the core",
+  "status.running": "Running",
+  "status.ended": "Session ended",
+  "status.did_not_take_effect": "Did not take effect - the target vanished",
+  "status.core_stopped": "Core stopped - the target time is frozen",
+  "status.stopping": "Stopping - returning the target to real time",
+  "status.refused": "Refused - the substitution did not take effect, so the target was stopped",
+  "status.stopped": "Session stopped - the target is back on real time",
+  "status.core_unresponsive": "Core not responding - stopped, the target is back on real time",
+  "status.core_missing": "The Chrono Mock core could not be started - the installation may be incomplete",
+  "status.target_unsupported": "That file is not a supported executable - choose a .exe application",
+  "status.target_unreadable": "The target could not be read - it may have been moved or is not accessible",
+  "status.no_ready": "No handshake from the core",
+  "status.error": "Session error",
+
+  // Core failure reasons (RELEASE-001). When a start/fatal error ends a session, its specific reason becomes the status headline, so a failed start never reads as "Session ended". Phrased as failure statements because they ARE the status line. Emitted by the core (crates/cli, crates/mech).
+  "core.hook_dll_missing": "The time hook is missing - the app was not launched under a fake clock (reinstall Chrono Mock).",
+  "time.bad_mode": "Unsupported time mode - the session did not start.",
+  "moment.invalid": "That moment is not valid (a daylight-saving gap, Feb 29 in a common year, or out of range) - the session did not start.",
+  "session.control_failed": "Could not set up the session's control channel - the substitution did not take effect.",
+  "target.launch_failed": "Could not launch the target - the substitution did not take effect.",
+  "target.inject_failed": "Could not inject the time hook - the substitution did not take effect (an antivirus or a hardened target may have blocked it).",
+  "target.attach_failed": "Could not attach to the Chromium/Electron app - the substitution did not take effect.",
+  "session.already_active": "Another Chrono Mock session is already running - only one at a time.",
+  "protocol.no_command": "The core received no command - the session did not start.",
+  "protocol.bad_command": "The core received a malformed command - the session did not start.",
+  "protocol.expected_start": "The core expected a start command - the session did not start.",
+
+  // Handshake gate refusals (surfaced before the target is launched).
+  "handshake.protocol_mismatch": "Protocol version mismatch - not started",
+  "handshake.bitness_mismatch": "Core bitness mismatch - not started",
+
+  // Verifier verdict (chrono-mock 7.1). The label is paired with a glyph and a colour.
+  "verdict.works": "Works",
+  "verdict.partial": "Partial",
+  "verdict.fails": "Fails",
+  "verdict.undetermined": "Undetermined",
+  "verdict.unknown": "Unknown",
+
+  // One-sentence "what this means for the test" for a non-works verdict.
+  "verdict.partial.meaning": "Some time channels were not covered - their readings are real, so the test may be unreliable.",
+  "verdict.fails.meaning": "The swap did not cover the key channels - the session was refused as unreliable.",
+  "verdict.undetermined.meaning": "Coverage could not be determined - treated as unproven, never as working.",
+
+  // Verdict reason keys the core sends over the wire (VerdictEvent / SessionVerdict reason_key), shown under a non-works verdict. The family variants (session.family_*) mirror the per-process ones and are emitted for the family aggregate at end. Wording mirrors the CLI report (describe_reason). RELEASE-002.
+  "coverage.time_channels_covered": "Every process that read time saw the session clock.",
+  "coverage.time_channels_partial": "Some time channels were covered, some were queried but not covered.",
+  "coverage.time_channels_uncovered": "Time was queried but no channel was covered.",
+  "coverage.undetermined": "No process read a covered time channel.",
+  "session.family_covered": "Every process that read time saw the session clock.",
+  "session.family_partial": "Some time channels were covered, some were queried but not covered.",
+  "session.family_uncovered": "Time was queried but no channel was covered.",
+  "session.family_undetermined": "No process read a covered time channel.",
+
+  // Coverage / audit preview (chrono-mock 7.2). Channel names are raw API identifiers, not translated.
+  "coverage.covered": "Covered channels",
+  "coverage.observed": "Observed (hooked, left real)",
+  "coverage.uncovered": "Uncovered channels",
+  "coverage.warnings": "Warnings",
+  "coverage.family_note": "Family session - showing the parent process coverage.",
+  "coverage.contexts_note": "Chromium session - showing every JS context (page and workers), never summed.",
+
+  // Coverage warning keys the core raises (CoverageEvent warning_keys), and the vanish reason (VanishedEvent reason_key, shown inside report.vanish_detail). Wording mirrors the CLI report (describe_warning). The Chromium (CDP) warnings live in the section below. RELEASE-002.
+  "source.network_at_start": "The target opened a network connection - it may read time from a server, which no local hook can cover.",
+  "wait.object_waits_not_scaled": "Object waits are hooked but left real - an I/O or hardware timeout is not shortened.",
+  "timer.multimedia_not_scaled": "The multimedia timer (timeSetEvent) is observed but not scaled.",
+  "inheritance.ntcreateuserprocess_child_maybe_uncovered": "A child spawned directly via NtCreateUserProcess may not be covered.",
+  "inheritance.child_vanished_before_audit": "A child process exited before its evidence could be read - whether it saw the session clock is unknown.",
+  "target.single_instance_suspected": "exited right after injection, before the swap could be confirmed",
+
+  // Runtime detected statically from the target's files (B1): its monotonic/elapsed clocks stand on QueryPerformanceCounter, which stays real (ADR-2), so a timer built on them does not scale even though the wall clock does. Wording mirrors the CLI describe_warning.
+  "runtime.python_monotonic_qpc": "This Python app measures time with perf_counter and monotonic - both use QueryPerformanceCounter on Python 3.13+, which is left real, so a timer built on them does not scale (time.time and the wall clock do).",
+  "runtime.python_perfcounter_qpc": "This Python app's perf_counter uses QueryPerformanceCounter, which is left real, so a perf_counter timer does not scale - on Python 3.13+ monotonic uses QPC too (time.time and the wall clock do scale).",
+  "runtime.dotnet_stopwatch_qpc": "This .NET app's Stopwatch uses QueryPerformanceCounter, which is left real, so a Stopwatch timer does not scale (DateTime and Environment.TickCount do).",
+  "runtime.java_nanotime_qpc": "This Java app's System.nanoTime uses QueryPerformanceCounter, which is left real, so a nanoTime timer does not scale (System.currentTimeMillis does).",
+
+  // Shown when QPC scaling is ON (the scale-qpc option, ADR-2 reversal): the monotonic/elapsed clock now scales, but a target that times rendering off QPC may look distorted. Replaces the runtime QPC warnings.
+  "qpc.scaled_render_may_distort": "QueryPerformanceCounter is being scaled, so a QPC-timed monotonic/elapsed clock accelerates - but a target that times its rendering or animation off QPC may look distorted.",
+
+  // Chromium/Electron (CDP) mode, ADR-8/ADR-9: verdict reasons and warnings the CDP core emits. The coverage unit is a JS context, not an OS process.
+  "chromium.contexts_covered": "Every JS context ran on the session clock.",
+  "chromium.contexts_partial": "Some JS contexts ran on the session clock; some could not be reached.",
+  "chromium.no_time_calls": "The shim was installed, but the app called no JS time API.",
+  "chromium.no_contexts": "No JS context could be shimmed.",
+  "chromium.launched_with_debug_port": "Electron/Chromium app: launched with a remote-debugging port and a clean isolated profile, not your real one.",
+  "chromium.app_closed_before_audit": "The app closed before the audit could read final call counts - the coverage may be incomplete.",
+  "chromium.rate_change_affects_running_timers": "The speed changed in flight: new timers and the clock reflect it at once, but a setInterval already running keeps its old cadence.",
+
+  // Cleanup residue the core reports in `ended.residue_keys` when a teardown could not finish (rules 4, 6). Today only a CDP session raises one (the temporary browser profile could not be removed); a native session always ends clean. Rendered verbatim in the panel and the summary.
+  "cleanup.chromium_profile_left": "The temporary Chromium profile could not be removed - delete it by hand if it lingers in your temp folder.",
+
+  // Copy session summary (chrono-mock 7.2, 8.8). A paste-into-ticket report; a non-works session leads with the unreliable-evidence banner. Keys ending in a template carry {0}-style placeholders.
+  "action.copy_summary": "Copy summary",
+  "action.copy_diagnostics": "Copy diagnostics",
+  "copy.done": "Copied to clipboard",
+  "copy.failed": "Could not copy - the clipboard is busy",
+
+  // Where the diagnostics log was written (RELEASE-012); the path follows this prefix.
+  "diagnostics.saved": "Diagnostics saved to",
+  "report.unreliable_banner": "!! UNRELIABLE EVIDENCE - the time substitution did not fully take effect. Do not cite this as proof of behavior.",
+  "report.title": "Chrono Mock - session report",
+  "report.target": "target",
+  "report.verdict": "verdict",
+  "report.no_verdict": "no verdict emitted",
+  "report.did_not_take_effect": "DID NOT TAKE EFFECT - the target vanished right after injection",
+  "report.vanish_detail": "suspected single-instance app: {0} - lived {1} ms",
+  "report.processes": "processes: {0}",
+  "report.session": "session",
+  "report.session_reached": "fake clock reached {0}",
+  "report.elapsed": "real {0}s, fake {1}s",
+
+  // The target's own exit code (informational; native sessions where the app exited on its own) and any cleanup residue the core could not remove - both surfaced from `ended` so a session never hides them.
+  "report.target_exit": "target exited with code",
+  "report.cleanup": "not fully cleaned up",
+  "report.requested": "requested: {0} (zone {1}, mode {2})",
+
+  // Session history (chrono-mock 7.2, 8.8, 11.1 pt 13). Local-only; clicking an entry fills the setup form and never starts a session (untouchable rule 7, docs/04 section 6).
+  "history.header": "History",
+  "history.save_failed": "Could not save to history:",
+  "history.delete": "Delete this session",
+  "history.clear": "Clear",
+  "history.clear_title": "Clear history",
+  "history.clear_confirm": "Clear all recorded sessions? This cannot be undone.",
+
+  // Module switch: the two halves of the product (chrono-mock 6.1/7).
+  "nav.substitution": "Substitution",
+  "nav.calculator": "Calculator",
+
+  // Date calculator (chrono-mock 7.3). Slice G1 is the layout shell; more keys arrive with the wiring.
+  "calc.presets_header": "Presets",
+  "calc.filter_placeholder": "Filter scenarios…",
+  "calc.preset_note": "A preset is a starting point - not a certificate that your test is complete.",
+  "calc.preset_params_header": "Parameters",
+  "calc.preset_needs_params": "Fill in the parameters below to compute this preset.",
+  "calc.build_header": "Build the moment",
+  "calc.start_point": "Start point",
+  "calc.steps_header": "Steps",
+  "calc.add_step": "+ Add step",
+  "calc.kind_shift": "Shift ±",
+  "calc.kind_snap": "Snap to",
+  "calc.kind_nearest": "Nearest",
+  "calc.kind_settime": "Set time",
+  "calc.kind_zone": "Change zone",
+  "calc.result_header": "Result",
+  "calc.what_tests": "What this date tests",
+  "calc.all_formats": "All formats - one click to copy",
+  "calc.copy": "Copy",
+  "calc.custom_format": "Custom format",
+  "calc.custom_format_hint": "e.g. yyyy-MM-dd HH:mm:ss",
+  "calc.metadata": "Metadata",
+  "calc.use_in_substitution": "Use in substitution →",
+  "calc.reverse_header": "Analyze a pasted date",
+  "calc.analyze_ambiguous": "Ambiguous - both interpretations shown",
+  "calc.reading.iso": "ISO 8601 (unambiguous)",
+  "calc.reading.us_month_day": "US reading (MM/DD/YYYY)",
+  "calc.reading.pl_day_month": "PL reading (DD/MM/YYYY)",
+
+  // Calculator builder (G3b): base kinds, shift units, calendars, and the significance markers.
+  "calc.base.today": "Today",
+  "calc.base.now": "Now",
+  "calc.base.specific": "Specific date",
+  "calc.field_calendar": "Calendar:",
+  "calc.remove_step": "Remove step",
+  "calc.unit.seconds": "seconds",
+  "calc.unit.minutes": "minutes",
+  "calc.unit.hours": "hours",
+  "calc.unit.days": "days",
+  "calc.unit.weeks": "weeks",
+  "calc.unit.months": "months",
+  "calc.unit.quarters": "quarters",
+  "calc.unit.years": "years",
+  "calc.unit.business_days": "business days",
+  "calc.cal.none": "(none)",
+  "calc.cal.us_banking": "US banking",
+  "calc.cal.us_federal": "US federal",
+  "calc.cal.pl": "Poland",
+
+  // Snap-step targets (G3c-1): the period boundary the step jumps to. Tokens mirror the snap flag.
+  "calc.snap.som": "Start of month",
+  "calc.snap.eom": "End of month",
+  "calc.snap.soq": "Start of quarter",
+  "calc.snap.eoq": "End of quarter",
+  "calc.snap.soy": "Start of year",
+  "calc.snap.eoy": "End of year",
+
+  // Nearest-step targets (G3c-2): roll to the nearest business day in a direction. Needs a calendar.
+  "calc.nearest.nbd": "Next business day",
+  "calc.nearest.pbd": "Previous business day",
+  "calc.nearest.leap": "Next 29 February",
+  "calc.variant.day_before": "Day before",
+  "calc.variant.on_day": "On the day",
+  "calc.variant.day_after": "Day after",
+  "calc.sig.start_of_month": "First day of the month",
+  "calc.sig.end_of_month": "Last day of the month (month-end)",
+  "calc.sig.start_of_quarter": "First day of the quarter",
+  "calc.sig.end_of_quarter": "Last day of the quarter (quarter-end)",
+  "calc.sig.start_of_year": "First day of the year",
+  "calc.sig.end_of_year": "Last day of the year (year-end rollover)",
+  "calc.sig.leap_day": "February 29 - leap day",
+  "calc.sig.last_day_of_february_common_year": "February 28 - last day of February (common year, no Feb 29)",
+  "calc.sig.unix_epoch": "Unix epoch (1970-01-01T00:00:00Z, epoch 0)",
+  "calc.sig.year_2038_boundary": "At or past the 2038-01-19 32-bit time_t limit (Y2038)",
+  "calc.sig.weekend": "Weekend - not a business day",
+  "calc.sig.public_holiday": "Public holiday",
+  "calc.sig.observed_holiday": "Observed public holiday - a day off shifted from a weekend holiday",
+
+  // Calculator result rendering (RELEASE-006): the weekday (mapped from the engine's English name), the format labels, the metadata line and the out-of-range marker - keys, not C# literals (rule 15).
+  "calc.weekday.monday": "Monday",
+  "calc.weekday.tuesday": "Tuesday",
+  "calc.weekday.wednesday": "Wednesday",
+  "calc.weekday.thursday": "Thursday",
+  "calc.weekday.friday": "Friday",
+  "calc.weekday.saturday": "Saturday",
+  "calc.weekday.sunday": "Sunday",
+  "calc.fmt.iso_date": "ISO date",
+  "calc.fmt.iso_datetime": "ISO datetime",
+  "calc.fmt.us": "US",
+  "calc.fmt.pl": "PL",
+  "calc.fmt.epoch_s": "epoch (s)",
+  "calc.fmt.epoch_ms": "epoch (ms)",
+  "calc.fmt.filetime": "FILETIME",
+  "calc.fmt.rfc1123": "RFC 1123",
+  "calc.out_of_range": "(out of range)",
+  "calc.md.us_week": "US week",
+  "calc.md.day": "day",
+  "calc.md.leap_year": "leap year",
+  "calc.md.common_year": "common year",
+  "calc.md.business_day": "business day",
+  "calc.md.not_business_day": "not a business day",
+
+  // Tooltips (hover help). Keys, not literals (rule 15); shown in the current language.
+  "tip.choose_target": "Pick the application to run under the fake clock.",
+  "tip.date_field": "Type the date as YYYY-MM-DD, or pick it from the calendar.",
+  "tip.time_field": "Time as HH:MM (24-hour). Empty means midnight.",
+  "tip.today": "Fill in today's date (session zone), at midnight.",
+  "tip.now": "Fill in the current date and time (session zone).",
+  "tip.zone": "The session time zone - a fixed offset with no daylight saving. The moment is read in it.",
+  "tip.mode": "How fast the fake clock runs: flowing at real speed, frozen, or N times faster.",
+  "tip.scale_duration": "Also speed up timers, sleeps and countdowns inside the app - not just the wall clock.",
+  "tip.scale_qpc": "Also speed up QPC-based clocks (Python monotonic, .NET Stopwatch, Java nanoTime). May distort an app that times its rendering off QPC.",
+  "tip.force": "Off by default. When the opening verdict says the substitution did not take effect, the target is stopped rather than handed to you, because its evidence would be about the real clock. Tick this to run anyway - the session is then marked unreliable everywhere it appears.",
+  "tip.start": "Launch the target under the fake clock. Needs a target and a valid moment.",
+  "tip.jump_to": "While running: jump the fake clock to the moment on the left.",
+  "tip.freeze": "Freeze the fake clock so it stops advancing.",
+  "tip.set_speed": "Set any custom speed, e.g. 500.",
+  "tip.stop": "Stop the session. The app returns to real time - it is not closed.",
+  "tip.copy_summary": "Copy a paste-ready session summary for a ticket.",
+  "tip.copy_diagnostics": "Copy the core diagnostics (its stderr) to attach to a support ticket.",
+  "tip.base_kind": "Where the calculation starts: today, now, or a specific date.",
+  "tip.add_step": "Add a step: shift, snap, nearest business day, set time, or change zone.",
+  "tip.calc_calendar": "The holiday and business-day calendar used by business-day and nearest steps.",
+  "tip.custom_format": "Render the result with your own format mask (.NET/Java tokens).",
+  "tip.analyze": "Paste a date to see how it reads - both interpretations when it is ambiguous.",
+  "tip.use_in_substitution": "Send this moment to the substitution panel. Available only when its zone is one of the offered session zones."
+}

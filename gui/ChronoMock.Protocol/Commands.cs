@@ -24,6 +24,11 @@ public sealed record StartCommand : Command
     [JsonPropertyName("type")] public string Type => "start";
     [JsonPropertyName("target")] public required TargetSpec Target { get; init; }
     [JsonPropertyName("time")] public required TimeSpec Time { get; init; }
+
+    /// <summary>Run even when the opening verdict says the substitution did not take effect. Without it
+    /// the core stops the target and refuses, because an application that looks time-shifted but is not
+    /// produces evidence about a session that never happened.</summary>
+    [JsonPropertyName("force")] public bool Force { get; init; }
 }
 
 public sealed record QueryCommand : Command

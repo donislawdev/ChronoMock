@@ -1,13 +1,21 @@
 using System.IO;
+using System.Text.Json;
 using System.Windows;
-using System.Windows.Markup;
 
 namespace ChronoMock.App.Localization;
 
 /// <summary>
-/// Loads interface strings from loose XAML files next to the app, so a language is added by dropping a
-/// Strings.&lt;culture&gt;.xaml file in the Localization folder - no recompile (untouchable rule 15).
+/// Loads interface strings from loose JSON files next to the app, so a language is added by dropping a
+/// Strings.&lt;culture&gt;.json file in the Localization folder - no recompile (untouchable rule 15).
 /// The set of languages is discovered by scanning that folder, never a hardcoded list.
+/// <para>
+/// The files are DATA and are read as data. They were XAML, parsed with <c>XamlReader.Load</c>, which is
+/// a full deserializer: it instantiates whatever types the document names, so a loose file beside the exe
+/// could run code in the application's context - and the documented contract invites people to add such
+/// files. Validating the result afterwards would not have helped, because the code runs during parsing.
+/// JSON parses to strings and nothing else, so the whole class of problem is gone rather than guarded.
+/// Comments are allowed (and skipped), which keeps the grouping that makes a 250-key file translatable.
+/// </para>
 /// </summary>
 public static class LocalizationService
 {
@@ -15,7 +23,7 @@ public static class LocalizationService
 
     private const string FolderName = "Localization";
     private const string FilePrefix = "Strings.";
-    private const string FileSuffix = ".xaml";
+    private const string FileSuffix = ".json";
     private const string MarkerKey = "__chrono_strings_culture";
 
     private static string FolderPath => Path.Combine(AppContext.BaseDirectory, FolderName);
@@ -75,7 +83,16 @@ public static class LocalizationService
         return cultures;
     }
 
-    /// <summary>Load the strings dictionary for a culture from its loose XAML file.</summary>
+    /// <summary>Options for the strings files: comments are part of the format (they carry the grouping
+    /// that makes a large file translatable), and a trailing comma is a typo not worth failing over.</summary>
+    private static readonly JsonSerializerOptions StringsJson = new()
+    {
+        ReadCommentHandling = JsonCommentHandling.Skip,
+        AllowTrailingCommas = true,
+    };
+
+    /// <summary>Load the strings dictionary for a culture from its loose JSON file. Every value is a
+    /// string by construction - the file cannot describe anything else.</summary>
     public static ResourceDictionary Load(string culture)
     {
         var path = Path.Combine(FolderPath, $"{FilePrefix}{culture}{FileSuffix}");
@@ -84,10 +101,27 @@ public static class LocalizationService
             throw new FileNotFoundException($"no strings file for culture '{culture}'", path);
         }
 
-        using var stream = File.OpenRead(path);
-        if (XamlReader.Load(stream) is not ResourceDictionary dictionary)
+        var json = File.ReadAllText(path);
+        Dictionary<string, string>? entries;
+        try
         {
-            throw new InvalidOperationException($"strings file '{path}' is not a ResourceDictionary");
+            entries = JsonSerializer.Deserialize<Dictionary<string, string>>(json, StringsJson);
+        }
+        catch (JsonException e)
+        {
+            // A malformed or hand-broken file names itself, rather than surfacing as a missing key later.
+            throw new InvalidOperationException($"strings file '{path}' is not valid JSON: {e.Message}", e);
+        }
+
+        if (entries is null)
+        {
+            throw new InvalidOperationException($"strings file '{path}' is empty");
+        }
+
+        var dictionary = new ResourceDictionary();
+        foreach (var (key, value) in entries)
+        {
+            dictionary[key] = value;
         }
 
         return dictionary;

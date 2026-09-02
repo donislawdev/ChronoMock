@@ -313,6 +313,17 @@ impl Session {
         out
     }
 
+    /// Stop the target, for the one case where letting it run would be worse than not running it: the
+    /// opening verdict says the substitution did not take effect, so every minute the tester spends in
+    /// that application produces evidence about the REAL clock while looking like a time-shifted run.
+    /// Coverage already gathered stays valid and is still reported - this ends the process, not the
+    /// audit. Best-effort: a target that exited on its own needs no stopping.
+    pub fn terminate_target(&self) {
+        unsafe {
+            let _ = TerminateProcess(self.hprocess, 1);
+        }
+    }
+
     /// Release our own handles, including every mapped coverage section. The target
     /// keeps its own mapped views, so its hooks keep working after we detach (full
     /// residue cleanup is a later slice).

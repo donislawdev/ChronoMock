@@ -141,6 +141,15 @@
                     HorizontalAlignment="Center" Margin="{StaticResource SpaceXs}"
                     FontSize="{StaticResource FontSizeBody}" Foreground="{DynamicResource BrushTextSecondary}" />
 
+          <!-- Run even when the opening verdict says the substitution did not take effect. Off by default:
+               the core stops the target in that case, because an application that looks time shifted but is
+               not produces evidence about a session that never happened. Maps to the wire force flag. -->
+          <CheckBox Content="{DynamicResource mode.force}"
+                    IsChecked="{Binding ForceStart}"
+                    IsEnabled="{Binding IsIdle}" ToolTip="{DynamicResource tip.force}"
+                    HorizontalAlignment="Center" Margin="{StaticResource SpaceXs}"
+                    FontSize="{StaticResource FontSizeBody}" Foreground="{DynamicResource BrushTextSecondary}" />
+
         </StackPanel>
 
         <Button Grid.Row="1" Margin="{StaticResource SpaceSm}" HorizontalAlignment="Center"

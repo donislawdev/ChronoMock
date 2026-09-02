@@ -58,8 +58,9 @@ fn main() {
 }
 
 fn print_usage() {
-    eprintln!("usage: chrono run <target> [--at <local-moment>] [--preset <id>] [--param id=value]... [--zone <+HH:MM>] [--mode <flow|frozen|xN>] [--scale-duration] [--ticks N] [--set-after T:M] [--jump-after T:moment] [--args \"...\"] [--report <path>] [--json]");
+    eprintln!("usage: chrono run <target> [--at <local-moment>] [--preset <id>] [--param id=value]... [--zone <+HH:MM>] [--mode <flow|frozen|xN>] [--scale-duration] [--ticks N] [--set-after T:M] [--jump-after T:moment] [--args \"...\"] [--report <path>] [--force] [--json]");
     eprintln!("       without --at (or --preset) the session clock starts at the real current time, so `--mode xN` alone just runs the target faster");
+    eprintln!("       --force runs on even when the opening verdict says the substitution did not take effect (the target is stopped otherwise)");
     eprintln!("       (--preset supplies the moment and mode from presets/<id>.json, exclusive of --at/--mode/--scale-duration; --param fills its parameters, a trial start_date defaults to the target's file date)");
     print_calc_usage();
 }
@@ -470,6 +471,8 @@ struct RunArgs {
     scale_duration: bool,
     /// Also scale QueryPerformanceCounter (ADR-2 reversal, opt-in `--scale-qpc`).
     scale_qpc: bool,
+    /// Run even when the opening verdict says the substitution did not take effect (`--force`).
+    force: bool,
     /// How many `state` heartbeats to stream before ending. 0 = end right after the
     /// verdict (one-shot).
     ticks: u64,
@@ -552,6 +555,7 @@ fn parse_run_args(argv: &[String]) -> Result<RunArgs, String> {
     let mut multiplier: Option<i64> = None;
     let mut scale_duration = false;
     let mut scale_qpc = false;
+    let mut force = false;
     let mut ticks: u64 = 0;
     let mut set_after: Option<(u64, i64)> = None;
     let mut jump_after: Option<(u64, String)> = None;
@@ -607,6 +611,9 @@ fn parse_run_args(argv: &[String]) -> Result<RunArgs, String> {
             "--scale-duration" => {
                 scale_duration = true;
                 saw_time_flag = true;
+            }
+            "--force" => {
+                force = true;
             }
             "--scale-qpc" => {
                 // ADR-2 reversal, opt-in. NOT a preset-exclusive time flag: a preset carries its own
@@ -683,6 +690,7 @@ fn parse_run_args(argv: &[String]) -> Result<RunArgs, String> {
         multiplier,
         scale_duration,
         scale_qpc,
+        force,
         ticks,
         set_after,
         jump_after,
@@ -978,6 +986,7 @@ fn driver_run(argv: &[String]) -> i32 {
             scale_duration,
             scale_qpc: ra.scale_qpc,
         },
+        force: ra.force,
     };
     let mut stdin = child.stdin.take().expect("piped stdin");
     {
@@ -3545,8 +3554,8 @@ fn core_mode() -> i32 {
         }
     };
 
-    let (target, time) = match cmd {
-        Command::Start { target, time, .. } => (target, time),
+    let (target, time, force) = match cmd {
+        Command::Start { target, time, force, .. } => (target, time, force),
         _ => {
             emit(&Event::Error {
                 v: PROTOCOL_VERSION,
@@ -3644,13 +3653,27 @@ fn core_mode() -> i32 {
                 Verdict::Fails => "coverage.time_channels_uncovered",
                 Verdict::Undetermined => "coverage.undetermined",
             };
+            // The refusal the README promises: a verdict of `fails` means the target read time and saw
+            // the REAL clock, so leaving it running produces evidence about a session that never
+            // happened - worse than not launching at all. The verdict cannot precede the launch (the
+            // only source of truth is a reading from inside the running process), so what is guaranteed
+            // is that the tester learns the truth before working in that application, not that a doomed
+            // launch never happens. `force` overrides and keeps the session, which every surface then
+            // marks unreliable through the verdict it carries.
+            let refuse = verdict == Verdict::Fails && !force;
             emit(&Event::Verdict {
                 v: PROTOCOL_VERSION,
                 id: Some(1),
                 verdict: verdict.wire().into(),
-                refuse_start: false,
+                refuse_start: refuse,
                 reason_key: reason_key.into(),
             });
+            if refuse {
+                prepared.session.terminate_target();
+                prepared.session.end();
+                emit(&ended_clean());
+                return verdict.exit_code();
+            }
             // Enter the running session: heartbeat, answer queries, end on command,
             // EOF, or target exit.
             run_session(prepared.session, verdict, reader)

@@ -25,6 +25,11 @@ public enum SessionStatusKind
     /// <summary>The core closed its stream mid-session - the target's time is now frozen (docs/08 section 7).</summary>
     CoreStopped,
 
+    /// <summary>The opening verdict said the substitution did not take effect, so the core stopped the
+    /// target instead of handing back a session whose evidence would be about the real clock. The tester
+    /// can re-run with "run even if it does not work" to override.</summary>
+    Refused,
+
     /// <summary>Stop was pressed and the core is being shut down - the session is no longer live, but its
     /// end has not been recorded yet. A distinct state because the shutdown is not instant (the core gets a
     /// grace period), and during it the in-flight controls must already be gone: sending on a closing

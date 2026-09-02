@@ -31,7 +31,7 @@ public class LocalizationTests
     // above only proves EN and PL agree - it cannot see a key that lives in the core and is absent from
     // BOTH files, which then renders as raw jargon (RELEASE-002). This list mirrors the core's emitted keys:
     // crates/cli (describe_reason / describe_warning / session_reason_key, and the start-error emissions) and
-    // crates/mech (warning keys). When the core adds a rendered key, add it here and to Strings.{en,pl}.
+    // crates/mech (warning keys). When the core adds a rendered key, add it here and to Strings.{en,pl}.json.
     private static readonly string[] CoreWireKeys =
     [
         // Verdict reason keys (VerdictEvent / SessionVerdict reason_key), shown under a non-works verdict.
@@ -99,10 +99,68 @@ public class LocalizationTests
         Directory.CreateDirectory(dir);
         try
         {
-            File.WriteAllText(Path.Combine(dir, "Strings.xaml"), "<x/>");
-            File.WriteAllText(Path.Combine(dir, "Strings.de.xaml"), "<x/>");
+            File.WriteAllText(Path.Combine(dir, "Strings.json"), "{}");
+            File.WriteAllText(Path.Combine(dir, "Strings.de.json"), "{}");
             var cultures = LocalizationService.AvailableCulturesIn(dir);
             Assert.Equal(new[] { "de" }, cultures);
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    /// <summary>
+    /// S-18. The strings files are loose files beside the exe, and the documented contract invites people
+    /// to add them. They were XAML, parsed by XamlReader - a full deserializer that instantiates the types
+    /// a document names, so such a file was executable code in the application's context. Validating the
+    /// RESULT could never have fixed that, because the code runs while parsing. They are data now: a file
+    /// that is not a flat string map is refused, and nothing in it can be anything but a string.
+    /// </summary>
+    [Fact]
+    public void The_strings_files_are_data_and_a_non_string_document_is_refused()
+    {
+        foreach (var culture in new[] { "en", "pl" })
+        {
+            var path = Path.Combine(
+                AppContext.BaseDirectory, "Localization", $"Strings.{culture}.json");
+            Assert.True(File.Exists(path), $"{culture} strings must ship as JSON");
+
+            var text = File.ReadAllText(path);
+            Assert.DoesNotContain("ResourceDictionary", text, StringComparison.Ordinal);
+            Assert.DoesNotContain("ObjectDataProvider", text, StringComparison.Ordinal);
+
+            // Every value the file can express is a string - the type says so, and it parses.
+            var options = new System.Text.Json.JsonSerializerOptions
+            {
+                ReadCommentHandling = System.Text.Json.JsonCommentHandling.Skip,
+                AllowTrailingCommas = true,
+            };
+            var map = System.Text.Json.JsonSerializer
+                .Deserialize<Dictionary<string, string>>(text, options);
+            Assert.NotNull(map);
+            Assert.NotEmpty(map);
+        }
+    }
+
+    /// <summary>A file that is not a string map at all names itself instead of failing later as a pile of
+    /// missing keys.</summary>
+    [Fact]
+    public void A_malformed_strings_file_is_reported_with_its_path()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "chrono-loc-bad", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var path = Path.Combine(dir, "Strings.xx.json");
+            File.WriteAllText(path, "{ \"a\": { \"nested\": 1 } }");
+            var options = new System.Text.Json.JsonSerializerOptions
+            {
+                ReadCommentHandling = System.Text.Json.JsonCommentHandling.Skip,
+            };
+            Assert.ThrowsAny<System.Text.Json.JsonException>(
+                () => System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, string>>(
+                    File.ReadAllText(path), options));
         }
         finally
         {

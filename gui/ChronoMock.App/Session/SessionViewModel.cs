@@ -52,6 +52,7 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     private ModeOption _selectedMode;
     private bool _scaleDuration;
     private bool _scaleQpc;
+    private bool _forceStart;
     private readonly ISessionHistoryStore _store;
     private readonly IDiagnosticsLog _diagnosticsLog;
     private bool _launched;
@@ -265,6 +266,11 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     /// a timer built on those accelerates too. SEPARATE from ScaleDuration because scaling QPC can distort a
     /// target that times its rendering off QPC. Off by default (ADR-2). Maps to the wire <c>scale_qpc</c>.</summary>
     public bool ScaleQpc { get => _scaleQpc; set => Set(ref _scaleQpc, value); }
+
+    /// <summary>Run even when the opening verdict says the substitution did not take effect. Off by
+    /// default: the core stops the target in that case, because an application that looks time-shifted
+    /// but is not produces evidence about a session that never happened. Start-only.</summary>
+    public bool ForceStart { get => _forceStart; set => Set(ref _forceStart, value); }
 
     /// <summary>True when a session may be started: nothing is running, a target is chosen, moment is valid.</summary>
     public bool CanStart => _idle && HasTarget && Moment.IsValid;
@@ -634,6 +640,15 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
             case VerdictEvent v:
                 // The per-process verdict, at start. It gates refuse_start and is the first indicator shown.
                 SetVerdict(VerdictKinds.Parse(v.Verdict), v.ReasonKey);
+                if (v.RefuseStart)
+                {
+                    // The core stopped the target rather than hand back a session whose evidence would be
+                    // about the real clock. Say so as a terminal state - the verdict and its reason are
+                    // already shown beside it, and IsReliable is false, so nothing here reads as a
+                    // successful run (untouchable rule 4).
+                    SetStatus("status.refused", SessionStatusKind.Refused);
+                }
+
                 break;
             case SessionVerdictEvent sv:
                 // The family aggregate, at end - it overrides the per-process verdict on the indicator.
@@ -701,7 +716,7 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
             SessionPlan plan;
             try
             {
-                plan = SessionPlan.Build(TargetPath!, BuildTime());
+                plan = SessionPlan.Build(TargetPath!, BuildTime(), _forceStart);
             }
             catch (InvalidOperationException ex)
             {
@@ -1285,6 +1300,7 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
 
     private static bool IsTerminal(SessionStatusKind kind) => kind
         is SessionStatusKind.Ended
+        or SessionStatusKind.Refused
         or SessionStatusKind.DidNotTakeEffect
         or SessionStatusKind.CoreStopped
         or SessionStatusKind.Stopped

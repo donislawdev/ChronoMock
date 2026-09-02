@@ -45,10 +45,11 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- Language files are loose Content (not compiled BAML), so anyone can add a language by dropping
-         a Strings.<culture>.xaml next to the app - no recompile (untouchable rule 15). -->
-    <Page Remove="Localization\**\*.xaml" />
-    <Content Include="Localization\**\*.xaml" CopyToOutputDirectory="PreserveNewest" />
+    <!-- Language files are loose Content, so anyone can add a language by dropping a
+         Strings.<culture>.json next to the app - no recompile (untouchable rule 15). They are JSON
+         rather than XAML on purpose: XamlReader instantiates types, so a loose file beside the exe
+         would have been executable code, and this contract invites people to add such files. -->
+    <Content Include="Localization\**\*.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>
