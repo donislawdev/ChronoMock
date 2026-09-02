@@ -465,6 +465,8 @@ struct RunArgs {
     mode: String,
     multiplier: Option<i64>,
     scale_duration: bool,
+    /// Also scale QueryPerformanceCounter (ADR-2 reversal, opt-in `--scale-qpc`).
+    scale_qpc: bool,
     /// How many `state` heartbeats to stream before ending. 0 = end right after the
     /// verdict (one-shot).
     ticks: u64,
@@ -546,6 +548,7 @@ fn parse_run_args(argv: &[String]) -> Result<RunArgs, String> {
     let mut mode = String::from("flow");
     let mut multiplier: Option<i64> = None;
     let mut scale_duration = false;
+    let mut scale_qpc = false;
     let mut ticks: u64 = 0;
     let mut set_after: Option<(u64, i64)> = None;
     let mut jump_after: Option<(u64, String)> = None;
@@ -601,6 +604,12 @@ fn parse_run_args(argv: &[String]) -> Result<RunArgs, String> {
             "--scale-duration" => {
                 scale_duration = true;
                 saw_time_flag = true;
+            }
+            "--scale-qpc" => {
+                // ADR-2 reversal, opt-in. NOT a preset-exclusive time flag: a preset carries its own
+                // scale_duration but never scale_qpc, so --scale-qpc is the only source and composes with
+                // --preset (unlike --scale-duration, which would double a preset's own setting).
+                scale_qpc = true;
             }
             "--ticks" => {
                 i += 1;
@@ -670,6 +679,7 @@ fn parse_run_args(argv: &[String]) -> Result<RunArgs, String> {
         mode,
         multiplier,
         scale_duration,
+        scale_qpc,
         ticks,
         set_after,
         jump_after,
@@ -939,6 +949,7 @@ fn driver_run(argv: &[String]) -> i32 {
             mode: mode.clone(),
             multiplier,
             scale_duration,
+            scale_qpc: ra.scale_qpc,
         },
     };
     let mut stdin = child.stdin.take().expect("piped stdin");
@@ -3687,6 +3698,7 @@ fn build_spec(time: &TimeSpec) -> Result<SessionSpec, (i32, &'static str)> {
         },
         mode,
         scale_duration: time.scale_duration,
+        scale_qpc: time.scale_qpc,
     })
 }
 

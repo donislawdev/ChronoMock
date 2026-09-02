@@ -18,9 +18,10 @@ use std::time::Instant;
 
 use chrono_core::{ChannelCoverage, Coverage, SessionSpec, TimeMode};
 use chrono_ctl::{
-    cov_section_name, cov_size, ctl_size, freeze_dur, read_anchor, read_calls, read_core_pid,
-    read_dur, read_installed, read_pid, write_anchor, write_anchor_full, write_core_pid,
-    write_scale_dur, write_tz_bias, ChannelCategory, ChannelModule, Cov, Ctl, CHANNELS, MAX_COV_PIDS,
+    cov_section_name, cov_size, ctl_size, freeze_dur, freeze_qpc, read_anchor, read_calls,
+    read_core_pid, read_dur, read_installed, read_pid, read_qpc, write_anchor, write_anchor_full,
+    write_core_pid, write_scale_dur, write_scale_qpc, write_tz_bias, ChannelCategory, ChannelModule,
+    Cov, Ctl, CHANNELS, MAX_COV_PIDS,
 };
 use windows::core::{s, PCWSTR, PWSTR};
 use windows::Win32::Foundation::{
@@ -39,6 +40,7 @@ use windows::Win32::System::Threading::{
     OpenProcess, ResumeThread, TerminateProcess, WaitForSingleObject, CREATE_SUSPENDED,
     LPTHREAD_START_ROUTINE, PROCESS_INFORMATION, PROCESS_SYNCHRONIZE, STARTUPINFOW,
 };
+use windows::Win32::System::Performance::QueryPerformanceCounter;
 use windows::Win32::System::WindowsProgramming::QueryUnbiasedInterruptTime;
 
 /// What to launch.
@@ -182,11 +184,28 @@ impl Session {
     /// new speed without ever going backward.
     pub fn set_multiplier(&self, m: i64) {
         let now = quit_now();
+        let now_qpc = qpc_now();
         let (a_fake, a_real, cur_m) = unsafe { read_anchor(self.ctl()) };
         let fake_now = a_fake.wrapping_add(now.wrapping_sub(a_real).wrapping_mul(cur_m));
         let (dur_tick_c0, dur_quit_c0, dur_q0, _) = unsafe { read_dur(self.ctl()) };
         let (frozen_tick, frozen_quit) = freeze_dur(dur_tick_c0, dur_quit_c0, dur_q0, cur_m, now);
-        unsafe { write_anchor_full(self.ctl_mut(), fake_now, now, m, frozen_tick, frozen_quit, now) };
+        // Freeze the QPC axis at the OLD multiplier too, then re-anchor at the current real QPC, so a
+        // speed change never rewinds it (H-1 applied to QPC, untouchable rule 3).
+        let (qpc_c0, qpc_q0, _) = unsafe { read_qpc(self.ctl()) };
+        let frozen_qpc = freeze_qpc(qpc_c0, qpc_q0, cur_m, now_qpc);
+        unsafe {
+            write_anchor_full(
+                self.ctl_mut(),
+                fake_now,
+                now,
+                m,
+                frozen_tick,
+                frozen_quit,
+                now,
+                frozen_qpc,
+                now_qpc,
+            )
+        };
     }
 
     /// Jump the wall clock to `to_ft` (UTC FILETIME), keeping the current multiplier.
@@ -272,6 +291,16 @@ fn quit_now() -> i64 {
         let _ = QueryUnbiasedInterruptTime(&mut t);
     }
     t as i64
+}
+
+/// Current raw QueryPerformanceCounter value. QPC is a system-wide counter, so the core reads the same
+/// value the target's hook does - the QPC axis anchor (ADR-2 reversal) rides on that.
+fn qpc_now() -> i64 {
+    let mut t: i64 = 0;
+    unsafe {
+        let _ = QueryPerformanceCounter(&mut t);
+    }
+    t
 }
 
 /// Whether a prior session's core (this pid) is still running. Cannot open, or already signaled,
@@ -457,10 +486,15 @@ pub fn prepare(spec: &SessionSpec, target: &Target, hook_dll: &Path) -> Result<P
         // QUIT are genuine). GetTickCount64 gives the millisecond base, so a target's GetTickCount64 starts
         // near the real uptime; the fake-QUIT base and the real base both start at `start_real`. The axis is
         // re-anchored on every set_multiplier so it never rewinds (H-1). Written in the wall anchor's seqlock.
+        // The QPC axis (ADR-2 reversal, opt-in) starts fake == real at the current QPC, so elapsed begins at 0.
         let dur_tick0 = GetTickCount64();
-        write_anchor_full(ctl, a_fake, start_real, multiplier, dur_tick0, start_real, start_real);
+        let start_qpc = qpc_now();
+        write_anchor_full(
+            ctl, a_fake, start_real, multiplier, dur_tick0, start_real, start_real, start_qpc, start_qpc,
+        );
         write_tz_bias(ctl, tz_bias);
         write_scale_dur(ctl, spec.scale_duration);
+        write_scale_qpc(ctl, spec.scale_qpc);
         write_core_pid(ctl, GetCurrentProcessId());
 
         // 2. Launch SUSPENDED so the hook lands before the first instruction.

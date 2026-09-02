@@ -44,6 +44,10 @@ pub struct SessionSpec {
     pub mode: TimeMode,
     /// Whether the monotonic duration axis is scaled too (E4 / ADR-2).
     pub scale_duration: bool,
+    /// Whether QueryPerformanceCounter is scaled too (ADR-2 reversal, opt-in). Separate from
+    /// scale_duration because scaling QPC also scales a target's QPC-timed rendering (a risk the tick
+    /// axis does not carry), so it is a deliberate, separate choice.
+    pub scale_qpc: bool,
 }
 
 /// The verdict about whether time substitution took effect (chrono-mock.md 7.1).

@@ -350,9 +350,21 @@ pub struct Ctl {
     /// Real QUIT base (100 ns) the duration elapsed is measured from. Distinct from `a_real`: a `jump`
     /// re-anchors `a_real` but must leave `dur_q0` (and so the whole duration axis) alone.
     pub dur_q0: i64,
+    /// QPC axis anchor (opt-in `scale_qpc`, ADR-2 reversal). QPC is a SEPARATE system counter from QUIT
+    /// (different ticks and epoch), so it needs its own base rather than riding `dur_q0`. Fake QPC base,
+    /// in raw QPC ticks. Rebased on every `set_multiplier` like the tick axis (freeze then re-anchor), so
+    /// a speed change never rewinds it (untouchable rule 3); left untouched on `jump`.
+    pub dur_qpc_c0: i64,
+    /// Real QPC base (raw ticks) the QPC elapsed is measured from - QPC is a system-wide counter, so the
+    /// core reads the same value the target's hook does.
+    pub dur_qpc_q0: i64,
     /// 1 = also scale the duration axis by the multiplier (the scale_duration opt-in).
     /// Stable per session: written once by the mechanism, read once by the hook.
     pub scale_dur: u32,
+    /// 1 = also scale QueryPerformanceCounter by the multiplier (the scale_qpc opt-in, ADR-2 reversal).
+    /// SEPARATE from scale_dur because scaling QPC also scales a target's QPC-timed rendering (a risk
+    /// scale_dur does not carry). Stable per session: written once by the mechanism, read once by the hook.
+    pub scale_qpc: u32,
     /// PID of the core process, so the hook can watch it and revert the target to
     /// real time when the core vanishes (clean end, crash, or kill -9). Stable.
     pub core_pid: u32,
@@ -428,6 +440,8 @@ pub unsafe fn write_anchor_full(
     dur_tick_c0: u64,
     dur_quit_c0: i64,
     dur_q0: i64,
+    dur_qpc_c0: i64,
+    dur_qpc_q0: i64,
 ) {
     let sp = addr_of_mut!((*p).seq);
     let s = read_volatile(sp).wrapping_add(1);
@@ -439,6 +453,8 @@ pub unsafe fn write_anchor_full(
     write_volatile(addr_of_mut!((*p).dur_tick_c0), dur_tick_c0);
     write_volatile(addr_of_mut!((*p).dur_quit_c0), dur_quit_c0);
     write_volatile(addr_of_mut!((*p).dur_q0), dur_q0);
+    write_volatile(addr_of_mut!((*p).dur_qpc_c0), dur_qpc_c0);
+    write_volatile(addr_of_mut!((*p).dur_qpc_q0), dur_qpc_q0);
     fence(Ordering::Release);
     write_volatile(sp, s.wrapping_add(1)); // even - write done
 }
@@ -552,6 +568,54 @@ pub fn freeze_dur(dur_tick_c0: u64, dur_quit_c0: i64, dur_q0: i64, old_m: i64, n
     )
 }
 
+/// Read the QPC anchor plus the multiplier under the seqlock, as ONE consistent snapshot (a torn read
+/// mixing a new multiplier with an old QPC base would dip the axis - rule 3). Returns `(dur_qpc_c0,
+/// dur_qpc_q0, multiplier)`. Companion of `read_dur` for the QPC detour (opt-in `scale_qpc`, ADR-2).
+///
+/// # Safety
+/// `p` must point to a live, correctly aligned `Ctl`.
+pub unsafe fn read_qpc(p: *const Ctl) -> (i64, i64, i64) {
+    for _ in 0..SEQLOCK_READ_TRIES {
+        let s1 = read_volatile(addr_of!((*p).seq));
+        if s1 & 1 == 0 {
+            fence(Ordering::Acquire);
+            let dur_qpc_c0 = read_volatile(addr_of!((*p).dur_qpc_c0));
+            let dur_qpc_q0 = read_volatile(addr_of!((*p).dur_qpc_q0));
+            let multiplier = read_volatile(addr_of!((*p).multiplier));
+            fence(Ordering::Acquire);
+            if s1 == read_volatile(addr_of!((*p).seq)) {
+                return (dur_qpc_c0, dur_qpc_q0, multiplier);
+            }
+        }
+        std::hint::spin_loop();
+    }
+    // A force-killed writer left `seq` odd forever - fall back rather than hang (see read_dur, RELEASE-009).
+    fence(Ordering::Acquire);
+    (
+        read_volatile(addr_of!((*p).dur_qpc_c0)),
+        read_volatile(addr_of!((*p).dur_qpc_q0)),
+        read_volatile(addr_of!((*p).multiplier)),
+    )
+}
+
+/// Project the fake QueryPerformanceCounter (raw QPC ticks) at real QPC `real_now` from the anchor:
+/// `dur_qpc_c0 + (real_now - dur_qpc_q0) * M`. QueryPerformanceFrequency is NOT scaled, so elapsed
+/// (delta / freq) scales by exactly M. `m` clamped to >= 1 (rule 3, like `dur_quit_at`). Pure, so the
+/// monotonicity is unit-tested without injection.
+pub fn dur_qpc_at(dur_qpc_c0: i64, dur_qpc_q0: i64, m: i64, real_now: i64) -> i64 {
+    let dm = m.max(1);
+    let dq = real_now.wrapping_sub(dur_qpc_q0);
+    dur_qpc_c0.wrapping_add(dq.wrapping_mul(dm))
+}
+
+/// Freeze the QPC axis at real QPC `now` under the OLD multiplier, returning the new `dur_qpc_c0` to
+/// re-anchor at `now` (the caller sets `dur_qpc_q0 = now`). Called by `set_multiplier` so the QPC axis
+/// stays CONTINUOUS across a speed change - the value right after the switch equals the value right
+/// before, so it never rewinds (untouchable rule 3). Pure and unit-tested.
+pub fn freeze_qpc(dur_qpc_c0: i64, dur_qpc_q0: i64, old_m: i64, now: i64) -> i64 {
+    dur_qpc_at(dur_qpc_c0, dur_qpc_q0, old_m, now)
+}
+
 /// Write the session zone bias (stable field, outside the seqlock). Mechanism side.
 ///
 /// # Safety
@@ -582,6 +646,22 @@ pub unsafe fn write_scale_dur(p: *mut Ctl, on: bool) {
 /// `p` must point to a live, correctly aligned `Ctl`.
 pub unsafe fn read_scale_dur(p: *const Ctl) -> bool {
     read_volatile(addr_of!((*p).scale_dur)) != 0
+}
+
+/// Write the scale-QPC flag (stable field, outside the seqlock). Mechanism side (ADR-2 reversal, opt-in).
+///
+/// # Safety
+/// `p` must point to a live, correctly aligned `Ctl`.
+pub unsafe fn write_scale_qpc(p: *mut Ctl, on: bool) {
+    write_volatile(addr_of_mut!((*p).scale_qpc), on as u32);
+}
+
+/// Read the scale-QPC flag (hook side).
+///
+/// # Safety
+/// `p` must point to a live, correctly aligned `Ctl`.
+pub unsafe fn read_scale_qpc(p: *const Ctl) -> bool {
+    read_volatile(addr_of!((*p).scale_qpc)) != 0
 }
 
 /// Write the core PID (stable field, outside the seqlock). Mechanism side.
@@ -777,7 +857,10 @@ mod tests {
             dur_tick_c0: 0,
             dur_quit_c0: 0,
             dur_q0: 0,
+            dur_qpc_c0: 0,
+            dur_qpc_q0: 0,
             scale_dur: 0,
+            scale_qpc: 0,
             core_pid: 0,
             pid_count: 0,
             _pad: 0,
@@ -809,12 +892,14 @@ mod tests {
         let mut ctl = zeroed_ctl();
         let p = &mut ctl as *mut Ctl;
         unsafe {
-            // write_anchor_full writes the wall triple AND the duration anchor.
-            write_anchor_full(p, 134_000_000_000_000_000, 42, 60, 5_000, 42, 42);
+            // write_anchor_full writes the wall triple AND the duration anchor (tick/quit + QPC).
+            write_anchor_full(p, 134_000_000_000_000_000, 42, 60, 5_000, 42, 42, 700, 700);
             let (af, ar, m) = read_anchor(p);
             assert_eq!((af, ar, m), (134_000_000_000_000_000, 42, 60));
             let (tick_c0, quit_c0, q0, dm) = read_dur(p);
             assert_eq!((tick_c0, quit_c0, q0, dm), (5_000, 42, 42, 60));
+            let (qpc_c0, qpc_q0, qm) = read_qpc(p);
+            assert_eq!((qpc_c0, qpc_q0, qm), (700, 700, 60));
 
             // write_anchor (the jump writer) moves the wall clock but must NOT touch the duration anchor.
             write_anchor(p, 999, 77, 60);
@@ -822,6 +907,8 @@ mod tests {
             assert_eq!((af2, ar2), (999, 77));
             let (tick_c0b, quit_c0b, q0b, _) = read_dur(p);
             assert_eq!((tick_c0b, quit_c0b, q0b), (5_000, 42, 42), "jump must leave the duration axis alone");
+            let (qpc_c0b, qpc_q0b, _) = read_qpc(p);
+            assert_eq!((qpc_c0b, qpc_q0b), (700, 700), "jump must leave the QPC axis alone");
         }
     }
 
@@ -869,6 +956,49 @@ mod tests {
         let a = dur_tick_at(1_000, 0, 0, 5_000_000);
         let b = dur_tick_at(1_000, 0, 0, 6_000_000);
         assert!(b > a, "a frozen wall clock must not stop the monotonic duration axis (rule 3)");
+    }
+
+    #[test]
+    fn qpc_axis_never_rewinds_across_multiplier_changes() {
+        // ADR-2 reversal (A1): a multiplier change must re-anchor the QPC axis so it stays continuous,
+        // never dips (rule 3) - exactly what the spike's lazy anchor got WRONG. Replays freeze_qpc then
+        // re-anchor at `now` against a rising real QPC, with the multiplier dropping then jumping up.
+        let mut qpc_c0: i64 = 5_000_000; // raw QPC ticks
+        let mut q0: i64 = 5_000_000; // real QPC base
+        let mut m: i64 = 60;
+        let changes: &[(i64, i64)] = &[(500, 10), (900, 0), (1300, 1), (1700, 1440)];
+        let mut last: i64 = dur_qpc_at(qpc_c0, q0, m, q0);
+        let mut ci = 0;
+        for step in 0..2_500i64 {
+            let now = 5_000_000 + step * 100; // real QPC advances 100 ticks per step
+            if ci < changes.len() && step == changes[ci].0 {
+                let new_m = changes[ci].1;
+                let frozen = freeze_qpc(qpc_c0, q0, m, now);
+                assert_eq!(frozen, dur_qpc_at(qpc_c0, q0, m, now), "qpc jumped at the switch");
+                qpc_c0 = frozen;
+                q0 = now;
+                m = new_m;
+                ci += 1;
+            }
+            let qpc = dur_qpc_at(qpc_c0, q0, m, now);
+            assert!(qpc >= last, "QPC rewound: {last} -> {qpc} at step {step}");
+            last = qpc;
+        }
+        // Frozen wall (M = 0) still advances the QPC axis at real speed (clamp to >= 1).
+        let a = dur_qpc_at(1_000, 0, 0, 5_000);
+        let b = dur_qpc_at(1_000, 0, 0, 6_000);
+        assert!(b > a, "a frozen wall clock must not stop the QPC axis (rule 3)");
+    }
+
+    #[test]
+    fn scale_qpc_round_trips() {
+        let mut ctl = zeroed_ctl();
+        let p = &mut ctl as *mut Ctl;
+        unsafe {
+            assert!(!read_scale_qpc(p));
+            write_scale_qpc(p, true);
+            assert!(read_scale_qpc(p));
+        }
     }
 
     #[test]

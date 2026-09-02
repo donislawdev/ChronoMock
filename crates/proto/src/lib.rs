@@ -48,6 +48,10 @@ pub struct TimeSpec {
     pub multiplier: Option<i64>,
     #[serde(default)]
     pub scale_duration: bool,
+    /// Also scale QueryPerformanceCounter (ADR-2 reversal, opt-in). Additive: an older client that omits
+    /// it defaults to false (QPC left real). Separate from scale_duration - it carries a render risk.
+    #[serde(default)]
+    pub scale_qpc: bool,
 }
 
 /// One covered channel and how many times the target has called it so far.
@@ -238,6 +242,7 @@ mod tests {
                 mode: "multiplier".into(),
                 multiplier: Some(60),
                 scale_duration: false,
+                scale_qpc: false,
             },
         };
         let line = serde_json::to_string(&cmd).unwrap();

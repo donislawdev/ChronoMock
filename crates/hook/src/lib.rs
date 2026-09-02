@@ -61,9 +61,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::OnceLock;
 
 use chrono_ctl::{
-    bump_calls, cov_section_name, cov_size, dur_quit_at, dur_tick_at, mark_channel_installed,
-    read_anchor, read_core_pid, read_dur, read_scale_dur, read_tz_bias, register_pid,
-    scale_delay_interval, scale_timer_due,
+    bump_calls, cov_section_name, cov_size, dur_qpc_at, dur_quit_at, dur_tick_at,
+    mark_channel_installed, read_anchor, read_core_pid, read_dur, read_qpc, read_scale_dur,
+    read_scale_qpc, read_tz_bias, register_pid, scale_delay_interval, scale_timer_due,
     scale_timer_elapse, scale_timer_period, scale_timer_period_ms, scale_wait, ChannelModule, Cov,
     Ctl, CHANNELS, IDX_GDTZI, IDX_GLT, IDX_GST, IDX_GSTAFT, IDX_GSTPAFT, IDX_GTC, IDX_GTC64,
     IDX_GTZI, IDX_NTDELAY, IDX_NTQSI, IDX_NTQST, IDX_QUIT, IDX_SLEEP, IDX_SLEEPEX, IDX_STSL,
@@ -779,6 +779,38 @@ unsafe extern "system" fn h_quit(lp: *mut u64) -> i32 {
         }
     }
     1 // nonzero BOOL = success
+}
+
+// QPC axis (ADR-2 reversal, opt-in `scale_qpc`): scale QueryPerformanceCounter, so a target whose elapsed
+// clock is monotonic/perf_counter (Python 3.13+), Stopwatch (.NET) or nanoTime (Java) - all QPC-backed -
+// also accelerates. The anchor lives in the shared Ctl (dur_qpc_c0 / dur_qpc_q0), initialized by the core
+// in prepare and REBASED on every set_multiplier (freeze then re-anchor), so a speed change never rewinds
+// the axis (H-1, untouchable rule 3). Each call reads the base AND the multiplier in one read_qpc snapshot
+// (they can never tear apart) and projects off the trampoline QPC. QueryPerformanceFrequency is left real,
+// so elapsed (delta / freq) scales by exactly M. Spike A (2026-09-02) proved this is stable on Win11 today
+// (E4's QPC hang did not recur with the bounded seqlock reader H-2).
+type QpcFn = unsafe extern "system" fn(*mut i64) -> i32;
+static O_QPC: OnceLock<QpcFn> = OnceLock::new();
+
+unsafe extern "system" fn h_qpc(lp: *mut i64) -> i32 {
+    let o = match O_QPC.get() {
+        Some(o) => *o,
+        None => return 0,
+    };
+    if lp.is_null() {
+        return o(lp);
+    }
+    match ctl_ptr() {
+        Some(p) if !detached() => {
+            let mut real: i64 = 0;
+            o(&mut real); // real QPC via the trampoline (bypasses this hook, no recursion)
+            let (qpc_c0, qpc_q0, m) = read_qpc(p as *const Ctl);
+            *lp = dur_qpc_at(qpc_c0, qpc_q0, m, real);
+            1
+        }
+        // Detached (core gone) or no control block -> real QPC, so the target reverts to real time cleanly.
+        _ => o(lp),
+    }
 }
 
 // Wait axis (ADR-7 class A): divide a blocking wait's timeout by the duration multiplier so
@@ -1593,6 +1625,24 @@ unsafe fn install() -> Result<(), String> {
         make_hook(cov, k32, ntdll, IDX_TIMESETEVENT, h_timesetevent as *const () as *mut c_void, &O_TIMESETEVENT);
         make_hook(cov, k32, ntdll, IDX_TPTIMER, h_set_tp_timer as *const () as *mut c_void, &O_TPTIMER);
         make_hook(cov, k32, ntdll, IDX_TPTIMEREX, h_set_tp_timer_ex as *const () as *mut c_void, &O_TPTIMEREX);
+    }
+
+    // QPC axis (opt-in `scale_qpc`, ADR-2 reversal). SEPARATE from scale_duration because scaling QPC also
+    // scales a target's QPC-timed rendering. Not a coverage channel (QPC was never in CHANNELS - ADR-2), so
+    // it is installed manually here rather than via make_hook. The anchor lives in the shared Ctl (core
+    // initialized it in prepare, rebases on set_multiplier). QueryPerformanceFrequency is left real.
+    if read_scale_qpc(ctl as *const Ctl) {
+        if let Some(qpc) = GetProcAddress(k32, s!("QueryPerformanceCounter")) {
+            match MinHook::create_hook(
+                qpc as *const () as *mut c_void,
+                h_qpc as *const () as *mut c_void,
+            ) {
+                Ok(original) => {
+                    let _ = O_QPC.set(std::mem::transmute::<*mut c_void, QpcFn>(original));
+                }
+                Err(e) => log(&format!("[chrono_hook] create_hook QueryPerformanceCounter failed: {e:?}")),
+            }
+        }
     }
 
     // Direct process creation (ADR-3, observed): hook NtCreateUserProcess ALWAYS - not gated by
