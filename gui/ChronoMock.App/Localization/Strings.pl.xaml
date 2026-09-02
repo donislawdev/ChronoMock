@@ -136,6 +136,7 @@
   <sys:String x:Key="wait.object_waits_not_scaled">Oczekiwania na obiekty są podpięte, ale pozostawione realne - limit czasu I/O lub sprzętu nie jest skracany.</sys:String>
   <sys:String x:Key="timer.multimedia_not_scaled">Timer multimedialny (timeSetEvent) jest obserwowany, ale nie skalowany.</sys:String>
   <sys:String x:Key="inheritance.ntcreateuserprocess_child_maybe_uncovered">Dziecko utworzone bezpośrednio przez NtCreateUserProcess może nie być objęte.</sys:String>
+  <sys:String x:Key="inheritance.child_vanished_before_audit">Proces potomny zakończył się, zanim dało się odczytać jego dowód - nie wiadomo, czy widział zegar sesji.</sys:String>
   <sys:String x:Key="target.single_instance_suspected">zakończył się zaraz po injekcji, zanim podmianę dało się potwierdzić</sys:String>
 
   <!-- Runtime wykryty statycznie z plików celu (B1): jego zegary monotoniczne/elapsed stoją na

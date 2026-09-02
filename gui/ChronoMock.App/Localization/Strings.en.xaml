@@ -137,6 +137,7 @@
   <sys:String x:Key="wait.object_waits_not_scaled">Object waits are hooked but left real - an I/O or hardware timeout is not shortened.</sys:String>
   <sys:String x:Key="timer.multimedia_not_scaled">The multimedia timer (timeSetEvent) is observed but not scaled.</sys:String>
   <sys:String x:Key="inheritance.ntcreateuserprocess_child_maybe_uncovered">A child spawned directly via NtCreateUserProcess may not be covered.</sys:String>
+  <sys:String x:Key="inheritance.child_vanished_before_audit">A child process exited before its evidence could be read - whether it saw the session clock is unknown.</sys:String>
   <sys:String x:Key="target.single_instance_suspected">exited right after injection, before the swap could be confirmed</sys:String>
 
   <!-- Runtime detected statically from the target's files (B1): its monotonic/elapsed clocks stand on

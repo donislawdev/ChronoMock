@@ -1164,6 +1164,9 @@ fn describe_warning(key: &str) -> String {
         "inheritance.ntcreateuserprocess_child_maybe_uncovered" => {
             "a child spawned directly via NtCreateUserProcess may not be covered"
         }
+        "inheritance.child_vanished_before_audit" => {
+            "a child process exited before its evidence could be read - whether it saw the session clock is unknown"
+        }
         "source.network_at_start" => {
             "the target opened a network connection - it may read time from a server, which no local hook can cover"
         }
@@ -3606,11 +3609,18 @@ fn run_session(
     fold_children(&mut session, &mut family, &mut family_pids);
 
     let heartbeat = Duration::from_secs(1);
+    // Children are polled faster than the heartbeat. A child publishes its evidence in a section
+    // that only its own handle keeps alive, so a child shorter-lived than the poll interval takes
+    // that evidence with it - and installers, the case ADR-3 exists for, spawn exactly such short
+    // helpers. A tenth of a second narrows the window without touching the protocol's once-a-second
+    // heartbeat (the section walk is a few memory reads, not I/O).
+    let child_poll = Duration::from_millis(100);
     let mut deadline = Instant::now() + heartbeat;
+    let mut child_deadline = Instant::now() + child_poll;
     let mut target_exit: Option<i32> = None;
 
     loop {
-        let wait = deadline.saturating_duration_since(Instant::now());
+        let wait = deadline.min(child_deadline).saturating_duration_since(Instant::now());
         match rx.recv_timeout(wait) {
             Ok(Command::End { .. }) => break,
             Ok(Command::Query { id, .. }) => {
@@ -3654,13 +3664,21 @@ fn run_session(
             }
             Ok(_) => {} // Start or a not-yet-supported command: ignore
             Err(mpsc::RecvTimeoutError::Timeout) => {
-                emit(&state_event(&session));
-                fold_children(&mut session, &mut family, &mut family_pids);
-                if !session.is_alive() {
-                    target_exit = session.exit_code();
-                    break;
+                let now = Instant::now();
+                if now >= child_deadline {
+                    fold_children(&mut session, &mut family, &mut family_pids);
+                    child_deadline = now + child_poll;
                 }
-                deadline = Instant::now() + heartbeat;
+                // The heartbeat keeps its own once-a-second cadence: `state` and the liveness check
+                // stay exactly as often as the protocol says, whatever the child poll does.
+                if now >= deadline {
+                    emit(&state_event(&session));
+                    if !session.is_alive() {
+                        target_exit = session.exit_code();
+                        break;
+                    }
+                    deadline = now + heartbeat;
+                }
             }
             Err(mpsc::RecvTimeoutError::Disconnected) => break, // stdin closed
         }

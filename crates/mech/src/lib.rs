@@ -109,6 +109,9 @@ pub struct Session {
     /// session so a child's evidence survives its exit. Also the record of which PIDs
     /// have been reported, so `poll_new_coverage` emits each process exactly once.
     cov_maps: Vec<CovMap>,
+    /// Pids that registered but whose coverage section was already gone when we looked - a child
+    /// that lived shorter than the poll interval. Kept so each is reported once and not retried.
+    vanished_pids: Vec<u32>,
     /// The session lock, held for as long as the session lives. Dropped last, so a second core
     /// cannot start until this one has released the control block it was using.
     _lock: SessionLock,
@@ -250,7 +253,10 @@ impl Session {
             for i in 0..MAX_COV_PIDS {
                 let pid = read_pid(self.ctl(), i);
                 // 0 = empty or reserved-but-not-yet-published; skip and retry later.
-                if pid == 0 || self.cov_maps.iter().any(|c| c.pid == pid) {
+                if pid == 0
+                    || self.cov_maps.iter().any(|c| c.pid == pid)
+                    || self.vanished_pids.contains(&pid)
+                {
                     continue;
                 }
                 if let Some((hmap, addr)) = open_cov(pid) {
@@ -258,9 +264,23 @@ impl Session {
                     let coverage = gather_coverage(cov, read_installed(cov), self.scale_duration);
                     self.cov_maps.push(CovMap { pid, hmap, view_addr: addr });
                     out.push((pid, coverage));
+                } else {
+                    // The pid is in the registry, and the hook registers itself ONLY after its
+                    // coverage section exists and its detours are live - so that section did exist.
+                    // Failing to open it now means the process is already gone and took the section
+                    // with it (its own handle was the only one keeping it alive). No later poll can
+                    // recover it, so the process is reported with an explicit reason instead of
+                    // being dropped from the family: a short-lived installer helper that ran
+                    // uncovered must not vanish from the audit too (untouchable rule 4).
+                    self.vanished_pids.push(pid);
+                    out.push((
+                        pid,
+                        Coverage {
+                            warning_keys: vec!["inheritance.child_vanished_before_audit".to_string()],
+                            ..Coverage::default()
+                        },
+                    ));
                 }
-                // Not openable yet (section not published, or process gone before we
-                // looked): leave it unseen so a later poll can still pick it up.
             }
         }
         out
@@ -678,6 +698,7 @@ pub fn prepare(spec: &SessionSpec, target: &Target, hook_dll: &Path) -> Result<P
             tz_bias,
             scale_duration: spec.scale_duration,
             cov_maps,
+            vanished_pids: Vec::new(),
             _lock: lock,
         };
         Ok(Prepared { coverage, session, vanished_lived_ms, orphan_reclaimed })
