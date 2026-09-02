@@ -84,6 +84,7 @@ impl LaunchedChromium {
 /// record it in the file. Fails loudly if the port never appears (remote debugging disabled, or not
 /// actually a Chromium app) rather than pretending the session started.
 pub fn launch_chromium(target: &str, args: &[String]) -> io::Result<LaunchedChromium> {
+    sweep_orphan_profiles();
     let user_data_dir = unique_temp_dir();
     std::fs::create_dir_all(&user_data_dir)?;
 
@@ -126,6 +127,23 @@ fn read_active_port(port_file: &Path) -> Option<u16> {
     let contents = std::fs::read_to_string(port_file).ok()?;
     let port: u16 = contents.lines().next()?.trim().parse().ok()?;
     (port != 0).then_some(port)
+}
+
+/// Best-effort sweep of profile directories a force-killed driver left behind (P3, pre-release audit). A
+/// live session's Chromium holds file locks on its profile, so `remove_dir_all` fails and leaves it be;
+/// only an orphaned (unlocked) `chrono-cdp-*` profile is removed. Called before this session makes its own.
+fn sweep_orphan_profiles() {
+    let Ok(entries) = std::fs::read_dir(std::env::temp_dir()) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir()
+            && path.file_name().and_then(|n| n.to_str()).is_some_and(|n| n.starts_with("chrono-cdp-"))
+        {
+            let _ = std::fs::remove_dir_all(&path); // best effort - a live profile is locked and survives
+        }
+    }
 }
 
 fn unique_temp_dir() -> PathBuf {

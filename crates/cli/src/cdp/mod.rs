@@ -175,15 +175,23 @@ pub fn http_get_json(host: &str, port: u16, path: &str) -> io::Result<Value> {
         }
     }
 
+    // Cap the body (P3, pre-release audit): a hostile or broken peer's Content-Length must not drive a huge
+    // up-front allocation, and a bodiless response must not read without bound. The DevTools JSON we fetch
+    // (the target list, the WS URL) is tiny, so this ceiling is generous.
+    const MAX_HTTP_BODY: usize = 16 * 1024 * 1024;
     let body = match content_length {
         Some(len) => {
+            if len > MAX_HTTP_BODY {
+                return Err(io::Error::new(io::ErrorKind::InvalidData, "HTTP Content-Length exceeds the cap"));
+            }
+
             let mut b = vec![0u8; len];
             reader.read_exact(&mut b)?;
             b
         }
         None => {
             let mut b = Vec::new();
-            reader.read_to_end(&mut b)?;
+            reader.by_ref().take(MAX_HTTP_BODY as u64).read_to_end(&mut b)?;
             b
         }
     };

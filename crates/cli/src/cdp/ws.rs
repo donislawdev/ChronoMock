@@ -144,6 +144,12 @@ impl WsClient {
             Ok(0) => Ok(Fill::Closed),
             Ok(n) => {
                 self.rbuf.extend_from_slice(&tmp[..n]);
+                if self.rbuf.len() > MAX_WS_BYTES {
+                    // A frame claiming a huge payload would otherwise grow this buffer toward that size
+                    // (P3, pre-release audit): bound it so a hostile or runaway peer cannot exhaust memory.
+                    return Err(io::Error::new(io::ErrorKind::InvalidData, "websocket frame exceeds the size cap"));
+                }
+
                 Ok(Fill::Data)
             }
             Err(e) if matches!(e.kind(), io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut) => Ok(Fill::Timeout),
@@ -159,6 +165,10 @@ impl WsClient {
                 0x0..=0x2 => {
                     // continuation (0x0) | text (0x1) | binary (0x2) - accumulate until FIN.
                     self.msg.extend_from_slice(&payload);
+                    if self.msg.len() > MAX_WS_BYTES {
+                        // Many fragmented frames must not accumulate without bound either (P3).
+                        return Err(io::Error::new(io::ErrorKind::InvalidData, "websocket message exceeds the size cap"));
+                    }
                     if fin {
                         let bytes = std::mem::take(&mut self.msg);
                         return String::from_utf8(bytes)
@@ -200,6 +210,11 @@ impl WsClient {
         self.mask_counter.to_be_bytes()
     }
 }
+
+/// Cap on the read buffer and on an assembled message (P3, pre-release audit). CDP messages are small, so
+/// anything past this is a runaway or hostile peer - bounded so a huge or endless frame cannot grow memory
+/// without limit. The peer here is a Chromium instance we launched, so this is defence in depth.
+const MAX_WS_BYTES: usize = 16 * 1024 * 1024;
 
 /// Parse and remove one complete WebSocket frame from the front of `buf`, if the buffer holds one.
 /// Server frames are usually unmasked, but the mask bit is honoured either way. Returns
