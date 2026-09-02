@@ -10,3 +10,11 @@ allow = [
     "Apache-2.0",
     "Unicode-3.0",
 ]
+
+# Vulnerability gate (P3, pre-release audit): fail on a known RustSec advisory in any dependency, so a
+# security fix in a crate we ship is not missed. Run: cargo deny check advisories (fetches the RustSec DB,
+# so it needs network - a pre-release gate, not every build). v2 defaults deny vulnerabilities and yanked
+# crates; `ignore` would list any advisory consciously accepted, with a reason.
+[advisories]
+version = 2
+ignore = []

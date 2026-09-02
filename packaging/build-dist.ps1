@@ -37,11 +37,16 @@
 
 .PARAMETER SkipPublish
     Reuse the last GUI publish under target/publish-gui instead of publishing again.
+
+.PARAMETER SkipGates
+    Skip the pre-package gates (deny/clippy/test/format). For fast iteration only - a real release build
+    must run them, so a broken build is never packaged.
 #>
 [CmdletBinding()]
 param(
     [switch] $SkipCoreBuild,
-    [switch] $SkipPublish
+    [switch] $SkipPublish,
+    [switch] $SkipGates
 )
 
 $ErrorActionPreference = 'Stop'
@@ -68,6 +73,30 @@ $x64core = Join-Path $root 'target/release/chrono.exe'
 $x64hook = Join-Path $root 'target/release/chrono_hook.dll'
 $x86core = Join-Path $root 'target/i686-pc-windows-msvc/release/chrono.exe'
 $x86hook = Join-Path $root 'target/i686-pc-windows-msvc/release/chrono_hook.dll'
+
+# --- 0. Gates: a broken build must never be packaged (P3, pre-release audit). The hermetic gates run
+#        here - license + advisory sieve, clippy, both test suites, and the format check; the
+#        environmental harness (tools/probes/run-targets.ps1, BOTH targets) is the separate manual
+#        pre-release step, since it needs a prepared host (Defender off, injection). -----------------
+if (-not $SkipGates) {
+    Write-Host '== gates: cargo deny / clippy / test, dotnet test / format =='
+    Push-Location $root
+    try {
+        cargo deny check licenses advisories
+        if ($LASTEXITCODE -ne 0) { throw "cargo deny failed with exit $LASTEXITCODE" }
+        cargo clippy --workspace --all-targets -- -D warnings
+        if ($LASTEXITCODE -ne 0) { throw "cargo clippy failed with exit $LASTEXITCODE" }
+        cargo test --workspace
+        if ($LASTEXITCODE -ne 0) { throw "cargo test failed with exit $LASTEXITCODE" }
+        dotnet test (Join-Path $root 'gui/ChronoMock.slnx') --filter 'Category!=Integration' --nologo
+        if ($LASTEXITCODE -ne 0) { throw "dotnet test (hermetic) failed with exit $LASTEXITCODE" }
+        dotnet format (Join-Path $root 'gui/ChronoMock.slnx') --verify-no-changes
+        if ($LASTEXITCODE -ne 0) { throw "dotnet format found unformatted code (exit $LASTEXITCODE)" }
+    }
+    finally {
+        Pop-Location
+    }
+}
 
 # --- 1. Native cores, both bitnesses. The support matrix promises x64 AND x86, so a missing
 #        i686 build is a hard stop, never a silent single-bitness ship (rule 6). ------------------
