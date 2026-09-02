@@ -36,7 +36,7 @@ public class PresetCatalogTests
         var param = Assert.Single(payment.Parameters);
         Assert.Equal("days", param.Id);
         Assert.Equal("duration", param.Type);
-        Assert.Equal(90, param.DefaultAmount);
+        Assert.Equal(90L, param.DefaultAmount);
         Assert.Equal("business_days", param.DefaultUnit);
     }
 
@@ -69,6 +69,42 @@ public class PresetCatalogTests
     [Fact]
     public void A_missing_directory_yields_an_empty_catalogue()
         => Assert.Empty(PresetCatalog.Load(Path.Combine(TestPaths.RepoRoot(), "no-such-presets")));
+
+    [Fact]
+    public void A_bad_amount_does_not_crash_the_whole_catalogue()
+    {
+        // RELEASE-011: a preset whose default.amount is out of Int32 range or fractional must not take down
+        // the whole list. GetInt32 threw FormatException/OverflowException the catch did not cover; now the
+        // amount is read as i64 (TryGetInt64, no throw), and a fractional one leaves the default unset.
+        var dir = Path.Combine(Path.GetTempPath(), $"chrono-presets-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(dir);
+        try
+        {
+            File.WriteAllText(Path.Combine(dir, "good.json"), Preset("good", "5"));
+            File.WriteAllText(Path.Combine(dir, "huge.json"), Preset("huge", "3000000000")); // > Int32.MaxValue
+            File.WriteAllText(Path.Combine(dir, "fractional.json"), Preset("fractional", "90.5"));
+
+            var loaded = PresetCatalog.Load(dir);
+
+            Assert.Equal(3, loaded.Count); // one bad file never removes the others
+            Assert.Equal(5L, loaded.Single(p => p.Id == "good").Parameters[0].DefaultAmount);
+            Assert.Equal(3_000_000_000L, loaded.Single(p => p.Id == "huge").Parameters[0].DefaultAmount); // i64, not Int32
+            Assert.Null(loaded.Single(p => p.Id == "fractional").Parameters[0].DefaultAmount); // fractional -> unset
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    // Built by concatenation, not an interpolated raw string: the JSON's own "}}" runs collide with the
+    // interpolation delimiter.
+    private static string Preset(string id, string amount) =>
+        "{\"schema\":\"chronomock.preset/1\",\"id\":\"" + id + "\",\"applies_to\":\"calculator\"," +
+        "\"name\":{\"en\":\"" + id + "\"},\"explains\":{\"en\":\"x\"}," +
+        "\"parameters\":[{\"id\":\"days\",\"type\":\"duration\"," +
+        "\"default\":{\"amount\":" + amount + ",\"unit\":\"days\"}}]," +
+        "\"moment\":{\"base\":\"today\",\"steps\":[]}}";
 
     [Theory]
     [InlineData("Last day of quarter", "reporting on the last day", "quarter", true)]

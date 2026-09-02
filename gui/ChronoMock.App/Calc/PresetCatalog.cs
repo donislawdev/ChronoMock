@@ -10,7 +10,7 @@ namespace ChronoMock.App.Calc;
 public sealed record PresetParameter(
     string Id,
     string Type,
-    int? DefaultAmount,
+    long? DefaultAmount, // i64, matching the CLI/core contract (docs/04 4.2) - not Int32 (RELEASE-011)
     string? DefaultUnit,
     string? DefaultHint);
 
@@ -109,8 +109,12 @@ public static class PresetCatalog
                 appliesTo, market, ReadParameters(root), moment);
             return true;
         }
-        catch (Exception e) when (e is JsonException or IOException or InvalidOperationException)
+        catch (Exception e) when (e is JsonException or IOException or InvalidOperationException
+                                      or FormatException or OverflowException)
         {
+            // Skip one malformed file rather than take down the whole list (rule 6). FormatException /
+            // OverflowException are defensive: a numeric accessor on an unexpected node could throw them, so
+            // a hostile preset in a shared catalogue cannot crash the calculator's preset list (RELEASE-011).
             return false;
         }
     }
@@ -129,13 +133,17 @@ public static class PresetCatalog
                     continue;
                 }
 
-                int? defaultAmount = null;
+                long? defaultAmount = null;
                 string? defaultUnit = null;
                 if (p.TryGetProperty("default", out var def) && def.ValueKind == JsonValueKind.Object)
                 {
-                    if (def.TryGetProperty("amount", out var amount) && amount.ValueKind == JsonValueKind.Number)
+                    // Read as i64 to match the contract (the CLI and core read amount as i64) and to never
+                    // throw: TryGetInt64 returns false for a fractional or out-of-range number, leaving the
+                    // default unset instead of crashing the whole catalogue on one bad file (RELEASE-011).
+                    if (def.TryGetProperty("amount", out var amount) && amount.ValueKind == JsonValueKind.Number
+                        && amount.TryGetInt64(out var amt))
                     {
-                        defaultAmount = amount.GetInt32();
+                        defaultAmount = amt;
                     }
 
                     if (def.TryGetProperty("unit", out var unit) && unit.ValueKind == JsonValueKind.String)
