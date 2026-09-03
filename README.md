@@ -126,16 +126,18 @@ port and a clean isolated profile (see the support matrix), so it is not affecte
 
 ## Support matrix
 
-_Generated from the internal test suite on 2026-08-19 (x64 and x86)._
+_Most rows come from the internal test suite, last run on 2026-09-03 (x64 and x86). The Python and
+Electron rows were verified by hand instead - the suite does not exercise those two yet, and the
+Basis column says which is which._
 
 | Environment | Status | Basis | Notes |
 |---|---|---|---|
 | Native Win32 / Win64 (C, C++, Delphi) | supported | measured on x64, x86 | The cleanest case |
 | .NET (Framework and modern) | experimental | measured on x64, x86 | Time calls go through Win32 exports and are covered, including the session time zone. Stopwatch stays on the real high-resolution counter unless you opt in with Scale QPC (`--scale-qpc`), which accelerates it too |
 | Java (JVM) | experimental | measured on x64, x86 | Wall clock and elapsed time are covered. The session time zone is not reached - a known gap. nanoTime stays on the real high-resolution counter unless you opt in with Scale QPC (`--scale-qpc`) |
-| Python (CPython, incl. PyInstaller) | experimental | measured on x64 | Wall clock (time.time, datetime) is covered. perf_counter, and monotonic on Python 3.13+, are on the high-resolution counter - real by default, accelerated when you opt in with Scale QPC (`--scale-qpc`) |
+| Python (CPython, incl. PyInstaller) | experimental | measured by hand on x64, not by the suite | Wall clock (time.time, datetime) is covered. perf_counter, and monotonic on Python 3.13+, are on the high-resolution counter - real by default, accelerated when you opt in with Scale QPC (`--scale-qpc`) |
 | Applications reading time from the network | out of scope by definition | the audit detects it | connect observed, warned |
-| Electron / Chromium | experimental (Chromium mode) | measured (Pomotroid, x64) | A separate mechanism, not injection: the app is launched with a debug port and a clean isolated profile, and its own JS time APIs are put on the session clock over the DevTools protocol - reaching the sandboxed renderer and its Web Workers, where the timer often lives. The session zone follows the host zone (the instant is faked, not the local-time getters) |
+| Electron / Chromium | experimental (Chromium mode) | measured by hand (Pomotroid, x64), not by the suite | A separate mechanism, not injection: the app is launched with a debug port and a clean isolated profile, and its own JS time APIs are put on the session clock over the DevTools protocol - reaching the sandboxed renderer and its Web Workers, where the timer often lives. The session zone follows the host zone (the instant is faked, not the local-time getters) |
 | UWP / MSIX (Store apps) | not supported | declared (not exercised) | Packaging and launch model |
 | ARM64 | out of scope through v1.0 | declared (not exercised) | To be revisited |
 
