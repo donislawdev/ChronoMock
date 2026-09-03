@@ -10,9 +10,10 @@ namespace ChronoMock.Protocol;
 /// Drives one core process over the machine protocol (ADR-6): spawns <c>chrono __core</c>, sends the
 /// <c>start</c> command first, then relays the event stream.
 /// <para>
-/// Start-first is deliberate and mirrors the core: <c>core_mode</c> reads the <c>start</c> line before it
-/// emits <c>ready</c>, so a client that waited for <c>ready</c> before sending <c>start</c> would deadlock.
-/// (docs/08 section 3 describes the opposite order - that is a doc-vs-code drift; the code is the contract.)
+/// The core emits <c>ready</c> FIRST and only then reads the <c>start</c> line, so this client gates on
+/// <c>ready</c> before sending - see <see cref="Connect"/>. This paragraph used to claim the opposite and
+/// call docs/08 a drift; the doc was right and the comment was stale, which is worse than no comment at
+/// all because a reader trusts it over the code (R2-N1).
 /// </para>
 /// The GUI is a client of this protocol, not FFI, so it stays AnyCPU and lets the core match the target's bitness.
 /// </summary>

@@ -3145,7 +3145,16 @@ fn read_target_creation_date(
     let meta = std::fs::metadata(target).ok()?;
     // creation_time() is a Windows FILETIME (100ns since 1601-01-01 UTC) - the same shape the
     // wall-clock conversion speaks - so express it in the session zone as a civil date.
-    let wall = filetime_utc_to_wall(meta.creation_time() as i64, tz_bias_min.unwrap_or(0));
+    //
+    // Zero means the file system does not record a creation time (some network and non-NTFS
+    // volumes), and it is not a date: taken literally it hands the preset 1601-01-01 and the trial
+    // computes from there without a word (R2-N13). None instead, which the caller already knows how
+    // to report - "this preset needs a start date" beats a confident wrong one (rule 6).
+    let created = meta.creation_time();
+    if created == 0 {
+        return None;
+    }
+    let wall = filetime_utc_to_wall(created as i64, tz_bias_min.unwrap_or(0));
     chrono_core::calc::parse_civil_datetime(&wall).ok()
 }
 

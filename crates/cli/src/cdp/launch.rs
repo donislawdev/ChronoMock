@@ -84,6 +84,24 @@ impl LaunchedChromium {
 /// record it in the file. Fails loudly if the port never appears (remote debugging disabled, or not
 /// actually a Chromium app) rather than pretending the session started.
 pub fn launch_chromium(target: &str, args: &[String]) -> io::Result<LaunchedChromium> {
+    // A user-supplied --user-data-dir would win over ours (Chromium takes the last one), and the
+    // session would then run on the REAL profile of a real browser - the one thing the isolated
+    // profile exists to prevent, and something the tester was told in writing does not happen
+    // (R2-N8). Refused rather than silently overridden: we cannot honour the flag and the promise
+    // at the same time, so we say which one we are keeping.
+    if let Some(bad) = args.iter().find(|a| {
+        let a = a.trim_start_matches('-').to_ascii_lowercase();
+        a.starts_with("user-data-dir") || a.starts_with("remote-debugging-port")
+    }) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!(
+                "'{bad}' collides with the isolated profile and debug port this session needs - \
+                 remove it from --args"
+            ),
+        ));
+    }
+
     sweep_orphan_profiles();
     let user_data_dir = unique_temp_dir();
     std::fs::create_dir_all(&user_data_dir)?;
@@ -206,6 +224,26 @@ fn unique_temp_dir() -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// R2-N8: our isolated profile is added BEFORE the user's arguments, and Chromium takes the
+    /// last --user-data-dir it is given - so a user-supplied one would have won and the session
+    /// would have run on their real browser profile, which the launch doc promises never happens.
+    /// The check runs before anything is spawned, so a target that does not exist is enough.
+    #[test]
+    fn a_user_supplied_profile_or_port_flag_is_refused_not_silently_overridden() {
+        for arg in ["--user-data-dir=/home/me/real", "--remote-debugging-port=9222"] {
+            match launch_chromium("no-such-app.exe", &[arg.to_string()]) {
+                Err(e) => assert_eq!(e.kind(), io::ErrorKind::InvalidInput, "for {arg}"),
+                Ok(_) => panic!("a colliding flag must be refused: {arg}"),
+            }
+        }
+        // An ordinary argument still passes the check (this one then fails to launch, which is a
+        // different error entirely - the point is that it got that far).
+        match launch_chromium("no-such-app.exe", &["--enable-logging".to_string()]) {
+            Err(e) => assert_ne!(e.kind(), io::ErrorKind::InvalidInput),
+            Ok(_) => panic!("a missing target cannot launch"),
+        }
+    }
 
     #[test]
     fn detects_a_chromium_folder_by_its_runtime_files() {

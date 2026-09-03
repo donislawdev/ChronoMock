@@ -101,7 +101,7 @@ For applications with licence protection this can be permanent. "Clock rollback 
 
 **Back up the application's data directory before your first future-dated session.**
 
-Chrono Mock leaves nothing behind in your system - no persistent hooks, no registry entries, no files outside its own folder. That guarantee covers the tool. It does not, and cannot, cover the application under test.
+Chrono Mock leaves nothing behind in your system - no persistent hooks, no registry entries, and nothing outside its own folder except three things it will name for you: the session history and the diagnostics log, which move to `%LOCALAPPDATA%\ChronoMock\` when the tool's own folder is not writable (a USB stick, or Program Files without admin), and, for an Electron or Chromium target, a throwaway browser profile under `%TEMP%` that is deleted when the session ends - and reported in the session summary if it could not be. That guarantee covers the tool. It does not, and cannot, cover the application under test.
 
 ---
 

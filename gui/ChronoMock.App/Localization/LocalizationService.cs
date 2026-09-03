@@ -50,6 +50,13 @@ public static class LocalizationService
         }
     }
 
+    /// <summary>Whether a string is shaped like a culture tag (<c>en</c>, <c>pl</c>, <c>pt-BR</c>) -
+    /// letters and at most one hyphen, nothing that could steer a path.</summary>
+    private static bool IsCultureTag(string culture)
+        => culture.Length is > 0 and <= 16
+           && culture.Count(c => c == '-') <= 1
+           && culture.All(c => char.IsAsciiLetter(c) || c == '-');
+
     /// <summary>The cultures that have a strings file present, discovered by scanning the folder.</summary>
     public static IReadOnlyList<string> AvailableCultures() => AvailableCulturesIn(FolderPath);
 
@@ -95,6 +102,14 @@ public static class LocalizationService
     /// string by construction - the file cannot describe anything else.</summary>
     public static ResourceDictionary Load(string culture)
     {
+        // The culture is pasted into a file name, so it is restricted to what a culture tag can even
+        // be (R2-N18). Today every caller passes a constant, but the moment a language switch reads
+        // this from a setting or the OS, an unrestricted value would be a path fragment.
+        if (!IsCultureTag(culture))
+        {
+            return new ResourceDictionary();
+        }
+
         var path = Path.Combine(FolderPath, $"{FilePrefix}{culture}{FileSuffix}");
         if (!File.Exists(path))
         {

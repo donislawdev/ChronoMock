@@ -5,9 +5,10 @@
 //! DATA lives in `calendars/*.json` (loaded by the consumer, which owns the I/O and serde);
 //! this module is the pure engine over already-parsed rules, unit-testable without files.
 //!
-//! Stage-4 slice 6 builds `Fixed` and `NthWeekday` (enough for both US calendars, which use
-//! no Easter) plus the four observance modifiers. `EasterOffset` is in the model so the schema
-//! is complete, and resolves to an honest "not built yet" until the Easter slice.
+//! All three rule types are built - `Fixed`, `NthWeekday` and `EasterOffset` (Meeus) - together
+//! with the four observance modifiers. The doc here used to promise an honest "not built yet" for
+//! Easter long after `holiday_days` had implemented it, which is the kind of drift that makes a
+//! reader trust the comment over the code (R2-N2).
 
 use crate::calc::CivilDateTime;
 
@@ -131,6 +132,13 @@ fn holiday_days(rule: &HolidayRule, year: i64) -> Option<i64> {
             nth_weekday_days(year, *month, *weekday, *order)
         }
         HolidayRule::EasterOffset { offset } => {
+            // Meeus' algorithm is stated for the Gregorian calendar, and its `%` on a negative year
+            // truncates toward zero, producing a month and day that are not a date at all - then cast
+            // to u32 (R2-N3). Unreachable through the loaders, which validate `valid_from`, but this
+            // engine is a library: an out-of-era year has no Easter rather than a nonsensical one.
+            if year < 1 {
+                return None;
+            }
             let (month, day) = easter_sunday(year);
             Some(days(year, month, day) + *offset as i64)
         }
@@ -160,6 +168,12 @@ fn observed_days(d: i64, observed: Observed) -> i64 {
 
 /// The holiday whose CALENDAR date (before observance) is `date`, if any and in force. Answers
 /// "is this date Independence Day?" - true for July 4 regardless of the weekday it lands on.
+/// 🔴 The FIRST holiday whose rule lands on this date, in file order - two holidays sharing a day
+/// (Christmas and a national day, say) report only the first, and the loader's duplicate check is on
+/// `id`, not on date (R2-N5). A documented limit rather than a silent one: nothing in the shipped
+/// calendars collides, and returning a list would change the report's shape for a case that has not
+/// arisen. If one ever does, the second holiday still makes the day non-business - only its NAME is
+/// missing.
 pub fn holiday_on<'a>(date: &CivilDateTime, cal: &'a Calendar) -> Option<&'a Holiday> {
     let target = days(date.year, date.month, date.day);
     cal.holidays
@@ -329,6 +343,31 @@ mod tests {
         assert_eq!(nth_weekday_days(2026, 5, 1, -1), Some(days(2026, 5, 25)));
         // Last-weekday when the month ends exactly on that weekday still works (May 2027 ends Mon).
         assert_eq!(nth_weekday_days(2027, 5, 1, -1), Some(days(2027, 5, 31)));
+    }
+
+    #[test]
+    fn an_easter_rule_has_no_answer_before_the_gregorian_era() {
+        // R2-N3: Meeus' algorithm is stated for the Gregorian calendar and its `%` truncates toward
+        // zero for a negative year, so it produced a (month, day) that is not a date - then cast to
+        // u32. Unreachable through the loaders, reachable through this engine as a library.
+        let cal = Calendar {
+            id: "t".into(),
+            country: "PL".into(),
+            weekend: vec![0, 6],
+            observed: Observed::None,
+            holidays: vec![h("easter", HolidayRule::EasterOffset { offset: 0 }, None)],
+        };
+        for year in [-100, 0] {
+            for month in 1..=12u32 {
+                for day in [1u32, 15, 28] {
+                    let d = CivilDateTime { year, month, day, hour: 0, minute: 0, second: 0 };
+                    assert!(holiday_on(&d, &cal).is_none(), "{year}-{month}-{day}");
+                }
+            }
+        }
+        // The era it IS stated for still answers: Easter 2026 is 5 April.
+        let easter = CivilDateTime { year: 2026, month: 4, day: 5, hour: 0, minute: 0, second: 0 };
+        assert!(holiday_on(&easter, &cal).is_some());
     }
 
     #[test]

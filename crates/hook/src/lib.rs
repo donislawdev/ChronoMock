@@ -74,7 +74,8 @@ use chrono_ctl::{
 use minhook::MinHook;
 use windows::core::{s, w, PCSTR};
 use windows::Win32::Foundation::{
-    CloseHandle, FILETIME, HANDLE, HMODULE, SYSTEMTIME, WAIT_FAILED,
+    CloseHandle, SetLastError, ERROR_INVALID_PARAMETER, FILETIME, HANDLE, HMODULE, SYSTEMTIME,
+    WAIT_FAILED,
 };
 use windows::Win32::System::Diagnostics::Debug::{OutputDebugStringA, WriteProcessMemory};
 use windows::Win32::System::LibraryLoader::{
@@ -703,7 +704,13 @@ unsafe fn shift_filetime(src: *const FILETIME, dst: *mut FILETIME, add: bool) ->
     // overflow-checks off (a panic across the FFI detour boundary is UB), so the check is explicit.
     let shifted = match if add { ticks.checked_add(bias_100ns) } else { ticks.checked_sub(bias_100ns) } {
         Some(v) if v >= 0 => v,
-        _ => return 0,
+        _ => {
+            // FALSE means "call GetLastError" to a Win32 caller, and leaving the thread's last error
+            // as whatever the previous operation set it to is how a caller ends up reporting an
+            // unrelated failure (R2-N16). Say what actually happened.
+            SetLastError(ERROR_INVALID_PARAMETER);
+            return 0;
+        }
     };
     *dst = i64_to_ft(shifted);
     1
