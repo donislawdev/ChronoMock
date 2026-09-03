@@ -40,6 +40,15 @@ public sealed record UnpackedMoment(BaseKind Base, string BaseText, IReadOnlyLis
 /// piece (a <c>{ "parameter": ... }</c> base or shift) or an unrecognized shape throws
 /// <see cref="NotSupportedException"/>: the caller checks the parametric flag first and never fills the
 /// builder from a preset it cannot represent honestly (rule 6).
+/// <para>
+/// That exception type is the whole contract, so every value is read through <see cref="RequireProperty"/>
+/// and <see cref="RequireString"/> rather than the raw accessors (R2-S8). The raw ones leaked whatever the
+/// malformed shape happened to hit - <c>KeyNotFoundException</c>, <c>InvalidOperationException</c>,
+/// <c>FormatException</c>, and for a JSON <c>null</c> in a text field an <c>ArgumentNullException</c> that
+/// the caller did not catch, so a hand-edited preset reached the dispatcher's last-resort message box. The
+/// preset keys are a public contract (untouchable rule 17) and the README invites people to write these
+/// files, so this reader owes them ONE honest failure rather than four accidental ones.
+/// </para>
 /// </summary>
 public static class PresetUnpack
 {
@@ -50,7 +59,9 @@ public static class PresetUnpack
         JsonElement moment, IReadOnlyDictionary<string, ParamValue>? parameters = null)
     {
         var values = parameters ?? NoParameters;
-        var (baseKind, baseText) = ParseBase(moment.GetProperty("base"), values);
+        // RequireProperty also covers a moment that is not an object at all - including the default
+        // JsonElement a preset file with no `moment` leaves behind (PresetCatalog).
+        var (baseKind, baseText) = ParseBase(RequireProperty(moment, "base", "preset moment"), values);
 
         var steps = new List<UnpackedStep>();
         if (moment.TryGetProperty("steps", out var stepsEl) && stepsEl.ValueKind == JsonValueKind.Array)
@@ -85,7 +96,7 @@ public static class PresetUnpack
 
             if (baseEl.TryGetProperty("parameter", out var pn))
             {
-                var id = pn.GetString()!;
+                var id = RequireString(pn, "a base parameter name");
                 if (values.TryGetValue(id, out var value) && value is DateValue date)
                 {
                     return (BaseKind.Specific, NormalizeDate(date.DateTimeText));
@@ -100,14 +111,24 @@ public static class PresetUnpack
 
     private static UnpackedStep ParseStep(JsonElement step, IReadOnlyDictionary<string, ParamValue> values)
     {
-        var property = step.EnumerateObject().First();
+        // A step is a one-key object ({"shift": ...}). An empty object, an array or a bare string used to
+        // leave through InvalidOperationException from First(); it leaves as an unsupported shape now.
+        if (step.ValueKind != JsonValueKind.Object
+            || step.EnumerateObject().Select(p => (JsonProperty?)p).FirstOrDefault() is not { } property)
+        {
+            throw new NotSupportedException("a step is not a one-key object");
+        }
+
         return property.Name switch
         {
-            "snap" => new UnpackedStep(StepKind.Snap, SnapToken: NormalizeSnap(property.Value.GetString()!)),
+            "snap" => new UnpackedStep(
+                StepKind.Snap, SnapToken: NormalizeSnap(RequireString(property.Value, "a snap target"))),
             "shift" => ParseShift(property.Value, values),
-            "set_time" => new UnpackedStep(StepKind.SetTime, SetTime: property.Value.GetString()!),
-            "nearest" => new UnpackedStep(StepKind.Nearest, NearestToken: NormalizeNearest(property.Value.GetString()!)),
-            "to_zone" or "zone" => new UnpackedStep(StepKind.Zone, ZoneOffset: property.Value.GetString()!),
+            "set_time" => new UnpackedStep(StepKind.SetTime, SetTime: RequireString(property.Value, "a set_time")),
+            "nearest" => new UnpackedStep(
+                StepKind.Nearest, NearestToken: NormalizeNearest(RequireString(property.Value, "a nearest target"))),
+            "to_zone" or "zone" => new UnpackedStep(
+                StepKind.Zone, ZoneOffset: RequireString(property.Value, "a zone offset")),
             var other => throw new NotSupportedException($"unknown step '{other}'"),
         };
     }
@@ -117,15 +138,15 @@ public static class PresetUnpack
         // A parametric shift takes its shape from a parameter: a duration gives magnitude + unit (the
         // step's sign carries direction), a variant gives a signed day offset (carrying its own sign, so
         // the step has no sign). The sign field is read only where it is actually needed.
-        if (shift.TryGetProperty("parameter", out var pn))
+        if (shift.ValueKind == JsonValueKind.Object && shift.TryGetProperty("parameter", out var pn))
         {
-            var id = pn.GetString()!;
+            var id = RequireString(pn, "a shift parameter name");
             if (values.TryGetValue(id, out var value))
             {
                 switch (value)
                 {
                     case DurationValue duration:
-                        return new UnpackedStep(StepKind.Shift, Sign: shift.GetProperty("sign").GetString()!,
+                        return new UnpackedStep(StepKind.Shift, Sign: RequireSign(shift),
                             Amount: duration.Amount, UnitToken: NormalizeUnit(duration.UnitToken));
                     case VariantValue variant:
                         var (vsign, vamount) = VariantShift(variant.Label);
@@ -136,11 +157,34 @@ public static class PresetUnpack
             throw new NotSupportedException($"shift parameter '{id}' has no duration or variant value");
         }
 
-        var sign = shift.GetProperty("sign").GetString()!;
-        var amount = shift.GetProperty("amount").GetInt64().ToString(CultureInfo.InvariantCulture);
-        var unit = NormalizeUnit(shift.GetProperty("unit").GetString()!);
-        return new UnpackedStep(StepKind.Shift, Sign: sign, Amount: amount, UnitToken: unit);
+        var sign = RequireSign(shift);
+        var amountEl = RequireProperty(shift, "amount", "a shift");
+        if (amountEl.ValueKind != JsonValueKind.Number || !amountEl.TryGetInt64(out var amount))
+        {
+            throw new NotSupportedException("a shift amount is not a whole number");
+        }
+
+        var unit = NormalizeUnit(RequireString(RequireProperty(shift, "unit", "a shift"), "a shift unit"));
+        return new UnpackedStep(
+            StepKind.Shift, Sign: sign, Amount: amount.ToString(CultureInfo.InvariantCulture), UnitToken: unit);
     }
+
+    private static string RequireSign(JsonElement shift)
+        => RequireString(RequireProperty(shift, "sign", "a shift"), "a shift sign");
+
+    /// <summary>Read a named member, or fail with the one exception type this class promises. Also rejects
+    /// a non-object (an array, a string, or the default JsonElement) rather than throwing from inside.</summary>
+    private static JsonElement RequireProperty(JsonElement element, string name, string what)
+        => element.ValueKind == JsonValueKind.Object && element.TryGetProperty(name, out var value)
+            ? value
+            : throw new NotSupportedException($"{what} has no '{name}'");
+
+    /// <summary>Read a JSON string, or fail with the one exception type this class promises. A JSON null is
+    /// not a string - reading it as one is how an ArgumentNullException used to escape to the dispatcher.</summary>
+    private static string RequireString(JsonElement element, string what)
+        => element.ValueKind == JsonValueKind.String && element.GetString() is { } text
+            ? text
+            : throw new NotSupportedException($"{what} is not a string");
 
     /// <summary>Map a boundary-variant label to a (sign, day amount) shift (docs/05 3.6): day_before is
     /// -1 day, on_day is +0, day_after is +1. Mirrors the CLI's variant_days.</summary>

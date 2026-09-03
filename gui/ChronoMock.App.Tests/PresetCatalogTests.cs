@@ -97,6 +97,34 @@ public class PresetCatalogTests
         }
     }
 
+    [Fact]
+    public void A_file_whose_schema_this_build_does_not_read_is_not_offered()
+    {
+        // R2-S8: the engine's parse_preset refuses anything but chronomock.preset/1, and this reader did not
+        // look at the field at all - so a preset/2 file was listed in the calculator and failed later, deep
+        // in the engine, answering a schema question with a date error. The preset keys are a public
+        // contract (untouchable rule 17), so the version gates the file here too.
+        var dir = Path.Combine(Path.GetTempPath(), $"chrono-presets-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(dir);
+        try
+        {
+            File.WriteAllText(Path.Combine(dir, "good.json"), Preset("good", "5"));
+            File.WriteAllText(
+                Path.Combine(dir, "future.json"),
+                Preset("future", "5").Replace("chronomock.preset/1", "chronomock.preset/2", StringComparison.Ordinal));
+            File.WriteAllText(
+                Path.Combine(dir, "schemaless.json"),
+                Preset("schemaless", "5").Replace("\"schema\":\"chronomock.preset/1\",", "", StringComparison.Ordinal));
+
+            // The readable one still loads - a refused neighbour never takes the list down (rule 6).
+            Assert.Equal("good", Assert.Single(PresetCatalog.Load(dir)).Id);
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
     // Built by concatenation, not an interpolated raw string: the JSON's own "}}" runs collide with the
     // interpolation delimiter.
     private static string Preset(string id, string amount) =>

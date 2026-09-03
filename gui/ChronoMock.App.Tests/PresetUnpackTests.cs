@@ -1,4 +1,5 @@
 using System.IO; // The WPF SDK trims System.IO from implicit usings (Path collides with Shapes.Path).
+using System.Text.Json;
 using ChronoMock.App.Calc;
 
 namespace ChronoMock.App.Tests;
@@ -145,5 +146,35 @@ public class PresetUnpackTests
         Assert.Equal("d", moment.Steps[0].UnitToken);
         Assert.Equal(StepKind.SetTime, moment.Steps[1].Kind);
         Assert.Equal("23:59:59", moment.Steps[1].SetTime);
+    }
+
+    /// <summary>
+    /// R2-S8. The class contract names ONE failure type, and the caller catches by type. Reading the raw
+    /// accessors meant a hand-edited preset threw whatever it happened to hit: a JSON null where a name
+    /// belongs produced an ArgumentNullException the caller does not catch, which reached the dispatcher's
+    /// last-resort message box, and a JSON null in set_time threw nothing at all and quietly filled the
+    /// builder with a null time. The README invites people to write these files.
+    /// </summary>
+    [Theory]
+    [InlineData("{}")] // no base at all
+    [InlineData("[]")] // not an object
+    [InlineData("{\"base\":{\"parameter\":null}}")] // JSON null where a parameter name belongs
+    [InlineData("{\"base\":{\"parameter\":7}}")] // a number where a parameter name belongs
+    [InlineData("{\"base\":\"today\",\"steps\":[{}]}")] // an empty step
+    [InlineData("{\"base\":\"today\",\"steps\":[\"shift\"]}")] // a step that is not an object
+    [InlineData("{\"base\":\"today\",\"steps\":[{\"set_time\":null}]}")] // silently accepted before
+    [InlineData("{\"base\":\"today\",\"steps\":[{\"snap\":5}]}")] // a token that is not a string
+    [InlineData("{\"base\":\"today\",\"steps\":[{\"shift\":{\"amount\":1,\"unit\":\"days\"}}]}")] // no sign
+    [InlineData("{\"base\":\"today\",\"steps\":[{\"shift\":{\"sign\":\"+\",\"unit\":\"days\"}}]}")] // no amount
+    [InlineData("{\"base\":\"today\",\"steps\":[{\"shift\":{\"sign\":\"+\",\"amount\":\"1\",\"unit\":\"d\"}}]}")] // amount as text
+    [InlineData("{\"base\":\"today\",\"steps\":[{\"shift\":{\"parameter\":null,\"sign\":\"+\"}}]}")]
+    public void A_malformed_moment_fails_as_unsupported_whatever_the_malformed_part_is(string json)
+        => Assert.Throws<NotSupportedException>(() => PresetUnpack.UnpackMoment(Moment(json)));
+
+    // Cloned so the element outlives the document, exactly as PresetCatalog keeps a preset's moment.
+    private static JsonElement Moment(string json)
+    {
+        using var doc = JsonDocument.Parse(json);
+        return doc.RootElement.Clone();
     }
 }

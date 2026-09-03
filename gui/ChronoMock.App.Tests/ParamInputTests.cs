@@ -17,6 +17,20 @@ public class ParamInputTests
     ];
 
     [Fact]
+    public void A_parameter_type_this_build_does_not_resolve_yields_no_value()
+    {
+        // R2-S8: the engine refuses an unbuilt parameter type with an honest "not built" (parse_parameter).
+        // Here it fell into the duration branch, so the preset silently computed a date from an amount and
+        // unit nobody entered. Null keeps the preset unfilled and the "needs parameters" note honest.
+        var input = new ParamInputViewModel(new PresetParameter("count", "int", null, null, null), Units());
+
+        Assert.False(input.IsDate);
+        Assert.False(input.IsDuration);
+        Assert.False(input.IsVariant);
+        Assert.Null(input.ToValue());
+    }
+
+    [Fact]
     public void A_date_input_is_null_until_a_date_is_entered()
     {
         var input = new ParamInputViewModel(

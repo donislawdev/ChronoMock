@@ -215,8 +215,9 @@ public sealed class ParamInputViewModel : ObservableObject
     /// <summary>The parameter id, used to build the value map.</summary>
     public string Id => Param.Id;
 
-    /// <summary>The resolved value, or null if a date has not been entered yet (so the preset stays unfilled).
-    /// A variant always has a value (it defaults to a selected option), as does a duration.</summary>
+    /// <summary>The resolved value, or null if it cannot be resolved honestly - a date not entered yet, or a
+    /// parameter type this build does not resolve. A variant always has a value (it defaults to a selected
+    /// option), as does a duration.</summary>
     public ParamValue? ToValue()
     {
         if (IsVariant)
@@ -224,9 +225,21 @@ public sealed class ParamInputViewModel : ObservableObject
             return new VariantValue(_variant.Token);
         }
 
-        return IsDate
-            ? string.IsNullOrWhiteSpace(_dateText) ? null : new DateValue(_dateText.Trim())
-            : new DurationValue(_amount.Trim(), _unit.Token);
+        if (IsDuration)
+        {
+            return new DurationValue(_amount.Trim(), _unit.Token);
+        }
+
+        if (IsDate)
+        {
+            return string.IsNullOrWhiteSpace(_dateText) ? null : new DateValue(_dateText.Trim());
+        }
+
+        // A parameter type this build does not resolve, where the engine answers an honest "not built" and
+        // refuses (crates/cli parse_parameter). It used to fall into the duration branch and quietly feed
+        // the builder a value nobody entered, so the preset computed a date from an invented parameter
+        // (R2-S8). Null keeps it unfilled: the panel shows the "needs parameters" note instead (rule 6).
+        return null;
     }
 
     private static UnitOption FindUnit(string? unit, IReadOnlyList<UnitOption> units)
@@ -824,37 +837,46 @@ public sealed class CalculatorViewModel : ObservableObject
         {
             var unpacked = PresetUnpack.UnpackMoment(preset.Moment, values);
             _unpacking = true;
-            while (Steps.Count > 0)
+            try
             {
-                RemoveStep(Steps[0]);
-            }
+                while (Steps.Count > 0)
+                {
+                    RemoveStep(Steps[0]);
+                }
 
-            SelectedBase = BaseKinds.First(b => b.Kind == unpacked.Base);
-            if (unpacked.Base == BaseKind.Specific)
+                SelectedBase = BaseKinds.First(b => b.Kind == unpacked.Base);
+                if (unpacked.Base == BaseKind.Specific)
+                {
+                    Base.LoadCanonical(unpacked.BaseText);
+                }
+
+                foreach (var step in unpacked.Steps)
+                {
+                    AddUnpackedStep(step);
+                }
+
+                ApplyMarketCalendar(preset.Market);
+            }
+            finally
             {
-                Base.LoadCanonical(unpacked.BaseText);
+                // The flag suppresses the live recompute while the builder is filled programmatically, so a
+                // throw that left it raised would leave the builder silently dead for the rest of the
+                // window's life. It is cleared on the way out whatever happens, not on the paths we listed.
+                _unpacking = false;
             }
-
-            foreach (var step in unpacked.Steps)
-            {
-                AddUnpackedStep(step);
-            }
-
-            ApplyMarketCalendar(preset.Market);
         }
         catch (Exception ex) when (ex is NotSupportedException or InvalidOperationException
                                        or KeyNotFoundException or FormatException)
         {
             // A shape the builder cannot represent, OR a malformed preset moment (missing base/steps, an
             // empty step, a shift without an amount, a non-string where a token is expected) - PresetUnpack
-            // throws these on a hand-edited or user-supplied preset file. Be honest with the "needs
-            // parameters" note rather than crash the dispatcher (M-8, rule 6).
-            _unpacking = false;
+            // throws NotSupportedException for all of those now (R2-S8); the other three stay as defence for
+            // the builder-filling half. Be honest with the "needs parameters" note rather than crash the
+            // dispatcher (M-8, rule 6).
             ShowActivePreset(preset, culture, needsParameters: true);
             return;
         }
 
-        _unpacking = false;
         ShowActivePreset(preset, culture, needsParameters: false);
         _ = RecomputeAsync();
     }

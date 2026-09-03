@@ -56,6 +56,12 @@ public sealed record PresetInfo(
 /// </summary>
 public static class PresetCatalog
 {
+    /// <summary>The only preset schema this build reads, mirroring the engine's <c>parse_preset</c> check
+    /// exactly (R2-S8). The keys of that schema are a public contract (untouchable rule 17), so a file
+    /// written to a later version has to be refused HERE - listing it and letting it fail inside the engine
+    /// would answer a schema question with a date error.</summary>
+    private const string SupportedSchema = "chronomock.preset/1";
+
     public static IReadOnlyList<PresetInfo> Load(string presetsDir)
     {
         if (!Directory.Exists(presetsDir))
@@ -91,6 +97,16 @@ public static class PresetCatalog
         {
             using var doc = JsonDocument.Parse(File.ReadAllText(file));
             var root = doc.RootElement;
+
+            // The schema gates the file before anything else is read, like the engine does.
+            var schema = root.ValueKind == JsonValueKind.Object && root.TryGetProperty("schema", out var sc)
+                         && sc.ValueKind == JsonValueKind.String
+                ? sc.GetString()
+                : null;
+            if (schema != SupportedSchema)
+            {
+                return false;
+            }
 
             var id = root.TryGetProperty("id", out var idEl) ? idEl.GetString() : null;
             if (string.IsNullOrEmpty(id))
