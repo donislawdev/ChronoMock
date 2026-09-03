@@ -145,6 +145,9 @@
   "wait.object_waits_not_scaled": "Object waits are hooked but left real - an I/O or hardware timeout is not shortened.",
   "timer.multimedia_not_scaled": "The multimedia timer (timeSetEvent) is observed but not scaled.",
   "inheritance.ntcreateuserprocess_child_maybe_uncovered": "A child spawned directly via NtCreateUserProcess may not be covered.",
+  // R2-S2. Distinct from the NtCreateUserProcess warning above it: there we choose not to inject,
+  // here we tried and it did not take, so a process of this family really did run on the real clock.
+  "inheritance.child_not_injected": "A child process could not be covered and ran on the real clock - usually a child of a different bitness. The process count is short by that many.",
   "target.single_instance_suspected": "exited right after injection, before the swap could be confirmed",
 
   // Runtime detected statically from the target's files (B1): its monotonic/elapsed clocks stand on QueryPerformanceCounter, which stays real (ADR-2), so a timer built on them does not scale even though the wall clock does. Wording mirrors the CLI describe_warning.

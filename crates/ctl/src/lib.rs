@@ -415,6 +415,16 @@ pub struct Cov {
     /// also aligns `calls` to 8 bytes with no explicit padding (the old u32 + u32 pad was the same 8
     /// bytes, so the section size is unchanged).
     pub installed_channels: u64,
+    /// Children THIS process spawned that the hook could not follow into (ADR-3). `inject_self` is
+    /// best-effort by design - the parent is somebody else's application and we do not get to kill its
+    /// child - but "best-effort" used to mean the failure existed only in an OutputDebugStringA line.
+    /// The family then reported one process fewer, and the verdict said `works` without mentioning that
+    /// a child had been running on the REAL clock (untouchable rule 4). A 32-bit child of a 64-bit
+    /// parent is the ordinary way to reach this, and mixed installers are common.
+    ///
+    /// Counted here, in the SPAWNING parent's own slot, because that is the process the fact belongs to:
+    /// the child never reserved a slot of its own, and never will.
+    pub uninjected_children: u64,
     /// Per-channel call counters for this process, indexed by IDX_*.
     pub calls: [u64; CHANNEL_COUNT],
 }
@@ -422,7 +432,8 @@ pub struct Cov {
 impl Cov {
     /// An empty slot. A `const` rather than `Default` so `[Cov::ZEROED; MAX_COV_PIDS]` builds the
     /// `Ctl` array without requiring `Copy` on a type that must never be copied around by accident.
-    pub const ZEROED: Cov = Cov { installed_channels: 0, calls: [0; CHANNEL_COUNT] };
+    pub const ZEROED: Cov =
+        Cov { installed_channels: 0, uninjected_children: 0, calls: [0; CHANNEL_COUNT] };
 }
 
 /// Size of the session control block, for CreateFileMapping.
@@ -824,6 +835,26 @@ pub unsafe fn read_calls(p: *const Cov, idx: usize) -> u64 {
     read_volatile(slot)
 }
 
+/// Record that a child this process spawned could not be followed into (hook side, own `Cov`).
+/// Same volatile RMW as `bump_calls`: two threads spawning at once may lose a bump, which can only
+/// ever UNDER-count a failure, never invent one - and one is already enough to raise the warning.
+///
+/// # Safety
+/// `p` must point to a live, correctly aligned `Cov`.
+pub unsafe fn bump_uninjected_children(p: *mut Cov) {
+    let slot = addr_of_mut!((*p).uninjected_children);
+    let cur = read_volatile(slot);
+    write_volatile(slot, cur.wrapping_add(1));
+}
+
+/// How many children this process spawned without coverage (mechanism side, per-process `Cov`).
+///
+/// # Safety
+/// `p` must point to a live, correctly aligned `Cov`.
+pub unsafe fn read_uninjected_children(p: *const Cov) -> u64 {
+    read_volatile(addr_of!((*p).uninjected_children))
+}
+
 /// Scale a wait timeout in milliseconds by the duration multiplier: real wait =
 /// requested / M (ADR-7). `INFINITE` (0xFFFFFFFF) and 0 pass through untouched - never
 /// turn "wait forever" into a finite wait, never lengthen a poll. `m` is clamped to >= 1,
@@ -945,7 +976,7 @@ mod tests {
     }
 
     fn zeroed_cov() -> Cov {
-        Cov { installed_channels: 0, calls: [0; CHANNEL_COUNT] }
+        Cov::ZEROED
     }
 
     #[test]
@@ -1174,6 +1205,28 @@ mod tests {
             assert_eq!(read_calls(cov_at(p, parent), IDX_GSTAFT), 1);
             assert_eq!(read_calls(cov_at(p, parent), IDX_NTQST), 0, "child calls stay the child's");
             assert_eq!(read_calls(cov_at(p, child), IDX_NTQST), 2);
+        }
+    }
+
+    /// R2-S2. The uninjected-child count lives beside the channel counters but is NOT one of them:
+    /// no channel index reaches it, and bumping channels never moves it.
+    #[test]
+    fn uninjected_children_count_separately_from_channels() {
+        let mut cov = zeroed_cov();
+        let p = &mut cov as *mut Cov;
+        unsafe {
+            assert_eq!(read_uninjected_children(p), 0);
+            bump_uninjected_children(p);
+            bump_uninjected_children(p);
+            assert_eq!(read_uninjected_children(p), 2);
+
+            // Channel counters and this counter do not alias each other in either direction.
+            bump_calls(p, IDX_GSTAFT);
+            assert_eq!(read_uninjected_children(p), 2);
+            assert_eq!(read_calls(p, IDX_GSTAFT), 1);
+            bump_uninjected_children(p);
+            assert_eq!(read_calls(p, IDX_GSTAFT), 1);
+            assert_eq!(read_calls(p, CHANNEL_COUNT - 1), 0);
         }
     }
 

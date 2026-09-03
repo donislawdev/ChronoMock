@@ -19,7 +19,8 @@ use std::time::Instant;
 use chrono_core::{ChannelCoverage, Coverage, SessionSpec, TimeMode};
 use chrono_ctl::{
     cov_at, ctl_size, freeze_dur, freeze_qpc, read_anchor, read_calls,
-    read_core_pid, read_dur, read_installed, read_pid, read_qpc, write_anchor, write_anchor_full,
+    read_core_pid, read_dur, read_installed, read_pid, read_qpc, read_uninjected_children,
+    write_anchor, write_anchor_full,
     write_core_pid, write_scale_dur, write_scale_qpc, write_tz_bias, ChannelCategory, ChannelModule,
     Cov, Ctl, CHANNELS, MAX_COV_PIDS,
 };
@@ -539,6 +540,13 @@ unsafe fn gather_coverage(cov: *const Cov, installed: u64, scale_duration: bool)
     if any_timer_observed {
         out.warning_keys.push("timer.multimedia_not_scaled".to_string());
     }
+    // A child this process spawned through the COVERED CreateProcess* path could not be followed into
+    // (R2-S2). Distinct from the observed NtCreateUserProcess warning below, which is about a spawn path
+    // we deliberately do not inject through: here we tried and it did not take, so one process of this
+    // family really did run on the real clock, and the family count is one short of the truth.
+    if read_uninjected_children(cov) > 0 {
+        out.warning_keys.push("inheritance.child_not_injected".to_string());
+    }
     // A direct NtCreateUserProcess ran: its child was NOT injected (ADR-3, observed), so warn that the
     // child may run with real time - honest, since real targets spawn through the covered CreateProcess*.
     if any_spawn_observed {
@@ -1015,7 +1023,7 @@ mod tests {
     }
 
     fn zeroed_cov() -> Cov {
-        Cov { installed_channels: 0, calls: [0; chrono_ctl::CHANNEL_COUNT] }
+        Cov::ZEROED
     }
 
     /// S-2 regression. A hook that PREPARED its detours but never enabled them (an AV blocking
@@ -1043,6 +1051,27 @@ mod tests {
         assert!(lock_is_ours(WAIT_ABANDONED), "a dead owner's lock is ours - that is the orphan");
         assert!(!lock_is_ours(WAIT_TIMEOUT), "a live core holding it must refuse us");
         assert!(!lock_is_ours(windows::Win32::Foundation::WAIT_FAILED), "a failed wait refuses too");
+    }
+
+    /// R2-S2. A child the hook could not follow into is a process of this family running on the REAL
+    /// clock. It leaves no slot of its own, so without the parent counting it the audit reports a
+    /// smaller family and a `works` that never mentions it (untouchable rule 4).
+    #[test]
+    fn an_uninjected_child_warns_and_does_not_touch_the_verdict() {
+        let all = CHANNELS.iter().fold(0u64, |acc, ch| acc | ch.bit);
+
+        let mut cov = zeroed_cov();
+        cov.uninjected_children = 1;
+        let gathered = unsafe { gather_coverage(&cov as *const Cov, all, false) };
+        assert!(gathered.warning_keys.iter().any(|k| k == "inheritance.child_not_injected"));
+        // The parent's OWN coverage is untouched: this says something about a different process, and
+        // the two are never merged (rule 4). The family count is what shrinks, and the warning says so.
+        assert_eq!(chrono_core::verdict_from_coverage(&gathered), chrono_core::Verdict::Works);
+
+        // And silence when every child was followed - the warning must mean something.
+        let quiet = zeroed_cov();
+        let gathered = unsafe { gather_coverage(&quiet as *const Cov, all, false) };
+        assert!(!gathered.warning_keys.iter().any(|k| k == "inheritance.child_not_injected"));
     }
 
     /// The paired direction, so the guard above cannot pass by reporting nothing at all: a full

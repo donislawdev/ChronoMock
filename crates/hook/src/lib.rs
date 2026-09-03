@@ -61,7 +61,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::OnceLock;
 
 use chrono_ctl::{
-    bump_calls, cov_at_mut, dur_qpc_at, dur_quit_at, dur_tick_at,
+    bump_calls, bump_uninjected_children, cov_at_mut, dur_qpc_at, dur_quit_at, dur_tick_at,
     publish_pid, read_anchor, read_core_pid, read_dur, read_qpc, read_scale_dur, read_scale_qpc,
     read_tz_bias, reserve_cov_slot, scale_delay_interval, scale_timer_due, scale_timer_elapse, scale_timer_period,
     scale_timer_period_ms, scale_wait, set_channels_installed, ChannelModule, Cov,
@@ -86,9 +86,9 @@ use windows::Win32::System::Memory::{
 };
 use windows::Win32::System::SystemServices::DLL_PROCESS_ATTACH;
 use windows::Win32::System::Threading::{
-    CreateRemoteThread, CreateThread, GetCurrentProcessId, OpenProcess, ResumeThread,
-    WaitForSingleObject, CREATE_SUSPENDED, INFINITE, LPTHREAD_START_ROUTINE, PROCESS_INFORMATION,
-    PROCESS_SYNCHRONIZE, THREAD_CREATION_FLAGS,
+    CreateRemoteThread, CreateThread, GetCurrentProcessId, GetExitCodeThread, OpenProcess,
+    ResumeThread, WaitForSingleObject, CREATE_SUSPENDED, INFINITE, LPTHREAD_START_ROUTINE,
+    PROCESS_INFORMATION, PROCESS_SYNCHRONIZE, THREAD_CREATION_FLAGS,
 };
 use windows::Win32::System::Time::{
     FileTimeToSystemTime, SystemTimeToFileTime, DYNAMIC_TIME_ZONE_INFORMATION, TIME_ZONE_INFORMATION,
@@ -278,6 +278,11 @@ unsafe fn wait_raw(h: HANDLE, ms: u32) {
         }
     }
 }
+
+/// `STILL_ACTIVE` (259): the exit code `GetExitCodeThread` reports for a thread that has not finished.
+/// Read as "we do not know yet", never as a loaded module - the wait above is bounded, so this really
+/// can come back on a child wedged in its loader.
+const STILL_ACTIVE_CODE: u32 = 259;
 
 /// How long to wait for a freshly injected child's `LoadLibraryW` thread before giving up (RELEASE-009).
 /// A finite bound, mirroring `mech::INJECT_TIMEOUT_MS`, so a child that deadlocks in its loader (loader
@@ -1332,14 +1337,20 @@ unsafe extern "system" fn h_ntcup(
 // shared Ctl and hooks itself, so it sees the same wall clock as the parent.
 
 /// Inject this DLL into `hproc` by writing our own module path and running
-/// LoadLibraryW there. Best-effort: on failure the child simply runs uncovered.
+/// LoadLibraryW there. Returns whether the DLL actually loaded there.
+///
+/// Best-effort in the sense that a failure never stops the child: this runs inside somebody else's
+/// application, which asked for that process, so killing it (what `mech::prepare` does for the target
+/// it launched itself) would change the behaviour under test. What the failure MUST do is get counted,
+/// so the audit can say a child ran on the real clock instead of quietly reporting a smaller family
+/// (R2-S2, untouchable rule 4).
 ///
 /// # Safety
 /// `hproc` must be a valid process handle with injection rights.
-unsafe fn inject_self(hproc: HANDLE) {
+unsafe fn inject_self(hproc: HANDLE) -> bool {
     let addr = *SELF_HMOD.get().unwrap_or(&0);
     if addr == 0 {
-        return;
+        return false;
     }
     let hmod = HMODULE(addr as *mut c_void);
     // GetModuleFileNameW returns the char count WITHOUT the NUL on success, or the buffer length on
@@ -1354,7 +1365,7 @@ unsafe fn inject_self(hproc: HANDLE) {
         let n = GetModuleFileNameW(Some(hmod), &mut buf) as usize;
         if n == 0 {
             log("[chrono_hook] GetModuleFileNameW failed, child not injected");
-            return;
+            return false;
         }
         if n < buf.len() {
             break n;
@@ -1363,24 +1374,24 @@ unsafe fn inject_self(hproc: HANDLE) {
             // Past the extended-path maximum: give up, but SAY so - the audit will report the child as
             // uncovered, and without this line nobody could tell why (rule 6).
             log("[chrono_hook] own module path exceeds the path limit, child not injected");
-            return;
+            return false;
         }
         buf.resize(buf.len() * 4, 0);
     };
     let bytes = (n + 1) * 2; // include the NUL terminator
     let remote = VirtualAllocEx(hproc, None, bytes, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
     if remote.is_null() {
-        return;
+        return false;
     }
     if WriteProcessMemory(hproc, remote, buf.as_ptr() as *const c_void, bytes, None).is_err() {
         let _ = VirtualFreeEx(hproc, remote, 0, MEM_RELEASE);
-        return;
+        return false;
     }
     let k32 = match GetModuleHandleA(s!("kernel32.dll")) {
         Ok(h) => h,
         Err(_) => {
             let _ = VirtualFreeEx(hproc, remote, 0, MEM_RELEASE);
-            return;
+            return false;
         }
     };
     // Check the export before transmuting (L-5, matching mech::inject): a None from GetProcAddress would
@@ -1390,21 +1401,35 @@ unsafe fn inject_self(hproc: HANDLE) {
         Some(f) => f,
         None => {
             let _ = VirtualFreeEx(hproc, remote, 0, MEM_RELEASE);
-            return;
+            return false;
         }
     };
     let start: LPTHREAD_START_ROUTINE = Some(std::mem::transmute::<
         unsafe extern "system" fn() -> isize,
         unsafe extern "system" fn(*mut c_void) -> u32,
     >(loadlib));
+    // The remote thread's exit code is the low 32 bits of the HMODULE LoadLibraryW returned; 0 means
+    // the DLL did not load - a child of the other bitness being the ordinary reason. Same reading as
+    // `mech::inject` (H-2), which is where this check was already made and this one was missing.
+    let mut loaded = false;
     if let Ok(hthread) =
         CreateRemoteThread(hproc, None, 0, start, Some(remote as *const c_void), 0, None)
     {
         // Finite wait (RELEASE-009): a child wedged in loader lock must not hang the parent's detour.
         wait_raw(hthread, CHILD_INJECT_TIMEOUT_MS);
+        // A timeout leaves `loaded` false: we did not establish that the hook is there, and claiming
+        // coverage we have not established is the one thing the audit may never do (rule 4).
+        let mut code: u32 = 0;
+        if GetExitCodeThread(hthread, &mut code).is_ok() && code != 0 && code != STILL_ACTIVE_CODE {
+            loaded = true;
+        }
         let _ = CloseHandle(hthread);
     }
     let _ = VirtualFreeEx(hproc, remote, 0, MEM_RELEASE);
+    if !loaded {
+        log("[chrono_hook] child not covered - LoadLibraryW did not load the hook there");
+    }
+    loaded
 }
 
 /// After a create call we forced to CREATE_SUSPENDED returns, inject the hook into the
@@ -1416,7 +1441,16 @@ unsafe fn inject_self(hproc: HANDLE) {
 unsafe fn inherit_into_child(r: i32, pi: *mut PROCESS_INFORMATION, want_suspended: bool) {
     if r != 0 && !pi.is_null() {
         let info = *pi;
-        inject_self(info.hProcess);
+        if !inject_self(info.hProcess) {
+            // Record it in OUR slot: the child never reserved one and never will, so without this the
+            // process simply would not appear anywhere in the audit (R2-S2). The mechanism turns a
+            // non-zero count into `inheritance.child_not_injected`.
+            if let Some(c) = cov_ptr() {
+                bump_uninjected_children(c);
+            }
+        }
+        // Resume regardless. The parent is the application under test and it asked for this child;
+        // holding it suspended or killing it would change the behaviour we were asked to observe.
         if !want_suspended {
             let _ = ResumeThread(info.hThread);
         }

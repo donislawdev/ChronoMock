@@ -1259,6 +1259,9 @@ fn describe_warning(key: &str) -> String {
         "inheritance.ntcreateuserprocess_child_maybe_uncovered" => {
             "a child spawned directly via NtCreateUserProcess may not be covered"
         }
+        "inheritance.child_not_injected" => {
+            "a child process could not be covered and ran on the REAL clock - usually a child of the other bitness; the process count below is short by that many"
+        }
         "source.network_at_start" => {
             "the target opened a network connection - it may read time from a server, which no local hook can cover"
         }
