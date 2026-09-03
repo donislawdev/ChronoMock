@@ -86,6 +86,7 @@
 
   // Core failure reasons (RELEASE-001). When a start/fatal error ends a session, its specific reason becomes the status headline, so a failed start never reads as "Session ended". Phrased as failure statements because they ARE the status line. Emitted by the core (crates/cli, crates/mech).
   "core.hook_dll_missing": "The time hook is missing - the app was not launched under a fake clock (reinstall Chrono Mock).",
+  "protocol.version_mismatch": "This app and the core speak different protocol versions - reinstall Chrono Mock so both come from the same build.",
   "time.bad_mode": "Unsupported time mode - the session did not start.",
   // Rejected rather than applied: past the bound the fake clock leaves the representable date range
   // mid-session and the time channels start disagreeing, and a negative rate would run the clock

@@ -3583,7 +3583,24 @@ fn core_mode() -> i32 {
     };
 
     let (target, time, force) = match cmd {
-        Command::Start { target, time, force, .. } => (target, time, force),
+        Command::Start { v, target, time, force, .. } => {
+            // The version field is in every message BECAUSE the receiver is meant to check it. Nobody
+            // did on this side, so it was a field the contract promised and the code ignored (R2-K3) -
+            // a client speaking a version this core does not would have been served silently, with
+            // whatever its fields happened to mean here. Checked once, at the only command that opens
+            // a session: refuse before anything is launched, and say so.
+            if v != PROTOCOL_VERSION {
+                emit(&Event::Error {
+                    v: PROTOCOL_VERSION,
+                    id: None,
+                    code: 1,
+                    key: "protocol.version_mismatch".into(),
+                    origin: "core".into(),
+                });
+                return 1;
+            }
+            (target, time, force)
+        }
         _ => {
             emit(&Event::Error {
                 v: PROTOCOL_VERSION,
