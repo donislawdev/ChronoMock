@@ -1020,6 +1020,7 @@ fn driver_run(argv: &[String]) -> i32 {
     let mut verdict_line: Option<(String, String)> = None; // parent (start) verdict, fallback
     let mut session_line: Option<(String, String, u32)> = None; // family: (verdict, reason_key, count)
     let mut vanished: Option<(String, u64)> = None; // (reason_key, lived_ms)
+    let mut errors: Vec<(String, String)> = Vec::new(); // (key, origin) - why a session did not start
     let mut warnings: Vec<String> = Vec::new();
     let mut uncovered: Vec<(u32, String)> = Vec::new(); // (pid, channel) - the honest gaps
     let mut covered: Vec<(u32, String, u64)> = Vec::new(); // (pid, channel, calls) - what took effect
@@ -1071,6 +1072,9 @@ fn driver_run(argv: &[String]) -> i32 {
                 Ok(Event::Vanished { reason_key, lived_ms, .. }) => {
                     vanished = Some((reason_key, lived_ms));
                 }
+                Ok(Event::Error { key, origin, .. }) => {
+                    errors.push((key, origin));
+                }
                 Ok(Event::Coverage { pid, covered: cov, observed: obs, uncovered: unc, warning_keys, .. }) => {
                     for k in warning_keys {
                         if !warnings.contains(&k) {
@@ -1106,6 +1110,7 @@ fn driver_run(argv: &[String]) -> i32 {
         session_verdict: session_line,
         parent_verdict: verdict_line,
         vanished,
+        errors,
         warnings,
         uncovered,
         covered,
@@ -1151,6 +1156,12 @@ struct SessionReport {
     parent_verdict: Option<(String, String)>,
     /// The target vanished right after injection - an honest non-effect (ADR-4).
     vanished: Option<(String, u64)>,
+    /// Error events the core emitted, as (key, origin). The `--json` surface always carried these;
+    /// the human report used to drop them on the floor and print `<no verdict emitted>`, so a session
+    /// that never started said nothing about WHY (untouchable rule 6). A start failure becomes the
+    /// headline; anything the core rejected mid-session (an out-of-range `set_multiplier`, which does
+    /// not end the session) is listed below the verdict instead of vanishing.
+    errors: Vec<(String, String)>,
     warnings: Vec<String>,
     /// Channels queried but not covered, tagged with the pid that queried them (never summed
     /// across processes - untouchable rule 4).
@@ -1201,6 +1212,35 @@ fn describe_reason(key: &str) -> &'static str {
         "chromium.contexts_partial" => "some JS contexts ran on the session clock, some could not be reached",
         "chromium.no_time_calls" => "the shim was installed, but the app called no JS time API",
         "chromium.no_contexts" => "no JS context could be shimmed",
+        _ => "",
+    }
+}
+
+/// English gloss for an error key the core emitted. Same contract as `describe_reason`: an unknown
+/// key yields "" and the caller falls back to the raw key, so a core newer than this driver still
+/// says something true rather than something invented.
+///
+/// Whose fault it is matters more here than anywhere else in the report. `core.hook_dll_missing` and
+/// `session.control_failed` are OURS (a broken install, a broken session), `target.launch_failed` is
+/// the target's, and `target.inject_failed` is genuinely ambiguous - which is exactly why the missing
+/// DLL had to stop being reported as that one (R2-W3).
+fn describe_error(key: &str) -> &'static str {
+    match key {
+        "core.hook_dll_missing" => {
+            "chrono_hook.dll is missing next to chrono.exe - this Chrono Mock installation is incomplete"
+        }
+        "session.control_failed" => "the session's control memory could not be set up",
+        "session.already_active" => "another Chrono Mock session is already running - one at a time",
+        "target.launch_failed" => "the target application could not be started",
+        "target.inject_failed" => "the hook could not be injected into the target",
+        "target.attach_failed" => "the target could not be attached to (Chromium/Electron, CDP)",
+        "moment.invalid" => "the requested moment is not a valid date and time",
+        "time.bad_mode" => "the requested time mode is not one this core knows",
+        "time.bad_multiplier" => "the requested speed is outside the range this core accepts",
+        "protocol.version_mismatch" => "the client and the core speak different protocol versions",
+        "protocol.no_command" | "protocol.bad_command" | "protocol.expected_start" => {
+            "the core did not receive a usable start command"
+        }
         _ => "",
     }
 }
@@ -1381,8 +1421,40 @@ fn render_report(r: &SessionReport) -> String {
     } else if let Some((verdict, reason_key)) = &r.parent_verdict {
         out.push_str(&format!("  verdict:  {}\n", verdict_headline(verdict)));
         out.push_str(&format!("            reason: {reason_key}\n"));
+    } else if let Some((key, origin)) = r.errors.first() {
+        // No verdict at all AND an error: the session never started. Say why, and say whose side it
+        // came from - `<no verdict emitted>` alone left the tester to guess between a broken install,
+        // a target that would not launch, and a tool that did nothing (untouchable rule 6).
+        out.push_str("  verdict:  DID NOT START - the session never began\n");
+        let why = describe_error(key);
+        if why.is_empty() {
+            out.push_str(&format!("            reason: {key} (from {origin})\n"));
+        } else {
+            out.push_str(&format!("            {why} [{key}]\n"));
+        }
     } else {
         out.push_str("  verdict:  <no verdict emitted>\n");
+    }
+
+    // Errors the headline did not consume: a session that DID start and then had a command rejected
+    // (an out-of-range set_multiplier, which by design does not end the session). Those used to be
+    // visible only under --json.
+    let trailing = if r.session_verdict.is_some() || r.parent_verdict.is_some() || r.vanished.is_some()
+    {
+        &r.errors[..]
+    } else {
+        r.errors.get(1..).unwrap_or(&[])
+    };
+    if !trailing.is_empty() {
+        out.push_str("  errors:\n");
+        for (key, origin) in trailing {
+            let why = describe_error(key);
+            if why.is_empty() {
+                out.push_str(&format!("            - {key} (from {origin})\n"));
+            } else {
+                out.push_str(&format!("            - {why} [{key}]\n"));
+            }
+        }
     }
 
     if let Some((fake_wall, real_ms, fake_ms)) = &r.timing {
@@ -3659,6 +3731,13 @@ fn core_mode() -> i32 {
                 key: "core.hook_dll_missing".into(),
                 origin: "core".into(),
             });
+            // Human-side detail on stderr (never on the protocol stdout), naming the folder we looked
+            // in. For a portable tool unpacked anywhere, WHERE we looked is the actionable half.
+            let looked_in = std::env::current_exe()
+                .ok()
+                .and_then(|e| e.parent().map(|d| d.display().to_string()))
+                .unwrap_or_else(|| "the folder holding chrono.exe".into());
+            eprintln!("chrono core: chrono_hook.dll not found in {looked_in} - this installation is incomplete");
             emit(&ended_clean());
             return 3;
         }
@@ -3996,7 +4075,22 @@ fn state_event(session: &chrono_mech::Session) -> Event {
 /// The hook DLL sits next to the executable (same target dir, matching bitness).
 fn hook_dll_path() -> Option<std::path::PathBuf> {
     let exe = std::env::current_exe().ok()?;
-    Some(exe.parent()?.join("chrono_hook.dll"))
+    hook_dll_in(exe.parent()?)
+}
+
+/// The hook DLL inside `dir`, or None when it is not there. The existence check is the whole point
+/// (R2-W3): without it a broken install - a half-unpacked release, an antivirus quarantine, someone
+/// who copied `chrono.exe` alone - walked past this and failed later inside the target, where
+/// `LoadLibraryW` returns NULL and the only word we have for that is `target.inject_failed`. That
+/// blames the application under test for a file missing from OUR folder, and the diagnosis that
+/// names the real cause (`core.hook_dll_missing`, translated in both languages) was unreachable.
+///
+/// A file deleted between this check and the injection still lands on the old path, and a directory
+/// we cannot stat reads as missing - which is the honest answer either way, since a DLL we cannot
+/// see is a DLL we cannot inject.
+fn hook_dll_in(dir: &std::path::Path) -> Option<std::path::PathBuf> {
+    let dll = dir.join("chrono_hook.dll");
+    dll.is_file().then_some(dll)
 }
 
 fn build_spec(time: &TimeSpec) -> Result<SessionSpec, (i32, &'static str)> {
@@ -4532,6 +4626,7 @@ mod tests {
             session_verdict: None,
             parent_verdict: None,
             vanished: None,
+            errors: vec![],
             warnings: vec![],
             uncovered: vec![],
             covered: vec![],
@@ -4578,6 +4673,51 @@ mod tests {
         let out = render_report(&r);
         assert!(out.contains("DID NOT TAKE EFFECT"), "got:\n{out}");
         assert!(out.contains("vanished"), "got:\n{out}");
+    }
+
+    #[test]
+    fn a_session_that_never_started_says_why_not_no_verdict_emitted() {
+        // R2-W3, second half. A broken install now reaches `core.hook_dll_missing` instead of being
+        // called `target.inject_failed` - but the human report used to drop every error event, so the
+        // reachable diagnosis would still have arrived only under --json.
+        let r = SessionReport {
+            errors: vec![("core.hook_dll_missing".into(), "core".into())],
+            ..empty_report()
+        };
+        let out = render_report(&r);
+        assert!(out.contains("DID NOT START"), "got:\n{out}");
+        assert!(out.contains("installation is incomplete"), "got:\n{out}");
+        assert!(out.contains("[core.hook_dll_missing]"), "got:\n{out}");
+        assert!(!out.contains("<no verdict emitted>"), "got:\n{out}");
+        // The headline consumed the only error, so no duplicate list underneath it.
+        assert!(!out.contains("  errors:"), "got:\n{out}");
+    }
+
+    #[test]
+    fn an_unknown_error_key_is_shown_verbatim_with_its_origin() {
+        // Same contract as the reason and warning tables: a core newer than this driver says something
+        // true rather than something invented.
+        let r = SessionReport {
+            errors: vec![("some.future_key".into(), "mechanism".into())],
+            ..empty_report()
+        };
+        let out = render_report(&r);
+        assert!(out.contains("some.future_key (from mechanism)"), "got:\n{out}");
+    }
+
+    #[test]
+    fn an_error_after_the_session_started_is_listed_not_swallowed() {
+        // A rejected in-flight command (an out-of-range set_multiplier) deliberately does not end the
+        // session, so it must not become the headline - but it must not disappear either.
+        let r = SessionReport {
+            session_verdict: Some(("works".into(), "session.family_covered".into(), 1)),
+            errors: vec![("time.bad_multiplier".into(), "core".into())],
+            ..empty_report()
+        };
+        let out = render_report(&r);
+        assert!(out.contains("WORKS"), "got:\n{out}");
+        assert!(out.contains("  errors:"), "got:\n{out}");
+        assert!(out.contains("outside the range"), "got:\n{out}");
     }
 
     #[test]
@@ -5515,5 +5655,33 @@ mod tests {
 
         std::fs::remove_dir_all(&dir).ok();
         std::fs::remove_dir_all(&native).ok();
+    }
+
+    // ---- Hook DLL presence (R2-W3): a broken install must not be reported as the target's fault ----
+
+    #[test]
+    fn hook_dll_is_only_found_when_it_is_actually_there() {
+        // The whole point of the check. Without it this returns Some for an empty folder, `prepare`
+        // walks on, LoadLibraryW fails inside the target, and the tester is told `target.inject_failed`
+        // - the application under test blamed for a file missing from ours (untouchable rule 6).
+        let dir = unique_temp_dir("chrono-hookdll");
+        std::fs::create_dir_all(&dir).unwrap();
+        assert_eq!(hook_dll_in(&dir), None, "an empty folder must not claim to hold the hook DLL");
+
+        let dll = dir.join("chrono_hook.dll");
+        std::fs::write(&dll, b"").unwrap();
+        assert_eq!(hook_dll_in(&dir), Some(dll));
+
+        // A DIRECTORY named chrono_hook.dll is not a DLL either - is_file, not exists.
+        let other = unique_temp_dir("chrono-hookdll-dir");
+        std::fs::create_dir_all(other.join("chrono_hook.dll")).unwrap();
+        assert_eq!(hook_dll_in(&other), None);
+
+        // A folder that does not exist at all reads as missing rather than panicking.
+        let gone = unique_temp_dir("chrono-hookdll-gone");
+        assert_eq!(hook_dll_in(&gone), None);
+
+        std::fs::remove_dir_all(&dir).ok();
+        std::fs::remove_dir_all(&other).ok();
     }
 }
