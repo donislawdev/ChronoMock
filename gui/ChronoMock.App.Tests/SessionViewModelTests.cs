@@ -1200,7 +1200,7 @@ public class SessionViewModelTests
         RefuseStart = refuseStart,
     };
 
-    private static CoverageEvent Coverage(int pid, string channel, long calls) => new()
+    private static CoverageEvent Coverage(uint pid, string channel, long calls) => new()
     {
         V = ProtocolJson.ProtocolVersion,
         Pid = pid,

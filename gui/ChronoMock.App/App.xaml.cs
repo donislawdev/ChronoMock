@@ -38,9 +38,21 @@ public partial class App : Application
     {
         // Surface the failure and keep the app alive - a recoverable slip (one bad event, one bad preset)
         // should not take down the whole session. Marked handled so the dispatcher does not tear down.
-        System.Windows.MessageBox.Show(
-            e.Exception.Message, "Chrono Mock",
-            System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
+        //
+        // Shown ONCE per run (R2-N12): a repeating exception - a binding that throws on every heartbeat -
+        // used to open a modal box per occurrence, and a window the user cannot out-click is worse than the
+        // fault it reports. The later ones are still handled, so the app stays up, and the first box has
+        // already named the failure.
+        if (!_reportedUnhandled)
+        {
+            _reportedUnhandled = true;
+            System.Windows.MessageBox.Show(
+                e.Exception.Message, "Chrono Mock",
+                System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
+        }
+
         e.Handled = true;
     }
+
+    private bool _reportedUnhandled;
 }

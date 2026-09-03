@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using ChronoMock.Protocol;
 
@@ -49,6 +50,19 @@ public class ParserTests
         var line = """{"type":"coverage","v":1,"pid":42,"covered":[],"uncovered":[],"warning_keys":[]}""";
         var evt = Assert.IsType<CoverageEvent>(EventParser.Parse(line));
         Assert.Empty(evt.Observed);
+    }
+
+    [Fact]
+    public void A_high_process_id_parses_instead_of_dropping_the_whole_event()
+    {
+        // R2-N20: the core sends a Windows pid as u32, and this side read it as int - so a pid above
+        // int.MaxValue failed the whole line's deserialization and the process's evidence was dropped with
+        // nothing but a diagnostic line behind it (rules 4 and 6).
+        // Asserted through ToString so the test does not name the property's type: with an int it fails by
+        // throwing out of Parse - the actual defect - rather than by failing to compile.
+        var line = """{"type":"coverage","v":1,"pid":4294967292,"covered":[],"uncovered":[],"warning_keys":[]}""";
+        var evt = Assert.IsType<CoverageEvent>(EventParser.Parse(line));
+        Assert.Equal("4294967292", evt.Pid.ToString(CultureInfo.InvariantCulture));
     }
 
     [Fact]

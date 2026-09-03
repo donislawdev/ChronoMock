@@ -124,7 +124,10 @@ public sealed class FileSessionHistoryStore : ISessionHistoryStore
         try
         {
             var file = JsonSerializer.Deserialize<HistoryFile>(File.ReadAllText(FilePath), Options);
-            return file?.Sessions ?? [];
+            // The schema gates the file, like the calendar and preset readers (R2-N10). The shape is marked
+            // unstable, so a file written by a later build is not a history this one can read - starting
+            // empty and leaving the file alone beats showing rows misread through an older shape.
+            return file is { Schema: Schema } ? file.Sessions : [];
         }
         catch (Exception e) when (e is JsonException or IOException or UnauthorizedAccessException)
         {

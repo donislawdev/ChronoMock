@@ -17,6 +17,17 @@ public class ParamInputTests
     ];
 
     [Fact]
+    public void The_default_unit_is_found_by_token_not_by_position()
+    {
+        // R2-N11: the fallback unit was units[3], which happened to be days. Reordering the dropdown would
+        // have silently changed what a parameter with no declared unit means. Same list, reversed.
+        var reversed = Units().Reverse().ToList();
+        var input = new ParamInputViewModel(new PresetParameter("days", "duration", 5, null, null), reversed);
+
+        Assert.Equal("d", input.Unit.Token);
+    }
+
+    [Fact]
     public void A_parameter_type_this_build_does_not_resolve_yields_no_value()
     {
         // R2-S8: the engine refuses an unbuilt parameter type with an honest "not built" (parse_parameter).

@@ -242,21 +242,24 @@ public sealed class ParamInputViewModel : ObservableObject
         return null;
     }
 
+    // The fallback unit is looked up by TOKEN, not by position (R2-N11): units[3] happened to be days, so
+    // reordering the dropdown would have silently changed which unit an unspecified parameter defaults to.
     private static UnitOption FindUnit(string? unit, IReadOnlyList<UnitOption> units)
     {
+        var days = units.FirstOrDefault(u => u.Token == "d") ?? units[0];
         if (unit is null)
         {
-            return units[3]; // days
+            return days;
         }
 
         try
         {
             var token = PresetUnpack.NormalizeUnit(unit);
-            return units.FirstOrDefault(u => u.Token == token) ?? units[3];
+            return units.FirstOrDefault(u => u.Token == token) ?? days;
         }
         catch (NotSupportedException)
         {
-            return units[3];
+            return days;
         }
     }
 }
@@ -702,10 +705,14 @@ public sealed class CalculatorViewModel : ObservableObject
         }
 
         var culture = LocalizationService.CurrentCulture;
+
+        // Ordered invariantly, like every other ordering and comparison in this project (R2-N19): a
+        // current-culture sort reorders the same catalogue from one machine to the next, so a preset a
+        // colleague describes as "third in the list" is not the same preset on the reader's box.
         _allPresets = PresetCatalog.Load(_presetsDir)
             .Where(p => p.ForCalculator)
             .Select(p => new PresetItemViewModel(p, culture))
-            .OrderBy(p => p.DisplayName, StringComparer.CurrentCulture)
+            .OrderBy(p => p.DisplayName, StringComparer.InvariantCulture)
             .ToList();
         ApplyPresetFilter();
     }

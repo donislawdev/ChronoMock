@@ -85,6 +85,26 @@ public sealed class SessionHistoryStoreTests : IDisposable
     }
 
     [Fact]
+    public void Load_is_empty_and_keeps_the_file_when_the_schema_is_not_this_one()
+    {
+        // R2-N10: the store writes a schema and an "unstable" marker and then never looked at either on
+        // read, unlike the calendar and preset readers. A file from a later build would have been rendered
+        // through this build's shape - whatever survived deserialization, shown as history.
+        Directory.CreateDirectory(_dir);
+        var path = Path.Combine(_dir, "sessions.json");
+        File.WriteAllText(
+            path,
+            "{\"schema\":2,\"stability\":\"unstable\",\"sessions\":[{\"target_path\":\"Ledger.exe\","
+            + "\"moment_local\":\"2038-01-19T03:14:07\",\"tz_bias_min\":0,\"mode\":\"flow\","
+            + "\"verdict\":\"works\",\"ended_at_utc\":\"2026-09-03T10:00:00Z\"}]}");
+
+        var loaded = new FileSessionHistoryStore(_dir).Load();
+
+        Assert.Empty(loaded);
+        Assert.True(File.Exists(path)); // a history this build cannot read is never deleted
+    }
+
+    [Fact]
     public void In_memory_store_appends_and_loads()
     {
         var store = new InMemorySessionHistoryStore();

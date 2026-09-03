@@ -23,7 +23,10 @@ public sealed record ReadyEvent : ChronoEvent
 
 public sealed record CoverageEvent : ChronoEvent
 {
-    [JsonPropertyName("pid")] public int Pid { get; init; }
+    // u32 on the wire (the core sends a Windows process id), so it is u32 here: an int could not hold a
+    // high pid, and the mismatch would fail the whole event's deserialization - dropping a process's
+    // evidence entirely, with only a diagnostic line to show for it (R2-N20, rules 4 and 6).
+    [JsonPropertyName("pid")] public uint Pid { get; init; }
     [JsonPropertyName("covered")] public IReadOnlyList<CoveredChannel> Covered { get; init; } = [];
     [JsonPropertyName("observed")] public IReadOnlyList<CoveredChannel> Observed { get; init; } = [];
     [JsonPropertyName("uncovered")] public IReadOnlyList<string> Uncovered { get; init; } = [];
@@ -54,7 +57,10 @@ public sealed record StateEvent : ChronoEvent
 
 public sealed record VanishedEvent : ChronoEvent
 {
-    [JsonPropertyName("pid")] public int Pid { get; init; }
+    // u32 on the wire (the core sends a Windows process id), so it is u32 here: an int could not hold a
+    // high pid, and the mismatch would fail the whole event's deserialization - dropping a process's
+    // evidence entirely, with only a diagnostic line to show for it (R2-N20, rules 4 and 6).
+    [JsonPropertyName("pid")] public uint Pid { get; init; }
     [JsonPropertyName("reason_key")] public required string ReasonKey { get; init; }
     [JsonPropertyName("lived_ms")] public long LivedMs { get; init; }
 }
