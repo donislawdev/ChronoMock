@@ -3172,6 +3172,9 @@ fn cdp_session(target: TargetSpec, time: TimeSpec, reader: BufReader<std::io::St
     // Install the shim into every context as it attaches (page and its Web Workers), beat a ~1 s
     // `state` heartbeat, and sample per-context call counts, until `end`, stdin EOF, or the app closes.
     let mut contexts: Vec<CdpContext> = Vec::new();
+    // Every context index this session ever shimmed, in attach order. Append-only, so evidence
+    // outlives the context that produced it (R2-W1) - see the note where a context is attached.
+    let mut seen: Vec<u32> = Vec::new();
     let mut counts: std::collections::BTreeMap<(u32, String), u64> = std::collections::BTreeMap::new();
     let mut failed = 0usize;
     let mut next_index = 0u32;
@@ -3260,12 +3263,20 @@ fn cdp_session(target: TargetSpec, time: TimeSpec, reader: BufReader<std::io::St
                         cdp::inject_page(&mut client, &sid, &shim)
                     };
                     match injected {
-                        Ok(()) => contexts.push(CdpContext {
-                            index: next_index,
-                            session_id: sid,
-                            ty,
-                            target_id: tid,
-                        }),
+                        Ok(()) => {
+                            // Two lists on purpose. `contexts` is who we still TALK to - polling or
+                            // broadcasting to a dead session costs the full read deadline inside the
+                            // session loop. `seen` is who this session ever COVERED, and it only grows:
+                            // the audit is a record of what happened, not of what is still open, so a
+                            // context that reloaded or closed keeps its evidence (R2-W1).
+                            seen.push(next_index);
+                            contexts.push(CdpContext {
+                                index: next_index,
+                                session_id: sid,
+                                ty,
+                                target_id: tid,
+                            });
+                        }
                         Err(_) => failed += 1,
                     }
                 }
@@ -3275,7 +3286,8 @@ fn cdp_session(target: TargetSpec, time: TimeSpec, reader: BufReader<std::io::St
             // Runtime.evaluate every second. That inflated the reported context count, and a command to a
             // dead session that draws no reply at all costs the full 20 s deadline INSIDE the session
             // loop - no heartbeat, no `end`, no liveness check for that whole time. Its counts stay in
-            // `counts` (keyed by context index, not by session), so the audit loses nothing.
+            // `counts` and its index in `seen`, so the audit still reports it - which this comment used
+            // to claim while the emitting loop walked the LIVE list and dropped it (R2-W1).
             Ok(Some(cdp::Msg::Event { method, params, .. }))
                 if method == "Target.detachedFromTarget" || method == "Target.targetDestroyed" =>
             {
@@ -3314,17 +3326,7 @@ fn cdp_session(target: TargetSpec, time: TimeSpec, reader: BufReader<std::io::St
         .collect();
     covered.sort();
 
-    let verdict = if contexts.is_empty() {
-        Verdict::Fails
-    } else if !covered.is_empty() {
-        if failed > 0 {
-            Verdict::Partial
-        } else {
-            Verdict::Works
-        }
-    } else {
-        Verdict::Undetermined
-    };
+    let verdict = cdp_verdict(seen.len(), !covered.is_empty(), failed);
     let (token, reason) = match &verdict {
         Verdict::Works => ("works", "chromium.contexts_covered"),
         Verdict::Partial => ("partial", "chromium.contexts_partial"),
@@ -3346,7 +3348,7 @@ fn cdp_session(target: TargetSpec, time: TimeSpec, reader: BufReader<std::io::St
     // Emit one `coverage` per attached context (pid = context index), never summed across contexts
     // (rule 4). The invasive-launch warning rides on the FIRST event, and if no context attached at
     // all we still emit one bare coverage - so the warning is never lost for an idle or zero-context app.
-    if contexts.is_empty() {
+    if seen.is_empty() {
         emit(&Event::Coverage {
             v: PROTOCOL_VERSION,
             pid: 0,
@@ -3356,15 +3358,15 @@ fn cdp_session(target: TargetSpec, time: TimeSpec, reader: BufReader<std::io::St
             warning_keys: std::mem::take(&mut warnings),
         });
     } else {
-        for ctx in &contexts {
+        for index in &seen {
             let chans: Vec<CoveredChannel> = covered
                 .iter()
-                .filter(|(idx, _, _)| *idx == ctx.index)
+                .filter(|(idx, _, _)| idx == index)
                 .map(|(_, ch, n)| CoveredChannel { channel: ch.clone(), calls: *n })
                 .collect();
             emit(&Event::Coverage {
                 v: PROTOCOL_VERSION,
-                pid: ctx.index,
+                pid: *index,
                 covered: chans,
                 observed: Vec::new(),
                 uncovered: Vec::new(),
@@ -3377,7 +3379,7 @@ fn cdp_session(target: TargetSpec, time: TimeSpec, reader: BufReader<std::io::St
         v: PROTOCOL_VERSION,
         verdict: token.to_string(),
         reason_key: reason.to_string(),
-        process_count: contexts.len() as u32,
+        process_count: seen.len() as u32,
     });
 
     // Session timing from the live clock (correct across any in-flight rate changes and jumps): real is
@@ -3482,6 +3484,30 @@ impl CdpClock {
         self.wall_fake0 = new_fake_ms;
         self.wall_real0 = now;
         (self.wall_fake0, self.wall_real0)
+    }
+}
+
+/// The verdict of a CDP session, from the three facts that decide it. Pulled out of the session loop
+/// so it can be tested without a browser - the bug it exists to pin needed a real Chromium and a
+/// gracefully closed window to reproduce (R2-W1).
+///
+/// `shimmed` counts every context the session EVER covered, not the ones still attached. Chromium
+/// destroys its targets while shutting down, so a healthy session with full coverage could reach the
+/// end with an empty live list; counting those, it reported `fails` with exit code 11 and emitted no
+/// coverage at all. Measured on Pomotroid: closing the window mid-session turned a `works` run with
+/// four covered APIs into `DID NOT TAKE EFFECT (contexts: 0)`, exit 11. What a session covered does
+/// not stop being true when the app closes.
+fn cdp_verdict(shimmed: usize, any_covered: bool, failed: usize) -> Verdict {
+    if shimmed == 0 {
+        // Nothing was ever shimmed: the substitution genuinely never reached the app.
+        Verdict::Fails
+    } else if !any_covered {
+        // Shimmed, but the app never called a time API - honest "we do not know", never a fake works.
+        Verdict::Undetermined
+    } else if failed > 0 {
+        Verdict::Partial
+    } else {
+        Verdict::Works
     }
 }
 
@@ -4279,6 +4305,26 @@ mod tests {
             let err = build_spec(&spec(bad)).expect_err("out of range must be refused");
             assert_eq!(err, (1, "time.bad_multiplier"), "multiplier {bad}");
         }
+    }
+
+    #[test]
+    fn cdp_verdict_counts_every_context_the_session_covered_not_the_survivors() {
+        // R2-W1, the case that needed a real browser to reproduce: Chromium destroys its targets while
+        // shutting down, so a healthy session could reach the verdict with an empty LIVE context list.
+        // Counting survivors called it `fails` with exit code 11 and dropped the coverage entirely -
+        // measured on Pomotroid, a closing window turned a four-channel `works` into
+        // "DID NOT TAKE EFFECT (contexts: 0)". Two contexts shimmed and covered stays `works` however
+        // many of them are still attached, because the argument is what the session covered.
+        assert_eq!(cdp_verdict(2, true, 0), Verdict::Works);
+
+        // Nothing ever shimmed is the one genuine failure: the substitution never reached the app.
+        assert_eq!(cdp_verdict(0, false, 0), Verdict::Fails);
+
+        // Shimmed but never asked the time: honest "we do not know", never a fake works (rule 4).
+        assert_eq!(cdp_verdict(1, false, 0), Verdict::Undetermined);
+
+        // Some contexts failed to take the shim: covered in part, and said so.
+        assert_eq!(cdp_verdict(3, true, 1), Verdict::Partial);
     }
 
     #[test]

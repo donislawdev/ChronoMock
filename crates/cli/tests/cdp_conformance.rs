@@ -52,3 +52,60 @@ fn cdp_shim_fakes_the_page_clock() {
     // effect (launch -> attach -> shim -> JS time API), not merely that the browser opened.
     assert!(stdout.contains("2038"), "the page did not read the faked 2038 clock\nstdout: {stdout}");
 }
+
+/// R2-W1 end to end: a session whose window is CLOSED while it runs must still report what it covered.
+///
+/// This is the shape the unit test on `cdp_verdict` cannot reach. That test pins the rule the function
+/// applies; this one pins what the session hands it. Before the fix the session counted the contexts
+/// still ATTACHED, and Chromium destroys its targets while shutting down - so a healthy run turned into
+/// "DID NOT TAKE EFFECT (contexts: 0)" with exit code 11 and no coverage at all. Measured on Pomotroid:
+/// a taskkill does NOT reproduce it (the socket dies before the destroy events arrive), only a graceful
+/// window close does.
+#[test]
+#[ignore = "opt-in: set CHRONO_CDP_TARGET to a permissive Chromium/Electron exe; it launches and closes that app"]
+fn a_closed_window_does_not_erase_what_the_session_covered() {
+    let Ok(target) = std::env::var("CHRONO_CDP_TARGET") else {
+        eprintln!("CHRONO_CDP_TARGET not set - skipping");
+        return;
+    };
+
+    let child = Command::new(env!("CARGO_BIN_EXE_chrono"))
+        .args(["run", "--at", "2038-01-01T00:00:00", "--mode", "x60", "--ticks", "30", &target])
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .expect("run chrono");
+
+    // Let the app attach, shim and actually call a time API, then close its window the polite way.
+    std::thread::sleep(std::time::Duration::from_secs(12));
+    close_windows_of(&target);
+
+    let out = child.wait_with_output().expect("collect chrono output");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+
+    if stdout.contains("not a Chromium") || stdout.contains("launch_failed") {
+        eprintln!("target is not Chromium-shaped or refused the debug port - skipping: {stdout}");
+        return;
+    }
+
+    assert!(
+        !stdout.contains("contexts: 0"),
+        "the session covered contexts; a closing window must not erase them:
+{stdout}"
+    );
+    assert_eq!(out.status.code(), Some(0), "a covered session must not exit as a failure:
+{stdout}");
+}
+
+/// Ask every window of that executable to close, the way a user would - not a kill, which tears the
+/// socket down before Chromium sends the target-destroyed events this test is about.
+fn close_windows_of(target: &str) {
+    let name = std::path::Path::new(target)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or(target);
+    let script = format!(
+        "Get-Process -Name '{name}' -ErrorAction SilentlyContinue | ForEach-Object {{ $_.CloseMainWindow() | Out-Null }}"
+    );
+    let _ = Command::new("powershell.exe").args(["-NoProfile", "-Command", &script]).output();
+}
