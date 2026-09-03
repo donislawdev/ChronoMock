@@ -27,7 +27,7 @@ So date-dependent tests get skipped, and "the licence never expires" ships to th
 Time is shifted **for one process only**. The domain, certificates and every other application keep seeing the real date and keep working.
 
 - **Absolute or relative time** - a specific moment, or `+30 days`, `−1 year`
-- **Time modes** - flowing normally from the shifted point, frozen, or accelerated any whole number of times (e.g. ×60, ×1440)
+- **Time modes** - flowing normally from the shifted point, frozen, or accelerated by any whole number up to a million (e.g. ×60, ×1440). The ceiling is not arbitrary: past it the fake clock runs out of the representable date range inside a working day, and the time channels stop agreeing with each other
 - **Independent time zone** per process, without touching the system zone
 - **Jump forward or backward mid-session** - including the backward jump a laptop performs after resyncing with a time server, which breaks anything that measures elapsed time without guarding against negative values
 - **Child process inheritance** - installers and launchers spawn children, and without this the test is incomplete
