@@ -115,6 +115,9 @@ pub struct Session {
     /// The duration axis is opt-in; coverage gathering needs it to know whether the
     /// Duration channels are expected.
     scale_duration: bool,
+    /// The QPC axis is a SEPARATE opt-in from the duration axis, so coverage gathering needs its own
+    /// flag to know whether the QueryPerformanceCounter channel is expected (R2-S3).
+    scale_qpc: bool,
     /// Which registry slots have already been reported, so `poll_new_coverage` emits each process
     /// exactly once. Indexed by SLOT, not by pid: Windows recycles pids, and two processes in one
     /// session can carry the same one - keyed by pid, the second would have been silently swallowed
@@ -288,7 +291,8 @@ impl Session {
                     continue;
                 }
                 let cov = cov_at(self.ctl(), i);
-                let coverage = gather_coverage(cov, read_installed(cov), self.scale_duration);
+                let coverage =
+                    gather_coverage(cov, read_installed(cov), self.scale_duration, self.scale_qpc);
                 self.reported_slots[i] = true;
                 out.push((pid, coverage));
             }
@@ -468,7 +472,12 @@ fn lock_is_ours(state: windows::Win32::Foundation::WAIT_EVENT) -> bool {
 ///
 /// # Safety
 /// `cov` must point to a live, correctly aligned `Cov`.
-unsafe fn gather_coverage(cov: *const Cov, installed: u64, scale_duration: bool) -> Coverage {
+unsafe fn gather_coverage(
+    cov: *const Cov,
+    installed: u64,
+    scale_duration: bool,
+    scale_qpc: bool,
+) -> Coverage {
     let mut out = Coverage::default();
     // Track which KIND of observed channel actually ran, so the audit names the right reason: an
     // object wait left real (class B), a multimedia timer left real (class C, winmm/ADR-2), or a
@@ -486,6 +495,12 @@ unsafe fn gather_coverage(cov: *const Cov, installed: u64, scale_duration: bool)
             ChannelCategory::Duration | ChannelCategory::WaitObserved | ChannelCategory::TimerObserved
         ) && !scale_duration
         {
+            continue;
+        }
+        // The QPC axis rides its OWN opt-in, not scale_duration (the two carry different risks), so it
+        // is expected only when the session asked for it. Off, it is not a gap - the channel is
+        // deliberately left real, which is the ADR-2 default.
+        if ch.category == ChannelCategory::Qpc && !scale_qpc {
             continue;
         }
         // Observed channels (class B object waits, class C multimedia timer, direct NtCreateUserProcess)
@@ -771,7 +786,9 @@ pub fn prepare(spec: &SessionSpec, target: &Target, hook_dll: &Path) -> Result<P
         }
         let waited = WaitForSingleObject(pi.hProcess, GUARD_MS);
         let coverage = match parent_slot {
-            Some(slot) => gather_coverage(cov_at(ctl, slot), installed, spec.scale_duration),
+            Some(slot) => {
+                gather_coverage(cov_at(ctl, slot), installed, spec.scale_duration, spec.scale_qpc)
+            }
             None => Coverage::default(),
         };
         let vanished_lived_ms = if waited == WAIT_TIMEOUT {
@@ -800,6 +817,7 @@ pub fn prepare(spec: &SessionSpec, target: &Target, hook_dll: &Path) -> Result<P
             rate_segment_real0: std::cell::Cell::new(start_real),
             tz_bias,
             scale_duration: spec.scale_duration,
+            scale_qpc: spec.scale_qpc,
             reported_slots,
             _lock: lock,
         };
@@ -966,6 +984,8 @@ unsafe fn inject(hproc: HANDLE, dll_wide: &[u16]) -> Result<(), PrepareError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    // Only the QPC-channel test needs this bit, so it is imported here rather than in the lib.
+    use chrono_ctl::CH_QPC;
 
     #[test]
     fn this_core_reports_its_own_machine_and_matches_itself() {
@@ -1034,7 +1054,7 @@ mod tests {
     #[test]
     fn empty_install_mask_reads_as_a_failing_verdict() {
         let cov = zeroed_cov();
-        let gathered = unsafe { gather_coverage(&cov as *const Cov, 0, false) };
+        let gathered = unsafe { gather_coverage(&cov as *const Cov, 0, false, false) };
         assert!(gathered.covered.is_empty(), "nothing may be claimed as covered");
         assert!(!gathered.uncovered.is_empty(), "always-present channels are a real gap");
         assert_eq!(chrono_core::verdict_from_coverage(&gathered), chrono_core::Verdict::Fails);
@@ -1062,7 +1082,7 @@ mod tests {
 
         let mut cov = zeroed_cov();
         cov.uninjected_children = 1;
-        let gathered = unsafe { gather_coverage(&cov as *const Cov, all, false) };
+        let gathered = unsafe { gather_coverage(&cov as *const Cov, all, false, false) };
         assert!(gathered.warning_keys.iter().any(|k| k == "inheritance.child_not_injected"));
         // The parent's OWN coverage is untouched: this says something about a different process, and
         // the two are never merged (rule 4). The family count is what shrinks, and the warning says so.
@@ -1070,8 +1090,35 @@ mod tests {
 
         // And silence when every child was followed - the warning must mean something.
         let quiet = zeroed_cov();
-        let gathered = unsafe { gather_coverage(&quiet as *const Cov, all, false) };
+        let gathered = unsafe { gather_coverage(&quiet as *const Cov, all, false, false) };
         assert!(!gathered.warning_keys.iter().any(|k| k == "inheritance.child_not_injected"));
+    }
+
+    /// R2-S3. The QPC channel rides its OWN opt-in. Off, it is not a gap - leaving QPC real is the
+    /// ADR-2 default, and reporting it as missing would make every ordinary session look partial. On,
+    /// it must be reported both ways: covered when the detour is live, and an honest gap when it is
+    /// not, because "did the QPC axis actually scale" is the only question the person who turned that
+    /// flag on is asking (untouchable rule 4).
+    #[test]
+    fn the_qpc_channel_is_reported_only_under_its_own_opt_in() {
+        let cov = zeroed_cov();
+        let all = CHANNELS.iter().fold(0u64, |acc, ch| acc | ch.bit);
+        let is_qpc = |name: &String| name == "QueryPerformanceCounter";
+
+        // scale_qpc off: absent from every bucket, whether or not the detour happened to install.
+        let off = unsafe { gather_coverage(&cov as *const Cov, all, false, false) };
+        assert!(!off.covered.iter().any(|c| is_qpc(&c.channel)));
+        assert!(!off.uncovered.iter().any(is_qpc));
+
+        // scale_qpc on and installed: a covered channel like any other.
+        let on = unsafe { gather_coverage(&cov as *const Cov, all, false, true) };
+        assert!(on.covered.iter().any(|c| is_qpc(&c.channel)), "the scaled axis must be reported");
+
+        // scale_qpc on and NOT installed: a real gap, and one that moves the verdict off `works` -
+        // the session was asked to scale QPC and did not (it used to say nothing at all).
+        let failed = unsafe { gather_coverage(&cov as *const Cov, all & !CH_QPC, false, true) };
+        assert!(failed.uncovered.iter().any(is_qpc), "a QPC detour that did not install is a gap");
+        assert_eq!(chrono_core::verdict_from_coverage(&failed), chrono_core::Verdict::Partial);
     }
 
     /// The paired direction, so the guard above cannot pass by reporting nothing at all: a full
@@ -1080,7 +1127,7 @@ mod tests {
     fn full_install_mask_reads_as_works() {
         let cov = zeroed_cov();
         let all = CHANNELS.iter().fold(0u64, |acc, ch| acc | ch.bit);
-        let gathered = unsafe { gather_coverage(&cov as *const Cov, all, false) };
+        let gathered = unsafe { gather_coverage(&cov as *const Cov, all, false, false) };
         assert!(!gathered.covered.is_empty(), "a live mask must report covered channels");
         assert!(gathered.uncovered.is_empty(), "nothing is missing when every bit is set");
         assert_eq!(chrono_core::verdict_from_coverage(&gathered), chrono_core::Verdict::Works);

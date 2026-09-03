@@ -147,6 +147,8 @@ pub const CH_TPTIMEREX: u64 = 1 << 32;
 pub const CH_NTCUP: u64 = 1 << 33;
 /// Coverage bit: `connect` is hooked (ws2_32 network connection, observed - a suspected server time source).
 pub const CH_CONNECT: u64 = 1 << 34;
+/// Coverage bit: `QueryPerformanceCounter` is hooked (QPC axis, opt-in `scale_qpc`, ADR-2 reversal).
+pub const CH_QPC: u64 = 1 << 35;
 
 /// Index of each channel into the `calls` array (== its position in `CHANNELS`).
 pub const IDX_GSTAFT: usize = 0;
@@ -184,10 +186,12 @@ pub const IDX_TPTIMER: usize = 31;
 pub const IDX_TPTIMEREX: usize = 32;
 pub const IDX_NTCUP: usize = 33;
 pub const IDX_CONNECT: usize = 34;
+pub const IDX_QPC: usize = 35;
 
 /// Number of channels tracked (wall-clock, session zone, duration axis, object/message waits,
-/// settable timers, multimedia timer, thread-pool timers, direct process creation, network connect).
-pub const CHANNEL_COUNT: usize = 35;
+/// settable timers, multimedia timer, thread-pool timers, direct process creation, network connect,
+/// the QPC axis).
+pub const CHANNEL_COUNT: usize = 36;
 
 /// Which system module exports a channel (the hook resolves it there).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -237,6 +241,15 @@ pub enum ChannelCategory {
     /// substitute. Like SpawnObserved, NOT opt-in: the network is watched regardless of scale_duration,
     /// and it never sways the local-coverage verdict.
     SourceObserved,
+    /// Scaled, but only when the session asked for it (`scale_qpc`, the ADR-2 reversal):
+    /// `QueryPerformanceCounter`. Its own category rather than `Duration`, because the two opt-ins are
+    /// deliberately separate - scaling QPC also scales a target's QPC-timed rendering, a risk
+    /// `scale_duration` does not carry, so the mechanism must expect this channel under a different
+    /// flag. It was outside the table entirely until R2-S3: installed by hand, and a failure to install
+    /// visible only in an OutputDebugStringA line, so whoever deliberately turned the option on had no
+    /// way to learn whether the QPC axis actually scaled - the one question this product exists to
+    /// answer (untouchable rule 4).
+    Qpc,
 }
 
 /// One time channel: its coverage bit, the exported symbol the hook detours, the
@@ -273,9 +286,16 @@ pub struct ChannelDef {
 // their msPeriod / msWindowLength divide by M. CRT time / _time64 ride the hooked Win32 exports, so
 // they follow for free.
 //
+// OPT-IN UNDER ITS OWN FLAG (`scale_qpc`, the ADR-2 reversal): QueryPerformanceCounter. Left real by
+// default - scaling it also scales a target's QPC-timed rendering - but a Python 3.13+ / .NET / Java
+// elapsed clock stands on QPC and nothing else reaches it, so the session may ask. Kept in this table
+// (R2-S3) because a channel outside it cannot be reported: the option was installed by hand and its
+// failure lived in a debug string, so the one person who deliberately turned it on could not learn
+// whether it took (rule 4). NtQueryPerformanceCounter stays out - ADR-2 unchanged for it.
+//
 // DELIBERATELY EXCLUDED, for two different reasons:
-//   - ADR-2 (scaling them destabilizes the target): the performance counter
-//     (QueryPerformanceCounter, NtQueryPerformanceCounter) and timeGetTime.
+//   - ADR-2 (scaling them destabilizes the target): timeGetTime and the native
+//     NtQueryPerformanceCounter.
 //   - not a "now" clock at all: GetFileTime returns a file's stored creation / last-access /
 //     last-write timestamps (MS Learn, fileapi.h), not the current time. Shifting them would
 //     falsify filesystem metadata, never advance a clock - the target must read real file times
@@ -344,6 +364,7 @@ pub const CHANNELS: [ChannelDef; CHANNEL_COUNT] = [
     ChannelDef { bit: CH_TPTIMEREX, name: "SetThreadpoolTimerEx", module: ChannelModule::Kernel32, category: ChannelCategory::Duration },
     ChannelDef { bit: CH_NTCUP, name: "NtCreateUserProcess", module: ChannelModule::Ntdll, category: ChannelCategory::SpawnObserved },
     ChannelDef { bit: CH_CONNECT, name: "connect", module: ChannelModule::Ws2_32, category: ChannelCategory::SourceObserved },
+    ChannelDef { bit: CH_QPC, name: "QueryPerformanceCounter", module: ChannelModule::Kernel32, category: ChannelCategory::Qpc },
 ];
 
 /// Session-wide control block in `Local\ChronoCtl`. `#[repr(C)]` so both processes

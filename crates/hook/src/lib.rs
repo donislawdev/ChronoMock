@@ -69,7 +69,7 @@ use chrono_ctl::{
     IDX_GTZI, IDX_NTDELAY, IDX_NTQSI, IDX_NTQST, IDX_QUIT, IDX_SLEEP, IDX_SLEEPEX, IDX_STSL,
     IDX_STSLEX, IDX_FTLFT, IDX_LFTFT, IDX_TLTST, IDX_TLTSTEX, IDX_WFSO, IDX_WFSOEX, IDX_WFMO,
     IDX_WFMOEX, IDX_SOAW, IDX_MWFMO, IDX_MWFMOEX, IDX_SWT, IDX_SWTEX, IDX_SETTIMER, IDX_TIMESETEVENT,
-    IDX_TPTIMER, IDX_TPTIMEREX, IDX_NTCUP, IDX_CONNECT,
+    IDX_TPTIMER, IDX_TPTIMEREX, IDX_NTCUP, IDX_CONNECT, IDX_QPC,
 };
 use minhook::MinHook;
 use windows::core::{s, w, PCSTR};
@@ -816,6 +816,13 @@ type QpcFn = unsafe extern "system" fn(*mut i64) -> i32;
 static O_QPC: OnceLock<QpcFn> = OnceLock::new();
 
 unsafe extern "system" fn h_qpc(lp: *mut i64) -> i32 {
+    // Counted like every other channel (R2-S3). QPC is the hottest clock a process calls, so the cost
+    // was measured rather than assumed - and measured as an INTERLEAVED A/B on two hook builds, because
+    // sequential batches drifted by ~9 ns between them and would have shown a slowdown that was not
+    // there. Five alternating pairs, 5 M calls each, x64, probe `pqpc`: the counted build ran
+    // +0.08 ns/call on average (worst pair +0.2), against ~25 ns for a bare QPC and ~37 ns hooked. The
+    // bump disappears next to the trampoline call and the seqlock read it rides on.
+    bump(IDX_QPC);
     let o = match O_QPC.get() {
         Some(o) => *o,
         None => return 0,
@@ -1720,21 +1727,12 @@ unsafe fn install() -> Result<(), String> {
     }
 
     // QPC axis (opt-in `scale_qpc`, ADR-2 reversal). SEPARATE from scale_duration because scaling QPC also
-    // scales a target's QPC-timed rendering. Not a coverage channel (QPC was never in CHANNELS - ADR-2), so
-    // it is installed manually here rather than via make_hook. The anchor lives in the shared Ctl (core
-    // initialized it in prepare, rebases on set_multiplier). QueryPerformanceFrequency is left real.
+    // scales a target's QPC-timed rendering. It IS a coverage channel now (R2-S3): installed through
+    // make_hook like the rest, so a failure to install shows up as an uncovered channel instead of a
+    // debug string nobody reads. The anchor lives in the shared Ctl (core initialized it in prepare,
+    // rebases on set_multiplier). QueryPerformanceFrequency is left real.
     if read_scale_qpc(ctl as *const Ctl) {
-        if let Some(qpc) = GetProcAddress(k32, s!("QueryPerformanceCounter")) {
-            match MinHook::create_hook(
-                qpc as *const () as *mut c_void,
-                h_qpc as *const () as *mut c_void,
-            ) {
-                Ok(original) => {
-                    let _ = O_QPC.set(std::mem::transmute::<*mut c_void, QpcFn>(original));
-                }
-                Err(e) => log(&format!("[chrono_hook] create_hook QueryPerformanceCounter failed: {e:?}")),
-            }
-        }
+        make_hook(&mut pending, k32, ntdll, IDX_QPC, h_qpc as *const () as *mut c_void, &O_QPC);
     }
 
     // Direct process creation (ADR-3, observed): hook NtCreateUserProcess ALWAYS - not gated by
