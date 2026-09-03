@@ -973,7 +973,16 @@ pub fn scale_timer_due(due: i64, fake_now: i64, m: i64) -> i64 {
         due / m
     } else {
         // Absolute fake instant -> relative real interval until the fake clock reaches it.
-        let delta_fake = due - fake_now;
+        //
+        // Checked, because `due` is the only value in this file that comes straight from the
+        // APPLICATION under test (R2-S5). The crate's overflow-checks are off on the grounds that its
+        // inputs are moments already validated upstream - true of everything else here, and not true
+        // of an argument the target passed to SetWaitableTimer. It cannot overflow while `fake_now`
+        // is non-negative, which the clamp guarantees, but a subtraction whose safety depends on a
+        // constant two crates away is exactly the kind that stops being safe quietly.
+        let Some(delta_fake) = due.checked_sub(fake_now) else {
+            return due; // not representable: hand the app's own value back, unscaled
+        };
         if delta_fake <= 0 {
             -1 // fake clock already at/past the due time: fire now
         } else {
@@ -1422,6 +1431,15 @@ mod tests {
         assert_eq!(scale_timer_due(-6_000_000, 0, -5), -6_000_000);
         // ...and an absolute due under frozen behaves as M=1 (documented limit).
         assert_eq!(scale_timer_due(fake_now + 60_000_000, fake_now, 0), -60_000_000);
+
+        // R2-S5: `due` is the one input here that comes from the APPLICATION under test, and this
+        // crate compiles with overflow-checks off, so a subtraction it cannot represent has to answer
+        // rather than wrap. It hands the app's own value straight back, unscaled - the same safe
+        // default the detours use when they cannot express something.
+        assert_eq!(scale_timer_due(i64::MAX, -1, 60), i64::MAX);
+        assert_eq!(scale_timer_due(i64::MAX, i64::MIN, 60), i64::MAX);
+        // And the ordinary large-but-representable case still scales.
+        assert_eq!(scale_timer_due(i64::MAX, 0, 1), -i64::MAX);
     }
 
     #[test]

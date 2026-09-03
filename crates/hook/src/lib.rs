@@ -248,6 +248,9 @@ static O_CPA: OnceLock<CpaFn> = OnceLock::new();
 // Self-detach: a SYNCHRONIZE handle to the core process, and the flag a watcher flips
 // when the core vanishes so every detour reverts to real time.
 static CORE_HANDLE: OnceLock<usize> = OnceLock::new();
+/// The pid of the core that owned the control block when this process joined its session. Kept so
+/// every anchor read can confirm the block is still that session's (R2-S6, `still_ours`).
+static CORE_PID: OnceLock<u32> = OnceLock::new();
 static DETACHED: AtomicBool = AtomicBool::new(false);
 static WATCHER_STARTED: AtomicBool = AtomicBool::new(false);
 
@@ -327,6 +330,42 @@ fn detached() -> bool {
     DETACHED.load(Ordering::SeqCst)
 }
 
+/// Whether the control block still belongs to the session this process joined - checked AFTER a
+/// value has been read from it, and the read discarded if not (R2-S6).
+///
+/// The section has a fixed name, so a NEW core reclaims it: it zeroes the whole block and writes its
+/// own anchor. The session mutex proves no other CORE is alive, but it says nothing about the
+/// previous session's TARGET, which is still running here and has not necessarily noticed its own
+/// core died - the watcher above is woken by the OS, but a thread wakeup is not instantaneous, and
+/// this process may be suspended or preempted mid-read. In that window the target read a zeroed
+/// block (1601, frozen) and then ANOTHER application's anchor: the one path where a target is handed
+/// somebody else's time (rule 2).
+///
+/// Checking after the read is what makes it sound. The reclaiming core writes the pid LAST, so the
+/// block only ever carries our pid while its anchor is still ours: seeing our pid after reading the
+/// anchor means no reclaim happened in between, and seeing anything else - zero, or a new core's pid
+/// - means the value we just read may not be ours, so we drop it and detach for good.
+///
+/// 🔴 Two measurements, both worth keeping next to the code. The leak is NOT reproducible on today's
+/// design: 0 of 6 runs with this guard removed, killing the core hard and starting a new session at
+/// year 3000 while the orphan sampled every 20 ms - because a second core REFUSES rather than waits
+/// (`session.already_active`), so it cannot already be inside the window when the first one dies, and
+/// starting a process takes far longer than the watcher takes to wake. And the guard is free: an
+/// interleaved A/B on two hook builds over the QPC path (5 pairs, 3 M calls) came out at -0.06 ns per
+/// call, inside the ±5 ns the probe's timer can even resolve. Unreachable today, free, and the only
+/// path on which a target could be handed another session's clock - so it stays.
+fn still_ours(p: *const Ctl) -> bool {
+    let Some(&mine) = CORE_PID.get() else {
+        return true; // no owner was ever recorded (pre-session install): behave as before
+    };
+    if unsafe { read_core_pid(p) } == mine {
+        return true;
+    }
+    // One-way, like the watcher's flag: a block that stopped being ours never becomes ours again.
+    DETACHED.store(true, Ordering::SeqCst);
+    false
+}
+
 /// Real (unbiased) monotonic anchor base - ADR-5. QUIT may be hooked for the duration
 /// axis, so prefer the trampoline (the real value) to keep our scaled output from
 /// feeding back into the anchor math. Before QUIT is hooked, call it directly.
@@ -350,6 +389,9 @@ fn compute_fake() -> Option<i64> {
     }
     let p = ctl_ptr()? as *const Ctl;
     let (a_fake, a_real, m) = unsafe { read_anchor(p) };
+    if !still_ours(p) {
+        return None; // the block was reclaimed by another session mid-read (R2-S6): real time
+    }
     let dq = real_quit().wrapping_sub(a_real);
     // Saturating, then clamped to the last representable instant. Wrapping here handed different
     // channels different answers once the fake clock ran past the end of the range: the raw FILETIME
@@ -371,7 +413,16 @@ fn cur_tz_bias() -> i32 {
 /// Current multiplier from the anchor (the wall-clock speed factor).
 fn cur_m() -> i64 {
     match ctl_ptr() {
-        Some(p) => unsafe { read_anchor(p as *const Ctl).2 },
+        // Ownership checked after the read, like compute_fake: a reclaimed block must not lend this
+        // target another session's rate either (R2-S6). Falling back to 1 = real speed.
+        Some(p) => {
+            let m = unsafe { read_anchor(p as *const Ctl).2 };
+            if still_ours(p as *const Ctl) {
+                m
+            } else {
+                1
+            }
+        }
         None => 1,
     }
 }
@@ -774,7 +825,14 @@ unsafe extern "system" fn h_tick() -> u64 {
     match ctl_ptr() {
         Some(p) => {
             let (dur_tick_c0, _quit_c0, dur_q0, m) = read_dur(p as *const Ctl);
-            dur_tick_at(dur_tick_c0, dur_q0, m, real_quit())
+            let fake = dur_tick_at(dur_tick_c0, dur_q0, m, real_quit());
+            // Ownership checked after the read (R2-S6): a reclaimed block would hand this target
+            // another session's duration base, which reads as the axis jumping.
+            if still_ours(p as *const Ctl) {
+                fake
+            } else {
+                O_TICK.get().map(|o| o()).unwrap_or(0)
+            }
         }
         None => O_TICK.get().map(|o| o()).unwrap_or(0),
     }
@@ -792,7 +850,12 @@ unsafe extern "system" fn h_tick32() -> u32 {
     match ctl_ptr() {
         Some(p) => {
             let (dur_tick_c0, _quit_c0, dur_q0, m) = read_dur(p as *const Ctl);
-            dur_tick_at(dur_tick_c0, dur_q0, m, real_quit()) as u32
+            let fake = dur_tick_at(dur_tick_c0, dur_q0, m, real_quit()) as u32;
+            if still_ours(p as *const Ctl) {
+                fake
+            } else {
+                O_TICK32.get().map(|o| o()).unwrap_or(0)
+            }
         }
         None => O_TICK32.get().map(|o| o()).unwrap_or(0),
     }
@@ -807,7 +870,11 @@ unsafe extern "system" fn h_quit(lp: *mut u64) -> i32 {
         match ctl_ptr() {
             Some(p) => {
                 let (_tick_c0, dur_quit_c0, dur_q0, m) = read_dur(p as *const Ctl);
-                *lp = dur_quit_at(dur_quit_c0, dur_q0, m, real_quit()) as u64;
+                let fake = dur_quit_at(dur_quit_c0, dur_q0, m, real_quit()) as u64;
+                if !still_ours(p as *const Ctl) {
+                    return O_QUIT.get().map(|o| o(lp)).unwrap_or(0);
+                }
+                *lp = fake;
             }
             // No control block (unreachable: CTL_PTR is set before these hooks install) - defer to the
             // real value rather than fake a zero.
@@ -848,7 +915,11 @@ unsafe extern "system" fn h_qpc(lp: *mut i64) -> i32 {
             let mut real: i64 = 0;
             o(&mut real); // real QPC via the trampoline (bypasses this hook, no recursion)
             let (qpc_c0, qpc_q0, m) = read_qpc(p as *const Ctl);
-            *lp = dur_qpc_at(qpc_c0, qpc_q0, m, real);
+            let fake = dur_qpc_at(qpc_c0, qpc_q0, m, real);
+            if !still_ours(p as *const Ctl) {
+                return o(lp); // reclaimed mid-read (R2-S6): real QPC
+            }
+            *lp = fake;
             1
         }
         // Detached (core gone) or no control block -> real QPC, so the target reverts to real time cleanly.
@@ -1105,7 +1176,13 @@ fn try_enter_timer(idx: usize) -> Option<(i64, TimerGuard)> {
     }
     bump(idx);
     if detached() {
-        return None; // core gone: real time
+        // Symmetric to try_enter_wait (R2-S4): hold the guard even with the core gone, so an internal
+        // cascade (SetWaitableTimer -> SetWaitableTimerEx, should a Windows version take that path)
+        // still counts as ONE application call rather than two (rule 4). Multiplier 1 is harmless
+        // either way - a detached compute_fake returns None, so the caller forwards the arguments
+        // untouched - but the flag has to be set on this path, and it was not.
+        SCALING_TIMER.set(true);
+        return Some((1, TimerGuard));
     }
     SCALING_TIMER.set(true);
     Some((dur_multiplier(), TimerGuard))
@@ -1643,6 +1720,7 @@ unsafe fn install() -> Result<(), String> {
 
     // Watch the core process so the target reverts to real time if the core vanishes.
     let core_pid = read_core_pid(ctl as *const Ctl);
+    let _ = CORE_PID.set(core_pid); // the session we joined, for `still_ours` (R2-S6)
     if core_pid != 0 {
         if let Ok(h) = OpenProcess(PROCESS_SYNCHRONIZE, false, core_pid) {
             let _ = CORE_HANDLE.set(h.0 as usize);
