@@ -1,0 +1,80 @@
+# The gates this project already runs by hand, run on every push instead.
+#
+# What is deliberately NOT here: the environment harness (tools/probes/run-targets.ps1). It injects a DLL
+# into live processes and needs JDK, .NET Framework and the hand-built probes - and `tools/` is outside git,
+# so it does not exist on a runner at all. It stays a local, pre-release gate.
+#
+# `cargo fmt --check` is also absent, and on purpose: this codebase is not written to default rustfmt
+# (measured 2026-09-04 - 7654 diff lines across every crate), so the check would fail on the first run and
+# adopting it means reformatting the whole workspace. That is a decision for the owner, not a CI default.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+# A private repo bills CI minutes and a Windows runner bills them at double rate, so a run superseded by a
+# newer push is cancelled rather than left to finish.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  rust:
+    name: Rust core, hook, mech, CLI
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # The tool ships both bitnesses: a 32-bit target needs a 32-bit hook, and building only x64 is how
+      # an x86 regression hides for a day (the reason "build both targets" is a standing rule here).
+      - name: Add the 32-bit target
+        run: rustup target add i686-pc-windows-msvc
+
+      - uses: Swatinem/rust-cache@v2
+
+      # -D warnings makes clippy a gate rather than a suggestion. A newer stable Rust can add a lint and
+      # turn this red without a code change; that is the intended signal, not a false alarm.
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Tests
+        run: cargo test --workspace
+
+      - name: Release build, x64
+        run: cargo build --release --target x86_64-pc-windows-msvc
+
+      - name: Release build, x86
+        run: cargo build --release --target i686-pc-windows-msvc
+
+      # Untouchable rule 8: every dependency must be GPL-3.0 compatible. Offline, so it runs on every push;
+      # the vulnerability half of cargo-deny needs the network and lives in audit.yml on a schedule.
+      - name: Licence gate
+        uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check
+          command-arguments: licenses
+
+  gui:
+    name: GUI and protocol client
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Format
+        run: dotnet format gui/ChronoMock.slnx --verify-no-changes
+
+      # Category!=Integration is the hermetic tier: the excluded tests need a real target process or a
+      # Chromium install, neither of which a runner has.
+      - name: Tests
+        run: dotnet test gui/ChronoMock.slnx --filter "Category!=Integration"

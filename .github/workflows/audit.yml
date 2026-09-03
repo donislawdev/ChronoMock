@@ -1,0 +1,30 @@
+# The vulnerability half of the dependency gate.
+#
+# Separate from CI on purpose: a new RustSec advisory appears without anything in this repo changing, so
+# this is a question about TIME, not about a commit. Running it on a schedule catches that; running it on
+# every push would only spend minutes re-asking a question whose answer cannot have changed.
+name: Dependency audit
+
+on:
+  schedule:
+    # Mondays, 06:00 UTC. Any weekly slot works; a fixed one makes a missed run obvious.
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  advisories:
+    name: RustSec advisories
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # deny.toml keeps `ignore = []`: an advisory consciously accepted would be listed there with its
+      # reason, never waved through silently (rule 6).
+      - name: Advisory gate
+        uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check
+          command-arguments: advisories
