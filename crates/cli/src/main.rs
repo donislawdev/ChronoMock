@@ -875,7 +875,10 @@ fn driver_run(argv: &[String]) -> i32 {
                 // Resolve parameters (--param, then the target's file date for a
                 // target_file_creation hint), then substitute them into the moment. A non-parametric
                 // preset resolves to an empty map and an unchanged moment.
-                let target_date = read_target_creation_date(&ra.target, ra.zone_bias_min);
+                // The target file's date, read in the SESSION's zone: a creation time near midnight
+                // resolves to a different calendar day in UTC than on the host, and that day is what a
+                // trial preset counts from.
+                let target_date = read_target_creation_date(&ra.target, Some(now_bias));
                 let values = match resolve_parameters(&p.parameters, &ra.params, target_date) {
                     Ok(v) => v,
                     Err(e) => {
@@ -949,15 +952,13 @@ fn driver_run(argv: &[String]) -> i32 {
                 }
             },
         };
-        // The zone the moment above was read in has to travel with it: the core turns local + bias into
-        // the UTC anchor, so a moment resolved in the host zone paired with a bias of 0 would land an
-        // offset away from the instant it names. A RELATIVE `--at` is derived from "now", so it carries
-        // the same zone as the no-`--at` case; an ABSOLUTE `--at` is a wall-clock string the caller
-        // typed, and it stays in the zone the caller named (UTC when they named none) - unchanged here,
-        // and noted as the one remaining asymmetry (R2-X5).
-        let relative_at = ra.at.as_deref().is_some_and(|raw| raw.starts_with(['+', '-']));
-        let session_bias =
-            if ra.at.is_some() && !relative_at { ra.zone_bias_min } else { Some(now_bias) };
+        // The zone the moment above was read in travels with it: the core turns local + bias into the
+        // UTC anchor, so a moment paired with the wrong bias lands an offset away from the instant it
+        // names. ONE zone for the session, whatever shape the moment came in (R2-X5). An absolute
+        // `--at` used to be the exception - a typed wall-clock string was read as UTC - which made the
+        // same string mean two different instants depending on which half of the tool read it, and
+        // made the exported evidence say "(host default)" about a session that ran on UTC.
+        let session_bias = Some(now_bias);
         (resolved, ra.mode.clone(), ra.multiplier, ra.scale_duration, session_bias)
     };
 
@@ -1065,7 +1066,13 @@ fn driver_run(argv: &[String]) -> i32 {
                     }
                     if let Some((t, ref mom)) = ra.jump_after {
                         if states_seen == t {
-                            send_jump(&mut stdin, mom, ra.zone_bias_min);
+                            // The SESSION's zone, not the raw flag: a jump names a wall-clock moment on
+                            // the clock the target is already showing. Reading it as UTC while the
+                            // session ran on the host's zone landed the jump an offset away - measured
+                            // at exactly that: `--jump-after 2:2038-01-19T03:14:07` reached 05:14 on a
+                            // UTC+2 host. That predates R2-S7 (it came in with "no --at follows the
+                            // host"), and it is the same rule-2 failure in a second place.
+                            send_jump(&mut stdin, mom, Some(now_bias));
                         }
                     }
                     if ra.ticks > 0 && states_seen >= ra.ticks && !end_sent {
@@ -1138,7 +1145,13 @@ fn driver_run(argv: &[String]) -> i32 {
     if let Some(path) = &ra.report {
         let params = EvidenceParams {
             moment: resolved_at.clone().unwrap_or_else(|| "(default)".into()),
-            zone: ra.zone_bias_min.map(format_bias).unwrap_or_else(|| "(host default)".into()),
+            // The zone the session ACTUALLY ran in, not the flag. This line used to read
+            // "(host default)" for a session running on UTC - a false statement in the file a tester
+            // is meant to cite as proof (untouchable rule 4).
+            zone: match ra.zone_bias_min {
+                Some(b) => format_bias(b),
+                None => format!("{} (host default)", format_bias(now_bias)),
+            },
             mode: mode_label(&mode, multiplier),
         };
         match std::fs::write(path, render_evidence(&report, &params)) {
