@@ -140,6 +140,29 @@ pub struct SessionState {
     pub elapsed_real_ms: i64,
 }
 
+/// The fake wall instant at `now_real`, from the anchor and the rate.
+///
+/// This is the SAME projection the hook computes inside the target (`chrono_hook::compute_fake`),
+/// clamp included, and it has to stay that way: this one is what the session REPORTS about itself,
+/// so a difference between them is the tool lying about its own clock. Wrapping here did exactly
+/// that at the end of the range - measured at 30828-09-01 under the maximum multiplier, the target
+/// held at the clamp while `state` announced the year -27627, a date no channel ever showed anyone,
+/// in the event the panel and the evidence export are built from (R2-X2).
+pub fn project_fake_ft(anchor_fake: i64, anchor_real: i64, now_real: i64, multiplier: i64) -> i64 {
+    let advanced = now_real.wrapping_sub(anchor_real).saturating_mul(multiplier);
+    anchor_fake.saturating_add(advanced).min(chrono_ctl::FAKE_WALL_MAX)
+}
+
+impl SessionState {
+    /// Whether the fake wall clock is standing on the last instant this build can represent. The
+    /// session is then doing less than it promised - the clock has stopped while fake time is still
+    /// being counted - so the core says so rather than let the reader infer it from a still picture
+    /// (untouchable rule 6, R2-X2).
+    pub fn clock_at_range_end(&self) -> bool {
+        self.fake_ft >= chrono_ctl::FAKE_WALL_MAX
+    }
+}
+
 const STILL_ACTIVE_CODE: u32 = 259;
 
 /// Window after resume within which a target exit is read as a single-instance vanish
@@ -162,7 +185,7 @@ impl Session {
     pub fn state(&self) -> SessionState {
         let (a_fake, a_real, m) = unsafe { read_anchor(self.ctl()) };
         let now_real = quit_now();
-        let fake_ft = a_fake.wrapping_add(now_real.wrapping_sub(a_real).wrapping_mul(m));
+        let fake_ft = project_fake_ft(a_fake, a_real, now_real, m);
         SessionState {
             fake_ft,
             real_ft: real_system_filetime(),
@@ -1005,6 +1028,33 @@ mod tests {
     use super::*;
     // Only the QPC-channel test needs this bit, so it is imported here rather than in the lib.
     use chrono_ctl::CH_QPC;
+
+    /// R2-X2. The projection the core reports has to be the one the target sees - the hook clamps at
+    /// the end of the range, so this must clamp there too. Before it did, a session at the edge showed
+    /// the tester a date fifty thousand years away from the one the app was reading.
+    #[test]
+    fn the_reported_clock_clamps_where_the_hook_clamps_and_never_wraps() {
+        let max = chrono_ctl::FAKE_WALL_MAX;
+
+        // Ordinary session: the anchor plus the elapsed real time times the rate, untouched.
+        assert_eq!(project_fake_ft(1_000, 100, 160, 60), 1_000 + 60 * 60);
+        // Frozen: the rate is zero, so the clock stands at the anchor.
+        assert_eq!(project_fake_ft(1_000, 100, 10_000_000, 0), 1_000);
+
+        // A rate big enough to run past the end of the range holds AT the edge - never a wrapped
+        // number, and above all never a NEGATIVE one, which is what a wrapping multiply produced.
+        let far = project_fake_ft(max - 10_000_000, 0, 1_000_000, chrono_core::MULTIPLIER_MAX);
+        assert_eq!(far, max);
+        assert!(far > 0, "a clock that wrapped past i64::MAX reads as a date before year one");
+
+        // Starting ON the edge stays on it rather than stepping off the end.
+        assert_eq!(project_fake_ft(max, 0, 10_000_000, 1), max);
+
+        // And the clamp leaves room for the largest zone bias, so the local-time channels can express
+        // the same instant without overflowing (R2-X7 - that overflow sent GetLocalTime back to the
+        // REAL clock while the UTC channels stayed fake).
+        assert!(i64::MAX - max >= chrono_ctl::MAX_ZONE_BIAS_TICKS);
+    }
 
     #[test]
     fn this_core_reports_its_own_machine_and_matches_itself() {

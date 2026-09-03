@@ -465,10 +465,16 @@ unsafe extern "system" fn h_glt(lp: *mut SYSTEMTIME) {
     bump(IDX_GLT);
     let done = match compute_fake() {
         // local = UTC_fake - Bias (UTC = local + Bias), session zone without DST.
-        Some(t) if !lp.is_null() => {
-            let bias_100ns = cur_tz_bias() as i64 * 60 * 10_000_000;
-            write_systemtime(lp, t - bias_100ns)
-        }
+        //
+        // Checked, not bare: this crate has overflow-checks off, and a plain subtraction wrapped for
+        // every zone east of UTC once the fake clock sat on the clamp - the conversion then failed and
+        // this channel fell back to the REAL clock while the UTC channels stayed fake (R2-X7). The
+        // clamp now keeps a zone bias of headroom, so this cannot trigger for our own clock; it stays
+        // explicit because a caller-set bias is data, and silent wrapping is how it hurt the first time.
+        Some(t) if !lp.is_null() => match t.checked_sub(cur_tz_bias() as i64 * 60 * 10_000_000) {
+            Some(local) => write_systemtime(lp, local),
+            None => false,
+        },
         _ => false,
     };
     if !done {
@@ -600,10 +606,14 @@ unsafe fn write_session_local(utc: *const SYSTEMTIME, local: *mut SYSTEMTIME) ->
     if SystemTimeToFileTime(utc, &mut ft).is_err() {
         return false;
     }
-    let bias_100ns = cur_tz_bias() as i64 * 60 * 10_000_000;
+    // Checked like every other bias shift here (R2-X7): the input is the CALLER's time, so a value
+    // near the end of the range is data we are handed, and this crate has overflow-checks off.
     // Propagate the SYSTEMTIME conversion result (L-3): on failure the caller defers to the original,
     // never reporting success with `local` left unwritten.
-    write_systemtime(local, ft_to_i64(ft) - bias_100ns)
+    match ft_to_i64(ft).checked_sub(cur_tz_bias() as i64 * 60 * 10_000_000) {
+        Some(shifted) => write_systemtime(local, shifted),
+        None => false,
+    }
 }
 
 /// Convert a caller-supplied local SYSTEMTIME to session-UTC (local + tz_bias, the inverse
@@ -617,9 +627,12 @@ unsafe fn write_session_utc(local: *const SYSTEMTIME, utc: *mut SYSTEMTIME) -> b
     if SystemTimeToFileTime(local, &mut ft).is_err() {
         return false;
     }
-    let bias_100ns = cur_tz_bias() as i64 * 60 * 10_000_000;
+    // Checked like every other bias shift here (R2-X7) - see write_session_local.
     // Propagate the SYSTEMTIME conversion result (L-3): on failure the caller defers to the original.
-    write_systemtime(utc, ft_to_i64(ft) + bias_100ns)
+    match ft_to_i64(ft).checked_add(cur_tz_bias() as i64 * 60 * 10_000_000) {
+        Some(shifted) => write_systemtime(utc, shifted),
+        None => false,
+    }
 }
 
 /// Shift a FILETIME by the session bias: `add` for local->UTC (utc = local + bias), clear for

@@ -47,6 +47,7 @@ public class LocalizationTests
         "inheritance.child_not_injected",
         // Session-level warning keys (SessionVerdict warning_keys).
         "coverage.pid_registry_full",
+        "time.fake_clock_clamped",
         "chromium.launched_with_debug_port", "chromium.app_closed_before_audit",
         "chromium.rate_change_affects_running_timers",
         // Runtime detection warnings the driver appends to coverage (B1): a Python/.NET/Java target whose

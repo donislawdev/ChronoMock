@@ -55,14 +55,38 @@ pub const CTL_SECTION_NAME: &str = "Local\\ChronoCtl";
 ///
 /// Clamping holds the fake clock at the edge instead: every channel keeps agreeing, the clock never
 /// runs backward (untouchable rule 3), and it never quietly becomes the real one (rule 2).
-pub const FAKE_WALL_MAX: i64 = i64::MAX - (i64::MAX % 10_000_000);
+///
+/// 🔴 The clamp stops one zone bias short of the end of the range, and that headroom is load-bearing
+/// (R2-X7). The local-time channels express the same instant as `fake - bias`, so a clamp sitting on
+/// the very last tick overflowed for every zone east of UTC: `GetLocalTime` failed its conversion and
+/// fell through to the REAL clock. Measured at 30828-09-01 under the maximum multiplier, on a host at
+/// UTC+02:00 - `GetSystemTime` held at 30828-09-14T02:48:05 while `GetLocalTime` answered
+/// 2026-09-03T20:54:05. One process, two epochs: exactly the failure this clamp exists to end,
+/// surviving on the channel the clamp forgot.
+pub const FAKE_WALL_MAX: i64 = {
+    let raw = i64::MAX - MAX_ZONE_BIAS_TICKS;
+    raw - (raw % 10_000_000)
+};
+
+/// The largest session-zone bias the tool accepts, in 100 ns ticks. `parse_zone_to_bias` takes hours
+/// 0..=14 and minutes 0..=59, so fifteen hours covers every accepted offset with room to spare.
+pub const MAX_ZONE_BIAS_TICKS: i64 = 15 * 3600 * 10_000_000;
 
 // Checked when the crate compiles, not when a test runs: the clamp has to be a value Windows can
 // still turn into a calendar date, or it would fail the very conversion it exists to keep working.
 const _: () = {
     assert!(FAKE_WALL_MAX > 0, "the clamp must stay in the signed range FileTimeToSystemTime accepts");
     assert!(FAKE_WALL_MAX % 10_000_000 == 0, "a whole second, no partial tick");
-    assert!(i64::MAX - FAKE_WALL_MAX < 10_000_000, "within one second of the end of the range");
+    assert!(
+        i64::MAX - FAKE_WALL_MAX >= MAX_ZONE_BIAS_TICKS,
+        "the local-time channels subtract the zone bias from the clamped instant, so the clamp must \
+         leave room for the largest bias the tool accepts - without it they overflow and fall back to \
+         the REAL clock (R2-X7)"
+    );
+    assert!(
+        i64::MAX - FAKE_WALL_MAX < MAX_ZONE_BIAS_TICKS + 10_000_000,
+        "and no more headroom than that, so the clamp stays the last instant it can be"
+    );
 };
 
 /// Maximum number of processes (parent + children) whose coverage a session tracks.

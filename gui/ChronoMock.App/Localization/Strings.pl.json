@@ -151,6 +151,7 @@
   // R2-S9. Poziom sesji, nie procesu: rzecz dotyczy procesow, ktore nie dostaly slotu pokrycia,
   // wiec przychodzi w session_verdict, a nie w ktoryms zdarzeniu coverage.
   "coverage.pid_registry_full": "Ta sesja uruchomiła więcej procesów, niż audyt potrafi śledzić (256). Część działała bez pokrycia i nie ma jej w liczbie procesów ani na listach kanałów.",
+  "time.fake_clock_clamped": "Fałszywy zegar doszedł do ostatniej daty, jaką ta wersja potrafi wyrazić (rok 30828), i stanął tam do końca sesji. Późniejsze odczyty nie są momentami, które dałaby wybrana prędkość.",
   "target.single_instance_suspected": "zakończył się zaraz po injekcji, zanim podmianę dało się potwierdzić",
 
   // Runtime wykryty statycznie z plików celu (B1): jego zegary monotoniczne/elapsed stoją na QueryPerformanceCounter, który zostaje realny (ADR-2), więc licznik na nich oparty nie skaluje, choć zegar ścienny tak. Brzmienie lustrzące CLI describe_warning.

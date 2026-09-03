@@ -1290,6 +1290,9 @@ fn describe_warning(key: &str) -> String {
         "coverage.pid_registry_full" => {
             "this session ran more processes than the audit can track (256), so some ran uncovered and are missing from the process count and the channel lists below"
         }
+        "time.fake_clock_clamped" => {
+            "the fake clock reached the last date this build can represent (year 30828) and stood there for the rest of the session, so late readings are not the moments the rate would have produced"
+        }
         "inheritance.child_not_injected" => {
             "a child process could not be covered and ran on the REAL clock - usually a child of the other bitness; the process count below is short by that many"
         }
@@ -3962,6 +3965,8 @@ fn run_session(
     // roll-up with the parent verdict, then fold each child's verdict as it joins.
     let mut family = verdict;
     let mut family_pids: HashSet<u32> = HashSet::new();
+    // Did the fake clock ever stand on the last instant this build can represent (R2-X2)?
+    let mut clock_clamped = false;
     fold_children(&mut session, &mut family, &mut family_pids);
 
     let heartbeat = Duration::from_secs(1);
@@ -4049,7 +4054,12 @@ fn run_session(
         // The heartbeat keeps its own once-a-second cadence: `state` and the liveness check stay
         // exactly as often as the protocol says, whatever else the loop is doing.
         if now >= deadline {
-            emit(&state_event(&session));
+            let st = session.state();
+            // Sticky: that the clock STOOD on the edge stays true for this session even if a later
+            // jump moves it back, because the readings taken while it stood there were clamped
+            // (R2-X2).
+            clock_clamped |= st.clock_at_range_end();
+            emit(&state_event_from(&st));
             if !session.is_alive() {
                 target_exit = session.exit_code();
                 break;
@@ -4073,6 +4083,14 @@ fn run_session(
     let mut session_warnings = Vec::new();
     if uncovered_processes > 0 {
         session_warnings.push("coverage.pid_registry_full".to_string());
+    }
+
+    // The clock reached the end of the representable range and stood there. The session then did less
+    // than it promised - the wall stopped while fake time kept being counted - and a still picture is
+    // not an explanation (R2-X2, rule 6). Checked on the final sample too, so a session shorter than
+    // one heartbeat still reports it.
+    if clock_clamped || final_state.clock_at_range_end() {
+        session_warnings.push("time.fake_clock_clamped".to_string());
     }
     emit(&Event::SessionVerdict {
         v: PROTOCOL_VERSION,
@@ -4137,7 +4155,12 @@ fn moment_from_spec(spec: &MomentSpec) -> Result<i64, &'static str> {
 
 /// Build a `state` event from the session's current clocks.
 fn state_event(session: &chrono_mech::Session) -> Event {
-    let s = session.state();
+    state_event_from(&session.state())
+}
+
+/// The wire `state` for a state already sampled - so a caller that needs to LOOK at the sample
+/// (the clamp check, R2-X2) reads the same one it reports, not a second sample taken next door.
+fn state_event_from(s: &chrono_mech::SessionState) -> Event {
     Event::State {
         v: PROTOCOL_VERSION,
         fake: Clock {
