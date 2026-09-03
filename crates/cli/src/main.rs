@@ -850,6 +850,13 @@ fn driver_run(argv: &[String]) -> i32 {
         }
     };
 
+    // The session zone when the caller named none: the HOST's. Reading "now" as UTC instead hands the
+    // target a local time off by the host's own offset - the failure untouchable rule 2 names. This used
+    // to be computed only in the no-preset arm and only for the no-`--at` case, so a relative `--at` and
+    // a preset both fell back to UTC and disagreed with the plain `chrono run app.exe` beside them
+    // (R2-S7). One value, computed once, used by every path that derives a moment from "now".
+    let now_bias = session_zone_default(ra.zone_bias_min);
+
     // The moment AND the time mode come either from a named preset (docs/04 4.3) or from the flags.
     // A preset is resolved driver-side here - the same way a relative --at is - so the core still
     // receives an absolute moment and a plain mode, and never learns that a preset existed.
@@ -886,7 +893,7 @@ fn driver_run(argv: &[String]) -> i32 {
                 // Evaluate the preset moment against real "now" in the session zone, exactly like a
                 // relative --at, to an absolute wall moment. No calendar here - a preset that needs
                 // one is an honest error (the run surface has no --calendar yet).
-                let now = match resolve_now_civil(ra.zone_bias_min) {
+                let now = match resolve_now_civil(Some(now_bias)) {
                     Ok(n) => n,
                     Err(e) => {
                         eprintln!("chrono: cannot resolve current time: {e}");
@@ -895,14 +902,16 @@ fn driver_run(argv: &[String]) -> i32 {
                 };
                 match chrono_core::calc::eval(
                     &moment,
-                    &EvalContext { now, zone_bias_min: ra.zone_bias_min.unwrap_or(0), calendar: None },
+                    &EvalContext { now, zone_bias_min: now_bias, calendar: None },
                 ) {
                     Ok(outcome) => (
                         Some(outcome.result().to_iso()),
                         p.time_mode.mode.clone(),
                         p.time_mode.multiplier,
                         p.time_mode.scale_duration,
-                        ra.zone_bias_min,
+                        // The zone the moment was computed in travels with it: a preset moment paired
+                        // with a bias of 0 would land an offset away from the instant it names.
+                        Some(now_bias),
                     ),
                     Err(e) => {
                         eprintln!("chrono: preset '{}' moment: {}", p.id, describe_calc_error(&e));
@@ -916,13 +925,6 @@ fn driver_run(argv: &[String]) -> i32 {
             }
         }
     } else {
-        // With no moment asked for, the session zone follows the HOST when the caller named none. Reading
-        // "now" as UTC there would hand the target a local time off by the host's own offset - a session
-        // meant to change nothing would quietly move the clock by two hours here, which is exactly the
-        // failure untouchable rule 2 names. An explicit --zone still wins, and an entered --at is
-        // untouched: that moment is in the session zone the caller chose, as before.
-        let now_bias = ra.zone_bias_min.unwrap_or_else(chrono_mech::host_tz_bias_min);
-
         // Resolve a relative --at (now + delta) to an absolute moment before we spawn. With no --at at
         // all, the session clock starts at the real current time - the same thing the Chromium path
         // already does with the same command line. Until now the two mechanisms disagreed: on a native
@@ -931,7 +933,7 @@ fn driver_run(argv: &[String]) -> i32 {
         // far from the user's mistake as it could be. It also makes `chrono run app.exe --mode x60`
         // mean what it reads as: run this application faster without moving its date.
         let resolved = match &ra.at {
-            Some(raw) => match resolve_at(raw, ra.zone_bias_min) {
+            Some(raw) => match resolve_at(raw, Some(now_bias)) {
                 Ok(s) => Some(s),
                 Err(e) => {
                     eprintln!("chrono: {e}");
@@ -949,8 +951,13 @@ fn driver_run(argv: &[String]) -> i32 {
         };
         // The zone the moment above was read in has to travel with it: the core turns local + bias into
         // the UTC anchor, so a moment resolved in the host zone paired with a bias of 0 would land an
-        // offset away from the instant it names.
-        let session_bias = if ra.at.is_some() { ra.zone_bias_min } else { Some(now_bias) };
+        // offset away from the instant it names. A RELATIVE `--at` is derived from "now", so it carries
+        // the same zone as the no-`--at` case; an ABSOLUTE `--at` is a wall-clock string the caller
+        // typed, and it stays in the zone the caller named (UTC when they named none) - unchanged here,
+        // and noted as the one remaining asymmetry (R2-X5).
+        let relative_at = ra.at.as_deref().is_some_and(|raw| raw.starts_with(['+', '-']));
+        let session_bias =
+            if ra.at.is_some() && !relative_at { ra.zone_bias_min } else { Some(now_bias) };
         (resolved, ra.mode.clone(), ra.multiplier, ra.scale_duration, session_bias)
     };
 
@@ -1611,10 +1618,20 @@ fn calc_run(argv: &[String]) -> i32 {
         }
     };
 
-    // Resolve the real current time in the session zone, as data for the pure core.
-    // Same pattern as `resolve_at`: UTC now, shifted by the session bias (UTC when
-    // no zone is given). Zone-aware "today" without an explicit zone is a later slice.
-    let now = match resolve_now_civil(ca.zone_bias_min) {
+    // The session zone for this whole invocation: the one the caller named, else the HOST's. It used
+    // to be UTC here while `chrono run` beside it already followed the host, so the two halves of one
+    // tool disagreed about what day it is - and in a zone ahead of UTC, `--base today` between midnight
+    // and the offset returned YESTERDAY (R2-S7). A calculator that is a day out around midnight is
+    // worse than no calculator. `--zone` still wins, and the zone is printed either way (rule 2).
+    //
+    // ONE zone per invocation, not one per base kind: the civil fields and the instant formats
+    // (epoch, FILETIME, RFC 1123) have to be read in the same zone, or a single result would carry
+    // two answers - the very shape of R2-S11 next door.
+    let zone_bias = session_zone_default(ca.zone_bias_min);
+    let zone_from_host = ca.zone_bias_min.is_none();
+
+    // Resolve the real current time in that zone, as data for the pure core.
+    let now = match resolve_now_civil(Some(zone_bias)) {
         Ok(n) => n,
         Err(e) => {
             eprintln!("chrono: cannot resolve current time: {e}");
@@ -1641,9 +1658,9 @@ fn calc_run(argv: &[String]) -> i32 {
         return match chrono_core::calc::analyze_date(input) {
             Ok(analysis) => {
                 if ca.json {
-                    println!("{}", calc_analysis_json(&analysis, input, &now, ca.zone_bias_min, calendar.as_ref()));
+                    println!("{}", calc_analysis_json(&analysis, input, &now, Some(zone_bias), calendar.as_ref()));
                 } else {
-                    print!("{}", render_analysis(&analysis, input, &now, ca.zone_bias_min, calendar.as_ref()));
+                    print!("{}", render_analysis(&analysis, input, &now, Some(zone_bias), calendar.as_ref()));
                 }
                 0
             }
@@ -1701,7 +1718,7 @@ fn calc_run(argv: &[String]) -> i32 {
     };
     match chrono_core::calc::eval(
         &expr,
-        &EvalContext { now, zone_bias_min: ca.zone_bias_min.unwrap_or(0), calendar: calendar.as_ref() },
+        &EvalContext { now, zone_bias_min: zone_bias, calendar: calendar.as_ref() },
     ) {
         Ok(outcome) => {
             if ca.json {
@@ -1712,7 +1729,7 @@ fn calc_run(argv: &[String]) -> i32 {
                 return 0;
             }
             let mut text =
-                render_calc(&expr, &outcome, ca.zone_bias_min, &now, calendar.as_ref(), preset_header.as_deref());
+                render_calc(&expr, &outcome, Some(zone_bias), zone_from_host, &now, calendar.as_ref(), preset_header.as_deref());
             // A custom mask (7.3) adds one more line in the target app's exact format.
             if let Some(mask) = &ca.format {
                 text.push_str(&format!(
@@ -2117,6 +2134,18 @@ fn parse_set_time(raw: &str) -> Result<Step, String> {
     Ok(Step::SetTime { hour, minute, second })
 }
 
+/// The session zone in minutes (UTC = local + bias) for a command that named one or did not: the
+/// caller's `--zone` when given, else the HOST's offset.
+///
+/// A named function rather than an `unwrap_or_else` repeated at each site, because it was repeated
+/// at each site and the copies drifted: `chrono run` with no `--at` followed the host while `chrono
+/// calc`, a relative `--at` and `run --preset` all fell back to UTC. Two halves of one tool then
+/// disagreed about what day it is, and in a zone ahead of UTC `--base today` returned YESTERDAY
+/// between midnight and the offset (R2-S7). One rule, one place, one test.
+fn session_zone_default(named: Option<i32>) -> i32 {
+    named.unwrap_or_else(chrono_mech::host_tz_bias_min)
+}
+
 /// Real current time in the session zone, as a civil date-time for the pure core.
 /// Reuses the tested UTC-now and wall-clock conversion, then parses back to civil.
 fn resolve_now_civil(zone_bias_min: Option<i32>) -> Result<chrono_core::calc::CivilDateTime, String> {
@@ -2163,11 +2192,18 @@ fn render_calc(
     expr: &MomentExpr,
     outcome: &chrono_core::calc::EvalOutcome,
     zone_bias_min: Option<i32>,
+    // True when the caller named no `--zone` and this is the host's offset. Printed, so a reader
+    // never has to wonder whether a zone they did not type is one they can rely on (rule 2).
+    zone_from_host: bool,
     now: &chrono_core::calc::CivilDateTime,
     calendar: Option<&chrono_core::calendar::Calendar>,
     preset_header: Option<&str>,
 ) -> String {
-    let zone = zone_bias_min.map(format_bias).unwrap_or_else(|| "UTC".into());
+    let zone = match (zone_bias_min.map(format_bias), zone_from_host) {
+        (Some(z), true) => format!("{z}, from the host"),
+        (Some(z), false) => z,
+        (None, _) => "UTC".into(),
+    };
     let mut out = String::from("Chrono Mock - date calculator\n");
     // When the moment came from a named preset, name it and show its "explains" line (the
     // preset's authored framing, docs/04 4.2 - distinct from the computed significance block).
@@ -4960,7 +4996,7 @@ mod tests {
         let expr = MomentExpr { base: ca.base, steps: ca.steps };
         let now = chrono_core::calc::CivilDateTime { year: 2000, month: 1, day: 1, hour: 0, minute: 0, second: 0 };
         let out = chrono_core::calc::eval(&expr, &EvalContext { now, zone_bias_min: 0, calendar: None }).unwrap();
-        let text = render_calc(&expr, &out, None, &now, None, None);
+        let text = render_calc(&expr, &out, None, false, &now, None, None);
         assert!(text.contains("base:    2008-08-04T00:00:00"), "got:\n{text}");
         assert!(text.contains("step 1:  shift -18 years  -> 1990-08-04T00:00:00"), "got:\n{text}");
         assert!(text.contains("step 3:  set time 23:59:59  -> 1990-08-03T23:59:59"), "got:\n{text}");
@@ -4981,7 +5017,7 @@ mod tests {
         let expr = MomentExpr { base: ca.base, steps: ca.steps };
         let now = chrono_core::calc::CivilDateTime { year: 2000, month: 1, day: 1, hour: 0, minute: 0, second: 0 };
         let out = chrono_core::calc::eval(&expr, &EvalContext { now, zone_bias_min: 0, calendar: None }).unwrap();
-        let text = render_calc(&expr, &out, Some(0), &now, None, None);
+        let text = render_calc(&expr, &out, Some(0), false, &now, None, None);
         assert!(text.contains("formats:"), "got:\n{text}");
         assert!(text.contains("ISO datetime  1970-01-01T00:00:00+00:00"), "got:\n{text}");
         assert!(text.contains("US            01/01/1970"), "got:\n{text}");
@@ -4997,7 +5033,7 @@ mod tests {
         // A fixed "today" makes days-from-now deterministic: 2026-01-01 is 9 days before 2026-01-10.
         let now = chrono_core::calc::CivilDateTime { year: 2026, month: 1, day: 10, hour: 0, minute: 0, second: 0 };
         let out = chrono_core::calc::eval(&expr, &EvalContext { now, zone_bias_min: 0, calendar: None }).unwrap();
-        let text = render_calc(&expr, &out, Some(0), &now, None, None);
+        let text = render_calc(&expr, &out, Some(0), false, &now, None, None);
         assert!(text.contains("metadata:"), "got:\n{text}");
         assert!(text.contains("weekday       Thursday"), "got:\n{text}"); // 2026-01-01 is a Thursday
         assert!(text.contains("ISO week      2026-W01"), "got:\n{text}");
@@ -5082,7 +5118,7 @@ mod tests {
         let expr = MomentExpr { base: ca.base, steps: ca.steps };
         let now = chrono_core::calc::CivilDateTime { year: 2000, month: 1, day: 1, hour: 0, minute: 0, second: 0 };
         let out = chrono_core::calc::eval(&expr, &EvalContext { now, zone_bias_min: 0, calendar: None }).unwrap();
-        let text = render_calc(&expr, &out, Some(0), &now, None, None);
+        let text = render_calc(&expr, &out, Some(0), false, &now, None, None);
         assert!(text.contains("what this date tests:"), "got:\n{text}");
         assert!(text.contains("last day of the year (year-end rollover)"), "got:\n{text}");
     }
@@ -5094,7 +5130,7 @@ mod tests {
         let expr = MomentExpr { base: ca.base, steps: ca.steps };
         let now = chrono_core::calc::CivilDateTime { year: 2000, month: 1, day: 1, hour: 0, minute: 0, second: 0 };
         let out = chrono_core::calc::eval(&expr, &EvalContext { now, zone_bias_min: 0, calendar: None }).unwrap();
-        let text = render_calc(&expr, &out, Some(0), &now, None, None);
+        let text = render_calc(&expr, &out, Some(0), false, &now, None, None);
         assert!(!text.contains("what this date tests:"), "got:\n{text}");
     }
 
@@ -5106,12 +5142,12 @@ mod tests {
         let now = chrono_core::calc::CivilDateTime { year: 2000, month: 1, day: 1, hour: 0, minute: 0, second: 0 };
         let out = chrono_core::calc::eval(&expr, &EvalContext { now, zone_bias_min: 0, calendar: None }).unwrap();
         let cal = test_calendar();
-        let text = render_calc(&expr, &out, Some(0), &now, Some(&cal), None);
+        let text = render_calc(&expr, &out, Some(0), false, &now, Some(&cal), None);
         assert!(text.contains("what this date tests:"), "got:\n{text}");
         assert!(text.contains("weekend - not a business day"), "got:\n{text}");
         assert!(text.contains("public holiday"), "got:\n{text}");
         // Without a calendar the same date names no calendar landmark (and here nothing at all).
-        assert!(!render_calc(&expr, &out, Some(0), &now, None, None).contains("what this date tests:"));
+        assert!(!render_calc(&expr, &out, Some(0), false, &now, None, None).contains("what this date tests:"));
     }
 
     #[test]
@@ -5133,7 +5169,7 @@ mod tests {
         let out = chrono_core::calc::eval(&expr, &EvalContext { now, zone_bias_min: bias, calendar: None }).unwrap();
         assert_eq!(out.result().to_iso(), "2026-01-15T15:45:00");
         assert_eq!(out.result_bias, -345);
-        let text = render_calc(&expr, &out, ca.zone_bias_min, &now, None, None);
+        let text = render_calc(&expr, &out, ca.zone_bias_min, false, &now, None, None);
         assert!(text.contains("step 1:  zone +05:45"), "got:\n{text}");
         assert!(text.contains("ISO datetime  2026-01-15T15:45:00+05:45"), "got:\n{text}");
         // Same instant as the +02:00 base (12:00+02:00 = 10:00 UTC).
@@ -5718,6 +5754,21 @@ mod tests {
     }
 
     // ---- Hook DLL presence (R2-W3): a broken install must not be reported as the target's fault ----
+
+    #[test]
+    fn the_session_zone_default_is_the_host_not_utc() {
+        // R2-S7. `chrono calc --base today` used to resolve "now" in UTC while `chrono run` beside it
+        // already followed the host, so in a zone ahead of UTC the calculator returned YESTERDAY
+        // between midnight and the offset - a silent wrong date, the class this project calls
+        // inadmissible. An explicit --zone still wins.
+        assert_eq!(session_zone_default(Some(-120)), -120, "an explicit zone is never overridden");
+        assert_eq!(session_zone_default(Some(0)), 0, "an explicit UTC is a choice, not an absence");
+        assert_eq!(
+            session_zone_default(None),
+            chrono_mech::host_tz_bias_min(),
+            "with no zone named, both surfaces read the host's"
+        );
+    }
 
     #[test]
     fn hook_dll_is_only_found_when_it_is_actually_there() {
