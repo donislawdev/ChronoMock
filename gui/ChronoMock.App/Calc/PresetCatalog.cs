@@ -33,8 +33,21 @@ public sealed record PresetInfo(
     /// <summary>Whether this preset is offered by the calculator module (<c>calculator</c> or <c>both</c>).</summary>
     public bool ForCalculator => AppliesTo is "calculator" or "both";
 
+    /// <summary>Whether this preset is offered by the substitution panel (<c>substitution</c> or <c>both</c>),
+    /// mirroring the gate <c>chrono run --preset</c> applies (docs/04 4.2).</summary>
+    public bool ForSubstitution => AppliesTo is "substitution" or "both";
+
     /// <summary>Whether this preset takes parameters (its moment refers to them by id).</summary>
     public bool IsParametric => Parameters.Count > 0;
+
+    /// <summary>The calendar this preset's market implies, or null for a market-neutral preset. Shared by
+    /// the calculator and the substitution panel so one preset never resolves to two calendars.</summary>
+    public static string? CalendarIdForMarket(string? market) => market switch
+    {
+        "us" => "us-banking",
+        "pl" => "pl",
+        _ => null,
+    };
 
     /// <summary>The name in the given culture, falling back to the default culture (English).</summary>
     public string LocalizedName(string culture) => Localized(Name, culture);

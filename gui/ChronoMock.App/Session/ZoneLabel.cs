@@ -9,7 +9,12 @@ namespace ChronoMock.App;
 /// </summary>
 public static class ZoneLabel
 {
-    public static string FromBiasMinutes(int biasMinutes)
+    public static string FromBiasMinutes(int biasMinutes) => "UTC" + OffsetFromBiasMinutes(biasMinutes);
+
+    /// <summary>The bare offset (<c>+02:00</c>), as the engine's <c>--zone</c> flag spells it. Same
+    /// arithmetic as the display label, so the zone the panel shows and the zone it computes in can never
+    /// disagree (untouchable rule 2).</summary>
+    public static string OffsetFromBiasMinutes(int biasMinutes)
     {
         // Windows Bias: UTC = local + Bias, so the offset a reader expects to see is the negation of the bias.
         int offset = -biasMinutes;
@@ -17,6 +22,6 @@ public static class ZoneLabel
         int magnitude = Math.Abs(offset);
         return string.Create(
             CultureInfo.InvariantCulture,
-            $"UTC{sign}{magnitude / 60:00}:{magnitude % 60:00}");
+            $"{sign}{magnitude / 60:00}:{magnitude % 60:00}");
     }
 }

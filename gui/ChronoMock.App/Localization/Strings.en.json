@@ -18,6 +18,13 @@
   // Only .exe: native injection needs a PE and CDP needs an Electron/Chromium .exe. Narrowing the filter keeps a user from picking a .lnk/.bat/.txt that could only fail (RELEASE-007).
   "target.dialog_filter": "Executables (*.exe)|*.exe",
 
+  // Scenarios (chrono-mock 7.1 pt 2): named moments from the shared preset catalogue. The scenario NAMES and their "what this date tests" lines come from the catalogue files (data locales), not from here.
+  "scenario.label": "Scenario",
+  "scenario.needs_parameters": "more scenarios take parameters - build one in the calculator, then use “Use in substitution”.",
+  "scenario.failed": "That scenario could not be turned into a date.",
+  "scenario.unsupported": "That scenario's preset file is in a shape this build cannot read.",
+  "scenario.engine_missing": "The calculator engine could not be run, so scenarios cannot be computed.",
+
   // Marks a recent target whose file is gone (a wiped build output, an uninstalled app). Shown rather than the entry being dropped, so the list never goes quiet about why a shortcut will not work (rule 6).
   "target.missing": "(missing)",
 
@@ -320,6 +327,7 @@
   // Tooltips (hover help). Keys, not literals (rule 15); shown in the current language.
   "tip.choose_target": "Pick the application to run under the fake clock.",
   "tip.target_recent": "The targets you have run before. Choose… picks one this machine has not run yet.",
+  "tip.scenario": "Pick a scenario to fill the date below. It never starts the session.",
   "tip.date_field": "Type the date as YYYY-MM-DD, or pick it from the calendar.",
   "tip.time_field": "Time as HH:MM (24-hour). Empty means midnight.",
   "tip.today": "Fill in today's date (session zone), at midnight.",

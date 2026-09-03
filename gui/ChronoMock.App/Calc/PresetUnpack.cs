@@ -31,7 +31,25 @@ public sealed record UnpackedStep(
     string ZoneOffset = "+00:00");
 
 /// <summary>A preset's moment as builder inputs (base + steps), produced by <see cref="PresetUnpack"/>.</summary>
-public sealed record UnpackedMoment(BaseKind Base, string BaseText, IReadOnlyList<UnpackedStep> Steps);
+public sealed record UnpackedMoment(BaseKind Base, string BaseText, IReadOnlyList<UnpackedStep> Steps)
+{
+    /// <summary>
+    /// The <c>chrono calc</c> flag pair for one step - the ONE place a step kind becomes flags, shared by
+    /// the calculator's builder (<see cref="StepViewModel.ToArgs"/>) and by the substitution panel's
+    /// scenario list. The panel deliberately evaluates a preset through these flags rather than through
+    /// <c>calc --preset</c>: that path gates on <c>applies_to</c> and refuses a substitution-only preset,
+    /// which would drop exactly the scenarios the panel exists to offer (year rollover, expired licence).
+    /// </summary>
+    public static IReadOnlyList<string> StepArgs(UnpackedStep step) => step.Kind switch
+    {
+        StepKind.Shift => ["--shift", $"{step.Sign}{step.Amount.Trim()}{step.UnitToken}"],
+        StepKind.Snap => ["--snap", step.SnapToken],
+        StepKind.Nearest => ["--nearest", step.NearestToken],
+        StepKind.SetTime => ["--set-time", step.SetTime.Trim()],
+        StepKind.Zone => ["--to-zone", step.ZoneOffset.Trim()],
+        _ => [],
+    };
+}
 
 /// <summary>
 /// Translates a preset's <c>moment</c> (raw JSON, schema <c>chronomock.preset/1</c>) into builder inputs so

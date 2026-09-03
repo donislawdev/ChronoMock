@@ -46,4 +46,9 @@
        window; the name is what identifies the target, and the full path is in the tooltip. -->
   <sys:Double x:Key="TargetBoxMaxWidth">320</sys:Double>
 
+  <!-- The scenario chips wrap inside this width. A cap is what MAKES them wrap: a WrapPanel measured with
+       unbounded width lays every chip in one row, so without this the list grows sideways with the
+       catalogue instead of down. -->
+  <sys:Double x:Key="ScenarioListMaxWidth">560</sys:Double>
+
 </ResourceDictionary>

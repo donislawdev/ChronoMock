@@ -97,6 +97,52 @@
                     ToolTip="{DynamicResource tip.choose_target}" Click="OnChooseTargetClick" />
           </StackPanel>
 
+          <!-- Scenarios (chrono-mock 7.1 pt 2): the named moments from the shared preset catalogue, so the
+               default path is clicking a scenario rather than typing a date. Picking one fills the date
+               below and nothing else (rule 7); the time mode stays where the tester put it. Hidden when the
+               catalogue has none, so an install without presets shows no empty box. -->
+          <StackPanel Margin="{StaticResource SpaceXs}" IsEnabled="{Binding IsIdle}"
+                      Visibility="{Binding HasScenarios, Converter={StaticResource BoolToVis}}">
+            <TextBlock Text="{DynamicResource scenario.label}" HorizontalAlignment="Center"
+                       FontSize="{StaticResource FontSizeBody}" Foreground="{DynamicResource BrushTextSecondary}" />
+            <ListBox x:Name="ScenarioList" ItemsSource="{Binding Scenarios}"
+                     SelectedItem="{Binding SelectedScenario}"
+                     ItemContainerStyle="{StaticResource ScenarioListItem}"
+                     ToolTip="{DynamicResource tip.scenario}"
+                     Background="Transparent" BorderThickness="0"
+                     MaxWidth="{StaticResource ScenarioListMaxWidth}"
+                     ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                     HorizontalAlignment="Center" Margin="{StaticResource SpaceXs}">
+              <ListBox.ItemsPanel>
+                <ItemsPanelTemplate>
+                  <WrapPanel Orientation="Horizontal" HorizontalAlignment="Center" />
+                </ItemsPanelTemplate>
+              </ListBox.ItemsPanel>
+              <ListBox.ItemTemplate>
+                <DataTemplate>
+                  <TextBlock Text="{Binding DisplayName}" FontSize="{StaticResource FontSizeBody}" />
+                </DataTemplate>
+              </ListBox.ItemTemplate>
+            </ListBox>
+            <!-- What the chosen scenario tests, written by the catalogue author (DATA locale, not an
+                 interface key), then anything that went wrong, then what this list does not offer. -->
+            <TextBlock Text="{Binding ScenarioExplains}" HorizontalAlignment="Center" TextWrapping="Wrap"
+                       Visibility="{Binding HasSelectedScenario, Converter={StaticResource BoolToVis}}"
+                       FontSize="{StaticResource FontSizeCaption}"
+                       Foreground="{DynamicResource BrushTextSecondary}" />
+            <TextBlock Text="{Binding ScenarioErrorKey, Converter={StaticResource KeyToText}}"
+                       Visibility="{Binding HasScenarioError, Converter={StaticResource BoolToVis}}"
+                       HorizontalAlignment="Center" TextWrapping="Wrap"
+                       FontSize="{StaticResource FontSizeCaption}"
+                       Foreground="{DynamicResource BrushStatusPartial}" />
+            <TextBlock HorizontalAlignment="Center" TextWrapping="Wrap"
+                       Visibility="{Binding HasScenariosNeedingParameters, Converter={StaticResource BoolToVis}}"
+                       FontSize="{StaticResource FontSizeCaption}"
+                       Foreground="{DynamicResource BrushTextSecondary}">
+              <Run Text="{Binding ScenariosNeedingParameters, Mode=OneWay}" /><Run Text=" " /><Run Text="{DynamicResource scenario.needs_parameters}" />
+            </TextBlock>
+          </StackPanel>
+
           <!-- One centred line: At label, the date/calendar/time input, the Today/Now quick fills, the
                in-flight Jump, and the zone. The validation message is a SEPARATE line below (not inside the
                date control), so it never changes this row's height or knocks the inputs out of alignment. -->

@@ -10,8 +10,11 @@ namespace ChronoMock.App;
 
 public partial class MainWindow : FluentWindow
 {
-    private readonly SessionViewModel _session =
-        new(FileSessionHistoryStore.ForApp(), FileDiagnosticsLog.ForApp());
+    // The panel is a second consumer of the calculator engine and of the shared preset catalogue: the
+    // scenario list turns a named preset into a date (7.1 pt 2). Same layout seam as everything else,
+    // resolved in AppPaths.
+    private readonly SessionViewModel _session = new(
+        FileSessionHistoryStore.ForApp(), FileDiagnosticsLog.ForApp(), AppPaths.CalcClient, AppPaths.PresetsDir);
     private readonly CalculatorViewModel _calculator = CreateCalculator();
 
     // The calculator is a client of the same engine (ADR-6); it reads the shared preset catalogue and the

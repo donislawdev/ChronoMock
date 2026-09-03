@@ -18,6 +18,13 @@
   // Tylko .exe: natywna injekcja wymaga PE, a CDP aplikacji Electron/Chromium .exe. Zawężenie filtra chroni przed wyborem .lnk/.bat/.txt, który mógłby tylko zawieść (RELEASE-007).
   "target.dialog_filter": "Pliki wykonywalne (*.exe)|*.exe",
 
+  // Scenariusze (chrono-mock 7.1 pkt 2): nazwane momenty ze wspólnego katalogu presetów. NAZWY scenariuszy i ich opisy „co ta data testuje" pochodzą z plików katalogu (locale danych), nie stąd.
+  "scenario.label": "Scenariusz",
+  "scenario.needs_parameters": "kolejne scenariusze wymagają parametrów - zbuduj taki w kalkulatorze, potem użyj „Use in substitution”.",
+  "scenario.failed": "Nie udało się policzyć daty dla tego scenariusza.",
+  "scenario.unsupported": "Plik presetu tego scenariusza ma kształt, którego ta wersja nie czyta.",
+  "scenario.engine_missing": "Nie udało się uruchomić silnika kalkulatora, więc scenariuszy nie da się policzyć.",
+
   // Oznacza ostatnio używany cel, którego pliku już nie ma (skasowany wynik budowy, odinstalowana aplikacja). Pokazywany zamiast usuwania wpisu, żeby lista nie milczała o tym, czemu skrót nie zadziała (reguła 6).
   "target.missing": "(brak pliku)",
 
@@ -320,6 +327,7 @@
   // Podpowiedzi (pomoc po najechaniu). Klucze, nie literały (reguła 15); w języku interfejsu.
   "tip.choose_target": "Wybierz aplikację do uruchomienia z podmienionym zegarem.",
   "tip.target_recent": "Cele uruchamiane wcześniej. Przycisk „Wybierz…” wskazuje taki, którego ta maszyna jeszcze nie uruchamiała.",
+  "tip.scenario": "Wybierz scenariusz, żeby wypełnić datę poniżej. To nigdy nie startuje sesji.",
   "tip.date_field": "Wpisz datę jako YYYY-MM-DD albo wybierz z kalendarza.",
   "tip.time_field": "Godzina jako HH:MM (24h). Pusto oznacza północ.",
   "tip.today": "Wstaw dzisiejszą datę (strefa sesji), o północy.",

@@ -143,15 +143,11 @@ public sealed class StepViewModel : ObservableObject
 
     /// <summary>The calc flag pair for this step, e.g. <c>--shift +18y</c>, <c>--snap eoq</c>,
     /// <c>--nearest nbd</c>, <c>--set-time 23:59:59</c> or <c>--to-zone +05:45</c>.</summary>
-    public IReadOnlyList<string> ToArgs() => _kind.Kind switch
-    {
-        StepKind.Shift => ["--shift", $"{Sign}{Amount.Trim()}{Unit.Token}"],
-        StepKind.Snap => ["--snap", _snapTarget.Token],
-        StepKind.Nearest => ["--nearest", _nearestTarget.Token],
-        StepKind.SetTime => ["--set-time", _setTimeText.Trim()],
-        StepKind.Zone => ["--to-zone", _zoneText.Trim()],
-        _ => [],
-    };
+    /// <para>The mapping itself lives in <see cref="UnpackedMoment.StepArgs"/> so the builder and the
+    /// substitution panel's scenario list emit identical flags for the same step - two spellings of one
+    /// grammar would drift, and the drift would only show as a wrong date.</para>
+    public IReadOnlyList<string> ToArgs() => UnpackedMoment.StepArgs(new UnpackedStep(
+        _kind.Kind, Sign, Amount, Unit.Token, _snapTarget.Token, _nearestTarget.Token, _setTimeText, _zoneText));
 }
 
 /// <summary>A preset as the left-column list shows it (7.3): the localized name and "what this date tests"
@@ -903,12 +899,7 @@ public sealed class CalculatorViewModel : ObservableObject
     /// without the user first picking one. A preset with no market leaves the calendar as it is.</summary>
     private void ApplyMarketCalendar(string? market)
     {
-        var id = market switch
-        {
-            "us" => "us-banking",
-            "pl" => "pl",
-            _ => null,
-        };
+        var id = PresetInfo.CalendarIdForMarket(market);
         if (id is not null)
         {
             SelectedCalendar = Calendars.FirstOrDefault(c => c.Id == id) ?? _calendar;

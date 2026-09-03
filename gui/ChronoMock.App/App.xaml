@@ -44,6 +44,13 @@
       <Style x:Key="RecentTargetComboItem" TargetType="ComboBoxItem" BasedOn="{StaticResource {x:Type ComboBoxItem}}">
         <Setter Property="AutomationProperties.Name" Value="{Binding FullPath}" />
       </Style>
+
+      <!-- Scenario chips: the accessible name is the scenario's own name, which the template shows; without
+           this the peer would read the record's ToString(), as it would for any templated item. -->
+      <Style x:Key="ScenarioListItem" TargetType="ListBoxItem" BasedOn="{StaticResource {x:Type ListBoxItem}}">
+        <Setter Property="AutomationProperties.Name" Value="{Binding DisplayName}" />
+        <Setter Property="Margin" Value="{StaticResource SpaceXs}" />
+      </Style>
     </ResourceDictionary>
   </Application.Resources>
 </Application>

@@ -3,6 +3,7 @@ using System.Globalization;
 using System.IO; // The WPF SDK trims System.IO from implicit usings (Path collides with Shapes.Path).
 using System.Text;
 using System.Threading.Channels;
+using ChronoMock.App.Calc;
 using ChronoMock.Protocol;
 
 namespace ChronoMock.App;
@@ -46,6 +47,13 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     private bool _idle = true;
     private string? _targetPath;
     private RecentTarget? _selectedTarget;
+    private readonly CalcClient? _calcClient;
+    private readonly string? _presetsDir;
+    private ScenarioCatalogue _scenarios = ScenarioCatalogue.Empty;
+    private ScenarioItem? _selectedScenario;
+    private string _scenarioExplains = string.Empty;
+    private string _scenarioErrorKey = string.Empty;
+    private bool _applyingScenario; // guard: filling the moment from a scenario must not clear the selection
     /// <summary>The editable moment (a date and optional time in the session zone, rule 2). The shared
     /// MomentInput control binds to it, and MomentParse composes it culture-invariantly (locale-safe).</summary>
     public MomentField Moment { get; } = new();
@@ -72,10 +80,16 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     {
     }
 
-    public SessionViewModel(ISessionHistoryStore history, IDiagnosticsLog? diagnosticsLog = null)
+    public SessionViewModel(
+        ISessionHistoryStore history,
+        IDiagnosticsLog? diagnosticsLog = null,
+        CalcClient? calcClient = null,
+        string? presetsDir = null)
     {
         _store = history;
         _diagnosticsLog = diagnosticsLog ?? new NoOpDiagnosticsLog();
+        _calcClient = calcClient;
+        _presetsDir = presetsDir;
 
         // Defaults match the moment/mode the panel shipped with before these inputs existed.
         _selectedZone = TimeInputs.Zones.First(z => z.BiasMinutes == -120); // UTC+02:00
@@ -83,7 +97,18 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
 
         // Ship with the same default moment the panel had before these inputs existed.
         Moment.LoadCanonical("2038-01-19T03:14:07");
-        Moment.Changed += (_, _) => RaisePropertyChanged(nameof(CanStart));
+        Moment.Changed += (_, _) =>
+        {
+            RaisePropertyChanged(nameof(CanStart));
+
+            // A hand-edited moment is no longer the scenario's moment, so the selection stops claiming it
+            // is (the calculator's active-preset banner clears the same way). Guarded, because filling the
+            // field FROM a scenario raises this too.
+            if (!_applyingScenario)
+            {
+                ClearScenarioSelection();
+            }
+        };
 
         History.CollectionChanged += (_, _) => RaisePropertyChanged(nameof(HasHistory));
         RecentTargets.CollectionChanged += (_, _) => RaisePropertyChanged(nameof(HasRecentTargets));
@@ -93,6 +118,14 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
         }
 
         SeedRecentTargets();
+
+        // Reading the catalogue is file I/O only - no process is spawned here. Evaluating a scenario does
+        // spawn the engine, and that happens on a click, never in a constructor (a window built in a test
+        // must start nothing).
+        if (_presetsDir is not null)
+        {
+            _scenarios = ScenarioCatalog.Load(_presetsDir);
+        }
     }
     private bool _verdictKnown;
     private VerdictKind _verdictKind = VerdictKind.Unknown;
@@ -411,6 +444,154 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
                 target.IsMissing = !exists;
             }
         }
+    }
+
+    /// <summary>The scenarios this panel offers (chrono-mock 7.1 pt 2): named moments from the shared
+    /// preset catalogue that fill the date with one click, so a tester never has to type one.</summary>
+    public IReadOnlyList<ScenarioItem> Scenarios => _scenarios.Ready;
+
+    /// <summary>True when the catalogue offered at least one scenario - the list hides itself otherwise
+    /// rather than showing an empty box (a portable install with no presets/ folder).</summary>
+    public bool HasScenarios => _scenarios.Ready.Count > 0;
+
+    /// <summary>How many substitution presets this list does NOT offer because they take parameters. Said
+    /// out loud in the panel rather than hidden (rule 6) - the calculator can build those and hand the
+    /// moment back over the "Use in substitution" bridge.</summary>
+    public int ScenariosNeedingParameters => _scenarios.NeedingParameters;
+
+    public bool HasScenariosNeedingParameters => _scenarios.NeedingParameters > 0;
+
+    /// <summary>The chosen scenario. Setting it computes its moment and fills the date - and nothing else:
+    /// it never starts a session (untouchable rule 7) and never touches the time mode, which is a separate
+    /// axis the tester set deliberately.</summary>
+    public ScenarioItem? SelectedScenario
+    {
+        get => _selectedScenario;
+        set
+        {
+            if (Set(ref _selectedScenario, value))
+            {
+                RaisePropertyChanged(nameof(HasSelectedScenario));
+                ScenarioExplains = value?.DisplayExplains ?? string.Empty;
+                if (value is not null)
+                {
+                    _ = ApplyScenarioAsync(value);
+                }
+            }
+        }
+    }
+
+    public bool HasSelectedScenario => _selectedScenario is not null;
+
+    /// <summary>The chosen scenario's "what this date tests" line, straight from the catalogue (DATA
+    /// locales, not interface keys - the author wrote it, we do not translate it).</summary>
+    public string ScenarioExplains { get => _scenarioExplains; private set => Set(ref _scenarioExplains, value); }
+
+    /// <summary>Translation key naming why a scenario could not be turned into a date, empty when fine. A
+    /// scenario that will not compute says so instead of leaving the old date in place (rule 6).</summary>
+    public string ScenarioErrorKey
+    {
+        get => _scenarioErrorKey;
+        private set { if (Set(ref _scenarioErrorKey, value)) { RaisePropertyChanged(nameof(HasScenarioError)); } }
+    }
+
+    public bool HasScenarioError => _scenarioErrorKey.Length > 0;
+
+    /// <summary>
+    /// Turn a scenario into a concrete moment and fill the date with it.
+    /// <para>
+    /// The preset is unpacked into explicit steps and evaluated through the ordinary calc grammar, NOT
+    /// through <c>calc --preset</c>: that path gates on <c>applies_to</c> and refuses a substitution-only
+    /// preset, which is exactly the half of the catalogue this panel exists to offer. The engine stays the
+    /// single source of the date either way (rule 16) - nothing here computes a calendar.
+    /// </para>
+    /// </summary>
+    internal async Task ApplyScenarioAsync(ScenarioItem scenario)
+    {
+        ArgumentNullException.ThrowIfNull(scenario);
+        if (_calcClient is null)
+        {
+            ScenarioErrorKey = "scenario.engine_missing";
+            return;
+        }
+
+        ScenarioErrorKey = string.Empty;
+        try
+        {
+            var result = await _calcClient.EvaluateAsync(
+                BuildScenarioArgs(scenario, SelectedZone.BiasMinutes));
+            var iso = result.Moment?.Iso;
+            if (iso is null)
+            {
+                ScenarioErrorKey = "scenario.failed";
+                return;
+            }
+
+            _applyingScenario = true;
+            try
+            {
+                Moment.LoadCanonical(iso);
+            }
+            finally
+            {
+                _applyingScenario = false;
+            }
+        }
+        catch (NotSupportedException)
+        {
+            // A hand-edited preset the unpacker cannot represent - one honest failure type (R2-S8).
+            ScenarioErrorKey = "scenario.unsupported";
+        }
+        catch (CalcException)
+        {
+            ScenarioErrorKey = "scenario.failed";
+        }
+        catch (Exception ex) when (ex is IOException or InvalidOperationException
+                                       or UnauthorizedAccessException
+                                       or System.ComponentModel.Win32Exception)
+        {
+            // The engine itself could not be run (a broken or incomplete install).
+            ScenarioErrorKey = "scenario.engine_missing";
+        }
+    }
+
+    /// <summary>
+    /// The <c>chrono calc</c> arguments that turn one scenario into a moment. Pure, so the two things that
+    /// would only ever show up as a wrong date are asserted rather than trusted: that the preset is
+    /// evaluated as explicit steps (not <c>--preset</c>, which refuses substitution-only presets), and that
+    /// it is computed in the SESSION zone rather than the host's - "the end of this month" is a different
+    /// day on either side of midnight, and the session runs in the zone chosen in this panel (rule 2).
+    /// </summary>
+    internal static IReadOnlyList<string> BuildScenarioArgs(ScenarioItem scenario, int zoneBiasMinutes)
+    {
+        ArgumentNullException.ThrowIfNull(scenario);
+        var unpacked = PresetUnpack.UnpackMoment(scenario.Info.Moment);
+        return
+        [
+            .. CalculatorViewModel.BuildCalcArgs(
+                unpacked.Base,
+                unpacked.BaseText,
+                unpacked.Steps.Select(UnpackedMoment.StepArgs),
+                PresetInfo.CalendarIdForMarket(scenario.Info.Market)),
+            "--zone",
+            ZoneLabel.OffsetFromBiasMinutes(zoneBiasMinutes),
+        ];
+    }
+
+    /// <summary>Drop the scenario selection without re-computing anything - the moment no longer came from
+    /// it. Writes the field directly, because the property's setter is the "apply this scenario" path.</summary>
+    private void ClearScenarioSelection()
+    {
+        if (_selectedScenario is null)
+        {
+            return;
+        }
+
+        _selectedScenario = null;
+        ScenarioExplains = string.Empty;
+        ScenarioErrorKey = string.Empty;
+        RaisePropertyChanged(nameof(SelectedScenario));
+        RaisePropertyChanged(nameof(HasSelectedScenario));
     }
 
     /// <summary>
