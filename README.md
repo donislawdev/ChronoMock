@@ -88,6 +88,8 @@ This section is longer than most tools' entire documentation, on purpose. A tool
 **Other limits:**
 
 - **A jump changes what the application sees, not when it wakes up.** Timers already scheduled with the kernel run on real time. Most applications poll the clock, so jumps work in practice - but not all of them do
+- **The session time zone is a fixed offset with no daylight saving.** A session set to Poland stays at the offset you chose whether its clock is in March or in July, so a run that crosses a real DST boundary drifts an hour from what that zone would really show. Forcing an application through a DST transition is therefore not something this tool does yet, and the date calculator says so rather than guessing
+- **The zone reports itself as "Chrono Session"**, a name no Windows registry knows. Anything that maps that name back to a zone (.NET's `TimeZoneInfo.Local` among them) falls back to the offset instead, which is the right answer - but a target that insists on a registry name will not find one
 - **Chrono Mock cleans up after itself. It cannot clean up after the application you tested.** See the warning below
 - Windows only. No macOS, no Linux - `libfaketime` already covers Linux well
 

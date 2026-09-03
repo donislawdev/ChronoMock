@@ -203,9 +203,15 @@ pub fn http_get_json(host: &str, port: u16, path: &str) -> io::Result<Value> {
 
     let mut reader = std::io::BufReader::new(stream);
     let mut content_length: Option<usize> = None;
-    loop {
+    // The body is capped below, and the header block gets the same treatment (R2-N9): a peer that
+    // never sends the blank line would otherwise be read header by header without bound. The peer is
+    // our own Chromium, so this is defence in depth, not a hole - but "the peer is trustworthy" is
+    // exactly the assumption the body cap already declined to make.
+    const MAX_HEADERS: usize = 200;
+    const MAX_HEADER_LINE: usize = 8 * 1024;
+    for _ in 0..MAX_HEADERS {
         let mut line = String::new();
-        let n = reader.read_line(&mut line)?;
+        let n = reader.by_ref().take(MAX_HEADER_LINE as u64).read_line(&mut line)?;
         if n == 0 {
             break; // EOF before the blank line
         }
