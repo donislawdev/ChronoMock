@@ -6,11 +6,20 @@
 # `cargo install cargo-deny` would work but rebuilds it from source on every run, so the published binary
 # is fetched instead - pinned to a version AND to its checksum, so a swapped asset fails loudly rather than
 # running as us.
+#
+# With -InstallOnly it only puts cargo-deny on PATH, so a later `cargo deny ...` works - which is what
+# packaging/build-dist.ps1 runs as its own pre-package gate.
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory = $true)][ValidateSet('licenses', 'advisories', 'bans', 'sources')]
-    [string]$Command
+    [ValidateSet('licenses', 'advisories', 'bans', 'sources')]
+    [string]$Command,
+
+    [switch]$InstallOnly
 )
+
+if (-not $Command -and -not $InstallOnly) {
+    throw 'give -Command <check> or -InstallOnly'
+}
 
 $ErrorActionPreference = 'Stop'
 
@@ -35,6 +44,16 @@ if ($actual -ne $sha256) {
 tar -xzf $archive -C $work
 $exe = Get-ChildItem -Path $work -Recurse -Filter 'cargo-deny.exe' | Select-Object -First 1
 if (-not $exe) { throw "cargo-deny.exe not found in $asset" }
+
+if ($InstallOnly) {
+    # Put it where `cargo deny` will find it. On a runner GITHUB_PATH makes it stick for later steps; off
+    # a runner the process PATH is enough for whatever this shell runs next.
+    $dir = $exe.Directory.FullName
+    if ($env:GITHUB_PATH) { Add-Content -Path $env:GITHUB_PATH -Value $dir }
+    $env:PATH = "$dir;$env:PATH"
+    Write-Host "cargo-deny $version on PATH at $dir"
+    return
+}
 
 & $exe.FullName check $Command
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

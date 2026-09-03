@@ -1,0 +1,52 @@
+# Build the portable distribution and hand back the zips.
+#
+# Manual only. Nothing here runs on a push: packaging is a several-minute Windows job producing ~70 MB of
+# artifacts, and a private repo bills Windows minutes at double rate - so it runs when someone asks for a
+# build, not on every commit. (A tag trigger would be the natural addition once versions start moving; the
+# version is still 0.1.0 and is not bumped by the assistant, so there is nothing to tag yet.)
+#
+# The packaging script runs its OWN gates (cargo deny / clippy / test, dotnet test / format) and treats
+# every missing piece as a hard stop - a half-assembled distribution that looks complete is worse than a
+# clear failure. Those gates are left switched on here rather than skipped, so what gets uploaded is what
+# passed. That means cargo-deny has to be on PATH before the script runs.
+name: Distribution
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    name: Portable build
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Add the 32-bit target
+        run: rustup target add i686-pc-windows-msvc
+
+      - uses: Swatinem/rust-cache@v2
+
+      # The script's own gate calls `cargo deny`, so the binary has to be resolvable as a cargo subcommand.
+      - name: Put cargo-deny on PATH
+        shell: pwsh
+        run: ./.github/scripts/cargo-deny.ps1 -InstallOnly
+
+      - name: Assemble the distribution
+        shell: pwsh
+        run: ./packaging/build-dist.ps1
+
+      # Only the zips: the unpacked folder is the same bytes again, and the GUI one is ~164 MB.
+      - name: Upload the packages
+        uses: actions/upload-artifact@v7
+        with:
+          name: chrono-mock-portable
+          path: dist/*.zip
+          if-no-files-found: error
+          retention-days: 14
