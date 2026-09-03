@@ -45,6 +45,7 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     private string _lastError = string.Empty;
     private bool _idle = true;
     private string? _targetPath;
+    private RecentTarget? _selectedTarget;
     /// <summary>The editable moment (a date and optional time in the session zone, rule 2). The shared
     /// MomentInput control binds to it, and MomentParse composes it culture-invariantly (locale-safe).</summary>
     public MomentField Moment { get; } = new();
@@ -85,10 +86,13 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
         Moment.Changed += (_, _) => RaisePropertyChanged(nameof(CanStart));
 
         History.CollectionChanged += (_, _) => RaisePropertyChanged(nameof(HasHistory));
+        RecentTargets.CollectionChanged += (_, _) => RaisePropertyChanged(nameof(HasRecentTargets));
         foreach (var record in _store.Load())
         {
             History.Insert(0, record); // newest first for display
         }
+
+        SeedRecentTargets();
     }
     private bool _verdictKnown;
     private VerdictKind _verdictKind = VerdictKind.Unknown;
@@ -205,9 +209,40 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
         {
             if (Set(ref _targetPath, value))
             {
+                PromoteRecentTarget(value);
                 RaisePropertyChanged(nameof(TargetName));
                 RaisePropertyChanged(nameof(HasTarget));
                 RaisePropertyChanged(nameof(CanStart));
+            }
+        }
+    }
+
+    /// <summary>Targets used before, newest first (chrono-mock 7.1 pt 1). Seeded from the session history
+    /// on construction and re-ordered as targets are chosen, so the picker only has to be opened for a
+    /// target this machine has never run.
+    /// <para>
+    /// It is a VIEW over the history, held in memory: deleting or clearing history does not empty it (that
+    /// would blank the current selection mid-setup), and a target chosen but never launched lives for this
+    /// run only - history records a session, and a session that never started is not one.
+    /// </para></summary>
+    public ObservableCollection<RecentTarget> RecentTargets { get; } = [];
+
+    /// <summary>True when there is at least one recent target - the dropdown binds its visibility here, so
+    /// a first run with no history shows the bare Choose… button instead of an empty control.</summary>
+    public bool HasRecentTargets => RecentTargets.Count > 0;
+
+    /// <summary>The dropdown's selection: the current target, always present in <see cref="RecentTargets"/>.
+    /// Setting it CHOOSES that target and nothing else - it never starts a session (untouchable rule 7).
+    /// A null write is ignored: WPF clears the selection while the list is re-ordered, and that must not
+    /// read as "the user unchose the target".</summary>
+    public RecentTarget? SelectedTarget
+    {
+        get => _selectedTarget;
+        set
+        {
+            if (value is not null && !RecentTarget.SamePath(value.FullPath, _targetPath ?? string.Empty))
+            {
+                SetTarget(value.FullPath); // one path in: promotion and every dependent property follow
             }
         }
     }
@@ -277,8 +312,106 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     /// <summary>True when a session may be started: nothing is running, a target is chosen, moment is valid.</summary>
     public bool CanStart => _idle && HasTarget && Moment.IsValid;
 
-    /// <summary>Choose the target executable to run (from the picker, or the dev default).</summary>
+    /// <summary>Choose the target executable to run (from the picker, the recent list, or the dev default).</summary>
     public void SetTarget(string path) => TargetPath = path;
+
+    /// <summary>Fill the recent list from the session history: distinct target paths, newest first, capped.
+    /// A record with no target path is skipped - <see cref="BuildRecord"/> writes an empty string when a
+    /// session somehow ended without one, and an entry that cannot be run is not a shortcut.</summary>
+    private void SeedRecentTargets()
+    {
+        foreach (var record in History) // already newest first
+        {
+            if (RecentTargets.Count >= RecentTargetLimits.Max)
+            {
+                break;
+            }
+
+            var path = record.TargetPath;
+            if (!string.IsNullOrWhiteSpace(path) && FindRecentTarget(path) is null)
+            {
+                RecentTargets.Add(new RecentTarget(path));
+            }
+        }
+    }
+
+    /// <summary>Move the chosen target to the head of the recent list (adding it when it is new) and make
+    /// it the dropdown's selection. Ordering matters: the selection is published BEFORE the list is
+    /// trimmed, so the entry dropped off the tail can never be the one the control has selected.</summary>
+    private void PromoteRecentTarget(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            _selectedTarget = null;
+            RaisePropertyChanged(nameof(SelectedTarget));
+            return;
+        }
+
+        var entry = FindRecentTarget(path);
+        if (entry is null)
+        {
+            entry = new RecentTarget(path);
+            RecentTargets.Insert(0, entry);
+        }
+        else
+        {
+            var index = RecentTargets.IndexOf(entry);
+            if (index > 0)
+            {
+                RecentTargets.Move(index, 0);
+            }
+        }
+
+        _selectedTarget = entry;
+        RaisePropertyChanged(nameof(SelectedTarget));
+
+        while (RecentTargets.Count > RecentTargetLimits.Max)
+        {
+            RecentTargets.RemoveAt(RecentTargets.Count - 1); // the oldest, never the selected head
+        }
+    }
+
+    private RecentTarget? FindRecentTarget(string path)
+        => RecentTargets.FirstOrDefault(t => RecentTarget.SamePath(t.FullPath, path));
+
+    /// <summary>
+    /// Re-check which recent targets still exist, so a wiped build output is marked instead of silently
+    /// offered (rule 6). Called when the dropdown opens.
+    /// <para>
+    /// The check runs OFF the UI thread on purpose: <see cref="File.Exists"/> on an unreachable network
+    /// path blocks for as long as the share takes to fail, which on the UI thread is a frozen window. Only
+    /// the flags are written back here, on the UI thread - the collection itself is never touched, so no
+    /// selection is disturbed by opening the list.
+    /// </para>
+    /// </summary>
+    public async Task RefreshRecentTargetsAsync()
+    {
+        var paths = RecentTargets.Select(t => t.FullPath).ToArray();
+        if (paths.Length == 0)
+        {
+            return;
+        }
+
+        // File.Exists answers false for any failure (missing, denied, malformed) and never throws.
+        var present = await Task.Run(() =>
+        {
+            var map = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+            foreach (var path in paths)
+            {
+                map[path] = File.Exists(path);
+            }
+
+            return map;
+        });
+
+        foreach (var target in RecentTargets)
+        {
+            if (present.TryGetValue(target.FullPath, out var exists))
+            {
+                target.IsMissing = !exists;
+            }
+        }
+    }
 
     /// <summary>
     /// Change the multiplier in flight (0 freezes, N resumes at N times). The core re-anchors from the

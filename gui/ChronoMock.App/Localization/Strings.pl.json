@@ -18,6 +18,9 @@
   // Tylko .exe: natywna injekcja wymaga PE, a CDP aplikacji Electron/Chromium .exe. Zawężenie filtra chroni przed wyborem .lnk/.bat/.txt, który mógłby tylko zawieść (RELEASE-007).
   "target.dialog_filter": "Pliki wykonywalne (*.exe)|*.exe",
 
+  // Oznacza ostatnio używany cel, którego pliku już nie ma (skasowany wynik budowy, odinstalowana aplikacja). Pokazywany zamiast usuwania wpisu, żeby lista nie milczała o tym, czemu skrót nie zadziała (reguła 6).
+  "target.missing": "(brak pliku)",
+
   // Wejścia czasu (chrono-mock 7.1). Moment to czas lokalny w strefie sesji (reguła 2).
   "moment.label": "Moment:",
   "moment.date_placeholder": "YYYY-MM-DD",
@@ -316,6 +319,7 @@
 
   // Podpowiedzi (pomoc po najechaniu). Klucze, nie literały (reguła 15); w języku interfejsu.
   "tip.choose_target": "Wybierz aplikację do uruchomienia z podmienionym zegarem.",
+  "tip.target_recent": "Cele uruchamiane wcześniej. Przycisk „Wybierz…” wskazuje taki, którego ta maszyna jeszcze nie uruchamiała.",
   "tip.date_field": "Wpisz datę jako YYYY-MM-DD albo wybierz z kalendarza.",
   "tip.time_field": "Godzina jako HH:MM (24h). Pusto oznacza północ.",
   "tip.today": "Wstaw dzisiejszą datę (strefa sesji), o północy.",

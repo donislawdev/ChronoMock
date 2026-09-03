@@ -59,8 +59,40 @@
                       IsEnabled="{Binding IsIdle}">
             <TextBlock Text="{DynamicResource target.label}" VerticalAlignment="Center"
                        FontSize="{StaticResource FontSizeBody}" Foreground="{DynamicResource BrushTextSecondary}" />
-            <TextBlock Text="{Binding TargetName}" Margin="{StaticResource SpaceXs}" VerticalAlignment="Center"
-                       FontSize="{StaticResource FontSizeBody}" Foreground="{DynamicResource BrushTextPrimary}" />
+            <!-- The chosen target, and the targets chosen before it (chrono-mock 7.1 pt 1). Picking one
+                 only FILLS the target - it never starts a session (rule 7). Hidden until there is at least
+                 one, so a first run shows the bare Choose… button rather than an empty control. The row is
+                 name-first; the directory tells two same-named builds apart and shows in the open list
+                 only, so the closed box reads exactly as the plain name it replaced. -->
+            <ComboBox x:Name="TargetBox" ItemsSource="{Binding RecentTargets}" SelectedItem="{Binding SelectedTarget}"
+                      ItemContainerStyle="{StaticResource RecentTargetComboItem}"
+                      DropDownOpened="OnRecentTargetsOpened"
+                      ToolTip="{DynamicResource tip.target_recent}"
+                      MaxWidth="{StaticResource TargetBoxMaxWidth}"
+                      Visibility="{Binding HasRecentTargets, Converter={StaticResource BoolToVis}}"
+                      Margin="{StaticResource SpaceXs}" VerticalAlignment="Center">
+              <ComboBox.ItemTemplate>
+                <DataTemplate>
+                  <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="{Binding Name}" FontSize="{StaticResource FontSizeBody}"
+                               Foreground="{DynamicResource BrushTextPrimary}" />
+                    <TextBlock x:Name="TargetDirectory" Text="{Binding Directory}"
+                               Margin="{StaticResource SpaceXs}" FontSize="{StaticResource FontSizeCaption}"
+                               Foreground="{DynamicResource BrushTextSecondary}" />
+                    <TextBlock Text="{DynamicResource target.missing}" Margin="{StaticResource SpaceXs}"
+                               FontSize="{StaticResource FontSizeCaption}"
+                               Foreground="{DynamicResource BrushStatusPartial}"
+                               Visibility="{Binding IsMissing, Converter={StaticResource BoolToVis}}" />
+                  </StackPanel>
+                  <DataTemplate.Triggers>
+                    <DataTrigger Value="{x:Null}"
+                                 Binding="{Binding RelativeSource={RelativeSource FindAncestor, AncestorType={x:Type ComboBoxItem}}}">
+                      <Setter TargetName="TargetDirectory" Property="Visibility" Value="Collapsed" />
+                    </DataTrigger>
+                  </DataTemplate.Triggers>
+                </DataTemplate>
+              </ComboBox.ItemTemplate>
+            </ComboBox>
             <Button Margin="{StaticResource SpaceSm}" Content="{DynamicResource action.choose_target}"
                     ToolTip="{DynamicResource tip.choose_target}" Click="OnChooseTargetClick" />
           </StackPanel>

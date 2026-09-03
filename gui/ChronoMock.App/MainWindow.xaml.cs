@@ -109,6 +109,12 @@ public partial class MainWindow : FluentWindow
         }
     }
 
+    // Opening the recent list re-checks which of its targets still exist, so a wiped build output is
+    // marked instead of silently offered (rule 6). The check itself runs off the UI thread - a dead
+    // network path would otherwise freeze the window for as long as the share takes to fail.
+    private async void OnRecentTargetsOpened(object sender, EventArgs e)
+        => await _session.RefreshRecentTargetsAsync();
+
     private async void OnStartClick(object sender, RoutedEventArgs e) => await _session.StartAsync();
 
     // In-flight speed control: each button carries its multiplier in Tag ("0" = freeze).

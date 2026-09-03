@@ -42,4 +42,8 @@
        not free geometry (zasady/13 2.1); the whole panel also scrolls. -->
   <sys:Double x:Key="HistoryMaxHeight">160</sys:Double>
 
+  <!-- The target box caps here so a deeply nested path cannot stretch the centred setup row across the
+       window; the name is what identifies the target, and the full path is in the tooltip. -->
+  <sys:Double x:Key="TargetBoxMaxWidth">320</sys:Double>
+
 </ResourceDictionary>

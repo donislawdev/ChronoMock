@@ -37,6 +37,13 @@
       <Style x:Key="LabelKeyComboItem" TargetType="ComboBoxItem" BasedOn="{StaticResource {x:Type ComboBoxItem}}">
         <Setter Property="AutomationProperties.Name" Value="{Binding LabelKey, Converter={StaticResource KeyToText}}" />
       </Style>
+
+      <!-- Recent-target items: the accessible name is the FULL path, because the file name alone does not
+           identify a build (an x64 and an x86 output are both app.exe) and assistive tech would otherwise
+           hear the record's ToString(). Same reason the row shows the directory beside the name. -->
+      <Style x:Key="RecentTargetComboItem" TargetType="ComboBoxItem" BasedOn="{StaticResource {x:Type ComboBoxItem}}">
+        <Setter Property="AutomationProperties.Name" Value="{Binding FullPath}" />
+      </Style>
     </ResourceDictionary>
   </Application.Resources>
 </Application>

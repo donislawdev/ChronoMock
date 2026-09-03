@@ -18,6 +18,9 @@
   // Only .exe: native injection needs a PE and CDP needs an Electron/Chromium .exe. Narrowing the filter keeps a user from picking a .lnk/.bat/.txt that could only fail (RELEASE-007).
   "target.dialog_filter": "Executables (*.exe)|*.exe",
 
+  // Marks a recent target whose file is gone (a wiped build output, an uninstalled app). Shown rather than the entry being dropped, so the list never goes quiet about why a shortcut will not work (rule 6).
+  "target.missing": "(missing)",
+
   // Time inputs (chrono-mock 7.1). The moment is the local time in the session zone (rule 2).
   "moment.label": "At:",
   "moment.date_placeholder": "YYYY-MM-DD",
@@ -316,6 +319,7 @@
 
   // Tooltips (hover help). Keys, not literals (rule 15); shown in the current language.
   "tip.choose_target": "Pick the application to run under the fake clock.",
+  "tip.target_recent": "The targets you have run before. Choose… picks one this machine has not run yet.",
   "tip.date_field": "Type the date as YYYY-MM-DD, or pick it from the calendar.",
   "tip.time_field": "Time as HH:MM (24-hour). Empty means midnight.",
   "tip.today": "Fill in today's date (session zone), at midnight.",

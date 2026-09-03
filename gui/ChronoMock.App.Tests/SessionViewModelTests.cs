@@ -1197,6 +1197,148 @@ public class SessionViewModelTests
         Assert.Equal(SessionHistoryLimits.Max, vm.History.Count);
     }
 
+    // Recent targets (chrono-mock 7.1 pt 1). The list is a view over the history, so these pin down what
+    // it takes from there, what it does NOT take, and that picking one only fills the form (rule 7).
+
+    [Fact]
+    public void Recent_targets_seed_from_history_newest_first_without_repeats()
+    {
+        var store = new InMemorySessionHistoryStore();
+        store.Append(HistoryRecord("Alpha")); // oldest
+        store.Append(HistoryRecord("Beta"));
+        store.Append(HistoryRecord("Alpha")); // Alpha run again - one entry, at its newest position
+
+        var vm = new SessionViewModel(store);
+
+        Assert.Equal([@"C:\apps\Alpha.exe", @"C:\apps\Beta.exe"], vm.RecentTargets.Select(t => t.FullPath));
+        Assert.True(vm.HasRecentTargets);
+    }
+
+    [Fact]
+    public void Recent_targets_seeded_from_history_stop_at_the_cap()
+    {
+        var store = new InMemorySessionHistoryStore();
+        for (int i = 0; i < RecentTargetLimits.Max + 4; i++)
+        {
+            store.Append(HistoryRecord($"App{i}"));
+        }
+
+        var vm = new SessionViewModel(store);
+
+        Assert.Equal(RecentTargetLimits.Max, vm.RecentTargets.Count);
+        Assert.Equal($@"C:\apps\App{RecentTargetLimits.Max + 3}.exe", vm.RecentTargets[0].FullPath); // newest
+    }
+
+    [Fact]
+    public void A_history_record_without_a_target_path_is_not_offered_as_a_recent_target()
+    {
+        var store = new InMemorySessionHistoryStore();
+        store.Append(HistoryRecord("Alpha") with { TargetPath = string.Empty });
+
+        var vm = new SessionViewModel(store);
+
+        Assert.Empty(vm.RecentTargets); // an entry that could not be run is not a shortcut
+        Assert.False(vm.HasRecentTargets);
+    }
+
+    [Fact]
+    public void Choosing_a_target_moves_it_to_the_head_and_becomes_the_selection()
+    {
+        var store = new InMemorySessionHistoryStore();
+        store.Append(HistoryRecord("Alpha"));
+        store.Append(HistoryRecord("Beta")); // newest, so it seeds at the head
+        var vm = new SessionViewModel(store);
+
+        vm.SetTarget(@"C:\APPS\ALPHA.EXE"); // same file, different spelling - Windows paths ignore case
+
+        Assert.Equal(2, vm.RecentTargets.Count); // no duplicate entry for the other spelling
+        Assert.Equal(@"C:\apps\Alpha.exe", vm.RecentTargets[0].FullPath);
+        Assert.Same(vm.RecentTargets[0], vm.SelectedTarget);
+    }
+
+    [Fact]
+    public void Choosing_a_new_target_adds_it_and_drops_the_oldest_beyond_the_cap()
+    {
+        var store = new InMemorySessionHistoryStore();
+        for (int i = 0; i < RecentTargetLimits.Max; i++)
+        {
+            store.Append(HistoryRecord($"App{i}"));
+        }
+
+        var vm = new SessionViewModel(store);
+        vm.SetTarget(@"C:\apps\Fresh.exe");
+
+        Assert.Equal(RecentTargetLimits.Max, vm.RecentTargets.Count);
+        Assert.Equal(@"C:\apps\Fresh.exe", vm.RecentTargets[0].FullPath);
+        Assert.DoesNotContain(vm.RecentTargets, t => t.FullPath == @"C:\apps\App0.exe"); // the oldest went
+        Assert.Same(vm.RecentTargets[0], vm.SelectedTarget); // the head is never the entry dropped
+    }
+
+    [Fact]
+    public void Selecting_a_recent_target_chooses_it_and_does_not_start_a_session()
+    {
+        var store = new InMemorySessionHistoryStore();
+        store.Append(HistoryRecord("Alpha"));
+        store.Append(HistoryRecord("Beta"));
+        var vm = new SessionViewModel(store);
+
+        vm.SelectedTarget = vm.RecentTargets.Single(t => t.FullPath == @"C:\apps\Alpha.exe");
+
+        Assert.Equal(@"C:\apps\Alpha.exe", vm.TargetPath);
+        Assert.Equal("Alpha.exe", vm.TargetName);
+        Assert.Equal(SessionStatusKind.Idle, vm.StatusKind); // rule 7: fills the target, never starts
+    }
+
+    [Fact]
+    public void A_cleared_selection_does_not_unchoose_the_target()
+    {
+        // WPF nulls SelectedItem while the list is re-ordered; that must not read as a user action.
+        var vm = new SessionViewModel();
+        vm.SetTarget(@"C:\apps\Ledger.exe");
+
+        vm.SelectedTarget = null;
+
+        Assert.Equal(@"C:\apps\Ledger.exe", vm.TargetPath);
+        Assert.NotNull(vm.SelectedTarget);
+    }
+
+    [Fact]
+    public void Clearing_the_history_leaves_the_recent_targets_alone()
+    {
+        var store = new InMemorySessionHistoryStore();
+        store.Append(HistoryRecord("Alpha"));
+        var vm = new SessionViewModel(store);
+        vm.SetTarget(@"C:\apps\Alpha.exe");
+
+        vm.ClearHistory();
+
+        // Dropping the entry would blank the box while TargetPath still holds that very target.
+        Assert.Equal(@"C:\apps\Alpha.exe", Assert.Single(vm.RecentTargets).FullPath);
+        Assert.Same(vm.RecentTargets[0], vm.SelectedTarget);
+    }
+
+    [Fact]
+    public async Task Refreshing_the_recent_targets_marks_the_ones_whose_file_is_gone()
+    {
+        var present = Path.Combine(Path.GetTempPath(), $"chrono-recent-{Guid.NewGuid():N}.exe");
+        await File.WriteAllTextAsync(present, string.Empty);
+        try
+        {
+            var vm = new SessionViewModel();
+            vm.SetTarget(Path.Combine(Path.GetTempPath(), $"chrono-gone-{Guid.NewGuid():N}.exe"));
+            vm.SetTarget(present);
+
+            await vm.RefreshRecentTargetsAsync();
+
+            Assert.False(vm.RecentTargets.Single(t => t.FullPath == present).IsMissing);
+            Assert.True(vm.RecentTargets.Single(t => t.FullPath != present).IsMissing);
+        }
+        finally
+        {
+            File.Delete(present);
+        }
+    }
+
     private static SessionRecord HistoryRecord(
         string name, string moment = "2038-01-19T03:14:07", int bias = -120,
         string mode = "multiplier", long? multiplier = 60) => new()
