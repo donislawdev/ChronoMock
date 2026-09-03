@@ -25,11 +25,14 @@ internal static class RepoPaths
             $"could not find the repo root (a parent with Cargo.toml) from '{AppContext.BaseDirectory}'");
     }
 
-    /// <summary>The x64 core executable. Requires <c>cargo build --release</c>.</summary>
+    /// <summary>The x64 core executable, named by its explicit target triple like the x86 one - reading it
+    /// from <c>target/release/</c> tests whatever was last built WITHOUT <c>--target</c>, which is how the
+    /// harness spent a session on a day-old binary (R2-X3). Requires
+    /// <c>cargo build --release --target x86_64-pc-windows-msvc</c>.</summary>
     public static string X64Core(string repoRoot)
         => RequireFile(
-            Path.Combine(repoRoot, "target", "release", "chrono.exe"),
-            "run `cargo build --release` first");
+            Path.Combine(repoRoot, "target", "x86_64-pc-windows-msvc", "release", "chrono.exe"),
+            "run `cargo build --release --target x86_64-pc-windows-msvc` first");
 
     /// <summary>The x86 core executable. Requires <c>cargo build --release --target i686-pc-windows-msvc</c>.</summary>
     public static string X86Core(string repoRoot)

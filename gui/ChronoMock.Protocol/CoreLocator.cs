@@ -27,10 +27,16 @@ public sealed class CoreLocator
         return _resolveCorePath(machine);
     }
 
-    /// <summary>Dev-checkout factory: the cores are the cargo build outputs under <paramref name="repoRoot"/>.</summary>
+    /// <summary>Dev-checkout factory: the cores are the cargo build outputs under <paramref name="repoRoot"/>.
+    /// Both are named by their explicit target triple, because <c>target/release/</c> is written only by a
+    /// build with NO <c>--target</c> - and the working rule is to build both triples explicitly, so that
+    /// directory holds whatever binary someone last built without the flag. The run-targets harness read
+    /// x64 from there and spent a session testing a day-old core (R2-X3); this is the same trap in the
+    /// GUI's own path.</summary>
     public static CoreLocator ForRepo(string repoRoot) => new(machine => machine switch
     {
-        PeReader.Machine.X64 => Path.Combine(repoRoot, "target", "release", "chrono.exe"),
+        PeReader.Machine.X64 =>
+            Path.Combine(repoRoot, "target", "x86_64-pc-windows-msvc", "release", "chrono.exe"),
         PeReader.Machine.X86 => Path.Combine(repoRoot, "target", "i686-pc-windows-msvc", "release", "chrono.exe"),
         _ => throw new InvalidOperationException($"unsupported bitness {machine}"),
     });
