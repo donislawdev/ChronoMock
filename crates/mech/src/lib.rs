@@ -35,13 +35,16 @@ use windows::Win32::System::Memory::{
     VirtualFreeEx, FILE_MAP_ALL_ACCESS, MEMORY_MAPPED_VIEW_ADDRESS, MEM_COMMIT, MEM_RELEASE,
     MEM_RESERVE, PAGE_READWRITE,
 };
-use windows::Win32::System::SystemInformation::{GetSystemTimeAsFileTime, GetTickCount64};
+use windows::Win32::System::SystemInformation::{
+    GetSystemTimeAsFileTime, GetTickCount64, IMAGE_FILE_MACHINE, IMAGE_FILE_MACHINE_AMD64,
+    IMAGE_FILE_MACHINE_ARM64, IMAGE_FILE_MACHINE_I386, IMAGE_FILE_MACHINE_UNKNOWN,
+};
 use windows::Win32::System::Time::{GetTimeZoneInformation, TIME_ZONE_INFORMATION};
 use windows::Win32::System::Threading::{
-    CreateMutexW, CreateProcessW, CreateRemoteThread, GetCurrentProcessId, GetExitCodeProcess,
-    GetExitCodeThread, OpenProcess, ResumeThread, TerminateProcess, WaitForSingleObject,
-    CREATE_SUSPENDED, LPTHREAD_START_ROUTINE, PROCESS_INFORMATION, PROCESS_SYNCHRONIZE,
-    STARTUPINFOW,
+    CreateMutexW, CreateProcessW, CreateRemoteThread, GetCurrentProcess, GetCurrentProcessId,
+    GetExitCodeProcess, GetExitCodeThread, IsWow64Process2, OpenProcess, ResumeThread,
+    TerminateProcess, WaitForSingleObject, CREATE_SUSPENDED, LPTHREAD_START_ROUTINE,
+    PROCESS_INFORMATION, PROCESS_SYNCHRONIZE, STARTUPINFOW,
 };
 use windows::Win32::System::Performance::QueryPerformanceCounter;
 use windows::Win32::System::WindowsProgramming::QueryUnbiasedInterruptTime;
@@ -64,6 +67,10 @@ pub enum PrepareError {
     /// Another session's core (this pid) is already running - single-session limit (fixed section
     /// name). The caller refuses rather than sharing one control block between two sessions.
     SessionActive(u32),
+    /// The target runs at a different bitness than this core, so `CreateRemoteThread` +
+    /// `LoadLibraryW` cannot reach it - a known impossibility, declared before the attempt rather
+    /// than after (R2-S1). Carries the two machine labels, target first.
+    BitnessMismatch(&'static str, &'static str),
 }
 
 /// The outcome of `prepare`: the parent's audit coverage plus the live session.
@@ -547,6 +554,54 @@ unsafe fn gather_coverage(cov: *const Cov, installed: u64, scale_duration: bool)
     out
 }
 
+// --- Target bitness (R2-S1) ----------------------------------------------------
+//
+// A 64-bit core cannot inject into a 32-bit target and the other way round: the remote LoadLibraryW
+// simply returns NULL, and the only word we had for that was `target.inject_failed` - the same word
+// an antivirus block, a corrupt DLL and (until R2-W3) a missing one all produced. The tester was left
+// to guess, when the one fact that would have told them to run the other chrono.exe was knowable.
+//
+// We ASK THE OS rather than read the target's PE header. A .NET Framework AnyCPU executable carries
+// IMAGE_FILE_MACHINE_I386 in its file header yet runs 64-bit on 64-bit Windows unless
+// COMIMAGE_FLAGS_32BITREQUIRED is set, so a header-reading gate would refuse a target that works
+// today. `IsWow64Process2` reports what the loader actually decided, and stays exact on an ARM64 host
+// where an emulated x64 process would fool the older `IsWow64Process`.
+
+/// A machine constant as a label for the report. Unknown values are shown as their raw value rather
+/// than guessed at - we never name a machine we do not recognise.
+fn machine_label(m: u16) -> &'static str {
+    match m {
+        x if x == IMAGE_FILE_MACHINE_I386.0 => "x86",
+        x if x == IMAGE_FILE_MACHINE_AMD64.0 => "x64",
+        x if x == IMAGE_FILE_MACHINE_ARM64.0 => "arm64",
+        _ => "an unrecognised machine",
+    }
+}
+
+/// The machine a live process actually runs as. `IsWow64Process2` reports `IMAGE_FILE_MACHINE_UNKNOWN`
+/// for a process that is NOT emulated, in which case the native machine is the answer.
+///
+/// # Safety
+/// `hproc` must be a valid process handle with QUERY_LIMITED_INFORMATION rights.
+unsafe fn process_machine(hproc: HANDLE) -> Option<u16> {
+    let mut process = IMAGE_FILE_MACHINE(0);
+    let mut native = IMAGE_FILE_MACHINE(0);
+    IsWow64Process2(hproc, &mut process, Some(&mut native)).ok()?;
+    Some(if process == IMAGE_FILE_MACHINE_UNKNOWN { native.0 } else { process.0 })
+}
+
+/// Whether this core can reach `hproc` at all. `None` means "go ahead": either the bitness matches, or
+/// the query failed and we do not know - and a guess is not grounds for refusing a session (rule 6 cuts
+/// both ways, we only declare what we actually established).
+///
+/// # Safety
+/// `hproc` must be a valid process handle with QUERY_LIMITED_INFORMATION rights.
+unsafe fn bitness_mismatch(hproc: HANDLE) -> Option<(&'static str, &'static str)> {
+    let target = process_machine(hproc)?;
+    let core = process_machine(GetCurrentProcess())?;
+    (target != core).then(|| (machine_label(target), machine_label(core)))
+}
+
 /// Find the registry slot a process published its pid into, so its coverage can be read out of the
 /// control block. Returns None if the process never registered (its hook failed, or the registry was
 /// full) - the honest answer then is no coverage, never a guess.
@@ -651,6 +706,18 @@ pub fn prepare(spec: &SessionSpec, target: &Target, hook_dll: &Path) -> Result<P
             let _ = UnmapViewOfFile(MEMORY_MAPPED_VIEW_ADDRESS { Value: view.Value });
             let _ = CloseHandle(hmap);
             return Err(PrepareError::Launch(format!("CreateProcessW: {e:?}")));
+        }
+
+        // 2a. Refuse a target this core cannot reach, before trying (R2-S1). The process exists but is
+        // still suspended - it has not run an instruction - so terminating it here costs the tester
+        // nothing and leaves no half-started application behind.
+        if let Some((target_bits, core_bits)) = bitness_mismatch(pi.hProcess) {
+            let _ = TerminateProcess(pi.hProcess, 1);
+            let _ = CloseHandle(pi.hThread);
+            let _ = CloseHandle(pi.hProcess);
+            let _ = UnmapViewOfFile(MEMORY_MAPPED_VIEW_ADDRESS { Value: view.Value });
+            let _ = CloseHandle(hmap);
+            return Err(PrepareError::BitnessMismatch(target_bits, core_bits));
         }
 
         // 3. Inject the hook into the suspended target.
@@ -891,6 +958,25 @@ unsafe fn inject(hproc: HANDLE, dll_wide: &[u16]) -> Result<(), PrepareError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn this_core_reports_its_own_machine_and_matches_itself() {
+        // The gate compares the target's machine with our own, so our own has to be knowable at all -
+        // and comparing this process against itself must never read as a mismatch (R2-S1).
+        let me = unsafe { process_machine(GetCurrentProcess()) };
+        let me = me.expect("IsWow64Process2 must answer for our own process");
+        let expected = if cfg!(target_pointer_width = "64") { "x64" } else { "x86" };
+        assert_eq!(machine_label(me), expected);
+        assert!(unsafe { bitness_mismatch(GetCurrentProcess()) }.is_none());
+    }
+
+    #[test]
+    fn machine_labels_never_guess_at_an_unknown_machine() {
+        assert_eq!(machine_label(IMAGE_FILE_MACHINE_I386.0), "x86");
+        assert_eq!(machine_label(IMAGE_FILE_MACHINE_AMD64.0), "x64");
+        assert_eq!(machine_label(IMAGE_FILE_MACHINE_ARM64.0), "arm64");
+        assert_eq!(machine_label(0xBEEF), "an unrecognised machine");
+    }
 
     #[test]
     fn quote_arg_leaves_simple_tokens_bare() {

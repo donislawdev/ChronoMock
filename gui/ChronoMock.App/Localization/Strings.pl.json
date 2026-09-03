@@ -97,6 +97,10 @@
   "target.launch_failed": "Nie udało się uruchomić celu - podmiana nie zadziałała.",
   "target.inject_failed": "Nie udało się wstrzyknąć haka czasu - podmiana nie zadziałała (mógł ją zablokować antywirus albo utwardzony cel).",
   "target.attach_failed": "Nie udało się podłączyć do aplikacji Chromium/Electron - podmiana nie zadziałała.",
+  // R2-S1. GUI zwykle łapie to samo wcześniej (HandshakeGate, z nagłówka PE celu), więc to druga linia
+  // obrony po stronie rdzenia - osiągalna dla celu, którego realna bitowość różni się od zadeklarowanej
+  // w nagłówku pliku, jak plik wykonywalny .NET AnyCPU.
+  "target.bitness_mismatch": "Cel działa w innej bitowości niż ten rdzeń - hak czasu nie przechodzi przez granicę bitowości.",
   "session.already_active": "Inna sesja Chrono Mock już działa - tylko jedna naraz.",
   "protocol.no_command": "Rdzeń nie otrzymał komendy - sesja nie wystartowała.",
   "protocol.bad_command": "Rdzeń otrzymał błędną komendę - sesja nie wystartowała.",

@@ -97,6 +97,10 @@
   "target.launch_failed": "Could not launch the target - the substitution did not take effect.",
   "target.inject_failed": "Could not inject the time hook - the substitution did not take effect (an antivirus or a hardened target may have blocked it).",
   "target.attach_failed": "Could not attach to the Chromium/Electron app - the substitution did not take effect.",
+  // R2-S1. The GUI normally catches this itself (HandshakeGate, from the target's PE), so this is the
+  // core's own second line of defence - reachable for a target whose real bitness differs from what its
+  // file header declares, such as a .NET AnyCPU executable.
+  "target.bitness_mismatch": "The target runs at a different bitness than this core - the time hook cannot cross bitness.",
   "session.already_active": "Another Chrono Mock session is already running - only one at a time.",
   "protocol.no_command": "The core received no command - the session did not start.",
   "protocol.bad_command": "The core received a malformed command - the session did not start.",

@@ -60,7 +60,7 @@ public class LocalizationTests
         "core.hook_dll_missing", "time.bad_mode", "time.bad_multiplier", "moment.invalid",
         "protocol.version_mismatch",
         "session.control_failed", "target.launch_failed", "target.inject_failed",
-        "target.attach_failed", "session.already_active",
+        "target.attach_failed", "target.bitness_mismatch", "session.already_active",
         "protocol.no_command", "protocol.bad_command", "protocol.expected_start",
     ];
 

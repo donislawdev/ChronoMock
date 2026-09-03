@@ -1233,6 +1233,9 @@ fn describe_error(key: &str) -> &'static str {
         "session.already_active" => "another Chrono Mock session is already running - one at a time",
         "target.launch_failed" => "the target application could not be started",
         "target.inject_failed" => "the hook could not be injected into the target",
+        "target.bitness_mismatch" => {
+            "the target and this chrono.exe are different bitness - run the chrono.exe that matches the target"
+        }
         "target.attach_failed" => "the target could not be attached to (Chromium/Electron, CDP)",
         "moment.invalid" => "the requested moment is not a valid date and time",
         "time.bad_mode" => "the requested time mode is not one this core knows",
@@ -4129,6 +4132,19 @@ fn map_prepare_error(e: chrono_mech::PrepareError) -> (i32, &'static str, &'stat
         P::Control(m) => (3, "session.control_failed", "mechanism", m),
         P::Launch(m) => (2, "target.launch_failed", "mechanism", m),
         P::Inject(m) => (2, "target.inject_failed", "mechanism", m),
+        // A usage error, not a failure of the target (docs/08 section 8, exit 1): nothing is wrong
+        // with the application - the wrong build of the tool was pointed at it, and the fix is a
+        // different command. Injection cannot cross bitness, so this is a known impossibility
+        // declared before the attempt rather than reported as `target.inject_failed` afterwards,
+        // where it was indistinguishable from an antivirus block (R2-S1).
+        P::BitnessMismatch(target_bits, core_bits) => (
+            1,
+            "target.bitness_mismatch",
+            "mechanism",
+            format!(
+                "the target runs as {target_bits} and this core is {core_bits} - a hook cannot cross bitness; run the {target_bits} chrono.exe instead"
+            ),
+        ),
         // pid 0 = the other core holds the session lock but has not published its pid yet (it is
         // still starting). Naming "pid 0" would be a lie, so say what is actually known.
         P::SessionActive(0) => (
@@ -4673,6 +4689,23 @@ mod tests {
         let out = render_report(&r);
         assert!(out.contains("DID NOT TAKE EFFECT"), "got:\n{out}");
         assert!(out.contains("vanished"), "got:\n{out}");
+    }
+
+    #[test]
+    fn a_bitness_mismatch_is_a_usage_error_and_names_both_sides() {
+        // R2-S1: exit 1, not 2. Nothing is wrong with the application - the wrong build of the tool
+        // was pointed at it, and the message has to say which one to run instead.
+        let (code, key, origin, detail) =
+            map_prepare_error(chrono_mech::PrepareError::BitnessMismatch("x86", "x64"));
+        assert_eq!(code, 1);
+        assert_eq!(key, "target.bitness_mismatch");
+        assert_eq!(origin, "mechanism");
+        assert!(detail.contains("runs as x86"), "got: {detail}");
+        assert!(detail.contains("this core is x64"), "got: {detail}");
+        assert!(detail.contains("run the x86 chrono.exe"), "got: {detail}");
+        // And it reads as its own thing in the report, not as an injection failure.
+        assert_ne!(describe_error(key), describe_error("target.inject_failed"));
+        assert!(!describe_error(key).is_empty());
     }
 
     #[test]
