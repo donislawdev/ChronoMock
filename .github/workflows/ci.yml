@@ -1,5 +1,12 @@
 # The gates this project already runs by hand, run on every push instead.
 #
+# ONE job, not two, and that is a fact about the repository rather than a CI preference: the C# protocol
+# tests resolve the real cargo build outputs (BitnessRouterTests asserts which core a target's bitness
+# routes to, against the actual target/<triple>/release/chrono.exe). Split across independent jobs they
+# failed with "missing build artifact" - measured on the first run, not foreseen. Passing the binaries
+# between jobs as artifacts would work, but a dependent job waits for the same build anyway, so it would
+# only add a transfer. Billing is per job-minute either way.
+#
 # What is deliberately NOT here: the environment harness (tools/probes/run-targets.ps1). It injects a DLL
 # into live processes and needs JDK, .NET Framework and the hand-built probes - and `tools/` is outside git,
 # so it does not exist on a runner at all. It stays a local, pre-release gate.
@@ -26,11 +33,15 @@ permissions:
   contents: read
 
 jobs:
-  rust:
-    name: Rust core, hook, mech, CLI
+  windows:
+    name: Gates
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v7
+
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '10.0.x'
 
       # The tool ships both bitnesses: a 32-bit target needs a 32-bit hook, and building only x64 is how
       # an x86 regression hides for a day (the reason "build both targets" is a standing rule here).
@@ -39,12 +50,16 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
+      # Cheapest gate first: a whitespace slip should not wait out a four-minute Rust build.
+      - name: C# format
+        run: dotnet format gui/ChronoMock.slnx --verify-no-changes
+
       # -D warnings makes clippy a gate rather than a suggestion. A newer stable Rust can add a lint and
       # turn this red without a code change; that is the intended signal, not a false alarm.
       - name: Clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
 
-      - name: Tests
+      - name: Rust tests
         run: cargo test --workspace
 
       - name: Release build, x64
@@ -65,20 +80,8 @@ jobs:
         shell: pwsh
         run: ./.github/scripts/cargo-deny.ps1 -Command licenses
 
-  gui:
-    name: GUI and protocol client
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v7
-
-      - uses: actions/setup-dotnet@v6
-        with:
-          dotnet-version: '10.0.x'
-
-      - name: Format
-        run: dotnet format gui/ChronoMock.slnx --verify-no-changes
-
-      # Category!=Integration is the hermetic tier: the excluded tests need a real target process or a
+      # After the Rust builds: these resolve the real cargo outputs (see the note at the top).
+      # Category!=Integration is the hermetic tier - the excluded tests need a live target process or a
       # Chromium install, neither of which a runner has.
-      - name: Tests
+      - name: C# tests
         run: dotnet test gui/ChronoMock.slnx --filter "Category!=Integration"
