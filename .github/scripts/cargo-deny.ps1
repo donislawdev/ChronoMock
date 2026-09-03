@@ -11,8 +11,9 @@
 # packaging/build-dist.ps1 runs as its own pre-package gate.
 [CmdletBinding()]
 param(
+    # One or more checks, run in a single cargo-deny invocation so the binary is fetched once.
     [ValidateSet('licenses', 'advisories', 'bans', 'sources')]
-    [string]$Command,
+    [string[]]$Command,
 
     [switch]$InstallOnly
 )
@@ -55,5 +56,5 @@ if ($InstallOnly) {
     return
 }
 
-& $exe.FullName check $Command
+& $exe.FullName check @Command
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

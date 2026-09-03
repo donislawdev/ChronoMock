@@ -1,8 +1,9 @@
-# The vulnerability half of the dependency gate.
+# The vulnerability gate, asked on a schedule.
 #
-# Separate from CI on purpose: a new RustSec advisory appears without anything in this repo changing, so
-# this is a question about TIME, not about a commit. Running it on a schedule catches that; running it on
-# every push would only spend minutes re-asking a question whose answer cannot have changed.
+# CI runs the same check on every push, and this is not a duplicate of it: the two answer different
+# questions. CI catches a push that ADDS a vulnerable dependency. This catches an advisory published
+# against a dependency tree nobody has touched - which is the more likely of the two, and which no
+# commit-triggered workflow can ever notice, because there is no commit.
 name: Dependency audit
 
 on:

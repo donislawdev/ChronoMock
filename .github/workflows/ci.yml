@@ -68,17 +68,20 @@ jobs:
       - name: Release build, x86
         run: cargo build --release --target i686-pc-windows-msvc
 
-      # Untouchable rule 8: every dependency must be GPL-3.0 compatible. Offline, so it runs on every push;
-      # the vulnerability half of cargo-deny needs the network and lives in audit.yml on a schedule.
+      # Both halves of the dependency gate: licences (untouchable rule 8 - everything we ship must be
+      # GPL-3.0 compatible) and RustSec advisories. Advisories run here as well as weekly in audit.yml,
+      # because the two answer different questions: a push can ADD a vulnerable dependency and should fail
+      # on the spot, while the weekly run catches an advisory published against a tree nobody touched.
+      # One invocation, so the binary is fetched once.
       #
       # The published cargo-deny-action is a CONTAINER action, so it only runs on Linux (measured - the
       # first run failed with exactly that). Moving the gate to a Linux runner would be worse than useless:
       # this workspace's dependency tree is Windows-only (windows, minhook), so on Linux cargo would resolve
       # a DIFFERENT, smaller graph and the gate would pass without having checked what we actually ship.
       # So the binary is fetched here instead, pinned by version AND by checksum.
-      - name: Licence gate
+      - name: Dependency gate
         shell: pwsh
-        run: ./.github/scripts/cargo-deny.ps1 -Command licenses
+        run: ./.github/scripts/cargo-deny.ps1 -Command licenses,advisories
 
       # After the Rust builds: these resolve the real cargo outputs (see the note at the top).
       # Category!=Integration is the hermetic tier - the excluded tests need a live target process or a
