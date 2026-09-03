@@ -23,8 +23,10 @@ jobs:
 
       # deny.toml keeps `ignore = []`: an advisory consciously accepted would be listed there with its
       # reason, never waved through silently (rule 6).
+      #
+      # Windows, and the binary fetched rather than the published action, for the same reason as the licence
+      # gate in ci.yml: the action is Linux-only, and on Linux cargo resolves a different (Windows-free)
+      # dependency graph, so the answer would be about a tree we do not ship.
       - name: Advisory gate
-        uses: EmbarkStudios/cargo-deny-action@v2
-        with:
-          command: check
-          command-arguments: advisories
+        shell: pwsh
+        run: ./.github/scripts/cargo-deny.ps1 -Command advisories

@@ -55,11 +55,15 @@ jobs:
 
       # Untouchable rule 8: every dependency must be GPL-3.0 compatible. Offline, so it runs on every push;
       # the vulnerability half of cargo-deny needs the network and lives in audit.yml on a schedule.
+      #
+      # The published cargo-deny-action is a CONTAINER action, so it only runs on Linux (measured - the
+      # first run failed with exactly that). Moving the gate to a Linux runner would be worse than useless:
+      # this workspace's dependency tree is Windows-only (windows, minhook), so on Linux cargo would resolve
+      # a DIFFERENT, smaller graph and the gate would pass without having checked what we actually ship.
+      # So the binary is fetched here instead, pinned by version AND by checksum.
       - name: Licence gate
-        uses: EmbarkStudios/cargo-deny-action@v2
-        with:
-          command: check
-          command-arguments: licenses
+        shell: pwsh
+        run: ./.github/scripts/cargo-deny.ps1 -Command licenses
 
   gui:
     name: GUI and protocol client

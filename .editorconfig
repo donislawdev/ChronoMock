@@ -1,0 +1,16 @@
+# Line endings, and only line endings.
+#
+# .gitattributes already declares the repository's answer (`* text=auto eol=lf`), so a checkout - here or on
+# a runner - writes LF. Without this file `dotnet format` falls back to the platform default, decides the
+# files "should" be CRLF on Windows, and fails every C# file. Measured, not guessed: the first CI run went
+# red on gui/ChronoMock.App/AssemblyInfo.cs with "Replace 49 characters with '\r\n...'" while the identical
+# working tree passed locally, because the two sides were reading different defaults for the same question.
+#
+# Deliberately minimal: no style or naming rules. Those would change what `dotnet format` enforces across
+# the whole codebase, which is a decision on its own, not a side effect of fixing line endings.
+root = true
+
+[*]
+end_of_line = lf
+charset = utf-8
+insert_final_newline = true
