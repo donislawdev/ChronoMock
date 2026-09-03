@@ -346,7 +346,17 @@ fn compute_fake() -> Option<i64> {
     let p = ctl_ptr()? as *const Ctl;
     let (a_fake, a_real, m) = unsafe { read_anchor(p) };
     let dq = real_quit().wrapping_sub(a_real);
-    Some(a_fake.wrapping_add(dq.wrapping_mul(m)))
+    // Saturating, then clamped to the last representable instant. Wrapping here handed different
+    // channels different answers once the fake clock ran past the end of the range: the raw FILETIME
+    // channels reported the wrapped number, while GetSystemTime and GetLocalTime go through
+    // FileTimeToSystemTime, which rejects it - so they fell back to the REAL clock. One process, two
+    // epochs, and the audit still saying `works` (R2-K2). Holding at the edge keeps every channel
+    // agreeing and never turns the fake clock back into the real one.
+    //
+    // This crate has overflow-checks off (a panic across the detour boundary is UB), so the bounds
+    // are written out rather than left to a debug assertion.
+    let advanced = dq.saturating_mul(m);
+    Some(a_fake.saturating_add(advanced).min(chrono_ctl::FAKE_WALL_MAX))
 }
 
 fn cur_tz_bias() -> i32 {

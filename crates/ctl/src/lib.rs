@@ -42,6 +42,29 @@ use std::sync::atomic::{fence, AtomicU32, Ordering};
 /// Named shared section for a session's control memory (per interactive session).
 pub const CTL_SECTION_NAME: &str = "Local\\ChronoCtl";
 
+/// The last fake instant the wall channels will report: the final whole second Windows can still turn
+/// into a calendar date (`FileTimeToSystemTime` rejects anything past the signed range, which lands in
+/// the year 30828).
+///
+/// Past this point the channels stop agreeing with each other, which is worse than a clock that
+/// stops. Measured before this clamp existed, starting at 30828-09-01 and running at the maximum
+/// multiplier: `GetSystemTimeAsFileTime` handed the target a wrapped instant while `GetSystemTime`
+/// silently returned the REAL date - two epochs inside one process, with the audit reporting `works`.
+/// The multiplier bound alone does not prevent it, because the session may START near the end of the
+/// range, so the clamp is the second half of the same fix (R2-K2).
+///
+/// Clamping holds the fake clock at the edge instead: every channel keeps agreeing, the clock never
+/// runs backward (untouchable rule 3), and it never quietly becomes the real one (rule 2).
+pub const FAKE_WALL_MAX: i64 = i64::MAX - (i64::MAX % 10_000_000);
+
+// Checked when the crate compiles, not when a test runs: the clamp has to be a value Windows can
+// still turn into a calendar date, or it would fail the very conversion it exists to keep working.
+const _: () = {
+    assert!(FAKE_WALL_MAX > 0, "the clamp must stay in the signed range FileTimeToSystemTime accepts");
+    assert!(FAKE_WALL_MAX % 10_000_000 == 0, "a whole second, no partial tick");
+    assert!(i64::MAX - FAKE_WALL_MAX < 10_000_000, "within one second of the end of the range");
+};
+
 /// Maximum number of processes (parent + children) whose coverage a session tracks.
 /// Installers can spawn dozens of helpers (docs/07 open item 2); 256 leaves headroom.
 /// Beyond it, `reserve_cov_slot` returns None and that process runs uncovered in the
