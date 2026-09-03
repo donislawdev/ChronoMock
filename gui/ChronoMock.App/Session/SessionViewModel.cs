@@ -310,6 +310,14 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     /// surfaces an in-flight error rather than doing nothing silently (rule 6). Parsing is culture-invariant
     /// (a Polish box and a US one read "500" the same). No-op unless a session is running.
     /// </summary>
+    /// <summary>
+    /// Largest speed the custom-speed box accepts. Mirrors the core's own bound (chrono_core's
+    /// MULTIPLIER_MAX), so the box refuses locally with a readable message instead of sending a value
+    /// the core will reject over the wire. The core still validates - this is a courtesy, not the gate,
+    /// and the two must be changed together (R2-K2).
+    /// </summary>
+    internal const long MaxSpeed = 1_000_000;
+
     public void SetCustomSpeed(string? raw)
     {
         if (!IsRunning)
@@ -320,7 +328,8 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
         InFlightErrorKey = string.Empty; // a fresh attempt clears any prior in-flight error
         var trimmed = raw?.Trim().TrimStart('x', 'X', '×');
         if (long.TryParse(trimmed, NumberStyles.Integer, CultureInfo.InvariantCulture, out var multiplier)
-            && multiplier >= 0)
+            && multiplier >= 0
+            && multiplier <= MaxSpeed)
         {
             SendMultiplier(multiplier);
         }

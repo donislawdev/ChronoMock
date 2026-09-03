@@ -37,6 +37,42 @@ pub enum TimeMode {
     Multiplier(i64),
 }
 
+/// The largest accepted time multiplier.
+///
+/// Chosen from the measured distance between a typical session moment and the end of the FILETIME
+/// range, not from taste. Starting at 2038 there are ~9.1e18 ticks of headroom, which the fake clock
+/// burns through in:
+///
+/// | multiplier | real time until the fake clock leaves the FILETIME range |
+/// |---|---|
+/// | 1440 (a day per minute - the largest documented use) | ~20 years |
+/// | 86_400 (a day per second) | ~122 days |
+/// | **1_000_000 (this limit)** | **~10.5 days** |
+/// | 10_000_000 | ~1.1 days - inside a session left over a weekend |
+///
+/// So this is where the headroom stops outliving any plausible session while still allowing 694x
+/// more than anyone has ever asked for. Past the range the substitution does not merely saturate,
+/// it comes apart: measured at x1e15, `GetSystemTimeAsFileTime` returned a wrapped nonsense instant
+/// while `GetSystemTime` silently fell back to the REAL clock (its conversion rejects the instant),
+/// and successive reads jumped backwards and forwards between centuries - two epochs in one process
+/// and a non-monotonic clock, against untouchable rules 2 and 3, with the audit still saying `works`.
+pub const MULTIPLIER_MAX: i64 = 1_000_000;
+
+/// The smallest accepted time multiplier. Zero is the wire spelling of "freeze" that the GUI's
+/// freeze button sends, so it is a value, not an error. Anything negative would run the wall clock
+/// CONTINUOUSLY BACKWARD, which the time model does not have: going back is a `jump`, an event, never
+/// a rate (docs/01 section 5.1, untouchable rule 3). Measured before this bound existed: a multiplier
+/// of -1_000_000 accepted over the protocol had the target read 31, then 29, then 28, then 26
+/// December - and the session still reported `works`.
+pub const MULTIPLIER_MIN: i64 = 0;
+
+/// Whether a multiplier is one the session may run at. The single gate both surfaces use, so the CLI
+/// and the protocol cannot drift apart on what they accept (they had: the CLI required `>= 1` while
+/// the protocol accepted anything at all).
+pub fn multiplier_in_range(m: i64) -> bool {
+    (MULTIPLIER_MIN..=MULTIPLIER_MAX).contains(&m)
+}
+
 /// Everything needed to define a session. Pure data, no I/O.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SessionSpec {
@@ -289,6 +325,21 @@ mod tests {
 
     fn ch(name: &str) -> ChannelCoverage {
         ChannelCoverage { channel: name.to_string(), calls: 1 }
+    }
+
+    #[test]
+    fn multiplier_range_admits_freeze_and_every_documented_speed() {
+        // Freeze is a VALUE on the wire, not an error - the GUI's freeze button sends 0.
+        assert!(multiplier_in_range(0));
+        // Every speed the product actually offers, and the bound itself.
+        for m in [1, 10, 60, 1440, 86_400, MULTIPLIER_MAX] {
+            assert!(multiplier_in_range(m), "x{m} must be allowed");
+        }
+        // Backward is a jump, never a rate (rule 3); past the bound the clock leaves the
+        // representable range mid-session (rule 2). Both measured before this gate existed.
+        for m in [-1, -1_000_000, i64::MIN, MULTIPLIER_MAX + 1, i64::MAX] {
+            assert!(!multiplier_in_range(m), "x{m} must be refused");
+        }
     }
 
     fn moment(local: &str, bias: Option<i32>) -> Moment {

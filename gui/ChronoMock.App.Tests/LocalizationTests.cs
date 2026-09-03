@@ -57,7 +57,7 @@ public class LocalizationTests
         // Vanish reason (VanishedEvent reason_key, shown inside report.vanish_detail).
         "target.single_instance_suspected",
         // Start/fatal error keys, surfaced as the status headline (RELEASE-001).
-        "core.hook_dll_missing", "time.bad_mode", "moment.invalid",
+        "core.hook_dll_missing", "time.bad_mode", "time.bad_multiplier", "moment.invalid",
         "session.control_failed", "target.launch_failed", "target.inject_failed",
         "target.attach_failed", "session.already_active",
         "protocol.no_command", "protocol.bad_command", "protocol.expected_start",

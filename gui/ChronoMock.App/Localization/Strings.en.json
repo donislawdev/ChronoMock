@@ -87,6 +87,10 @@
   // Core failure reasons (RELEASE-001). When a start/fatal error ends a session, its specific reason becomes the status headline, so a failed start never reads as "Session ended". Phrased as failure statements because they ARE the status line. Emitted by the core (crates/cli, crates/mech).
   "core.hook_dll_missing": "The time hook is missing - the app was not launched under a fake clock (reinstall Chrono Mock).",
   "time.bad_mode": "Unsupported time mode - the session did not start.",
+  // Rejected rather than applied: past the bound the fake clock leaves the representable date range
+  // mid-session and the time channels start disagreeing, and a negative rate would run the clock
+  // continuously backward - which the time model has as a jump, never as a speed.
+  "time.bad_multiplier": "Speed out of range - it must be between 0 (freeze) and 1,000,000. The session did not start.",
   "moment.invalid": "That moment is not valid (a daylight-saving gap, Feb 29 in a common year, or out of range) - the session did not start.",
   "session.control_failed": "Could not set up the session's control channel - the substitution did not take effect.",
   "target.launch_failed": "Could not launch the target - the substitution did not take effect.",

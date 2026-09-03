@@ -87,6 +87,10 @@
   // Powody awarii rdzenia (RELEASE-001). Gdy błąd startu/fatalny kończy sesję, jego konkretny powód staje się nagłówkiem statusu, więc nieudany start nigdy nie czyta się jak „Sesja zakończona". Sformułowane jako zdania o awarii, bo SĄ linią statusu. Emitowane przez rdzeń (crates/cli, crates/mech).
   "core.hook_dll_missing": "Brak haka czasu - aplikacja nie została uruchomiona z fałszywym zegarem (zainstaluj Chrono Mock ponownie).",
   "time.bad_mode": "Nieobsługiwany tryb czasu - sesja nie wystartowała.",
+  // Odrzucone, nie zastosowane: powyżej granicy fałszywy zegar wychodzi w trakcie sesji poza
+  // reprezentowalny zakres dat i kanały czasu zaczynają się rozjeżdżać, a ujemne tempo cofałoby
+  // zegar w sposób ciągły - a to model czasu ma jako skok, nigdy jako prędkość.
+  "time.bad_multiplier": "Prędkość poza zakresem - musi mieścić się między 0 (zamrożenie) a 1,000,000. Sesja nie wystartowała.",
   "moment.invalid": "Nieprawidłowy moment (luka czasu letniego, 29 lutego w roku nieprzestępnym albo poza zakresem) - sesja nie wystartowała.",
   "session.control_failed": "Nie udało się utworzyć kanału sterowania sesji - podmiana nie zadziałała.",
   "target.launch_failed": "Nie udało się uruchomić celu - podmiana nie zadziałała.",

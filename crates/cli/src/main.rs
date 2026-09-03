@@ -505,8 +505,18 @@ fn parse_mode(raw: &str) -> Result<(String, Option<i64>), String> {
             let m: i64 = n
                 .parse()
                 .map_err(|_| format!("bad multiplier in mode '{raw}'"))?;
+            // The friendly surface keeps its own floor of 1: `x0` here would be a confusing way to
+            // spell `--mode frozen`, which already exists. The ceiling is the shared one, so the CLI
+            // and the protocol agree on what a session may run at.
             if m < 1 {
                 return Err(format!("multiplier must be >= 1, got '{raw}'"));
+            }
+            if m > chrono_core::MULTIPLIER_MAX {
+                return Err(format!(
+                    "multiplier must be <= {}, got '{raw}' - past that the fake clock leaves the \
+                     representable date range mid-session and the time channels start disagreeing",
+                    chrono_core::MULTIPLIER_MAX
+                ));
             }
             Ok(("multiplier".into(), Some(m)))
         }
@@ -639,6 +649,12 @@ fn parse_run_args(argv: &[String]) -> Result<RunArgs, String> {
                 // of an unvalidated surface (rule 4); freezing in flight is not a feature here.
                 if mult < 1 {
                     return Err(format!("--set-after multiplier must be >= 1, got '{raw}'"));
+                }
+                if mult > chrono_core::MULTIPLIER_MAX {
+                    return Err(format!(
+                        "--set-after multiplier must be <= {}, got '{raw}'",
+                        chrono_core::MULTIPLIER_MAX
+                    ));
                 }
                 set_after = Some((tick, mult));
             }
@@ -3182,6 +3198,16 @@ fn cdp_session(target: TargetSpec, time: TimeSpec, reader: BufReader<std::io::St
                     // push the new origin + rate to every context. New timers pick up the rate at once;
                     // Date.now/new Date/performance.now reflect it immediately - only an already-queued
                     // setInterval keeps its old cadence, which the end report warns about (rule 4).
+                    if !chrono_core::multiplier_in_range(multiplier) {
+                        emit(&Event::Error {
+                            v: PROTOCOL_VERSION,
+                            id: Some(id),
+                            code: 1,
+                            key: "time.bad_multiplier".into(),
+                            origin: "core".into(),
+                        });
+                        continue;
+                    }
                     let now = now_epoch_ms();
                     let (fake0, real0, m) = clock.set_multiplier_at(multiplier, now);
                     cdp_broadcast(&mut client, &contexts, &cdp_set_multiplier_expr(fake0, real0, m));
@@ -3407,13 +3433,17 @@ impl CdpClock {
     /// The fake wall instant (epoch ms) at `now`: the current segment's origin plus scaled real time.
     /// Frozen (mult 0) holds it at the origin; xN accelerates.
     fn fake_wall_ms(&self, now: i64) -> i64 {
-        self.wall_fake0 + (now - self.wall_real0).saturating_mul(self.mult)
+        // Saturating on BOTH operations, not just the product. `chrono-cli` keeps the workspace's
+        // release `overflow-checks`, so an unsaturated add here panics the core mid-session (R2-W2) -
+        // and a panicking CDP core never runs its shutdown, leaving a launched Chromium with an open
+        // debug port and a temp profile behind. Defence in depth behind the multiplier bound.
+        self.wall_fake0.saturating_add((now - self.wall_real0).saturating_mul(self.mult))
     }
 
     /// Fake duration elapsed (the integral of the rate): the accumulator plus the current segment. A
     /// jump does not touch this, so a wall discontinuity is never counted as elapsed time.
     fn elapsed_fake_ms(&self, now: i64) -> i64 {
-        self.dur_fake_accum + (now - self.dur_real0).saturating_mul(self.mult)
+        self.dur_fake_accum.saturating_add((now - self.dur_real0).saturating_mul(self.mult))
     }
 
     /// A `state` event at `now` (passed in so the mapping is pure and unit-testable).
@@ -3436,7 +3466,8 @@ impl CdpClock {
     /// backward, which is never valid, so it clamps to 0 (freeze). Returns (fake0, real0, mult) to push
     /// to the shim.
     fn set_multiplier_at(&mut self, m: i64, now: i64) -> (i64, i64, i64) {
-        self.dur_fake_accum += (now - self.dur_real0).saturating_mul(self.mult);
+        self.dur_fake_accum =
+            self.dur_fake_accum.saturating_add((now - self.dur_real0).saturating_mul(self.mult));
         self.dur_real0 = now;
         self.wall_fake0 = self.fake_wall_ms(now);
         self.wall_real0 = now;
@@ -3763,9 +3794,23 @@ fn run_session(
                 emit(&Event::Ack { v: PROTOCOL_VERSION, id });
             }
             Ok(Command::SetMultiplier { id, multiplier, .. }) => {
-                session.set_multiplier(multiplier);
-                emit(&Event::Ack { v: PROTOCOL_VERSION, id });
-                emit(&state_event(&session));
+                // Bounded here as well as at start: a rate change in flight reaches the same anchor
+                // arithmetic, so an unchecked one walks the clock out of range (or backwards) just as
+                // effectively (R2-K2, R2-K3). Rejecting ONE command never ends the session - the
+                // session keeps running at the rate it had, and the client is told why (rule 6).
+                if chrono_core::multiplier_in_range(multiplier) {
+                    session.set_multiplier(multiplier);
+                    emit(&Event::Ack { v: PROTOCOL_VERSION, id });
+                    emit(&state_event(&session));
+                } else {
+                    emit(&Event::Error {
+                        v: PROTOCOL_VERSION,
+                        id: Some(id),
+                        code: 1,
+                        key: "time.bad_multiplier".into(),
+                        origin: "core".into(),
+                    });
+                }
             }
             Ok(Command::Jump { id, to, .. }) => {
                 // Relative jump (current fake + one step) resolves in the core through the SHARED
@@ -3915,7 +3960,18 @@ fn build_spec(time: &TimeSpec) -> Result<SessionSpec, (i32, &'static str)> {
     let mode = match time.mode.as_str() {
         "flow" => TimeMode::Flow,
         "frozen" => TimeMode::Frozen,
-        "multiplier" => TimeMode::Multiplier(time.multiplier.unwrap_or(1)),
+        "multiplier" => {
+            // The core reads NDJSON from whatever client is on the other end, so it validates for
+            // itself rather than trusting the friendly CLI to have done it. It did not, and the two
+            // surfaces had drifted: `--mode` required >= 1 while the protocol took any i64, so a
+            // negative rate ran the target's clock CONTINUOUSLY BACKWARD and an enormous one walked
+            // it out of the representable range - both reported as `works` (R2-K2, R2-K3).
+            let m = time.multiplier.unwrap_or(1);
+            if !chrono_core::multiplier_in_range(m) {
+                return Err((1, "time.bad_multiplier"));
+            }
+            TimeMode::Multiplier(m)
+        }
         _ => return Err((1, "time.bad_mode")),
     };
     Ok(SessionSpec {
@@ -4179,6 +4235,52 @@ mod tests {
     }
 
     #[test]
+    fn build_spec_rejects_a_multiplier_the_clock_cannot_survive() {
+        // R2-K2 / R2-K3: the core reads NDJSON from any client, so it validates for itself. The CLI
+        // used to be the only gate and only checked the floor, so the protocol accepted a negative
+        // rate (measured: the target read 31, 29, 28, 26 December while the session said `works`)
+        // and an unbounded one (measured at x1e15: one channel wrapped, another silently fell back
+        // to the REAL clock, and successive reads jumped between centuries).
+        let spec = |m: i64| TimeSpec {
+            moment: MomentSpec {
+                kind: "absolute".into(),
+                local: Some("2038-01-01T00:00:00".into()),
+                tz_bias_min: Some(0),
+                delta: None,
+            },
+            mode: "multiplier".into(),
+            multiplier: Some(m),
+            scale_duration: false,
+            scale_qpc: false,
+        };
+
+        assert!(build_spec(&spec(60)).is_ok());
+        assert!(build_spec(&spec(0)).is_ok(), "0 is the wire spelling of freeze, a value not an error");
+        assert!(build_spec(&spec(chrono_core::MULTIPLIER_MAX)).is_ok());
+
+        for bad in [-1, -1_000_000, chrono_core::MULTIPLIER_MAX + 1, i64::MAX] {
+            let err = build_spec(&spec(bad)).expect_err("out of range must be refused");
+            assert_eq!(err, (1, "time.bad_multiplier"), "multiplier {bad}");
+        }
+    }
+
+    #[test]
+    fn cdp_clock_saturates_instead_of_panicking() {
+        // R2-W2: `chrono-cli` keeps the workspace's release overflow-checks, so an unsaturated add
+        // panics the core mid-session - and a panicking CDP core never runs its shutdown, leaving a
+        // launched Chromium with an open debug port and a temp profile behind. The multiplier bound
+        // makes this unreachable from either surface; this is the layer behind it.
+        let c = CdpClock::new(i64::MAX - 1, 0, chrono_core::MULTIPLIER_MAX, 0);
+        assert_eq!(c.fake_wall_ms(i64::MAX), i64::MAX);
+        assert_eq!(c.elapsed_fake_ms(i64::MAX), i64::MAX);
+
+        let mut m = CdpClock::new(i64::MAX - 1, 0, chrono_core::MULTIPLIER_MAX, 0);
+        let (fake0, _, mult) = m.set_multiplier_at(1, i64::MAX);
+        assert_eq!(fake0, i64::MAX);
+        assert_eq!(mult, 1);
+    }
+
+    #[test]
     fn cdp_clock_scales_and_holds_frozen() {
         // xN: at +1000 ms real the fake wall advanced 60000 ms, and elapsed_fake is 60000.
         let c = CdpClock::new(1_000_000, 500_000, 60, 0);
@@ -4245,6 +4347,10 @@ mod tests {
         assert!(parse_mode("x0").is_err());
         assert!(parse_mode("x-5").is_err());
         assert!(parse_mode("xabc").is_err());
+        // Upper bound (R2-K2): the largest accepted rate passes, one past it does not. Above this
+        // the fake clock leaves the representable range mid-session and the channels disagree.
+        assert!(parse_mode(&format!("x{}", chrono_core::MULTIPLIER_MAX)).is_ok());
+        assert!(parse_mode(&format!("x{}", chrono_core::MULTIPLIER_MAX + 1)).is_err());
     }
 
     #[test]

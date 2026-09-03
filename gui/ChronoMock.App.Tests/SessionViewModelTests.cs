@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.IO;
 using System.Threading.Channels;
 using ChronoMock.App;
@@ -547,6 +548,24 @@ public class SessionViewModelTests
         vm.SetCustomSpeed("500"); // a fresh, valid attempt clears the error
         Assert.False(vm.HasInFlightError);
         Assert.True(vm.IsRunning); // and never ends the session
+    }
+
+    [Fact]
+    public void Custom_speed_refuses_a_rate_the_clock_cannot_survive()
+    {
+        // R2-K2: the box used to accept any non-negative long, so a number typed here could walk the
+        // fake clock out of the representable date range mid-session, after which one channel wrapped
+        // and another silently fell back to the REAL clock. The core refuses it too - this is the
+        // local courtesy that turns a wire rejection into a readable message next to the box.
+        var vm = new SessionViewModel();
+        vm.Apply(State("2038-01-19T03:14:07", "2026-09-02T00:00:00", bias: 0, multiplier: 60));
+
+        vm.SetCustomSpeed(SessionViewModel.MaxSpeed.ToString(CultureInfo.InvariantCulture));
+        Assert.False(vm.HasInFlightError, "the bound itself is allowed");
+
+        vm.SetCustomSpeed((SessionViewModel.MaxSpeed + 1).ToString(CultureInfo.InvariantCulture));
+        Assert.Equal("speed.invalid", vm.InFlightErrorKey);
+        Assert.True(vm.IsRunning); // refusing one command never ends the session
     }
 
     [Fact]
