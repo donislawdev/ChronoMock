@@ -99,7 +99,9 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     private bool _verdictHasMeaning;
     private int _processCount;
     private bool _coverageKnown;
-    private bool _coverageCaptured;
+    /// <summary>The pid of the process whose call counts the panel shows - the first one reported,
+    /// which is the parent. Later events for it replace its counts; other pids never do (R2-X8).</summary>
+    private uint? _parentPid;
     private bool _isCdp;
     private IReadOnlyList<string> _covered = [];
     private IReadOnlyList<string> _observed = [];
@@ -683,12 +685,16 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
                 CoverageKnown = true;
                 break;
             case CoverageEvent c:
-                // Native. Call counts stay the PARENT's - the first event - because summing them across
-                // processes would fabricate a per-process picture (untouchable rule 4), and a per-process
-                // family breakdown is a later slice.
-                if (!_coverageCaptured)
+                // Native. Call counts stay the PARENT's - the process the first event names - because
+                // summing them across processes would fabricate a per-process picture (untouchable rule
+                // 4), and a per-process family breakdown is a later slice. But a LATER event for that
+                // same pid replaces the earlier one: the core reports a process when it is discovered
+                // and again when the session ends, and the first snapshot is taken inside the guard
+                // window, so its counts are the session's first blink (R2-X8) - measured, a probe that
+                // read the clock 25 times showed "×2" in this panel.
+                _parentPid ??= c.Pid;
+                if (c.Pid == _parentPid)
                 {
-                    _coverageCaptured = true;
                     Covered = c.Covered.Select(FormatChannel).ToList();
                     Observed = c.Observed.Select(FormatChannel).ToList();
                 }
@@ -964,7 +970,7 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
         ProcessCount = 0;
 
         CoverageKnown = false;
-        _coverageCaptured = false;
+        _parentPid = null;
         IsCdp = false;
         Covered = [];
         Observed = [];

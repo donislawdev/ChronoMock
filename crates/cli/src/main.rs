@@ -1030,9 +1030,12 @@ fn driver_run(argv: &[String]) -> i32 {
     let mut vanished: Option<(String, u64)> = None; // (reason_key, lived_ms)
     let mut errors: Vec<(String, String)> = Vec::new(); // (key, origin) - why a session did not start
     let mut warnings: Vec<String> = Vec::new();
-    let mut uncovered: Vec<(u32, String)> = Vec::new(); // (pid, channel) - the honest gaps
-    let mut covered: Vec<(u32, String, u64)> = Vec::new(); // (pid, channel, calls) - what took effect
-    let mut observed: Vec<(u32, String, u64)> = Vec::new(); // (pid, channel, calls) - hooked, left real
+    // Coverage per process, LATEST snapshot wins. The core emits one event per process as it is
+    // discovered and a final one for every process at the end, because the first is sampled inside
+    // the guard window and its call counts never move again (R2-X8). Appending every event instead
+    // would print each channel twice, once with a number from the session's first blink.
+    let mut cov_by_pid: HashMap<u32, ProcessCoverage> = HashMap::new();
+    let mut pid_order: Vec<u32> = Vec::new(); // first-seen order, so the parent still leads the report
     let mut timing: Option<(String, i64, i64)> = None; // (fake wall reached, real ms, fake ms) from `ended`
     let mut states_seen: u64 = 0;
     let mut end_sent = false;
@@ -1098,20 +1101,17 @@ fn driver_run(argv: &[String]) -> i32 {
                     errors.push((key, origin));
                 }
                 Ok(Event::Coverage { pid, covered: cov, observed: obs, uncovered: unc, warning_keys, .. }) => {
+                    // Warnings are a union across every event - a later snapshot for the same process
+                    // carries no driver-side warning, and dropping the earlier one would lose it.
                     for k in warning_keys {
                         if !warnings.contains(&k) {
                             warnings.push(k);
                         }
                     }
-                    for ch in cov {
-                        covered.push((pid, ch.channel, ch.calls));
+                    if !cov_by_pid.contains_key(&pid) {
+                        pid_order.push(pid);
                     }
-                    for ch in obs {
-                        observed.push((pid, ch.channel, ch.calls));
-                    }
-                    for ch in unc {
-                        uncovered.push((pid, ch));
-                    }
+                    cov_by_pid.insert(pid, ProcessCoverage { covered: cov, observed: obs, uncovered: unc });
                 }
                 Ok(Event::Ended { elapsed_real_ms, elapsed_fake_ms, fake_end_wall, .. }) => {
                     if let Some(wall) = fake_end_wall {
@@ -1126,6 +1126,24 @@ fn driver_run(argv: &[String]) -> i32 {
     drop(stdin);
 
     let status = child.wait();
+
+    // Flatten the per-process snapshots into report rows, parent first (first-seen order).
+    let mut uncovered: Vec<(u32, String)> = Vec::new(); // (pid, channel) - the honest gaps
+    let mut covered: Vec<(u32, String, u64)> = Vec::new(); // (pid, channel, calls) - what took effect
+    let mut observed: Vec<(u32, String, u64)> = Vec::new(); // (pid, channel, calls) - hooked, left real
+    for pid in &pid_order {
+        if let Some(pc) = cov_by_pid.get(pid) {
+            for ch in &pc.covered {
+                covered.push((*pid, ch.channel.clone(), ch.calls));
+            }
+            for ch in &pc.observed {
+                observed.push((*pid, ch.channel.clone(), ch.calls));
+            }
+            for ch in &pc.uncovered {
+                uncovered.push((*pid, ch.clone()));
+            }
+        }
+    }
 
     let report = SessionReport {
         target: ra.target.clone(),
@@ -1169,6 +1187,15 @@ fn driver_run(argv: &[String]) -> i32 {
         Ok(s) => s.code().unwrap_or(3),
         Err(_) => 3,
     }
+}
+
+/// One process's channel coverage as of the latest `coverage` event for its pid. Kept per process
+/// and replaced rather than appended, because the core reports a process more than once: a first
+/// snapshot when it is discovered, and a final one when the session ends (R2-X8).
+struct ProcessCoverage {
+    covered: Vec<chrono_proto::CoveredChannel>,
+    observed: Vec<chrono_proto::CoveredChannel>,
+    uncovered: Vec<String>,
 }
 
 /// The captured outcome of a `chrono run` session, rendered as a human report in the
@@ -4079,6 +4106,16 @@ fn run_session(
     // are short - and no per-process event can carry that, because those processes have no pid here
     // (R2-S9). It rides the session verdict, which is the one event that speaks for the whole family.
     let uncovered_processes = session.uncovered_process_count();
+
+    // The counts every process ENDED with. The first event for a process is emitted inside the ADR-4
+    // guard window, so its call counts are the first 300 ms of the session and never move again -
+    // measured, a probe that read the clock 25 times was reported as "2 calls" (R2-X8). The audit
+    // promises "which channels, and how many times", so the last word on a pid has to be the true
+    // one: a later `coverage` for the same pid supersedes the earlier one (docs/08).
+    let final_coverage = session.read_all_coverage();
+    for (pid, cov) in &final_coverage {
+        emit_coverage(*pid, cov, &[]);
+    }
     session.end();
     let mut session_warnings = Vec::new();
     if uncovered_processes > 0 {

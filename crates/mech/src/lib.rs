@@ -324,6 +324,33 @@ impl Session {
         out
     }
 
+    /// Every published process's coverage as it stands NOW, reported or not.
+    ///
+    /// `poll_new_coverage` answers "who joined since last time" and hands each process out exactly
+    /// once, which is right for discovery and wrong for counts: the parent's one event is emitted
+    /// about 300 ms after resume, inside the ADR-4 guard window, so its call counts are the first
+    /// blink of the session and never move again. Measured - a probe that read the clock 25 times
+    /// over five seconds was reported as "2 calls", and that number is what the report, the panel and
+    /// the exported evidence all showed under "how many times" (R2-X8). The caller emits this at the
+    /// end so the counts describe the session that ran.
+    pub fn read_all_coverage(&self) -> Vec<(u32, Coverage)> {
+        let mut out = Vec::new();
+        unsafe {
+            for i in 0..MAX_COV_PIDS {
+                let pid = read_pid(self.ctl(), i);
+                if pid == 0 {
+                    continue; // empty, or reserved but not yet published
+                }
+                let cov = cov_at(self.ctl(), i);
+                out.push((
+                    pid,
+                    gather_coverage(cov, read_installed(cov), self.scale_duration, self.scale_qpc),
+                ));
+            }
+        }
+        out
+    }
+
     /// How many processes of this session ran with NO coverage slot, because the registry was already
     /// full. Zero for every ordinary session; `MAX_COV_PIDS` is 256 and an installer spawning dozens of
     /// helpers is the realistic way past it (docs/07 open item 2).

@@ -562,6 +562,24 @@ public class SessionViewModelTests
         Assert.True(vm.HasUncovered);
     }
 
+    /// <summary>
+    /// R2-X8. The core reports a process twice - once when it is discovered, once when the session
+    /// ends - because the first snapshot is taken inside the ADR-4 guard window and its call counts
+    /// are the session's first blink. Measured: a probe that read the clock 25 times was shown here
+    /// as "×2". The panel has to move to the later snapshot for that pid, and to no other.
+    /// </summary>
+    [Fact]
+    public void A_later_snapshot_of_the_parent_replaces_its_counts_but_a_child_never_does()
+    {
+        var vm = new SessionViewModel();
+
+        vm.Apply(Coverage(pid: 100, "GetSystemTime", 2));   // parent, inside the guard window
+        vm.Apply(Coverage(pid: 200, "GetSystemTime", 900)); // a child - never becomes the headline
+        vm.Apply(Coverage(pid: 100, "GetSystemTime", 25));  // the parent again, at the end
+
+        Assert.Equal("GetSystemTime  ×25", Assert.Single(vm.Covered));
+    }
+
     [Fact]
     public void A_warning_two_processes_raise_is_listed_once()
     {
