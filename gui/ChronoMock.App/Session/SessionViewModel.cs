@@ -497,7 +497,8 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     }
 
     /// <summary>Translation key for the coverage note: a CDP session shows every JS context, a native
-    /// family session shows the parent process only (rule 4 - neither is summed).</summary>
+    /// family session shows the parent's call counts with the whole family's warnings and uncovered
+    /// channels (rule 4 - counts are never summed across processes).</summary>
     public string CoverageNoteKey => _isCdp ? "coverage.contexts_note" : "coverage.family_note";
 
     /// <summary>Whether to show the coverage note: for CDP once coverage arrived (it spans contexts), for
@@ -518,14 +519,16 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
         private set { if (Set(ref _observed, value)) { RaisePropertyChanged(nameof(HasObserved)); } }
     }
 
-    /// <summary>Uncovered channel identifiers (raw API names, not translation keys) - the partial verdict's evidence.</summary>
+    /// <summary>Uncovered channel identifiers (raw API names, not translation keys) - the partial verdict's
+    /// evidence, unioned over every process of the family (R2-W5).</summary>
     public IReadOnlyList<string> Uncovered
     {
         get => _uncovered;
         private set { if (Set(ref _uncovered, value)) { RaisePropertyChanged(nameof(HasUncovered)); } }
     }
 
-    /// <summary>Warning translation keys the core raised for this process (rendered in the current language).</summary>
+    /// <summary>Warning translation keys the core raised (rendered in the current language), unioned over
+    /// every process of the family and the session aggregate (R2-W5, R2-S9).</summary>
     public IReadOnlyList<string> Warnings
     {
         get => _warnings;
@@ -679,14 +682,27 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
                 Warnings = [.. _warnings, .. c.WarningKeys.Where(w => !_warnings.Contains(w))];
                 CoverageKnown = true;
                 break;
-            case CoverageEvent c when !_coverageCaptured:
-                // Native: show the PARENT's coverage (the first event). Children's coverage is never summed
-                // into it (untouchable rule 4); a per-process family breakdown is a later slice.
-                _coverageCaptured = true;
-                Covered = c.Covered.Select(FormatChannel).ToList();
-                Observed = c.Observed.Select(FormatChannel).ToList();
-                Uncovered = [.. c.Uncovered];
-                Warnings = [.. c.WarningKeys];
+            case CoverageEvent c:
+                // Native. Call counts stay the PARENT's - the first event - because summing them across
+                // processes would fabricate a per-process picture (untouchable rule 4), and a per-process
+                // family breakdown is a later slice.
+                if (!_coverageCaptured)
+                {
+                    _coverageCaptured = true;
+                    Covered = c.Covered.Select(FormatChannel).ToList();
+                    Observed = c.Observed.Select(FormatChannel).ToList();
+                }
+
+                // Warnings and uncovered channels are not counts - they are the REASON behind the family
+                // verdict, and the core raises them per process (R2-W5). A child that opened a network
+                // connection, ran an unscaled wait, or failed to hook a channel says so on its own event,
+                // so dropping every event after the first left the panel with the right verdict and no
+                // reason for it (rule 6). Union them across the family, exactly like the CLI driver
+                // (driver_run) and the CDP branch above. A channel can therefore be covered in the parent
+                // and uncovered in a child at once - that is the honest reading, and it is precisely why
+                // the family verdict is partial (Verdict::combine).
+                Uncovered = [.. _uncovered, .. c.Uncovered.Where(u => !_uncovered.Contains(u))];
+                Warnings = [.. _warnings, .. c.WarningKeys.Where(w => !_warnings.Contains(w))];
                 CoverageKnown = true;
                 break;
             default:

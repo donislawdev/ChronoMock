@@ -137,7 +137,7 @@
   "coverage.observed": "Obserwowane (podpięte, pozostawione realne)",
   "coverage.uncovered": "Nieobjęte kanały",
   "coverage.warnings": "Ostrzeżenia",
-  "coverage.family_note": "Sesja rodziny - pokazano pokrycie procesu rodzica.",
+  "coverage.family_note": "Sesja rodziny - liczniki wywołań z procesu rodzica, ostrzeżenia i nieobjęte kanały ze wszystkich procesów.",
   "coverage.contexts_note": "Sesja Chromium - pokazano każdy kontekst JS (stronę i workery), nigdy sumowane.",
 
   // Klucze ostrzeżeń pokrycia emitowane przez rdzeń (CoverageEvent warning_keys) oraz powód zniknięcia (VanishedEvent reason_key, pokazywany w report.vanish_detail). Brzmienie lustrzy raport CLI (describe_warning). Ostrzeżenia Chromium (CDP) są w sekcji niżej. RELEASE-002.

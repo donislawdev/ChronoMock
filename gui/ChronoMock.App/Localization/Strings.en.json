@@ -137,7 +137,7 @@
   "coverage.observed": "Observed (hooked, left real)",
   "coverage.uncovered": "Uncovered channels",
   "coverage.warnings": "Warnings",
-  "coverage.family_note": "Family session - showing the parent process coverage.",
+  "coverage.family_note": "Family session - call counts are the parent process, warnings and uncovered channels cover every process.",
   "coverage.contexts_note": "Chromium session - showing every JS context (page and workers), never summed.",
 
   // Coverage warning keys the core raises (CoverageEvent warning_keys), and the vanish reason (VanishedEvent reason_key, shown inside report.vanish_detail). Wording mirrors the CLI report (describe_warning). The Chromium (CDP) warnings live in the section below. RELEASE-002.

@@ -519,10 +519,92 @@ public class SessionViewModelTests
         var vm = new SessionViewModel();
 
         vm.Apply(Coverage(pid: 100, "GetSystemTimeAsFileTime", 842)); // parent, first
-        vm.Apply(Coverage(pid: 200, "GetSystemTimeAsFileTime", 5));   // a child - must be ignored here
+        vm.Apply(Coverage(pid: 200, "GetSystemTimeAsFileTime", 5));   // a child - never summed in here
 
         // Still the parent's single channel and its own count (untouchable rule 4: never sum processes).
         Assert.Equal("GetSystemTimeAsFileTime  ×842", Assert.Single(vm.Covered));
+    }
+
+    /// <summary>
+    /// R2-W5. Measured on a real family session (probe pspawn launching probe pnet): the CHILD raised
+    /// source.network_at_start and the parent raised nothing at all. Keeping only the first coverage event
+    /// dropped the child's whole event, so the panel carried the family verdict with none of the reasons
+    /// behind it - and for an uncovered channel in a child that verdict is `partial` with an empty evidence
+    /// list (rule 6). Warnings and uncovered channels are not counts: they union across the family, like
+    /// the CLI driver and the CDP branch.
+    /// </summary>
+    [Fact]
+    public void A_child_coverage_contributes_its_warnings_and_uncovered_channels()
+    {
+        var vm = new SessionViewModel();
+
+        vm.Apply(new CoverageEvent
+        {
+            V = ProtocolJson.ProtocolVersion,
+            Pid = 100,
+            Covered = [new CoveredChannel { Channel = "GetSystemTimeAsFileTime", Calls = 842 }],
+        });
+        vm.Apply(new CoverageEvent
+        {
+            V = ProtocolJson.ProtocolVersion,
+            Pid = 200,
+            Covered = [new CoveredChannel { Channel = "GetSystemTimeAsFileTime", Calls = 5 }],
+            Uncovered = ["NtQuerySystemInformation"],
+            WarningKeys = ["source.network_at_start"],
+        });
+
+        // Counts: the parent's, unchanged and unsummed (rule 4).
+        Assert.Equal("GetSystemTimeAsFileTime  ×842", Assert.Single(vm.Covered));
+        // Reasons: the child's, which used to vanish entirely.
+        Assert.Equal("source.network_at_start", Assert.Single(vm.Warnings));
+        Assert.Equal("NtQuerySystemInformation", Assert.Single(vm.Uncovered));
+        Assert.True(vm.HasWarnings);
+        Assert.True(vm.HasUncovered);
+    }
+
+    [Fact]
+    public void A_warning_two_processes_raise_is_listed_once()
+    {
+        var vm = new SessionViewModel();
+
+        vm.Apply(new CoverageEvent
+        {
+            V = ProtocolJson.ProtocolVersion,
+            Pid = 100,
+            Uncovered = ["NtQuerySystemInformation"],
+            WarningKeys = ["wait.object_waits_not_scaled"],
+        });
+        vm.Apply(new CoverageEvent
+        {
+            V = ProtocolJson.ProtocolVersion,
+            Pid = 200,
+            Uncovered = ["NtQuerySystemInformation", "GetTickCount64"],
+            WarningKeys = ["wait.object_waits_not_scaled", "source.network_at_start"],
+        });
+
+        // The family shares most of its reasons - the panel says each of them once.
+        Assert.Equal(["wait.object_waits_not_scaled", "source.network_at_start"], vm.Warnings);
+        Assert.Equal(["NtQuerySystemInformation", "GetTickCount64"], vm.Uncovered);
+    }
+
+    /// <summary>The copy-into-a-ticket summary is the evidence a tester pastes, so a child's warning has
+    /// to reach it too - it reads the same lists the panel does.</summary>
+    [Fact]
+    public void The_summary_carries_a_child_process_warning()
+    {
+        var vm = new SessionViewModel();
+        vm.SetTarget(@"C:\apps\Installer.exe");
+        vm.Apply(Coverage(pid: 100, "GetSystemTimeAsFileTime", 842));
+        vm.Apply(new CoverageEvent
+        {
+            V = ProtocolJson.ProtocolVersion,
+            Pid = 200,
+            WarningKeys = ["source.network_at_start"],
+        });
+
+        var summary = vm.BuildSummary(T());
+
+        Assert.Contains("source.network_at_start", summary, StringComparison.Ordinal);
     }
 
     [Fact]
