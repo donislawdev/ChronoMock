@@ -121,4 +121,33 @@ public class ParserTests
 
         Assert.Contains("\"scale_qpc\":true", start.ToNdjson(), StringComparison.Ordinal);
     }
+
+    /// <summary>
+    /// R2-S9. A full PID registry is a fact about the SESSION - about processes that never got a
+    /// coverage slot, so no per-process event can carry it. It rides session_verdict, and the panel
+    /// has to read it there.
+    /// </summary>
+    [Fact]
+    public void Session_verdict_carries_session_level_warnings()
+    {
+        const string line = "{\"type\":\"session_verdict\",\"v\":1,\"verdict\":\"works\"," +
+            "\"reason_key\":\"session.family_covered\",\"process_count\":254," +
+            "\"warning_keys\":[\"coverage.pid_registry_full\"]}";
+
+        var ev = Assert.IsType<SessionVerdictEvent>(EventParser.Parse(line));
+        Assert.Equal(254, ev.ProcessCount);
+        Assert.Equal(["coverage.pid_registry_full"], ev.WarningKeys);
+    }
+
+    /// <summary>The field was added after the event was already in use, so a core built before it must
+    /// still parse - additive evolution, never a new schema version.</summary>
+    [Fact]
+    public void Session_verdict_without_warning_keys_parses_with_none()
+    {
+        const string line = "{\"type\":\"session_verdict\",\"v\":1,\"verdict\":\"works\"," +
+            "\"reason_key\":\"session.family_covered\",\"process_count\":1}";
+
+        var ev = Assert.IsType<SessionVerdictEvent>(EventParser.Parse(line));
+        Assert.Empty(ev.WarningKeys);
+    }
 }

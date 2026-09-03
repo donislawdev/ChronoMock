@@ -1066,8 +1066,16 @@ fn driver_run(argv: &[String]) -> i32 {
                         end_sent = true;
                     }
                 }
-                Ok(Event::SessionVerdict { verdict, reason_key, process_count, .. }) => {
+                Ok(Event::SessionVerdict { verdict, reason_key, process_count, warning_keys, .. }) => {
                     session_line = Some((verdict, reason_key, process_count));
+                    // Session-level warnings join the same de-duplicated list as the per-process ones:
+                    // the report has one `warnings:` block, and where a warning came from is a wire
+                    // detail, not something the reader should have to know.
+                    for k in warning_keys {
+                        if !warnings.contains(&k) {
+                            warnings.push(k);
+                        }
+                    }
                 }
                 Ok(Event::Vanished { reason_key, lived_ms, .. }) => {
                     vanished = Some((reason_key, lived_ms));
@@ -1258,6 +1266,9 @@ fn describe_warning(key: &str) -> String {
         "timer.multimedia_not_scaled" => "the multimedia timer (timeSetEvent) is observed but not scaled",
         "inheritance.ntcreateuserprocess_child_maybe_uncovered" => {
             "a child spawned directly via NtCreateUserProcess may not be covered"
+        }
+        "coverage.pid_registry_full" => {
+            "this session ran more processes than the audit can track (256), so some ran uncovered and are missing from the process count and the channel lists below"
         }
         "inheritance.child_not_injected" => {
             "a child process could not be covered and ran on the REAL clock - usually a child of the other bitness; the process count below is short by that many"
@@ -3458,6 +3469,9 @@ fn cdp_session(target: TargetSpec, time: TimeSpec, reader: BufReader<std::io::St
         verdict: token.to_string(),
         reason_key: reason.to_string(),
         process_count: seen.len() as u32,
+        // No PID registry on this path: a CDP session tracks JS contexts, not injected processes, and
+        // its per-context warnings already travel on the coverage events above.
+        warning_keys: Vec::new(),
     });
 
     // Session timing from the live clock (correct across any in-flight rate changes and jumps): real is
@@ -3998,12 +4012,22 @@ fn run_session(
     // Capture the session clocks before ending so `ended` can state the duration and the fake wall
     // clock reached - reliably, even for a session too short to have emitted a heartbeat.
     let final_state = session.state();
+    // Read BEFORE `end` unmaps the control block. A full PID registry means some processes of this
+    // family ran with nowhere to report coverage into, so both the count below and the channel lists
+    // are short - and no per-process event can carry that, because those processes have no pid here
+    // (R2-S9). It rides the session verdict, which is the one event that speaks for the whole family.
+    let uncovered_processes = session.uncovered_process_count();
     session.end();
+    let mut session_warnings = Vec::new();
+    if uncovered_processes > 0 {
+        session_warnings.push("coverage.pid_registry_full".to_string());
+    }
     emit(&Event::SessionVerdict {
         v: PROTOCOL_VERSION,
         verdict: family.wire().into(),
         reason_key: session_reason_key(family).into(),
         process_count: 1 + family_pids.len() as u32,
+        warning_keys: session_warnings,
     });
     emit(&Event::Ended {
         v: PROTOCOL_VERSION,

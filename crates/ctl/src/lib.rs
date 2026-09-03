@@ -787,6 +787,29 @@ pub unsafe fn publish_pid(p: *mut Ctl, slot: usize, pid: u32) {
 ///
 /// # Safety
 /// `p` must point to a live, correctly aligned `Ctl`, and `i < MAX_COV_PIDS`.
+/// How many processes have tried to claim a coverage slot this session (mechanism side). Counts
+/// ATTEMPTS, not occupied slots: `reserve_cov_slot` increments unconditionally, so anything above
+/// `MAX_COV_PIDS` is the number of processes that ran with no slot to report into.
+///
+/// Slots are deliberately never freed or reused - that is what makes a slot outlive the process that
+/// wrote it (stability audit S-9), and it is what removed the pid-recycling hazard - so recycling them
+/// is NOT the fix for a full registry, however the finding phrased it. Saying so is (R2-S9): the
+/// overflow used to exist only in an OutputDebugStringA line, and the audit reported a smaller family
+/// without a word about the processes it could not see.
+///
+/// # Safety
+/// `p` must point to a live, correctly aligned `Ctl`.
+pub unsafe fn read_pid_count(p: *const Ctl) -> u32 {
+    let counter = &*(addr_of!((*p).pid_count) as *const AtomicU32);
+    counter.load(Ordering::SeqCst)
+}
+
+/// Read one PID registry slot (mechanism side). `i` must be < MAX_COV_PIDS. A zero
+/// means "empty or not yet published" - the mechanism scans all slots and skips zeros,
+/// so a slot reserved but not yet published is simply picked up on the next refresh.
+///
+/// # Safety
+/// `p` must point to a live, correctly aligned `Ctl`, and `i < MAX_COV_PIDS`.
 pub unsafe fn read_pid(p: *const Ctl, i: usize) -> u32 {
     let slotp = (addr_of!((*p).pids) as *const u32).add(i);
     let pid = read_volatile(slotp);

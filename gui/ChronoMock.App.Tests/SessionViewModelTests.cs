@@ -480,6 +480,39 @@ public class SessionViewModelTests
         Assert.Equal("source.network_at_start", Assert.Single(vm.Warnings));
     }
 
+    /// <summary>
+    /// R2-S9. A full PID registry is about processes that never got a coverage slot, so it cannot ride
+    /// a per-process coverage event - it arrives on the session verdict. The panel has one warnings
+    /// list, so it has to land there beside the per-process ones rather than in a place of its own.
+    /// </summary>
+    [Fact]
+    public void A_session_level_warning_joins_the_per_process_warnings()
+    {
+        var vm = new SessionViewModel();
+
+        vm.Apply(new CoverageEvent
+        {
+            V = ProtocolJson.ProtocolVersion,
+            Pid = 100,
+            Covered = [new CoveredChannel { Channel = "GetSystemTimeAsFileTime", Calls = 3 }],
+            WarningKeys = ["source.network_at_start"],
+        });
+        vm.Apply(new SessionVerdictEvent
+        {
+            V = ProtocolJson.ProtocolVersion,
+            Verdict = "works",
+            ReasonKey = "session.family_covered",
+            ProcessCount = 254,
+            WarningKeys = ["coverage.pid_registry_full", "source.network_at_start"],
+        });
+
+        Assert.Equal(254, vm.ProcessCount);
+        // Both are present, and the one already reported per process is not duplicated.
+        Assert.Equal(
+            ["source.network_at_start", "coverage.pid_registry_full"],
+            vm.Warnings);
+    }
+
     [Fact]
     public void A_child_coverage_never_replaces_or_sums_the_parent_coverage()
     {

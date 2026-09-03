@@ -148,6 +148,9 @@
   // R2-S2. Inne niz ostrzezenie o NtCreateUserProcess nad nim: tam swiadomie nie wstrzykujemy,
   // tu probowalismy i sie nie udalo, wiec proces tej rodziny naprawde chodzil na realnym zegarze.
   "inheritance.child_not_injected": "Proces potomny nie został objęty i działał na realnym zegarze - zwykle dziecko o innej bitowości. Liczba procesów jest o tyle zaniżona.",
+  // R2-S9. Poziom sesji, nie procesu: rzecz dotyczy procesow, ktore nie dostaly slotu pokrycia,
+  // wiec przychodzi w session_verdict, a nie w ktoryms zdarzeniu coverage.
+  "coverage.pid_registry_full": "Ta sesja uruchomiła więcej procesów, niż audyt potrafi śledzić (256). Część działała bez pokrycia i nie ma jej w liczbie procesów ani na listach kanałów.",
   "target.single_instance_suspected": "zakończył się zaraz po injekcji, zanim podmianę dało się potwierdzić",
 
   // Runtime wykryty statycznie z plików celu (B1): jego zegary monotoniczne/elapsed stoją na QueryPerformanceCounter, który zostaje realny (ADR-2), więc licznik na nich oparty nie skaluje, choć zegar ścienny tak. Brzmienie lustrzące CLI describe_warning.

@@ -180,6 +180,14 @@ pub enum Event {
         verdict: String,
         reason_key: String,
         process_count: u32,
+        /// Warnings about the SESSION as a whole, rather than about one process. A per-process
+        /// `coverage` event cannot carry these: the first case to need one (a full PID registry,
+        /// R2-S9) is precisely about processes that never got a slot, so there is no pid to attach it
+        /// to, and attaching it to some other process's coverage would be a lie about that process.
+        /// `#[serde(default)]` keeps session_verdict messages from before this field parseable
+        /// (additive evolution, zasady/15).
+        #[serde(default)]
+        warning_keys: Vec<String>,
     },
     Ended {
         v: u32,
@@ -365,13 +373,29 @@ mod tests {
             verdict: "works".into(),
             reason_key: "session.family_covered".into(),
             process_count: 2,
+            warning_keys: vec!["coverage.pid_registry_full".into()],
         };
         let line = ev.to_ndjson();
         assert!(line.starts_with(r#"{"type":"session_verdict""#), "got {line}");
         match parse_event(&line).unwrap() {
-            Event::SessionVerdict { verdict, process_count, .. } => {
+            Event::SessionVerdict { verdict, process_count, warning_keys, .. } => {
                 assert_eq!(verdict, "works");
                 assert_eq!(process_count, 2);
+                assert_eq!(warning_keys, vec!["coverage.pid_registry_full".to_string()]);
+            }
+            _ => panic!("wrong event variant"),
+        }
+    }
+
+    /// R2-S9. `warning_keys` was added to session_verdict after the field set was already in use, so a
+    /// message without it has to keep parsing - additive evolution, not a new schema (zasady/15).
+    #[test]
+    fn a_session_verdict_without_warning_keys_still_parses() {
+        let line = r#"{"type":"session_verdict","v":1,"verdict":"works","reason_key":"session.family_covered","process_count":1}"#;
+        match parse_event(line).expect("an older core's message must still parse") {
+            Event::SessionVerdict { warning_keys, process_count, .. } => {
+                assert!(warning_keys.is_empty(), "absent means no warnings, never a parse failure");
+                assert_eq!(process_count, 1);
             }
             _ => panic!("wrong event variant"),
         }

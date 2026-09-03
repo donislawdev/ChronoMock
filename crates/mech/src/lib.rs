@@ -19,7 +19,8 @@ use std::time::Instant;
 use chrono_core::{ChannelCoverage, Coverage, SessionSpec, TimeMode};
 use chrono_ctl::{
     cov_at, ctl_size, freeze_dur, freeze_qpc, read_anchor, read_calls,
-    read_core_pid, read_dur, read_installed, read_pid, read_qpc, read_uninjected_children,
+    read_core_pid, read_dur, read_installed, read_pid, read_pid_count, read_qpc,
+    read_uninjected_children,
     write_anchor, write_anchor_full,
     write_core_pid, write_scale_dur, write_scale_qpc, write_tz_bias, ChannelCategory, ChannelModule,
     Cov, Ctl, CHANNELS, MAX_COV_PIDS,
@@ -298,6 +299,17 @@ impl Session {
             }
         }
         out
+    }
+
+    /// How many processes of this session ran with NO coverage slot, because the registry was already
+    /// full. Zero for every ordinary session; `MAX_COV_PIDS` is 256 and an installer spawning dozens of
+    /// helpers is the realistic way past it (docs/07 open item 2).
+    ///
+    /// These processes are invisible to `poll_new_coverage` - they published no pid, because they had
+    /// nowhere to publish one - so the family count and the coverage list are both short by this many,
+    /// and nothing else in the audit can say so. Read it BEFORE `end`, while the block is still mapped.
+    pub fn uncovered_process_count(&self) -> u32 {
+        uncovered_from_attempts(unsafe { read_pid_count(self.ctl()) })
     }
 
     /// Stop the target, for the one case where letting it run would be worse than not running it: the
@@ -623,6 +635,13 @@ unsafe fn bitness_mismatch(hproc: HANDLE) -> Option<(&'static str, &'static str)
     let target = process_machine(hproc)?;
     let core = process_machine(GetCurrentProcess())?;
     (target != core).then(|| (machine_label(target), machine_label(core)))
+}
+
+/// How many slot claims went unserved, given the number of claims made. Pure, so the arithmetic is
+/// testable without a live session: the registry counter only ever increases and counts ATTEMPTS, so
+/// everything past its capacity is a process that ran with nowhere to report coverage into (R2-S9).
+fn uncovered_from_attempts(attempts: u32) -> u32 {
+    attempts.saturating_sub(MAX_COV_PIDS as u32)
 }
 
 /// Find the registry slot a process published its pid into, so its coverage can be read out of the
@@ -1092,6 +1111,19 @@ mod tests {
         let quiet = zeroed_cov();
         let gathered = unsafe { gather_coverage(&quiet as *const Cov, all, false, false) };
         assert!(!gathered.warning_keys.iter().any(|k| k == "inheritance.child_not_injected"));
+    }
+
+    /// R2-S9. Everything past the registry's capacity is a process the audit could not see. Exactly at
+    /// capacity is not an overflow - the 256th process got the last slot - and the saturating subtraction
+    /// is what keeps an ordinary session from reporting a negative-turned-huge count.
+    #[test]
+    fn only_claims_past_the_registrys_capacity_count_as_uncovered() {
+        assert_eq!(uncovered_from_attempts(0), 0);
+        assert_eq!(uncovered_from_attempts(1), 0);
+        assert_eq!(uncovered_from_attempts(MAX_COV_PIDS as u32), 0, "the last slot is still a slot");
+        assert_eq!(uncovered_from_attempts(MAX_COV_PIDS as u32 + 1), 1);
+        assert_eq!(uncovered_from_attempts(MAX_COV_PIDS as u32 + 44), 44);
+        assert_eq!(uncovered_from_attempts(u32::MAX), u32::MAX - MAX_COV_PIDS as u32);
     }
 
     /// R2-S3. The QPC channel rides its OWN opt-in. Off, it is not a gap - leaving QPC real is the

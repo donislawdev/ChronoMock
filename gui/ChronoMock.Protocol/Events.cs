@@ -64,6 +64,14 @@ public sealed record SessionVerdictEvent : ChronoEvent
     [JsonPropertyName("verdict")] public required string Verdict { get; init; }
     [JsonPropertyName("reason_key")] public required string ReasonKey { get; init; }
     [JsonPropertyName("process_count")] public int ProcessCount { get; init; }
+
+    /// <summary>
+    /// Warnings about the SESSION rather than about one process (R2-S9). The first of them, a full PID
+    /// registry, is precisely about processes that never got a coverage slot - so there is no pid to
+    /// hang it on, and a per-process <c>coverage</c> event cannot carry it. Absent in messages from a
+    /// core built before the field existed, which deserializes to the empty default.
+    /// </summary>
+    [JsonPropertyName("warning_keys")] public IReadOnlyList<string> WarningKeys { get; init; } = [];
 }
 
 public sealed record EndedEvent : ChronoEvent

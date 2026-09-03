@@ -148,6 +148,9 @@
   // R2-S2. Distinct from the NtCreateUserProcess warning above it: there we choose not to inject,
   // here we tried and it did not take, so a process of this family really did run on the real clock.
   "inheritance.child_not_injected": "A child process could not be covered and ran on the real clock - usually a child of a different bitness. The process count is short by that many.",
+  // R2-S9. Session-level, not per-process: it is about processes that never got a coverage slot,
+  // so it arrives on session_verdict rather than on any one coverage event.
+  "coverage.pid_registry_full": "This session ran more processes than the audit can track (256). Some ran uncovered and are missing from the process count and the channel lists.",
   "target.single_instance_suspected": "exited right after injection, before the swap could be confirmed",
 
   // Runtime detected statically from the target's files (B1): its monotonic/elapsed clocks stand on QueryPerformanceCounter, which stays real (ADR-2), so a timer built on them does not scale even though the wall clock does. Wording mirrors the CLI describe_warning.

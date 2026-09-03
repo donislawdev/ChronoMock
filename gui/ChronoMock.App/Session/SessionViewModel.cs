@@ -662,6 +662,10 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
             case SessionVerdictEvent sv:
                 // The family aggregate, at end - it overrides the per-process verdict on the indicator.
                 ProcessCount = sv.ProcessCount;
+                // Session-level warnings join the per-process ones (R2-S9). They are about the family,
+                // not about any one process, so the panel shows them in the same list - a warning the
+                // reader has to attribute to an event type is a warning they will not read.
+                Warnings = [.. _warnings, .. sv.WarningKeys.Where(w => !_warnings.Contains(w))];
                 SetVerdict(VerdictKinds.Parse(sv.Verdict), sv.ReasonKey);
                 break;
             case CoverageEvent c when _isCdp:
