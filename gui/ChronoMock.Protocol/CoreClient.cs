@@ -113,6 +113,23 @@ public sealed class CoreClient : IAsyncDisposable
         // closed stream - callers that guard on a running session (the GUI's in-flight controls) can race
         // Dispose, and a predictable type is what lets them catch it.
         ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
+        SendLine(command);
+    }
+
+    /// <summary>
+    /// Write one command without the disposed guard, for the ONE caller that must still be able to
+    /// speak after the guard has closed: <see cref="DisposeAsync"/>, whose whole job starts by asking
+    /// the core to end.
+    /// <para>
+    /// This split is not decoration. <c>_disposed</c> carries two jobs - the idempotency latch for
+    /// dispose, and the guard on the public API - and routing shutdown through the public
+    /// <see cref="Send"/> made the second job veto the first: the latch was already set, so the `end`
+    /// command threw <see cref="ObjectDisposedException"/> and took the whole graceful path with it
+    /// (R2-K1). Keep the two jobs apart.
+    /// </para>
+    /// </summary>
+    private void SendLine(Command command)
+    {
         var line = command.ToNdjson();
         lock (_stdinLock)
         {
@@ -191,20 +208,22 @@ public sealed class CoreClient : IAsyncDisposable
             if (!_process.HasExited)
             {
                 // Graceful: end the session, then close stdin so the core sees EOF and shuts down.
+                // SendLine, not Send: the disposed latch is already set above, and the public guard would
+                // reject our own shutdown command (R2-K1).
                 try
                 {
-                    Send(new EndCommand { Id = 0 });
+                    SendLine(new EndCommand { Id = 0 });
                 }
-                catch (IOException)
+                catch (Exception ex) when (ex is IOException or ObjectDisposedException)
                 {
-                    // Core already gone - nothing to end.
+                    // Core already gone, or its stdin stream is closed - nothing to end.
                 }
 
                 try
                 {
                     _process.StandardInput.Close();
                 }
-                catch (IOException)
+                catch (Exception ex) when (ex is IOException or ObjectDisposedException)
                 {
                     // Stream already closed.
                 }
@@ -229,8 +248,23 @@ public sealed class CoreClient : IAsyncDisposable
             // Process exited between the HasExited check and here - fine.
         }
 
-        await AwaitQuietly(_readLoop).ConfigureAwait(false);
-        await AwaitQuietly(_stderrDrain).ConfigureAwait(false);
+        // The core is gone. Complete the event stream NOW instead of waiting for the read loop to see EOF
+        // on stdout. That EOF does not arrive when the core dies: the target holds the write end of the
+        // core's stdout pipe, so it lands only once the APPLICATION UNDER TEST exits - which after a Stop
+        // is whenever the tester happens to close it. Measured on this path: the core exited 21 ms after
+        // `end`, and the read loop stayed parked until the target was killed, to the millisecond.
+        //
+        // Consumers gate "the session is over" on this stream (the GUI keeps showing "stopping" until it
+        // ends, then falls back to its 15 s idle watchdog), so the target's lifetime must not be what
+        // decides when a stopped session looks stopped. Already-written events stay readable - completing
+        // a channel closes it to WRITERS, not to a reader draining what is left.
+        _events.Writer.TryComplete();
+
+        // Bounded join for the same reason: the read loop can be parked on ReadLineAsync for as long as
+        // the target holds that pipe, and dispose must not inherit the target's lifetime. Disposing the
+        // process below closes the stream underneath it either way.
+        await AwaitQuietly(_readLoop, JoinTimeout).ConfigureAwait(false);
+        await AwaitQuietly(_stderrDrain, JoinTimeout).ConfigureAwait(false);
         _process.Dispose();
     }
 
@@ -248,10 +282,25 @@ public sealed class CoreClient : IAsyncDisposable
         }
     }
 
-    private async Task AwaitQuietly(Task task)
+    /// <summary>How long dispose waits to join a background reader before giving up on it. The read loop
+    /// can be parked on a pipe the target still holds, so this is a bound on OUR shutdown, not on the
+    /// reader - the process dispose that follows closes the stream underneath it.</summary>
+    private static readonly TimeSpan JoinTimeout = TimeSpan.FromSeconds(2);
+
+    private async Task AwaitQuietly(Task task, TimeSpan? timeout = null)
     {
         try
         {
+            if (timeout is { } limit)
+            {
+                var finished = await Task.WhenAny(task, Task.Delay(limit)).ConfigureAwait(false);
+                if (!ReferenceEquals(finished, task))
+                {
+                    AddDiagnostic($"background task did not finish within {limit.TotalSeconds:0.#}s");
+                    return;
+                }
+            }
+
             await task.ConfigureAwait(false);
         }
         catch (Exception ex)

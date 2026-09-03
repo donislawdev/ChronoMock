@@ -1073,6 +1073,55 @@ public class SessionViewModelTests
         Covered = [new CoveredChannel { Channel = channel, Calls = calls }],
     };
 
+    [Fact]
+    public void A_heartbeat_cannot_put_a_stopping_session_back_into_running()
+    {
+        // R2-W4: Stop is asynchronous - the core keeps heartbeating for up to its grace period. Every one
+        // of those heartbeats used to reset the status to "running" and bring the in-flight controls back,
+        // so a pressed Stop looked ignored.
+        Assert.False(SessionViewModel.CanReturnToRunning(SessionStatusKind.Stopping));
+    }
+
+    [Fact]
+    public void Only_pre_stop_statuses_let_a_heartbeat_report_running()
+    {
+        // Pinned over the WHOLE enum, so a status added later has to make this decision explicitly rather
+        // than inherit "a heartbeat may resurrect me" by default.
+        var mayReturn = new[]
+        {
+            SessionStatusKind.Idle,
+            SessionStatusKind.Connecting,
+            SessionStatusKind.Running,
+        };
+
+        foreach (var kind in Enum.GetValues<SessionStatusKind>())
+        {
+            Assert.Equal(mayReturn.Contains(kind), SessionViewModel.CanReturnToRunning(kind));
+        }
+    }
+
+    [Fact]
+    public void Ended_still_lands_after_a_stop_so_its_final_facts_are_not_lost()
+    {
+        // The companion guarantee to the two above: Stopping blocks the heartbeat, but must NOT block
+        // `ended`, which carries the core's authoritative end timing, the target's exit code and any
+        // cleanup residue. That is why the Stopping rule is its own predicate and not part of IsTerminal.
+        Assert.True(SessionViewModel.CanReturnToRunning(SessionStatusKind.Running));
+
+        var vm = new SessionViewModel();
+        vm.Apply(new EndedEvent
+        {
+            V = ProtocolJson.ProtocolVersion,
+            Clean = true,
+            TargetExitCode = 7,
+            ResidueKeys = ["cleanup.chromium_profile_left"],
+        });
+
+        Assert.Equal(SessionStatusKind.Ended, vm.StatusKind);
+        Assert.Equal(7, vm.TargetExitCode);
+        Assert.Single(vm.ResidueKeys);
+    }
+
     // A fake diagnostics log: records the block it was asked to save and returns a canned path (or null to
     // simulate a read-only medium), so CaptureDiagnostics is tested without touching the file system.
     private sealed class RecordingDiagnosticsLog : IDiagnosticsLog

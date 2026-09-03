@@ -584,7 +584,7 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     {
         switch (evt)
         {
-            case StateEvent s when !IsTerminal(StatusKind):
+            case StateEvent s when CanReturnToRunning(StatusKind):
                 Fake.Wall = s.Fake.Wall;
                 Fake.Zone = ZoneLabel.FromBiasMinutes(s.Fake.ZoneBiasMin);
                 Real.Wall = s.Real.Wall;
@@ -1306,6 +1306,21 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
         or SessionStatusKind.Stopped
         or SessionStatusKind.CoreUnresponsive
         or SessionStatusKind.Error;
+
+    /// <summary>
+    /// True when a heartbeat may still put the session back into "running". Terminal statuses may not,
+    /// and neither may <see cref="SessionStatusKind.Stopping"/>: the user has pressed Stop, shutdown is
+    /// under way, and the in-flight controls are deliberately gone - "running" with dead buttons reads
+    /// as a hang. Heartbeats keep arriving for up to the core's grace period, so without this every one
+    /// of them undid the Stop (R2-W4).
+    /// <para>
+    /// Deliberately NOT folded into <see cref="IsTerminal"/>. That predicate also gates the
+    /// <c>ended</c> event, which carries the core's authoritative end timing, the target's exit code
+    /// and any cleanup residue - data we still want after a Stop.
+    /// </para>
+    /// </summary>
+    internal static bool CanReturnToRunning(SessionStatusKind kind) =>
+        !IsTerminal(kind) && kind != SessionStatusKind.Stopping;
 
     /// <summary>True when an error event answers one of OUR in-flight commands (jump/set_multiplier),
     /// whose ids run from <see cref="FirstInFlightCommandId"/> up. A start/fatal error instead carries the

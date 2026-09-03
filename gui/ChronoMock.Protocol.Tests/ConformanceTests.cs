@@ -136,6 +136,76 @@ public class ConformanceTests
         _ = await ReadUntilAsync(client, e => e.Any(x => x is EndedEvent), ReadTimeout);
     }
 
+    [Fact]
+    public async Task DisposeAsync_ends_the_core_without_waiting_for_the_target()
+    {
+        // R2-K1, the test whose absence let the regression through. DisposeAsync is what the GUI's Stop
+        // button runs, and it had been silently dead: it set the disposed latch first, so its own `end`
+        // command hit the public Send guard, threw ObjectDisposedException, and took the whole graceful
+        // path - stdin close, grace period, Kill - down with it. The core kept running and kept holding
+        // the session mutex, so the NEXT session refused to start.
+        //
+        // The oracle is the core PROCESS, and the deadline is what makes it meaningful: the test target
+        // lives ~5 s, so a core that exits well inside that window can only have obeyed `end`. Waiting on
+        // dispose to return would NOT prove it - dispose also returns when the target finally exits, for
+        // an unrelated reason (see the note on the stdout pipe below).
+        var (core, target) = Fixture();
+        var before = LiveCorePids(core);
+        var client = CoreClient.Launch(core, StartAt(target, mode: "multiplier", multiplier: 60));
+
+        // Let the session come up, so dispose meets a LIVE core rather than a failed start.
+        _ = await ReadUntilAsync(client, e => e.OfType<StateEvent>().Any(), ReadTimeout);
+        var ours = LiveCorePids(core).Except(before).ToList();
+        Assert.True(ours.Count == 1, $"expected exactly one new core process, saw {ours.Count}");
+
+        // Dispose runs in the background exactly like the GUI's Stop, which does not await it either.
+        var dispose = client.DisposeAsync().AsTask();
+
+        var deadline = TimeSpan.FromSeconds(3); // target lives ~5 s, so this cannot pass by waiting it out
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        while (sw.Elapsed < deadline && LiveCorePids(core).Intersect(ours).Any())
+        {
+            await Task.Delay(25);
+        }
+
+        Assert.False(
+            LiveCorePids(core).Intersect(ours).Any(),
+            $"the core must end on `end`, not outlive it (still alive after {sw.ElapsedMilliseconds} ms)");
+
+        // Let dispose finish so the test leaves no background task behind. It returns once the target
+        // releases the core's stdout pipe, which is why it is NOT the oracle above.
+        await Task.WhenAny(dispose, Task.Delay(ReadTimeout));
+    }
+
+    /// <summary>PIDs of live processes running this exact core image - the honest way to ask whether the
+    /// core is still alive, independent of any stream or client state
+    /// ([[measure-process-exit-via-hasexited]]).</summary>
+    private static IReadOnlyList<int> LiveCorePids(string coreExePath)
+    {
+        var name = Path.GetFileNameWithoutExtension(coreExePath);
+        var full = Path.GetFullPath(coreExePath);
+        var pids = new List<int>();
+        foreach (var p in System.Diagnostics.Process.GetProcessesByName(name))
+        {
+            try
+            {
+                if (!p.HasExited && string.Equals(p.MainModule?.FileName, full, StringComparison.OrdinalIgnoreCase))
+                {
+                    pids.Add(p.Id);
+                }
+            }
+            catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception)
+            {
+                // Exited between enumeration and query, or not ours to inspect - not a live core of ours.
+            }
+            finally
+            {
+                p.Dispose();
+            }
+        }
+        return pids;
+    }
+
     private static (string core, string target) Fixture()
     {
         var repo = RepoPaths.RepoRoot();
