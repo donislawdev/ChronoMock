@@ -253,7 +253,22 @@ fn parse_civil(local: &str) -> Result<(i64, i64, i64, i64, i64, i64), String> {
     if !(1..=last).contains(&day) {
         return Err(format!("day {day} out of range for month {month} in '{local}'"));
     }
-    if !(0..=23).contains(&hour) || !(0..=59).contains(&min) || !(0..=60).contains(&sec) {
+    // A leap second gets its own refusal, because it used to get silently accepted and then move the
+    // DATE. `:60` passed this check as a nod to leap seconds, and `moment_to_filetime_utc` then summed
+    // a time-of-day of 86400, which is midnight of the NEXT day - so `2026-06-15T23:59:60` became the
+    // 16th with nothing said, and `filetime_utc_to_wall` could not give the input back. In the
+    // calculator it was worse than a shift: one result carried two dates, the civil fields saying
+    // Monday the 15th while the instant, FILETIME and RFC 1123 said Tuesday the 16th (R2-S11).
+    //
+    // Neither this model nor FILETIME has leap seconds, so accepting one is a promise we cannot keep.
+    // Refuse it the way every other impossible moment above is refused, and name the reason - a tester
+    // who pasted a timestamp from a leap-second-aware source needs to know which second to use.
+    if sec == 60 {
+        return Err(format!(
+            "second 60 in '{local}' is a leap second - this model has none (use :59)"
+        ));
+    }
+    if !(0..=23).contains(&hour) || !(0..=59).contains(&min) || !(0..=59).contains(&sec) {
         return Err(format!("time out of range in '{local}'"));
     }
     Ok((year, month, day, hour, min, sec))
@@ -397,6 +412,27 @@ mod tests {
         assert!(moment_to_filetime_utc(&moment("2026-01-00T00:00:00", Some(0))).is_err()); // day 0
         // The valid leap day still converts.
         assert!(moment_to_filetime_utc(&moment("2024-02-29T00:00:00", Some(0))).is_ok());
+    }
+
+    #[test]
+    fn a_leap_second_is_refused_not_rolled_into_the_next_day() {
+        // R2-S11. `:60` used to pass the range check and then sum to a time-of-day of 86400 - midnight
+        // of the NEXT day - so the moment moved a full day with nothing said. In the calculator the same
+        // input produced ONE result carrying two dates: the civil fields said Monday the 15th while the
+        // instant and RFC 1123 said Tuesday the 16th.
+        let err = moment_to_filetime_utc(&moment("2026-06-15T23:59:60", Some(0)))
+            .expect_err("a leap second is not a moment this model can represent");
+        assert!(err.contains("leap second"), "the message must name the reason, got: {err}");
+
+        // Not only at the end of a day: the second field is refused wherever it appears.
+        assert!(moment_to_filetime_utc(&moment("2026-06-15T12:00:60", Some(0))).is_err());
+        // The calculator shares this parser, so it refuses the same input.
+        assert!(calc::parse_civil_datetime("2026-06-15T23:59:60").is_err());
+
+        // And the second before it still converts, to exactly 23:59:59 of the SAME day.
+        let ok = moment_to_filetime_utc(&moment("2026-06-15T23:59:59", Some(0))).unwrap();
+        let midnight = moment_to_filetime_utc(&moment("2026-06-16T00:00:00", Some(0))).unwrap();
+        assert_eq!(midnight - ok, 10_000_000, "one second apart, not one day");
     }
 
     #[test]
