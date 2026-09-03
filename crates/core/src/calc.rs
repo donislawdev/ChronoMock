@@ -225,8 +225,13 @@ pub enum EvalError {
     /// A built step or unit that needs a calendar the caller did not provide (the `business_days`
     /// unit, the `nearest` business-day step). The substitution `--at`/`jump` paths have none.
     NeedsCalendar { index: usize },
-    /// A `nearest` target had no match within the search range - only a degenerate calendar.
-    NotFound { index: usize },
+    /// A calendar step found no business day: the file marks (almost) every day as one off. Its own
+    /// variant because it used to travel two different ways for one cause - `nearest` reported
+    /// `NotFound`, which the CLI renders as exit 5 "not built in this release" (the operation IS
+    /// built, the FILE is wrong), and `+Nbd` reported `Overflow`, a message about number sizes
+    /// (R2-S10). Calendars are the one part of this tool outsiders write, so the diagnosis has to
+    /// point at the file.
+    DegenerateCalendar { index: usize },
     /// The shift overflowed the representable range - rejected, not wrapped.
     Overflow { index: usize },
     /// `set_time` fields out of range (hour > 23, minute/second > 59).
@@ -335,7 +340,8 @@ fn apply_nearest(
     index: usize,
 ) -> Result<CivilDateTime, EvalError> {
     let forward = matches!(target, NearestTarget::NextBusinessDay);
-    crate::calendar::nearest_business_day(&cur, forward, cal).ok_or(EvalError::NotFound { index })
+    crate::calendar::nearest_business_day(&cur, forward, cal)
+        .ok_or(EvalError::DegenerateCalendar { index })
 }
 
 /// Jump to the next 29 February on or after `cur` (itself if `cur` is already a leap day). The year
@@ -409,7 +415,14 @@ fn apply_shift(
         // without one (the substitution paths), stay honestly unsupported.
         Unit::BusinessDays => match calendar {
             Some(cal) => {
-                crate::calendar::add_business_days(&cur, signed, cal).ok_or(EvalError::Overflow { index })
+                crate::calendar::add_business_days(&cur, signed, cal).map_err(|limit| match limit {
+                    // The request is out of range; the calendar is fine.
+                    crate::calendar::BusinessDayLimit::TooManyDays => EvalError::Overflow { index },
+                    // The calendar is the problem, and the message has to say so.
+                    crate::calendar::BusinessDayLimit::DegenerateCalendar => {
+                        EvalError::DegenerateCalendar { index }
+                    }
+                })
             }
             None => Err(EvalError::NeedsCalendar { index }),
         },

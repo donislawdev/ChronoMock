@@ -797,7 +797,7 @@ fn describe_at_error(e: EvalError) -> String {
         }
         EvalError::Overflow { .. } => "relative --at is too large".to_string(),
         EvalError::StepUnsupported { kind, .. } => format!("relative --at step '{kind}' is not supported"),
-        EvalError::NotFound { .. } => "relative --at found no matching date".to_string(),
+        EvalError::DegenerateCalendar { .. } => "relative --at found no matching date".to_string(),
         EvalError::BadSetTime { .. } => "relative --at has an invalid time".to_string(),
     }
 }
@@ -2158,8 +2158,8 @@ fn resolve_now_civil(zone_bias_min: Option<i32>) -> Result<chrono_core::calc::Ci
 /// in this release is its own honest code (5) so a script can tell the two apart.
 fn calc_error_exit_code(e: &EvalError) -> i32 {
     match e {
-        EvalError::StepUnsupported { .. } | EvalError::NeedsCalendar { .. } | EvalError::NotFound { .. } => 5,
-        EvalError::Overflow { .. } | EvalError::BadSetTime { .. } => 1,
+        EvalError::StepUnsupported { .. } | EvalError::NeedsCalendar { .. } => 5,
+        EvalError::Overflow { .. } | EvalError::BadSetTime { .. } | EvalError::DegenerateCalendar { .. } => 1,
     }
 }
 
@@ -2174,9 +2174,10 @@ fn describe_calc_error(e: &EvalError) -> String {
         EvalError::NeedsCalendar { index } => {
             format!("chrono calc: step {} needs a calendar - pass --calendar (calc.needs_calendar)", index + 1)
         }
-        EvalError::NotFound { index } => {
-            format!("chrono calc: step {} found no matching date in range (calc.not_found)", index + 1)
-        }
+        EvalError::DegenerateCalendar { index } => format!(
+            "chrono calc: step {} found no business day - this calendar marks (almost) every day as one off; check its weekend and holidays (calc.degenerate_calendar)",
+            index + 1
+        ),
         EvalError::Overflow { index } => {
             format!("chrono calc: step {} overflows the representable range (calc.overflow)", index + 1)
         }
@@ -2443,9 +2444,11 @@ fn rule_from(id: &str, dto: RuleDto) -> Result<chrono_core::calendar::HolidayRul
         }
         RuleDto::NthWeekday { month, weekday, order } => {
             check_month(id, month)?;
-            // -1 = "the last such weekday in the month"; 1..=5 counts from the start (5 exists only in
-            // some months, which the engine already resolves). Anything else silently lands in another
-            // month, e.g. order 9 walking past the end.
+            // -1 = "the last such weekday in the month"; 1..=5 counts from the start. A fifth exists
+            // only in some months, and the engine now answers "this holiday does not fall in that
+            // year" rather than borrowing a day from the next month - which is what it actually did
+            // while this comment claimed otherwise (R2-N4). Anything outside the range would walk
+            // past the end for every month, so it stays a load error.
             if order != -1 && !(1..=5).contains(&order) {
                 return Err(format!(
                     "holiday '{id}': order {order} out of range (-1 for last, or 1..=5)"
@@ -4949,7 +4952,10 @@ mod tests {
         // Not built / needs data -> code 5; bad input -> usage 1.
         assert_eq!(calc_error_exit_code(&EvalError::StepUnsupported { kind: "zone", index: 0 }), 5);
         assert_eq!(calc_error_exit_code(&EvalError::NeedsCalendar { index: 0 }), 5);
-        assert_eq!(calc_error_exit_code(&EvalError::NotFound { index: 0 }), 5);
+        // R2-S10: a degenerate calendar is BAD INPUT (exit 1), not an unbuilt operation (exit 5).
+        // It used to travel as `NotFound` -> 5 from `--nearest` and as `Overflow` -> 1 from `+Nbd`:
+        // two answers, one cause, and the 5 told a script the feature does not exist yet.
+        assert_eq!(calc_error_exit_code(&EvalError::DegenerateCalendar { index: 0 }), 1);
         assert_eq!(calc_error_exit_code(&EvalError::Overflow { index: 0 }), 1);
         assert_eq!(calc_error_exit_code(&EvalError::BadSetTime { index: 0 }), 1);
     }

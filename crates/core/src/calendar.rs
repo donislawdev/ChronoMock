@@ -75,17 +75,25 @@ fn days(year: i64, month: u32, day: u32) -> i64 {
 }
 
 /// The n-th (`order`) `weekday` of `month` in `year`, as a day count. `order` -1 = the last.
-fn nth_weekday_days(year: i64, month: u32, weekday_target: u32, order: i32) -> i64 {
+///
+/// `None` when the month has no such occurrence - "the 5th Monday of February" is a date that simply
+/// does not exist most years, and a holiday defined that way does not happen then. It used to return
+/// a day count regardless, landing silently in the NEXT month (R2-N4): the loader allows 1..=5 and
+/// its comment claimed the engine resolved a missing 5th, which it did not. No shipped calendar uses
+/// 5, but calendars are the one part of this tool outsiders are invited to write, and a rule that
+/// quietly marks a day in March as a February holiday is the silent-wrong-date class this project
+/// calls inadmissible.
+fn nth_weekday_days(year: i64, month: u32, weekday_target: u32, order: i32) -> Option<i64> {
+    let (next_year, next_month) = if month == 12 { (year + 1, 1) } else { (year, month + 1) };
+    let last_of_month = days(next_year, next_month, 1) - 1;
     if order == -1 {
         // Walk back from the first day of the next month to the last matching weekday.
-        let (ny, nm) = if month == 12 { (year + 1, 1) } else { (year, month + 1) };
-        let last = days(ny, nm, 1) - 1;
-        last - ((weekday(last) + 7 - weekday_target) % 7) as i64
-    } else {
-        let first = days(year, month, 1);
-        let shift = (weekday_target + 7 - weekday(first)) % 7;
-        first + shift as i64 + (order as i64 - 1) * 7
+        return Some(last_of_month - ((weekday(last_of_month) + 7 - weekday_target) % 7) as i64);
     }
+    let first = days(year, month, 1);
+    let shift = (weekday_target + 7 - weekday(first)) % 7;
+    let d = first + shift as i64 + (order as i64 - 1) * 7;
+    (d <= last_of_month).then_some(d)
 }
 
 /// Gregorian Easter Sunday (month, day) for a year - the Meeus/Butcher "Anonymous Gregorian"
@@ -114,13 +122,17 @@ fn easter_sunday(year: i64) -> (u32, u32) {
 /// The calendar date (day count since 1970-01-01) of a holiday in `year`. Every rule type is
 /// built; a rule this build did not know would have been rejected by the loader, and adding a
 /// `HolidayRule` variant without handling it here is a compile error (the match is exhaustive).
-fn holiday_days(rule: &HolidayRule, year: i64) -> i64 {
+fn holiday_days(rule: &HolidayRule, year: i64) -> Option<i64> {
     match rule {
-        HolidayRule::Fixed { month, day } => days(year, *month, *day),
-        HolidayRule::NthWeekday { month, weekday, order } => nth_weekday_days(year, *month, *weekday, *order),
+        HolidayRule::Fixed { month, day } => Some(days(year, *month, *day)),
+        // `None` when the month has no such occurrence: the holiday does not fall in this year at all
+        // (R2-N4), rather than falling on an invented date in the next month.
+        HolidayRule::NthWeekday { month, weekday, order } => {
+            nth_weekday_days(year, *month, *weekday, *order)
+        }
         HolidayRule::EasterOffset { offset } => {
             let (month, day) = easter_sunday(year);
-            days(year, month, day) + *offset as i64
+            Some(days(year, month, day) + *offset as i64)
         }
     }
 }
@@ -152,7 +164,7 @@ pub fn holiday_on<'a>(date: &CivilDateTime, cal: &'a Calendar) -> Option<&'a Hol
     let target = days(date.year, date.month, date.day);
     cal.holidays
         .iter()
-        .find(|h| in_force(h, date.year) && holiday_days(&h.rule, date.year) == target)
+        .find(|h| in_force(h, date.year) && holiday_days(&h.rule, date.year) == Some(target))
 }
 
 /// Whether the day-count `target` is a business day: not a weekend day, and not the OBSERVED date
@@ -169,7 +181,8 @@ fn is_business_day_days(target: i64, cal: &Calendar) -> bool {
     let (year, _, _) = crate::civil_from_days(target);
     for y in [year - 1, year, year + 1] {
         for h in &cal.holidays {
-            if in_force(h, y) && observed_days(holiday_days(&h.rule, y), cal.observed) == target {
+            let observed = holiday_days(&h.rule, y).map(|d| observed_days(d, cal.observed));
+            if in_force(h, y) && observed == Some(target) {
                 return false;
             }
         }
@@ -211,12 +224,29 @@ pub fn nearest_business_day(from: &CivilDateTime, forward: bool, cal: &Calendar)
     None
 }
 
+/// Why a business-day walk produced no answer. The two cases used to be one `None`, and the caller
+/// turned both into "overflows the representable range" - a message about number sizes handed to
+/// someone whose calendar file marks every weekday as a weekend (R2-S10). Calendars are the one part
+/// of this tool outsiders are invited to write, so pointing their author at the wrong thing is the
+/// expensive kind of wrong.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BusinessDayLimit {
+    /// `|n|` is beyond `MAX_BUSINESS_DAYS`: the request is out of range, the calendar is fine.
+    TooManyDays,
+    /// The walk ran out of budget: this calendar has (almost) no business days at all.
+    DegenerateCalendar,
+}
+
 /// `start` advanced by `n` business days (negative = backward), keeping the time of day. The start
 /// day is not counted: the walk steps day by day and counts only business days, so Friday + 1 = the
-/// next Monday. `None` if `|n|` exceeds `MAX_BUSINESS_DAYS`.
-pub fn add_business_days(start: &CivilDateTime, n: i64, cal: &Calendar) -> Option<CivilDateTime> {
+/// next Monday.
+pub fn add_business_days(
+    start: &CivilDateTime,
+    n: i64,
+    cal: &Calendar,
+) -> Result<CivilDateTime, BusinessDayLimit> {
     if n.unsigned_abs() > MAX_BUSINESS_DAYS as u64 {
-        return None;
+        return Err(BusinessDayLimit::TooManyDays);
     }
     let mut d = days(start.year, start.month, start.day);
     let step = if n >= 0 { 1 } else { -1 };
@@ -232,7 +262,7 @@ pub fn add_business_days(start: &CivilDateTime, n: i64, cal: &Calendar) -> Optio
     let mut budget = n.abs().saturating_mul(7).saturating_add(400);
     while remaining > 0 {
         if budget == 0 {
-            return None;
+            return Err(BusinessDayLimit::DegenerateCalendar);
         }
         budget -= 1;
         d += step;
@@ -241,7 +271,7 @@ pub fn add_business_days(start: &CivilDateTime, n: i64, cal: &Calendar) -> Optio
         }
     }
     let (year, month, day) = crate::civil_from_days(d);
-    Some(CivilDateTime {
+    Ok(CivilDateTime {
         year,
         month: month as u32,
         day: day as u32,
@@ -292,13 +322,13 @@ mod tests {
     #[test]
     fn nth_weekday_computes_known_dates() {
         // Thanksgiving 2026 = 4th Thursday of November = 2026-11-26.
-        assert_eq!(nth_weekday_days(2026, 11, 4, 4), days(2026, 11, 26));
+        assert_eq!(nth_weekday_days(2026, 11, 4, 4), Some(days(2026, 11, 26)));
         // MLK Day 2026 = 3rd Monday of January = 2026-01-19.
-        assert_eq!(nth_weekday_days(2026, 1, 1, 3), days(2026, 1, 19));
+        assert_eq!(nth_weekday_days(2026, 1, 1, 3), Some(days(2026, 1, 19)));
         // Memorial Day 2026 = last Monday of May = 2026-05-25.
-        assert_eq!(nth_weekday_days(2026, 5, 1, -1), days(2026, 5, 25));
+        assert_eq!(nth_weekday_days(2026, 5, 1, -1), Some(days(2026, 5, 25)));
         // Last-weekday when the month ends exactly on that weekday still works (May 2027 ends Mon).
-        assert_eq!(nth_weekday_days(2027, 5, 1, -1), days(2027, 5, 31));
+        assert_eq!(nth_weekday_days(2027, 5, 1, -1), Some(days(2027, 5, 31)));
     }
 
     #[test]
@@ -397,6 +427,42 @@ mod tests {
         assert_eq!(holiday_on(&dt(2025, 12, 24), &cal).unwrap().id, "christmas_eve");
     }
 
+    /// R2-N4. `order: 5` is legal in the schema and legitimate for a month that HAS a fifth such
+    /// weekday. For one that does not, the walk used to run past the month end and hand back a day in
+    /// the NEXT month - so a rule saying "the 5th Monday of February" quietly marked a Monday in March
+    /// as a February holiday, in a file written by someone outside this project.
+    #[test]
+    fn a_fifth_weekday_the_month_does_not_have_is_absent_not_borrowed_from_the_next() {
+        // February 2026 starts on a Sunday, so its Mondays are the 2nd, 9th, 16th and 23rd - four.
+        assert_eq!(nth_weekday_days(2026, 2, 1, 4), Some(days(2026, 2, 23)));
+        assert_eq!(nth_weekday_days(2026, 2, 1, 5), None, "there is no fifth Monday to name");
+
+        // A month that DOES have five keeps working - this is a real capability, not a banned value.
+        // March 2026 starts on a Sunday too, and 31 days give Mondays on the 2nd, 9th, 16th, 23rd, 30th.
+        assert_eq!(nth_weekday_days(2026, 3, 1, 5), Some(days(2026, 3, 30)));
+        // And -1 still means the last one, whichever ordinal that is.
+        assert_eq!(nth_weekday_days(2026, 2, 1, -1), Some(days(2026, 2, 23)));
+        assert_eq!(nth_weekday_days(2026, 3, 1, -1), Some(days(2026, 3, 30)));
+
+        // End to end: a holiday defined that way does not occur in a year without a fifth Monday, and
+        // in particular does not turn a March day into a February holiday.
+        let cal = Calendar {
+            id: "t".into(),
+            country: "XX".into(),
+            weekend: vec![0, 6],
+            observed: Observed::None,
+            holidays: vec![h("fifth_mon_feb", HolidayRule::NthWeekday { month: 2, weekday: 1, order: 5 }, None)],
+        };
+        assert!(holiday_on(&dt(2026, 3, 2), &cal).is_none(), "March 2 is not a February holiday");
+        assert!(is_business_day(&dt(2026, 3, 2), &cal), "and it stays a working day");
+        // In a month that HAS a fifth, it does occur - this is a capability, not a banned value.
+        let cal5 = Calendar {
+            holidays: vec![h("fifth_mon_mar", HolidayRule::NthWeekday { month: 3, weekday: 1, order: 5 }, None)],
+            ..cal
+        };
+        assert!(holiday_on(&dt(2026, 3, 30), &cal5).is_some(), "a real fifth Monday still fires");
+    }
+
     #[test]
     fn add_business_days_skips_weekends() {
         let cal = us(Observed::SunToMon);
@@ -420,9 +486,15 @@ mod tests {
             observed: Observed::None,
             holidays: vec![],
         };
-        assert!(add_business_days(&dt(2026, 7, 6), 1, &cal).is_none());
-        assert!(add_business_days(&dt(2026, 7, 6), -1, &cal).is_none());
-        assert!(add_business_days(&dt(2026, 7, 6), 5000, &cal).is_none());
+        // R2-S10: and it says WHICH limit it hit. A calendar with no business day is a bad FILE,
+        // not a number too large - the caller renders each with its own message.
+        for n in [1, -1, 5000] {
+            assert_eq!(
+                add_business_days(&dt(2026, 7, 6), n, &cal),
+                Err(BusinessDayLimit::DegenerateCalendar),
+                "a calendar with no business day names itself, whatever the count"
+            );
+        }
         // Zero steps never enters the walk, so it still resolves to the start day.
         assert_eq!(add_business_days(&dt(2026, 7, 6), 0, &cal).unwrap(), dt(2026, 7, 6));
     }
@@ -467,7 +539,11 @@ mod tests {
     #[test]
     fn add_business_days_caps_absurd_shifts() {
         let cal = us(Observed::SunToMon);
-        assert!(add_business_days(&dt(2026, 7, 6), MAX_BUSINESS_DAYS + 1, &cal).is_none());
+        assert_eq!(
+            add_business_days(&dt(2026, 7, 6), MAX_BUSINESS_DAYS + 1, &cal),
+            Err(BusinessDayLimit::TooManyDays),
+            "an absurd count is the REQUEST being out of range - this calendar is perfectly good"
+        );
     }
 
     #[test]
