@@ -136,7 +136,6 @@
   "wait.object_waits_not_scaled": "Oczekiwania na obiekty są podpięte, ale pozostawione realne - limit czasu I/O lub sprzętu nie jest skracany.",
   "timer.multimedia_not_scaled": "Timer multimedialny (timeSetEvent) jest obserwowany, ale nie skalowany.",
   "inheritance.ntcreateuserprocess_child_maybe_uncovered": "Dziecko utworzone bezpośrednio przez NtCreateUserProcess może nie być objęte.",
-  "inheritance.child_vanished_before_audit": "Proces potomny zakończył się, zanim dało się odczytać jego dowód - nie wiadomo, czy widział zegar sesji.",
   "target.single_instance_suspected": "zakończył się zaraz po injekcji, zanim podmianę dało się potwierdzić",
 
   // Runtime wykryty statycznie z plików celu (B1): jego zegary monotoniczne/elapsed stoją na QueryPerformanceCounter, który zostaje realny (ADR-2), więc licznik na nich oparty nie skaluje, choć zegar ścienny tak. Brzmienie lustrzące CLI describe_warning.

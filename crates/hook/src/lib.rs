@@ -61,9 +61,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::OnceLock;
 
 use chrono_ctl::{
-    bump_calls, cov_section_name, cov_size, dur_qpc_at, dur_quit_at, dur_tick_at,
-    read_anchor, read_core_pid, read_dur, read_qpc, read_scale_dur, read_scale_qpc, read_tz_bias,
-    register_pid, scale_delay_interval, scale_timer_due, scale_timer_elapse, scale_timer_period,
+    bump_calls, cov_at_mut, dur_qpc_at, dur_quit_at, dur_tick_at,
+    publish_pid, read_anchor, read_core_pid, read_dur, read_qpc, read_scale_dur, read_scale_qpc,
+    read_tz_bias, reserve_cov_slot, scale_delay_interval, scale_timer_due, scale_timer_elapse, scale_timer_period,
     scale_timer_period_ms, scale_wait, set_channels_installed, ChannelModule, Cov,
     Ctl, CHANNELS, IDX_GDTZI, IDX_GLT, IDX_GST, IDX_GSTAFT, IDX_GSTPAFT, IDX_GTC, IDX_GTC64,
     IDX_GTZI, IDX_NTDELAY, IDX_NTQSI, IDX_NTQST, IDX_QUIT, IDX_SLEEP, IDX_SLEEPEX, IDX_STSL,
@@ -72,16 +72,16 @@ use chrono_ctl::{
     IDX_TPTIMER, IDX_TPTIMEREX, IDX_NTCUP, IDX_CONNECT,
 };
 use minhook::MinHook;
-use windows::core::{s, w, PCSTR, PCWSTR};
+use windows::core::{s, w, PCSTR};
 use windows::Win32::Foundation::{
-    CloseHandle, FILETIME, HANDLE, HMODULE, INVALID_HANDLE_VALUE, SYSTEMTIME, WAIT_FAILED,
+    CloseHandle, FILETIME, HANDLE, HMODULE, SYSTEMTIME, WAIT_FAILED,
 };
 use windows::Win32::System::Diagnostics::Debug::{OutputDebugStringA, WriteProcessMemory};
 use windows::Win32::System::LibraryLoader::{
     GetModuleFileNameW, GetModuleHandleA, GetProcAddress,
 };
 use windows::Win32::System::Memory::{
-    CreateFileMappingW, MapViewOfFile, OpenFileMappingW, VirtualAllocEx, VirtualFreeEx,
+    MapViewOfFile, OpenFileMappingW, VirtualAllocEx, VirtualFreeEx,
     FILE_MAP_ALL_ACCESS, MEM_COMMIT, MEM_RELEASE, MEM_RESERVE, PAGE_READWRITE,
 };
 use windows::Win32::System::SystemServices::DLL_PROCESS_ATTACH;
@@ -261,10 +261,6 @@ fn cov_ptr() -> Option<*mut Cov> {
 
 /// UTF-16, NUL-terminated - for a section name built at runtime (the pid varies, so
 /// the compile-time `w!` macro used for the fixed `ChronoCtl` name cannot serve here).
-fn to_wide(s: &str) -> Vec<u16> {
-    s.encode_utf16().chain(std::iter::once(0)).collect()
-}
-
 /// Wait via the ORIGINAL WaitForSingleObject (trampoline) when it is hooked, so the hook's own
 /// internal waits (the core watcher, child injection) are never counted as the target's
 /// object-wait usage (ADR-7 class B - the audit must count the app's waits, not our machinery's,
@@ -1589,37 +1585,31 @@ unsafe fn install() -> Result<(), String> {
         }
     }
 
-    // This process's OWN coverage section (Local\ChronoCov.<pid>), so its calls are
-    // attributed to it and never summed into the parent's report. Best-effort: on
-    // failure the detours still substitute time (they read the shared anchor via
-    // CTL_PTR), but this process reports no coverage and does not register its PID -
-    // the mechanism simply never sees it, it never fabricates coverage.
+    // This process's OWN coverage slot in the shared block, so its calls are attributed to it and
+    // never summed into the parent's report (rule 4). Reserved NOW, before any detour is enabled,
+    // because a detour that fires needs somewhere to count - the PID that advertises this slot is
+    // published at the very end of install, once the slot holds the truth.
+    //
+    // The slot lives in `Ctl`, which the mechanism holds for the whole session, so this process's
+    // evidence survives the process (S-9). It used to be a section named after our PID, kept alive
+    // by our own handle alone, and a child shorter-lived than the mechanism's poll took its evidence
+    // to the grave. That also means there is no CreateFileMapping call on this path any more, which
+    // is work removed from DllMain and the loader lock.
+    //
+    // Best-effort: if the registry is full the detours still substitute time (they read the shared
+    // anchor via CTL_PTR), but this process reports no coverage and publishes no PID - the mechanism
+    // simply never sees it, and never fabricates coverage.
     let pid = GetCurrentProcessId();
-    let cov: Option<*mut Cov> = {
-        let name = to_wide(&cov_section_name(pid));
-        match CreateFileMappingW(
-            INVALID_HANDLE_VALUE,
-            None,
-            PAGE_READWRITE,
-            0,
-            cov_size() as u32,
-            PCWSTR(name.as_ptr()),
-        ) {
-            Ok(hmap_cov) => {
-                let cview = MapViewOfFile(hmap_cov, FILE_MAP_ALL_ACCESS, 0, 0, cov_size());
-                if cview.Value.is_null() {
-                    log("[chrono_hook] MapViewOfFile(cov) returned null");
-                    None
-                } else {
-                    let cptr = cview.Value as usize;
-                    let _ = COV_PTR.set(cptr);
-                    Some(cptr as *mut Cov)
-                }
-            }
-            Err(e) => {
-                log(&format!("[chrono_hook] CreateFileMapping(cov) failed: {e:?}"));
-                None
-            }
+    let cov_slot: Option<usize> = reserve_cov_slot(ctl);
+    let cov: Option<*mut Cov> = match cov_slot {
+        Some(slot) => {
+            let cptr = cov_at_mut(ctl, slot);
+            let _ = COV_PTR.set(cptr as usize);
+            Some(cptr)
+        }
+        None => {
+            log("[chrono_hook] PID registry full - this process runs uncovered in the audit");
+            None
         }
     };
 
@@ -1748,8 +1738,9 @@ unsafe fn install() -> Result<(), String> {
     // a silent "works" over a session that substituted nothing (rule 4).
     if let Err(e) = MinHook::enable_all_hooks() {
         if let Some(c) = cov {
-            // Explicit, not merely "we never wrote": the section is named after our PID and Windows
-            // recycles PIDs, so it can be a section the core still holds open from an earlier child.
+            // Explicit, not merely "we never wrote": a reader that somehow saw this slot must read
+            // zero covered channels, not a claim we cannot back. We also return without publishing
+            // our PID, so the mechanism never looks at the slot at all.
             set_channels_installed(c, 0);
         }
         return Err(format!("enable_all_hooks: {e:?}"));
@@ -1758,11 +1749,11 @@ unsafe fn install() -> Result<(), String> {
         set_channels_installed(c, pending);
     }
 
-    // Publish our PID LAST - after the coverage section exists and the hooks are
-    // installed - so the mechanism never reads a pid whose ChronoCov.<pid> is not yet
-    // ready. Only if we actually have a section to report (best-effort above).
-    if cov.is_some() && !register_pid(ctl, pid) {
-        log("[chrono_hook] PID registry full - this process runs uncovered in the audit");
+    // Publish our PID LAST - after the coverage slot holds the installed mask and the detours are
+    // live - so the mechanism never reads a pid whose slot is not yet filled in. Only if we actually
+    // reserved a slot to report (best-effort above).
+    if let Some(slot) = cov_slot {
+        publish_pid(ctl, slot, pid);
     }
     Ok(())
 }

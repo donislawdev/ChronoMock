@@ -18,7 +18,7 @@ use std::time::Instant;
 
 use chrono_core::{ChannelCoverage, Coverage, SessionSpec, TimeMode};
 use chrono_ctl::{
-    cov_section_name, cov_size, ctl_size, freeze_dur, freeze_qpc, read_anchor, read_calls,
+    cov_at, ctl_size, freeze_dur, freeze_qpc, read_anchor, read_calls,
     read_core_pid, read_dur, read_installed, read_pid, read_qpc, write_anchor, write_anchor_full,
     write_core_pid, write_scale_dur, write_scale_qpc, write_tz_bias, ChannelCategory, ChannelModule,
     Cov, Ctl, CHANNELS, MAX_COV_PIDS,
@@ -83,14 +83,6 @@ pub struct Prepared {
     pub orphan_reclaimed: bool,
 }
 
-/// One process's mapped coverage section, kept open for the session's lifetime so the
-/// section survives even if that process exits (full-family audit).
-struct CovMap {
-    pid: u32,
-    hmap: HANDLE,
-    view_addr: usize,
-}
-
 /// A live, running session. Keeps the control memory mapped and the target handle
 /// open so the core can read state (and later re-anchor) until the session ends.
 pub struct Session {
@@ -115,13 +107,12 @@ pub struct Session {
     /// The duration axis is opt-in; coverage gathering needs it to know whether the
     /// Duration channels are expected.
     scale_duration: bool,
-    /// Per-process coverage sections (parent + children), kept mapped for the whole
-    /// session so a child's evidence survives its exit. Also the record of which PIDs
-    /// have been reported, so `poll_new_coverage` emits each process exactly once.
-    cov_maps: Vec<CovMap>,
-    /// Pids that registered but whose coverage section was already gone when we looked - a child
-    /// that lived shorter than the poll interval. Kept so each is reported once and not retried.
-    vanished_pids: Vec<u32>,
+    /// Which registry slots have already been reported, so `poll_new_coverage` emits each process
+    /// exactly once. Indexed by SLOT, not by pid: Windows recycles pids, and two processes in one
+    /// session can carry the same one - keyed by pid, the second would have been silently swallowed
+    /// as a duplicate. The coverage itself needs no bookkeeping here, since it lives in the control
+    /// block this session already holds mapped and so outlives every process that writes it (S-9).
+    reported_slots: Vec<bool>,
     /// The session lock, held for as long as the session lives. Dropped last, so a second core
     /// cannot start until this one has released the control block it was using.
     _lock: SessionLock,
@@ -271,43 +262,27 @@ impl Session {
     }
 
     /// Scan the PID registry for processes not yet reported (children that joined the
-    /// session after `prepare`, ADR-3) and return each one's OWN coverage. Each new
-    /// section is mapped and kept for the session, so a child's evidence survives even
-    /// if it exits. Idempotent: a pid is returned exactly once across calls.
+    /// session after `prepare`, ADR-3) and return each one's OWN coverage. Idempotent:
+    /// a slot is returned exactly once across calls.
+    ///
+    /// A child's evidence cannot be lost here any more, however briefly it lived: its coverage sits
+    /// in the control block this session holds mapped from `prepare` to `end`, so the poll reads
+    /// what the child wrote whether or not the child is still alive. That is the whole of S-9 - the
+    /// coverage used to live in a section the child's own handle kept alive, and a helper shorter
+    /// than the poll interval took its evidence with it every single time.
     pub fn poll_new_coverage(&mut self) -> Vec<(u32, Coverage)> {
         let mut out = Vec::new();
         unsafe {
             for i in 0..MAX_COV_PIDS {
                 let pid = read_pid(self.ctl(), i);
                 // 0 = empty or reserved-but-not-yet-published; skip and retry later.
-                if pid == 0
-                    || self.cov_maps.iter().any(|c| c.pid == pid)
-                    || self.vanished_pids.contains(&pid)
-                {
+                if pid == 0 || self.reported_slots[i] {
                     continue;
                 }
-                if let Some((hmap, addr)) = open_cov(pid) {
-                    let cov = addr as *const Cov;
-                    let coverage = gather_coverage(cov, read_installed(cov), self.scale_duration);
-                    self.cov_maps.push(CovMap { pid, hmap, view_addr: addr });
-                    out.push((pid, coverage));
-                } else {
-                    // The pid is in the registry, and the hook registers itself ONLY after its
-                    // coverage section exists and its detours are live - so that section did exist.
-                    // Failing to open it now means the process is already gone and took the section
-                    // with it (its own handle was the only one keeping it alive). No later poll can
-                    // recover it, so the process is reported with an explicit reason instead of
-                    // being dropped from the family: a short-lived installer helper that ran
-                    // uncovered must not vanish from the audit too (untouchable rule 4).
-                    self.vanished_pids.push(pid);
-                    out.push((
-                        pid,
-                        Coverage {
-                            warning_keys: vec!["inheritance.child_vanished_before_audit".to_string()],
-                            ..Coverage::default()
-                        },
-                    ));
-                }
+                let cov = cov_at(self.ctl(), i);
+                let coverage = gather_coverage(cov, read_installed(cov), self.scale_duration);
+                self.reported_slots[i] = true;
+                out.push((pid, coverage));
             }
         }
         out
@@ -324,9 +299,9 @@ impl Session {
         }
     }
 
-    /// Release our own handles, including every mapped coverage section. The target
-    /// keeps its own mapped views, so its hooks keep working after we detach (full
-    /// residue cleanup is a later slice).
+    /// Release our own handles. The target keeps its own mapped view of the control
+    /// block, so its hooks keep working after we detach (full residue cleanup is a
+    /// later slice).
     ///
     /// Kept as the explicit way to end a session (it reads as one at every call site), but the release
     /// itself lives in `Drop`: every path out of the core called this today, and the first `?` or early
@@ -341,12 +316,6 @@ impl Session {
 impl Drop for Session {
     fn drop(&mut self) {
         unsafe {
-            for cm in &self.cov_maps {
-                let _ = UnmapViewOfFile(MEMORY_MAPPED_VIEW_ADDRESS {
-                    Value: cm.view_addr as *mut c_void,
-                });
-                let _ = CloseHandle(cm.hmap);
-            }
             let _ = UnmapViewOfFile(MEMORY_MAPPED_VIEW_ADDRESS {
                 Value: self.ctl_addr as *mut c_void,
             });
@@ -578,24 +547,14 @@ unsafe fn gather_coverage(cov: *const Cov, installed: u64, scale_duration: bool)
     out
 }
 
-/// Open a process's coverage section (`Local\ChronoCov.<pid>`) and map it. The caller
-/// keeps the handle+view for the session's lifetime so the section outlives the
-/// process. Returns None if the section is not published yet or the process is gone.
+/// Find the registry slot a process published its pid into, so its coverage can be read out of the
+/// control block. Returns None if the process never registered (its hook failed, or the registry was
+/// full) - the honest answer then is no coverage, never a guess.
 ///
 /// # Safety
-/// The returned view must be unmapped and the handle closed exactly once.
-unsafe fn open_cov(pid: u32) -> Option<(HANDLE, usize)> {
-    let name: Vec<u16> = cov_section_name(pid)
-        .encode_utf16()
-        .chain(std::iter::once(0))
-        .collect();
-    let hmap = OpenFileMappingW(FILE_MAP_ALL_ACCESS.0, false, PCWSTR(name.as_ptr())).ok()?;
-    let view = MapViewOfFile(hmap, FILE_MAP_ALL_ACCESS, 0, 0, cov_size());
-    if view.Value.is_null() {
-        let _ = CloseHandle(hmap);
-        return None;
-    }
-    Some((hmap, view.Value as usize))
+/// `ctl` must point to a live, correctly aligned `Ctl`.
+unsafe fn find_pid_slot(ctl: *const Ctl, pid: u32) -> Option<usize> {
+    (0..MAX_COV_PIDS).find(|&i| read_pid(ctl, i) == pid)
 }
 
 /// Prepare and start a session on `target` using `spec`, injecting `hook_dll`.
@@ -708,14 +667,13 @@ pub fn prepare(spec: &SessionSpec, target: &Target, hook_dll: &Path) -> Result<P
             return Err(e);
         }
 
-        // 4. Open the parent's OWN coverage section (its pid is known) and read the
-        // install bitmask set in DllMain (deterministic before resume). If the hook
-        // could not publish a section (best-effort failure in the target), report no
-        // coverage rather than guessing - honest.
+        // 4. Find the parent's OWN coverage slot (it published its pid in DllMain, before resume, so
+        // this is deterministic) and read the install bitmask. If the hook could not claim a slot
+        // (best-effort failure in the target), report no coverage rather than guessing - honest.
         let parent_pid = pi.dwProcessId;
-        let parent_cov = open_cov(parent_pid);
-        let installed = match parent_cov {
-            Some((_, addr)) => read_installed(addr as *const Cov),
+        let parent_slot = find_pid_slot(ctl, parent_pid);
+        let installed = match parent_slot {
+            Some(slot) => read_installed(cov_at(ctl, slot)),
             None => 0,
         };
 
@@ -732,17 +690,13 @@ pub fn prepare(spec: &SessionSpec, target: &Target, hook_dll: &Path) -> Result<P
             let _ = TerminateProcess(pi.hProcess, 1);
             let _ = CloseHandle(pi.hThread);
             let _ = CloseHandle(pi.hProcess);
-            if let Some((hmap_cov, addr)) = parent_cov {
-                let _ = UnmapViewOfFile(MEMORY_MAPPED_VIEW_ADDRESS { Value: addr as *mut c_void });
-                let _ = CloseHandle(hmap_cov);
-            }
             let _ = UnmapViewOfFile(MEMORY_MAPPED_VIEW_ADDRESS { Value: view.Value });
             let _ = CloseHandle(hmap);
             return Err(PrepareError::Inject("ResumeThread failed - target left suspended".into()));
         }
         let waited = WaitForSingleObject(pi.hProcess, GUARD_MS);
-        let coverage = match parent_cov {
-            Some((_, addr)) => gather_coverage(addr as *const Cov, installed, spec.scale_duration),
+        let coverage = match parent_slot {
+            Some(slot) => gather_coverage(cov_at(ctl, slot), installed, spec.scale_duration),
             None => Coverage::default(),
         };
         let vanished_lived_ms = if waited == WAIT_TIMEOUT {
@@ -751,14 +705,15 @@ pub fn prepare(spec: &SessionSpec, target: &Target, hook_dll: &Path) -> Result<P
             Some(t0.elapsed().as_millis() as u64)
         };
 
-        // 6. Hand back a live session. We keep the control section mapped, the process
-        // handle open, and the parent's coverage section mapped - only the thread
-        // handle is released here. Session::end releases the rest; the target's own
-        // mapped views keep the sections alive regardless.
+        // 6. Hand back a live session. We keep the control section mapped and the process handle
+        // open - only the thread handle is released here. Session::end releases the rest; the
+        // target's own mapped view keeps the control section alive regardless. The parent's slot is
+        // marked reported, since its coverage is handed back right here in `Prepared` - without that
+        // the first child poll would emit the parent a second time.
         let _ = CloseHandle(pi.hThread);
-        let mut cov_maps = Vec::new();
-        if let Some((hmap_cov, addr)) = parent_cov {
-            cov_maps.push(CovMap { pid: parent_pid, hmap: hmap_cov, view_addr: addr });
+        let mut reported_slots = vec![false; MAX_COV_PIDS];
+        if let Some(slot) = parent_slot {
+            reported_slots[slot] = true;
         }
         let session = Session {
             pid: parent_pid,
@@ -770,8 +725,7 @@ pub fn prepare(spec: &SessionSpec, target: &Target, hook_dll: &Path) -> Result<P
             rate_segment_real0: std::cell::Cell::new(start_real),
             tz_bias,
             scale_duration: spec.scale_duration,
-            cov_maps,
-            vanished_pids: Vec::new(),
+            reported_slots,
             _lock: lock,
         };
         Ok(Prepared { coverage, session, vanished_lived_ms, orphan_reclaimed })
