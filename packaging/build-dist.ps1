@@ -66,11 +66,14 @@ function Assert-Exists([string] $path, [string] $why) {
     }
 }
 
-# Where the cargo build lands each core and its matching-bitness hook DLL. x64 is the default
-# host build (target/release), x86 is the cross build (target/i686-pc-windows-msvc/release) -
-# the same two locations the GUI's dev fallback and the tests already use.
-$x64core = Join-Path $root 'target/release/chrono.exe'
-$x64hook = Join-Path $root 'target/release/chrono_hook.dll'
+# Where the cargo build lands each core and its matching-bitness hook DLL - one directory per target
+# triple, the same two locations the GUI's dev fallback and the tests use.
+# The x64 core comes from the EXPLICIT triple directory, like every other consumer in this project since
+# R2-X3. `target/release/` is only written by a build with no --target, so with -SkipCoreBuild it can hold
+# a days-old binary while the triple directory holds the current one - the exact way the harness spent a
+# day testing a stale x64 build.
+$x64core = Join-Path $root 'target/x86_64-pc-windows-msvc/release/chrono.exe'
+$x64hook = Join-Path $root 'target/x86_64-pc-windows-msvc/release/chrono_hook.dll'
 $x86core = Join-Path $root 'target/i686-pc-windows-msvc/release/chrono.exe'
 $x86hook = Join-Path $root 'target/i686-pc-windows-msvc/release/chrono_hook.dll'
 
@@ -88,10 +91,12 @@ if (-not $SkipGates) {
         if ($LASTEXITCODE -ne 0) { throw "cargo clippy failed with exit $LASTEXITCODE" }
         cargo test --workspace
         if ($LASTEXITCODE -ne 0) { throw "cargo test failed with exit $LASTEXITCODE" }
-        dotnet test (Join-Path $root 'gui/ChronoMock.slnx') --filter 'Category!=Integration' --nologo
-        if ($LASTEXITCODE -ne 0) { throw "dotnet test (hermetic) failed with exit $LASTEXITCODE" }
         dotnet format (Join-Path $root 'gui/ChronoMock.slnx') --verify-no-changes
         if ($LASTEXITCODE -ne 0) { throw "dotnet format found unformatted code (exit $LASTEXITCODE)" }
+        # `dotnet test` is NOT here: the protocol tests resolve the real cargo release outputs
+        # (BitnessRouterTests routes a target's bitness to a core and checks the file exists), so it runs
+        # after section 1 builds them. On a developer box the outputs are already on disk and this never
+        # showed; on a clean machine it failed with "missing build artifact" (measured on CI, 2026-09-04).
     }
     finally {
         Pop-Location
@@ -104,7 +109,7 @@ if (-not $SkipCoreBuild) {
     Write-Host '== cargo build --release (x64 + x86) =='
     Push-Location $root
     try {
-        cargo build --release
+        cargo build --release --target x86_64-pc-windows-msvc
         if ($LASTEXITCODE -ne 0) { throw "cargo build (x64) failed with exit $LASTEXITCODE" }
         cargo build --release --target i686-pc-windows-msvc
         if ($LASTEXITCODE -ne 0) { throw "cargo build (x86) failed with exit $LASTEXITCODE" }
@@ -114,8 +119,21 @@ if (-not $SkipCoreBuild) {
     }
 }
 
-Assert-Exists $x64core 'build the x64 core: cargo build --release'
-Assert-Exists $x64hook 'build the x64 core: cargo build --release'
+# The hermetic C# tier, now that the cores it resolves exist (see the note in the gate section above).
+if (-not $SkipGates) {
+    Write-Host '== gates: dotnet test (hermetic) =='
+    Push-Location $root
+    try {
+        dotnet test (Join-Path $root 'gui/ChronoMock.slnx') --filter 'Category!=Integration' --nologo
+        if ($LASTEXITCODE -ne 0) { throw "dotnet test (hermetic) failed with exit $LASTEXITCODE" }
+    }
+    finally {
+        Pop-Location
+    }
+}
+
+Assert-Exists $x64core 'build the x64 core: cargo build --release --target x86_64-pc-windows-msvc'
+Assert-Exists $x64hook 'build the x64 core: cargo build --release --target x86_64-pc-windows-msvc'
 Assert-Exists $x86core 'build the x86 core: cargo build --release --target i686-pc-windows-msvc'
 Assert-Exists $x86hook 'build the x86 core: cargo build --release --target i686-pc-windows-msvc'
 
