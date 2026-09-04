@@ -5,6 +5,7 @@
 [![Downloads](https://img.shields.io/github/downloads/donislawdev/ChronoMock/total)](https://github.com/donislawdev/ChronoMock/releases)
 [![License: GPLv3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
 ![Platform: Windows](https://img.shields.io/badge/platform-Windows-0078D6)
+[![Website](https://img.shields.io/badge/website-chronomock.donislawdev.com-e4573f)](https://chronomock.donislawdev.com/)
 
 **Chrono Mock** is a tool for testers and developers: run one application as if it were a different
 date, and find out whether it actually worked. Set the clock to next year, freeze it, or speed it up
@@ -18,9 +19,10 @@ been nothing comparable.
 ⭐ **If it saved you a 30-day wait, leave a star.** That is how the next tester who needs it finds out
 it exists.
 
-<!-- SCREENSHOT: the session panel - the two clocks side by side (app clock vs real clock, both with
-     their zone), the verdict line, and the speed controls. This is the single most convincing image
-     of the tool. A short GIF of x1440 running the app's clock forward would be even better. -->
+![Chrono Mock running another Windows application at a fake date. The left window shows the application's clock on 2028-06-03 against the real clock on 2026-09-04, with the speed changed from frozen to x10 while it runs. The right window is the program under test, whose own session log records 2028-06-03.](site/assets/chrono-in-action.gif)
+
+*A real session. The window on the right is the program under test - and it wrote **2028-06-03** into
+its own session log, which is the whole point.*
 
 **What it can do**
 
@@ -51,7 +53,7 @@ Grab the latest build from the **[Releases page](https://github.com/donislawdev/
 | File | What it is | Size |
 |---|---|---|
 | `ChronoMock-win-x64.zip` | The desktop app, self-contained - no .NET install needed | ~69 MB |
-| `chrono-cli-win.zip` | Just the command-line tool, for CI and scripts | ~1.4 MB |
+| `chrono-cli-win.zip` | Just the command-line tool, for CI and scripts | ~1.6 MB |
 
 Unzip anywhere and run `ChronoMock.exe` (or `chrono.exe` for the CLI). There is no installer, nothing
 is written to the registry, and no administrator rights are needed.
@@ -80,20 +82,19 @@ Antivirus software may flag the injected library. That is expected, and
 application's clock and the real clock side by side, the verdict, and which time channels the
 application is actually reading.
 
-<!-- SCREENSHOT: the setup half of the panel - target row, the scenario chips, the date field and the
-     speed selector. Shows in one image that you do not have to type a date. -->
+![The Chrono Mock session panel: the application's clock reading 2038-01-19, the real clock reading 2026-09-04, a green Works verdict, and a list of 26 covered time channels each with a call count.](site/assets/session-panel.png)
 
 **From the command line:**
 
 ```bash
 # Run an application as if it were the last second of 2027
-chrono run "C:\apps\Ledger.exe" --at 2027-12-31T23:59:59
+chrono run "C:\apps\test.exe" --at 2027-12-31T23:59:59
 
 # Watch a 30-day trial expire while you make coffee: x1440 is a day a minute
-chrono run "C:\apps\Ledger.exe" --mode x1440
+chrono run "C:\apps\test.exe" --mode x1440
 
 # Use a named scenario instead of a date, and write the evidence to a file
-chrono run "C:\apps\Ledger.exe" --preset year-rollover --report session.txt
+chrono run "C:\apps\test.exe" --preset year-rollover --report session.txt
 
 # Countdowns and timers are on a separate axis - add --scale-duration to speed those up too
 chrono run "C:\apps\Timer.exe" --mode x60 --scale-duration
@@ -206,8 +207,7 @@ speaks in QA terms rather than arithmetic:
 
 Any calculated date goes straight into a time-shift session with one click.
 
-<!-- SCREENSHOT: the calculator screen - presets on the left, the step builder in the middle, and the
-     formats column with "what this date tests" underneath. -->
+![The Chrono Mock calculator: scenarios with explanations on the left, the step builder in the middle, and the result column listing every format with a copy button. At the bottom a pasted 04/08/2008 is reported as ambiguous, with both the American and Polish readings shown.](site/assets/calculator.png)
 
 ---
 

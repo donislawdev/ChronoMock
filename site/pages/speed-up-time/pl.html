@@ -44,11 +44,13 @@
 <span class="c"># Albo zatrzymaj zegar zupełnie</span>
 <span class="p">chrono</span> run "C:\apps\test.exe" --mode frozen</pre>
 
-    <div class="shot">
-      <p><strong>Miejsce na obraz 2 z 4 - speed-x1440.gif, 16:9.</strong><br>
-        Krótka pętla z sesji x1440: zegar aplikacji widocznie biegnie, podczas gdy prawdziwy
-        ledwie się wlecze. Dziesięć do dwudziestu sekund wystarczy.</p>
-    </div>
+    <figure class="shot filled">
+      <img src="/assets/chrono-in-action.gif" width="2598" height="1197" loading="lazy"
+           alt="Nagranie sesji sterującej inną aplikacją Windows. Lewe okno to Chrono Mock z zegarem aplikacji na 2028-06-03 i prawdziwym na 2026-09-04, prędkość zmienia się z zamrożonej na x10 w trakcie sesji. Prawe okno to testowana aplikacja, której własny dziennik zapisał start sesji na 2028-06-03.">
+      <figcaption>Prawdziwa sesja, prawdziwa aplikacja. Zwróć uwagę na prawe okno: testowany
+        program zapisał <strong>2028-06-03</strong> we własnym dzienniku sesji. Prędkość
+        zmienia się w trakcie, bez restartowania czegokolwiek.</figcaption>
+    </figure>
   </section>
 
   <section>

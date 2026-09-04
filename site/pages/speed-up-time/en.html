@@ -48,11 +48,13 @@
 <span class="c"># Hold the clock completely still instead</span>
 <span class="p">chrono</span> run "C:\apps\test.exe" --mode frozen</pre>
 
-    <div class="shot">
-      <p><strong>Image slot 2 of 4 - speed-x1440.gif, 16:9.</strong><br>
-        A short loop of an x1440 session: the application's clock visibly running while the
-        real one crawls. Ten to twenty seconds is enough.</p>
-    </div>
+    <figure class="shot filled">
+      <img src="/assets/chrono-in-action.gif" width="2598" height="1197" loading="lazy"
+           alt="A recording of a session driving another Windows application. The left window is Chrono Mock with the application's clock on 2028-06-03 and the real clock on 2026-09-04, the speed changing from frozen to x10 mid-session. The right window is the application under test, whose own log records the session as having started on 2028-06-03.">
+      <figcaption>A real session, driving a real application. Note the right-hand window: the
+        program under test wrote <strong>2028-06-03</strong> into its own session log. The
+        speed is changed while it runs, without restarting anything.</figcaption>
+    </figure>
   </section>
 
   <section>

@@ -1,0 +1,68 @@
+version: 2
+
+# Keeps dependencies current. This is a different question from the one audit.yml asks:
+# that workflow runs `cargo deny check advisories` weekly and fails when something we ship
+# has a published vulnerability. Dependabot asks whether a newer version exists at all,
+# which is how a dependency stops being three years behind without anyone noticing. The two
+# overlap only when a stale dependency also turns out to be vulnerable.
+#
+# Updates are grouped on purpose. This project has one maintainer, and a separate pull
+# request per crate is how a dependency bot gets muted - which costs more than the noise it
+# was meant to save.
+
+updates:
+  # ---- Rust: the workspace at the repository root ------------------------------------
+  # One manifest tree, resolved from the root Cargo.toml. Note that the dependency graph
+  # here is Windows-only (windows, minhook), so anything Dependabot proposes still has to
+  # pass CI on a Windows runner before it means anything.
+  - package-ecosystem: "cargo"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(deps)"
+    groups:
+      cargo-minor-and-patch:
+        update-types:
+          - "minor"
+          - "patch"
+
+  # ---- .NET: the GUI projects --------------------------------------------------------
+  # `directories` rather than `directory`, because the packages are declared per project
+  # and only three of the five csproj files carry a PackageReference at all. Pointing at
+  # /gui alone would find the solution file and none of the manifests under it.
+  - package-ecosystem: "nuget"
+    directories:
+      - "/gui/ChronoMock.App"
+      - "/gui/ChronoMock.App.Tests"
+      - "/gui/ChronoMock.Protocol.Tests"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(deps)"
+    groups:
+      nuget-minor-and-patch:
+        update-types:
+          - "minor"
+          - "patch"
+
+  # ---- The workflows themselves ------------------------------------------------------
+  # Action versions are pinned by major tag in the workflows, so this catches the day a
+  # major is superseded - which is exactly the change that would otherwise sit unnoticed
+  # until an action is deprecated and the build stops.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: "chore(ci)"
+    groups:
+      actions:
+        patterns:
+          - "*"
