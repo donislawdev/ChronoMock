@@ -720,7 +720,7 @@ public class SessionViewModelTests
         // that emits once then never completes - a short timeout stands in for the real 15 s.
         var vm = new SessionViewModel();
         var channel = Channel.CreateUnbounded<ChronoEvent>();
-        await channel.Writer.WriteAsync(State("2038-01-19T03:14:07", "2026-08-26T00:00:00", bias: 0, multiplier: 60));
+        await channel.Writer.WriteAsync(State("2038-01-19T03:14:07", "2026-08-26T00:00:00", bias: 0, multiplier: 60), TestContext.Current.CancellationToken);
 
         var fired = await vm.ConsumeEventsAsync(channel.Reader, TimeSpan.FromMilliseconds(150));
 
@@ -735,7 +735,7 @@ public class SessionViewModelTests
         // fire, even with a generous timeout, because completion is observed immediately.
         var vm = new SessionViewModel();
         var channel = Channel.CreateUnbounded<ChronoEvent>();
-        await channel.Writer.WriteAsync(State("2038-01-19T03:14:07", "2026-08-26T00:00:00", bias: 0, multiplier: 60));
+        await channel.Writer.WriteAsync(State("2038-01-19T03:14:07", "2026-08-26T00:00:00", bias: 0, multiplier: 60), TestContext.Current.CancellationToken);
         channel.Writer.Complete();
 
         var fired = await vm.ConsumeEventsAsync(channel.Reader, TimeSpan.FromSeconds(30));
@@ -1321,7 +1321,7 @@ public class SessionViewModelTests
     public async Task Refreshing_the_recent_targets_marks_the_ones_whose_file_is_gone()
     {
         var present = Path.Combine(Path.GetTempPath(), $"chrono-recent-{Guid.NewGuid():N}.exe");
-        await File.WriteAllTextAsync(present, string.Empty);
+        await File.WriteAllTextAsync(present, string.Empty, TestContext.Current.CancellationToken);
         try
         {
             var vm = new SessionViewModel();

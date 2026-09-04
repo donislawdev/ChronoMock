@@ -67,7 +67,7 @@ public class ConformanceTests
         var verdict = tail.OfType<SessionVerdictEvent>().Single();
         Assert.Equal("works", verdict.Verdict);
 
-        var exit = await client.WaitForExitAsync();
+        var exit = await client.WaitForExitAsync(TestContext.Current.CancellationToken);
         Assert.Equal(0, exit); // works -> exit 0 (docs/08 section 8)
     }
 
@@ -165,7 +165,7 @@ public class ConformanceTests
         var sw = System.Diagnostics.Stopwatch.StartNew();
         while (sw.Elapsed < deadline && LiveCorePids(core).Intersect(ours).Any())
         {
-            await Task.Delay(25);
+            await Task.Delay(25, TestContext.Current.CancellationToken);
         }
 
         Assert.False(
@@ -174,7 +174,7 @@ public class ConformanceTests
 
         // Let dispose finish so the test leaves no background task behind. It returns once the target
         // releases the core's stdout pipe, which is why it is NOT the oracle above.
-        await Task.WhenAny(dispose, Task.Delay(ReadTimeout));
+        await Task.WhenAny(dispose, Task.Delay(ReadTimeout, TestContext.Current.CancellationToken));
     }
 
     /// <summary>PIDs of live processes running this exact core image - the honest way to ask whether the

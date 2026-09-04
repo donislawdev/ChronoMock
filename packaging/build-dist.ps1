@@ -124,7 +124,7 @@ if (-not $SkipGates) {
     Write-Host '== gates: dotnet test (hermetic) =='
     Push-Location $root
     try {
-        dotnet test (Join-Path $root 'gui/ChronoMock.slnx') --filter 'Category!=Integration' --nologo
+        dotnet test --solution (Join-Path $root 'gui/ChronoMock.slnx') --filter-not-trait 'Category=Integration'
         if ($LASTEXITCODE -ne 0) { throw "dotnet test (hermetic) failed with exit $LASTEXITCODE" }
     }
     finally {

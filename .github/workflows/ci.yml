@@ -103,7 +103,12 @@ jobs:
         run: ./.github/scripts/cargo-deny.ps1 -Command licenses,advisories,bans,sources
 
       # After the Rust builds: these resolve the real cargo outputs (see the note at the top).
-      # Category!=Integration is the hermetic tier - the excluded tests need a live target process or a
-      # Chromium install, neither of which a runner has.
+      # Excluding the Integration trait leaves the hermetic tier - those tests need a live target
+      # process or a Chromium install, neither of which a runner has.
+      #
+      # The spelling changed with xunit v3: the suite runs on Microsoft.Testing.Platform (global.json
+      # selects it), where the solution is named by --solution and traits are filtered by
+      # --filter-not-trait rather than VSTest's --filter expression. Measured on the same tree: 276
+      # tests in total, 268 after this filter, 8 carrying the trait.
       - name: C# tests
-        run: dotnet test gui/ChronoMock.slnx --filter "Category!=Integration"
+        run: dotnet test --solution gui/ChronoMock.slnx --filter-not-trait "Category=Integration"

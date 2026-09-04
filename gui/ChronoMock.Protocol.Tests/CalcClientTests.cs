@@ -81,7 +81,7 @@ public class CalcClientTests
         // Spawns the REAL chrono calc, proving the GUI client and the engine's JSON contract agree end
         // to end (the method the conformance tests use for the core). Requires `cargo build --release`.
         var client = CalcClient.ForRepo(RepoPaths.RepoRoot());
-        var r = await client.EvaluateAsync(["--base", "2026-09-30T23:59:59", "--calendar", "us-banking"]);
+        var r = await client.EvaluateAsync(["--base", "2026-09-30T23:59:59", "--calendar", "us-banking"], TestContext.Current.CancellationToken);
         Assert.Equal("chronomock.calc/1", r.Schema);
         Assert.NotNull(r.Moment);
         Assert.Equal("2026-09-30T23:59:59", r.Moment!.Iso);
@@ -95,7 +95,7 @@ public class CalcClientTests
     {
         var client = CalcClient.ForRepo(RepoPaths.RepoRoot());
         var ex = await Assert.ThrowsAsync<CalcException>(
-            () => client.EvaluateAsync(["--base", "2026-02-31T00:00:00"])); // impossible day -> exit 1
+            () => client.EvaluateAsync(["--base", "2026-02-31T00:00:00"], TestContext.Current.CancellationToken)); // impossible day -> exit 1
         Assert.Equal(1, ex.ExitCode);
     }
 }
