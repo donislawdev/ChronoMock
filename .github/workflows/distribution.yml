@@ -1,9 +1,9 @@
 # Build the portable distribution and hand back the zips.
 #
-# Manual only. Nothing here runs on a push: packaging is a several-minute Windows job producing ~70 MB of
-# artifacts, and a private repo bills Windows minutes at double rate - so it runs when someone asks for a
-# build, not on every commit. (A tag trigger would be the natural addition once versions start moving; the
-# version is still 0.1.0 and is not bumped by the assistant, so there is nothing to tag yet.)
+# Manual only. Nothing here runs on a push: a packaged build is something a person WANTS at a moment, not
+# an answer to every commit, and each run stores ~70 MB of artifacts that nobody asked for. (A tag trigger
+# is the natural addition once versions start moving; the version is still 0.1.0 and is not bumped by the
+# assistant, so there is nothing to tag yet.)
 #
 # The packaging script runs its OWN gates (cargo deny / clippy / test, dotnet test / format) and treats
 # every missing piece as a hard stop - a half-assembled distribution that looks complete is worse than a

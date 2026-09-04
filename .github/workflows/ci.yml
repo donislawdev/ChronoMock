@@ -5,7 +5,9 @@
 # routes to, against the actual target/<triple>/release/chrono.exe). Split across independent jobs they
 # failed with "missing build artifact" - measured on the first run, not foreseen. Passing the binaries
 # between jobs as artifacts would work, but a dependent job waits for the same build anyway, so it would
-# only add a transfer. Billing is per job-minute either way.
+# only add a transfer. The argument is the dependency, not the minutes: it holds whether or not runner
+# time is free. If faster feedback is ever wanted, the split worth making is a SECOND job running only the
+# checks that need no cargo output (dotnet format), in parallel - not a re-split of these.
 #
 # What is deliberately NOT here: the environment harness (tools/probes/run-targets.ps1). It injects a DLL
 # into live processes and needs JDK, .NET Framework and the hand-built probes - and `tools/` is outside git,
@@ -23,8 +25,8 @@ on:
     branches: [main]
   workflow_dispatch:
 
-# A private repo bills CI minutes and a Windows runner bills them at double rate, so a run superseded by a
-# newer push is cancelled rather than left to finish.
+# A run superseded by a newer push is cancelled rather than left to finish: the result would be about code
+# nobody has any more, and the queue is better spent on the push that replaced it.
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
