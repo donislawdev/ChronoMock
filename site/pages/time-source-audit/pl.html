@@ -1,0 +1,181 @@
+<!-- The time source audit, Polish. The session report is the same real output as in the
+     English version - the program speaks English, so its output stays as it is. -->
+
+<div class="shell">
+
+  <section class="plain">
+    <h1>Skąd wiesz, że zadziałało?</h1>
+    <p class="sub">
+      Przy każdym innym narzędziu tego typu - nie wiesz. Aplikacja startuje, pokazuje jakąś
+      datę, a ty zakładasz. Tyle że może czytać zegar drogą, której nic nie przechwyciło -
+      i wtedy <em>„test przeszedł"</em> nie znaczy zupełnie nic.
+    </p>
+  </section>
+
+  <section>
+    <h2>Porażka, która nie ma objawów</h2>
+    <div class="prose">
+      <p>
+        Narzędzie do przesuwania czasu, które pominęło kanał, nie wywala się i nie ostrzega.
+        Aplikacja po prostu czyta prawdziwą datę tą jedną funkcją, której nikt nie
+        podpiął, i zachowuje się dokładnie tak, jak zachowałaby się w zwykłe popołudnie.
+        Test świeci na zielono. Błąd trafia do klienta.
+      </p>
+      <p>
+        RunAsDate pisze o tym uczciwie we własnej dokumentacji - że
+        <strong>„nie wpłynie na aplikacje, które biorą bieżącą datę i godzinę z innego
+        źródła"</strong> - i zostawia cię z ustaleniem, czy twoja jest jedną z nich. To
+        narzędzie traktuje to samo zdanie jako coś do zmierzenia.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Co sesja naprawdę raportuje</h2>
+    <div class="prose">
+      <p>
+        Prawdziwe wyjście, z uruchomienia narzędzia na jednej z własnych sond tego projektu -
+        takiej, która celowo otwiera połączenie sieciowe:
+      </p>
+    </div>
+
+    <pre class="term"><span class="c">$</span> <span class="p">chrono</span> run "...\pnet-x64.exe" --at 2038-01-19T03:14:07 --report session.txt
+
+Chrono Mock - session report
+  target:   C:\ChronoMock\tools\probes\bin\pnet-x64.exe
+  verdict:  <span class="v">WORKS - time substitution took effect</span>  (processes: 1)
+            every process that read time saw the session clock
+  session:  fake clock reached 2038-01-19T03:14:10
+            real elapsed 3.3s, fake elapsed 3.3s
+  covered channels (substituted, with call counts):
+            - pid 38828: NtQuerySystemTime (3 calls)
+<span class="c">            ... i każdy pozostały kanał, łącznie z nigdy niewywołanymi</span>
+  observed channels (hooked but left real):
+            - pid 38828: NtCreateUserProcess (0 calls)
+            - pid 38828: connect (1 call)
+  warnings:
+            - the target opened a network connection - it may read time from a
+              server, which no local hook can cover (source.network_at_start)
+  requested:  2038-01-19T03:14:07 (zone +02:00 (host default), mode flow)</pre>
+
+    <div class="prose">
+      <p>
+        Dwa ostatnie bloki są sednem. Nic tu nie zawiodło - werdykt brzmi
+        <strong>works</strong> - a raport i tak sam z siebie mówi, że ta aplikacja rozmawiała
+        z siecią, zanim skończyła, więc lokalny hook może nie być całą historią. To zdanie
+        jest różnicą między testem, któremu można ufać, a takim, któremu nie można.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Cztery werdykty i kod wyjścia do każdego</h2>
+    <div class="prose">
+      <p>
+        Werdykt powstaje z wnętrza działającego procesu, zanim zaczniesz pracować, i jest
+        zarazem kodem wyjścia narzędzia, więc potok może się na nim rozgałęzić.
+      </p>
+    </div>
+
+    <div class="wrap" style="margin-top:22px">
+      <table>
+        <thead><tr><th>Werdykt</th><th>Kod</th><th>Znaczenie</th></tr></thead>
+        <tbody>
+          <tr><td class="y">działa</td><td>0</td><td>każdy proces, który czytał czas, widział zegar sesji</td></tr>
+          <tr><td>działa częściowo</td><td>10</td><td>część kanałów objęta, część nie - nieobjęte są wypisane</td></tr>
+          <tr><td class="n">nie działa</td><td>11</td><td>podmiana nie dotarła do kluczowych kanałów</td></tr>
+          <tr><td>nieokreślony</td><td>4</td><td>nie dało się ustalić pokrycia - uczciwe „nie wiem"</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="prose">
+      <p>
+        <strong>Gdy werdykt brzmi „nie działa", proces jest natychmiast zatrzymywany</strong>,
+        zanim zdążysz z nim cokolwiek zrobić. Werdykt nie może wyprzedzić uruchomienia, bo
+        jedynym źródłem prawdy jest odczyt z wnętrza działającego procesu. Gwarantowane jest
+        to, że poznasz prawdę, zanim zaczniesz pracować - a nie to, że skazana sesja nigdy
+        nie wystartuje. Można to nadpisać i lecieć dalej, a sesja jest wtedy oznaczona jako
+        nierzetelna wszędzie, gdzie się pojawia, łącznie z eksportowanym dowodem.
+      </p>
+      <p>
+        Istnieją jeszcze trzy kody, które nie są werdyktami: <code>1</code> dla błędu użycia,
+        <code>2</code>, gdy nie udało się uruchomić celu albo wstrzyknąć, i <code>12</code>,
+        gdy cel zniknął w sposób sugerujący aplikację jednoinstancyjną, która oddała robotę
+        już działającej kopii.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Objęte, obserwowane, nieobjęte</h2>
+    <div class="prose">
+      <p>Kanały dzielą się na trzy kubełki, a najciekawszy jest środkowy.</p>
+      <ul>
+        <li><strong>Objęte</strong> - podpięte i podmienione. Aplikacja zapytała i dostała
+          zegar sesji. Licznik mówi, ile razy.</li>
+        <li><strong>Obserwowane</strong> - podpięte, liczone i celowo zostawione mówiące
+          prawdę. Licznik wysokiej rozdzielczości jest tu domyślnie, bo jego skalowanie
+          destabilizowało renderowanie. Timery multimedialne są tu, bo ich skalowanie
+          przesunęłoby timing audio i MIDI. Połączenia sieciowe i jedna ścieżka tworzenia
+          procesu są tu, bo są dowodem, a nie zegarem.</li>
+        <li><strong>Nieobjęte</strong> - kanał, który aplikacja czytała, a podmiana do niego
+          nie dotarła. To właśnie zamienia werdykt w <em>działa częściowo</em> i jest
+          wypisywane z nazwy, a nie zwijane do podsumowania.</li>
+      </ul>
+      <p>
+        Zero wywołań też jest informacją: kanał był podpięty, a aplikacja nigdy nie zapytała.
+        Dlatego raport je wypisuje, zamiast chować.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Czego audyt nie widzi</h2>
+    <div class="prose">
+      <p>
+        Raport jest uczciwy co do pokrycia, co znaczy, że musi być uczciwy co do własnych
+        granic. Te źródła są czytane bez żadnego wywołania funkcji do przechwycenia albo w
+        ogóle poza procesem:
+      </p>
+      <ul>
+        <li>bezpośrednie odczyty współdzielonej strony danych trybu użytkownika - wartość leży
+          w pamięci, więc nie ma czego podpiąć. Rzadkie w zwykłych aplikacjach, częste w
+          kodzie licencyjnym i antytamperowym</li>
+        <li>bezpośrednie wywołania systemowe omijające standardowe eksporty - ten sam wzorzec</li>
+        <li>czas pobierany poza procesem, przez WMI, pozaprocesowy serwer COM albo RPC</li>
+        <li>czas z sieci - nagłówek HTTP <code>Date</code>, NTP, odpowiedź API albo własny
+          zegar serwera bazy danych</li>
+        <li>czas ze sterowników jądra</li>
+      </ul>
+      <p>
+        Przypadek sieciowy jest tym jednym, który audyt potrafi przynajmniej
+        <em>zauważyć</em>, i stąd ostrzeżenie w raporcie powyżej. Dla reszty werdykt
+        <em>works</em> znaczy, że kanały, które to narzędzie widzi, zostały objęte - a nie
+        że żadna inna droga nie istnieje.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>W potoku</h2>
+    <div class="prose">
+      <p>
+        <code>--json</code> wypisuje te same fakty w formie maszynowej, <code>--report</code>
+        zapisuje wersję dla człowieka do pliku, a sesja z werdyktem innym niż <em>works</em>
+        prowadzi ten plik banerem o nierzetelnym dowodzie, zamiast chować go na dole.
+      </p>
+    </div>
+
+    <pre class="term"><span class="p">chrono</span> run "C:\apps\Ledger.exe" --at 2027-12-31T23:59:59 --json --report evidence.txt</pre>
+  </section>
+
+  <section>
+    <h2>Wypróbuj</h2>
+    <div class="cta">
+      <a class="btn btn-primary" href="/pl/pobieranie/">Pobierz na Windows</a>
+      <a class="btn btn-ghost" href="/pl/alternatywa-dla-runasdate/">Porównanie z RunAsDate</a>
+    </div>
+  </section>
+
+</div>

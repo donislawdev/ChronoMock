@@ -1,0 +1,128 @@
+<!-- Electron and Chromium, Polish. Same story, same two limits. -->
+
+<div class="shell">
+
+  <section class="plain">
+    <h1>Podmiana daty w aplikacji Electron</h1>
+    <p class="sub">
+      Poszukaj tego, a każda odpowiedź dotyczy zmiany własnego kodu - podmień obiekt
+      <code>Date</code>, użyj sztucznych timerów z frameworka testowego. Nic z tego nie
+      pomaga, gdy masz gotową, zbudowaną aplikację. To uruchamia tę, którą już masz.
+    </p>
+  </section>
+
+  <section>
+    <h2>Dlaczego wstrzyknięcie tam nie sięga</h2>
+    <div class="prose">
+      <p>
+        Ten tryb powstał z konkretnej porażki. Minutnik Pomodoro zbudowany na Electronie
+        został uruchomiony w sesji <code>x60</code> i jego odliczanie nie ruszyło się wcale.
+        Rozłożenie paczki aplikacji pokazało dwa niezależne powody i żaden nie miał naprawy po
+        stronie natywnej:
+      </p>
+      <ul>
+        <li>Odliczanie w ogóle nie czytało zegara. Był to <strong>licznik zwiększany przez
+          <code>setInterval</code></strong>, działający wewnątrz Web Workera. Nie było
+          wywołania czasu do przechwycenia, bo aplikacja nigdy nie pytała, która godzina.</li>
+        <li>Ten worker żyje w <strong>piaskowanym procesie renderera</strong>, czyli dokładnie
+          tam, gdzie biblioteka wstrzyknięta z zewnątrz się nie dostaje.</li>
+      </ul>
+      <p>
+        Mechanizm windowsowy nie może więc tu pomóc, a odpowiedzią jest rozmowa z własnym
+        silnikiem JavaScriptu aplikacji.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Co dzieje się zamiast tego</h2>
+    <div class="prose">
+      <p>
+        Aplikacja jest uruchamiana z portem debugowania i czystym, jednorazowym profilem, a jej
+        własne API czasu zostają przestawione na zegar sesji przez protokół DevTools -
+        <code>Date.now</code>, konstruktor <code>new Date()</code>,
+        <code>performance.now</code>, <code>setTimeout</code> i <code>setInterval</code>.
+      </p>
+      <p>
+        Nadpisanie trafia do każdego kontekstu, jaki aplikacja otwiera, <strong>łącznie z Web
+        Workerami</strong> - czyli tam, gdzie zwykle okazuje się mieszkać timer, i w to jedno
+        miejsce, do którego natywne wstrzyknięcie i tak by nie dotarło.
+      </p>
+      <p>
+        Sposób sterowania nie zmienia się w niczym. Ta sama komenda, to samo okno, ten sam
+        panel sesji z dwoma zegarami i werdyktem.
+      </p>
+    </div>
+
+    <pre class="term"><span class="c"># Ta sama komenda co dla aplikacji natywnej - tryb jest wykrywany</span>
+<span class="p">chrono</span> run "%LOCALAPPDATA%\Programs\pomotroid\Pomotroid.exe" --at 2038-01-01T00:00:00 --mode x60</pre>
+  </section>
+
+  <section>
+    <h2>Dwa ograniczenia, o których warto wiedzieć przed startem</h2>
+
+    <div class="note warning">
+      <p><strong>Uruchomienie jest inwazyjne i celowo o tym głośno mówi.</strong></p>
+      <p>
+        Aplikacja startuje z otwartym portem zdalnego debugowania i świeżym, izolowanym
+        profilem w <code>%TEMP%</code> - nie działa na twoim prawdziwym profilu i nie jest tą
+        kopią, którą masz już w zasobniku. Profil jest kasowany po zakończeniu sesji, a jeśli
+        skasować się nie dał, podsumowanie sesji mówi o tym wprost, zamiast po cichu go
+        zostawiać.
+      </p>
+      <p>
+        Przekazanie własnego <code>--user-data-dir</code> albo
+        <code>--remote-debugging-port</code> jest odmawiane, a nie nadpisywane, bo oczywisty
+        wypadek - wycelowanie sesji w twój prawdziwy profil przeglądarki - nie jest wart
+        dopuszczenia.
+      </p>
+    </div>
+
+    <div class="note">
+      <p><strong>Strefa czasowa sesji idzie za hostem.</strong></p>
+      <p>
+        W tym trybie fałszowana jest chwila, ale nie funkcje czasu lokalnego, więc
+        <a href="/pl/testowanie-stref-czasowych/">niezależna strefa czasowa</a> jest funkcją
+        wyłącznie trybu natywnego. To ograniczenie tej wersji, a nie decyzja.
+      </p>
+    </div>
+
+    <div class="prose">
+      <p>
+        Jeszcze jedna rzecz, która zaskakuje: interwał <em>już zaplanowany</em> zachowuje stare
+        tempo, gdy zmienisz prędkość w trakcie sesji. <code>Date.now</code>,
+        <code>new Date()</code> i <code>performance.now</code> reagują natychmiast, działający
+        <code>setInterval</code> nie, a sesja ostrzega o tym, zamiast pozwolić ci wyciągnąć
+        wniosek, że zmiana nic nie dała.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Jak dobrze to jest przetestowane</h2>
+    <div class="prose">
+      <p>
+        <strong>Eksperymentalnie</strong>, a to słowo ma tu zdefiniowane znaczenie: działa na
+        celach, przeciwko którym powstało, nie było testowane szeroko, a źródłem prawdy jest
+        wbudowany audyt, a nie ta strona. Zostało zweryfikowane ręcznie, a nie przez
+        zautomatyzowany zestaw, na prawdziwej aplikacji Electron na 64-bitowym Windows.
+      </p>
+      <p>
+        Pokrycie jest raportowane per kontekst JavaScriptu, a nie per proces, bo to jest tutaj
+        istniejąca jednostka. Aplikacja stojąca bezczynnie i nigdy niepytająca o czas uczciwie
+        daje werdykt <em>nieokreślony</em> - nie czytała zegara, więc nie da się twierdzić
+        niczego o tym, czy zobaczyłaby właściwy.
+        <a href="/pl/audyt-zrodel-czasu/">Co znaczą werdykty &rarr;</a>
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Wypróbuj</h2>
+    <div class="cta">
+      <a class="btn btn-primary" href="/pl/pobieranie/">Pobierz na Windows</a>
+      <a class="btn btn-ghost" href="/pl/faq/">Przeczytaj FAQ</a>
+    </div>
+  </section>
+
+</div>

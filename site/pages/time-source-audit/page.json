@@ -1,0 +1,24 @@
+{
+  "//": "The trust page, and the one the rest of the site links to most - eight internal links pointed here before it existed. It is the answer to the objection every other page raises: how would you know?",
+
+  "//evidence": "The session report shown on this page is real output, produced by running the tool against one of the project's own probes, not written by hand. The network warning in it is genuine - the probe opens a connection on purpose.",
+
+  "id": "time-source-audit",
+  "order": 60,
+  "nav": true,
+
+  "languages": {
+    "en": {
+      "slug": "time-source-audit",
+      "link_text": "The audit",
+      "title": "How to know the fake date actually reached your app",
+      "description": "Every session ends with a verdict, the time channels the application really read with call counts, the ones that were missed, and warnings. A silent failure is the one outcome refused."
+    },
+    "pl": {
+      "slug": "audyt-zrodel-czasu",
+      "link_text": "Audyt",
+      "title": "Skąd wiadomo, że fałszywa data dotarła do aplikacji",
+      "description": "Każda sesja kończy się werdyktem, listą kanałów czasu naprawdę czytanych przez aplikację z liczbą wywołań, listą pominiętych i ostrzeżeniami. Cicha porażka to jedyny odrzucany wynik."
+    }
+  }
+}

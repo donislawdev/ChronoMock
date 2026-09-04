@@ -1,0 +1,131 @@
+<!-- Electron and Chromium, English.
+
+     The story at the top is what actually happened: a Pomodoro timer built on Electron
+     did not speed up under a x60 session, and taking its bundle apart showed why. It is
+     kept because it explains the mechanism better than a description of the mechanism. -->
+
+<div class="shell">
+
+  <section class="plain">
+    <h1>Faking the date in an Electron app</h1>
+    <p class="sub">
+      Search for this and every answer is about changing your own code - mock the
+      <code>Date</code> object, use your test framework's fake timers. None of that helps
+      when what you have is a built application. This runs the application you already have.
+    </p>
+  </section>
+
+  <section>
+    <h2>Why injection does not reach it</h2>
+    <div class="prose">
+      <p>
+        This mode exists because of a specific failure. A Pomodoro timer built on Electron was
+        run under a <code>x60</code> session and its countdown did not move at all. Taking the
+        application's bundle apart showed two independent reasons, and neither had a fix on the
+        native side:
+      </p>
+      <ul>
+        <li>The countdown was not reading a clock. It was a <strong>counter incremented by
+          <code>setInterval</code></strong>, running inside a Web Worker. There was no time
+          call to intercept, because the application never asked what time it was.</li>
+        <li>That worker lives in a <strong>sandboxed renderer process</strong>, which is
+          precisely the place a library injected from outside does not get into.</li>
+      </ul>
+      <p>
+        So the Windows-side mechanism cannot help here, and the answer is to speak to the
+        application's own JavaScript engine instead.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>What happens instead</h2>
+    <div class="prose">
+      <p>
+        The application is launched with a debugging port and a clean throwaway profile, and
+        its own time APIs are put on the session clock through the DevTools protocol -
+        <code>Date.now</code>, the <code>new Date()</code> constructor,
+        <code>performance.now</code>, <code>setTimeout</code> and <code>setInterval</code>.
+      </p>
+      <p>
+        The override is installed into every context the application opens, <strong>including
+        its Web Workers</strong> - which is where the timer usually turns out to live, and the
+        one place native injection was never going to reach.
+      </p>
+      <p>
+        Nothing about how you drive it changes. The same command, the same window, the same
+        session panel with the two clocks and the verdict.
+      </p>
+    </div>
+
+    <pre class="term"><span class="c"># Same command as for a native application - the mode is detected</span>
+<span class="p">chrono</span> run "%LOCALAPPDATA%\Programs\pomotroid\Pomotroid.exe" --at 2038-01-01T00:00:00 --mode x60</pre>
+  </section>
+
+  <section>
+    <h2>Two limits worth knowing before you start</h2>
+
+    <div class="note warning">
+      <p><strong>The launch is invasive, and deliberately loud about it.</strong></p>
+      <p>
+        The application is started with a remote debugging port open and a fresh, isolated
+        profile under <code>%TEMP%</code> - it does not run against your real profile, and it
+        is not the copy already in your system tray. The profile is deleted when the session
+        ends, and if it could not be, the session summary says so rather than leaving it
+        quietly behind.
+      </p>
+      <p>
+        Passing your own <code>--user-data-dir</code> or <code>--remote-debugging-port</code>
+        through is refused rather than overridden, because the obvious accident - pointing the
+        session at your real browser profile - is not one worth allowing.
+      </p>
+    </div>
+
+    <div class="note">
+      <p><strong>The session time zone follows the host.</strong></p>
+      <p>
+        In this mode the instant is faked, but the local-time getters are not, so
+        <a href="/timezone-testing/">an independent time zone</a> is a native-mode feature
+        only. That is a limitation of this version, not a decision.
+      </p>
+    </div>
+
+    <div class="prose">
+      <p>
+        One more thing that surprises people: an interval <em>already scheduled</em> keeps its
+        old rate when you change the speed mid-session. <code>Date.now</code>,
+        <code>new Date()</code> and <code>performance.now</code> react immediately, a running
+        <code>setInterval</code> does not, and the session warns about it rather than letting
+        you conclude the change did nothing.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>How well tested is it</h2>
+    <div class="prose">
+      <p>
+        <strong>Experimental</strong>, and that word has a defined meaning here: it works on the
+        targets it was built against, it has not been tested broadly, and the built-in audit is
+        your source of truth rather than this page. It was verified by hand rather than by the
+        automated suite, against a real Electron application on 64-bit Windows.
+      </p>
+      <p>
+        Coverage is reported per JavaScript context rather than per process, since that is the
+        unit that exists here. An application sitting idle and never asking the time honestly
+        produces <em>undetermined</em> - it did not read a clock, so nothing can be claimed
+        about whether it would have seen the right one.
+        <a href="/time-source-audit/">What the verdicts mean &rarr;</a>
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Try it</h2>
+    <div class="cta">
+      <a class="btn btn-primary" href="/download/">Download for Windows</a>
+      <a class="btn btn-ghost" href="/faq/">Read the FAQ</a>
+    </div>
+  </section>
+
+</div>

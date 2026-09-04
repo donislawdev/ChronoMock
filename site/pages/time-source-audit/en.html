@@ -1,0 +1,185 @@
+<!-- The time source audit, English.
+
+     The session report below is real output, produced by running the tool against one
+     of the project's own probes. The network warning in it is genuine - that probe
+     opens a connection on purpose, which is exactly the case the warning is for.
+     Nothing in that block was written by hand. -->
+
+<div class="shell">
+
+  <section class="plain">
+    <h1>How do you know it worked?</h1>
+    <p class="sub">
+      With every other tool of this kind, you do not. The application starts, shows some
+      date, and you assume. But it can read the clock through a route nothing intercepted -
+      and then <em>"the test passed"</em> means nothing at all.
+    </p>
+  </section>
+
+  <section>
+    <h2>The failure that has no symptom</h2>
+    <div class="prose">
+      <p>
+        A time-shifting tool that misses a channel does not crash and does not warn. The
+        application simply reads the real date through the one function nobody hooked, and
+        behaves exactly as it would have on any ordinary afternoon. The test goes green.
+        The bug ships.
+      </p>
+      <p>
+        RunAsDate is honest about this in its own documentation - it says it
+        <strong>"will not affect applications that take the current date/time from another
+        source"</strong> - and then leaves you to work out whether yours is one of them.
+        This tool treats that same sentence as something to measure.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>What a session actually reports</h2>
+    <div class="prose">
+      <p>
+        Real output, from running the tool against one of this project's own test probes -
+        one that deliberately opens a network connection:
+      </p>
+    </div>
+
+    <pre class="term"><span class="c">$</span> <span class="p">chrono</span> run "...\pnet-x64.exe" --at 2038-01-19T03:14:07 --report session.txt
+
+Chrono Mock - session report
+  target:   C:\ChronoMock\tools\probes\bin\pnet-x64.exe
+  verdict:  <span class="v">WORKS - time substitution took effect</span>  (processes: 1)
+            every process that read time saw the session clock
+  session:  fake clock reached 2038-01-19T03:14:10
+            real elapsed 3.3s, fake elapsed 3.3s
+  covered channels (substituted, with call counts):
+            - pid 38828: NtQuerySystemTime (3 calls)
+<span class="c">            ... every other channel, including the ones never called</span>
+  observed channels (hooked but left real):
+            - pid 38828: NtCreateUserProcess (0 calls)
+            - pid 38828: connect (1 call)
+  warnings:
+            - the target opened a network connection - it may read time from a
+              server, which no local hook can cover (source.network_at_start)
+  requested:  2038-01-19T03:14:07 (zone +02:00 (host default), mode flow)</pre>
+
+    <div class="prose">
+      <p>
+        The last two blocks are the point. Nothing here failed - the verdict is
+        <strong>works</strong> - and the report still says, unprompted, that this application
+        talked to the network before it was done, so a local hook may not be the whole story.
+        That sentence is the difference between a test you can trust and one you cannot.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Four verdicts, and an exit code for each</h2>
+    <div class="prose">
+      <p>
+        The verdict is reached from inside the running process, before you start working, and
+        it is the tool's own exit code so a pipeline can branch on it.
+      </p>
+    </div>
+
+    <div class="wrap" style="margin-top:22px">
+      <table>
+        <thead><tr><th>Verdict</th><th>Exit</th><th>Meaning</th></tr></thead>
+        <tbody>
+          <tr><td class="y">works</td><td>0</td><td>every process that read time saw the session clock</td></tr>
+          <tr><td>works partially</td><td>10</td><td>some channels covered, some not - the uncovered ones are listed</td></tr>
+          <tr><td class="n">does not work</td><td>11</td><td>the substitution did not reach the key channels</td></tr>
+          <tr><td>undetermined</td><td>4</td><td>coverage could not be established - an honest "I do not know"</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="prose">
+      <p>
+        <strong>When the verdict is "does not work", the process is stopped immediately</strong>,
+        before you can interact with it. The verdict cannot precede the launch, because the
+        only source of truth is a reading taken from inside the running process. What is
+        guaranteed is that you learn the truth before you start working - not that a doomed
+        launch never happens. You can override and carry on, and the session is then marked
+        unreliable everywhere it appears, including in any evidence you export.
+      </p>
+      <p>
+        Three more codes exist for things that are not verdicts at all: <code>1</code> for a
+        usage error, <code>2</code> when the target could not be launched or injected, and
+        <code>12</code> when the target vanished in a way that suggests a single-instance
+        application handed off to a copy already running.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Covered, observed, uncovered</h2>
+    <div class="prose">
+      <p>Channels fall into three buckets, and the middle one is the interesting one.</p>
+      <ul>
+        <li><strong>Covered</strong> - hooked and substituted. The application asked, and got
+          the session clock. The call count says how many times.</li>
+        <li><strong>Observed</strong> - hooked, counted, and deliberately left telling the
+          truth. The high-resolution counter is here by default because scaling it
+          destabilised rendering. Multimedia timers are here because scaling them would shift
+          audio and MIDI timing. Network connections and one process-creation path are here
+          because they are evidence, not clocks.</li>
+        <li><strong>Uncovered</strong> - a channel the application read that the substitution
+          did not reach. This is what turns a verdict into <em>works partially</em>, and it
+          is listed by name rather than summarised away.</li>
+      </ul>
+      <p>
+        A count of zero is information too: the channel was hooked and the application never
+        asked. That is why the report lists them rather than hiding them.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>What the audit cannot see</h2>
+    <div class="prose">
+      <p>
+        The report is honest about coverage, which means being honest about its own edges.
+        These are read without any function call to intercept, or outside the process
+        entirely:
+      </p>
+      <ul>
+        <li>direct reads of the shared user-mode data page - the value sits in memory, so
+          there is nothing to hook. Rare in ordinary applications, common in licensing and
+          anti-tamper code</li>
+        <li>direct system calls that bypass the standard exports - same pattern</li>
+        <li>time obtained out of process, through WMI, an out-of-process COM server or RPC</li>
+        <li>time from the network - an HTTP <code>Date</code> header, NTP, an API response, or
+          a database server's own clock</li>
+        <li>time from kernel drivers</li>
+      </ul>
+      <p>
+        The network case is the one the audit can at least <em>notice</em>, which is why the
+        warning in the report above exists. For the rest, a verdict of <em>works</em> means
+        the channels this tool can see were covered - not that no other route exists.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>In a pipeline</h2>
+    <div class="prose">
+      <p>
+        <code>--json</code> emits the same facts in machine form, <code>--report</code> writes
+        the human version to a file, and a session whose verdict is anything but
+        <em>works</em> leads that file with an unreliable-evidence banner rather than burying
+        it at the bottom.
+      </p>
+    </div>
+
+    <pre class="term"><span class="p">chrono</span> run "C:\apps\Ledger.exe" --at 2027-12-31T23:59:59 --json --report evidence.txt</pre>
+  </section>
+
+  <section>
+    <h2>Try it</h2>
+    <div class="cta">
+      <a class="btn btn-primary" href="/download/">Download for Windows</a>
+      <a class="btn btn-ghost" href="/runasdate-alternative/">Compared with RunAsDate</a>
+    </div>
+  </section>
+
+</div>

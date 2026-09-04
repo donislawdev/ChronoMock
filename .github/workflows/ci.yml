@@ -64,6 +64,14 @@ jobs:
       - name: Rust tests
         run: cargo test --workspace
 
+      # The website, built the way the publishing workflow builds it. --strict turns a dead
+      # internal link into a failure here rather than a 404 on a published page - GitHub Pages
+      # cannot issue redirects, so a wrong address stays wrong until somebody notices by hand.
+      # The debug profile on purpose: the artifact is thrown away, and the crate is already
+      # compiled by the test step above, so this costs seconds rather than a rebuild.
+      - name: Website
+        run: cargo run -p chrono-site -- --strict
+
       - name: Release build, x64
         run: cargo build --release --target x86_64-pc-windows-msvc
 

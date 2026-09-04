@@ -1,0 +1,24 @@
+{
+  "//": "The gap nobody else fills. Every answer to 'fake the date in an Electron app' is about changing your own code - mock the Date object, use a test framework's fake timers. None of that helps when what you have is a built application you did not write.",
+
+  "//honesty": "This mode is marked experimental in README.md's support matrix and was verified by hand rather than by the automated suite. The page says so, and names its two real limits: the launch is invasive, and the session zone follows the host.",
+
+  "id": "electron-chromium",
+  "order": 55,
+  "nav": false,
+
+  "languages": {
+    "en": {
+      "slug": "electron-chromium",
+      "link_text": "Electron and Chromium",
+      "title": "Fake the date in an Electron or Chromium app",
+      "description": "Their clock lives in a sandboxed renderer that injection cannot reach. A different mechanism puts the app's own JavaScript time APIs on the session clock, workers included."
+    },
+    "pl": {
+      "slug": "electron-chromium",
+      "link_text": "Electron i Chromium",
+      "title": "Podmiana daty w aplikacji Electron albo Chromium",
+      "description": "Ich zegar mieszka w piaskowanym rendererze, do którego wstrzyknięcie nie sięga. Inny mechanizm przestawia własne API czasu aplikacji na zegar sesji, razem z workerami."
+    }
+  }
+}
