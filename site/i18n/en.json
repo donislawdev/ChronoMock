@@ -1,0 +1,18 @@
+{
+  "//": "Chrome strings only - the header, the footer and the accessibility affordances. Anything that belongs to one page lives in that page's fragment instead, because a string used once is easier to translate in context than in a shared dictionary. Both language files must carry exactly the same keys: a missing key fails the build rather than falling back to English, which is how a half-translated page reaches production unnoticed.",
+
+  "html_lang": "en",
+  "og_locale": "en_US",
+
+  "skip_to_content": "Skip to content",
+  "nav_label": "Main",
+
+  "//language_name": "What THIS language calls itself, and how a link to it should be labelled - a reader who needs the English page is looking for the word 'English'. The generator reads these two keys from the dictionary of the language being linked TO, never from the current one, so adding a third language needs no change here.",
+  "language_name": "English",
+  "language_title": "This page in English",
+
+  "footer_summary": "Chrono Mock - GPL-3.0. No account, no telemetry, and it never talks to the internet.",
+  "footer_source": "Source on GitHub",
+  "footer_releases": "Releases",
+  "footer_license": "License"
+}

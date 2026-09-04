@@ -1,0 +1,238 @@
+<!-- Home page, Polish. Same structure as en.html.
+
+     The program output inside the terminal blocks stays in English on purpose: the
+     command line speaks English only, so translating what it prints would show the
+     reader something the tool never says. The `#` comment lines are ours, so those
+     are translated. -->
+
+<div class="shell">
+  <div class="hero">
+    <div class="hero-grid">
+      <div>
+        <h1>Uruchom aplikację Windows z <span class="hl">dowolną datą</span> - bez ruszania zegara systemowego</h1>
+
+        <p class="lede">
+          Ustaw zegar jednej aplikacji na przyszły rok, zamroź go albo <strong>przyspiesz tak, żeby
+          30-dniowa wersja próbna wygasła, zanim zrobisz kawę</strong>. Reszta komputera zachowuje
+          prawdziwy czas - logowanie do domeny, certyfikaty i wszystkie inne programy działają
+          normalnie.
+        </p>
+        <p class="lede">
+          A potem narzędzie mówi, czy podmiana <strong>naprawdę zadziałała</strong>.
+        </p>
+
+        <div class="cta">
+          <a class="btn btn-primary" href="/pl/pobieranie/">Pobierz na Windows</a>
+          <a class="btn btn-ghost" href="{{repo}}">Zobacz kod na GitHubie</a>
+        </div>
+
+        <p class="trust">
+          <span>Darmowe i otwarte, GPL-3.0</span>
+          <span>Bez instalatora</span>
+          <span>Bez uprawnień administratora</span>
+          <span>Nigdy nie łączy się z siecią</span>
+        </p>
+      </div>
+
+      <div class="panel">
+        <p class="panel-cap">Jak wygląda sesja</p>
+        <div class="clocks">
+          <div class="clock fake">
+            <div class="who">Aplikacja widzi</div>
+            <div class="val">2027-12-31<br>23:59:50</div>
+            <div class="zone">strefa sesji -05:00</div>
+          </div>
+          <div class="clock">
+            <div class="who">Komputer nadal widzi</div>
+            <div class="val">2026-09-04<br>18:12:33</div>
+            <div class="zone">strefa hosta +02:00</div>
+          </div>
+        </div>
+        <div class="verdict">
+          <span class="dot"></span>
+          <span><b>Działa</b> - podmiana dotarła do tego procesu</span>
+        </div>
+        <div class="chan">
+          <span>Objęte kanały czasu</span>
+          <span class="n">7 z {{channel_count}} &middot; 1 284 wywołań</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="shot">
+      <p><strong>Miejsce na zrzut ekranu - 16:9.</strong><br>
+        Prawdziwy panel sesji: dwa zegary obok siebie, linia werdyktu, sterowanie prędkością.</p>
+    </div>
+  </div>
+</div>
+
+<div class="shell">
+
+  <section>
+    <p class="eyebrow">Po co to jest</p>
+    <h2>Testowanie czegokolwiek zależnego od daty wymaga przesunięcia czasu. Obie typowe drogi są złe.</h2>
+    <p class="sub">
+      Wygasanie licencji, okresy próbne, odnowienia subskrypcji, ważność certyfikatów, czas życia
+      tokenów, raporty na koniec miesiąca i roku, naliczanie odsetek, przypomnienia.
+    </p>
+    <div class="two">
+      <div class="card">
+        <p class="bad">Droga 1 - zmiana zegara systemowego</p>
+        <p>
+          Psuje logowanie do domeny i Kerberos, unieważnia certyfikaty TLS, więc przeglądarka
+          przestaje działać, dezorientuje Windows Update i sprawia, że każdy inny program na
+          komputerze zapisuje błędne znaczniki czasu. Na maszynie w domenie zasady grupy zwykle
+          blokują taką zmianę albo cofają ją po kilku minutach, więc test nie jest nawet powtarzalny.
+        </p>
+      </div>
+      <div class="card">
+        <p class="bad">Droga 2 - czekanie</p>
+        <p>
+          Czyli: nie testujemy tego. Przypadki zależne od daty wypadają z planu, a do klienta trafia
+          <em>„licencja nigdy nie wygasa"</em>.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Co potrafi</h2>
+    <p class="sub">Jeden proces przesuwa się w czasie. Cała reszta komputera nie.</p>
+    <div class="grid">
+      <div class="feat">
+        <h3>Dowolny moment</h3>
+        <p>Konkretna data i godzina albo względna - <code>+30 dni</code>, <code>-1 rok</code>.</p>
+      </div>
+      <div class="feat">
+        <h3>Płynny, zamrożony albo przyspieszony</h3>
+        <p>Normalne tempo, zatrzymany zegar albo całkowity mnożnik. <code>x1440</code> zamienia dobę
+          w minutę.</p>
+      </div>
+      <div class="feat">
+        <h3>Własna strefa czasowa</h3>
+        <p>Stały offset tylko dla tego procesu, podczas gdy strefa systemu zostaje dokładnie tam,
+          gdzie była.</p>
+      </div>
+      <div class="feat">
+        <h3>Procesy potomne też</h3>
+        <p>Instalatory i launchery uruchamiają dzieci. Bez tego test obejmuje połowę tego, co się
+          wykonało.</p>
+      </div>
+      <div class="feat">
+        <h3>Skok w trakcie sesji</h3>
+        <p>Do przodu albo do tyłu - łącznie ze skokiem wstecz, jaki robi laptop po synchronizacji z
+          serwerem czasu.</p>
+      </div>
+      <div class="feat">
+        <h3>Electron i Chromium również</h3>
+        <p>Innym mechanizmem, bo ich zegar żyje w piaskowanym rendererze, do którego wstrzyknięcie
+          nie sięga.</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="callout">
+      <p class="eyebrow">Część, której nie robi nikt inny</p>
+      <h2>Skąd wiesz, że zadziałało?</h2>
+      <p class="sub">
+        Przy każdym innym narzędziu - nie wiesz. Aplikacja startuje, pokazuje jakąś datę, a ty
+        zakładasz. Tyle że może czytać zegar kanałem, którego narzędzie nigdy nie przechwyciło - z
+        serwera, z bazy danych, przez warstwę środowiska uruchomieniowego - i wtedy <em>„test
+        przeszedł"</em> nie znaczy zupełnie nic.
+      </p>
+      <ul class="vlist">
+        <li><span class="tick">&rarr;</span><span>Werdykt, zanim zacznie się właściwy test:
+          <b>działa / działa częściowo / nie działa</b></span></li>
+        <li><span class="tick">&rarr;</span><span>Które z <b>{{channel_count}} kanałów czasu</b>
+          zostały objęte i ile razy aplikacja odpytała każdy z nich</span></li>
+        <li><span class="tick">&rarr;</span><span><b>Które kanały nie zostały objęte</b> - powiedziane
+          wprost, nigdy pominięte</span></li>
+        <li><span class="tick">&rarr;</span><span>Ostrzeżenia z konsekwencją: <em>„ta aplikacja czyta
+          czas z sieci - lokalna podmiana może nie wystarczyć"</em></span></li>
+      </ul>
+      <p class="sub" style="margin:22px 0 0">
+        <a href="/pl/audyt-zrodel-czasu/">Jak działa audyt źródeł czasu &rarr;</a>
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Dwie minuty z narzędziem</h2>
+    <p class="sub">Okno do eksploracji, wiersz poleceń do CI. Za obydwoma ten sam silnik.</p>
+    <div class="stack">
+      <pre class="term"><span class="c"># Uruchom aplikację tak, jakby była ostatnia sekunda 2027 roku</span>
+<span class="p">chrono</span> run "C:\apps\Ledger.exe" --at 2027-12-31T23:59:59
+
+<span class="c"># Patrz, jak 30-dniowa wersja próbna wygasa przy kawie: x1440 to doba na minutę</span>
+<span class="p">chrono</span> run "C:\apps\Ledger.exe" --mode x1440
+
+<span class="c"># Zamiast daty użyj nazwanego scenariusza i zapisz dowód do pliku</span>
+<span class="p">chrono</span> run "C:\apps\Ledger.exe" --preset year-rollover --report session.txt</pre>
+
+      <p class="sub" style="margin:6px 0 0">
+        Kalkulator odpowiada na drugą połowę testowania dat - <em>której</em> daty użyć:
+      </p>
+
+      <pre class="term"><span class="c">$</span> <span class="p">chrono</span> calc --preset year-2038 --zone +00:00
+Chrono Mock - date calculator
+  preset:   year-2038 - 2038 boundary
+  explains: Does the app survive the 32-bit Unix time boundary (2038-01-19T03:14:07Z)?
+  base:    2038-01-19T03:14:07
+  result:  <span class="v">2038-01-19T03:14:07</span>
+  formats:
+    ISO date      2038-01-19
+    ISO datetime  2038-01-19T03:14:07+00:00
+    US            01/19/2038
+    PL            19.01.2038
+    epoch (s)     <span class="v">2147483647</span>
+    epoch (ms)    2147483647000
+    FILETIME      137919572470000000
+    RFC 1123      Tue, 19 Jan 2038 03:14:07 GMT
+<span class="c">  ...</span>
+  what this date tests:
+    at or past the 2038-01-19T03:14:07Z 32-bit time_t limit (Y2038)</pre>
+    </div>
+  </section>
+
+  <section>
+    <p class="eyebrow">W porównaniu z tym, czego pewnie używasz</p>
+    <h2>Jak RunAsDate, tylko z tym, czego brakowało</h2>
+    <p class="sub">
+      RunAsDate przechwytuje pięć funkcji zegara ściennego i robi to dobrze. Tu widać, czym się te
+      dwa narzędzia różnią - a pełna strona mówi też, kiedy RunAsDate jest nadal lepszym wyborem.
+    </p>
+    <div class="wrap">
+      <table>
+        <thead>
+          <tr><th>&nbsp;</th><th>RunAsDate</th><th>Chrono Mock</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Uruchamia aplikację z fałszywą datą</td><td class="y">tak</td><td class="y">tak</td></tr>
+          <tr><td>Przechwycone kanały czasu</td><td class="n">5</td><td class="y">{{channel_count}}</td></tr>
+          <tr><td>Przyspieszanie zegara</td><td class="n">nie</td><td class="y">tak</td></tr>
+          <tr><td>Niezależna strefa czasowa</td><td class="n">nieudokumentowane</td><td class="y">tak</td></tr>
+          <tr><td>Podąża za procesami potomnymi</td><td class="n">nieudokumentowane</td><td class="y">tak</td></tr>
+          <tr><td>Mówi, czy zadziałało</td><td class="n">nie</td><td class="y">tak, per kanał</td></tr>
+          <tr><td>Dostępny kod źródłowy</td><td class="n">freeware, zamknięty</td><td class="y">GPL-3.0</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="sub" style="margin:22px 0 0">
+      <a href="/pl/alternatywa-dla-runasdate/">Pełne porównanie, razem z tym, w czym RunAsDate wygrywa &rarr;</a>
+    </p>
+  </section>
+
+  <section>
+    <h2>Pobierz</h2>
+    <p class="sub">
+      Rozpakuj gdziekolwiek i uruchom. Bez instalatora, bez wpisów w rejestrze, bez uprawnień
+      administratora.
+    </p>
+    <div class="cta">
+      <a class="btn btn-primary" href="/pl/pobieranie/">Pobierz na Windows</a>
+      <a class="btn btn-ghost" href="{{repo}}">Zobacz kod na GitHubie</a>
+    </div>
+  </section>
+
+</div>

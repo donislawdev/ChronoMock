@@ -1,0 +1,235 @@
+<!-- Home page, English. Everything inside <main> - the generator supplies the head,
+     the header, the footer and the language links.
+
+     Double-brace tokens are resolved by crates/site from the code itself, so a number
+     here cannot drift away from the program - the channel count below comes from
+     chrono_ctl::CHANNEL_COUNT at compile time. An unresolved token fails the build. -->
+
+<div class="shell">
+  <div class="hero">
+    <div class="hero-grid">
+      <div>
+        <h1>Run a Windows app at <span class="hl">any date</span> - without touching the system clock</h1>
+
+        <p class="lede">
+          Set one application's clock to next year, freeze it, or <strong>speed it up so a 30-day
+          trial expires while you make coffee</strong>. The rest of the machine keeps the real time -
+          your domain logon, your certificates and every other program carry on as normal.
+        </p>
+        <p class="lede">
+          Then it tells you whether the substitution <strong>actually worked</strong>.
+        </p>
+
+        <div class="cta">
+          <a class="btn btn-primary" href="/download/">Download for Windows</a>
+          <a class="btn btn-ghost" href="{{repo}}">See the code on GitHub</a>
+        </div>
+
+        <p class="trust">
+          <span>Free and open source, GPL-3.0</span>
+          <span>No installer</span>
+          <span>No administrator rights</span>
+          <span>Never talks to the internet</span>
+        </p>
+      </div>
+
+      <!-- An illustration of what a session shows, drawn as page elements. It carries
+           no window chrome on purpose - see the note in style.css. -->
+      <div class="panel">
+        <p class="panel-cap">What a session looks like</p>
+        <div class="clocks">
+          <div class="clock fake">
+            <div class="who">The application sees</div>
+            <div class="val">2027-12-31<br>23:59:50</div>
+            <div class="zone">session zone -05:00</div>
+          </div>
+          <div class="clock">
+            <div class="who">The machine still sees</div>
+            <div class="val">2026-09-04<br>18:12:33</div>
+            <div class="zone">host zone +02:00</div>
+          </div>
+        </div>
+        <div class="verdict">
+          <span class="dot"></span>
+          <span><b>Works</b> - the substitution reached this process</span>
+        </div>
+        <div class="chan">
+          <span>Time channels covered</span>
+          <span class="n">7 of {{channel_count}} &middot; 1 284 calls</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="shot">
+      <p><strong>Screenshot slot - 16:9.</strong><br>
+        The real session panel: two clocks side by side, the verdict line, the speed control.</p>
+    </div>
+  </div>
+</div>
+
+<div class="shell">
+
+  <section>
+    <p class="eyebrow">Why this exists</p>
+    <h2>Testing anything date-dependent means moving time. Both usual options are bad.</h2>
+    <p class="sub">
+      Licence expiry, trial periods, subscription renewals, certificate validity, token lifetimes,
+      month-end and year-end reports, interest accrual, reminders.
+    </p>
+    <div class="two">
+      <div class="card">
+        <p class="bad">Option 1 - change the system clock</p>
+        <p>
+          It breaks domain logon and Kerberos, invalidates TLS certificates so the browser stops
+          working, confuses Windows Update, and makes every other application on the machine write
+          wrong timestamps. On a domain-joined machine group policy usually blocks the change or
+          reverts it minutes later, so the test is not even repeatable.
+        </p>
+      </div>
+      <div class="card">
+        <p class="bad">Option 2 - wait</p>
+        <p>
+          Which means: do not test it. So the date-dependent cases get skipped, and
+          <em>"the licence never expires"</em> ships to the customer.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>What it does</h2>
+    <p class="sub">One process moves through time. Everything else on the machine does not.</p>
+    <div class="grid">
+      <div class="feat">
+        <h3>Any moment</h3>
+        <p>A specific date and time, or a relative one - <code>+30 days</code>, <code>-1 year</code>.</p>
+      </div>
+      <div class="feat">
+        <h3>Flowing, frozen or accelerated</h3>
+        <p>Normal speed, a held clock, or a whole-number multiplier. <code>x1440</code> turns a day
+          into a minute.</p>
+      </div>
+      <div class="feat">
+        <h3>Its own time zone</h3>
+        <p>A fixed offset for that process only, while the system zone stays exactly where it was.</p>
+      </div>
+      <div class="feat">
+        <h3>Child processes come along</h3>
+        <p>Installers and launchers spawn children. Without that, the test covers half of what ran.</p>
+      </div>
+      <div class="feat">
+        <h3>Jump mid-session</h3>
+        <p>Forward or backward - including the backward jump a laptop makes after resyncing with a
+          time server.</p>
+      </div>
+      <div class="feat">
+        <h3>Electron and Chromium too</h3>
+        <p>Through a different mechanism, because their clock lives in a sandboxed renderer where
+          injection does not reach.</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="callout">
+      <p class="eyebrow">The part nobody else does</p>
+      <h2>How do you know it worked?</h2>
+      <p class="sub">
+        With every other tool you do not. The application starts, shows some date, and you assume.
+        But it can read the clock through a channel the tool never intercepted - from a server, from
+        a database, through a runtime layer - and then <em>"the test passed"</em> means nothing at all.
+      </p>
+      <ul class="vlist">
+        <li><span class="tick">&rarr;</span><span>A verdict before the real test begins:
+          <b>works / works partially / does not work</b></span></li>
+        <li><span class="tick">&rarr;</span><span>Which of the <b>{{channel_count}} time channels</b>
+          were covered, and how many times the application queried each</span></li>
+        <li><span class="tick">&rarr;</span><span><b>Which channels were not</b> - stated plainly,
+          never omitted</span></li>
+        <li><span class="tick">&rarr;</span><span>Warnings with consequences attached: <em>"this
+          application reads time from the network - local substitution may not be enough"</em></span></li>
+      </ul>
+      <p class="sub" style="margin:22px 0 0">
+        <a href="/time-source-audit/">How the time source audit works &rarr;</a>
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Two minutes with it</h2>
+    <p class="sub">A window for exploring, a command line for CI. The same engine behind both.</p>
+    <div class="stack">
+      <pre class="term"><span class="c"># Run an application as if it were the last second of 2027</span>
+<span class="p">chrono</span> run "C:\apps\Ledger.exe" --at 2027-12-31T23:59:59
+
+<span class="c"># Watch a 30-day trial expire while you make coffee: x1440 is a day a minute</span>
+<span class="p">chrono</span> run "C:\apps\Ledger.exe" --mode x1440
+
+<span class="c"># Use a named scenario instead of a date, and write the evidence to a file</span>
+<span class="p">chrono</span> run "C:\apps\Ledger.exe" --preset year-rollover --report session.txt</pre>
+
+      <p class="sub" style="margin:6px 0 0">
+        The calculator answers the other half of date testing - <em>which</em> date to use:
+      </p>
+
+      <pre class="term"><span class="c">$</span> <span class="p">chrono</span> calc --preset year-2038 --zone +00:00
+Chrono Mock - date calculator
+  preset:   year-2038 - 2038 boundary
+  explains: Does the app survive the 32-bit Unix time boundary (2038-01-19T03:14:07Z)?
+  base:    2038-01-19T03:14:07
+  result:  <span class="v">2038-01-19T03:14:07</span>
+  formats:
+    ISO date      2038-01-19
+    ISO datetime  2038-01-19T03:14:07+00:00
+    US            01/19/2038
+    PL            19.01.2038
+    epoch (s)     <span class="v">2147483647</span>
+    epoch (ms)    2147483647000
+    FILETIME      137919572470000000
+    RFC 1123      Tue, 19 Jan 2038 03:14:07 GMT
+<span class="c">  ...</span>
+  what this date tests:
+    at or past the 2038-01-19T03:14:07Z 32-bit time_t limit (Y2038)</pre>
+    </div>
+  </section>
+
+  <section>
+    <p class="eyebrow">Compared with what you are probably using</p>
+    <h2>Like RunAsDate, with the parts that were missing</h2>
+    <p class="sub">
+      RunAsDate intercepts five wall-clock functions and does that well. Here is where the two
+      differ - and the full page also says where RunAsDate is still the better pick.
+    </p>
+    <div class="wrap">
+      <table>
+        <thead>
+          <tr><th>&nbsp;</th><th>RunAsDate</th><th>Chrono Mock</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Runs one app at a fake date</td><td class="y">yes</td><td class="y">yes</td></tr>
+          <tr><td>Time channels intercepted</td><td class="n">5</td><td class="y">{{channel_count}}</td></tr>
+          <tr><td>Speed the clock up</td><td class="n">no</td><td class="y">yes</td></tr>
+          <tr><td>Independent time zone</td><td class="n">not documented</td><td class="y">yes</td></tr>
+          <tr><td>Follows child processes</td><td class="n">not documented</td><td class="y">yes</td></tr>
+          <tr><td>Tells you whether it worked</td><td class="n">no</td><td class="y">yes, per channel</td></tr>
+          <tr><td>Source available</td><td class="n">freeware, closed</td><td class="y">GPL-3.0</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="sub" style="margin:22px 0 0">
+      <a href="/runasdate-alternative/">The full comparison, including where RunAsDate wins &rarr;</a>
+    </p>
+  </section>
+
+  <section>
+    <h2>Get it</h2>
+    <p class="sub">
+      Unzip anywhere and run. No installer, nothing written to the registry, no administrator rights.
+    </p>
+    <div class="cta">
+      <a class="btn btn-primary" href="/download/">Download for Windows</a>
+      <a class="btn btn-ghost" href="{{repo}}">See the code on GitHub</a>
+    </div>
+  </section>
+
+</div>

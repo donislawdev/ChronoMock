@@ -1,0 +1,26 @@
+[package]
+name = "chrono-site"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+# Build tool for the website in site/. It ships with nothing: no other crate depends
+# on it, and it never reaches a release artifact. It sits at the top of the
+# dependency graph on purpose, which is what lets it depend on chrono-ctl.
+#
+# That dependency is the point. The site states how many time channels the tool
+# covers, and taking that number from chrono_ctl::CHANNEL_COUNT at compile time means
+# the published page cannot disagree with the code - a mismatch stops being a wrong
+# sentence on a public page and becomes a build failure.
+#
+# chrono-ctl has no dependencies of its own and touches no Windows API, so this
+# builds on the Linux runner that publishes the site.
+
+[[bin]]
+name = "chrono-site"
+path = "src/main.rs"
+
+[dependencies]
+chrono-ctl.workspace = true
+serde = { workspace = true }
+serde_json = { workspace = true }

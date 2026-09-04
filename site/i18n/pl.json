@@ -1,0 +1,18 @@
+{
+  "//": "Odpowiednik en.json. Klucze muszą być identyczne - brakujący klucz zatrzymuje budowanie, zamiast po cichu wstawić angielski tekst na polskiej stronie.",
+
+  "html_lang": "pl",
+  "og_locale": "pl_PL",
+
+  "skip_to_content": "Przejdź do treści",
+  "nav_label": "Główna",
+
+  "//language_name": "Jak TEN język nazywa siebie sam - tak ma być podpisany odnośnik prowadzący do niego. Generator czyta te dwa klucze ze słownika języka, DO którego prowadzi odnośnik, nigdy z bieżącego.",
+  "language_name": "Polski",
+  "language_title": "Ta strona po polsku",
+
+  "footer_summary": "Chrono Mock - GPL-3.0. Bez konta, bez telemetrii, nigdy nie łączy się z siecią.",
+  "footer_source": "Kod na GitHubie",
+  "footer_releases": "Wydania",
+  "footer_license": "Licencja"
+}

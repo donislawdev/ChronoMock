@@ -1,0 +1,122 @@
+name: Pages
+
+# Publishes the website in `site/` to GitHub Pages. It has nothing to do with the
+# program's release path: it builds static files and deploys them, and it is the only
+# workflow allowed to write to Pages.
+#
+# 🔴 NOT YET VERIFIED BY A REAL RUN, unlike ci.yml, audit.yml and distribution.yml.
+# It cannot be: GitHub Pages is available in public repositories on GitHub Free and in
+# private ones only on a paid plan, and this repository is still private. The first
+# run happens after the repository goes public - treat the first green run as the
+# verification, not this comment.
+#
+# Two things the owner has to do once, outside this file:
+#
+#   * Settings -> Pages, source "GitHub Actions". Without it the step that reads the
+#     Pages configuration fails, and says so.
+#   * The custom domain in the same settings, plus the DNS record for it. The build
+#     below REFUSES to publish to an address the pages do not claim as their own, so
+#     that is enforced rather than remembered - see the comparison step.
+#
+# There is deliberately no `push` trigger yet. Until the repository is public and a
+# release exists, every automatic run would fail at the Pages API and turn the commit
+# red for a reason that is not a defect. When the site goes live, add:
+#
+#   push:
+#     branches: [main]
+#     paths:
+#       - "site/**"
+#       - "crates/site/**"
+#       - "crates/ctl/**"        # the channel count the pages state
+#       - "presets/**"
+#       - "calendars/**"
+#       - "assets/chrono-bean.svg"
+#       - ".github/workflows/pages.yml"
+#
+# Miss one of those paths and the site keeps serving the previous version of it, which
+# looks exactly like a page nobody edited.
+on:
+  workflow_dispatch:
+
+# Least privilege, same rule as ci.yml: the token reads the repository, and only the
+# job that has to write to Pages raises it for itself.
+permissions:
+  contents: read
+
+# One deployment at a time, and never cancel one in flight. A half-replaced site is
+# worse than a late one, and a partial upload cannot be rolled back.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build the site
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    # READ, not write. This job asks the Pages API which address the repository
+    # publishes to, and nothing more - it never deploys. GitHub's own starter workflow
+    # grants `pages: write` to the whole file instead, which hands that power to every
+    # job in it.
+    # 🔴 If the first run fails with 403 on "Read the Pages configuration", this is the
+    # line to raise to `write` - not the workflow-level permissions above.
+    permissions:
+      contents: read
+      pages: read
+
+    steps:
+      - uses: actions/checkout@v7
+
+      # Rust comes preinstalled on the runner, exactly as in ci.yml. The generator is a
+      # small crate and depends only on chrono-ctl, which has no dependencies of its
+      # own and touches no Windows API - which is why this builds on Linux at all.
+      - uses: Swatinem/rust-cache@v2
+
+      # --strict: a dead internal link fails the build rather than being published.
+      # GitHub Pages cannot issue redirects, so a wrong address stays wrong until a
+      # human notices it.
+      - name: Build the site
+        run: cargo run --release -p chrono-site -- --strict --out dist/site
+
+      - name: Read the Pages configuration
+        id: pages
+        uses: actions/configure-pages@v6
+
+      # The pages carry an absolute canonical address and a CNAME file. If those and
+      # the repository's configured domain disagree, the site goes up under one name
+      # while every page insists it lives at another - which search engines resolve by
+      # ignoring the site. Cheaper to stop here.
+      - name: Refuse to publish under an address the pages do not claim
+        run: |
+          configured=$(printf '%s' "${{ steps.pages.outputs.base_url }}" | sed -E 's#^https?://##; s#/$##')
+          claimed=$(tr -d '\r\n' < dist/site/CNAME)
+          echo "Pages is configured for: $configured"
+          echo "The built site claims:   $claimed"
+          if [ "$configured" != "$claimed" ]; then
+            echo "::error::The repository publishes to '$configured' but the site was built for '$claimed'. Fix site.json or the custom domain in Settings -> Pages - do not publish a site that disagrees with its own address."
+            exit 1
+          fi
+
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: dist/site
+
+  deploy:
+    name: Deploy
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    permissions:
+      pages: write
+      id-token: write
+
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v5

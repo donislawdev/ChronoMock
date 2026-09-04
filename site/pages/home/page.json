@@ -1,0 +1,26 @@
+{
+  "//": "Metadata for one page, in every language it exists in. The slug is part of the published address and GitHub Pages cannot issue redirects, so changing one after the page is indexed loses its position with no way to carry it over - treat these as permanent.",
+
+  "id": "home",
+  "order": 0,
+
+  "//nav": "The home page is reached through the wordmark, so it is not repeated in the navigation.",
+  "nav": false,
+
+  "//title": "Roughly sixty characters is what a result actually shows. The product name leads because the address does too, and the phrase people type - running a Windows application at a different date - follows it rather than being implied.",
+
+  "languages": {
+    "en": {
+      "slug": "",
+      "link_text": "Home",
+      "title": "Chrono Mock - run any Windows app at a different date",
+      "description": "Free and open source Windows tool. Run one application at any date, freeze or speed up its clock, and never touch the system time. Then it tells you if it worked."
+    },
+    "pl": {
+      "slug": "",
+      "link_text": "Start",
+      "title": "Chrono Mock - uruchom aplikację Windows z inną datą",
+      "description": "Darmowe, otwarte narzędzie dla Windows. Uruchom jedną aplikację z dowolną datą, zamroź albo przyspiesz jej zegar, bez zmiany czasu systemowego. I sprawdź, czy zadziałało."
+    }
+  }
+}

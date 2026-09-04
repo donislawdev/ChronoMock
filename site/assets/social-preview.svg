@@ -1,0 +1,57 @@
+<!-- Source for social-preview.png, the picture shown when a link to this site is
+     pasted into a chat or a social network. Kept as SVG in the repository so it can be
+     regenerated rather than only inherited:
+
+       magick -density 384 -background none site/assets/social-preview.svg \
+              -resize 1280x640 site/assets/social-preview.png
+
+     1280x640 is 2:1, which is what a large summary card crops to without cutting.
+     The bean path is the same one as assets/chrono-bean.svg. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 640" width="1280" height="640">
+  <defs>
+    <radialGradient id="bean" cx="62%" cy="28%" r="85%">
+      <stop offset="0%" stop-color="#E4573F"/>
+      <stop offset="42%" stop-color="#C0392B"/>
+      <stop offset="100%" stop-color="#6E1414"/>
+    </radialGradient>
+  </defs>
+
+  <rect width="1280" height="640" fill="#0f1013"/>
+  <rect x="0" y="0" width="1280" height="6" fill="#c0392b"/>
+
+  <!-- Wordmark -->
+  <g transform="translate(80,74) scale(0.1875)">
+    <g transform="translate(128,128) scale(1.38) translate(-147,-128)">
+      <path d="M 140 46 C 178 48, 204 82, 202 128 C 200 174, 180 210, 146 210
+               C 118 210, 98 192, 94 166 C 90 150, 120 142, 122 128
+               C 124 114, 92 106, 96 84 C 100 60, 112 46, 140 46 Z"
+            fill="url(#bean)" stroke="#560E0E" stroke-width="4"/>
+      <ellipse cx="150" cy="92" rx="20" ry="40" fill="#FFFFFF" opacity="0.20"
+               transform="rotate(-28 150 92)"/>
+    </g>
+  </g>
+  <text x="136" y="106" font-family="Segoe UI, Arial, Helvetica, sans-serif"
+        font-size="30" font-weight="600" fill="#e7e9ee">Chrono Mock</text>
+
+  <!-- Headline -->
+  <text x="80" y="240" font-family="Segoe UI, Arial, Helvetica, sans-serif"
+        font-size="76" font-weight="700" fill="#e7e9ee">Run a Windows app</text>
+  <text x="80" y="330" font-family="Segoe UI, Arial, Helvetica, sans-serif"
+        font-size="76" font-weight="700" fill="#e4573f">at any date</text>
+  <text x="80" y="404" font-family="Segoe UI, Arial, Helvetica, sans-serif"
+        font-size="34" font-weight="400" fill="#98a0ad">without touching the system clock</text>
+
+  <!-- The two clocks, the same idea as the panel on the page -->
+  <g transform="translate(80,470)">
+    <rect x="0" y="0" width="380" height="104" rx="12" fill="#16181d" stroke="#272b34"/>
+    <text x="20" y="34" font-family="Segoe UI, Arial, sans-serif" font-size="19" fill="#6f7783">The application sees</text>
+    <text x="20" y="76" font-family="Consolas, monospace" font-size="30" font-weight="600" fill="#e4573f">2027-12-31 23:59:50</text>
+
+    <rect x="404" y="0" width="380" height="104" rx="12" fill="#16181d" stroke="#272b34"/>
+    <text x="424" y="34" font-family="Segoe UI, Arial, sans-serif" font-size="19" fill="#6f7783">The machine still sees</text>
+    <text x="424" y="76" font-family="Consolas, monospace" font-size="30" font-weight="600" fill="#e7e9ee">2026-09-04 18:12:33</text>
+  </g>
+
+  <text x="1200" y="592" text-anchor="end" font-family="Segoe UI, Arial, sans-serif"
+        font-size="22" fill="#6f7783">Free and open source &#183; GPL-3.0 &#183; Windows</text>
+</svg>

@@ -1,0 +1,20 @@
+{
+  "//": "Global facts about the website. Everything that appears on more than one page lives here rather than in the page fragments, because a value repeated across twenty-four pages drifts on the day one of them is edited alone. The generator (crates/site) refuses to emit a page that still contains an unresolved {{token}}, so a name removed from this file breaks the build instead of leaving a hole on a published page.",
+
+  "host": "https://chronomock.donislawdev.com",
+  "cname": "chronomock.donislawdev.com",
+
+  "product": "Chrono Mock",
+  "repo": "https://github.com/donislawdev/ChronoMock",
+
+  "//languages": "The first entry is the default: it owns the site root and is what hreflang x-default points at. Adding a language here without adding its file under i18n/ fails the build.",
+  "languages": ["en", "pl"],
+
+  "//theme": "Taken from the product icon (assets/chrono-bean.svg), not chosen separately - #C0392B is the bean body and #E4573F its highlight. The background matches the application's dark theme.",
+  "theme_color": "#0f1013",
+
+  "social_image": "/assets/social-preview.png",
+  "social_image_width": 1280,
+  "social_image_height": 640,
+  "social_image_alt": "Chrono Mock - run a Windows application at any date and time, without changing the system clock"
+}

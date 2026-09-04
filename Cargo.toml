@@ -4,7 +4,7 @@
 # guard test in crates/cli/tests/architecture.rs.
 [workspace]
 resolver = "2"
-members = ["crates/core", "crates/ctl", "crates/mech", "crates/hook", "crates/proto", "crates/cli"]
+members = ["crates/core", "crates/ctl", "crates/mech", "crates/hook", "crates/proto", "crates/cli", "crates/site"]
 # The spike lives in tools/ (its own workspace, outside git) - keep it out of ours.
 exclude = ["tools"]
 

@@ -1,0 +1,17 @@
+{
+  "//": "GitHub Pages serves one 404 document for the whole site, including addresses under /pl/, so this page cannot be language-specific the way the others are. It is declared in English and carries a short Polish line in its own body. The generator treats it specially: it lands at /404.html, it is marked noindex, it carries no canonical and no hreflang, and it never appears in the sitemap.",
+
+  "id": "404",
+  "order": 999,
+  "nav": false,
+  "indexable": false,
+
+  "languages": {
+    "en": {
+      "slug": "404",
+      "link_text": "Not found",
+      "title": "Page not found - Chrono Mock",
+      "description": "That address does not exist on this site."
+    }
+  }
+}
