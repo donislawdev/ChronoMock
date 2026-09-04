@@ -1,0 +1,198 @@
+<!-- FAQ, Polish. Same fourteen questions. Claims must match the support matrix in
+     README.md - if the two ever disagree, the README is the one that shipped. -->
+
+<div class="shell">
+
+  <section class="plain">
+    <h1>Pytania i odpowiedzi</h1>
+    <p class="sub">
+      Krótkie odpowiedzi, razem z tymi o tym, czego to narzędzie nie zrobi.
+    </p>
+  </section>
+
+  <section>
+
+    <div class="qa">
+      <h3>Czy to zmienia zegar mojego komputera?</h3>
+      <p>
+        Nie i nigdy nie będzie - to jest cały sens tego narzędzia. Przesunięty czas widzi
+        <strong>jeden proces i uruchomione przez niego procesy potomne</strong>. Logowanie do
+        domeny, certyfikaty, Windows Update i wszystkie inne aplikacje przez cały czas widzą
+        prawdziwą datę.
+      </p>
+    </div>
+
+    <div class="qa">
+      <h3>Czy potrzebuję uprawnień administratora?</h3>
+      <p>
+        Nie. Nie ma instalatora, nic nie trafia do rejestru, a całość działa z folderu, który
+        możesz nosić na pendrive.
+      </p>
+    </div>
+
+    <div class="qa">
+      <h3>Czy zadziała z moją aplikacją?</h3>
+      <p>
+        Uczciwa odpowiedź brzmi: żadne narzędzie tego typu nie może tego obiecać z góry -
+        więc to zamiast obiecywać, mierzy. Każda sesja kończy się werdyktem
+        (<strong>działa, działa częściowo, nie działa</strong>), listą kanałów czasu, które
+        aplikacja naprawdę czytała, wraz z liczbą wywołań każdego, oraz listą kanałów, które
+        nie zostały objęte.
+      </p>
+      <p>
+        Aplikacja może czytać zegar drogą, której nic nie przechwyciło - z serwera, z bazy
+        danych, przez warstwę środowiska uruchomieniowego. Kiedy tak się dzieje, dowiadujesz
+        się o tym, zamiast zakładać, że test przeszedł.
+      </p>
+    </div>
+
+    <div class="qa">
+      <h3>Czy działa z aplikacjami .NET, Javy i Pythona?</h3>
+      <p>
+        Częściowo i różnice mają znaczenie. Wszystkie trzy są oznaczone jako
+        <strong>eksperymentalne</strong>: działają na naszych celach testowych, nie były
+        testowane szeroko, a źródłem prawdy jest wbudowany audyt, nie ten akapit.
+      </p>
+      <ul>
+        <li><strong>.NET</strong> - zegar ścienny i strefa sesji są objęte.
+          <code>Stopwatch</code> zostaje na prawdziwym liczniku wysokiej rozdzielczości,
+          chyba że włączysz jego skalowanie.</li>
+        <li><strong>Java</strong> - zegar ścienny i czas trwania są objęte. Strefa sesji
+          <em>nie</em> jest osiągana i jest to znana dziura.</li>
+        <li><strong>Python</strong> - <code>time.time</code> i <code>datetime</code> są objęte.
+          <code>perf_counter</code>, a od Pythona 3.13 również <code>monotonic</code>, siedzą
+          na liczniku wysokiej rozdzielczości, chyba że włączysz skalowanie.</li>
+      </ul>
+    </div>
+
+    <div class="qa">
+      <h3>Czy działa z aplikacjami Electron i Chromium?</h3>
+      <p>
+        Tak, innym mechanizmem. Ich zegar żyje w piaskowanym rendererze, do którego
+        wstrzyknięcie nie sięga, więc aplikacja jest uruchamiana z portem debugowania i
+        czystym, jednorazowym profilem, a jej własne API czasu w JavaScripcie zostają
+        przestawione na zegar sesji - również wewnątrz Web Workerów, gdzie często faktycznie
+        mieszka odliczanie.
+      </p>
+      <p>
+        Jedno ograniczenie warto znać: w tym trybie sesja idzie za strefą hosta. Fałszowana
+        jest chwila, a nie funkcje czasu lokalnego.
+      </p>
+    </div>
+
+    <div class="qa">
+      <h3>Czy mogę sprawić, żeby czas płynął szybciej?</h3>
+      <p>
+        Tak. Wybierasz całkowity mnożnik i zegar aplikacji idzie w tym tempie -
+        <code>x1440</code> zamienia dobę w minutę, więc 30-dniowa wersja próbna wygasa w jakieś
+        pół godziny. Zegar można też zamrozić albo skakać nim w przód i w tył w trakcie sesji.
+      </p>
+      <p>
+        Odliczania i timery leżą na osobnej osi, a ich przyspieszanie to osobny przełącznik,
+        bo skalowanie ich zmienia zachowanie, na którym wiele aplikacji polega.
+      </p>
+    </div>
+
+    <div class="qa">
+      <h3>Czy mogę zmienić samą strefę czasową, bez zmiany daty?</h3>
+      <p>
+        Tak. Sesja niesie własny stały offset, widoczny dla tego procesu, podczas gdy strefa
+        systemu zostaje dokładnie tam, gdzie była. To jest część, którą większość narzędzi
+        pomija, a właśnie tak odtwarza się błąd pojawiający się wyłącznie u klienta pięć stref
+        czasowych dalej.
+      </p>
+    </div>
+
+    <div class="qa">
+      <h3>A co z czasem letnim?</h3>
+      <p>
+        Strefa sesji to <strong>stały offset bez czasu letniego</strong>. Sesja ustawiona na
+        Polskę zostaje przy wybranym offsecie niezależnie od tego, czy jej zegar pokazuje
+        marzec, czy lipiec, więc przebieg przecinający prawdziwą zmianę czasu rozjedzie się o
+        godzinę z tym, co ta strefa naprawdę by pokazała.
+      </p>
+      <p>
+        Przeprowadzenie aplikacji przez zmianę czasu nie jest więc czymś, co to narzędzie na
+        razie robi, a kalkulator dat mówi o tym wprost, zamiast zgadywać.
+      </p>
+    </div>
+
+    <div class="qa">
+      <h3>Dlaczego mój antywirus to zgłasza?</h3>
+      <p>
+        Bo wstrzyknięcie biblioteki do cudzego procesu to legalna, udokumentowana technika
+        Windows, której używa również złośliwe oprogramowanie. To fałszywy alarm wywołany
+        techniką, a nie tym, co narzędzie robi z komputerem. Wstrzykiwana biblioteka to
+        <code>chrono_hook.dll</code>, zbudowana z publicznego kodu na licencji GPL-3.0 i możesz
+        ją zbudować sam. Tryb Chromium i Electron w ogóle nie wstrzykuje.
+      </p>
+      <p>
+        <a href="/pl/pobieranie/">Strona pobierania</a> mówi, co z tym zrobić.
+      </p>
+    </div>
+
+    <div class="qa">
+      <h3>Czy to sposób na przedłużenie wersji próbnej albo obejście licencji?</h3>
+      <p>
+        Nie i nie jest do tego zbudowane. Chrono Mock służy do testowania oprogramowania, za
+        które odpowiadasz - własnego wygasania licencji, własnej logiki odnowień, własnego
+        raportu na koniec miesiąca. Żaden przykład, preset ani strona tutaj nigdy nie pokaże
+        przedłużania cudzej wersji próbnej.
+      </p>
+      <p>
+        Oprogramowanie z ochroną licencji jest zresztą przypadkiem, który najpewniej to
+        narzędzie pokona: kod zabezpieczający często czyta czas drogami dobranymi tak, żeby
+        trudno je było przechwycić, a cofnięcie zegara to warunek, pod który taki kod jest
+        wprost pisany. Planowana jest funkcja skierowana w drugą stronę - tryb, który
+        przepuszcza <em>twoją własną</em> aplikację przez serię manipulacji czasem i raportuje,
+        które z nich twoje zabezpieczenie wychwyciło.
+      </p>
+    </div>
+
+    <div class="qa">
+      <h3>Czy mogę użyć tego w ciągłej integracji?</h3>
+      <p>
+        Tak. Wersja konsolowa to osobna paczka o rozmiarze około 1,4 MB, bez żadnego
+        środowiska do instalowania. Każda komenda mówi <code>--json</code> i kończy się kodem
+        wyjścia, na którym potok może się rozgałęzić, a sesja potrafi zapisać swój dowód do
+        pliku.
+      </p>
+    </div>
+
+    <div class="qa">
+      <h3>Czym to się różni od RunAsDate?</h3>
+      <p>
+        RunAsDate przechwytuje pięć funkcji zegara ściennego i robi to dobrze. To narzędzie
+        obejmuje {{channel_count}} kanałów czasu, potrafi przyspieszyć zegar, daje procesowi
+        własną strefę czasową, podąża za procesami potomnymi i mówi po fakcie, które kanały
+        naprawdę zostały objęte. Jest też otwartoźródłowe, podczas gdy RunAsDate to zamknięty
+        freeware.
+      </p>
+      <p>
+        <a href="/pl/alternatywa-dla-runasdate/">Pełne porównanie</a> mówi też, w czym
+        RunAsDate jest lepszym wyborem.
+      </p>
+    </div>
+
+    <div class="qa">
+      <h3>Czy to libfaketime na Windows?</h3>
+      <p>
+        W zamyśle tak - ta sama idea przesuwania czasu dla jednego programu zamiast dla całej
+        maszyny. W praktyce to inna implementacja, bo
+        <a href="https://github.com/wolfcw/libfaketime">libfaketime</a> opiera się na
+        <code>LD_PRELOAD</code>, którego na Windows nie ma. Jest o tym
+        <a href="/pl/libfaketime-na-windows/">osobna strona</a>.
+      </p>
+    </div>
+
+    <div class="qa">
+      <h3>Czy jest darmowe i czy coś gdzieś wysyła?</h3>
+      <p>
+        Darmowe i otwartoźródłowe na licencji GPL-3.0. Bez konta, bez telemetrii i bez
+        jakiegokolwiek kontaktu z siecią - całe narzędzie działa z wyciągniętym kablem.
+      </p>
+    </div>
+
+  </section>
+
+</div>

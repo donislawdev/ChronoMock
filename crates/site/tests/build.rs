@@ -12,8 +12,14 @@ use chrono_site::{render, repo_root};
 
 /// Build into a directory of this test's own, so tests running in parallel do not
 /// wipe each other's output.
+///
+/// The directory is removed first rather than reused. A test that fails part way can
+/// leave one without the marker the generator looks for, and every later run would
+/// then fail on that residue instead of on the thing under test - which is a slow way
+/// to debug the wrong problem.
 fn built(name: &str) -> PathBuf {
     let out = std::env::temp_dir().join(format!("chrono-site-test-{name}"));
+    let _ = fs::remove_dir_all(&out);
     render::build(&repo_root(), &out).expect("the site in this repository must build");
     out
 }
@@ -165,6 +171,58 @@ fn every_page_has_exactly_one_title_and_one_description() {
             file.display()
         );
     }
+}
+
+#[test]
+fn a_second_build_clears_what_the_first_one_left() {
+    // Deliberately a weak property - it passes whether the directory is emptied or
+    // replaced wholesale. The invariant that actually matters is the next test.
+    let out = built("rebuild");
+    let stale = out.join("gone-in-the-next-build.html");
+    fs::write(&stale, "old").expect("write");
+
+    render::build(&repo_root(), &out).expect("a second build must be allowed");
+
+    assert!(!stale.exists(), "the previous build's leftovers must be cleared");
+    assert!(out.join("index.html").exists(), "and it must be rebuilt");
+}
+
+// Windows-only, because the lever that reliably blocks a deletion is. The generator
+// itself builds and runs on Linux, where this failure mode would need a different one.
+#[cfg(windows)]
+#[test]
+fn a_clean_that_cannot_finish_leaves_the_directory_still_claimable() {
+    // Removing the whole output directory deletes the marker first, so a clean that
+    // fails part way - a preview server holding it open was enough - leaves a
+    // half-empty directory that no longer proves it is ours, and every later run then
+    // refuses to touch it. Emptying the directory while keeping the marker is what
+    // makes the failure recoverable.
+    //
+    // Marking the file read-only is NOT enough - measured: std's remove_file deletes it
+    // anyway. What does block a deletion on Windows is an open handle that shares
+    // nothing, which is the shape of the real case (a preview server holding the
+    // directory it serves).
+    use std::os::windows::fs::OpenOptionsExt;
+
+    let out = built("failedclean");
+    let stubborn = out.join("locked.bin");
+    fs::write(&stubborn, b"x").expect("write");
+
+    let held = fs::OpenOptions::new()
+        .read(true)
+        .share_mode(0)
+        .open(&stubborn)
+        .expect("open with no sharing");
+
+    let err = render::build(&repo_root(), &out).expect_err("the clean cannot finish");
+    assert!(err.contains("locked.bin"), "the error must name the file: {err}");
+    assert!(
+        out.join(".chrono-site").exists(),
+        "the marker must survive a failed clean, or the next run locks itself out"
+    );
+
+    drop(held);
+    fs::remove_file(&stubborn).expect("remove");
 }
 
 #[test]

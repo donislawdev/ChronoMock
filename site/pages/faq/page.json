@@ -1,0 +1,24 @@
+{
+  "//": "Question-shaped queries are how a lot of people arrive at a tool like this, so each heading here is written the way someone would actually type it.",
+
+  "//no-structured-data": "There is deliberately no FAQPage markup on this page. Google restricted FAQ rich results to government and health sites in August 2023 and retired them entirely on 7 May 2026, so the markup would produce nothing. The page earns its place by answering the questions, not by decorating them.",
+
+  "id": "faq",
+  "order": 90,
+  "nav": true,
+
+  "languages": {
+    "en": {
+      "slug": "faq",
+      "link_text": "FAQ",
+      "title": "Chrono Mock FAQ - questions about faking dates on Windows",
+      "description": "Does it change the system clock? Does it need admin rights? Will it work with my app, with .NET, Java or Electron? Short answers, including what it will not do."
+    },
+    "pl": {
+      "slug": "faq",
+      "link_text": "FAQ",
+      "title": "Chrono Mock FAQ - pytania o podmianę daty w aplikacji",
+      "description": "Czy zmienia zegar systemowy? Czy wymaga uprawnień administratora? Czy zadziała z moją aplikacją, z .NET, Javą albo Electronem? Krótkie odpowiedzi, razem z tym, czego nie robi."
+    }
+  }
+}

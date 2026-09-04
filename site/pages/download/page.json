@@ -1,0 +1,22 @@
+{
+  "//": "The conversion page. It is in the navigation and it is what the two big buttons on the home page point at.",
+
+  "id": "download",
+  "order": 10,
+  "nav": true,
+
+  "languages": {
+    "en": {
+      "slug": "download",
+      "link_text": "Download",
+      "title": "Download Chrono Mock for Windows - free, no installer",
+      "description": "Get the free Windows build: a desktop app and a command-line tool. No installer, no administrator rights, and nothing written to the registry."
+    },
+    "pl": {
+      "slug": "pobieranie",
+      "link_text": "Pobierz",
+      "title": "Pobierz Chrono Mock na Windows - darmowe, bez instalatora",
+      "description": "Pobierz darmową wersję na Windows: aplikację okienkową i narzędzie wiersza poleceń. Bez instalatora, bez uprawnień administratora, bez wpisów w rejestrze."
+    }
+  }
+}

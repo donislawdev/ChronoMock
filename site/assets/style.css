@@ -150,6 +150,10 @@ h1 .hl{color:var(--accent)}
 /* -------------------------------------------------------------- sections --- */
 
 section{padding:72px 0;border-top:1px solid var(--line-soft)}
+/* The opening section of a page has nothing above it to be separated from. Its bottom
+   padding is nearly zero because the section that follows brings its own 72px, and two
+   of them stacked left a gap wide enough to read as a missing block (measured at 144px). */
+section.plain{border-top:0;padding:60px 0 4px}
 h2{font-size:clamp(22px,2.4vw,29px);line-height:1.22;letter-spacing:-.016em;margin:0 0 14px;font-weight:660}
 h3{font-size:17px;margin:0 0 6px;font-weight:640;letter-spacing:-.008em}
 .sub{color:var(--muted);max-width:var(--prose);margin:0 0 32px;font-size:16.5px}
@@ -180,6 +184,40 @@ h3{font-size:17px;margin:0 0 6px;font-weight:640;letter-spacing:-.008em}
 .vlist li{display:flex;gap:11px;align-items:flex-start;font-size:15px;color:var(--muted)}
 .vlist b{color:var(--text);font-weight:620}
 .tick{color:var(--accent);flex:0 0 auto;font-weight:700}
+
+/* ----------------------------------------------------------------- prose --- */
+/* Body copy on the pages that are mostly text. Capped at --prose because a line of
+   reading text past roughly eighty characters is measurably harder to follow, and
+   this site has no columns to hide behind. */
+
+.prose{max-width:var(--prose)}
+.prose p{color:var(--muted);font-size:16px}
+.prose strong{color:var(--text);font-weight:620}
+.prose ul,.prose ol{color:var(--muted);padding-left:20px;margin:14px 0}
+.prose li{margin:7px 0}
+.prose h3{margin:30px 0 8px}
+
+.note{
+  border-left:3px solid var(--line);background:var(--surface);
+  border-radius:0 var(--radius) var(--radius) 0;
+  padding:16px 20px;margin:26px 0;max-width:var(--prose);
+}
+.note p{margin:0 0 10px;color:var(--muted);font-size:15px}
+.note p:last-child{margin-bottom:0}
+.note strong{color:var(--text)}
+.note.warning{border-left-color:var(--warn);background:rgba(217,164,65,.06)}
+
+/* ----------------------------------------------------------- question list --- */
+/* Plain headings and paragraphs, with no FAQPage markup: Google restricted FAQ rich
+   results to government and health sites in 2023 and retired them in May 2026, so the
+   markup would decorate nothing. The page has to earn its position by answering. */
+
+.qa{border-top:1px solid var(--line-soft);padding:24px 0;max-width:var(--prose)}
+.qa:first-of-type{border-top:0;padding-top:0}
+.qa h3{font-size:17.5px;margin:0 0 8px;color:var(--text)}
+.qa p{margin:0 0 10px;color:var(--muted);font-size:15.5px}
+.qa p:last-child{margin-bottom:0}
+.qa ul{color:var(--muted);font-size:15.5px;padding-left:20px;margin:10px 0 0}
 
 /* -------------------------------------------------------------- terminal --- */
 /* Every command block on this site is real output from the shipped binary, pasted

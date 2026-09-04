@@ -1,0 +1,195 @@
+<!-- FAQ, English. Each heading is written the way someone would type the question, not
+     the way a manual would title a chapter. Claims here must match the support matrix in
+     README.md - if the two ever disagree, the README is the one that shipped. -->
+
+<div class="shell">
+
+  <section class="plain">
+    <h1>Questions and answers</h1>
+    <p class="sub">
+      Short answers, including the ones about what this tool will not do.
+    </p>
+  </section>
+
+  <section>
+
+    <div class="qa">
+      <h3>Does it change my computer's clock?</h3>
+      <p>
+        No, and it never will - that is the whole point of the tool. The shifted time is
+        visible to <strong>one process and the children it starts</strong>. Your domain
+        logon, your certificates, Windows Update and every other application keep seeing
+        the real date the entire time.
+      </p>
+    </div>
+
+    <div class="qa">
+      <h3>Do I need administrator rights?</h3>
+      <p>
+        No. There is no installer, nothing is written to the registry, and it runs from a
+        folder you can put on a USB stick.
+      </p>
+    </div>
+
+    <div class="qa">
+      <h3>Will it work with my application?</h3>
+      <p>
+        The honest answer is that no tool of this kind can promise that in advance - so
+        this one measures it instead. Every session ends with a verdict
+        (<strong>works, works partially, does not work</strong>), the list of time channels
+        the application actually read with a call count for each, and the list of channels
+        that were not covered.
+      </p>
+      <p>
+        An application can read the clock through a route nothing intercepted - from a
+        server, from a database, through a runtime layer. When that happens you are told,
+        rather than left assuming the test passed.
+      </p>
+    </div>
+
+    <div class="qa">
+      <h3>Does it work with .NET, Java and Python applications?</h3>
+      <p>
+        Partly, and the differences matter. All three are marked <strong>experimental</strong>:
+        they work on the test targets, they have not been tested broadly, and the built-in
+        audit is your source of truth rather than this paragraph.
+      </p>
+      <ul>
+        <li><strong>.NET</strong> - the wall clock and the session time zone are covered.
+          <code>Stopwatch</code> stays on the real high-resolution counter unless you opt in
+          to scaling it.</li>
+        <li><strong>Java</strong> - the wall clock and elapsed time are covered. The session
+          time zone is <em>not</em> reached, which is a known gap.</li>
+        <li><strong>Python</strong> - <code>time.time</code> and <code>datetime</code> are
+          covered. <code>perf_counter</code>, and <code>monotonic</code> on Python 3.13 and
+          later, sit on the high-resolution counter unless you opt in.</li>
+      </ul>
+    </div>
+
+    <div class="qa">
+      <h3>Does it work with Electron and Chromium applications?</h3>
+      <p>
+        Yes, through a different mechanism. Their clock lives in a sandboxed renderer that
+        injection does not reach, so the application is launched with a debug port and a
+        clean throwaway profile, and its own JavaScript time APIs are put on the session
+        clock - including inside the Web Workers, where the timer often actually lives.
+      </p>
+      <p>
+        One limit worth knowing: in this mode the session follows the host time zone. The
+        instant is faked, the local-time getters are not.
+      </p>
+    </div>
+
+    <div class="qa">
+      <h3>Can I make time run faster than real time?</h3>
+      <p>
+        Yes. Pick a whole-number multiplier and the application's clock runs at that speed -
+        <code>x1440</code> turns a day into a minute, so a 30-day trial expires in about half
+        an hour. You can also freeze the clock, or jump forwards and backwards mid-session.
+      </p>
+      <p>
+        Countdowns and timers sit on a separate axis, and speeding those up is a separate
+        switch, because scaling them changes behaviour that a lot of applications depend on.
+      </p>
+    </div>
+
+    <div class="qa">
+      <h3>Can I change only the time zone, without changing the date?</h3>
+      <p>
+        Yes. The session carries its own fixed offset, visible to that process while the
+        system zone stays exactly where it was. This is the part most tools skip, and it is
+        how you reproduce the bug that only appears for the customer five time zones away.
+      </p>
+    </div>
+
+    <div class="qa">
+      <h3>What about daylight saving time?</h3>
+      <p>
+        The session zone is a <strong>fixed offset with no daylight saving</strong>. A
+        session set to Poland stays at the offset you chose whether its clock reads March or
+        July, so a run that crosses a real transition drifts an hour from what that zone
+        would really show.
+      </p>
+      <p>
+        Forcing an application through a daylight saving transition is therefore not
+        something this tool does yet, and the date calculator says so rather than guessing.
+      </p>
+    </div>
+
+    <div class="qa">
+      <h3>Why does my antivirus flag it?</h3>
+      <p>
+        Because injecting a library into another process is a legitimate documented Windows
+        technique that malware also uses. It is a false positive triggered by the technique,
+        not by anything the tool does to your machine. The injected library is
+        <code>chrono_hook.dll</code>, built from the public source under GPL-3.0, and you can
+        rebuild it yourself. The Chromium and Electron mode does not inject at all.
+      </p>
+      <p>
+        <a href="/download/">The download page</a> says what to do about it.
+      </p>
+    </div>
+
+    <div class="qa">
+      <h3>Is this a way to extend a trial or get around a licence?</h3>
+      <p>
+        No, and it is not built for that. Chrono Mock is for testing software you are
+        responsible for - your own licence expiry, your own renewal logic, your own
+        month-end report. No example, preset or page here will ever demonstrate extending
+        somebody else's trial period.
+      </p>
+      <p>
+        Software with licence protection is in fact the case most likely to defeat it:
+        anti-tamper code frequently reads time through routes deliberately chosen to be hard
+        to intercept, and rolling a clock backwards is a condition such software is written
+        to detect. A feature pointed the other way is planned - a mode that runs a series of
+        time manipulations against <em>your own</em> application and reports which ones your
+        protection caught.
+      </p>
+    </div>
+
+    <div class="qa">
+      <h3>Can I use it in continuous integration?</h3>
+      <p>
+        Yes. The command-line build is a separate download of about 1.4 MB with no runtime
+        to install. Every command speaks <code>--json</code> and exits with a code a pipeline
+        can branch on, and a session can write its evidence to a file.
+      </p>
+    </div>
+
+    <div class="qa">
+      <h3>How is this different from RunAsDate?</h3>
+      <p>
+        RunAsDate intercepts five wall-clock functions and does that well. This tool covers
+        {{channel_count}} time channels, can speed the clock up, gives the process its own
+        time zone, follows child processes, and tells you afterwards which channels were
+        actually covered. It is also open source, where RunAsDate is closed freeware.
+      </p>
+      <p>
+        <a href="/runasdate-alternative/">The full comparison</a> also says where RunAsDate
+        is the better pick.
+      </p>
+    </div>
+
+    <div class="qa">
+      <h3>Is this libfaketime for Windows?</h3>
+      <p>
+        In spirit, yes - the same idea of moving time for one program rather than for the
+        machine. In practice it is a different implementation, because
+        <a href="https://github.com/wolfcw/libfaketime">libfaketime</a> depends on
+        <code>LD_PRELOAD</code>, which does not exist on Windows. There is
+        <a href="/libfaketime-windows/">a page about exactly that</a>.
+      </p>
+    </div>
+
+    <div class="qa">
+      <h3>Is it free, and does it send anything anywhere?</h3>
+      <p>
+        Free and open source under GPL-3.0. No account, no telemetry, and it never talks to
+        the internet at all - the whole tool works with the network cable pulled out.
+      </p>
+    </div>
+
+  </section>
+
+</div>
