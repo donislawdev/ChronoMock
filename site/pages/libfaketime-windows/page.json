@@ -1,0 +1,24 @@
+{
+  "//": "The clearest gap found while researching this: search engines answer 'libfaketime for Windows' with a plain 'it does not run there', and stop. This page answers the question that was actually being asked - how do I do this on Windows - and maps the flags across so somebody arriving from Linux does not have to guess.",
+
+  "//honesty": "Every statement about libfaketime comes from its own README. It already does several of the things this tool does, acceleration among them, and the page says so.",
+
+  "id": "libfaketime-windows",
+  "order": 30,
+  "nav": false,
+
+  "languages": {
+    "en": {
+      "slug": "libfaketime-windows",
+      "link_text": "libfaketime on Windows",
+      "title": "libfaketime for Windows - the closest equivalent",
+      "description": "libfaketime needs LD_PRELOAD, which Windows does not have. Here is what replaces it, with the FAKETIME flags mapped one by one onto their Windows equivalents."
+    },
+    "pl": {
+      "slug": "libfaketime-na-windows",
+      "link_text": "libfaketime na Windows",
+      "title": "libfaketime na Windows - najbliższy odpowiednik",
+      "description": "libfaketime potrzebuje LD_PRELOAD, którego Windows nie ma. Oto co go zastępuje, razem z flagami FAKETIME przełożonymi po kolei na windowsowe odpowiedniki."
+    }
+  }
+}

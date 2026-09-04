@@ -1,0 +1,147 @@
+<!-- Comparison with RunAsDate, Polish. Same claims, same sources, same section about
+     where RunAsDate wins - a comparison that finds no fault with itself is an advert. -->
+
+<div class="shell">
+
+  <section class="plain">
+    <h1>Alternatywa dla RunAsDate, z tym, czego brakowało</h1>
+    <p class="sub">
+      <a href="https://www.nirsoft.net/utils/run_as_date.html">RunAsDate</a> od lat jest
+      odpowiedzią na <em>„uruchom ten program z inną datą na Windows"</em> i jest to dobra
+      odpowiedź. Ta strona jest o tym, czym te dwa narzędzia się różnią - i w czym RunAsDate
+      nadal wygrywa.
+    </p>
+  </section>
+
+  <section>
+    <h2>Obok siebie</h2>
+    <div class="wrap">
+      <table>
+        <thead>
+          <tr><th>&nbsp;</th><th>RunAsDate</th><th>Chrono Mock</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Uruchamia aplikację z fałszywą datą</td><td class="y">tak</td><td class="y">tak</td></tr>
+          <tr><td>Nie rusza zegara systemowego</td><td class="y">tak</td><td class="y">tak</td></tr>
+          <tr><td>Przechwycone funkcje czasu</td><td class="n">5</td><td class="y">{{channel_count}} kanałów</td></tr>
+          <tr><td>Zegar szybszy niż rzeczywisty</td><td class="n">nieoferowane</td><td class="y">dowolny całkowity mnożnik</td></tr>
+          <tr><td>Zamrożenie zegara</td><td class="n">nieoferowane</td><td class="y">tak</td></tr>
+          <tr><td>Skok w trakcie działania aplikacji</td><td class="n">nieoferowane</td><td class="y">w przód i w tył</td></tr>
+          <tr><td>Strefa czasowa tylko dla tego procesu</td><td class="n">nieudokumentowane</td><td class="y">tak, stały offset</td></tr>
+          <tr><td>Procesy potomne dziedziczą sesję</td><td class="n">nieudokumentowane</td><td class="y">tak</td></tr>
+          <tr><td>Mówi, czy zadziałało</td><td class="n">nie</td><td class="y">werdykt, per kanał, z liczbą wywołań</td></tr>
+          <tr><td>Aplikacje Electron i Chromium</td><td class="n">nieoferowane</td><td class="y">osobny mechanizm</td></tr>
+          <tr><td>Wiersz poleceń do CI</td><td class="y">tak</td><td class="y">tak, z kodami wyjścia i JSON-em</td></tr>
+          <tr><td>Kod źródłowy</td><td class="n">freeware, zamknięty</td><td class="y">GPL-3.0</td></tr>
+          <tr><td>Rozmiar</td><td class="y">poniżej 40 KB</td><td class="n">1,4 MB CLI, 69 MB z oknem</td></tr>
+          <tr><td>Stare wersje Windows</td><td class="y">wstecz do Windows 2000</td><td class="n">Windows 10 i 11</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="sub" style="margin-top:18px">
+      <em>„Nieudokumentowane"</em> znaczy, że funkcja nie jest wspomniana na stronie
+      RunAsDate. To nie jest twierdzenie, że narzędzie jej nie ma.
+    </p>
+  </section>
+
+  <section>
+    <h2>Różnica, która waży najwięcej</h2>
+    <div class="prose">
+      <p>
+        To nie jest liczba kanałów. To fakt, że RunAsDate uczciwie pisze we własnej
+        dokumentacji, że <strong>„nie wpłynie na aplikacje, które biorą bieżącą datę i
+        godzinę z innego źródła"</strong> - i zostawia cię z ustaleniem, czy twoja jest
+        jedną z nich.
+      </p>
+      <p>
+        Chrono Mock traktuje to samo zdanie jako coś do <strong>zmierzenia</strong>. Każda
+        sesja kończy się werdyktem, listą kanałów, które aplikacja naprawdę czytała, z
+        liczbą wywołań każdego, listą kanałów pominiętych oraz ostrzeżeniem, gdy aplikacja
+        otwierała połączenie sieciowe, zanim w ogóle zapytała o zegar.
+      </p>
+      <p>
+        Aplikacja, która wygląda na przesuniętą w czasie, a nie jest, jest gorsza niż taka,
+        która w ogóle nie wystartowała - produkuje zdany test, który nic nie znaczy.
+        <a href="/pl/audyt-zrodel-czasu/">Jak działa audyt &rarr;</a>
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Pięć funkcji albo {{channel_count}} kanałów</h2>
+    <div class="prose">
+      <p>
+        RunAsDate przechwytuje <code>GetSystemTime</code>, <code>GetLocalTime</code>,
+        <code>GetSystemTimeAsFileTime</code>, <code>NtQuerySystemTime</code> oraz
+        <code>GetSystemTimePreciseAsFileTime</code>. Dla bardzo wielu aplikacji to naprawdę
+        wystarcza, bo właśnie tam czytany jest zegar ścienny.
+      </p>
+      <p>
+        Reszta powierzchni to miejsca, w których kod zależny od daty lubi się chować:
+      </p>
+      <ul>
+        <li><strong>strefa czasowa</strong> - cztery funkcje plus cała rodzina konwersji
+          między strefami, przez którą raport ląduje w złym dniu</li>
+        <li><strong>oś czasu trwania</strong> - liczniki taktów i nieobciążony czas przerwań,
+          czyli to, co zwykle mierzy odliczanie wersji próbnej</li>
+        <li><strong>uśpienia i czekania</strong>, żeby opóźnienie było opóźnieniem na zegarze
+          sesji, a nie na prawdziwym</li>
+        <li><strong>timery</strong> - nastawialne, okienkowe, z puli wątków i multimedialne</li>
+        <li><strong>tworzenie procesów</strong>, żeby dzieci instalatora działały w tej samej
+          sesji, a nie w dniu dzisiejszym</li>
+      </ul>
+    </div>
+  </section>
+
+  <section>
+    <h2>Kiedy RunAsDate jest lepszym wyborem</h2>
+    <div class="prose">
+      <p>Naprawdę i wcale nie rzadko:</p>
+      <ul>
+        <li><strong>Potrzebujesz jednej daty, w normalnym tempie, teraz.</strong> RunAsDate
+          waży poniżej 40 KB, nie ma okna do nauczenia się i robi dokładnie to od wielu
+          lat.</li>
+        <li><strong>Jesteś na starszym Windowsie.</strong> RunAsDate sięga wstecz do Windows
+          2000. To narzędzie celuje w Windows 10 i 11 i nie jest testowane nigdzie
+          starzej.</li>
+        <li><strong>Rozmiar ma znaczenie.</strong> 40 KB wobec 1,4 MB dla wiersza poleceń albo
+          69 MB z oknem to nie jest bliskie porównanie.</li>
+        <li><strong>Nie chcesz werdyktu.</strong> Mierzenie pokrycia oznacza czytanie wyniku.
+          Jeśli test jest jednorazowy, to narzut, o który nie prosiłeś.</li>
+      </ul>
+      <p>
+        Te dwa narzędzia zresztą współistnieją. Nic tu nie każe ci porzucać RunAsDate do
+        szybkich przypadków.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Do czego żadne z nich nie służy</h2>
+    <div class="prose">
+      <p>
+        Oba narzędzia pojawiają się w wyszukiwaniach o przedłużaniu wersji próbnych.
+        <strong>To nie jest do tego zbudowane</strong> i żaden przykład, preset ani strona
+        tutaj nigdy tego nie pokaże. Chrono Mock służy do testowania oprogramowania, za które
+        odpowiadasz - własnego wygasania licencji, własnej logiki odnowień, własnego raportu
+        na koniec miesiąca.
+      </p>
+      <p>
+        Jest to zresztą przypadek, w którym najmniej prawdopodobne jest, że zadziała. Ochrona
+        licencji rutynowo czyta czas drogami dobranymi tak, żeby trudno je było przechwycić -
+        współdzielona strona danych trybu użytkownika, bezpośrednie wywołania systemowe,
+        serwer - a cofający się zegar to warunek, pod który taki kod jest wprost pisany.
+        Audyt powie ci, że nie zadziałało, co jest odpowiedzią uczciwą, a nie użyteczną.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Wypróbuj</h2>
+    <div class="cta">
+      <a class="btn btn-primary" href="/pl/pobieranie/">Pobierz na Windows</a>
+      <a class="btn btn-ghost" href="/pl/faq/">Najpierw przeczytaj FAQ</a>
+    </div>
+  </section>
+
+</div>

@@ -1,0 +1,24 @@
+{
+  "//": "The comparison page. High-intent traffic - somebody typing 'RunAsDate alternative' already knows what they want to do. Not in the navigation: it is reached from the home page and the FAQ, where the comparison is actually raised.",
+
+  "//honesty": "Every claim about RunAsDate on this page comes from its own documentation at nirsoft.net, quoted rather than paraphrased where it matters. The section saying where RunAsDate is the better choice is not decoration - a comparison that finds no fault with itself is an advertisement, and reads like one.",
+
+  "id": "runasdate-alternative",
+  "order": 20,
+  "nav": false,
+
+  "languages": {
+    "en": {
+      "slug": "runasdate-alternative",
+      "link_text": "vs RunAsDate",
+      "title": "RunAsDate alternative for Windows QA - open source",
+      "description": "How Chrono Mock differs from RunAsDate: {{channel_count}} time channels instead of five, an adjustable clock speed, its own time zone, child processes - and a verdict on whether it worked."
+    },
+    "pl": {
+      "slug": "alternatywa-dla-runasdate",
+      "link_text": "vs RunAsDate",
+      "title": "Alternatywa dla RunAsDate na Windows - otwarte źródła",
+      "description": "Czym Chrono Mock różni się od RunAsDate: {{channel_count}} kanałów czasu zamiast pięciu, regulowana prędkość zegara, własna strefa, procesy potomne - i werdykt, czy zadziałało."
+    }
+  }
+}

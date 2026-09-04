@@ -1,0 +1,147 @@
+<!-- Comparison with RunAsDate, English.
+
+     Every claim about RunAsDate comes from its own page at nirsoft.net and is quoted
+     where it matters. "Not documented" means exactly that - the feature is not
+     mentioned there - and is not a claim that it is missing. -->
+
+<div class="shell">
+
+  <section class="plain">
+    <h1>A RunAsDate alternative, with the parts that were missing</h1>
+    <p class="sub">
+      <a href="https://www.nirsoft.net/utils/run_as_date.html">RunAsDate</a> has been the
+      answer to <em>"run this program at a different date on Windows"</em> for years, and
+      it is a good one. This page is about where the two differ, and where RunAsDate is
+      still the better pick.
+    </p>
+  </section>
+
+  <section>
+    <h2>Side by side</h2>
+    <div class="wrap">
+      <table>
+        <thead>
+          <tr><th>&nbsp;</th><th>RunAsDate</th><th>Chrono Mock</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Runs one application at a fake date</td><td class="y">yes</td><td class="y">yes</td></tr>
+          <tr><td>Leaves the system clock alone</td><td class="y">yes</td><td class="y">yes</td></tr>
+          <tr><td>Time functions intercepted</td><td class="n">5</td><td class="y">{{channel_count}} channels</td></tr>
+          <tr><td>Clock faster than real time</td><td class="n">not offered</td><td class="y">any whole multiplier</td></tr>
+          <tr><td>Freeze the clock</td><td class="n">not offered</td><td class="y">yes</td></tr>
+          <tr><td>Jump while the app is running</td><td class="n">not offered</td><td class="y">forwards and backwards</td></tr>
+          <tr><td>Time zone for that process only</td><td class="n">not documented</td><td class="y">yes, fixed offset</td></tr>
+          <tr><td>Child processes inherit the session</td><td class="n">not documented</td><td class="y">yes</td></tr>
+          <tr><td>Tells you whether it worked</td><td class="n">no</td><td class="y">verdict, per channel, with call counts</td></tr>
+          <tr><td>Electron and Chromium applications</td><td class="n">not offered</td><td class="y">separate mechanism</td></tr>
+          <tr><td>Command line for CI</td><td class="y">yes</td><td class="y">yes, with exit codes and JSON</td></tr>
+          <tr><td>Source code</td><td class="n">freeware, closed</td><td class="y">GPL-3.0</td></tr>
+          <tr><td>Size</td><td class="y">under 40 KB</td><td class="n">1.4 MB CLI, 69 MB with the window</td></tr>
+          <tr><td>Old Windows versions</td><td class="y">back to Windows 2000</td><td class="n">Windows 10 and 11</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="sub" style="margin-top:18px">
+      <em>"Not documented"</em> means the feature is not mentioned on the RunAsDate page.
+      It is not a claim that the tool lacks it.
+    </p>
+  </section>
+
+  <section>
+    <h2>The difference that matters most</h2>
+    <div class="prose">
+      <p>
+        It is not the channel count. It is that RunAsDate tells you, honestly, in its own
+        documentation, that it <strong>"will not affect applications that take the current
+        date/time from another source"</strong> - and then leaves you to work out whether
+        yours is one of them.
+      </p>
+      <p>
+        Chrono Mock treats that same sentence as something to <strong>measure</strong>. Every
+        session ends with a verdict, the channels the application actually read with a count
+        for each, the channels that were missed, and a warning when the application was seen
+        opening a network connection before it ever asked the clock.
+      </p>
+      <p>
+        An application that looks time-shifted but is not is worse than one that never
+        launched - it produces a passing test that means nothing.
+        <a href="/time-source-audit/">How the audit works &rarr;</a>
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Five functions, or {{channel_count}} channels</h2>
+    <div class="prose">
+      <p>
+        RunAsDate intercepts <code>GetSystemTime</code>, <code>GetLocalTime</code>,
+        <code>GetSystemTimeAsFileTime</code>, <code>NtQuerySystemTime</code> and
+        <code>GetSystemTimePreciseAsFileTime</code>. For a great many applications that is
+        genuinely enough, because that is where the wall clock is read.
+      </p>
+      <p>
+        The rest of the surface is where date-dependent code tends to hide:
+      </p>
+      <ul>
+        <li>the <strong>time zone</strong> - four functions, plus the whole family that
+          converts between zones, which is how a report lands on the wrong day</li>
+        <li>the <strong>elapsed-time axis</strong> - tick counts and unbiased interrupt time,
+          which is what a trial countdown usually measures</li>
+        <li><strong>sleeps and waits</strong>, so a delay is a delay on the session clock and
+          not on the real one</li>
+        <li><strong>timers</strong> - waitable, window, thread-pool and multimedia</li>
+        <li><strong>process creation</strong>, so an installer's children run in the same
+          session rather than in the present day</li>
+      </ul>
+    </div>
+  </section>
+
+  <section>
+    <h2>When RunAsDate is the better choice</h2>
+    <div class="prose">
+      <p>Genuinely, and not rarely:</p>
+      <ul>
+        <li><strong>You need one date, at normal speed, right now.</strong> RunAsDate is
+          under 40 KB, has no window to learn and has been doing exactly this for many
+          years.</li>
+        <li><strong>You are on an older Windows.</strong> RunAsDate goes back to Windows 2000.
+          This tool targets Windows 10 and 11 and is not tested anywhere older.</li>
+        <li><strong>Size matters.</strong> 40 KB against 1.4 MB for the command line, or
+          69 MB with the window, is not a close comparison.</li>
+        <li><strong>You do not want a verdict.</strong> Measuring coverage means reading the
+          result. If the test is throwaway, that is overhead you did not ask for.</li>
+      </ul>
+      <p>
+        The two also coexist. Nothing here stops you keeping RunAsDate for the quick case.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>What neither of them is for</h2>
+    <div class="prose">
+      <p>
+        Both tools turn up in searches about extending trial periods. <strong>This one is not
+        built for that</strong>, and no example, preset or page here will ever demonstrate it.
+        Chrono Mock is for testing software you are responsible for - your own licence expiry,
+        your own renewal logic, your own month-end report.
+      </p>
+      <p>
+        It is also the case least likely to work. Licence protection routinely reads time
+        through routes chosen to be hard to intercept - the shared user-mode data page,
+        direct system calls, a server - and a clock moving backwards is a condition such code
+        is written to detect. The audit will tell you that it did not work, which is the
+        honest answer rather than a useful one.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Try it</h2>
+    <div class="cta">
+      <a class="btn btn-primary" href="/download/">Download for Windows</a>
+      <a class="btn btn-ghost" href="/faq/">Read the FAQ first</a>
+    </div>
+  </section>
+
+</div>

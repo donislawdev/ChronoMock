@@ -1,0 +1,136 @@
+<!-- libfaketime on Windows, Polish. Same facts, same sources, same short answer first. -->
+
+<div class="shell">
+
+  <section class="plain">
+    <h1>libfaketime na Windows</h1>
+    <p class="sub">
+      <strong>Krótka odpowiedź:</strong> libfaketime nie działa na Windows i działać nie
+      może - opiera się na <code>LD_PRELOAD</code>, którego Windows nie ma. Chrono Mock to ta
+      sama idea zbudowana tak, jak pozwala Windows.
+    </p>
+  </section>
+
+  <section>
+    <h2>Dlaczego nie da się tego po prostu przenieść</h2>
+    <div class="prose">
+      <p>
+        <a href="https://github.com/wolfcw/libfaketime">libfaketime</a> działa tak, że
+        dynamiczny loader ustawia małą bibliotekę przed biblioteką C, więc wywołania
+        <code>time()</code> trafiają najpierw do podmiany. Tym zaczepem jest
+        <code>LD_PRELOAD</code> na Linuksie i <code>DYLD_INSERT_LIBRARIES</code> na macOS-ie.
+        Własny README projektu wymienia dokładnie te dwie platformy.
+      </p>
+      <p>
+        Windows nie ma odpowiednika, a jego zegar i tak nie mieszka za jedną funkcją.
+        Aplikacje czytają czas przez API Win32, przez natywne API pod spodem i przez to, co
+        owija jedno albo drugie ich środowisko uruchomieniowe - więc windowsowa wersja tego
+        pomysłu to biblioteka wstrzykiwana do procesu celu, przekierowująca zestaw
+        eksportowanych funkcji, a nie jeden symbol.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Flagi, przełożone jedna po drugiej</h2>
+    <div class="wrap">
+      <table>
+        <thead>
+          <tr><th>libfaketime</th><th>Chrono Mock</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>FAKETIME="2020-12-24 20:30:00"</code></td>
+            <td><code>--at 2020-12-24T20:30:00</code></td>
+          </tr>
+          <tr>
+            <td><code>FAKETIME="+14d"</code></td>
+            <td><code>--at +14d</code></td>
+          </tr>
+          <tr>
+            <td><code>FAKETIME="-10m"</code></td>
+            <td><code>--at -10m</code></td>
+          </tr>
+          <tr>
+            <td><code>FAKETIME="+0 x2"</code></td>
+            <td><code>--mode x2</code></td>
+          </tr>
+          <tr>
+            <td><code>FAKETIME_DONT_FAKE_MONOTONIC=1</code></td>
+            <td>tutaj domyślne - patrz niżej</td>
+          </tr>
+          <tr>
+            <td><code>LD_PRELOAD=libfaketime.so.1</code></td>
+            <td>nic do ustawiania - narzędzie wstrzykuje samo</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p class="sub" style="margin-top:26px">Więc dwie strony tego samego testu wyglądają tak:</p>
+
+    <pre class="term"><span class="c"># Linux</span>
+FAKETIME="2020-12-24 20:30:00" LD_PRELOAD=/usr/local/lib/libfaketime.so.1 ./ledger
+
+<span class="c"># Windows</span>
+<span class="p">chrono</span> run "C:\apps\Ledger.exe" --at 2020-12-24T20:30:00</pre>
+  </section>
+
+  <section>
+    <h2>Czym te dwa naprawdę się różnią</h2>
+    <div class="prose">
+      <p>
+        <strong>Zegary monotoniczne są odwrócone.</strong> libfaketime fałszuje je domyślnie i
+        daje <code>FAKETIME_DONT_FAKE_MONOTONIC</code>, żeby to wyłączyć. Tutaj licznik
+        wysokiej rozdzielczości domyślnie zostaje prawdziwy, bo jego skalowanie
+        destabilizowało renderowanie w testach, a włącza się je flagą
+        <code>--scale-qpc</code>. To ten przełącznik sprawia, że <code>monotonic</code> w
+        Pythonie 3.13+, <code>Stopwatch</code> w .NET i <code>nanoTime</code> w Javie idą za
+        zegarem sesji.
+      </p>
+      <p>
+        <strong>Windows ma więcej miejsc do przechwycenia.</strong> Poza zegarem ściennym jest
+        strefa czasowa, oś czasu trwania, cztery rodziny timerów, funkcje uśpienia i czekania
+        oraz tworzenie procesów - razem {{channel_count}} kanałów.
+      </p>
+      <p>
+        <strong>To narzędzie raportuje własne pokrycie.</strong> Każda sesja kończy się
+        werdyktem, listą kanałów, które aplikacja naprawdę czytała, z liczbą wywołań każdego,
+        oraz listą kanałów pominiętych. To część, która nie ma odpowiednika na żadnej z tych
+        platform.
+      </p>
+      <p>
+        <strong>libfaketime jest starsze i na swoim gruncie szersze.</strong> Ma za sobą lata
+        użycia, obejmuje szeroki zakres punktów wejścia biblioteki C, a na Linuksie jest
+        właściwym narzędziem. Nic tutaj go tam nie zastępuje.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Jeśli naprawdę chcesz samego libfaketime</h2>
+    <div class="prose">
+      <p>
+        Dwie uczciwe drogi, obie przenoszą testowany program na Linuksa:
+      </p>
+      <ul>
+        <li><strong>WSL</strong> - zbuduj i uruchom libfaketime w podsystemie Linux. Dobre,
+          kiedy testowany program jest linuksowy, a ty po prostu pracujesz na Windows.</li>
+        <li><strong>Kontener</strong> - ten sam pomysł, bardziej powtarzalny.</li>
+      </ul>
+      <p>
+        Żadna z nich nie pomoże przy aplikacji windowsowej, a to jest przypadek, dla którego
+        to narzędzie istnieje.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Wypróbuj</h2>
+    <div class="cta">
+      <a class="btn btn-primary" href="/pl/pobieranie/">Pobierz na Windows</a>
+      <a class="btn btn-ghost" href="/pl/faq/">Przeczytaj FAQ</a>
+    </div>
+  </section>
+
+</div>

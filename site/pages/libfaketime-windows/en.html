@@ -1,0 +1,140 @@
+<!-- libfaketime on Windows, English.
+
+     Somebody typing this into a search engine gets told "it does not run there" and
+     nothing else. The answer they wanted is how to do the same thing on Windows, so
+     that is what this page leads with, and the flag mapping is the substance.
+
+     Every statement about libfaketime comes from its own README. Every command shown
+     here was run against the shipped binary before it was written down. -->
+
+<div class="shell">
+
+  <section class="plain">
+    <h1>libfaketime for Windows</h1>
+    <p class="sub">
+      <strong>Short answer:</strong> libfaketime does not run on Windows, and cannot -
+      it is built on <code>LD_PRELOAD</code>, which Windows does not have. Chrono Mock is
+      the same idea built the way Windows allows.
+    </p>
+  </section>
+
+  <section>
+    <h2>Why it cannot simply be ported</h2>
+    <div class="prose">
+      <p>
+        <a href="https://github.com/wolfcw/libfaketime">libfaketime</a> works by having the
+        dynamic loader place a small library in front of the C library, so that a program's
+        calls to <code>time()</code> reach the replacement first. That hook is
+        <code>LD_PRELOAD</code> on Linux and <code>DYLD_INSERT_LIBRARIES</code> on macOS.
+        Its own README lists exactly those two platforms.
+      </p>
+      <p>
+        Windows has no equivalent, and its clock does not live behind one function anyway.
+        Applications read the time through the Win32 API, through the native API below it,
+        and through whatever their runtime wraps around either - so the Windows version of
+        this idea is a library injected into the target process, redirecting a set of
+        exported functions rather than one symbol.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>The flags, mapped across</h2>
+    <div class="wrap">
+      <table>
+        <thead>
+          <tr><th>libfaketime</th><th>Chrono Mock</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>FAKETIME="2020-12-24 20:30:00"</code></td>
+            <td><code>--at 2020-12-24T20:30:00</code></td>
+          </tr>
+          <tr>
+            <td><code>FAKETIME="+14d"</code></td>
+            <td><code>--at +14d</code></td>
+          </tr>
+          <tr>
+            <td><code>FAKETIME="-10m"</code></td>
+            <td><code>--at -10m</code></td>
+          </tr>
+          <tr>
+            <td><code>FAKETIME="+0 x2"</code></td>
+            <td><code>--mode x2</code></td>
+          </tr>
+          <tr>
+            <td><code>FAKETIME_DONT_FAKE_MONOTONIC=1</code></td>
+            <td>the default here - see below</td>
+          </tr>
+          <tr>
+            <td><code>LD_PRELOAD=libfaketime.so.1</code></td>
+            <td>nothing to set - the tool injects</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p class="sub" style="margin-top:26px">So the two sides of the same test look like this:</p>
+
+    <pre class="term"><span class="c"># Linux</span>
+FAKETIME="2020-12-24 20:30:00" LD_PRELOAD=/usr/local/lib/libfaketime.so.1 ./ledger
+
+<span class="c"># Windows</span>
+<span class="p">chrono</span> run "C:\apps\Ledger.exe" --at 2020-12-24T20:30:00</pre>
+  </section>
+
+  <section>
+    <h2>Where the two genuinely differ</h2>
+    <div class="prose">
+      <p>
+        <strong>Monotonic clocks are inverted.</strong> libfaketime fakes them by default and
+        gives you <code>FAKETIME_DONT_FAKE_MONOTONIC</code> to stop it. Here the
+        high-resolution counter stays real by default, because scaling it destabilised
+        rendering in testing, and <code>--scale-qpc</code> opts in. That switch is what makes
+        Python 3.13+ <code>monotonic</code>, .NET <code>Stopwatch</code> and Java
+        <code>nanoTime</code> follow the session clock.
+      </p>
+      <p>
+        <strong>Windows has more places to intercept.</strong> Beyond the wall clock there is
+        the time zone, the elapsed-time axis, four families of timer, the sleep and wait
+        functions, and process creation - {{channel_count}} channels in total.
+      </p>
+      <p>
+        <strong>This one reports its own coverage.</strong> Every session ends with a verdict,
+        the channels the application actually read with a count for each, and the channels
+        that were missed. That is the part with no equivalent on either platform.
+      </p>
+      <p>
+        <strong>libfaketime is older and broader on its own ground.</strong> It has years of
+        use behind it, covers a wide range of C library entry points, and on Linux it is the
+        right tool. Nothing here replaces it there.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>If you actually want libfaketime itself</h2>
+    <div class="prose">
+      <p>
+        Two honest routes, both of which move the program under test onto Linux:
+      </p>
+      <ul>
+        <li><strong>WSL</strong> - build and run libfaketime inside the Linux subsystem. Fine
+          when the thing being tested is a Linux program you happen to develop on Windows.</li>
+        <li><strong>A container</strong> - same idea, more reproducible.</li>
+      </ul>
+      <p>
+        Neither helps with a Windows application, which is the case this tool exists for.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Try it</h2>
+    <div class="cta">
+      <a class="btn btn-primary" href="/download/">Download for Windows</a>
+      <a class="btn btn-ghost" href="/faq/">Read the FAQ</a>
+    </div>
+  </section>
+
+</div>
