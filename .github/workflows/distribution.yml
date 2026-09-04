@@ -22,16 +22,16 @@ jobs:
     name: Portable build
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/setup-dotnet@v6
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
           dotnet-version: '10.0.x'
 
       - name: Add the 32-bit target
         run: rustup target add i686-pc-windows-msvc
 
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
 
       # The script's own gate calls `cargo deny`, so the binary has to be resolvable as a cargo subcommand.
       - name: Put cargo-deny on PATH
@@ -44,7 +44,7 @@ jobs:
 
       # Only the zips: the unpacked folder is the same bytes again, and the GUI one is ~164 MB.
       - name: Upload the packages
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: chrono-mock-portable
           path: dist/*.zip

@@ -16,6 +16,13 @@
 # `cargo fmt --check` is also absent, and on purpose: this codebase is not written to default rustfmt
 # (measured 2026-09-04 - 7654 diff lines across every crate), so the check would fail on the first run and
 # adopting it means reformatting the whole workspace. That is a decision for the owner, not a CI default.
+#
+# Every `uses:` is pinned to a full commit SHA, with the release it corresponds to in the comment
+# beside it. A tag is a moving pointer: the immutable-release scheme covers the actions/* ones, but
+# not a third-party action, and CodeQL flagged exactly that - actions/unpinned-tag on
+# Swatinem/rust-cache, in three workflows. It matters most in distribution.yml, which builds the
+# archives people download. Dependabot updates the SHA and the version comment together, so pinning
+# does not mean freezing.
 name: CI
 
 on:
@@ -39,9 +46,9 @@ jobs:
     name: Gates
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/setup-dotnet@v6
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
           dotnet-version: '10.0.x'
 
@@ -50,7 +57,7 @@ jobs:
       - name: Add the 32-bit target
         run: rustup target add i686-pc-windows-msvc
 
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
 
       # Cheapest gate first: a whitespace slip should not wait out a four-minute Rust build.
       - name: C# format

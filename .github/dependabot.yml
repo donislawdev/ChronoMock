@@ -51,9 +51,10 @@ updates:
           - "patch"
 
   # ---- The workflows themselves ------------------------------------------------------
-  # Action versions are pinned by major tag in the workflows, so this catches the day a
-  # major is superseded - which is exactly the change that would otherwise sit unnoticed
-  # until an action is deprecated and the build stops.
+  # Every action is pinned to a full commit SHA (the reason is at the top of ci.yml), which is
+  # precisely the form that never updates on its own - a SHA does not move. Dependabot bumps the
+  # SHA and its version comment together, so this is what keeps a pinned action from quietly
+  # ageing until it is deprecated and the build stops.
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
