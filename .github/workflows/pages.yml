@@ -4,13 +4,7 @@ name: Pages
 # program's release path: it builds static files and deploys them, and it is the only
 # workflow allowed to write to Pages.
 #
-# 🔴 NOT YET VERIFIED BY A REAL RUN, unlike ci.yml, audit.yml and distribution.yml.
-# It cannot be: GitHub Pages is available in public repositories on GitHub Free and in
-# private ones only on a paid plan, and this repository is still private. The first
-# run happens after the repository goes public - treat the first green run as the
-# verification, not this comment.
-#
-# Two things the owner has to do once, outside this file:
+# Two things the owner did once, outside this file, and which this workflow depends on:
 #
 #   * Settings -> Pages, source "GitHub Actions". Without it the step that reads the
 #     Pages configuration fails, and says so.
@@ -18,24 +12,21 @@ name: Pages
 #     below REFUSES to publish to an address the pages do not claim as their own, so
 #     that is enforced rather than remembered - see the comparison step.
 #
-# There is deliberately no `push` trigger yet. Until the repository is public and a
-# release exists, every automatic run would fail at the Pages API and turn the commit
-# red for a reason that is not a defect. When the site goes live, add:
-#
-#   push:
-#     branches: [main]
-#     paths:
-#       - "site/**"
-#       - "crates/site/**"
-#       - "crates/ctl/**"        # the channel count the pages state
-#       - "presets/**"
-#       - "calendars/**"
-#       - "assets/chrono-bean.svg"
-#       - ".github/workflows/pages.yml"
-#
-# Miss one of those paths and the site keeps serving the previous version of it, which
-# looks exactly like a page nobody edited.
+# The paths below are everything the pages are built FROM. Miss one and the site keeps
+# serving the previous version of it, which looks exactly like a page nobody edited.
+# crates/ctl is on the list because the channel count the pages state is read from it at
+# compile time, so changing the code changes the site.
 on:
+  push:
+    branches: [main]
+    paths:
+      - "site/**"
+      - "crates/site/**"
+      - "crates/ctl/**"
+      - "presets/**"
+      - "calendars/**"
+      - "assets/chrono-bean.svg"
+      - ".github/workflows/pages.yml"
   workflow_dispatch:
 
 # Least privilege, same rule as ci.yml: the token reads the repository, and only the
