@@ -8,6 +8,15 @@
   -->
   <PropertyGroup>
     <LangVersion>latest</LangVersion>
+    <!-- Lets a non-Windows machine restore these Windows-targeting projects. We never build
+         on Linux - every workflow we own runs on windows-latest - but GitHub's automatic
+         dependency submission restores each csproj on a Linux runner to feed the dependency
+         graph, and without this it fails with NETSDK1100, so the graph never learns our
+         transitive NuGet dependencies. This is the documented resolution and Microsoft
+         allows it in a Directory.Build.props. It only permits the Windows targeting packs to
+         be downloaded when cross-targeting, so a build on Windows is unaffected - and the
+         same doc asks that releases be built on Windows, which is where ours are built. -->
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
