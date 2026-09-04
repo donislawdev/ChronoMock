@@ -21,7 +21,7 @@ serde_json = { workspace = true }
 
 # Only for the Rule 16 architecture guard test (reads chrono-core's manifest).
 [dev-dependencies]
-toml = "0.8"
+toml = "1.1"
 
 # Build-time only: embeds the application icon into chrono.exe via the Windows SDK resource
 # compiler. Not linked into the shipped binary (like cc), so it needs no third-party notice.
