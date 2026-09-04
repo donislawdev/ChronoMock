@@ -18,3 +18,28 @@ allow = [
 [advisories]
 version = 2
 ignore = []
+
+# Supply-chain gate: a dependency must come from crates.io and nowhere else. This is the only one of the
+# four checks that asks WHERE a crate came from - a git dependency or a private registry would pass the
+# licence and advisory gates and still be code nobody reviewed. Run: cargo deny check sources
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+
+# Hygiene gate: catches a crate we have decided not to take, and a version requirement so loose that the
+# tree can change under us without a manifest edit. Run: cargo deny check bans
+#
+# multiple-versions stays a warning on purpose. Today the tree carries two versions of `syn`, and both
+# come from other people's manifests - failing the build on something we cannot fix would train everyone
+# to ignore the gate. `deny = []` is empty for the same reason `ignore = []` is above: a banned crate
+# would be listed here with its reason, never enforced by memory.
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+# Measured: without this, the check fails on our OWN crates - a workspace dependency carries a path and
+# no version requirement, which reads as a wildcard. The point of the check is a loose requirement on
+# somebody else's crate, so path dependencies inside this workspace are exempted rather than the whole
+# check being downgraded to a warning.
+allow-wildcard-paths = true
+deny = []

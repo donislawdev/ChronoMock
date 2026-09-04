@@ -3,6 +3,7 @@ name = "chrono-cli"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+publish.workspace = true
 build = "build.rs"
 
 # The friendly driver AND the hidden core mode live in one binary. `chrono run`

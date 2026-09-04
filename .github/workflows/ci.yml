@@ -85,11 +85,13 @@ jobs:
       - name: Release build, x86
         run: cargo build --release --target i686-pc-windows-msvc
 
-      # Both halves of the dependency gate: licences (untouchable rule 8 - everything we ship must be
-      # GPL-3.0 compatible) and RustSec advisories. Advisories run here as well as weekly in audit.yml,
-      # because the two answer different questions: a push can ADD a vulnerable dependency and should fail
-      # on the spot, while the weekly run catches an advisory published against a tree nobody touched.
-      # One invocation, so the binary is fetched once.
+      # All four dependency questions in one invocation: licences (untouchable rule 8 - everything we ship
+      # must be GPL-3.0 compatible), RustSec advisories, sources and bans. Advisories run here as well as
+      # weekly in audit.yml, because the two answer different questions: a push can ADD a vulnerable
+      # dependency and should fail on the spot, while the weekly run catches an advisory published
+      # against a tree nobody touched. `sources` is the only check that asks WHERE a crate came from -
+      # a git dependency would pass the other three and still be code nobody reviewed. `bans` catches a
+      # crate we decided against and a wildcard requirement. One invocation, so the binary is fetched once.
       #
       # The published cargo-deny-action is a CONTAINER action, so it only runs on Linux (measured - the
       # first run failed with exactly that). Moving the gate to a Linux runner would be worse than useless:
@@ -98,7 +100,7 @@ jobs:
       # So the binary is fetched here instead, pinned by version AND by checksum.
       - name: Dependency gate
         shell: pwsh
-        run: ./.github/scripts/cargo-deny.ps1 -Command licenses,advisories
+        run: ./.github/scripts/cargo-deny.ps1 -Command licenses,advisories,bans,sources
 
       # After the Rust builds: these resolve the real cargo outputs (see the note at the top).
       # Category!=Integration is the hermetic tier - the excluded tests need a live target process or a

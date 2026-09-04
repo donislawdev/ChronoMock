@@ -12,6 +12,12 @@ exclude = ["tools"]
 version = "0.1.0"
 edition = "2021"
 license = "GPL-3.0-only"
+# None of these crates goes to crates.io - the product ships as executables, and the layer crates
+# only make sense together. Saying so is not decoration: `cargo deny check bans` refuses to exempt
+# a workspace path dependency from the wildcard rule unless the crate is private, because crates.io
+# forbids path dependencies in the first place. It also means `cargo publish` cannot go off by
+# accident.
+publish = false
 
 [workspace.dependencies]
 serde = { version = "1", features = ["derive"] }

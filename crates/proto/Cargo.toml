@@ -3,6 +3,7 @@ name = "chrono-proto"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+publish.workspace = true
 
 [lib]
 name = "chrono_proto"

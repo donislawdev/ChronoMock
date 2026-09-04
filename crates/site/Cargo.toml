@@ -3,6 +3,7 @@ name = "chrono-site"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+publish.workspace = true
 
 # Build tool for the website in site/. It ships with nothing: no other crate depends
 # on it, and it never reaches a release artifact. It sits at the top of the
