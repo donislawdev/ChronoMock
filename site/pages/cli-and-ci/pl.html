@@ -1,0 +1,125 @@
+<!-- CLI and CI, Polish. Same exit-code contract, same honest caveats about runners. -->
+
+<div class="shell">
+
+  <section class="plain">
+    <h1>Testowanie dat w potoku</h1>
+    <p class="sub">
+      Okno służy do eksploracji. To jest druga połowa: wersja konsolowa o rozmiarze około
+      <strong>1,4 MB</strong>, bez środowiska do instalowania, której kod wyjścia jest
+      werdyktem pokrycia, a nie kodem samego celu.
+    </p>
+  </section>
+
+  <section>
+    <h2>Kod wyjścia to werdykt</h2>
+    <div class="prose">
+      <p>
+        To jest decyzja projektowa, która czyni narzędzie skryptowalnym. Gdy sesja się kończy,
+        kod wyjścia odpowiada na pytanie <em>„czy podmiana czasu zadziałała"</em>, a nie
+        <em>„co zwróciła aplikacja"</em>. Potok może więc paść na podmianie, która po cichu się
+        nie odbyła - czyli na porażce wartej padnięcia, bo wszystko poniżej niej to test, który
+        niczego nie dowiódł.
+      </p>
+      <p>
+        Kod wyjścia samego celu nadal jest raportowany, w danych sesji.
+      </p>
+    </div>
+
+    <div class="wrap" style="margin-top:22px">
+      <table>
+        <thead><tr><th>Kod</th><th>Znaczenie</th></tr></thead>
+        <tbody>
+          <tr><td class="y">0</td><td>działa - każdy proces, który czytał czas, widział zegar sesji</td></tr>
+          <tr><td>10</td><td>działa częściowo - część kanałów objęta, część nie</td></tr>
+          <tr><td class="n">11</td><td>nie działa - podmiana nie dotarła do kluczowych kanałów</td></tr>
+          <tr><td>4</td><td>nieokreślony - nie dało się ustalić pokrycia</td></tr>
+          <tr><td>1</td><td>błąd użycia - zła flaga albo złe wyrażenie</td></tr>
+          <tr><td>2</td><td>nie udało się uruchomić celu albo wstrzyknąć</td></tr>
+          <tr><td>12</td><td>cel zniknął, co sugeruje aplikację jednoinstancyjną</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <h2>Przebiegi ograniczone czasowo</h2>
+    <div class="prose">
+      <p>
+        Potok nie może czekać, aż aplikację okienkową zamknie człowiek. <code>--ticks N</code>
+        kończy sesję po N uderzeniach bicia - po jednej prawdziwej sekundzie każde - i
+        raportuje to, co znalazł do tego momentu. Pokrycie i tak ustala się w pierwszych
+        chwilach procesu, więc krótkie ograniczenie zwykle w zupełności wystarcza.
+      </p>
+    </div>
+
+    <pre class="term"><span class="c"># Dziesięć sekund, potem koniec i raport</span>
+<span class="p">chrono</span> run ".\build\test.exe" --preset year-rollover --ticks 10 --report evidence.txt</pre>
+  </section>
+
+  <section>
+    <h2>Wyjście maszynowe i dowód</h2>
+    <div class="prose">
+      <ul>
+        <li><code>--json</code> wypisuje sesję jako rekordy czytelne maszynowo zamiast raportu
+          dla człowieka - te same fakty, razem z pokryciem per kanał.</li>
+        <li><code>--report &lt;ścieżka&gt;</code> zapisuje raport dla człowieka do pliku, co
+          nadaje się na artefakt budowania. Sesja z werdyktem innym niż <em>works</em> prowadzi
+          ten plik banerem o nierzetelnym dowodzie, zamiast chować zastrzeżenie na dole.</li>
+        <li>Kalkulator też mówi <code>--json</code>, więc potok może policzyć potrzebną datę i
+          podać ją z powrotem.</li>
+      </ul>
+    </div>
+
+    <pre class="term"><span class="c"># Policz datę, potem uruchom w niej</span>
+<span class="p">chrono</span> calc --base today --snap eom --json
+<span class="p">chrono</span> run ".\build\test.exe" --preset month-end --ticks 10 --json</pre>
+  </section>
+
+  <section>
+    <h2>Krok, z grubsza</h2>
+    <pre class="term">- name: Month-end behaviour
+  shell: pwsh
+  run: |
+    .\chrono.exe run ".\build\test.exe" --preset month-end --ticks 10 --report evidence.txt
+    <span class="c"># niezerowy kod wyjścia znaczy tu, że podmiana się nie odbyła, więc test</span>
+    <span class="c"># poniżej niczego by nie dowiódł</span>
+
+- name: Keep the evidence
+  uses: actions/upload-artifact@v7
+  with:
+    name: chrono-evidence
+    path: evidence.txt</pre>
+  </section>
+
+  <section>
+    <h2>Dwa uczciwe zastrzeżenia o runnerach</h2>
+    <div class="prose">
+      <ul>
+        <li><strong>Potrzebny jest runner z Windowsem.</strong> Nie ma wersji na Linuksa ani
+          macOS-a i nie będzie - na Linuksie
+          <a href="https://github.com/wolfcw/libfaketime">libfaketime</a> już to pokrywa.</li>
+        <li><strong>Antywirus na hostowanym runnerze może zablokować wstrzyknięcie.</strong>
+          Przesuwanie czasu oznacza wstrzyknięcie biblioteki do procesu celu, czyli
+          udokumentowaną technikę Windows, której używa również złośliwe oprogramowanie.
+          Runner, który to zablokuje, wyprodukuje kod wyjścia mówiący o tym wprost, a nie
+          fałszywe zaliczenie - ale warto się o tym przekonać, zanim się na tym oprzesz.</li>
+      </ul>
+      <p>
+        Z tego samego powodu własny zestaw testów end-to-end tego projektu chodzi na prawdziwych
+        maszynach, a nie na hostowanym runnerze. Jego ciągła integracja buduje i testuje
+        jednostkowo całość, a samą podmianę ćwiczy się ręcznie na prawdziwych aplikacjach, na
+        obu bitowościach, przed wydaniem.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Wypróbuj</h2>
+    <div class="cta">
+      <a class="btn btn-primary" href="/pl/pobieranie/">Pobierz na Windows</a>
+      <a class="btn btn-ghost" href="/pl/audyt-zrodel-czasu/">Co znaczą werdykty</a>
+    </div>
+  </section>
+
+</div>

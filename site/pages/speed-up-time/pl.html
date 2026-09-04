@@ -27,8 +27,8 @@
         </thead>
         <tbody>
           <tr><td><code>x60</code></td><td>godzina</td><td>zadania godzinowe, wygasanie sesji, czas życia tokenów</td></tr>
-          <tr><td><code>x1440</code></td><td>doba</td><td>przejścia dobowe, 30-dniowy trial w pół godziny</td></tr>
-          <tr><td><code>x43200</code></td><td>30-dniowa wersja próbna</td><td>obejrzenie całego triala w czasie czytania tej strony</td></tr>
+          <tr><td><code>x1440</code></td><td>doba</td><td>przejścia dobowe, 30-dniowa wersja próbna w pół godziny</td></tr>
+          <tr><td><code>x43200</code></td><td>30-dniowa wersja próbna</td><td>obejrzenie jej całej w czasie czytania tej strony</td></tr>
           <tr><td><code>x525600</code></td><td>rok</td><td>odnowienia roczne, wygasanie certyfikatów</td></tr>
           <tr><td><code>x1000000</code></td><td>około 1,9 roku</td><td>sufit</td></tr>
         </tbody>
@@ -36,13 +36,13 @@
     </div>
 
     <pre class="term" style="margin-top:26px"><span class="c"># Zacznij od prawdziwego teraz i leć w tempie doby na minutę</span>
-<span class="p">chrono</span> run "C:\apps\Ledger.exe" --mode x1440
+<span class="p">chrono</span> run "C:\apps\test.exe" --mode x1440
 
 <span class="c"># Zacznij od wybranej daty i przyspieszaj od niej</span>
-<span class="p">chrono</span> run "C:\apps\Ledger.exe" --at 2027-12-01T09:00:00 --mode x1440
+<span class="p">chrono</span> run "C:\apps\test.exe" --at 2027-12-01T09:00:00 --mode x1440
 
 <span class="c"># Albo zatrzymaj zegar zupełnie</span>
-<span class="p">chrono</span> run "C:\apps\Ledger.exe" --mode frozen</pre>
+<span class="p">chrono</span> run "C:\apps\test.exe" --mode frozen</pre>
   </section>
 
   <section>
@@ -94,10 +94,10 @@
     </div>
 
     <pre class="term"><span class="c"># Leć x60, po dwóch sekundach przełącz na x1440</span>
-<span class="p">chrono</span> run "C:\apps\Ledger.exe" --mode x60 --set-after 2:1440
+<span class="p">chrono</span> run "C:\apps\test.exe" --mode x60 --set-after 2:1440
 
 <span class="c"># Po pięciu sekundach skocz zegarem na wybrany moment</span>
-<span class="p">chrono</span> run "C:\apps\Ledger.exe" --jump-after 5:2028-01-01T00:00:00</pre>
+<span class="p">chrono</span> run "C:\apps\test.exe" --jump-after 5:2028-01-01T00:00:00</pre>
   </section>
 
   <section>

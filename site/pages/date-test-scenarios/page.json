@@ -1,0 +1,22 @@
+{
+  "//": "The long-tail page. Somebody searching '29 February test case' or 'year 2038 problem how to test' has a specific date in mind, and this is the page that has it. The list is the shipped preset catalogue, with the names and explanations read out of presets/*.json rather than retyped.",
+
+  "id": "date-test-scenarios",
+  "order": 75,
+  "nav": false,
+
+  "languages": {
+    "en": {
+      "slug": "date-test-scenarios",
+      "link_text": "Dates worth testing",
+      "title": "Dates worth testing - month end, 29 February, 2038",
+      "description": "The dates that break software: period boundaries, the leap day, epoch zero, the 32-bit limit, trial edges and clock skew. {{preset_count}} of them ship as named scenarios."
+    },
+    "pl": {
+      "slug": "scenariusze-testowe-dat",
+      "link_text": "Daty warte testowania",
+      "title": "Daty warte testowania - koniec miesiąca, 29 lutego, 2038",
+      "description": "Daty, na których psuje się oprogramowanie: granice okresów, dzień przestępny, zero epoki, limit 32-bit, krawędzie wersji próbnej i dryf zegara. {{preset_count}} gotowych scenariuszy."
+    }
+  }
+}

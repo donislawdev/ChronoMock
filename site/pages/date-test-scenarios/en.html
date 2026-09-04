@@ -1,0 +1,149 @@
+<!-- Dates worth testing, English.
+
+     The names and explanations below are the ones in presets/*.json, read out rather
+     than retyped, so this page and the shipped catalogue say the same thing. The count
+     is a token resolved from the number of files in that directory. -->
+
+<div class="shell">
+
+  <section class="plain">
+    <h1>Dates worth testing</h1>
+    <p class="sub">
+      Software does not break on ordinary Tuesdays. It breaks on the last day of the
+      quarter, on 29 February, at the moment a year rolls over, and one second after a
+      licence expires. These are the dates that find those bugs -
+      <strong>{{preset_count}}</strong> of them ship as named scenarios.
+    </p>
+  </section>
+
+  <section>
+    <h2>Period boundaries</h2>
+    <div class="prose">
+      <p>
+        Anything that closes a period, numbers a document by year, or accrues to a cut-off
+        gets these wrong first.
+      </p>
+      <ul>
+        <li><strong>Last day of month</strong> - does month-end closing and period accrual
+          behave on the last day of the month?</li>
+        <li><strong>Last day of quarter</strong> - does quarter-end closing and reporting
+          behave on the last day of the quarter?</li>
+        <li><strong>Last day of fiscal year</strong> - does the app close the fiscal year on
+          the right day, the day before the fiscal year starts?</li>
+        <li><strong>Year rollover, live</strong> - does document numbering, year-in-name and
+          annual reporting handle the rollover <em>while it happens</em>, rather than being
+          restarted afterwards?</li>
+      </ul>
+      <p>
+        The last one is the one people usually cannot test at all, because it needs the clock
+        to cross midnight on 31 December while the application is running. That is a
+        ten-second job with an accelerated clock.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Calendar and representation edges</h2>
+    <div class="prose">
+      <ul>
+        <li><strong>29 February</strong> - the leap day that exists only every four years, and
+          that a surprising amount of validation code rejects outright.</li>
+        <li><strong>Unix epoch zero</strong> - does the app treat 1 January 1970 as a real
+          date, or as an empty value it should have refused to store?</li>
+        <li><strong>2038 boundary</strong> - the moment a signed 32-bit
+          <code>time_t</code> runs out, at <code>2038-01-19T03:14:07Z</code>. One second later
+          the counter overflows into 1901.</li>
+      </ul>
+    </div>
+  </section>
+
+  <section>
+    <h2>Licences, trials and installation</h2>
+    <div class="prose">
+      <p>
+        These are for testing <em>your own</em> licensing, which is the case they were written
+        for.
+      </p>
+      <ul>
+        <li><strong>Last day of trial</strong> - does the app still work in the very last
+          moment of the trial?</li>
+        <li><strong>First day after trial expiry</strong> - does it refuse access the moment
+          the trial ends, and how? A sensible message, or a stack trace?</li>
+        <li><strong>Licence expired a year ago</strong> - does it handle a licence that expired
+          long ago, not just yesterday?</li>
+        <li><strong>Date before installation</strong> - does it behave when the clock is set
+          before its own installation date? This one reads the target's own file date, so it
+          needs no parameter.</li>
+      </ul>
+    </div>
+  </section>
+
+  <section>
+    <h2>Business rules and clock behaviour</h2>
+    <div class="prose">
+      <ul>
+        <li><strong>Payment due, +N business days</strong> - does a payment due N business days
+          out land on the right day, skipping weekends and the right country's holidays? The
+          only scenario that needs a calendar, and the answer differs between markets.</li>
+        <li><strong>Age-of-majority boundary</strong> - does the app admit somebody exactly at
+          the boundary, and refuse somebody one day short?</li>
+        <li><strong>Clock skew, +90 s</strong> - does the app cope when its clock runs ninety
+          seconds ahead of real time? This is the case that breaks time-based one-time
+          passwords and token validation.</li>
+      </ul>
+    </div>
+  </section>
+
+  <section>
+    <h2>Using one</h2>
+    <div class="prose">
+      <p>
+        A scenario is a named date expression. The calculator works out what it means, and the
+        substitution runs an application at it - the same name in both places.
+      </p>
+    </div>
+
+    <pre class="term"><span class="c"># What date is it, and what does that date test?</span>
+<span class="p">chrono</span> calc --preset month-end
+
+<span class="c"># Run an application at it</span>
+<span class="p">chrono</span> run "C:\apps\test.exe" --preset year-rollover --report session.txt
+
+<span class="c"># The trial scenarios take the start date from the target's own file date</span>
+<span class="p">chrono</span> run "C:\apps\test.exe" --preset trial-first-day-after</pre>
+
+    <div class="prose">
+      <p>
+        In the window they are chips above the date field - one click fills it in. Each
+        carries its own sentence saying what it catches, which is the part an online date
+        calculator has no way to give you.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>What is not here</h2>
+    <div class="prose">
+      <p>
+        <strong>The daylight saving transitions.</strong> Forcing an application through the
+        spring-forward or fall-back boundary is a genuinely useful test and it is
+        <em>deliberately absent</em>, because the session time zone is a fixed offset with no
+        daylight saving - there is no transition to simulate yet. Shipping a scenario that
+        quietly did nothing would be worse than not shipping it.
+      </p>
+      <p>
+        It comes back with a model of time zone rules.
+        <a href="/timezone-testing/">What the time zone does and does not do &rarr;</a>
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Try it</h2>
+    <div class="cta">
+      <a class="btn btn-primary" href="/download/">Download for Windows</a>
+      <a class="btn btn-ghost" href="/date-calculator/">The calculator</a>
+    </div>
+  </section>
+
+</div>

@@ -1,0 +1,22 @@
+{
+  "//": "For the reader who wants this in a pipeline rather than in a window. The exit codes come from the CLI contract, and the point of the page is that the exit code is the VERDICT rather than the target's own code - which is what makes the tool scriptable at all.",
+
+  "id": "cli-and-ci",
+  "order": 80,
+  "nav": false,
+
+  "languages": {
+    "en": {
+      "slug": "cli-and-ci",
+      "link_text": "CLI and CI",
+      "title": "Date testing in CI - exit codes and JSON output",
+      "description": "A 1.4 MB command-line build with no runtime to install. The exit code is the coverage verdict, not the target's, so a pipeline can fail on a substitution that did not take."
+    },
+    "pl": {
+      "slug": "cli-i-ci",
+      "link_text": "CLI i CI",
+      "title": "Testowanie dat w CI - kody wyjścia i wyjście JSON",
+      "description": "Wersja konsolowa o rozmiarze 1,4 MB, bez środowiska do instalowania. Kod wyjścia to werdykt pokrycia, a nie kod celu, więc potok może paść na nieudanej podmianie."
+    }
+  }
+}

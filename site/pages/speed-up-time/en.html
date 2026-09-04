@@ -40,13 +40,13 @@
     </div>
 
     <pre class="term" style="margin-top:26px"><span class="c"># Start at the real time now, and run a day per minute</span>
-<span class="p">chrono</span> run "C:\apps\Ledger.exe" --mode x1440
+<span class="p">chrono</span> run "C:\apps\test.exe" --mode x1440
 
 <span class="c"># Start on a chosen date and accelerate from there</span>
-<span class="p">chrono</span> run "C:\apps\Ledger.exe" --at 2027-12-01T09:00:00 --mode x1440
+<span class="p">chrono</span> run "C:\apps\test.exe" --at 2027-12-01T09:00:00 --mode x1440
 
 <span class="c"># Hold the clock completely still instead</span>
-<span class="p">chrono</span> run "C:\apps\Ledger.exe" --mode frozen</pre>
+<span class="p">chrono</span> run "C:\apps\test.exe" --mode frozen</pre>
   </section>
 
   <section>
@@ -94,10 +94,10 @@
     </div>
 
     <pre class="term"><span class="c"># Run at x60, then switch to x1440 two seconds in</span>
-<span class="p">chrono</span> run "C:\apps\Ledger.exe" --mode x60 --set-after 2:1440
+<span class="p">chrono</span> run "C:\apps\test.exe" --mode x60 --set-after 2:1440
 
 <span class="c"># Run, then jump the clock to a chosen moment five seconds in</span>
-<span class="p">chrono</span> run "C:\apps\Ledger.exe" --jump-after 5:2028-01-01T00:00:00</pre>
+<span class="p">chrono</span> run "C:\apps\test.exe" --jump-after 5:2028-01-01T00:00:00</pre>
   </section>
 
   <section>

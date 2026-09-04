@@ -1,0 +1,130 @@
+<!-- CLI and CI, English.
+
+     The exit code table is the contract from docs/08 and matches the audit page. The
+     honest note at the bottom matters: this project does not itself run the substitution
+     on a hosted runner, and saying so is cheaper than a reader discovering it. -->
+
+<div class="shell">
+
+  <section class="plain">
+    <h1>Date testing in a pipeline</h1>
+    <p class="sub">
+      The window is for exploring. This is the other half: a command-line build of about
+      <strong>1.4 MB</strong> with no runtime to install, whose exit code is the coverage
+      verdict rather than the target's own.
+    </p>
+  </section>
+
+  <section>
+    <h2>The exit code is the verdict</h2>
+    <div class="prose">
+      <p>
+        This is the design decision that makes the tool scriptable. When a session ends, the
+        exit code answers <em>"did the time substitution take effect"</em>, not <em>"what did
+        the application return"</em>. A pipeline can therefore fail on a substitution that
+        silently did not happen - which is the failure worth failing on, because everything
+        downstream of it is a test that proved nothing.
+      </p>
+      <p>
+        The target's own exit code is still reported, in the session data.
+      </p>
+    </div>
+
+    <div class="wrap" style="margin-top:22px">
+      <table>
+        <thead><tr><th>Code</th><th>Meaning</th></tr></thead>
+        <tbody>
+          <tr><td class="y">0</td><td>works - every process that read time saw the session clock</td></tr>
+          <tr><td>10</td><td>works partially - some channels covered, some not</td></tr>
+          <tr><td class="n">11</td><td>does not work - the substitution did not reach the key channels</td></tr>
+          <tr><td>4</td><td>undetermined - coverage could not be established</td></tr>
+          <tr><td>1</td><td>usage error - a bad flag or a bad expression</td></tr>
+          <tr><td>2</td><td>the target could not be launched or injected</td></tr>
+          <tr><td>12</td><td>the target vanished, suggesting a single-instance application</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <h2>Bounded runs</h2>
+    <div class="prose">
+      <p>
+        A pipeline cannot wait for a desktop application to be closed by a human.
+        <code>--ticks N</code> ends the session after N heartbeats - one real second each -
+        and reports what it found up to that point. Coverage is established in the first
+        moments of the process anyway, so a short bound is usually all that is needed.
+      </p>
+    </div>
+
+    <pre class="term"><span class="c"># Ten seconds, then stop and report</span>
+<span class="p">chrono</span> run ".\build\test.exe" --preset year-rollover --ticks 10 --report evidence.txt</pre>
+  </section>
+
+  <section>
+    <h2>Machine output and evidence</h2>
+    <div class="prose">
+      <ul>
+        <li><code>--json</code> emits the session as machine-readable records rather than the
+          human report - the same facts, including the per-channel coverage.</li>
+        <li><code>--report &lt;path&gt;</code> writes the human report to a file, which makes a
+          reasonable build artefact. A session whose verdict is anything but <em>works</em>
+          leads that file with an unreliable-evidence banner rather than burying the caveat at
+          the bottom.</li>
+        <li>The calculator speaks <code>--json</code> too, so a pipeline can compute the date it
+          needs and feed it back in.</li>
+      </ul>
+    </div>
+
+    <pre class="term"><span class="c"># Work out the date, then run at it</span>
+<span class="p">chrono</span> calc --base today --snap eom --json
+<span class="p">chrono</span> run ".\build\test.exe" --preset month-end --ticks 10 --json</pre>
+  </section>
+
+  <section>
+    <h2>A step, roughly</h2>
+    <pre class="term">- name: Month-end behaviour
+  shell: pwsh
+  run: |
+    .\chrono.exe run ".\build\test.exe" --preset month-end --ticks 10 --report evidence.txt
+    <span class="c"># a non-zero exit here means the substitution did not take, so the</span>
+    <span class="c"># test below it would have proven nothing</span>
+
+- name: Keep the evidence
+  uses: actions/upload-artifact@v7
+  with:
+    name: chrono-evidence
+    path: evidence.txt</pre>
+  </section>
+
+  <section>
+    <h2>Two honest caveats about runners</h2>
+    <div class="prose">
+      <ul>
+        <li><strong>It needs a Windows runner.</strong> There is no Linux or macOS build, and
+          there will not be - on Linux,
+          <a href="https://github.com/wolfcw/libfaketime">libfaketime</a> already covers this.</li>
+        <li><strong>Antivirus on a hosted runner may block the injection.</strong> Shifting time
+          means injecting a library into the target process, which is a documented Windows
+          technique that malware also uses. A runner that blocks it produces an exit code
+          saying so rather than a false pass - but it is a thing to find out before you depend
+          on it.</li>
+      </ul>
+      <p>
+        For the same reason, this project's own end-to-end suite runs on real machines rather
+        than on a hosted runner. Its continuous integration builds and unit-tests everything,
+        and the substitution itself is exercised by hand against real applications on both
+        32-bit and 64-bit builds before a release.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Try it</h2>
+    <div class="cta">
+      <a class="btn btn-primary" href="/download/">Download for Windows</a>
+      <a class="btn btn-ghost" href="/time-source-audit/">What the verdicts mean</a>
+    </div>
+  </section>
+
+</div>

@@ -1,0 +1,144 @@
+<!-- Dates worth testing, Polish. Same catalogue, same count token. -->
+
+<div class="shell">
+
+  <section class="plain">
+    <h1>Daty warte testowania</h1>
+    <p class="sub">
+      Oprogramowanie nie psuje się w zwykłe wtorki. Psuje się ostatniego dnia kwartału,
+      29 lutego, w chwili przełomu roku i sekundę po wygaśnięciu licencji. To są daty, które
+      znajdują takie błędy - <strong>{{preset_count}}</strong> z nich jest dostarczanych jako
+      nazwane scenariusze.
+    </p>
+  </section>
+
+  <section>
+    <h2>Granice okresów</h2>
+    <div class="prose">
+      <p>
+        Cokolwiek zamyka okres, numeruje dokument rokiem albo nalicza do daty granicznej,
+        myli się na nich w pierwszej kolejności.
+      </p>
+      <ul>
+        <li><strong>Ostatni dzień miesiąca</strong> - czy zamknięcie miesiąca i naliczenia
+          okresowe zachowują się poprawnie ostatniego dnia miesiąca?</li>
+        <li><strong>Ostatni dzień kwartału</strong> - czy zamknięcie kwartału i raportowanie
+          zachowują się poprawnie ostatniego dnia kwartału?</li>
+        <li><strong>Ostatni dzień roku obrotowego</strong> - czy aplikacja zamyka rok obrotowy
+          właściwego dnia, czyli w dniu poprzedzającym start nowego?</li>
+        <li><strong>Przełom roku, na żywo</strong> - czy numeracja dokumentów, rok w nazwie i
+          raporty roczne radzą sobie z przełomem <em>w trakcie</em>, a nie dopiero po
+          restarcie?</li>
+      </ul>
+      <p>
+        Tego ostatniego zwykle nie da się przetestować w ogóle, bo wymaga, żeby zegar przeszedł
+        przez północ 31 grudnia w czasie działania aplikacji. Z przyspieszonym zegarem to
+        robota na dziesięć sekund.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Krawędzie kalendarza i reprezentacji</h2>
+    <div class="prose">
+      <ul>
+        <li><strong>29 lutego</strong> - dzień przestępny, który istnieje tylko co cztery lata
+          i który zaskakująco dużo kodu walidującego odrzuca wprost.</li>
+        <li><strong>Zero epoki uniksowej</strong> - czy aplikacja traktuje 1 stycznia 1970 jako
+          prawdziwą datę, czy jako pustą wartość, której nie powinna była zapisać?</li>
+        <li><strong>Granica 2038</strong> - chwila, w której kończy się 32-bitowy
+          <code>time_t</code> ze znakiem, czyli <code>2038-01-19T03:14:07Z</code>. Sekundę
+          później licznik przepełnia się w rok 1901.</li>
+      </ul>
+    </div>
+  </section>
+
+  <section>
+    <h2>Licencje, wersje próbne i instalacja</h2>
+    <div class="prose">
+      <p>
+        Te są do testowania <em>własnego</em> licencjonowania i dokładnie po to powstały.
+      </p>
+      <ul>
+        <li><strong>Ostatni dzień wersji próbnej</strong> - czy aplikacja nadal działa w
+          ostatniej chwili jej trwania?</li>
+        <li><strong>Pierwszy dzień po wygaśnięciu</strong> - czy odmawia dostępu dokładnie w
+          momencie końca i w jaki sposób? Sensownym komunikatem czy zrzutem stosu?</li>
+        <li><strong>Licencja wygasła rok temu</strong> - czy radzi sobie z licencją, która
+          wygasła dawno, a nie wczoraj?</li>
+        <li><strong>Data sprzed instalacji</strong> - czy zachowuje się poprawnie, gdy zegar
+          jest ustawiony przed jej własną datą instalacji? Ten scenariusz czyta datę pliku
+          celu, więc nie potrzebuje parametru.</li>
+      </ul>
+    </div>
+  </section>
+
+  <section>
+    <h2>Reguły biznesowe i zachowanie zegara</h2>
+    <div class="prose">
+      <ul>
+        <li><strong>Płatność za N dni roboczych</strong> - czy płatność wymagalna za N dni
+          roboczych ląduje we właściwym dniu, pomijając weekendy i święta właściwego kraju? To
+          jedyny scenariusz wymagający kalendarza, a odpowiedź różni się między rynkami.</li>
+        <li><strong>Granica pełnoletności</strong> - czy aplikacja wpuszcza kogoś dokładnie na
+          granicy i odmawia komuś, komu brakuje jednego dnia?</li>
+        <li><strong>Dryf zegara, +90 s</strong> - czy aplikacja radzi sobie, gdy jej zegar
+          wyprzedza prawdziwy o dziewięćdziesiąt sekund? To przypadek psujący hasła
+          jednorazowe oparte na czasie i walidację tokenów.</li>
+      </ul>
+    </div>
+  </section>
+
+  <section>
+    <h2>Jak użyć</h2>
+    <div class="prose">
+      <p>
+        Scenariusz to nazwane wyrażenie daty. Kalkulator wylicza, co ono znaczy, a podmiana
+        uruchamia w nim aplikację - ta sama nazwa w obu miejscach.
+      </p>
+    </div>
+
+    <pre class="term"><span class="c"># Jaka to data i co ta data testuje?</span>
+<span class="p">chrono</span> calc --preset month-end
+
+<span class="c"># Uruchom w niej aplikację</span>
+<span class="p">chrono</span> run "C:\apps\test.exe" --preset year-rollover --report session.txt
+
+<span class="c"># Scenariusze wersji próbnej biorą datę startu z daty pliku celu</span>
+<span class="p">chrono</span> run "C:\apps\test.exe" --preset trial-first-day-after</pre>
+
+    <div class="prose">
+      <p>
+        W oknie są to przyciski nad polem daty - jedno kliknięcie je wypełnia. Każdy niesie
+        własne zdanie mówiące, co wyłapuje, czyli część, której kalkulator dat online nie ma
+        jak ci dać.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Czego tu nie ma</h2>
+    <div class="prose">
+      <p>
+        <strong>Zmian czasu na letni i zimowy.</strong> Przeprowadzenie aplikacji przez taką
+        granicę jest naprawdę użytecznym testem i jest <em>celowo nieobecne</em>, bo strefa
+        czasowa sesji to stały offset bez czasu letniego - nie ma jeszcze przejścia do
+        zasymulowania. Dostarczenie scenariusza, który po cichu nic by nie robił, byłoby gorsze
+        niż niedostarczenie go.
+      </p>
+      <p>
+        Wróci razem z modelem reguł stref czasowych.
+        <a href="/pl/testowanie-stref-czasowych/">Co strefa robi, a czego nie &rarr;</a>
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Wypróbuj</h2>
+    <div class="cta">
+      <a class="btn btn-primary" href="/pl/pobieranie/">Pobierz na Windows</a>
+      <a class="btn btn-ghost" href="/pl/kalkulator-dat/">Kalkulator</a>
+    </div>
+  </section>
+
+</div>

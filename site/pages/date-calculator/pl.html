@@ -1,0 +1,156 @@
+<!-- The date calculator, Polish. The command output stays English - that is what the
+     program prints. -->
+
+<div class="shell">
+
+  <section class="plain">
+    <h1>Którą datę testować?</h1>
+    <p class="sub">
+      Połowa testowania dat to przesunięcie zegara. Druga połowa to wiedza, dokąd go
+      przesunąć. Kalkulator online powie ci, co wypada dziewięćdziesiąt dni od dziś. Nie
+      powie, że ta odpowiedź to dzień wolny od pracy w banku ani że to ostatni dzień
+      kwartału.
+    </p>
+  </section>
+
+  <section>
+    <h2>Dni robocze, z prawdziwymi świętami</h2>
+    <div class="prose">
+      <p>
+        „Dziesięć dni roboczych" to nie arytmetyka - zależy od tego, w czyim kalendarzu
+        liczysz. Ta sama data początkowa, ta sama liczba dni, dwie różne odpowiedzi:
+      </p>
+    </div>
+
+    <pre class="term"><span class="c">$</span> <span class="p">chrono</span> calc --base 2027-09-01T00:00:00 --shift +10bd --calendar us-banking
+  result:  <span class="v">2027-09-16T00:00:00</span>
+
+<span class="c">$</span> <span class="p">chrono</span> calc --base 2027-09-01T00:00:00 --shift +10bd --calendar pl
+  result:  <span class="v">2027-09-15T00:00:00</span></pre>
+
+    <div class="prose">
+      <p>
+        Jeden dzień różnicy - a kalkulator powie dlaczego, jeśli zapytasz go o datę leżącą
+        pomiędzy:
+      </p>
+    </div>
+
+    <pre class="term"><span class="c">$</span> <span class="p">chrono</span> calc --base 2027-09-06T00:00:00 --calendar us-banking
+  metadata:
+    weekday       Monday
+    business day  <span class="v">no</span>  (us-banking)
+    holiday       <span class="v">Labor Day</span>
+  what this date tests:
+    public holiday</pre>
+
+    <div class="prose">
+      <p>
+        Stany Zjednoczone i Polska są dostarczane jako kalendarze referencyjne, wybrane
+        dlatego, że wspólnie ćwiczą każdy istniejący typ reguły: daty stałe, n-ty dzień tygodnia
+        w miesiącu, daty liczone od Wielkanocy oraz amerykańską regułę, w której święto
+        wypadające w sobotę obchodzi się w poprzedzający piątek. Dodanie kraju to plik z
+        danymi, nie zmiana kodu.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Wszystkie formaty naraz</h2>
+    <div class="prose">
+      <p>
+        Testowana aplikacja chce daty w takiej postaci, jakiej akurat oczekuje. Zamiast kazać ci
+        konwertować, kalkulator wypisuje wszystkie - plus własną maskę na te, które nie pasują
+        do niczego standardowego.
+      </p>
+    </div>
+
+    <pre class="term"><span class="c">$</span> <span class="p">chrono</span> calc --preset year-2038 --zone +00:00
+Chrono Mock - date calculator
+  preset:   year-2038 - 2038 boundary
+  explains: Does the app survive the 32-bit Unix time boundary (2038-01-19T03:14:07Z)?
+  result:  <span class="v">2038-01-19T03:14:07</span>
+  formats:
+    ISO date      2038-01-19
+    ISO datetime  2038-01-19T03:14:07+00:00
+    US            01/19/2038
+    PL            19.01.2038
+    epoch (s)     <span class="v">2147483647</span>
+    epoch (ms)    2147483647000
+    FILETIME      137919572470000000
+    RFC 1123      Tue, 19 Jan 2038 03:14:07 GMT
+<span class="c">  ...</span>
+  what this date tests:
+    at or past the 2038-01-19T03:14:07Z 32-bit time_t limit (Y2038)</pre>
+
+    <div class="prose">
+      <p>
+        Ta wartość epoki to nie przypadek - <code>2147483647</code> to dokładnie największa
+        liczba mieszcząca się w 32-bitowej liczbie ze znakiem, czyli cały powód, dla którego ta
+        data ma znaczenie.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Czytanie daty wstecz</h2>
+    <div class="prose">
+      <p>
+        Drugi kierunek jest równie użyteczny: wklej datę z loga i dowiedz się, co to jest. Gdy
+        format jest niejednoznaczny - a <code>04/08</code> jest niejednoznaczny w połowie
+        świata - <strong>pokazywane są obie interpretacje, zamiast zgadywania jednej</strong>,
+        bo od zgadywania zaczęło się pierwotne zgłoszenie błędu.
+      </p>
+    </div>
+
+    <pre class="term"><span class="c">$</span> <span class="p">chrono</span> calc --analyze 04/08/2027
+Chrono Mock - date analysis
+  input:   04/08/2027  (ambiguous - month/day order differs by locale)
+  US MM/DD/YYYY:  <span class="v">2027-04-08</span>  (Thursday)
+  PL DD/MM/YYYY:  <span class="v">2027-08-04</span>  (Wednesday)</pre>
+
+    <div class="prose">
+      <p>
+        Cztery miesiące różnicy i inne dni tygodnia. Data w ISO jest jednoznaczna i tak jest
+        czytana, a coś, co w ogóle nie jest datą, zostaje odrzucone, a nie zgadnięte.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Budowane z kroków, nie ze zdania</h2>
+    <div class="prose">
+      <p>
+        Moment to punkt wyjścia plus kroki, a wynik pośredni jest pokazywany po każdym z nich,
+        więc wyrażenie dające zaskakującą odpowiedź pokazuje, w którym miejscu skręciło. Pięć
+        rodzajów kroku: przesunięcie o jednostkę, ustawienie godziny, przyciągnięcie do granicy
+        okresu, przejście do najbliższego dnia roboczego i wyrażenie w innej strefie czasowej.
+      </p>
+    </div>
+
+    <pre class="term"><span class="c"># Ostatnia sekunda przed przełomem roku</span>
+<span class="p">chrono</span> calc --base today --snap eoy
+
+<span class="c"># Dziewięćdziesiąt dni roboczych w amerykańskim kalendarzu bankowym</span>
+<span class="p">chrono</span> calc --base today --shift +90bd --calendar us-banking
+
+<span class="c"># Osiemnaście lat i jeden dzień wstecz, do sprawdzenia wieku</span>
+<span class="p">chrono</span> calc --base today --shift -18y --shift -1d</pre>
+
+    <div class="prose">
+      <p>
+        Każda policzona data trafia wprost do sesji podmiany, a <code>--json</code> wypisuje
+        ten sam wynik w formie maszynowej.
+        <a href="/pl/scenariusze-testowe-dat/">Daty warte testowania &rarr;</a>
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Wypróbuj</h2>
+    <div class="cta">
+      <a class="btn btn-primary" href="/pl/pobieranie/">Pobierz na Windows</a>
+      <a class="btn btn-ghost" href="/pl/scenariusze-testowe-dat/">Zobacz scenariusze</a>
+    </div>
+  </section>
+
+</div>

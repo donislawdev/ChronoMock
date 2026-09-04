@@ -162,13 +162,13 @@
     <p class="sub">Okno do eksploracji, wiersz poleceń do CI. Za obydwoma ten sam silnik.</p>
     <div class="stack">
       <pre class="term"><span class="c"># Uruchom aplikację tak, jakby była ostatnia sekunda 2027 roku</span>
-<span class="p">chrono</span> run "C:\apps\Ledger.exe" --at 2027-12-31T23:59:59
+<span class="p">chrono</span> run "C:\apps\test.exe" --at 2027-12-31T23:59:59
 
 <span class="c"># Patrz, jak 30-dniowa wersja próbna wygasa przy kawie: x1440 to doba na minutę</span>
-<span class="p">chrono</span> run "C:\apps\Ledger.exe" --mode x1440
+<span class="p">chrono</span> run "C:\apps\test.exe" --mode x1440
 
 <span class="c"># Zamiast daty użyj nazwanego scenariusza i zapisz dowód do pliku</span>
-<span class="p">chrono</span> run "C:\apps\Ledger.exe" --preset year-rollover --report session.txt</pre>
+<span class="p">chrono</span> run "C:\apps\test.exe" --preset year-rollover --report session.txt</pre>
 
       <p class="sub" style="margin:6px 0 0">
         Kalkulator odpowiada na drugą połowę testowania dat - <em>której</em> daty użyć:

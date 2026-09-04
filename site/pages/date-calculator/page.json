@@ -1,0 +1,22 @@
+{
+  "//": "The second half of the product, and its own keyword space - business days, quarter close, the 2038 boundary. Online date calculators answer 'what is 90 days from today'. None of them answer 'and what does that date test'.",
+
+  "id": "date-calculator",
+  "order": 70,
+  "nav": true,
+
+  "languages": {
+    "en": {
+      "slug": "date-calculator",
+      "link_text": "Calculator",
+      "title": "Date calculator for QA - business days and edge cases",
+      "description": "Work out which date to test: month end, quarter close, N business days out with real holidays, the 2038 boundary. Every format at once, and what each date actually tests."
+    },
+    "pl": {
+      "slug": "kalkulator-dat",
+      "link_text": "Kalkulator",
+      "title": "Kalkulator dat dla QA - dni robocze i przypadki brzegowe",
+      "description": "Ustal, którą datę testować: koniec miesiąca, koniec kwartału, N dni roboczych z prawdziwymi świętami, granica 2038. Wszystkie formaty naraz i co każda data testuje."
+    }
+  }
+}

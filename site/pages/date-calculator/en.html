@@ -1,0 +1,157 @@
+<!-- The date calculator, English.
+
+     Every block below is real output from the shipped binary, with --zone pinned so the
+     examples do not depend on the machine that produced them. The Labor Day example is
+     self-verifying: the tool's own metadata names the holiday that causes the
+     difference between the two markets. -->
+
+<div class="shell">
+
+  <section class="plain">
+    <h1>Which date should you test?</h1>
+    <p class="sub">
+      Half of date testing is moving the clock. The other half is knowing where to move it
+      to. An online calculator will tell you what ninety days from today is. It will not tell
+      you that the answer is a bank holiday, or that it is the last day of the quarter.
+    </p>
+  </section>
+
+  <section>
+    <h2>Business days, with real holidays</h2>
+    <div class="prose">
+      <p>
+        "Ten business days out" is not arithmetic - it depends on which country's calendar you
+        are counting in. Same start date, same ten days, two different answers:
+      </p>
+    </div>
+
+    <pre class="term"><span class="c">$</span> <span class="p">chrono</span> calc --base 2027-09-01T00:00:00 --shift +10bd --calendar us-banking
+  result:  <span class="v">2027-09-16T00:00:00</span>
+
+<span class="c">$</span> <span class="p">chrono</span> calc --base 2027-09-01T00:00:00 --shift +10bd --calendar pl
+  result:  <span class="v">2027-09-15T00:00:00</span></pre>
+
+    <div class="prose">
+      <p>
+        One day apart, and the calculator will tell you why if you ask it about the date in
+        between:
+      </p>
+    </div>
+
+    <pre class="term"><span class="c">$</span> <span class="p">chrono</span> calc --base 2027-09-06T00:00:00 --calendar us-banking
+  metadata:
+    weekday       Monday
+    business day  <span class="v">no</span>  (us-banking)
+    holiday       <span class="v">Labor Day</span>
+  what this date tests:
+    public holiday</pre>
+
+    <div class="prose">
+      <p>
+        The United States and Poland ship as reference calendars, chosen because between them
+        they exercise every rule type there is: fixed dates, nth-weekday-of-month, dates
+        calculated from Easter, and the American rule where a holiday landing on a Saturday is
+        observed on the preceding Friday. Adding a country is a data file, not a code change.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Every format at once</h2>
+    <div class="prose">
+      <p>
+        The application under test wants the date in whatever form it expects. Rather than
+        making you convert, the calculator prints them all - and a custom mask for the ones
+        that fit nothing standard.
+      </p>
+    </div>
+
+    <pre class="term"><span class="c">$</span> <span class="p">chrono</span> calc --preset year-2038 --zone +00:00
+Chrono Mock - date calculator
+  preset:   year-2038 - 2038 boundary
+  explains: Does the app survive the 32-bit Unix time boundary (2038-01-19T03:14:07Z)?
+  result:  <span class="v">2038-01-19T03:14:07</span>
+  formats:
+    ISO date      2038-01-19
+    ISO datetime  2038-01-19T03:14:07+00:00
+    US            01/19/2038
+    PL            19.01.2038
+    epoch (s)     <span class="v">2147483647</span>
+    epoch (ms)    2147483647000
+    FILETIME      137919572470000000
+    RFC 1123      Tue, 19 Jan 2038 03:14:07 GMT
+<span class="c">  ...</span>
+  what this date tests:
+    at or past the 2038-01-19T03:14:07Z 32-bit time_t limit (Y2038)</pre>
+
+    <div class="prose">
+      <p>
+        That epoch value is not a coincidence - <code>2147483647</code> is exactly the largest
+        number a signed 32-bit integer holds, which is the entire reason the date matters.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Reading a date backwards</h2>
+    <div class="prose">
+      <p>
+        The other direction is just as useful: paste a date out of a log and find out what it
+        is. When the format is ambiguous - and <code>04/08</code> is ambiguous across half the
+        world - <strong>both readings are shown rather than one being guessed</strong>, because
+        guessing is where the original bug report came from.
+      </p>
+    </div>
+
+    <pre class="term"><span class="c">$</span> <span class="p">chrono</span> calc --analyze 04/08/2027
+Chrono Mock - date analysis
+  input:   04/08/2027  (ambiguous - month/day order differs by locale)
+  US MM/DD/YYYY:  <span class="v">2027-04-08</span>  (Thursday)
+  PL DD/MM/YYYY:  <span class="v">2027-08-04</span>  (Wednesday)</pre>
+
+    <div class="prose">
+      <p>
+        Four months apart, on different weekdays. An ISO date is unambiguous and is read as
+        one, and something that is not a date at all is refused rather than guessed at.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Built from steps, not from a sentence</h2>
+    <div class="prose">
+      <p>
+        A moment is a starting point plus steps, and the intermediate result is shown after
+        each one, so an expression that produces a surprising answer shows you where it turned.
+        Five kinds of step: shift by a unit, set the time of day, snap to a period boundary,
+        move to the nearest business day, and re-express in another time zone.
+      </p>
+    </div>
+
+    <pre class="term"><span class="c"># The last second before a year rolls over</span>
+<span class="p">chrono</span> calc --base today --snap eoy
+
+<span class="c"># Ninety business days out, in the American banking calendar</span>
+<span class="p">chrono</span> calc --base today --shift +90bd --calendar us-banking
+
+<span class="c"># Eighteen years and a day back, for an age check</span>
+<span class="p">chrono</span> calc --base today --shift -18y --shift -1d</pre>
+
+    <div class="prose">
+      <p>
+        Any calculated date goes straight into a substitution session, and
+        <code>--json</code> emits the same result in machine form.
+        <a href="/date-test-scenarios/">The dates worth testing &rarr;</a>
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Try it</h2>
+    <div class="cta">
+      <a class="btn btn-primary" href="/download/">Download for Windows</a>
+      <a class="btn btn-ghost" href="/date-test-scenarios/">See the scenarios</a>
+    </div>
+  </section>
+
+</div>
