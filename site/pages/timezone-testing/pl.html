@@ -1,0 +1,116 @@
+<!-- Time zones, Polish. The honest-limits section carries the same weight as in English. -->
+
+<div class="shell">
+
+  <section class="plain">
+    <h1>Uruchom aplikację w innej strefie czasowej</h1>
+    <p class="sub">
+      Raport, który ląduje w złym dniu, przypomnienie odpalające godzinę za wcześnie,
+      znacznik czasu czytany jako jutro - większość tego widać dopiero w strefie, w której
+      nie siedzisz. To daje jednemu procesowi własny offset, podczas gdy strefa twojego
+      systemu zostaje dokładnie tam, gdzie była.
+    </p>
+  </section>
+
+  <section>
+    <h2>Dlaczego typowe odpowiedzi nie pomagają</h2>
+    <div class="prose">
+      <ul>
+        <li><strong>Zmiana strefy w Windows</strong> zmienia ją dla wszystkiego - kalendarza,
+          logów, spotkań - a na zarządzanej maszynie może w ogóle nie być twoja do
+          zmieniania.</li>
+        <li><strong>Ustawienie <code>TZ</code></strong> działa w niektórych środowiskach
+          uruchomieniowych, w innych nie. Natywna aplikacja Windows czytająca
+          <code>GetTimeZoneInformation</code> w ogóle tego nie zauważy.</li>
+        <li><strong>Narzędzia deweloperskie przeglądarki</strong> nadpisują strefę dla strony
+          internetowej, co jest świetne i nieistotne dla aplikacji desktopowej.</li>
+      </ul>
+    </div>
+  </section>
+
+  <section>
+    <h2>Jeden proces, jeden offset</h2>
+    <div class="prose">
+      <p>
+        Sesja niesie własny offset. Aplikacja pyta Windows, w jakiej jest strefie, i dostaje
+        tę odpowiedź, a każdy inny program na komputerze dostaje prawdziwą.
+      </p>
+    </div>
+
+    <pre class="term"><span class="c"># Ta sama chwila, widziana z zachodniego wybrzeża USA</span>
+<span class="p">chrono</span> run "C:\apps\Ledger.exe" --at 2027-01-15T09:00:00 --zone -08:00
+
+<span class="c"># Sama strefa - dzisiejsza prawdziwa data, cudzy zegar</span>
+<span class="p">chrono</span> run "C:\apps\Ledger.exe" --zone +09:00</pre>
+
+    <div class="prose">
+      <p>
+        Kalkulator odpowiada na drugą połowę pytania - jak dany moment naprawdę czyta się
+        gdzie indziej. Konwersja zachowuje chwilę i zmienia tylko czas ścienny, czyli
+        dokładnie tak, jak data ląduje w złym dniu:
+      </p>
+    </div>
+
+    <pre class="term"><span class="c">$</span> <span class="p">chrono</span> calc --base 2027-01-15T09:00:00 --zone +01:00 --to-zone -08:00
+Chrono Mock - date calculator
+  base:    2027-01-15T09:00:00
+  step 1:  zone -08:00  -&gt; <span class="v">2027-01-15T00:00:00</span>
+  result:  <span class="v">2027-01-15T00:00:00</span>
+  formats:
+    ISO date      2027-01-15
+    ISO datetime  2027-01-15T00:00:00-08:00
+    US            01/15/2027
+    PL            15.01.2027</pre>
+
+    <div class="prose">
+      <p>
+        Dziewiąta rano w Europie Środkowej to <strong>północ</strong> na zachodnim wybrzeżu
+        USA. Ta sama chwila - a dzienny raport grupujący po dacie lokalnej wrzuci ją do
+        innego dnia w zależności od tego, gdzie się wykonuje.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Uczciwe ograniczenia, i tu ważą najwięcej</h2>
+
+    <div class="note warning">
+      <p><strong>Strefa sesji to stały offset bez czasu letniego.</strong></p>
+      <p>
+        Sesja ustawiona na <code>+01:00</code> zostaje przy <code>+01:00</code> niezależnie od
+        tego, czy jej zegar pokazuje styczeń, czy lipiec. Przebieg przecinający prawdziwą
+        zmianę czasu rozjedzie się więc o godzinę z tym, co ta strefa naprawdę by pokazała, a
+        przeprowadzenie aplikacji przez zmianę czasu nie jest czymś, co to narzędzie na razie
+        robi. Kalkulator dat mówi o tym wprost, zamiast zgadywać.
+      </p>
+    </div>
+
+    <div class="prose">
+      <ul>
+        <li><strong>Strefa przedstawia się jako „Chrono Session"</strong>, czyli nazwą, której
+          nie zna żaden rejestr Windows. Cokolwiek mapuje tę nazwę z powrotem na strefę -
+          w tym <code>TimeZoneInfo.Local</code> w .NET - spada na offset, co jest właściwą
+          odpowiedzią. Aplikacja upierająca się przy nazwie z rejestru jej nie znajdzie.</li>
+        <li><strong>Java nie podchwytuje strefy sesji.</strong> Zegar ścienny i czas trwania są
+          objęte, strefa nie. To znana dziura, powiedziana wprost, a nie ukryta.</li>
+        <li><strong>W trybie Chromium i Electron strefa idzie za hostem.</strong> Fałszowana
+          jest chwila, a nie funkcje czasu lokalnego.</li>
+        <li><strong>Offsety mieszczą się od -14:00 do +14:00</strong>, w pełnych minutach.
+          Cokolwiek poza tym jest odrzucane, a nie po cichu zawijane.</li>
+      </ul>
+      <p>
+        To, które z nich dotyczy twojej aplikacji, da się zmierzyć, a nie tylko zgadnąć.
+        <a href="/pl/audyt-zrodel-czasu/">Sesja raportuje własne pokrycie &rarr;</a>
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Wypróbuj</h2>
+    <div class="cta">
+      <a class="btn btn-primary" href="/pl/pobieranie/">Pobierz na Windows</a>
+      <a class="btn btn-ghost" href="/pl/faq/">Przeczytaj FAQ</a>
+    </div>
+  </section>
+
+</div>

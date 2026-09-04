@@ -1,0 +1,120 @@
+<!-- Time zones, English.
+
+     The honest-limits section carries more weight here than on any other page: the
+     session zone is a fixed offset with no daylight saving, and a reader who finds that
+     out afterwards has already drawn a wrong conclusion from a test. -->
+
+<div class="shell">
+
+  <section class="plain">
+    <h1>Run an app in another time zone</h1>
+    <p class="sub">
+      The report that lands on the wrong day, the reminder that fires an hour early, the
+      timestamp that reads as tomorrow - most of it only shows up in a zone you are not
+      sitting in. This gives one process its own offset, while your system zone stays
+      exactly where it was.
+    </p>
+  </section>
+
+  <section>
+    <h2>Why the usual answers do not help</h2>
+    <div class="prose">
+      <ul>
+        <li><strong>Changing the Windows time zone</strong> changes it for everything -
+          your calendar, your logs, your meetings - and on a managed machine it may not be
+          yours to change.</li>
+        <li><strong>Setting <code>TZ</code></strong> works for some runtimes and not others.
+          A native Windows application reading <code>GetTimeZoneInformation</code> will not
+          notice it at all.</li>
+        <li><strong>The browser developer tools</strong> override the zone for a web page,
+          which is excellent, and irrelevant to a desktop application.</li>
+      </ul>
+    </div>
+  </section>
+
+  <section>
+    <h2>One process, one offset</h2>
+    <div class="prose">
+      <p>
+        The session carries its own offset. The application asks Windows what zone it is in
+        and gets that answer, while every other program on the machine gets the real one.
+      </p>
+    </div>
+
+    <pre class="term"><span class="c"># The same moment, seen from the American west coast</span>
+<span class="p">chrono</span> run "C:\apps\Ledger.exe" --at 2027-01-15T09:00:00 --zone -08:00
+
+<span class="c"># Just the zone - today's real date, someone else's clock</span>
+<span class="p">chrono</span> run "C:\apps\Ledger.exe" --zone +09:00</pre>
+
+    <div class="prose">
+      <p>
+        The calculator answers the other half of the question - what a given moment actually
+        reads as somewhere else. Converting keeps the instant and changes only the wall
+        clock, which is exactly how a date lands on the wrong day:
+      </p>
+    </div>
+
+    <pre class="term"><span class="c">$</span> <span class="p">chrono</span> calc --base 2027-01-15T09:00:00 --zone +01:00 --to-zone -08:00
+Chrono Mock - date calculator
+  base:    2027-01-15T09:00:00
+  step 1:  zone -08:00  -&gt; <span class="v">2027-01-15T00:00:00</span>
+  result:  <span class="v">2027-01-15T00:00:00</span>
+  formats:
+    ISO date      2027-01-15
+    ISO datetime  2027-01-15T00:00:00-08:00
+    US            01/15/2027
+    PL            15.01.2027</pre>
+
+    <div class="prose">
+      <p>
+        Nine in the morning in central Europe is <strong>midnight</strong> on the American
+        west coast. Same instant, and a daily report that groups by local date puts it in a
+        different day depending on where it runs.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Honest limits, and they matter here</h2>
+
+    <div class="note warning">
+      <p><strong>The session zone is a fixed offset with no daylight saving.</strong></p>
+      <p>
+        A session set to <code>+01:00</code> stays at <code>+01:00</code> whether its clock
+        reads January or July. A run that crosses a real transition therefore drifts an hour
+        from what that zone would actually show, and forcing an application through a
+        daylight saving transition is not something this tool does yet. The date calculator
+        says so rather than guessing.
+      </p>
+    </div>
+
+    <div class="prose">
+      <ul>
+        <li><strong>The zone reports itself as "Chrono Session"</strong>, a name no Windows
+          registry knows. Anything mapping that name back to a zone - .NET's
+          <code>TimeZoneInfo.Local</code> among them - falls back to the offset instead, which
+          is the right answer. An application insisting on a registry name will not find one.</li>
+        <li><strong>Java does not pick the session zone up.</strong> The wall clock and elapsed
+          time are covered, the zone is not. It is a known gap, stated rather than hidden.</li>
+        <li><strong>In Chromium and Electron mode the zone follows the host.</strong> The
+          instant is faked, the local-time getters are not.</li>
+        <li><strong>Offsets run from -14:00 to +14:00</strong> in whole minutes. Anything
+          outside that is refused rather than quietly wrapped.</li>
+      </ul>
+      <p>
+        Which of those applies to your application is measurable rather than guessable.
+        <a href="/time-source-audit/">The session reports its own coverage &rarr;</a>
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Try it</h2>
+    <div class="cta">
+      <a class="btn btn-primary" href="/download/">Download for Windows</a>
+      <a class="btn btn-ghost" href="/faq/">Read the FAQ</a>
+    </div>
+  </section>
+
+</div>

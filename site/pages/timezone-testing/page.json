@@ -1,0 +1,22 @@
+{
+  "//": "A question that keeps being asked and keeps being answered with 'set TZ' or 'use the browser devtools', neither of which helps with a native Windows application. The honest limits section matters more here than anywhere else on the site, because the session zone has no daylight saving.",
+
+  "id": "timezone-testing",
+  "order": 50,
+  "nav": true,
+
+  "languages": {
+    "en": {
+      "slug": "timezone-testing",
+      "link_text": "Time zones",
+      "title": "Run an app in another time zone - Windows stays put",
+      "description": "Give one process its own time zone offset while the system zone stays where it is. How to reproduce the bug that only shows up for the customer five time zones away."
+    },
+    "pl": {
+      "slug": "testowanie-stref-czasowych",
+      "link_text": "Strefy czasowe",
+      "title": "Uruchom aplikację w innej strefie, bez zmiany systemu",
+      "description": "Daj jednemu procesowi własny offset strefy, podczas gdy strefa systemu zostaje na miejscu. Jak odtworzyć błąd widoczny tylko u klienta pięć stref dalej."
+    }
+  }
+}

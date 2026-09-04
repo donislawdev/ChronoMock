@@ -1,0 +1,131 @@
+<!-- Speeding the clock up, Polish. The multiplier table is arithmetic, checked. -->
+
+<div class="shell">
+
+  <section class="plain">
+    <h1>Spraw, żeby zegar jednej aplikacji szedł szybciej</h1>
+    <p class="sub">
+      30-dniowa wersja próbna wygasa po 30 dniach, chyba że umiesz przesunąć czas. Typowa
+      rada to popchnąć zegar systemowy do przodu, co wymaga uprawnień administratora i
+      pociąga za sobą wszystkie inne programy na komputerze. To przesuwa jeden proces.
+    </p>
+  </section>
+
+  <section>
+    <h2>Jak szybko</h2>
+    <div class="prose">
+      <p>
+        Wybierasz całkowity mnożnik. Zegar aplikacji idzie tyle razy szybciej niż prawdziwy,
+        licząc od momentu, w którym zaczyna się sesja.
+      </p>
+    </div>
+
+    <div class="wrap" style="margin-top:24px">
+      <table>
+        <thead>
+          <tr><th>Mnożnik</th><th>Jedna realna minuta to</th><th>Do czego</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>x60</code></td><td>godzina</td><td>zadania godzinowe, wygasanie sesji, czas życia tokenów</td></tr>
+          <tr><td><code>x1440</code></td><td>doba</td><td>przejścia dobowe, 30-dniowy trial w pół godziny</td></tr>
+          <tr><td><code>x43200</code></td><td>30-dniowa wersja próbna</td><td>obejrzenie całego triala w czasie czytania tej strony</td></tr>
+          <tr><td><code>x525600</code></td><td>rok</td><td>odnowienia roczne, wygasanie certyfikatów</td></tr>
+          <tr><td><code>x1000000</code></td><td>około 1,9 roku</td><td>sufit</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <pre class="term" style="margin-top:26px"><span class="c"># Zacznij od prawdziwego teraz i leć w tempie doby na minutę</span>
+<span class="p">chrono</span> run "C:\apps\Ledger.exe" --mode x1440
+
+<span class="c"># Zacznij od wybranej daty i przyspieszaj od niej</span>
+<span class="p">chrono</span> run "C:\apps\Ledger.exe" --at 2027-12-01T09:00:00 --mode x1440
+
+<span class="c"># Albo zatrzymaj zegar zupełnie</span>
+<span class="p">chrono</span> run "C:\apps\Ledger.exe" --mode frozen</pre>
+  </section>
+
+  <section>
+    <h2>Rzecz, która zaskakuje: zegary są dwa</h2>
+    <div class="prose">
+      <p>
+        Przyspieszenie <strong>zegara ściennego</strong> - tego, co zwraca
+        <code>DateTime.Now</code> i jego odpowiedniki - samo w sobie nie przyspiesza
+        <strong>odliczania</strong>. To dwa różne pytania, które aplikacja może zadać
+        systemowi, a mnóstwo oprogramowania mierzy „trzydzieści dni" tym drugim, nie
+        pierwszym.
+      </p>
+      <p>
+        Dlatego oś czasu trwania - liczniki taktów, uśpienia, czekania i timery - jest
+        osobnym przełącznikiem:
+      </p>
+      <ul>
+        <li><code>--scale-duration</code> przestawia uśpienia, czekania i timery również na
+          zegar sesji. Bez tego <code>x1440</code> pędzi kalendarzem naprzód, a
+          pięciosekundowy timer nadal trwa pięć prawdziwych sekund.</li>
+        <li><code>--scale-qpc</code> dokłada skalowanie licznika wysokiej rozdzielczości. To
+          tam <code>monotonic</code> w Pythonie 3.13+, <code>Stopwatch</code> w .NET i
+          <code>nanoTime</code> w Javie czytają czas trwania. Domyślnie wyłączone, bo
+          skalowanie go destabilizowało renderowanie w testach.</li>
+      </ul>
+      <p>
+        Jeśli mnożnik zdaje się nie robić nic z odliczaniem, to prawie zawsze jest to ten
+        powód.
+      </p>
+    </div>
+
+    <pre class="term"><span class="c"># Aplikacja z timerem: przyspiesz kalendarz I odliczania</span>
+<span class="p">chrono</span> run "C:\apps\Timer.exe" --mode x60 --scale-duration
+
+<span class="c"># Aplikacja Pythona albo .NET mierząca czas licznikiem wysokiej rozdzielczości</span>
+<span class="p">chrono</span> run "C:\apps\Job.exe" --mode x60 --scale-duration --scale-qpc</pre>
+  </section>
+
+  <section>
+    <h2>Zmiana prędkości bez restartu</h2>
+    <div class="prose">
+      <p>
+        Mnożnik można zmienić w trakcie sesji, a zegar jest wtedy przekotwiczany, nie
+        przeskakiwany, więc nigdy nie cofa się przy spadku prędkości. Zegarem można też
+        skoczyć wprost - do przodu albo do tyłu, tak jak robi to laptop po synchronizacji z
+        serwerem czasu, co jest przypadkiem psującym wszystko, co mierzy czas trwania bez
+        zabezpieczenia.
+      </p>
+    </div>
+
+    <pre class="term"><span class="c"># Leć x60, po dwóch sekundach przełącz na x1440</span>
+<span class="p">chrono</span> run "C:\apps\Ledger.exe" --mode x60 --set-after 2:1440
+
+<span class="c"># Po pięciu sekundach skocz zegarem na wybrany moment</span>
+<span class="p">chrono</span> run "C:\apps\Ledger.exe" --jump-after 5:2028-01-01T00:00:00</pre>
+  </section>
+
+  <section>
+    <h2>Czego nie zrobi</h2>
+    <div class="prose">
+      <ul>
+        <li><strong>Nie rusza zegara systemowego.</strong> To jest sens, a nie ograniczenie -
+          ale oznacza, że cokolwiek czyta czas z serwera, z bazy danych albo z innej maszyny,
+          pozostaje nietknięte, a audyt powie ci, kiedy tak się dzieje.</li>
+        <li><strong>Skok zmienia to, co aplikacja widzi, a nie to, kiedy się budzi.</strong>
+          Timery już oddane jądru chodzą na prawdziwym czasie. Większość aplikacji odpytuje
+          zegar, więc skoki w praktyce działają - ale nie u wszystkich.</li>
+        <li><strong>Nie spowalnia czasu.</strong> Mnożniki to liczby całkowite od jedynki w
+          górę plus zamrożony zegar w zerze.</li>
+      </ul>
+      <p>
+        Tego, czy cokolwiek z tego dotarło do twojej aplikacji, nie warto zakładać.
+        <a href="/pl/audyt-zrodel-czasu/">Sesja to mówi &rarr;</a>
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Wypróbuj</h2>
+    <div class="cta">
+      <a class="btn btn-primary" href="/pl/pobieranie/">Pobierz na Windows</a>
+      <a class="btn btn-ghost" href="/pl/faq/">Przeczytaj FAQ</a>
+    </div>
+  </section>
+
+</div>

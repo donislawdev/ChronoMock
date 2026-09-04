@@ -1,0 +1,131 @@
+<!-- Speeding the clock up, English.
+
+     The multiplier table is arithmetic, checked rather than estimated: x1440 is 1440
+     fake minutes per real minute, which is exactly one day. The ceiling of a million
+     is chrono_core::MULTIPLIER_MAX. -->
+
+<div class="shell">
+
+  <section class="plain">
+    <h1>Make one app's clock run faster</h1>
+    <p class="sub">
+      A 30-day trial takes 30 days to expire, unless you can move time. The usual advice
+      is to push the system clock forward, which needs administrator rights and drags
+      every other program on the machine along with it. This moves one process instead.
+    </p>
+  </section>
+
+  <section>
+    <h2>How fast</h2>
+    <div class="prose">
+      <p>
+        Pick a whole-number multiplier. The application's clock advances that many times
+        faster than the real one, from whatever moment the session starts at.
+      </p>
+    </div>
+
+    <div class="wrap" style="margin-top:24px">
+      <table>
+        <thead>
+          <tr><th>Multiplier</th><th>One real minute becomes</th><th>Useful for</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>x60</code></td><td>an hour</td><td>hourly jobs, session timeouts, token lifetimes</td></tr>
+          <tr><td><code>x1440</code></td><td>a day</td><td>daily rollovers, a 30-day trial in half an hour</td></tr>
+          <tr><td><code>x43200</code></td><td>a 30-day trial</td><td>watching the whole trial end while you read this</td></tr>
+          <tr><td><code>x525600</code></td><td>a year</td><td>annual renewals, certificate expiry</td></tr>
+          <tr><td><code>x1000000</code></td><td>about 1.9 years</td><td>the ceiling</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <pre class="term" style="margin-top:26px"><span class="c"># Start at the real time now, and run a day per minute</span>
+<span class="p">chrono</span> run "C:\apps\Ledger.exe" --mode x1440
+
+<span class="c"># Start on a chosen date and accelerate from there</span>
+<span class="p">chrono</span> run "C:\apps\Ledger.exe" --at 2027-12-01T09:00:00 --mode x1440
+
+<span class="c"># Hold the clock completely still instead</span>
+<span class="p">chrono</span> run "C:\apps\Ledger.exe" --mode frozen</pre>
+  </section>
+
+  <section>
+    <h2>The part that catches people out: there are two clocks</h2>
+    <div class="prose">
+      <p>
+        Speeding up the <strong>wall clock</strong> - what <code>DateTime.Now</code> and its
+        equivalents return - does not by itself speed up a <strong>countdown</strong>. Those
+        are two different questions an application can ask the operating system, and plenty
+        of software measures "thirty days" with the second one rather than the first.
+      </p>
+      <p>
+        So the duration axis - tick counts, sleeps, waits and timers - is a separate switch:
+      </p>
+      <ul>
+        <li><code>--scale-duration</code> puts sleeps, waits and timers on the session clock
+          too. Without it, <code>x1440</code> races the calendar forward while a five-second
+          timer still takes five real seconds.</li>
+        <li><code>--scale-qpc</code> additionally scales the high-resolution counter. That is
+          where Python 3.13+ <code>monotonic</code>, .NET <code>Stopwatch</code> and Java
+          <code>nanoTime</code> read elapsed time, and it is off by default because scaling it
+          destabilised rendering in testing.</li>
+      </ul>
+      <p>
+        If the multiplier appears to do nothing to a countdown, this is almost always why.
+      </p>
+    </div>
+
+    <pre class="term"><span class="c"># A timer app: speed the calendar AND the countdowns</span>
+<span class="p">chrono</span> run "C:\apps\Timer.exe" --mode x60 --scale-duration
+
+<span class="c"># A Python or .NET app measuring elapsed time on the high-resolution counter</span>
+<span class="p">chrono</span> run "C:\apps\Job.exe" --mode x60 --scale-duration --scale-qpc</pre>
+  </section>
+
+  <section>
+    <h2>Changing speed without restarting</h2>
+    <div class="prose">
+      <p>
+        The multiplier can change mid-session, and the clock is re-anchored rather than
+        jumped, so it never goes backwards when the speed drops. You can also jump the clock
+        outright - forwards, or backwards the way a laptop does after it resyncs with a time
+        server, which is the case that breaks anything measuring elapsed time without a guard.
+      </p>
+    </div>
+
+    <pre class="term"><span class="c"># Run at x60, then switch to x1440 two seconds in</span>
+<span class="p">chrono</span> run "C:\apps\Ledger.exe" --mode x60 --set-after 2:1440
+
+<span class="c"># Run, then jump the clock to a chosen moment five seconds in</span>
+<span class="p">chrono</span> run "C:\apps\Ledger.exe" --jump-after 5:2028-01-01T00:00:00</pre>
+  </section>
+
+  <section>
+    <h2>What it will not do</h2>
+    <div class="prose">
+      <ul>
+        <li><strong>It does not touch the system clock.</strong> That is the point, not a
+          limitation - but it means anything reading the time from a server, a database or
+          another machine is unaffected, and the audit will tell you when that happens.</li>
+        <li><strong>A jump changes what the application sees, not when it wakes up.</strong>
+          Timers already handed to the kernel run on real time. Most applications poll the
+          clock, so jumps work in practice - not all of them do.</li>
+        <li><strong>It does not slow time down.</strong> Multipliers are whole numbers of one
+          and above, plus a frozen clock at zero.</li>
+      </ul>
+      <p>
+        Whether any of it reached your application is not something to assume.
+        <a href="/time-source-audit/">The session says so &rarr;</a>
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Try it</h2>
+    <div class="cta">
+      <a class="btn btn-primary" href="/download/">Download for Windows</a>
+      <a class="btn btn-ghost" href="/faq/">Read the FAQ</a>
+    </div>
+  </section>
+
+</div>

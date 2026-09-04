@@ -1,0 +1,22 @@
+{
+  "//": "The answer people currently find for this involves moving the system clock and needing administrator rights. That is the comparison the page is written against.",
+
+  "id": "speed-up-time",
+  "order": 40,
+  "nav": true,
+
+  "languages": {
+    "en": {
+      "slug": "speed-up-time",
+      "link_text": "Speed up time",
+      "title": "Speed up time for one Windows app, not the system clock",
+      "description": "Run one application's clock up to a million times faster, so a 30-day trial expires in half an hour. No administrator rights, and every other program keeps the real time."
+    },
+    "pl": {
+      "slug": "przyspieszanie-czasu",
+      "link_text": "Przyspieszanie czasu",
+      "title": "Przyspiesz czas jednej aplikacji, nie zegara systemu",
+      "description": "Zegar jednej aplikacji nawet milion razy szybciej, więc 30-dniowa wersja próbna wygasa w pół godziny. Bez uprawnień administratora, reszta programów ma prawdziwy czas."
+    }
+  }
+}
