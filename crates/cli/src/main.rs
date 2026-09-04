@@ -442,8 +442,8 @@ fn poll_counts(
             serde_json::json!({ "expression": cdp::COUNTS_EXPR, "returnByValue": true }),
             Some(&c.session_id),
         );
-        if let Ok(v) = read {
-            if let Some(obj) = v.get("result").and_then(|x| x.get("value")).and_then(serde_json::Value::as_object) {
+        if let Ok(v) = read
+            && let Some(obj) = v.get("result").and_then(|x| x.get("value")).and_then(serde_json::Value::as_object) {
                 any = true;
                 for (api, key) in [("setInterval", "si"), ("setTimeout", "st"), ("Date.now", "now"), ("performance.now", "perf")] {
                     if let Some(n) = obj.get(key).and_then(serde_json::Value::as_u64) {
@@ -452,7 +452,6 @@ fn poll_counts(
                     }
                 }
             }
-        }
     }
     any
 }
@@ -1063,13 +1062,12 @@ fn driver_run(argv: &[String]) -> i32 {
                 }
                 Ok(Event::State { .. }) => {
                     states_seen += 1;
-                    if let Some((t, m)) = ra.set_after {
-                        if states_seen == t {
+                    if let Some((t, m)) = ra.set_after
+                        && states_seen == t {
                             send_set_multiplier(&mut stdin, m);
                         }
-                    }
-                    if let Some((t, ref mom)) = ra.jump_after {
-                        if states_seen == t {
+                    if let Some((t, ref mom)) = ra.jump_after
+                        && states_seen == t {
                             // The SESSION's zone, not the raw flag: a jump names a wall-clock moment on
                             // the clock the target is already showing. Reading it as UTC while the
                             // session ran on the host's zone landed the jump an offset away - measured
@@ -1078,7 +1076,6 @@ fn driver_run(argv: &[String]) -> i32 {
                             // host"), and it is the same rule-2 failure in a second place.
                             send_jump(&mut stdin, mom, Some(now_bias));
                         }
-                    }
                     if ra.ticks > 0 && states_seen >= ra.ticks && !end_sent {
                         send_end(&mut stdin);
                         end_sent = true;
@@ -2537,11 +2534,10 @@ fn find_calendar_file(id: &str) -> Result<std::path::PathBuf, String> {
     }
     let name = format!("{id}.json");
     let mut candidates: Vec<std::path::PathBuf> = Vec::new();
-    if let Ok(exe) = std::env::current_exe() {
-        if let Some(dir) = exe.parent() {
+    if let Ok(exe) = std::env::current_exe()
+        && let Some(dir) = exe.parent() {
             candidates.push(dir.join("calendars").join(&name));
         }
-    }
     candidates.push(std::path::Path::new("calendars").join(&name));
     candidates
         .into_iter()
@@ -2594,14 +2590,13 @@ fn calendar_from_text(text: &str) -> Result<chrono_core::calendar::Calendar, Str
 
             // An inverted window silently means "never a holiday", which reads as a missing entry
             // rather than as the mistake it is.
-            if let (Some(from), Some(to)) = (h.valid_from, h.valid_to) {
-                if from > to {
+            if let (Some(from), Some(to)) = (h.valid_from, h.valid_to)
+                && from > to {
                     return Err(format!(
                         "holiday '{}': valid_from {from} is after valid_to {to}",
                         h.id
                     ));
                 }
-            }
 
             seen_ids.push(h.id.clone());
             let rule = rule_from(&h.id, h.rule)?;
@@ -3168,11 +3163,10 @@ fn find_preset_file(id: &str) -> Result<std::path::PathBuf, PresetError> {
     }
     let name = format!("{id}.json");
     let mut candidates: Vec<std::path::PathBuf> = Vec::new();
-    if let Ok(exe) = std::env::current_exe() {
-        if let Some(dir) = exe.parent() {
+    if let Ok(exe) = std::env::current_exe()
+        && let Some(dir) = exe.parent() {
             candidates.push(dir.join("presets").join(&name));
         }
-    }
     candidates.push(std::path::Path::new("presets").join(&name));
     candidates
         .into_iter()
@@ -3340,11 +3334,10 @@ fn cdp_session(target: TargetSpec, time: TimeSpec, reader: BufReader<std::io::St
             match reader.read_line(&mut line) {
                 Ok(0) | Err(_) => break,
                 Ok(_) => {
-                    if let Ok(cmd) = parse_command(line.trim_end()) {
-                        if tx.send(cmd).is_err() {
+                    if let Ok(cmd) = parse_command(line.trim_end())
+                        && tx.send(cmd).is_err() {
                             break;
                         }
-                    }
                 }
             }
         }
@@ -3992,11 +3985,10 @@ fn run_session(
             match reader.read_line(&mut line) {
                 Ok(0) | Err(_) => break, // EOF or error: dropping tx signals Disconnected
                 Ok(_) => {
-                    if let Ok(cmd) = parse_command(line.trim_end()) {
-                        if tx.send(cmd).is_err() {
+                    if let Ok(cmd) = parse_command(line.trim_end())
+                        && tx.send(cmd).is_err() {
                             break;
                         }
-                    }
                 }
             }
         }

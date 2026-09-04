@@ -493,7 +493,7 @@ pub const fn ctl_size() -> usize {
 ///
 /// # Safety
 /// `p` must point to a live, correctly aligned `Ctl`.
-pub unsafe fn write_anchor(p: *mut Ctl, a_fake: i64, a_real: i64, multiplier: i64) {
+pub unsafe fn write_anchor(p: *mut Ctl, a_fake: i64, a_real: i64, multiplier: i64) { unsafe {
     let sp = addr_of_mut!((*p).seq);
     let s = read_volatile(sp).wrapping_add(1);
     write_volatile(sp, s); // odd - write in progress
@@ -508,7 +508,7 @@ pub unsafe fn write_anchor(p: *mut Ctl, a_fake: i64, a_real: i64, multiplier: i6
     write_volatile(addr_of_mut!((*p).multiplier), multiplier);
     fence(Ordering::Release);
     write_volatile(sp, s.wrapping_add(1)); // even - write done
-}
+}}
 
 /// Write the FULL anchor (wall triple plus the duration anchor) under the seqlock, in one transaction
 /// so a reader never sees a new multiplier against an old duration base. This is the `prepare` (initial)
@@ -527,7 +527,7 @@ pub unsafe fn write_anchor_full(
     dur_q0: i64,
     dur_qpc_c0: i64,
     dur_qpc_q0: i64,
-) {
+) { unsafe {
     let sp = addr_of_mut!((*p).seq);
     let s = read_volatile(sp).wrapping_add(1);
     write_volatile(sp, s); // odd - write in progress
@@ -542,7 +542,7 @@ pub unsafe fn write_anchor_full(
     write_volatile(addr_of_mut!((*p).dur_qpc_q0), dur_qpc_q0);
     fence(Ordering::Release);
     write_volatile(sp, s.wrapping_add(1)); // even - write done
-}
+}}
 
 /// How many times a seqlock reader retries before it gives up and returns a fallback (RELEASE-009). A write
 /// is a handful of instructions held for nanoseconds and happens only on `set_multiplier`/`jump` (rare,
@@ -555,7 +555,7 @@ const SEQLOCK_READ_TRIES: usize = 1_000_000;
 ///
 /// # Safety
 /// `p` must point to a live, correctly aligned `Ctl`.
-pub unsafe fn read_anchor(p: *const Ctl) -> (i64, i64, i64) {
+pub unsafe fn read_anchor(p: *const Ctl) -> (i64, i64, i64) { unsafe {
     for _ in 0..SEQLOCK_READ_TRIES {
         let s1 = read_volatile(addr_of!((*p).seq));
         if s1 & 1 == 0 {
@@ -584,7 +584,7 @@ pub unsafe fn read_anchor(p: *const Ctl) -> (i64, i64, i64) {
         read_volatile(addr_of!((*p).a_real)),
         read_volatile(addr_of!((*p).multiplier)),
     )
-}
+}}
 
 /// Read the duration anchor plus the multiplier under the seqlock, as ONE consistent snapshot, retrying
 /// on a concurrent write. Returns `(dur_tick_c0, dur_quit_c0, dur_q0, multiplier)`. The duration detours
@@ -594,7 +594,7 @@ pub unsafe fn read_anchor(p: *const Ctl) -> (i64, i64, i64) {
 ///
 /// # Safety
 /// `p` must point to a live, correctly aligned `Ctl`.
-pub unsafe fn read_dur(p: *const Ctl) -> (u64, i64, i64, i64) {
+pub unsafe fn read_dur(p: *const Ctl) -> (u64, i64, i64, i64) { unsafe {
     for _ in 0..SEQLOCK_READ_TRIES {
         let s1 = read_volatile(addr_of!((*p).seq));
         if s1 & 1 == 0 {
@@ -618,7 +618,7 @@ pub unsafe fn read_dur(p: *const Ctl) -> (u64, i64, i64, i64) {
         read_volatile(addr_of!((*p).dur_q0)),
         read_volatile(addr_of!((*p).multiplier)),
     )
-}
+}}
 
 /// Project the duration tick (milliseconds, `GetTickCount64` scale) at real time `real_now` (QUIT, 100 ns)
 /// from the anchor: `dur_tick_c0 + (real_now - dur_q0) * M / 10_000`. Monotonic in `real_now` for a fixed
@@ -659,7 +659,7 @@ pub fn freeze_dur(dur_tick_c0: u64, dur_quit_c0: i64, dur_q0: i64, old_m: i64, n
 ///
 /// # Safety
 /// `p` must point to a live, correctly aligned `Ctl`.
-pub unsafe fn read_qpc(p: *const Ctl) -> (i64, i64, i64) {
+pub unsafe fn read_qpc(p: *const Ctl) -> (i64, i64, i64) { unsafe {
     for _ in 0..SEQLOCK_READ_TRIES {
         let s1 = read_volatile(addr_of!((*p).seq));
         if s1 & 1 == 0 {
@@ -681,7 +681,7 @@ pub unsafe fn read_qpc(p: *const Ctl) -> (i64, i64, i64) {
         read_volatile(addr_of!((*p).dur_qpc_q0)),
         read_volatile(addr_of!((*p).multiplier)),
     )
-}
+}}
 
 /// Project the fake QueryPerformanceCounter (raw QPC ticks) at real QPC `real_now` from the anchor:
 /// `dur_qpc_c0 + (real_now - dur_qpc_q0) * M`. QueryPerformanceFrequency is NOT scaled, so elapsed
@@ -705,65 +705,65 @@ pub fn freeze_qpc(dur_qpc_c0: i64, dur_qpc_q0: i64, old_m: i64, now: i64) -> i64
 ///
 /// # Safety
 /// `p` must point to a live, correctly aligned `Ctl`.
-pub unsafe fn write_tz_bias(p: *mut Ctl, bias: i32) {
+pub unsafe fn write_tz_bias(p: *mut Ctl, bias: i32) { unsafe {
     write_volatile(addr_of_mut!((*p).tz_bias), bias);
-}
+}}
 
 /// Read the session zone bias (hook side).
 ///
 /// # Safety
 /// `p` must point to a live, correctly aligned `Ctl`.
-pub unsafe fn read_tz_bias(p: *const Ctl) -> i32 {
+pub unsafe fn read_tz_bias(p: *const Ctl) -> i32 { unsafe {
     read_volatile(addr_of!((*p).tz_bias))
-}
+}}
 
 /// Write the scale-duration flag (stable field, outside the seqlock). Mechanism side.
 ///
 /// # Safety
 /// `p` must point to a live, correctly aligned `Ctl`.
-pub unsafe fn write_scale_dur(p: *mut Ctl, on: bool) {
+pub unsafe fn write_scale_dur(p: *mut Ctl, on: bool) { unsafe {
     write_volatile(addr_of_mut!((*p).scale_dur), on as u32);
-}
+}}
 
 /// Read the scale-duration flag (hook side).
 ///
 /// # Safety
 /// `p` must point to a live, correctly aligned `Ctl`.
-pub unsafe fn read_scale_dur(p: *const Ctl) -> bool {
+pub unsafe fn read_scale_dur(p: *const Ctl) -> bool { unsafe {
     read_volatile(addr_of!((*p).scale_dur)) != 0
-}
+}}
 
 /// Write the scale-QPC flag (stable field, outside the seqlock). Mechanism side (ADR-2 reversal, opt-in).
 ///
 /// # Safety
 /// `p` must point to a live, correctly aligned `Ctl`.
-pub unsafe fn write_scale_qpc(p: *mut Ctl, on: bool) {
+pub unsafe fn write_scale_qpc(p: *mut Ctl, on: bool) { unsafe {
     write_volatile(addr_of_mut!((*p).scale_qpc), on as u32);
-}
+}}
 
 /// Read the scale-QPC flag (hook side).
 ///
 /// # Safety
 /// `p` must point to a live, correctly aligned `Ctl`.
-pub unsafe fn read_scale_qpc(p: *const Ctl) -> bool {
+pub unsafe fn read_scale_qpc(p: *const Ctl) -> bool { unsafe {
     read_volatile(addr_of!((*p).scale_qpc)) != 0
-}
+}}
 
 /// Write the core PID (stable field, outside the seqlock). Mechanism side.
 ///
 /// # Safety
 /// `p` must point to a live, correctly aligned `Ctl`.
-pub unsafe fn write_core_pid(p: *mut Ctl, pid: u32) {
+pub unsafe fn write_core_pid(p: *mut Ctl, pid: u32) { unsafe {
     write_volatile(addr_of_mut!((*p).core_pid), pid);
-}
+}}
 
 /// Read the core PID (hook side).
 ///
 /// # Safety
 /// `p` must point to a live, correctly aligned `Ctl`.
-pub unsafe fn read_core_pid(p: *const Ctl) -> u32 {
+pub unsafe fn read_core_pid(p: *const Ctl) -> u32 { unsafe {
     read_volatile(addr_of!((*p).core_pid))
-}
+}}
 
 /// Reserve this process's coverage slot (hook side). Reserves atomically - several children may
 /// start concurrently - and returns the slot index, or None if the registry is full (the process
@@ -779,7 +779,7 @@ pub unsafe fn read_core_pid(p: *const Ctl) -> u32 {
 ///
 /// # Safety
 /// `p` must point to a live, correctly aligned `Ctl`.
-pub unsafe fn reserve_cov_slot(p: *mut Ctl) -> Option<usize> {
+pub unsafe fn reserve_cov_slot(p: *mut Ctl) -> Option<usize> { unsafe {
     // Atomic reservation: a volatile RMW could hand two children the same slot and
     // lose one from the audit entirely (worse than the calls under-count).
     let counter = &*(addr_of!((*p).pid_count) as *const AtomicU32);
@@ -788,7 +788,7 @@ pub unsafe fn reserve_cov_slot(p: *mut Ctl) -> Option<usize> {
         return None;
     }
     Some(slot)
-}
+}}
 
 /// Publish this process's PID into the slot it reserved (hook side), announcing to the mechanism
 /// that the slot is ready to read. Call LAST, after the coverage slot carries the installed mask.
@@ -799,11 +799,11 @@ pub unsafe fn reserve_cov_slot(p: *mut Ctl) -> Option<usize> {
 ///
 /// # Safety
 /// `p` must point to a live, correctly aligned `Ctl`, and `slot < MAX_COV_PIDS`.
-pub unsafe fn publish_pid(p: *mut Ctl, slot: usize, pid: u32) {
+pub unsafe fn publish_pid(p: *mut Ctl, slot: usize, pid: u32) { unsafe {
     fence(Ordering::Release);
     let slotp = (addr_of_mut!((*p).pids) as *mut u32).add(slot);
     write_volatile(slotp, pid);
-}
+}}
 
 /// Read one PID registry slot (mechanism side). `i` must be < MAX_COV_PIDS. A zero
 /// means "empty or not yet published" - the mechanism scans all slots and skips zeros,
@@ -823,10 +823,10 @@ pub unsafe fn publish_pid(p: *mut Ctl, slot: usize, pid: u32) {
 ///
 /// # Safety
 /// `p` must point to a live, correctly aligned `Ctl`.
-pub unsafe fn read_pid_count(p: *const Ctl) -> u32 {
+pub unsafe fn read_pid_count(p: *const Ctl) -> u32 { unsafe {
     let counter = &*(addr_of!((*p).pid_count) as *const AtomicU32);
     counter.load(Ordering::SeqCst)
-}
+}}
 
 /// Read one PID registry slot (mechanism side). `i` must be < MAX_COV_PIDS. A zero
 /// means "empty or not yet published" - the mechanism scans all slots and skips zeros,
@@ -834,7 +834,7 @@ pub unsafe fn read_pid_count(p: *const Ctl) -> u32 {
 ///
 /// # Safety
 /// `p` must point to a live, correctly aligned `Ctl`, and `i < MAX_COV_PIDS`.
-pub unsafe fn read_pid(p: *const Ctl, i: usize) -> u32 {
+pub unsafe fn read_pid(p: *const Ctl, i: usize) -> u32 { unsafe {
     let slotp = (addr_of!((*p).pids) as *const u32).add(i);
     let pid = read_volatile(slotp);
     if pid != 0 {
@@ -843,23 +843,23 @@ pub unsafe fn read_pid(p: *const Ctl, i: usize) -> u32 {
         fence(Ordering::Acquire);
     }
     pid
-}
+}}
 
 /// Pointer to one slot's coverage (hook side, its own slot). `i` must be < MAX_COV_PIDS.
 ///
 /// # Safety
 /// `p` must point to a live, correctly aligned `Ctl`, and `i < MAX_COV_PIDS`.
-pub unsafe fn cov_at_mut(p: *mut Ctl, i: usize) -> *mut Cov {
+pub unsafe fn cov_at_mut(p: *mut Ctl, i: usize) -> *mut Cov { unsafe {
     (addr_of_mut!((*p).covs) as *mut Cov).add(i)
-}
+}}
 
 /// Pointer to one slot's coverage (mechanism side, read-only). `i` must be < MAX_COV_PIDS.
 ///
 /// # Safety
 /// `p` must point to a live, correctly aligned `Ctl`, and `i < MAX_COV_PIDS`.
-pub unsafe fn cov_at(p: *const Ctl, i: usize) -> *const Cov {
+pub unsafe fn cov_at(p: *const Ctl, i: usize) -> *const Cov { unsafe {
     (addr_of!((*p).covs) as *const Cov).add(i)
-}
+}}
 
 /// Publish the set of installed channels (hook side, per-process `Cov`). A whole-mask WRITE,
 /// not an OR-in: the hook side collects bits locally while it creates the detours and publishes
@@ -870,38 +870,38 @@ pub unsafe fn cov_at(p: *const Ctl, i: usize) -> *const Cov {
 ///
 /// # Safety
 /// `p` must point to a live, correctly aligned `Cov`.
-pub unsafe fn set_channels_installed(p: *mut Cov, mask: u64) {
+pub unsafe fn set_channels_installed(p: *mut Cov, mask: u64) { unsafe {
     write_volatile(addr_of_mut!((*p).installed_channels), mask);
-}
+}}
 
 /// Read the installed-channels bitmask (mechanism side, per-process `Cov`).
 ///
 /// # Safety
 /// `p` must point to a live, correctly aligned `Cov`.
-pub unsafe fn read_installed(p: *const Cov) -> u64 {
+pub unsafe fn read_installed(p: *const Cov) -> u64 { unsafe {
     read_volatile(addr_of!((*p).installed_channels))
-}
+}}
 
 /// Increment a channel's call counter (hook side, per-process `Cov`). `idx` must be
 /// < CHANNEL_COUNT.
 ///
 /// # Safety
 /// `p` must point to a live, correctly aligned `Cov`, and `idx < CHANNEL_COUNT`.
-pub unsafe fn bump_calls(p: *mut Cov, idx: usize) {
+pub unsafe fn bump_calls(p: *mut Cov, idx: usize) { unsafe {
     let slot = (addr_of_mut!((*p).calls) as *mut u64).add(idx);
     let cur = read_volatile(slot);
     write_volatile(slot, cur.wrapping_add(1));
-}
+}}
 
 /// Read a channel's call counter (mechanism side, per-process `Cov`). `idx` must be
 /// < CHANNEL_COUNT.
 ///
 /// # Safety
 /// `p` must point to a live, correctly aligned `Cov`, and `idx < CHANNEL_COUNT`.
-pub unsafe fn read_calls(p: *const Cov, idx: usize) -> u64 {
+pub unsafe fn read_calls(p: *const Cov, idx: usize) -> u64 { unsafe {
     let slot = (addr_of!((*p).calls) as *const u64).add(idx);
     read_volatile(slot)
-}
+}}
 
 /// Record that a child this process spawned could not be followed into (hook side, own `Cov`).
 /// Same volatile RMW as `bump_calls`: two threads spawning at once may lose a bump, which can only
@@ -909,19 +909,19 @@ pub unsafe fn read_calls(p: *const Cov, idx: usize) -> u64 {
 ///
 /// # Safety
 /// `p` must point to a live, correctly aligned `Cov`.
-pub unsafe fn bump_uninjected_children(p: *mut Cov) {
+pub unsafe fn bump_uninjected_children(p: *mut Cov) { unsafe {
     let slot = addr_of_mut!((*p).uninjected_children);
     let cur = read_volatile(slot);
     write_volatile(slot, cur.wrapping_add(1));
-}
+}}
 
 /// How many children this process spawned without coverage (mechanism side, per-process `Cov`).
 ///
 /// # Safety
 /// `p` must point to a live, correctly aligned `Cov`.
-pub unsafe fn read_uninjected_children(p: *const Cov) -> u64 {
+pub unsafe fn read_uninjected_children(p: *const Cov) -> u64 { unsafe {
     read_volatile(addr_of!((*p).uninjected_children))
-}
+}}
 
 /// Scale a wait timeout in milliseconds by the duration multiplier: real wait =
 /// requested / M (ADR-7). `INFINITE` (0xFFFFFFFF) and 0 pass through untouched - never

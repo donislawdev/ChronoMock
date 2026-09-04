@@ -485,7 +485,7 @@ impl Drop for SessionLock {
 ///
 /// # Safety
 /// Maps and unmaps the control section; safe to call with no session running.
-unsafe fn read_active_core_pid() -> u32 {
+unsafe fn read_active_core_pid() -> u32 { unsafe {
     let Ok(hmap) = OpenFileMappingW(FILE_MAP_ALL_ACCESS.0, false, windows::core::w!("Local\\ChronoCtl"))
     else {
         return 0;
@@ -497,7 +497,7 @@ unsafe fn read_active_core_pid() -> u32 {
     }
     let _ = CloseHandle(hmap);
     pid
-}
+}}
 
 /// Take the session lock, or report who holds it. A named mutex rather than inference from the
 /// control block's contents: the previous design read `core_pid`, which `prepare` writes LAST, so
@@ -508,7 +508,7 @@ unsafe fn read_active_core_pid() -> u32 {
 ///
 /// # Safety
 /// Calls the Win32 synchronization APIs.
-unsafe fn take_session_lock() -> Result<SessionLock, PrepareError> {
+unsafe fn take_session_lock() -> Result<SessionLock, PrepareError> { unsafe {
     let h = CreateMutexW(None, false, windows::core::w!("Local\\ChronoCtl.lock"))
         .map_err(|e| PrepareError::Control(format!("CreateMutexW: {e:?}")))?;
     let lock = SessionLock(h);
@@ -517,7 +517,7 @@ unsafe fn take_session_lock() -> Result<SessionLock, PrepareError> {
     } else {
         Err(PrepareError::SessionActive(read_active_core_pid()))
     }
-}
+}}
 
 /// Whether a zero-timeout wait on the session mutex left US holding it. `WAIT_OBJECT_0` is the
 /// plain case. `WAIT_ABANDONED` also means ours: the previous owner died without releasing, which
@@ -539,7 +539,7 @@ unsafe fn gather_coverage(
     installed: u64,
     scale_duration: bool,
     scale_qpc: bool,
-) -> Coverage {
+) -> Coverage { unsafe {
     let mut out = Coverage::default();
     // Track which KIND of observed channel actually ran, so the audit names the right reason: an
     // object wait left real (class B), a multimedia timer left real (class C, winmm/ADR-2), or a
@@ -637,7 +637,7 @@ unsafe fn gather_coverage(
         out.warning_keys.push("source.network_at_start".to_string());
     }
     out
-}
+}}
 
 // --- Target bitness (R2-S1) ----------------------------------------------------
 //
@@ -668,12 +668,12 @@ fn machine_label(m: u16) -> &'static str {
 ///
 /// # Safety
 /// `hproc` must be a valid process handle with QUERY_LIMITED_INFORMATION rights.
-unsafe fn process_machine(hproc: HANDLE) -> Option<u16> {
+unsafe fn process_machine(hproc: HANDLE) -> Option<u16> { unsafe {
     let mut process = IMAGE_FILE_MACHINE(0);
     let mut native = IMAGE_FILE_MACHINE(0);
     IsWow64Process2(hproc, &mut process, Some(&mut native)).ok()?;
     Some(if process == IMAGE_FILE_MACHINE_UNKNOWN { native.0 } else { process.0 })
-}
+}}
 
 /// Whether this core can reach `hproc` at all. `None` means "go ahead": either the bitness matches, or
 /// the query failed and we do not know - and a guess is not grounds for refusing a session (rule 6 cuts
@@ -681,11 +681,11 @@ unsafe fn process_machine(hproc: HANDLE) -> Option<u16> {
 ///
 /// # Safety
 /// `hproc` must be a valid process handle with QUERY_LIMITED_INFORMATION rights.
-unsafe fn bitness_mismatch(hproc: HANDLE) -> Option<(&'static str, &'static str)> {
+unsafe fn bitness_mismatch(hproc: HANDLE) -> Option<(&'static str, &'static str)> { unsafe {
     let target = process_machine(hproc)?;
     let core = process_machine(GetCurrentProcess())?;
     (target != core).then(|| (machine_label(target), machine_label(core)))
-}
+}}
 
 /// How many slot claims went unserved, given the number of claims made. Pure, so the arithmetic is
 /// testable without a live session: the registry counter only ever increases and counts ATTEMPTS, so
@@ -700,9 +700,9 @@ fn uncovered_from_attempts(attempts: u32) -> u32 {
 ///
 /// # Safety
 /// `ctl` must point to a live, correctly aligned `Ctl`.
-unsafe fn find_pid_slot(ctl: *const Ctl, pid: u32) -> Option<usize> {
+unsafe fn find_pid_slot(ctl: *const Ctl, pid: u32) -> Option<usize> { unsafe {
     (0..MAX_COV_PIDS).find(|&i| read_pid(ctl, i) == pid)
-}
+}}
 
 /// Prepare and start a session on `target` using `spec`, injecting `hook_dll`.
 pub fn prepare(spec: &SessionSpec, target: &Target, hook_dll: &Path) -> Result<Prepared, PrepareError> {
@@ -993,7 +993,7 @@ const INJECT_TIMEOUT_MS: u32 = 10_000;
 /// remote thread. Returns `Err` (and frees the remote page) on any failure, INCLUDING a `LoadLibraryW`
 /// that returned NULL in the target - the caller then terminates the still-suspended target rather than
 /// resume an unhooked process reading real time (H-2).
-unsafe fn inject(hproc: HANDLE, dll_wide: &[u16]) -> Result<(), PrepareError> {
+unsafe fn inject(hproc: HANDLE, dll_wide: &[u16]) -> Result<(), PrepareError> { unsafe {
     let bytes = dll_wide.len() * 2;
     let remote = VirtualAllocEx(hproc, None, bytes, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
     if remote.is_null() {
@@ -1048,7 +1048,7 @@ unsafe fn inject(hproc: HANDLE, dll_wide: &[u16]) -> Result<(), PrepareError> {
         ));
     }
     Ok(())
-}
+}}
 
 #[cfg(test)]
 mod tests {

@@ -272,7 +272,7 @@ fn cov_ptr() -> Option<*mut Cov> {
 ///
 /// # Safety
 /// `h` must be a valid handle to wait on.
-unsafe fn wait_raw(h: HANDLE, ms: u32) {
+unsafe fn wait_raw(h: HANDLE, ms: u32) { unsafe {
     match O_WFSO.get() {
         Some(o) => {
             o(h, ms);
@@ -281,7 +281,7 @@ unsafe fn wait_raw(h: HANDLE, ms: u32) {
             WaitForSingleObject(h, ms);
         }
     }
-}
+}}
 
 /// `STILL_ACTIVE` (259): the exit code `GetExitCodeThread` reports for a thread that has not finished.
 /// Read as "we do not know yet", never as a loaded module - the wait above is bounded, so this really
@@ -300,13 +300,13 @@ const CHILD_INJECT_TIMEOUT_MS: u32 = 10_000;
 // dies (clean end, crash, or kill -9) the OS signals it, we flip DETACHED, and every
 // detour falls through to the original - the target's clock returns to real time.
 
-unsafe extern "system" fn watcher_proc(_p: *mut c_void) -> u32 {
+unsafe extern "system" fn watcher_proc(_p: *mut c_void) -> u32 { unsafe {
     if let Some(&h) = CORE_HANDLE.get() {
         wait_raw(HANDLE(h as *mut c_void), INFINITE);
     }
     DETACHED.store(true, Ordering::SeqCst);
     0
-}
+}}
 
 /// Spawn the watcher once, lazily - NOT from DllMain, to stay clear of the loader lock.
 fn ensure_watcher() {
@@ -459,7 +459,7 @@ fn bump(idx: usize) {
 ///
 /// # Safety
 /// `lp` must be a valid, writable pointer to a `SYSTEMTIME`.
-unsafe fn write_systemtime(lp: *mut SYSTEMTIME, ft_ticks: i64) -> bool {
+unsafe fn write_systemtime(lp: *mut SYSTEMTIME, ft_ticks: i64) -> bool { unsafe {
     let ft = i64_to_ft(ft_ticks);
     let mut st = SYSTEMTIME::default();
     if FileTimeToSystemTime(&ft, &mut st).is_ok() {
@@ -468,13 +468,13 @@ unsafe fn write_systemtime(lp: *mut SYSTEMTIME, ft_ticks: i64) -> bool {
     } else {
         false
     }
-}
+}}
 
 // --- Detours -------------------------------------------------------------------
 // Each fills its out-parameter with the fake instant, or falls back to the original
 // if the anchor is unreadable or the pointer is null.
 
-unsafe extern "system" fn h_gstaft(lp: *mut FILETIME) {
+unsafe extern "system" fn h_gstaft(lp: *mut FILETIME) { unsafe {
     bump(IDX_GSTAFT);
     match compute_fake() {
         Some(t) if !lp.is_null() => *lp = i64_to_ft(t),
@@ -484,9 +484,9 @@ unsafe extern "system" fn h_gstaft(lp: *mut FILETIME) {
             }
         }
     }
-}
+}}
 
-unsafe extern "system" fn h_gstpaft(lp: *mut FILETIME) {
+unsafe extern "system" fn h_gstpaft(lp: *mut FILETIME) { unsafe {
     bump(IDX_GSTPAFT);
     match compute_fake() {
         Some(t) if !lp.is_null() => *lp = i64_to_ft(t),
@@ -496,9 +496,9 @@ unsafe extern "system" fn h_gstpaft(lp: *mut FILETIME) {
             }
         }
     }
-}
+}}
 
-unsafe extern "system" fn h_gst(lp: *mut SYSTEMTIME) {
+unsafe extern "system" fn h_gst(lp: *mut SYSTEMTIME) { unsafe {
     bump(IDX_GST);
     // `done` is false when there is no fake instant, the pointer is null, or the SYSTEMTIME conversion
     // failed (L-3) - in every case defer to the real API rather than leave `*lp` as garbage.
@@ -506,14 +506,13 @@ unsafe extern "system" fn h_gst(lp: *mut SYSTEMTIME) {
         Some(t) if !lp.is_null() => write_systemtime(lp, t),
         _ => false,
     };
-    if !done {
-        if let Some(o) = O_GST.get() {
+    if !done
+        && let Some(o) = O_GST.get() {
             o(lp);
         }
-    }
-}
+}}
 
-unsafe extern "system" fn h_glt(lp: *mut SYSTEMTIME) {
+unsafe extern "system" fn h_glt(lp: *mut SYSTEMTIME) { unsafe {
     bump(IDX_GLT);
     let done = match compute_fake() {
         // local = UTC_fake - Bias (UTC = local + Bias), session zone without DST.
@@ -529,14 +528,13 @@ unsafe extern "system" fn h_glt(lp: *mut SYSTEMTIME) {
         },
         _ => false,
     };
-    if !done {
-        if let Some(o) = O_GLT.get() {
+    if !done
+        && let Some(o) = O_GLT.get() {
             o(lp);
         }
-    }
-}
+}}
 
-unsafe extern "system" fn h_ntqst(lp: *mut i64) -> i32 {
+unsafe extern "system" fn h_ntqst(lp: *mut i64) -> i32 { unsafe {
     bump(IDX_NTQST);
     match compute_fake() {
         Some(t) if !lp.is_null() => {
@@ -548,7 +546,7 @@ unsafe extern "system" fn h_ntqst(lp: *mut i64) -> i32 {
         Some(_) => STATUS_ACCESS_VIOLATION,
         None => O_NTQST.get().map(|o| o(lp)).unwrap_or(STATUS_UNSUCCESSFUL),
     }
-}
+}}
 
 // NtQuerySystemInformation is a syscall stub, so class SystemTimeOfDayInformation returns the REAL
 // system time straight from the kernel, bypassing every user-mode wall detour above. Unlike those,
@@ -566,7 +564,7 @@ unsafe extern "system" fn h_ntqst(lp: *mut i64) -> i32 {
 const SYSTEM_TIME_OF_DAY_INFORMATION: i32 = 3;
 const TOD_CURRENTTIME_OFFSET: usize = 8;
 
-unsafe extern "system" fn h_ntqsi(class: i32, info: *mut c_void, len: u32, retlen: *mut u32) -> i32 {
+unsafe extern "system" fn h_ntqsi(class: i32, info: *mut c_void, len: u32, retlen: *mut u32) -> i32 { unsafe {
     let o = match O_NTQSI.get() {
         Some(o) => o,
         None => return STATUS_UNSUCCESSFUL, // no trampoline: the buffer would be left unfilled, so do not report success
@@ -578,16 +576,15 @@ unsafe extern "system" fn h_ntqsi(class: i32, info: *mut c_void, len: u32, retle
         bump(IDX_NTQSI);
         // NT_SUCCESS(status) == status >= 0; the length guard keeps the [8, 16) write in bounds when a
         // caller passes a truncated buffer (honest partial: leave it, never write past its end).
-        if status >= 0 && !info.is_null() && len as usize >= TOD_CURRENTTIME_OFFSET + 8 {
-            if let Some(fake) = compute_fake() {
+        if status >= 0 && !info.is_null() && len as usize >= TOD_CURRENTTIME_OFFSET + 8
+            && let Some(fake) = compute_fake() {
                 // None when the core detached - then leave the real CurrentTime the original wrote.
                 let p = (info as *mut u8).add(TOD_CURRENTTIME_OFFSET) as *mut i64;
                 core::ptr::write_unaligned(p, fake);
             }
-        }
     }
     status
-}
+}}
 
 // --- Session zone -------------------------------------------------------------
 // Report the session zone (Bias = tz_bias, no DST) so a target's notion of "which
@@ -611,7 +608,7 @@ fn set_wide(dst: &mut [u16], s: &str) {
     }
 }
 
-unsafe extern "system" fn h_gtzi(lp: *mut TIME_ZONE_INFORMATION) -> u32 {
+unsafe extern "system" fn h_gtzi(lp: *mut TIME_ZONE_INFORMATION) -> u32 { unsafe {
     bump(IDX_GTZI);
     if detached() {
         return O_GTZI.get().map(|o| o(lp)).unwrap_or(TIME_ZONE_ID_INVALID);
@@ -623,9 +620,9 @@ unsafe extern "system" fn h_gtzi(lp: *mut TIME_ZONE_INFORMATION) -> u32 {
         return 0; // TIME_ZONE_ID_UNKNOWN - the session zone has no DST
     }
     O_GTZI.get().map(|o| o(lp)).unwrap_or(TIME_ZONE_ID_INVALID)
-}
+}}
 
-unsafe extern "system" fn h_gdtzi(lp: *mut DYNAMIC_TIME_ZONE_INFORMATION) -> u32 {
+unsafe extern "system" fn h_gdtzi(lp: *mut DYNAMIC_TIME_ZONE_INFORMATION) -> u32 { unsafe {
     bump(IDX_GDTZI);
     if detached() {
         return O_GDTZI.get().map(|o| o(lp)).unwrap_or(TIME_ZONE_ID_INVALID);
@@ -638,7 +635,7 @@ unsafe extern "system" fn h_gdtzi(lp: *mut DYNAMIC_TIME_ZONE_INFORMATION) -> u32
         return 0; // TIME_ZONE_ID_UNKNOWN - the session zone has no DST
     }
     O_GDTZI.get().map(|o| o(lp)).unwrap_or(TIME_ZONE_ID_INVALID)
-}
+}}
 
 // SystemTimeToTzSpecificLocalTime converts a caller-supplied UTC to local. A NULL zone
 // means "the currently active zone" (MS Learn, timezoneapi.h). We substitute the session
@@ -653,7 +650,7 @@ unsafe extern "system" fn h_gdtzi(lp: *mut DYNAMIC_TIME_ZONE_INFORMATION) -> u32
 ///
 /// # Safety
 /// `utc` must point to a valid SYSTEMTIME and `local` to a valid writable SYSTEMTIME.
-unsafe fn write_session_local(utc: *const SYSTEMTIME, local: *mut SYSTEMTIME) -> bool {
+unsafe fn write_session_local(utc: *const SYSTEMTIME, local: *mut SYSTEMTIME) -> bool { unsafe {
     let mut ft = FILETIME::default();
     if SystemTimeToFileTime(utc, &mut ft).is_err() {
         return false;
@@ -666,7 +663,7 @@ unsafe fn write_session_local(utc: *const SYSTEMTIME, local: *mut SYSTEMTIME) ->
         Some(shifted) => write_systemtime(local, shifted),
         None => false,
     }
-}
+}}
 
 /// Convert a caller-supplied local SYSTEMTIME to session-UTC (local + tz_bias, the inverse
 /// of write_session_local) and write it to `utc`. Returns false if the local time could not
@@ -674,7 +671,7 @@ unsafe fn write_session_local(utc: *const SYSTEMTIME, local: *mut SYSTEMTIME) ->
 ///
 /// # Safety
 /// `local` must point to a valid SYSTEMTIME and `utc` to a valid writable SYSTEMTIME.
-unsafe fn write_session_utc(local: *const SYSTEMTIME, utc: *mut SYSTEMTIME) -> bool {
+unsafe fn write_session_utc(local: *const SYSTEMTIME, utc: *mut SYSTEMTIME) -> bool { unsafe {
     let mut ft = FILETIME::default();
     if SystemTimeToFileTime(local, &mut ft).is_err() {
         return false;
@@ -685,7 +682,7 @@ unsafe fn write_session_utc(local: *const SYSTEMTIME, utc: *mut SYSTEMTIME) -> b
         Some(shifted) => write_systemtime(utc, shifted),
         None => false,
     }
-}
+}}
 
 /// Shift a FILETIME by the session bias: `add` for local->UTC (utc = local + bias), clear for
 /// UTC->local (local = utc - bias). The FILETIME conversions carry no zone argument, so they
@@ -693,7 +690,7 @@ unsafe fn write_session_utc(local: *const SYSTEMTIME, utc: *mut SYSTEMTIME) -> b
 ///
 /// # Safety
 /// `src` and `dst` must be valid, non-null FILETIME pointers.
-unsafe fn shift_filetime(src: *const FILETIME, dst: *mut FILETIME, add: bool) -> i32 {
+unsafe fn shift_filetime(src: *const FILETIME, dst: *mut FILETIME, add: bool) -> i32 { unsafe {
     let bias_100ns = cur_tz_bias() as i64 * 60 * 10_000_000;
     let ticks = ft_to_i64(*src);
     // FILETIME 0 is the very common "no time recorded", and a positive bias pushes it below zero -
@@ -714,25 +711,25 @@ unsafe fn shift_filetime(src: *const FILETIME, dst: *mut FILETIME, add: bool) ->
     };
     *dst = i64_to_ft(shifted);
     1
-}
+}}
 
 // FileTimeToLocalFileTime (UTC -> local) and LocalFileTimeToFileTime (local -> UTC) take no
 // zone argument, so they always mean the active zone - always substitute the session zone.
-unsafe extern "system" fn h_ftlft(utc: *const FILETIME, local: *mut FILETIME) -> i32 {
+unsafe extern "system" fn h_ftlft(utc: *const FILETIME, local: *mut FILETIME) -> i32 { unsafe {
     bump(IDX_FTLFT);
     if detached() || utc.is_null() || local.is_null() {
         return O_FTLFT.get().map(|o| o(utc, local)).unwrap_or(0);
     }
     shift_filetime(utc, local, false)
-}
+}}
 
-unsafe extern "system" fn h_lftft(local: *const FILETIME, utc: *mut FILETIME) -> i32 {
+unsafe extern "system" fn h_lftft(local: *const FILETIME, utc: *mut FILETIME) -> i32 { unsafe {
     bump(IDX_LFTFT);
     if detached() || local.is_null() || utc.is_null() {
         return O_LFTFT.get().map(|o| o(local, utc)).unwrap_or(0);
     }
     shift_filetime(local, utc, true)
-}
+}}
 
 // TzSpecificLocalTimeToSystemTime (+Ex): reverse of the STtSLT detours (local -> UTC). A NULL
 // zone means the active zone -> session zone (utc = local + tz_bias). A named zone passes through.
@@ -740,7 +737,7 @@ unsafe extern "system" fn h_tltst(
     tzi: *const TIME_ZONE_INFORMATION,
     local: *const SYSTEMTIME,
     utc: *mut SYSTEMTIME,
-) -> i32 {
+) -> i32 { unsafe {
     bump(IDX_TLTST);
     let o = match O_TLTST.get() {
         Some(o) => o,
@@ -754,13 +751,13 @@ unsafe extern "system" fn h_tltst(
     } else {
         o(tzi, local, utc)
     }
-}
+}}
 
 unsafe extern "system" fn h_tltstex(
     tzi: *const DYNAMIC_TIME_ZONE_INFORMATION,
     local: *const SYSTEMTIME,
     utc: *mut SYSTEMTIME,
-) -> i32 {
+) -> i32 { unsafe {
     bump(IDX_TLTSTEX);
     let o = match O_TLTSTEX.get() {
         Some(o) => o,
@@ -774,13 +771,13 @@ unsafe extern "system" fn h_tltstex(
     } else {
         o(tzi, local, utc)
     }
-}
+}}
 
 unsafe extern "system" fn h_stsl(
     tzi: *const TIME_ZONE_INFORMATION,
     utc: *const SYSTEMTIME,
     local: *mut SYSTEMTIME,
-) -> i32 {
+) -> i32 { unsafe {
     bump(IDX_STSL);
     let o = match O_STSL.get() {
         Some(o) => o,
@@ -794,13 +791,13 @@ unsafe extern "system" fn h_stsl(
     } else {
         o(tzi, utc, local)
     }
-}
+}}
 
 unsafe extern "system" fn h_stslex(
     tzi: *const DYNAMIC_TIME_ZONE_INFORMATION,
     utc: *const SYSTEMTIME,
     local: *mut SYSTEMTIME,
-) -> i32 {
+) -> i32 { unsafe {
     bump(IDX_STSLEX);
     let o = match O_STSLEX.get() {
         Some(o) => o,
@@ -814,7 +811,7 @@ unsafe extern "system" fn h_stslex(
     } else {
         o(tzi, utc, local)
     }
-}
+}}
 
 // --- Duration axis (opt-in) ----------------------------------------------------
 // Only installed when scale_duration is set. The anchor (`dur_tick_c0`, `dur_quit_c0`, `dur_q0`) lives
@@ -824,7 +821,7 @@ unsafe extern "system" fn h_stslex(
 // `m` is clamped to >= 1 inside `dur_tick_at`/`dur_quit_at`, so the axis keeps advancing even when the
 // wall clock is frozen. QPC and timeGetTime are left real (ADR-2).
 
-unsafe extern "system" fn h_tick() -> u64 {
+unsafe extern "system" fn h_tick() -> u64 { unsafe {
     bump(IDX_GTC64);
     if detached() {
         return O_TICK.get().map(|o| o()).unwrap_or(0);
@@ -843,13 +840,13 @@ unsafe extern "system" fn h_tick() -> u64 {
         }
         None => O_TICK.get().map(|o| o()).unwrap_or(0),
     }
-}
+}}
 
 // GetTickCount (32-bit): the low 32 bits of the SAME scaled millisecond count as
 // GetTickCount64 (shares the dur_tick_c0 base), so a target comparing the two sees them
 // agree. Wraps at 2^32 ms like the real one - and sooner under acceleration - which is the
 // honest behavior of a fast 32-bit counter; callers handle the wrap with unsigned deltas.
-unsafe extern "system" fn h_tick32() -> u32 {
+unsafe extern "system" fn h_tick32() -> u32 { unsafe {
     bump(IDX_GTC);
     if detached() {
         return O_TICK32.get().map(|o| o()).unwrap_or(0);
@@ -866,9 +863,9 @@ unsafe extern "system" fn h_tick32() -> u32 {
         }
         None => O_TICK32.get().map(|o| o()).unwrap_or(0),
     }
-}
+}}
 
-unsafe extern "system" fn h_quit(lp: *mut u64) -> i32 {
+unsafe extern "system" fn h_quit(lp: *mut u64) -> i32 { unsafe {
     bump(IDX_QUIT);
     if detached() {
         return O_QUIT.get().map(|o| o(lp)).unwrap_or(0);
@@ -889,7 +886,7 @@ unsafe extern "system" fn h_quit(lp: *mut u64) -> i32 {
         }
     }
     1 // nonzero BOOL = success
-}
+}}
 
 // QPC axis (ADR-2 reversal, opt-in `scale_qpc`): scale QueryPerformanceCounter, so a target whose elapsed
 // clock is monotonic/perf_counter (Python 3.13+), Stopwatch (.NET) or nanoTime (Java) - all QPC-backed -
@@ -902,7 +899,7 @@ unsafe extern "system" fn h_quit(lp: *mut u64) -> i32 {
 type QpcFn = unsafe extern "system" fn(*mut i64) -> i32;
 static O_QPC: OnceLock<QpcFn> = OnceLock::new();
 
-unsafe extern "system" fn h_qpc(lp: *mut i64) -> i32 {
+unsafe extern "system" fn h_qpc(lp: *mut i64) -> i32 { unsafe {
     // Counted like every other channel (R2-S3). QPC is the hottest clock a process calls, so the cost
     // was measured rather than assumed - and measured as an INTERLEAVED A/B on two hook builds, because
     // sequential batches drifted by ~9 ns between them and would have shown a slowdown that was not
@@ -932,7 +929,7 @@ unsafe extern "system" fn h_qpc(lp: *mut i64) -> i32 {
         // Detached (core gone) or no control block -> real QPC, so the target reverts to real time cleanly.
         _ => o(lp),
     }
-}
+}}
 
 // Wait axis (ADR-7 class A): divide a blocking wait's timeout by the duration multiplier so
 // a thread that blocks on time wakes in lockstep with the scaled clock it reads. INFINITE and
@@ -978,7 +975,7 @@ fn try_enter_wait(idx: usize) -> Option<(i64, WaitGuard)> {
     Some((dur_multiplier(), WaitGuard))
 }
 
-unsafe extern "system" fn h_sleep(ms: u32) {
+unsafe extern "system" fn h_sleep(ms: u32) { unsafe {
     let o = match O_SLEEP.get() {
         Some(o) => o,
         None => return,
@@ -987,9 +984,9 @@ unsafe extern "system" fn h_sleep(ms: u32) {
         Some((m, _guard)) => o(scale_wait(ms, m)),
         None => o(ms),
     }
-}
+}}
 
-unsafe extern "system" fn h_sleepex(ms: u32, alertable: i32) -> u32 {
+unsafe extern "system" fn h_sleepex(ms: u32, alertable: i32) -> u32 { unsafe {
     let o = match O_SLEEPEX.get() {
         Some(o) => o,
         None => return 0,
@@ -998,13 +995,13 @@ unsafe extern "system" fn h_sleepex(ms: u32, alertable: i32) -> u32 {
         Some((m, _guard)) => o(scale_wait(ms, m), alertable),
         None => o(ms, alertable),
     }
-}
+}}
 
 // NtDelayExecution is the shared funnel Sleep and SleepEx bottom out on, so hooking it makes the
 // re-entrancy guard load-bearing (a scaled Sleep re-enters here and must pass through). It also
 // catches callers that reach ntdll directly. The interval is signed 100 ns: only a negative
 // (relative) delay is scaled; a positive (absolute deadline) or null passes through.
-unsafe extern "system" fn h_ntdelay(alertable: u8, interval: *const i64) -> i32 {
+unsafe extern "system" fn h_ntdelay(alertable: u8, interval: *const i64) -> i32 { unsafe {
     let o = match O_NTDELAY.get() {
         Some(o) => o,
         None => return STATUS_UNSUCCESSFUL, // no trampoline: no delay happened, so do not report success
@@ -1020,7 +1017,7 @@ unsafe extern "system" fn h_ntdelay(alertable: u8, interval: *const i64) -> i32 
         }
         None => o(alertable, interval),
     }
-}
+}}
 
 // Wait axis class B (ADR-7, option b): object waits are COUNTED but deliberately NOT scaled.
 // Shortening a wait on a real I/O / hardware / IPC handle would fake a timeout, so each detour
@@ -1059,32 +1056,32 @@ fn enter_observed_wait(idx: usize) -> Option<ObservedWaitGuard> {
     Some(ObservedWaitGuard)
 }
 
-unsafe extern "system" fn h_wfso(handle: HANDLE, ms: u32) -> u32 {
+unsafe extern "system" fn h_wfso(handle: HANDLE, ms: u32) -> u32 { unsafe {
     let o = match O_WFSO.get() {
         Some(o) => o,
         None => return WAIT_FAILED.0, // no trampoline: fail the wait, never claim it was signalled
     };
     let _g = enter_observed_wait(IDX_WFSO);
     o(handle, ms)
-}
+}}
 
-unsafe extern "system" fn h_wfsoex(handle: HANDLE, ms: u32, alertable: i32) -> u32 {
+unsafe extern "system" fn h_wfsoex(handle: HANDLE, ms: u32, alertable: i32) -> u32 { unsafe {
     let o = match O_WFSOEX.get() {
         Some(o) => o,
         None => return WAIT_FAILED.0, // no trampoline: fail the wait, never claim it was signalled
     };
     let _g = enter_observed_wait(IDX_WFSOEX);
     o(handle, ms, alertable)
-}
+}}
 
-unsafe extern "system" fn h_wfmo(count: u32, handles: *const HANDLE, wait_all: i32, ms: u32) -> u32 {
+unsafe extern "system" fn h_wfmo(count: u32, handles: *const HANDLE, wait_all: i32, ms: u32) -> u32 { unsafe {
     let o = match O_WFMO.get() {
         Some(o) => o,
         None => return WAIT_FAILED.0, // no trampoline: fail the wait, never claim it was signalled
     };
     let _g = enter_observed_wait(IDX_WFMO);
     o(count, handles, wait_all, ms)
-}
+}}
 
 unsafe extern "system" fn h_wfmoex(
     count: u32,
@@ -1092,23 +1089,23 @@ unsafe extern "system" fn h_wfmoex(
     wait_all: i32,
     ms: u32,
     alertable: i32,
-) -> u32 {
+) -> u32 { unsafe {
     let o = match O_WFMOEX.get() {
         Some(o) => o,
         None => return WAIT_FAILED.0, // no trampoline: fail the wait, never claim it was signalled
     };
     let _g = enter_observed_wait(IDX_WFMOEX);
     o(count, handles, wait_all, ms, alertable)
-}
+}}
 
-unsafe extern "system" fn h_soaw(signal: HANDLE, wait: HANDLE, ms: u32, alertable: i32) -> u32 {
+unsafe extern "system" fn h_soaw(signal: HANDLE, wait: HANDLE, ms: u32, alertable: i32) -> u32 { unsafe {
     let o = match O_SOAW.get() {
         Some(o) => o,
         None => return WAIT_FAILED.0, // no trampoline: fail the wait, never claim it was signalled
     };
     let _g = enter_observed_wait(IDX_SOAW);
     o(signal, wait, ms, alertable)
-}
+}}
 
 // The message waits live in user32. Same class-B story (count, never scale, forward untouched), and
 // the same counting guard - MsgWaitForMultipleObjects may internally reach ...Ex. The Ex form drops
@@ -1119,14 +1116,14 @@ unsafe extern "system" fn h_mwfmo(
     wait_all: i32,
     ms: u32,
     wake_mask: u32,
-) -> u32 {
+) -> u32 { unsafe {
     let o = match O_MWFMO.get() {
         Some(o) => o,
         None => return WAIT_FAILED.0, // no trampoline: fail the wait, never claim it was signalled
     };
     let _g = enter_observed_wait(IDX_MWFMO);
     o(count, handles, wait_all, ms, wake_mask)
-}
+}}
 
 unsafe extern "system" fn h_mwfmoex(
     count: u32,
@@ -1134,14 +1131,14 @@ unsafe extern "system" fn h_mwfmoex(
     ms: u32,
     wake_mask: u32,
     flags: u32,
-) -> u32 {
+) -> u32 { unsafe {
     let o = match O_MWFMOEX.get() {
         Some(o) => o,
         None => return WAIT_FAILED.0, // no trampoline: fail the wait, never claim it was signalled
     };
     let _g = enter_observed_wait(IDX_MWFMOEX);
     o(count, handles, ms, wake_mask, flags)
-}
+}}
 
 // --- Settable timers (ADR-7 class C) -------------------------------------------
 // SetWaitableTimer(Ex) ask the kernel to signal a timer after a delay or at an instant. Unlike the
@@ -1202,7 +1199,7 @@ unsafe extern "system" fn h_swt(
     pfn: *const c_void,
     arg: *const c_void,
     resume: i32,
-) -> i32 {
+) -> i32 { unsafe {
     let o = match O_SWT.get() {
         Some(o) => o,
         None => return 0,
@@ -1221,7 +1218,7 @@ unsafe extern "system" fn h_swt(
         },
         None => o(timer, due, period, pfn, arg, resume),
     }
-}
+}}
 
 unsafe extern "system" fn h_swtex(
     timer: HANDLE,
@@ -1231,7 +1228,7 @@ unsafe extern "system" fn h_swtex(
     arg: *const c_void,
     wake_context: *const c_void,
     tolerable_delay: u32,
-) -> i32 {
+) -> i32 { unsafe {
     let o = match O_SWTEX.get() {
         Some(o) => o,
         None => return 0,
@@ -1247,7 +1244,7 @@ unsafe extern "system" fn h_swtex(
         },
         None => o(timer, due, period, pfn, arg, wake_context, tolerable_delay),
     }
-}
+}}
 
 // SetTimer (user32, ADR-7 class C): scale the uElapse interval so WM_TIMER arrives in step with the
 // fake clock. A relative interval only (no absolute form, no INFINITE), and no cross-channel cascade
@@ -1259,7 +1256,7 @@ unsafe extern "system" fn h_settimer(
     id: usize,
     elapse: u32,
     timer_proc: *const c_void,
-) -> usize {
+) -> usize { unsafe {
     let o = match O_SETTIMER.get() {
         Some(o) => o,
         None => return 0,
@@ -1269,7 +1266,7 @@ unsafe extern "system" fn h_settimer(
         return o(hwnd, id, elapse, timer_proc);
     }
     o(hwnd, id, scale_timer_elapse(elapse, dur_multiplier()), timer_proc)
-}
+}}
 
 // timeSetEvent (winmm, ADR-7 class C, OBSERVED): count the multimedia timer but never scale its
 // uDelay - scaling would shift audio/MIDI timing, the winmm cost ADR-2 avoids (like timeGetTime), so
@@ -1282,27 +1279,27 @@ unsafe extern "system" fn h_timesetevent(
     time_proc: *const c_void,
     user: usize,
     event: u32,
-) -> u32 {
+) -> u32 { unsafe {
     let o = match O_TIMESETEVENT.get() {
         Some(o) => o,
         None => return 0,
     };
     bump(IDX_TIMESETEVENT);
     o(delay, resolution, time_proc, user, event)
-}
+}}
 
 // connect (ws2_32, SourceObserved): a network connection is a suspected SERVER time source, which no
 // local hook can cover. We only COUNT it and forward untouched (never modify the connection) - the audit
 // then warns source.network_at_start. Like timeSetEvent: no guard, no detached check (we never change the
 // call). The unreachable None path returns SOCKET_ERROR (-1) so an un-hooked call never fakes success.
-unsafe extern "system" fn h_connect(s: usize, name: *const c_void, namelen: i32) -> i32 {
+unsafe extern "system" fn h_connect(s: usize, name: *const c_void, namelen: i32) -> i32 { unsafe {
     let o = match O_CONNECT.get() {
         Some(o) => o,
         None => return -1,
     };
     bump(IDX_CONNECT);
     o(s, name, namelen)
-}
+}}
 
 // Thread-pool timers (kernel32, ADR-7 class C): SetThreadpoolTimer / SetThreadpoolTimerEx share the
 // time structure of SetWaitableTimer - a FILETIME due (absolute converted to a scaled relative
@@ -1319,16 +1316,16 @@ unsafe extern "system" fn h_connect(s: usize, name: *const c_void, namelen: i32)
 ///
 /// # Safety
 /// `pft`, when non-null, must point to a valid FILETIME.
-unsafe fn scale_tp_timer(pft: *const FILETIME, period: u32, window: u32, m: i64) -> Option<(FILETIME, u32, u32)> {
+unsafe fn scale_tp_timer(pft: *const FILETIME, period: u32, window: u32, m: i64) -> Option<(FILETIME, u32, u32)> { unsafe {
     if pft.is_null() {
         return None; // NULL = cancel: forward untouched
     }
     let fake_now = compute_fake()?; // detached: forward untouched
     let scaled_due = scale_timer_due(ft_to_i64(*pft), fake_now, m);
     Some((i64_to_ft(scaled_due), scale_timer_period_ms(period, m), scale_timer_elapse(window, m)))
-}
+}}
 
-unsafe extern "system" fn h_set_tp_timer(pti: *mut c_void, pft: *const FILETIME, period: u32, window: u32) {
+unsafe extern "system" fn h_set_tp_timer(pti: *mut c_void, pft: *const FILETIME, period: u32, window: u32) { unsafe {
     let o = match O_TPTIMER.get() {
         Some(o) => o,
         None => return,
@@ -1341,14 +1338,14 @@ unsafe extern "system" fn h_set_tp_timer(pti: *mut c_void, pft: *const FILETIME,
         },
         None => o(pti, pft, period, window),
     }
-}
+}}
 
 unsafe extern "system" fn h_set_tp_timer_ex(
     pti: *mut c_void,
     pft: *const FILETIME,
     period: u32,
     window: u32,
-) -> i32 {
+) -> i32 { unsafe {
     let o = match O_TPTIMEREX.get() {
         Some(o) => o,
         None => return 0,
@@ -1360,7 +1357,7 @@ unsafe extern "system" fn h_set_tp_timer_ex(
         },
         None => o(pti, pft, period, window),
     }
-}
+}}
 
 // --- Direct process creation (ADR-3, observed) ---------------------------------
 // NtCreateUserProcess is the funnel under CreateProcessInternalW, so a hooked CreateProcessW/A reaches
@@ -1408,7 +1405,7 @@ unsafe extern "system" fn h_ntcup(
     process_params: *mut c_void,
     create_info: *mut c_void,
     attr_list: *mut c_void,
-) -> i32 {
+) -> i32 { unsafe {
     let o = match O_NTCUP.get() {
         Some(o) => o,
         // Unreachable (O_NTCUP is set before enable_all_hooks), but unlike a wait detour, returning
@@ -1433,7 +1430,7 @@ unsafe extern "system" fn h_ntcup(
         create_info,
         attr_list,
     )
-}
+}}
 
 // --- Child inheritance (ADR-3) --------------------------------------------------
 // Detour CreateProcessW so children join the session: create suspended, inject the
@@ -1451,7 +1448,7 @@ unsafe extern "system" fn h_ntcup(
 ///
 /// # Safety
 /// `hproc` must be a valid process handle with injection rights.
-unsafe fn inject_self(hproc: HANDLE) -> bool {
+unsafe fn inject_self(hproc: HANDLE) -> bool { unsafe {
     let addr = *SELF_HMOD.get().unwrap_or(&0);
     if addr == 0 {
         return false;
@@ -1534,7 +1531,7 @@ unsafe fn inject_self(hproc: HANDLE) -> bool {
         log("[chrono_hook] child not covered - LoadLibraryW did not load the hook there");
     }
     loaded
-}
+}}
 
 /// After a create call we forced to CREATE_SUSPENDED returns, inject the hook into the
 /// new child so it joins the session, then resume it unless the caller originally asked
@@ -1542,7 +1539,7 @@ unsafe fn inject_self(hproc: HANDLE) -> bool {
 ///
 /// # Safety
 /// `pi`, when non-null, must point to a PROCESS_INFORMATION filled by a successful create.
-unsafe fn inherit_into_child(r: i32, pi: *mut PROCESS_INFORMATION, want_suspended: bool) {
+unsafe fn inherit_into_child(r: i32, pi: *mut PROCESS_INFORMATION, want_suspended: bool) { unsafe {
     if r != 0 && !pi.is_null() {
         let info = *pi;
         if !inject_self(info.hProcess) {
@@ -1559,7 +1556,7 @@ unsafe fn inherit_into_child(r: i32, pi: *mut PROCESS_INFORMATION, want_suspende
             let _ = ResumeThread(info.hThread);
         }
     }
-}
+}}
 
 #[allow(clippy::too_many_arguments)]
 unsafe extern "system" fn h_cpw(
@@ -1573,7 +1570,7 @@ unsafe extern "system" fn h_cpw(
     cwd: *const u16,
     si: *const c_void,
     pi: *mut PROCESS_INFORMATION,
-) -> i32 {
+) -> i32 { unsafe {
     let o = match O_CPW.get() {
         Some(o) => o,
         None => return 0,
@@ -1587,7 +1584,7 @@ unsafe extern "system" fn h_cpw(
     };
     inherit_into_child(r, pi, want_suspended);
     r
-}
+}}
 
 // CreateProcessA bypasses the CreateProcessW export (it funnels through the internal
 // CreateProcessInternalW), so a parent spawning with the ANSI API would escape the
@@ -1604,7 +1601,7 @@ unsafe extern "system" fn h_cpa(
     cwd: *const u8,
     si: *const c_void,
     pi: *mut PROCESS_INFORMATION,
-) -> i32 {
+) -> i32 { unsafe {
     let o = match O_CPA.get() {
         Some(o) => o,
         None => return 0,
@@ -1616,7 +1613,7 @@ unsafe extern "system" fn h_cpa(
     };
     inherit_into_child(r, pi, want_suspended);
     r
-}
+}}
 
 /// Diagnostics only (stderr-equivalent for an injected DLL); never affects coverage.
 fn log(msg: &str) {
@@ -1645,7 +1642,7 @@ unsafe fn make_hook<T: Copy>(
     idx: usize,
     detour: *mut c_void,
     slot: &OnceLock<T>,
-) {
+) { unsafe {
     let ch = &CHANNELS[idx];
     let module = match ch.module {
         ChannelModule::Kernel32 => k32,
@@ -1699,7 +1696,7 @@ unsafe fn make_hook<T: Copy>(
         }
         Err(e) => log(&format!("[chrono_hook] create_hook {} failed: {e:?}", ch.name)),
     }
-}
+}}
 
 /// Install and enable every channel's detour, wiring this process to the shared anchor.
 ///
@@ -1710,7 +1707,7 @@ unsafe fn make_hook<T: Copy>(
 /// no other application thread exists yet. Do NOT add a path that injects into an already-running,
 /// multi-threaded process without moving hook-enabling off the loader lock (the watcher thread is
 /// created OUTSIDE DllMain, in `ensure_watcher`, for exactly this reason).
-unsafe fn install() -> Result<(), String> {
+unsafe fn install() -> Result<(), String> { unsafe {
     let hmap = OpenFileMappingW(FILE_MAP_ALL_ACCESS.0, false, w!("Local\\ChronoCtl"))
         .map_err(|e| format!("OpenFileMappingW: {e:?}"))?;
     let view = MapViewOfFile(hmap, FILE_MAP_ALL_ACCESS, 0, 0, chrono_ctl::ctl_size());
@@ -1728,11 +1725,10 @@ unsafe fn install() -> Result<(), String> {
     // Watch the core process so the target reverts to real time if the core vanishes.
     let core_pid = read_core_pid(ctl as *const Ctl);
     let _ = CORE_PID.set(core_pid); // the session we joined, for `still_ours` (R2-S6)
-    if core_pid != 0 {
-        if let Ok(h) = OpenProcess(PROCESS_SYNCHRONIZE, false, core_pid) {
+    if core_pid != 0
+        && let Ok(h) = OpenProcess(PROCESS_SYNCHRONIZE, false, core_pid) {
             let _ = CORE_HANDLE.set(h.0 as usize);
         }
-    }
 
     // This process's OWN coverage slot in the shared block, so its calls are attributed to it and
     // never summed into the parent's report (rule 4). Reserved NOW, before any detour is enabled,
@@ -1896,9 +1892,9 @@ unsafe fn install() -> Result<(), String> {
         publish_pid(ctl, slot, pid);
     }
     Ok(())
-}
+}}
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "system" fn DllMain(hinst: HMODULE, reason: u32, _reserved: *mut c_void) -> i32 {
     if reason == DLL_PROCESS_ATTACH {
         // Remember our own module so we can inject the same DLL into children (ADR-3).

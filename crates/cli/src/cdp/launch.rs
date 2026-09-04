@@ -135,8 +135,8 @@ pub fn launch_chromium(target: &str, args: &[String]) -> io::Result<LaunchedChro
         // another process, which is exactly the shape that would still open the port. So the exit
         // shortens the wait to a grace period rather than failing on the spot, and names the exit
         // code if the port never appears.
-        if child_exit.is_none() {
-            if let Ok(Some(status)) = child.try_wait() {
+        if child_exit.is_none()
+            && let Ok(Some(status)) = child.try_wait() {
                 child_exit = Some(match status.code() {
                     Some(c) => format!(" (it exited with code {c})"),
                     None => " (it exited)".to_string(),
@@ -146,7 +146,6 @@ pub fn launch_chromium(target: &str, args: &[String]) -> io::Result<LaunchedChro
                     deadline = grace;
                 }
             }
-        }
         if Instant::now() >= deadline {
             let _ = child.kill();
             let _ = child.wait();

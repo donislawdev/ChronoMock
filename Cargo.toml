@@ -10,7 +10,7 @@ exclude = ["tools"]
 
 [workspace.package]
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 license = "GPL-3.0-only"
 # None of these crates goes to crates.io - the product ships as executables, and the layer crates
 # only make sense together. Saying so is not decoration: `cargo deny check bans` refuses to exempt
