@@ -1,0 +1,78 @@
+# Code scanning, moved out of GitHub's default setup and into a file.
+#
+# The reason is control, not coverage. Default setup works - it is what found the unpinned third-party
+# action - but it is configured in a dialog, so the repository cannot say why it looks the way it does,
+# cannot pin the actions it runs, and cannot choose the runner. This file can, and it is reviewed like
+# the rest of the pipeline.
+#
+# Rust and C# are analysed on WINDOWS, and it is worth being precise about what that buys, because the
+# obvious argument does not survive measurement: this workspace has one cfg(windows) in it (a test in
+# crates/site) and no target-gated dependency, so a Linux extractor reads the same source files. What the
+# Windows runner buys is that the analysis environment matches the product, so the day a cfg gate does
+# appear the analysis does not quietly stop looking at it. The dependency gate in ci.yml stays on Windows
+# for the stronger version of the same reason, and that one was measured.
+#
+# build-mode: none for all three languages, which is what default setup used (its own analyses report
+# "build-mode":"none", for the workflow language too). Nothing here is compiled, so the scan does not
+# repeat the release builds ci.yml already runs on the same push.
+#
+# security-extended keeps the suite chosen when scanning was first turned on - the API reported
+# query_suite: extended. Leaving this out would have silently narrowed the analysis while looking like a
+# pure move from a dialog into a file.
+name: CodeQL
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  # Weekly, as default setup ran it. A new query in a CodeQL release can find something in code nobody
+  # has touched, and no commit-triggered run would ever notice - the argument audit.yml makes for
+  # advisories, applied to queries instead of dependencies.
+  schedule:
+    - cron: '0 7 * * 1'
+  workflow_dispatch:
+
+concurrency:
+  group: codeql-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  analyze:
+    name: Analyse ${{ matrix.language }}
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      # Writing results to the Security tab is the whole point of the job. Everything else stays
+      # read-only, like the rest of the pipeline.
+      security-events: write
+      contents: read
+      actions: read
+    strategy:
+      # One language failing should not hide the answer for the other two.
+      fail-fast: false
+      matrix:
+        include:
+          - language: rust
+            runner: windows-latest
+          - language: csharp
+            runner: windows-latest
+          # Workflow files are YAML, with no platform involved, so this one takes the cheaper runner.
+          - language: actions
+            runner: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Initialise CodeQL
+        uses: github/codeql-action/init@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: none
+          queries: security-extended
+
+      - name: Analyse
+        uses: github/codeql-action/analyze@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9
+        with:
+          category: /language:${{ matrix.language }}
