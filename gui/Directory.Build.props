@@ -21,6 +21,18 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+    <!-- How far the SDK audits NuGet packages during restore. These are the SDK 10.0.400 defaults,
+         written down rather than inherited, because together with TreatWarningsAsErrors above they
+         already form a vulnerability gate that nobody had declared - an NU1901-NU1904 warning is a
+         build error here. Measured before writing this: a deliberately vulnerable System.Net.Http
+         4.3.0 fails the build with NU1903. A future SDK narrowing a default (mode "all" back to
+         "direct", say) would shrink that gate silently, and nothing in the repository would say so.
+         The cost is worth knowing: an advisory published against a package nobody touched turns the
+         next build red. That is the trade audit.yml makes weekly for Rust, except here it lands on
+         the push - which for a test-only dependency tree is the cheaper end of the bargain. -->
+    <NuGetAudit>true</NuGetAudit>
+    <NuGetAuditMode>all</NuGetAuditMode>
+    <NuGetAuditLevel>low</NuGetAuditLevel>
     <NeutralLanguage>en</NeutralLanguage>
     <!-- Product identity and version for every gui/ assembly (shows in the exe's Details tab).
          Single source for the GUI stack. The version WILL change across releases - bump it here
