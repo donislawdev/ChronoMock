@@ -3454,7 +3454,12 @@ fn cdp_session(target: TargetSpec, time: TimeSpec, reader: BufReader<std::io::St
                             contexts.push(CdpContext {
                                 index: next_index,
                                 session_id: sid,
-                                ty,
+                                // The target named its own context type, and that name becomes a
+                                // coverage key in the report and on the wire. Cleaned here, at the
+                                // one place a context is built, rather than at the one place the key
+                                // is formatted - a second use added later would otherwise carry raw
+                                // target text without anyone noticing.
+                                ty: cdp::sanitise_target_text(&ty),
                                 target_id: tid,
                             });
                         }

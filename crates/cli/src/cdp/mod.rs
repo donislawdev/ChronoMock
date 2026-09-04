@@ -57,6 +57,53 @@ fn push_bounded(queue: &mut std::collections::VecDeque<Msg>, msg: Msg) -> bool {
     dropped
 }
 
+/// Fold text the TARGET supplied into something that cannot forge output.
+///
+/// Everything this tool prints about a CDP session carries words the target chose: an error it
+/// reported, the URL it advertised for its own debugger, the type it gave a context. That text
+/// reaches stderr and the session report - and the report is EVIDENCE (untouchable rule 4), so a
+/// newline inside it would add a line no part of this tool wrote, which is the one thing a report
+/// must never contain. The target is untrusted by construction: it is an arbitrary executable the
+/// user pointed us at, and everything it says arrives over a socket.
+///
+/// Control characters become a visible escape rather than being dropped, so nothing disappears
+/// silently and the text stays readable, and the result is capped for the reason MAX_WS_BYTES exists
+/// one layer up - a line of evidence has no business being unbounded. Backslashes are left alone
+/// deliberately: escaping them would turn every Windows path in a target's message into noise, and
+/// the property needed here is "cannot add a line", not "round-trips exactly".
+pub(crate) fn sanitise_target_text(text: &str) -> String {
+    const MAX_CHARS: usize = 200;
+    let mut out = String::with_capacity(text.len().min(MAX_CHARS * 2));
+    for (seen, c) in text.chars().enumerate() {
+        if seen == MAX_CHARS {
+            out.push_str(" (truncated)");
+            break;
+        }
+        match c {
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            // U+2028 and U+2029 are not control characters, but plenty of readers break a line on
+            // them - including the JS engine at the other end of this very protocol.
+            c if c.is_control() || c == '\u{2028}' || c == '\u{2029}' => {
+                out.push_str(&format!("\\u{{{:04x}}}", c as u32));
+            }
+            c => out.push(c),
+        }
+    }
+    out
+}
+
+/// The error a target reported for a call, as an `io::Error`. Split out of `send` so the one place
+/// that quotes a target's own words has a name and a test - those words come off the wire and end up
+/// on stderr, so they go through `sanitise_target_text` on the way.
+fn target_error(method: &str, error: &Value) -> io::Error {
+    io::Error::other(format!(
+        "CDP {method} failed: {}",
+        sanitise_target_text(error.get("message").and_then(Value::as_str).unwrap_or("unknown"))
+    ))
+}
+
 impl CdpClient {
     /// Discover the browser-level WebSocket endpoint from `http://host:port/json/version` and connect
     /// to it. This is the endpoint that carries the `Target` domain, so it can reach every page and
@@ -109,10 +156,7 @@ impl CdpClient {
             match self.poll_msg()? {
                 Some(Msg::Response { id: rid, result, error }) if rid == id => {
                     return match error {
-                        Some(e) => Err(io::Error::other(format!(
-                            "CDP {method} failed: {}",
-                            e.get("message").and_then(Value::as_str).unwrap_or("unknown")
-                        ))),
+                        Some(e) => Err(target_error(method, &e)),
                         None => Ok(result),
                     };
                 }
@@ -174,16 +218,16 @@ impl CdpClient {
 fn parse_ws_url(url: &str) -> io::Result<(String, u16, String)> {
     let rest = url
         .strip_prefix("ws://")
-        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, format!("not a ws:// url: {url}")))?;
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, format!("not a ws:// url: {}", sanitise_target_text(url))))?;
     let slash = rest.find('/').unwrap_or(rest.len());
     let authority = &rest[..slash];
     let path = if slash < rest.len() { &rest[slash..] } else { "/" };
     let (host, port) = authority
         .rsplit_once(':')
-        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, format!("no port in ws url: {url}")))?;
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, format!("no port in ws url: {}", sanitise_target_text(url))))?;
     let port: u16 = port
         .parse()
-        .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, format!("bad port in ws url: {url}")))?;
+        .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, format!("bad port in ws url: {}", sanitise_target_text(url))))?;
     Ok((host.to_string(), port, path.to_string()))
 }
 
@@ -251,6 +295,50 @@ pub fn http_get_json(host: &str, port: u16, path: &str) -> io::Result<Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn target_text_cannot_add_a_line() {
+        assert_eq!(sanitise_target_text("one\ntwo"), "one\\ntwo");
+        assert_eq!(sanitise_target_text("carriage\rreturn"), "carriage\\rreturn");
+        assert_eq!(sanitise_target_text("tab\there"), "tab\\there");
+        // An escape sequence would otherwise let a target repaint the terminal it is reported in.
+        assert_eq!(sanitise_target_text("esc\u{1b}[31m"), "esc\\u{001b}[31m");
+        assert_eq!(sanitise_target_text("sep\u{2028}arator"), "sep\\u{2028}arator");
+    }
+
+    #[test]
+    fn target_text_leaves_ordinary_words_alone() {
+        let real = "Uncaught TypeError: x is not a function";
+        assert_eq!(sanitise_target_text(real), real);
+        // Backslashes stay: a Windows path in a target's message must still read as one.
+        assert_eq!(sanitise_target_text(r"C:\Users\qa\app.exe"), r"C:\Users\qa\app.exe");
+        assert_eq!(sanitise_target_text(""), "");
+    }
+
+    #[test]
+    fn target_text_is_capped_on_a_character_not_a_byte() {
+        // Multi-byte on purpose: a byte-wise cut would split the character and panic.
+        let long = "\u{105}".repeat(500);
+        let out = sanitise_target_text(&long);
+        assert!(out.ends_with(" (truncated)"), "{out}");
+        assert_eq!(out.chars().filter(|c| *c == '\u{105}').count(), 200);
+    }
+
+    #[test]
+    fn a_target_error_cannot_forge_a_report_line() {
+        let reported = serde_json::json!({ "message": "boom\nchrono core: verdict: works" });
+        let err = target_error("Runtime.evaluate", &reported);
+        let text = err.to_string();
+        assert!(!text.contains('\n'), "target words reached the message raw: {text}");
+        assert!(text.contains("boom\\nchrono core"), "{text}");
+    }
+
+    #[test]
+    fn a_bad_ws_url_from_the_target_cannot_forge_a_line() {
+        let err = parse_ws_url("nonsense\nchrono core: verdict: works").unwrap_err();
+        let text = err.to_string();
+        assert!(!text.contains('\n'), "target words reached the message raw: {text}");
+    }
 
     #[test]
     fn parses_a_browser_ws_url() {
