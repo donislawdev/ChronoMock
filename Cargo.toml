@@ -47,6 +47,25 @@ chrono-proto = { path = "crates/proto" }
 # panic on any OTHER overflow into an honest crash rather than a quiet wrong answer.
 [profile.release]
 overflow-checks = true
+# Thin LTO, and the variant matters. Without it the detours call into `chrono-ctl` across a crate
+# boundary, and a non-generic function in another rlib cannot be inlined unless the build is LTO'd.
+# Measured on the wall-clock hot path (probe `pwall`, GetSystemTimeAsFileTime, 100 M calls per run,
+# interleaved A/B on two hook builds because consecutive series measure machine drift and not the
+# difference - R2-S3), 12 pairs each, against a hooked call of about 10 ns:
+#
+#   thin                 -1.40 ns, 12 of 12 pairs faster   build: at or below no-LTO
+#   thin + cgu=1         -1.60 ns, 11 of 12                build: 2x on a core touch
+#   fat  + cgu=1         -1.10 ns, 12 of 12                build: 3x on a core touch
+#
+# So thin alone takes the whole win, and the heavier variants buy only size (fat: hook -18% against
+# thin's -6%) at 2-3x the build time of every gate run. `#[inline]` on the same helpers was tried
+# first and measured as NOTHING (+0.10 ns, 7 of 12) - LTO is what actually lets the call graph fold,
+# which is why there are no `#[inline]` attributes to go with this.
+#
+# The per-package overflow-checks overrides below survive it: cargo emits the flag per crate, so the
+# hook and the control block still compile with the checks OFF under LTO (verified on the rustc
+# command lines, not assumed - see the note there).
+lto = "thin"
 
 # ...except the injected detour call graph. The hook is a cdylib whose detours run inside the target
 # process behind an `extern "system"` boundary, and it calls the shared control block (`chrono-ctl`) on the
