@@ -118,8 +118,7 @@ fn cdp_probe(argv: &[String]) -> i32 {
             for t in infos {
                 let ty = t.get("type").and_then(serde_json::Value::as_str).unwrap_or("?");
                 let url = t.get("url").and_then(serde_json::Value::as_str).unwrap_or("");
-                let shown = if url.len() > 70 { &url[..70] } else { url };
-                println!("  - {ty} :: {shown}");
+                println!("{}", probe_target_line(ty, url));
             }
         }
         Err(e) => {
@@ -396,6 +395,20 @@ fn cdp_date_probe(argv: &[String]) -> i32 {
 /// log line is a poor trade either way.
 fn short_url(url: &str) -> String {
     url.chars().take(66).collect()
+}
+
+/// One line of the target list a probe prints. Split out for the reason `target_error` was
+/// (`cdp/mod.rs`): both halves are words the TARGET chose - the type it gave its own context and the
+/// URL it advertised - so the one place that quotes them has a name and a test.
+///
+/// Trimmed by CHARACTERS before sanitising, in that order: `short_url` cannot split a character, and
+/// sanitising first would let an escape (`\n` becoming two characters) be cut in half by the trim.
+fn probe_target_line(ty: &str, url: &str) -> String {
+    format!(
+        "  - {} :: {}",
+        cdp::sanitise_target_text(ty),
+        cdp::sanitise_target_text(&short_url(url))
+    )
 }
 
 /// FILETIME ticks (100 ns since 1601) at the Unix epoch (1970-01-01T00:00:00Z).
@@ -4483,6 +4496,27 @@ mod tests {
         // A short URL is returned whole, and ASCII behaves exactly as before.
         assert_eq!(short_url("ws://127.0.0.1:9333/x"), "ws://127.0.0.1:9333/x");
         assert_eq!(short_url(&"a".repeat(100)).len(), 66);
+    }
+
+    /// The probe's target list quotes two strings the target chose, and this one call site kept the
+    /// byte slice that S-20 removed everywhere else - so a target whose URL carried a non-ASCII
+    /// profile path crashed the probe, and one whose context type carried a newline could add a line
+    /// of output nothing in this tool wrote.
+    #[test]
+    fn a_probe_target_line_cannot_panic_or_forge_a_line() {
+        // The removed slice was `&url[..70]`, so byte 70 has to land INSIDE a character or this
+        // proves nothing. Asserted rather than reasoned about: the first version of this test used a
+        // 34-byte prefix, which put byte 70 exactly on a boundary - it went green against the very
+        // code it was meant to catch, and only the forgery half of it was doing any work.
+        let url = format!("ws://127.0.0.1:9333/devtools/page/x{}", "ó".repeat(60));
+        assert!(!url.is_char_boundary(70), "test URL stopped splitting a character at byte 70");
+        let line = probe_target_line("page", &url);
+        assert!(line.starts_with("  - page :: ws://127.0.0.1:9333/"));
+        // Trimmed by characters, so the URL half is exactly what `short_url` yields.
+        assert!(line.ends_with(&short_url(&url)));
+
+        let forged = probe_target_line("page\nchrono core: verdict: works", "ws://127.0.0.1:9333/x");
+        assert!(!forged.contains('\n'), "target words reached the line raw: {forged}");
     }
 
     #[test]
