@@ -34,8 +34,8 @@ use windows::Win32::System::Diagnostics::Debug::WriteProcessMemory;
 use windows::Win32::System::LibraryLoader::{GetModuleHandleA, GetProcAddress};
 use windows::Win32::System::Memory::{
     CreateFileMappingW, MapViewOfFile, OpenFileMappingW, UnmapViewOfFile, VirtualAllocEx,
-    VirtualFreeEx, FILE_MAP_ALL_ACCESS, MEMORY_MAPPED_VIEW_ADDRESS, MEM_COMMIT, MEM_RELEASE,
-    MEM_RESERVE, PAGE_READWRITE,
+    VirtualFreeEx, FILE_MAP_ALL_ACCESS, FILE_MAP_READ, MEMORY_MAPPED_VIEW_ADDRESS, MEM_COMMIT,
+    MEM_RELEASE, MEM_RESERVE, PAGE_READWRITE,
 };
 use windows::Win32::System::SystemInformation::{
     GetSystemTimeAsFileTime, GetTickCount64, IMAGE_FILE_MACHINE, IMAGE_FILE_MACHINE_AMD64,
@@ -486,12 +486,22 @@ impl Drop for SessionLock {
 /// # Safety
 /// Maps and unmaps the control section; safe to call with no session running.
 unsafe fn read_active_core_pid() -> u32 { unsafe {
-    let Ok(hmap) = OpenFileMappingW(FILE_MAP_ALL_ACCESS.0, false, windows::core::w!("Local\\ChronoCtl"))
+    // Read access only. This function reads a single u32 and has never written anything, so asking
+    // for write was a right we could not use - and the block it opens belongs to a session that is
+    // still running.
+    let Ok(hmap) = OpenFileMappingW(FILE_MAP_READ.0, false, windows::core::w!("Local\\ChronoCtl"))
     else {
         return 0;
     };
-    let view = MapViewOfFile(hmap, FILE_MAP_ALL_ACCESS, 0, 0, ctl_size());
-    let pid = if view.Value.is_null() { 0 } else { read_core_pid(view.Value as *const Ctl) };
+    let view = MapViewOfFile(hmap, FILE_MAP_READ, 0, 0, ctl_size());
+    // A block we do not recognise has no pid of ours in it, whatever sits at that offset. Returning
+    // 0 makes the caller say "another session's core is starting or running" instead of naming a
+    // number read out of a stranger's memory as though it were a Chrono Mock process (rule 6).
+    let pid = if view.Value.is_null() || !header_is_ours(view.Value as *const Ctl) {
+        0
+    } else {
+        read_core_pid(view.Value as *const Ctl)
+    };
     if !view.Value.is_null() {
         let _ = UnmapViewOfFile(MEMORY_MAPPED_VIEW_ADDRESS { Value: view.Value });
     }
