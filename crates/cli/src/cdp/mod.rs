@@ -115,6 +115,12 @@ impl CdpClient {
             .and_then(Value::as_str)
             .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "no webSocketDebuggerUrl in /json/version"))?;
         let (ws_host, ws_port, ws_path) = parse_ws_url(url)?;
+        if !ws_endpoint_is_ours(&ws_host, ws_port, port) {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("ws url is not the endpoint we opened: {}", sanitise_target_text(url)),
+            ));
+        }
         let ws = WsClient::connect(&ws_host, ws_port, &ws_path)?;
         Ok(CdpClient {
             ws,
@@ -229,6 +235,28 @@ fn parse_ws_url(url: &str) -> io::Result<(String, u16, String)> {
         .parse()
         .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, format!("bad port in ws url: {}", sanitise_target_text(url))))?;
     Ok((host.to_string(), port, path.to_string()))
+}
+
+/// Loopback names a DevTools endpoint may legitimately give for itself. An allow-list rather than a
+/// parse: every form here is this machine, and anything else is somewhere we did not choose to go.
+const LOOPBACK_HOSTS: [&str; 4] = ["127.0.0.1", "localhost", "::1", "[::1]"];
+
+/// Whether the ws endpoint the target advertised is the one we already chose to talk to.
+///
+/// `webSocketDebuggerUrl` is text the TARGET wrote, and the code that reads it then connects there -
+/// so without this the target names any `host:port` it likes and the driver goes, carrying the
+/// content of our CDP commands with it. That is a server-side request forgery whose trigger is the
+/// application under test, which is untrusted by construction (it is an arbitrary executable the
+/// user pointed us at).
+///
+/// The port must match EXACTLY the one we discovered, because "go somewhere else" is the whole of
+/// the attack and a different port is already somewhere else. The host is checked against the
+/// loopback list rather than compared, because the name a browser uses for itself is cosmetic and
+/// not worth a regression: measured 2026-09-05 on two engines six years apart - Chrome 83 (in
+/// Pomotroid) and Edge 152 - both answer with the exact host and port we asked on (`127.0.0.1`),
+/// but a build that said `localhost` would be equally legitimate and equally harmless.
+fn ws_endpoint_is_ours(ws_host: &str, ws_port: u16, our_port: u16) -> bool {
+    ws_port == our_port && LOOPBACK_HOSTS.iter().any(|h| h.eq_ignore_ascii_case(ws_host))
 }
 
 /// A tiny blocking HTTP/1.1 GET that returns the JSON body. Only for the loopback CDP HTTP endpoints
@@ -352,6 +380,33 @@ mod tests {
     fn rejects_non_ws_url() {
         assert!(parse_ws_url("http://127.0.0.1:9333/x").is_err());
         assert!(parse_ws_url("ws://127.0.0.1/x").is_err()); // no port
+    }
+
+    /// The target writes `webSocketDebuggerUrl`, so it gets to name where we connect next. A host it
+    /// chose is a request forgery with our driver as the courier - the one thing the endpoint check
+    /// exists to stop.
+    #[test]
+    fn a_ws_url_pointing_off_this_machine_is_refused() {
+        for host in ["evil.example.com", "10.0.0.5", "169.254.169.254", "127.0.0.1.evil.com"] {
+            assert!(!ws_endpoint_is_ours(host, 9333, 9333), "host {host} was accepted");
+        }
+    }
+
+    /// A different port is already somewhere we did not choose to go, even on this machine - another
+    /// service listening on loopback is exactly the interesting target for a forged request.
+    #[test]
+    fn a_ws_url_on_another_port_is_refused() {
+        assert!(!ws_endpoint_is_ours("127.0.0.1", 9334, 9333));
+        assert!(!ws_endpoint_is_ours("localhost", 80, 9333));
+    }
+
+    /// What Chrome 83 and Edge 152 actually answer (measured), plus the loopback spellings a
+    /// different build could legitimately use. Refusing these would be a regression, not a fix.
+    #[test]
+    fn the_endpoint_we_opened_is_accepted_however_it_spells_loopback() {
+        for host in ["127.0.0.1", "localhost", "LocalHost", "::1", "[::1]"] {
+            assert!(ws_endpoint_is_ours(host, 9333, 9333), "host {host} was refused");
+        }
     }
 
     fn event(n: u64) -> Msg {
