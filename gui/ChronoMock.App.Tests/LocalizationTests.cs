@@ -62,6 +62,11 @@ public class LocalizationTests
         "target.single_instance_suspected",
         // Start/fatal error keys, surfaced as the status headline (RELEASE-001).
         "core.hook_dll_missing", "time.bad_mode", "time.bad_multiplier", "moment.invalid",
+        // In-flight jump rejections (Event::Error answering a jump command). Both were missing from
+        // this list AND from both translation files until the wire-key guard in
+        // crates/cli/tests/wire_keys.rs found them: `chrono run <target> --jump-after 1:+5bd` emits
+        // moment.needs_calendar today, so this was a live gap, not a hypothetical one.
+        "moment.needs_calendar", "moment.unsupported_kind",
         "protocol.version_mismatch",
         "session.control_failed", "target.launch_failed", "target.inject_failed",
         "target.attach_failed", "target.bitness_mismatch", "session.already_active",

@@ -103,6 +103,8 @@
   // zegar w sposób ciągły - a to model czasu ma jako skok, nigdy jako prędkość.
   "time.bad_multiplier": "Prędkość poza zakresem - musi mieścić się między 0 (zamrożenie) a 1,000,000. Sesja nie wystartowała.",
   "moment.invalid": "Nieprawidłowy moment (luka czasu letniego, 29 lutego w roku nieprzestępnym albo poza zakresem) - sesja nie wystartowała.",
+  "moment.needs_calendar": "Ten skok liczy dni robocze, a trwająca sesja nie ma kalendarza - skocz do konkretnej daty albo policz ją najpierw w kalkulatorze.",
+  "moment.unsupported_kind": "Rdzeń nie rozpoznał tego rodzaju celu skoku.",
   "session.control_failed": "Nie udało się utworzyć kanału sterowania sesji - podmiana nie zadziałała.",
   "target.launch_failed": "Nie udało się uruchomić celu - podmiana nie zadziałała.",
   "target.inject_failed": "Nie udało się wstrzyknąć haka czasu - podmiana nie zadziałała (mógł ją zablokować antywirus albo utwardzony cel).",
