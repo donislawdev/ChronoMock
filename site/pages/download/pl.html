@@ -101,11 +101,13 @@
         albo zablokować samo wstrzyknięcie. To fałszywy alarm wywołany techniką.
       </p>
       <p>
-        Jeśli sesja nie chce wystartować, a Defender zgłasza zagrożenie, dodaj wykluczenie
-        dla folderu Chrono Mock albo uruchom narzędzie na maszynie, na której wolno ci to
-        zrobić. Wstrzykiwana biblioteka to <code>chrono_hook.dll</code>, zbudowana z kodu w
-        tym repozytorium na licencji GPL-3.0 - możesz ją zbudować sam. Tryb Chromium i
-        Electron w ogóle nie wstrzykuje i nie dotyczy go ten problem.
+        Jeśli sesja nie chce wystartować, a Defender zgłasza zagrożenie, wyklucz samą
+        bibliotekę, a nie folder: wybierz <strong>Plik</strong> w Zabezpieczeniach Windows
+        i podaj pełną ścieżkę do <code>chrono_hook.dll</code>. Wykluczenie folderu
+        wstrzymałoby skanowanie dokładnie w tym katalogu, z którego narzędzie wstrzykuje.
+        Albo uruchom je na maszynie, na której wolno ci to zrobić. Wstrzykiwana biblioteka
+        jest zbudowana z kodu w tym repozytorium na licencji GPL-3.0 - możesz ją zbudować
+        sam. Tryb Chromium i Electron w ogóle nie wstrzykuje i nie dotyczy go ten problem.
       </p>
     </div>
   </section>

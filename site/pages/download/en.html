@@ -101,11 +101,13 @@
         injection outright. It is a false positive triggered by the technique.
       </p>
       <p>
-        If a session refuses to start and Defender reports a threat, add an exclusion for
-        the Chrono Mock folder, or run it on a machine where you are permitted to do so.
-        The injected library is <code>chrono_hook.dll</code>, built from the code in this
-        repository under GPL-3.0 - you can rebuild it yourself. The Chromium and Electron
-        mode does not inject at all and is unaffected.
+        If a session refuses to start and Defender reports a threat, exclude the library
+        rather than the folder: choose <strong>File</strong> in Windows Security and give
+        the full path to <code>chrono_hook.dll</code>. A folder exclusion would stop
+        anything being scanned in the very directory the tool injects from. Or run it on a
+        machine where you are permitted to do so. The injected library is built from the
+        code in this repository under GPL-3.0 - you can rebuild it yourself. The Chromium
+        and Electron mode does not inject at all and is unaffected.
       </p>
     </div>
   </section>

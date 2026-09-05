@@ -274,10 +274,20 @@ documented Windows technique - and it is also one that malware uses, so antiviru
 Defender included, may flag or quarantine the injected library or block the injection outright. This
 is a false positive triggered by the technique, not by anything the tool does to your machine.
 
-If a session fails to start and Defender reports a threat, add a Defender exclusion for the Chrono
-Mock folder (Windows Security, Virus and threat protection, Manage settings, Exclusions), or run it on
-a machine where you are permitted to do so. The tool is open source under GPL-3.0 - the injected
-library is `chrono_hook.dll`, built from the code in this repository, and you can rebuild it yourself.
+If a session fails to start and Defender reports a threat, add an exclusion in Windows Security
+(Virus and threat protection, Manage settings, Exclusions, Add an exclusion), or run it on a machine
+where you are permitted to do so. The tool is open source under GPL-3.0 - the injected library is
+`chrono_hook.dll`, built from the code in this repository, and you can rebuild it yourself.
+
+**Exclude the library, not the folder.** Choose **File** and give the full path to the injected
+library - `core\x64\chrono_hook.dll` in the GUI package, `chrono_hook.dll` in the CLI one, plus the
+`x86` copy if you test 32-bit targets. Microsoft's own guidance is that every exclusion is a
+protection gap, so it is worth keeping this one as small as it can be. There is a specific reason
+here: a **Folder** exclusion turns the Chrono Mock directory into a place nothing is scanned - and
+that is the same directory the tool loads `chrono_hook.dll` from and injects into every application
+you point it at. Excluding the one file leaves the rest of the folder watched. If the narrower
+exclusion is not enough for your Defender configuration, the folder exclusion is the fallback, not
+the starting point.
 
 The Chromium / Electron mode does not inject at all. It launches the target with a debug port and a
 clean isolated profile (see the support matrix), so it is not affected by this.
