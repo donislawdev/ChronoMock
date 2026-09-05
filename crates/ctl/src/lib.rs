@@ -391,11 +391,28 @@ pub const CHANNELS: [ChannelDef; CHANNEL_COUNT] = [
     ChannelDef { bit: CH_QPC, name: "QueryPerformanceCounter", module: ChannelModule::Kernel32, category: ChannelCategory::Qpc },
 ];
 
+/// Marks the control block as one WE built. The section name is fixed and lives in a namespace any
+/// process in this session can create in, so `CreateFileMapping` returning `ERROR_ALREADY_EXISTS`
+/// used to mean "our orphan" by assumption - the block was zeroed and used whatever it really was.
+/// A fresh section is zero-filled by the OS (documented), so anything that merely squatted the name
+/// fails this check, and so does a block from a build whose layout differs.
+pub const CTL_MAGIC: u64 = 0x4348_524F_4E4F_4354; // "CHRONOCT"
+
+/// Layout version of [`Ctl`]. Bumped whenever fields move, so a hook from one build refuses a block
+/// written by another instead of reading the wrong offsets as a clock (untouchable rules 2 and 4).
+/// This is an internal seam - mechanism and hook ship in the same package - not a wire contract.
+pub const CTL_LAYOUT_VERSION: u32 = 1;
+
 /// Session-wide control block in `Local\ChronoCtl`. `#[repr(C)]` so both processes
 /// agree on the layout. Coverage lives here too, one `Cov` per registry slot, so a
 /// process's evidence outlives the process (S-9) while staying attributed to it alone.
 #[repr(C)]
 pub struct Ctl {
+    /// [`CTL_MAGIC`] once the mechanism has claimed this section. FIRST field on purpose: it is the
+    /// one thing a reader may look at before it trusts any offset below it.
+    pub magic: u64,
+    /// [`CTL_LAYOUT_VERSION`] of the build that wrote this block.
+    pub layout: u32,
     /// Seqlock counter for the anchor fields (odd = write in progress).
     pub seq: u32,
     /// Session zone bias in minutes (UTC = local + bias), no DST. Stable per session.
@@ -480,6 +497,34 @@ impl Cov {
     pub const ZEROED: Cov =
         Cov { installed_channels: 0, uninjected_children: 0, calls: [0; CHANNEL_COUNT] };
 }
+
+/// Stamp the block as ours, at the layout this build speaks.
+///
+/// Written IMMEDIATELY after the section is created or reclaimed, before the anchor. That ordering
+/// is what makes the check below safe against a false alarm: a section only outlives its core
+/// because the TARGET still holds it mapped, and the target is created long after this point - so a
+/// core that died before stamping left nothing behind to be found.
+///
+/// # Safety
+/// `p` must point to a live, correctly aligned `Ctl`.
+pub unsafe fn write_header(p: *mut Ctl) { unsafe {
+    write_volatile(addr_of_mut!((*p).magic), CTL_MAGIC);
+    write_volatile(addr_of_mut!((*p).layout), CTL_LAYOUT_VERSION);
+}}
+
+/// Whether this block was written by a build that speaks our layout.
+///
+/// Read before ANY other field, by both sides: the mechanism before it reclaims a surviving section
+/// as its own orphan, and the hook before it takes a single number out of it as a clock. Reading an
+/// anchor out of a block somebody else shaped is how a target ends up on a time nobody in this tool
+/// chose, with an audit that calls it covered (untouchable rules 2 and 4).
+///
+/// # Safety
+/// `p` must point to a mapped view of at least `ctl_size()` bytes, correctly aligned.
+pub unsafe fn header_is_ours(p: *const Ctl) -> bool { unsafe {
+    read_volatile(addr_of!((*p).magic)) == CTL_MAGIC
+        && read_volatile(addr_of!((*p).layout)) == CTL_LAYOUT_VERSION
+}}
 
 /// Size of the session control block, for CreateFileMapping.
 pub const fn ctl_size() -> usize {
@@ -1032,6 +1077,10 @@ mod tests {
     /// a by-value helper would push that through the test thread's stack on every call.
     fn zeroed_ctl() -> Box<Ctl> {
         Box::new(Ctl {
+            // Zeroed like a section the OS just handed us, header included: a helper that stamped
+            // the magic for free would hide the very state `header_is_ours` exists to reject.
+            magic: 0,
+            layout: 0,
             seq: 0,
             tz_bias: 0,
             a_fake: 0,
@@ -1054,6 +1103,43 @@ mod tests {
 
     fn zeroed_cov() -> Cov {
         Cov::ZEROED
+    }
+
+    /// The name `Local\ChronoCtl` is fixed and anyone in the session can create it, so
+    /// `ERROR_ALREADY_EXISTS` alone never meant "our orphan". A section the OS just created is
+    /// zero-filled, which is exactly the state a bare name-squat leaves behind - and the state this
+    /// rejects, so the mechanism refuses the block instead of zeroing it and running the session on
+    /// a mapping somebody else keeps a handle to.
+    #[test]
+    fn an_unstamped_block_is_not_recognised_as_ours() {
+        let mut ctl = zeroed_ctl();
+        let p = &mut *ctl as *mut Ctl;
+        unsafe {
+            assert!(!header_is_ours(p), "a zero-filled section passed as ours");
+            write_header(p);
+            assert!(header_is_ours(p), "our own stamp was not recognised");
+        }
+    }
+
+    /// Two ways a block can be present and still not be one we may read a clock out of: written by
+    /// something else entirely, or by a build whose fields sit at different offsets. The second is
+    /// the reason the version is checked at all - the mechanism and the hook ship together, but a
+    /// half-updated folder does happen, and reading the wrong offsets yields a plausible-looking
+    /// number rather than an error (untouchable rules 2 and 4).
+    #[test]
+    fn a_foreign_magic_or_a_different_layout_is_refused() {
+        let mut ctl = zeroed_ctl();
+        let p = &mut *ctl as *mut Ctl;
+        unsafe {
+            write_header(p);
+
+            write_volatile(addr_of_mut!((*p).magic), CTL_MAGIC ^ 1);
+            assert!(!header_is_ours(p), "a foreign magic passed as ours");
+
+            write_volatile(addr_of_mut!((*p).magic), CTL_MAGIC);
+            write_volatile(addr_of_mut!((*p).layout), CTL_LAYOUT_VERSION + 1);
+            assert!(!header_is_ours(p), "another layout version passed as ours");
+        }
     }
 
     #[test]

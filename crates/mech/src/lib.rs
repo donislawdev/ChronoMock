@@ -18,10 +18,10 @@ use std::time::Instant;
 
 use chrono_core::{ChannelCoverage, Coverage, SessionSpec, TimeMode};
 use chrono_ctl::{
-    cov_at, ctl_size, freeze_dur, freeze_qpc, read_anchor, read_calls,
+    cov_at, ctl_size, freeze_dur, freeze_qpc, header_is_ours, read_anchor, read_calls,
     read_core_pid, read_dur, read_installed, read_pid, read_pid_count, read_qpc,
     read_uninjected_children,
-    write_anchor, write_anchor_full,
+    write_anchor, write_anchor_full, write_header,
     write_core_pid, write_scale_dur, write_scale_qpc, write_tz_bias, ChannelCategory, ChannelModule,
     Cov, Ctl, CHANNELS, MAX_COV_PIDS,
 };
@@ -749,9 +749,27 @@ pub fn prepare(spec: &SessionSpec, target: &Target, hook_dll: &Path) -> Result<P
         // with a core that has not written it yet.
         let mut orphan_reclaimed = false;
         if already_existed {
+            // ...but "surviving" is not the same as "ours". The name is fixed and any process in
+            // this session can create it, so a section already sitting on it was zeroed and used as
+            // if we had made it - handing whoever made it a mapping of the session's anchor and its
+            // coverage counters for the whole run. The audit is evidence (untouchable rule 4) and
+            // the anchor decides what the target sees (rule 2); neither may come from a block we
+            // cannot recognise. A section the OS just created is zero-filled, so a bare name-squat
+            // fails this, and so does a block written by a build with a different layout.
+            if !header_is_ours(ctl) {
+                let _ = UnmapViewOfFile(MEMORY_MAPPED_VIEW_ADDRESS { Value: view.Value });
+                let _ = CloseHandle(hmap);
+                return Err(PrepareError::Control(
+                    "the session control block is held by something that is not this tool - \
+                     refusing to reuse it"
+                        .into(),
+                ));
+            }
             std::ptr::write_bytes(ctl as *mut u8, 0, ctl_size());
             orphan_reclaimed = true;
         }
+        // Stamped before the anchor, so anything that outlives this core is recognisable as ours.
+        write_header(ctl);
 
         let start_real = quit_now();
         // Initialize the duration anchor from the REAL clock (the core is not hooked, so GetTickCount64 and

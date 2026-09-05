@@ -62,6 +62,7 @@ use std::sync::OnceLock;
 
 use chrono_ctl::{
     bump_calls, bump_uninjected_children, cov_at_mut, dur_qpc_at, dur_quit_at, dur_tick_at,
+    header_is_ours,
     publish_pid, read_anchor, read_core_pid, read_dur, read_qpc, read_scale_dur, read_scale_qpc,
     read_tz_bias, reserve_cov_slot, scale_delay_interval, scale_timer_due, scale_timer_elapse, scale_timer_period,
     scale_timer_period_ms, scale_wait, set_channels_installed, ChannelModule, Cov,
@@ -82,8 +83,9 @@ use windows::Win32::System::LibraryLoader::{
     GetModuleFileNameW, GetModuleHandleA, GetProcAddress,
 };
 use windows::Win32::System::Memory::{
-    MapViewOfFile, OpenFileMappingW, VirtualAllocEx, VirtualFreeEx,
-    FILE_MAP_ALL_ACCESS, MEM_COMMIT, MEM_RELEASE, MEM_RESERVE, PAGE_READWRITE,
+    MapViewOfFile, OpenFileMappingW, UnmapViewOfFile, VirtualAllocEx, VirtualFreeEx,
+    FILE_MAP_ALL_ACCESS, MEMORY_MAPPED_VIEW_ADDRESS, MEM_COMMIT, MEM_RELEASE, MEM_RESERVE,
+    PAGE_READWRITE,
 };
 use windows::Win32::System::SystemServices::DLL_PROCESS_ATTACH;
 use windows::Win32::System::Threading::{
@@ -1763,6 +1765,17 @@ unsafe fn install() -> Result<(), String> { unsafe {
         return Err("MapViewOfFile returned null".into());
     }
     let ctl = view.Value as *mut Ctl;
+    // Before ANY field is read as a time. The section name is fixed and creatable by any process in
+    // this session, so what is mapped here is not guaranteed to be the block our mechanism wrote -
+    // and every number below decides either what the target's clock says (untouchable rule 2) or
+    // what the audit reports about it (rule 4). Refusing is the honest outcome: the target then runs
+    // on the real clock and the driver reports the injection as failed, rather than the target
+    // silently running on a stranger's anchor while the report calls the session covered.
+    if !header_is_ours(ctl as *const Ctl) {
+        let _ = UnmapViewOfFile(MEMORY_MAPPED_VIEW_ADDRESS { Value: view.Value });
+        let _ = CloseHandle(hmap);
+        return Err("session control block is not this build's".into());
+    }
     let _ = CTL_PTR.set(view.Value as usize);
     let _ = TZ_BIAS.set(read_tz_bias(ctl as *const Ctl));
 
