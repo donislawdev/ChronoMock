@@ -1,0 +1,326 @@
+<!-- CLI reference, English.
+
+     Written from the argument parser in crates/cli, not from the contract document. Two
+     things on this page were missing everywhere else when it was written: exit code 3 and
+     exit code 5 for chrono run, and the report line naming the target's own exit code. -->
+
+<div class="shell">
+
+  <section class="plain">
+    <h1>Command line reference</h1>
+    <p class="sub">
+      Every flag of both commands, both exit code tables, and how to read what comes back.
+      The narrative version, with the reasoning, is on the
+      <a href="/cli-and-ci/">CLI and CI page</a>.
+    </p>
+  </section>
+
+  <section>
+    <h2>Two commands</h2>
+    <div class="prose">
+      <p>
+        <code>chrono run</code> starts an application at a different date and time.
+        <code>chrono calc</code> works out a date and tells you what makes it interesting.
+        They share one step grammar, so a shift written for one means the same in the other.
+      </p>
+    </div>
+
+    <pre class="term"><span class="p">chrono</span> run &lt;target&gt; [options]
+<span class="p">chrono</span> calc [options]
+<span class="p">chrono</span> --help          <span class="c"># usage for both</span></pre>
+  </section>
+
+  <section>
+    <h2><code>chrono run</code> - options</h2>
+
+    <div class="wrap">
+      <table>
+        <thead><tr><th>Flag</th><th>What it does</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><code>--at &lt;moment&gt;</code></td>
+            <td>The moment to start at, in the session zone. Absolute
+              (<code>2038-01-19T03:14:07</code>) or relative with a leading sign
+              (<code>+1d</code>, <code>-2h</code>). Units: <code>s m h d w mo q y</code> -
+              <strong><code>m</code> is minutes and <code>mo</code> is months</strong>. Without
+              this flag the session clock starts at the real current time, so <code>--mode xN</code>
+              on its own simply runs the target faster.</td>
+          </tr>
+          <tr>
+            <td><code>--zone +HH:MM</code></td>
+            <td>The session zone: the zone the moment is written in, and the one the target's
+              local-time calls report. A fixed offset, with no daylight saving. Without it, the
+              host's own zone.</td>
+          </tr>
+          <tr>
+            <td><code>--mode flow|frozen|xN</code></td>
+            <td><code>flow</code> runs at real speed, <code>frozen</code> holds the clock still,
+              <code>xN</code> runs it N times faster (<code>x60</code> turns an hour into a
+              minute, <code>x1440</code> a day).</td>
+          </tr>
+          <tr>
+            <td><code>--scale-duration</code></td>
+            <td>Also speed up the duration axis: tick counts, sleeps and timers. Off by default,
+              because a wall clock and a stopwatch are different questions.</td>
+          </tr>
+          <tr>
+            <td><code>--scale-qpc</code></td>
+            <td>Also scale the high-resolution counter, which is where Python 3.13+
+              <code>monotonic</code>, .NET <code>Stopwatch</code> and Java <code>nanoTime</code>
+              read elapsed time. Off by default: an application that times its rendering off that
+              counter can look distorted.</td>
+          </tr>
+          <tr>
+            <td><code>--ticks N</code></td>
+            <td>End the session after N heartbeats, one real second each, and report. Without it
+              the tool stays attached until the target exits.</td>
+          </tr>
+          <tr>
+            <td><code>--args "..."</code></td>
+            <td>Arguments for the target, as one string, split by the same rule Windows uses - so
+              an argument containing spaces survives. For a Chromium target,
+              <code>--user-data-dir</code> and <code>--remote-debugging-port</code> are refused
+              rather than overridden: the session needs its own isolated profile, and quietly
+              running on your real browser profile is the one thing that must not happen.</td>
+          </tr>
+          <tr>
+            <td><code>--preset &lt;id&gt;</code></td>
+            <td>Take the moment and the speed from <code>presets/&lt;id&gt;.json</code>. Exclusive
+              with <code>--at</code>, <code>--mode</code> and <code>--scale-duration</code>, since
+              the preset is then the single source of both.</td>
+          </tr>
+          <tr>
+            <td><code>--param id=value</code></td>
+            <td>Fill a preset parameter. Repeatable, requires <code>--preset</code>. In
+              <code>run</code> only, a trial start date defaults to the target executable's own
+              creation date, so a trial preset counts from the day the application was installed
+              without you typing it.</td>
+          </tr>
+          <tr>
+            <td><code>--set-after T:M</code></td>
+            <td>At heartbeat T, change the speed to M. In flight the multiplier is at least 1 -
+              freezing mid-session is not offered here.</td>
+          </tr>
+          <tr>
+            <td><code>--jump-after T:moment</code></td>
+            <td>At heartbeat T, jump the clock to that moment, absolute or relative, in the
+              session zone.</td>
+          </tr>
+          <tr>
+            <td><code>--force</code></td>
+            <td>Keep the session even when the opening verdict says the substitution did not take
+              effect - by default the target is stopped instead, because a session that proved
+              nothing is worse than no session. <strong>The verdict does not change</strong>, and
+              neither does the exit code. This only decides whether the target keeps running.</td>
+          </tr>
+          <tr>
+            <td><code>--report &lt;path&gt;</code></td>
+            <td>Write the human report to a file. A verdict other than <em>works</em> leads that
+              file with an unreliable-evidence banner, because evidence that hides its own doubt
+              is worse than none.</td>
+          </tr>
+          <tr>
+            <td><code>--json</code></td>
+            <td>Emit the session as machine-readable records instead of the report - the same
+              stream the window itself consumes.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <h2><code>chrono run</code> - exit codes</h2>
+    <div class="prose">
+      <p>
+        The exit code is the <strong>session verdict</strong>, not what the application returned.
+        The application's own exit code is reported separately, in the report and in the session
+        data - the <a href="/cli-and-ci/">CLI and CI page</a> explains why round that way.
+      </p>
+    </div>
+
+    <div class="wrap" style="margin-top:22px">
+      <table>
+        <thead><tr><th>Code</th><th>Meaning</th></tr></thead>
+        <tbody>
+          <tr><td class="y">0</td><td>works - every process that read time saw the session clock</td></tr>
+          <tr><td>10</td><td>works partially - some channels covered, some not</td></tr>
+          <tr><td class="n">11</td><td>does not work - the substitution did not reach the key channels</td></tr>
+          <tr><td>4</td><td>undetermined - coverage could not be established. An honest "cannot tell", never a pretended pass</td></tr>
+          <tr><td>12</td><td>the target vanished right after injection, which suggests a single-instance application handing over to a copy already running</td></tr>
+          <tr><td>1</td><td>usage error - a bad flag, a bad expression, or a preset this command will not accept</td></tr>
+          <tr><td>2</td><td>the target could not be launched or injected</td></tr>
+          <tr><td>3</td><td>internal error - the engine could not start or hit an unexpected state</td></tr>
+          <tr><td>5</td><td>the operation is not built in this release - for example a preset whose moment needs a calendar, which <code>run</code> cannot load yet. Deliberately distinct from a usage error: you asked for something that does not exist yet, not for something wrong</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <h2>Reading the report</h2>
+    <div class="prose">
+      <p>
+        Without <code>--json</code> the session ends in a plain report. Every line is either a
+        fact the session observed or absent - nothing is filled in with a plausible default.
+      </p>
+    </div>
+
+    <pre class="term">Chrono Mock - session report
+  target:   .\build\test.exe
+  verdict:  WORKS - time substitution took effect  (processes: 1)
+            every process that read time saw the session clock
+  session:  fake clock reached 2038-01-19T03:14:08
+            real elapsed 1.3s, fake elapsed 1.3s
+  exited:   the target closed itself with code 3
+  covered channels (substituted, with call counts):
+            - pid 21240: GetSystemTimeAsFileTime (5 calls)
+            - pid 21240: GetLocalTime (5 calls)
+  observed channels (hooked but left real):
+            - pid 21240: NtCreateUserProcess (0 calls)
+  warnings:
+            - the target opened a network connection ...</pre>
+
+    <div class="prose">
+      <ul>
+        <li><strong>verdict</strong> - the family verdict over the parent and every child process,
+          with the process count. This is the number the exit code carries.</li>
+        <li><strong>exited</strong> - the application's <em>own</em> exit code, and only when it
+          closed itself. A run bounded by <code>--ticks</code> leaves the target running, a
+          Chromium session is one the tool closes itself, and a session that never started has no
+          such code - the line is then absent rather than showing a made-up zero. A crash code
+          arrives as a large negative number, so it also gets its hexadecimal form.</li>
+        <li><strong>covered</strong> - channels the substitution reached, with how many times each
+          was actually called, per process. Counts are never summed across processes: one
+          process's audit must not borrow another's numbers.</li>
+        <li><strong>observed</strong> - channels hooked but deliberately left real, such as object
+          waits and multimedia timers. Their own bucket, so they are never read as substituted.</li>
+        <li><strong>uncovered</strong> - channels the application asked for and the session did not
+          cover. This is what turns a verdict into <em>partially</em>.</li>
+        <li><strong>not fully cleaned up</strong> - anything teardown could not remove. Absent on a
+          clean end, which is the normal case.</li>
+      </ul>
+    </div>
+  </section>
+
+  <section>
+    <h2><code>chrono calc</code> - options</h2>
+    <div class="prose">
+      <p>
+        No natural language: <strong>each flag is one step, and the order of the flags is the
+        order of the steps</strong>. The result after every step is printed, so a wrong step is
+        visible rather than buried.
+      </p>
+    </div>
+
+    <div class="wrap">
+      <table>
+        <thead><tr><th>Flag</th><th>What it does</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><code>--base today|now|&lt;moment&gt;</code></td>
+            <td>Where to start, default <code>today</code>. Resolved in the session zone. An
+              impossible day such as <code>2025-02-31</code> is refused, never quietly
+              normalised into the next month.</td>
+          </tr>
+          <tr>
+            <td><code>--shift ±N&lt;unit&gt;</code></td>
+            <td>Repeatable. The sign is required. Units: <code>s m h d w mo q y bd</code>, or
+              their full names. <strong><code>m</code> is minutes, <code>mo</code> is
+              months.</strong> Months, quarters and years fold onto the calendar date with a
+              clamp, so a month after 31 January is the end of February, not a fixed number of
+              ticks. <code>bd</code> (business days) needs <code>--calendar</code>.</td>
+          </tr>
+          <tr><td><code>--set-time HH:MM:SS</code></td><td>Set the time of day on the current result.</td></tr>
+          <tr>
+            <td><code>--snap &lt;target&gt;</code></td>
+            <td>Jump to a period boundary: <code>som eom soq eoq soy eoy</code> (start or end of
+              month, quarter, year). A start is the first day at 00:00:00, an end the last day at
+              23:59:59.</td>
+          </tr>
+          <tr>
+            <td><code>--nearest nbd|pbd</code></td>
+            <td>The nearest business day forward or back, the current day included when it already
+              is one. Needs <code>--calendar</code>.</td>
+          </tr>
+          <tr>
+            <td><code>--to-zone +HH:MM</code></td>
+            <td>A <em>step</em>: re-express the same instant in another fixed offset. The instant
+              is preserved, so the epoch value does not move and only the civil fields do. Not to
+              be confused with <code>--zone</code>.</td>
+          </tr>
+          <tr>
+            <td><code>--zone +HH:MM</code></td>
+            <td>The session zone, used to resolve <code>today</code> and <code>now</code> and to
+              render the result. Without it, the host's zone.</td>
+          </tr>
+          <tr>
+            <td><code>--calendar us-banking|us-federal|pl</code></td>
+            <td>Load a holiday calendar. It adds business day and holiday to the metadata and
+              enables <code>bd</code> and <code>--nearest</code>. The two American calendars differ
+              in how they observe a holiday falling at a weekend, which is exactly the kind of
+              off-by-one day a test is meant to find.</td>
+          </tr>
+          <tr>
+            <td><code>--preset &lt;id&gt;</code> <code>--param id=value</code></td>
+            <td>A named moment from <code>presets/&lt;id&gt;.json</code>, with its parameters
+              filled in. Exclusive with the step flags and with <code>--analyze</code>, and it
+              composes with <code>--calendar</code>, <code>--zone</code> and
+              <code>--format</code>.</td>
+          </tr>
+          <tr>
+            <td><code>--analyze &lt;date&gt;</code></td>
+            <td>Read a pasted date back and say what it is. An ambiguous <code>04/08</code> is
+              shown in <strong>both</strong> readings, American and Polish, rather than guessed -
+              that ambiguity is a real source of wrong bug reports.</td>
+          </tr>
+          <tr>
+            <td><code>--format &lt;mask&gt;</code></td>
+            <td>Print the result in your own mask as well, so it matches the format of the
+              application under test: <code>yyyy-MM-dd HH:mm:ss</code>. Tokens are case sensitive
+              in the .NET and Java sense - <strong><code>M</code> is month, <code>m</code> is
+              minute</strong>.</td>
+          </tr>
+          <tr>
+            <td><code>--json</code></td>
+            <td>Machine output (<code>chronomock.calc/1</code>) for any of the above, so a pipeline
+              can compute a date and feed it straight back into <code>chrono run</code>.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <pre class="term"><span class="c"># Last business day of the quarter, American banking calendar</span>
+<span class="p">chrono</span> calc --base today --snap eoq --nearest pbd --calendar us-banking</pre>
+  </section>
+
+  <section>
+    <h2><code>chrono calc</code> - exit codes</h2>
+    <div class="prose">
+      <p>
+        A separate, smaller table: the calculator has no coverage verdict to report.
+      </p>
+    </div>
+
+    <div class="wrap" style="margin-top:22px">
+      <table>
+        <thead><tr><th>Code</th><th>Meaning</th></tr></thead>
+        <tbody>
+          <tr><td class="y">0</td><td>computed</td></tr>
+          <tr><td>1</td><td>usage error - a bad flag, an impossible date, a range overflow, or a calendar file with no business day in it</td></tr>
+          <tr><td>5</td><td>the step or unit is not built in this release, or the step needs a calendar you did not pass. Separate from a usage error on purpose, so a script can tell "not yet" from "wrong"</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <h2>Next</h2>
+    <div class="cta">
+      <a class="btn btn-primary" href="/download/">Download for Windows</a>
+      <a class="btn btn-ghost" href="/cli-and-ci/">Using it in a pipeline</a>
+      <a class="btn btn-ghost" href="/time-source-audit/">What the verdicts mean</a>
+    </div>
+  </section>
+
+</div>

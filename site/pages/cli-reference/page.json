@@ -1,0 +1,22 @@
+{
+  "//": "The reference the narrative pages deliberately do not carry: every flag of both commands and every exit code either can return, in one place. Written from the argument parser in crates/cli, not from the contract document - the document is what drifted, and this page is public. The CLI and CI page keeps the argument for WHY the exit code is the verdict; this one only states what the codes are.",
+
+  "id": "cli-reference",
+  "order": 85,
+  "nav": false,
+
+  "languages": {
+    "en": {
+      "slug": "cli-reference",
+      "link_text": "CLI reference",
+      "title": "Chrono Mock CLI reference - every flag and exit code",
+      "description": "Complete reference for chrono run and chrono calc: every command-line flag, both exit code tables, and how to read the session report."
+    },
+    "pl": {
+      "slug": "dokumentacja-cli",
+      "link_text": "Dokumentacja CLI",
+      "title": "Dokumentacja CLI Chrono Mock - flagi i kody wyjścia",
+      "description": "Pełna dokumentacja chrono run i chrono calc: wszystkie flagi wiersza poleceń, obie tabele kodów wyjścia i jak czytać raport sesji."
+    }
+  }
+}

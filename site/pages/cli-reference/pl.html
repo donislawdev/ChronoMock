@@ -1,0 +1,327 @@
+<!-- Dokumentacja CLI, polski.
+
+     Bloki terminala zostaja po angielsku: program jest angielski, wiec przepisanie jego
+     wyjscia byloby zmysleniem. Tlumaczy sie proza wokol nich. -->
+
+<div class="shell">
+
+  <section class="plain">
+    <h1>Dokumentacja wiersza poleceń</h1>
+    <p class="sub">
+      Wszystkie flagi obu komend, obie tabele kodów wyjścia i sposób czytania tego, co wraca.
+      Wersja z uzasadnieniem, a nie samymi faktami, stoi na stronie
+      <a href="/pl/cli-i-ci/">CLI i CI</a>.
+    </p>
+  </section>
+
+  <section>
+    <h2>Dwie komendy</h2>
+    <div class="prose">
+      <p>
+        <code>chrono run</code> uruchamia aplikację w innej dacie i godzinie.
+        <code>chrono calc</code> liczy datę i mówi, co w niej ciekawego. Obie mówią tą samą
+        gramatyką kroków, więc przesunięcie napisane dla jednej znaczy w drugiej to samo.
+      </p>
+    </div>
+
+    <pre class="term"><span class="p">chrono</span> run &lt;target&gt; [options]
+<span class="p">chrono</span> calc [options]
+<span class="p">chrono</span> --help          <span class="c"># usage for both</span></pre>
+  </section>
+
+  <section>
+    <h2><code>chrono run</code> - opcje</h2>
+
+    <div class="wrap">
+      <table>
+        <thead><tr><th>Flaga</th><th>Co robi</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><code>--at &lt;moment&gt;</code></td>
+            <td>Moment, od którego zaczyna się sesja, w strefie sesji. Bezwzględny
+              (<code>2038-01-19T03:14:07</code>) albo względny z wiodącym znakiem
+              (<code>+1d</code>, <code>-2h</code>). Jednostki: <code>s m h d w mo q y</code> -
+              <strong><code>m</code> to minuty, a <code>mo</code> miesiące</strong>. Bez tej flagi
+              zegar sesji startuje od realnego teraz, więc samo <code>--mode xN</code> po prostu
+              przyspiesza aplikację.</td>
+          </tr>
+          <tr>
+            <td><code>--zone +HH:MM</code></td>
+            <td>Strefa sesji: strefa, w której zapisany jest moment, i ta, którą raportują
+              wywołania czasu lokalnego w celu. Stały offset, bez zmiany czasu. Bez flagi - strefa
+              hosta.</td>
+          </tr>
+          <tr>
+            <td><code>--mode flow|frozen|xN</code></td>
+            <td><code>flow</code> to tempo realne, <code>frozen</code> zatrzymuje zegar,
+              <code>xN</code> przyspiesza go N razy (<code>x60</code> zamienia godzinę w minutę,
+              <code>x1440</code> dobę).</td>
+          </tr>
+          <tr>
+            <td><code>--scale-duration</code></td>
+            <td>Przyspiesza także oś trwania: liczniki ticków, uśpienia i timery. Domyślnie
+              wyłączone, bo zegar ścienny i stoper to dwa różne pytania.</td>
+          </tr>
+          <tr>
+            <td><code>--scale-qpc</code></td>
+            <td>Skaluje też licznik wysokiej rozdzielczości, z którego czytają czas miniony
+              <code>monotonic</code> w Pythonie 3.13+, <code>Stopwatch</code> w .NET i
+              <code>nanoTime</code> w Javie. Domyślnie wyłączone: aplikacja, która mierzy tym
+              licznikiem własne renderowanie, potrafi wyglądać na zniekształconą.</td>
+          </tr>
+          <tr>
+            <td><code>--ticks N</code></td>
+            <td>Kończy sesję po N biciach serca, każde po jednej realnej sekundzie, i raportuje.
+              Bez tej flagi narzędzie zostaje przy celu do jego wyjścia.</td>
+          </tr>
+          <tr>
+            <td><code>--args "..."</code></td>
+            <td>Argumenty dla celu, jako jeden łańcuch, dzielony tą samą regułą, której używa
+              Windows - więc argument ze spacją przeżywa podróż. Dla celu Chromium
+              <code>--user-data-dir</code> i <code>--remote-debugging-port</code> są
+              <strong>odmawiane</strong>, nie nadpisywane: sesja potrzebuje własnego, odizolowanego
+              profilu, a ciche uruchomienie na twoim prawdziwym profilu przeglądarki to jedyna
+              rzecz, która stać się nie może.</td>
+          </tr>
+          <tr>
+            <td><code>--preset &lt;id&gt;</code></td>
+            <td>Bierze moment i tempo z <code>presets/&lt;id&gt;.json</code>. Wyłączna wobec
+              <code>--at</code>, <code>--mode</code> i <code>--scale-duration</code>, bo preset
+              jest wtedy jedynym źródłem obu.</td>
+          </tr>
+          <tr>
+            <td><code>--param id=value</code></td>
+            <td>Wypełnia parametr presetu. Powtarzalna, wymaga <code>--preset</code>. Tylko w
+              <code>run</code> data startu wersji próbnej domyślnie bierze się z daty utworzenia
+              pliku celu, więc preset triala liczy od dnia instalacji aplikacji bez wpisywania
+              czegokolwiek.</td>
+          </tr>
+          <tr>
+            <td><code>--set-after T:M</code></td>
+            <td>Na biciu T zmienia tempo na M. W locie mnożnik wynosi co najmniej 1 - zamrażanie w
+              trakcie sesji nie jest tu oferowane.</td>
+          </tr>
+          <tr>
+            <td><code>--jump-after T:moment</code></td>
+            <td>Na biciu T przeskakuje zegar na podany moment, bezwzględny albo względny, w strefie
+              sesji.</td>
+          </tr>
+          <tr>
+            <td><code>--force</code></td>
+            <td>Prowadzi sesję nawet wtedy, gdy werdykt otwarcia mówi, że podmiana nie zadziałała -
+              domyślnie cel jest wtedy zatrzymywany, bo sesja, która niczego nie dowodzi, jest
+              gorsza niż jej brak. <strong>Werdykt się nie zmienia</strong>, kod wyjścia też nie.
+              Ta flaga rozstrzyga wyłącznie, czy cel biegnie dalej.</td>
+          </tr>
+          <tr>
+            <td><code>--report &lt;plik&gt;</code></td>
+            <td>Zapisuje czytelny raport do pliku. Werdykt inny niż <em>works</em> prowadzi taki
+              plik banerem o nierzetelnym dowodzie, bo dowód, który przemilcza własną wątpliwość,
+              jest gorszy niż brak dowodu.</td>
+          </tr>
+          <tr>
+            <td><code>--json</code></td>
+            <td>Wypisuje sesję jako rekordy maszynowe zamiast raportu - ten sam strumień, który
+              konsumuje okno aplikacji.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <h2><code>chrono run</code> - kody wyjścia</h2>
+    <div class="prose">
+      <p>
+        Kod wyjścia to <strong>werdykt sesji</strong>, a nie to, co zwróciła aplikacja. Własny kod
+        wyjścia aplikacji jest raportowany osobno, w raporcie i w danych sesji - dlaczego akurat
+        tak, wyjaśnia strona <a href="/pl/cli-i-ci/">CLI i CI</a>.
+      </p>
+    </div>
+
+    <div class="wrap" style="margin-top:22px">
+      <table>
+        <thead><tr><th>Kod</th><th>Znaczenie</th></tr></thead>
+        <tbody>
+          <tr><td class="y">0</td><td>działa - każdy proces, który czytał czas, zobaczył zegar sesji</td></tr>
+          <tr><td>10</td><td>działa częściowo - część kanałów objęta, część nie</td></tr>
+          <tr><td class="n">11</td><td>nie działa - podmiana nie dosięgła kluczowych kanałów</td></tr>
+          <tr><td>4</td><td>nieokreślony - nie dało się ustalić pokrycia. Uczciwe „nie wiem", nigdy udawane „działa"</td></tr>
+          <tr><td>12</td><td>cel zniknął zaraz po wstrzyknięciu, co wskazuje na aplikację jednoinstancyjną, która oddała robotę już działającej kopii</td></tr>
+          <tr><td>1</td><td>błąd użycia - zła flaga, złe wyrażenie albo preset, którego ta komenda nie przyjmuje</td></tr>
+          <tr><td>2</td><td>nie udało się uruchomić celu albo wstrzyknąć do niego biblioteki</td></tr>
+          <tr><td>3</td><td>błąd wewnętrzny - rdzeń nie wystartował albo trafił na nieoczekiwany stan</td></tr>
+          <tr><td>5</td><td>operacja niezbudowana w tym wydaniu - na przykład preset, którego moment wymaga kalendarza, a <code>run</code> nie umie go jeszcze wczytać. Celowo odróżnialne od błędu użycia: poprosiłeś o coś, czego jeszcze nie ma, a nie o coś złego</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <h2>Jak czytać raport</h2>
+    <div class="prose">
+      <p>
+        Bez <code>--json</code> sesja kończy się zwykłym raportem. Każdy wiersz jest albo faktem,
+        który sesja zaobserwowała, albo go nie ma - nic nie jest dopisywane prawdopodobną wartością
+        domyślną.
+      </p>
+    </div>
+
+    <pre class="term">Chrono Mock - session report
+  target:   .\build\test.exe
+  verdict:  WORKS - time substitution took effect  (processes: 1)
+            every process that read time saw the session clock
+  session:  fake clock reached 2038-01-19T03:14:08
+            real elapsed 1.3s, fake elapsed 1.3s
+  exited:   the target closed itself with code 3
+  covered channels (substituted, with call counts):
+            - pid 21240: GetSystemTimeAsFileTime (5 calls)
+            - pid 21240: GetLocalTime (5 calls)
+  observed channels (hooked but left real):
+            - pid 21240: NtCreateUserProcess (0 calls)
+  warnings:
+            - the target opened a network connection ...</pre>
+
+    <div class="prose">
+      <ul>
+        <li><strong>verdict</strong> - werdykt rodziny, czyli rodzica i wszystkich procesów
+          potomnych, wraz z ich liczbą. To jest liczba, którą niesie kod wyjścia.</li>
+        <li><strong>exited</strong> - <em>własny</em> kod wyjścia aplikacji, i tylko wtedy, gdy
+          zamknęła się sama. Przebieg ograniczony przez <code>--ticks</code> zostawia cel
+          działający, sesję Chromium narzędzie zamyka samo, a sesja, która nigdy nie wystartowała,
+          takiego kodu nie ma - wtedy tego wiersza po prostu nie ma, zamiast zmyślonego zera. Kod
+          awaryjny przychodzi jako duża liczba ujemna, więc dostaje też postać szesnastkową.</li>
+        <li><strong>covered</strong> - kanały, które podmiana objęła, z liczbą realnych wywołań
+          każdego, osobno per proces. Liczniki nigdy nie są sumowane między procesami: audyt
+          jednego procesu nie może pożyczać liczb od drugiego.</li>
+        <li><strong>observed</strong> - kanały podpięte, ale celowo zostawione prawdziwe, jak
+          czekania na obiekty czy timery multimedialne. Mają własny kubełek, żeby nikt nie
+          przeczytał ich jako podmienionych.</li>
+        <li><strong>uncovered</strong> - kanały, o które aplikacja pytała, a sesja ich nie objęła.
+          To one zamieniają werdykt w <em>częściowy</em>.</li>
+        <li><strong>not fully cleaned up</strong> - to, czego sprzątanie nie zdołało usunąć. Przy
+          czystym zakończeniu, czyli normalnie, tego wiersza nie ma.</li>
+      </ul>
+    </div>
+  </section>
+
+  <section>
+    <h2><code>chrono calc</code> - opcje</h2>
+    <div class="prose">
+      <p>
+        Zero języka naturalnego: <strong>każda flaga to jeden krok, a kolejność flag to kolejność
+        kroków</strong>. Wynik po każdym kroku jest wypisywany, więc zły krok widać, zamiast go
+        zakopywać.
+      </p>
+    </div>
+
+    <div class="wrap">
+      <table>
+        <thead><tr><th>Flaga</th><th>Co robi</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><code>--base today|now|&lt;moment&gt;</code></td>
+            <td>Punkt wyjścia, domyślnie <code>today</code>. Rozwiązywany w strefie sesji.
+              Niemożliwy dzień, taki jak <code>2025-02-31</code>, jest odrzucany, a nie po cichu
+              normalizowany na następny miesiąc.</td>
+          </tr>
+          <tr>
+            <td><code>--shift ±N&lt;jednostka&gt;</code></td>
+            <td>Powtarzalna. Znak obowiązkowy. Jednostki: <code>s m h d w mo q y bd</code> albo
+              ich pełne nazwy. <strong><code>m</code> to minuty, <code>mo</code> miesiące.</strong>
+              Miesiące, kwartały i lata składają się na datę cywilną z zaciskiem, więc miesiąc po
+              31 stycznia to koniec lutego, a nie stała liczba ticków. <code>bd</code> (dni
+              robocze) wymaga <code>--calendar</code>.</td>
+          </tr>
+          <tr><td><code>--set-time HH:MM:SS</code></td><td>Ustawia porę dnia na bieżącym wyniku.</td></tr>
+          <tr>
+            <td><code>--snap &lt;cel&gt;</code></td>
+            <td>Skok do granicy okresu: <code>som eom soq eoq soy eoy</code> (początek albo koniec
+              miesiąca, kwartału, roku). Początek to pierwszy dzień o 00:00:00, koniec - ostatni o
+              23:59:59.</td>
+          </tr>
+          <tr>
+            <td><code>--nearest nbd|pbd</code></td>
+            <td>Najbliższy dzień roboczy naprzód albo wstecz, włącznie z bieżącym, jeśli już nim
+              jest. Wymaga <code>--calendar</code>.</td>
+          </tr>
+          <tr>
+            <td><code>--to-zone +HH:MM</code></td>
+            <td><em>Krok</em>: wyraża tę samą chwilę w innym stałym offsecie. Chwila jest
+              zachowana, więc wartość epoch się nie rusza, przesuwają się tylko pola cywilne. Nie
+              mylić z <code>--zone</code>.</td>
+          </tr>
+          <tr>
+            <td><code>--zone +HH:MM</code></td>
+            <td>Strefa sesji, w której rozwiązywane są <code>today</code> i <code>now</code> i w
+              której renderowany jest wynik. Bez flagi - strefa hosta.</td>
+          </tr>
+          <tr>
+            <td><code>--calendar us-banking|us-federal|pl</code></td>
+            <td>Wczytuje kalendarz świąt. Dokłada do metadanych dzień roboczy i święto oraz włącza
+              <code>bd</code> i <code>--nearest</code>. Dwa kalendarze amerykańskie różnią się tym,
+              jak obserwują święto wypadające w weekend - czyli dokładnie tym błędem o jeden dzień,
+              który test ma znaleźć.</td>
+          </tr>
+          <tr>
+            <td><code>--preset &lt;id&gt;</code> <code>--param id=value</code></td>
+            <td>Nazwany moment z <code>presets/&lt;id&gt;.json</code>, z wypełnionymi parametrami.
+              Wyłączna wobec flag kroków i wobec <code>--analyze</code>, komponuje się z
+              <code>--calendar</code>, <code>--zone</code> i <code>--format</code>.</td>
+          </tr>
+          <tr>
+            <td><code>--analyze &lt;data&gt;</code></td>
+            <td>Czyta wklejoną datę i mówi, co to jest. Niejednoznaczne <code>04/08</code>
+              pokazywane jest w <strong>obu</strong> odczytach, amerykańskim i polskim, zamiast
+              zgadywane - ta niejednoznaczność to realne źródło błędnych zgłoszeń.</td>
+          </tr>
+          <tr>
+            <td><code>--format &lt;maska&gt;</code></td>
+            <td>Wypisuje wynik dodatkowo we własnej masce, żeby trafić w format testowanej
+              aplikacji: <code>yyyy-MM-dd HH:mm:ss</code>. Tokeny rozróżniają wielkość liter w
+              sensie .NET i Javy - <strong><code>M</code> to miesiąc, <code>m</code> to
+              minuta</strong>.</td>
+          </tr>
+          <tr>
+            <td><code>--json</code></td>
+            <td>Wyjście maszynowe (<code>chronomock.calc/1</code>) dla każdego z powyższych, więc
+              potok może policzyć datę i podać ją z powrotem do <code>chrono run</code>.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <pre class="term"><span class="c"># Last business day of the quarter, American banking calendar</span>
+<span class="p">chrono</span> calc --base today --snap eoq --nearest pbd --calendar us-banking</pre>
+  </section>
+
+  <section>
+    <h2><code>chrono calc</code> - kody wyjścia</h2>
+    <div class="prose">
+      <p>
+        Osobna, mniejsza tabela: kalkulator nie ma werdyktu pokrycia, o którym miałby meldować.
+      </p>
+    </div>
+
+    <div class="wrap" style="margin-top:22px">
+      <table>
+        <thead><tr><th>Kod</th><th>Znaczenie</th></tr></thead>
+        <tbody>
+          <tr><td class="y">0</td><td>policzono</td></tr>
+          <tr><td>1</td><td>błąd użycia - zła flaga, niemożliwa data, przepełnienie zakresu albo plik kalendarza, w którym nie ma ani jednego dnia roboczego</td></tr>
+          <tr><td>5</td><td>krok albo jednostka niezbudowane w tym wydaniu, albo krok wymaga kalendarza, którego nie podałeś. Celowo oddzielone od błędu użycia, żeby skrypt odróżnił „jeszcze nie" od „źle"</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <h2>Dalej</h2>
+    <div class="cta">
+      <a class="btn btn-primary" href="/pl/pobieranie/">Pobierz na Windows</a>
+      <a class="btn btn-ghost" href="/pl/cli-i-ci/">Użycie w potoku</a>
+      <a class="btn btn-ghost" href="/pl/audyt-zrodel-czasu/">Co znaczą werdykty</a>
+    </div>
+  </section>
+
+</div>
