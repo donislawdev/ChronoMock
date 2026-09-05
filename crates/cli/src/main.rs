@@ -118,7 +118,7 @@ fn cdp_probe(argv: &[String]) -> i32 {
             for t in infos {
                 let ty = t.get("type").and_then(serde_json::Value::as_str).unwrap_or("?");
                 let url = t.get("url").and_then(serde_json::Value::as_str).unwrap_or("");
-                println!("{}", probe_target_line(ty, url));
+                println!("{}", probe_target_line("-", ty, url));
             }
         }
         Err(e) => {
@@ -248,8 +248,9 @@ fn cdp_shim_probe(argv: &[String]) -> i32 {
                     cdp::inject_page(&mut client, &sid, &shim)
                 };
                 match r {
-                    Ok(()) => println!("  shimmed {ty} :: {}", short_url(&url)),
-                    Err(e) => println!("  FAILED  {ty}: {e}"),
+                    Ok(()) => println!("{}", probe_target_line("shimmed", &ty, &url)),
+                    // `e` is already folded at its source (`evaluate_shim`); `ty` is not.
+                    Err(e) => println!("  FAILED  {}: {e}", cdp::sanitise_target_text(&ty)),
                 }
                 if cdp::is_worker(&ty) && url.contains(".worker.js") {
                     worker_sid = Some(sid);
@@ -372,7 +373,12 @@ fn cdp_date_probe(argv: &[String]) -> i32 {
             Ok(v) => {
                 let reads = v.get("result").and_then(|r| r.get("value")).and_then(serde_json::Value::as_str).unwrap_or("?");
                 println!("requested moment: {iso}");
-                println!("page reads [new Date().toISOString(), getUTCFullYear(), Date.now()]: {reads}");
+                // `reads` is a string the PAGE built and returned, so it is the target's words like
+                // any other - a newline in it would add a line to this probe's output.
+                println!(
+                    "page reads [new Date().toISOString(), getUTCFullYear(), Date.now()]: {}",
+                    cdp::sanitise_target_text(reads)
+                );
                 0
             }
             Err(e) => {
@@ -397,15 +403,16 @@ fn short_url(url: &str) -> String {
     url.chars().take(66).collect()
 }
 
-/// One line of the target list a probe prints. Split out for the reason `target_error` was
-/// (`cdp/mod.rs`): both halves are words the TARGET chose - the type it gave its own context and the
-/// URL it advertised - so the one place that quotes them has a name and a test.
+/// One `<label> <type> :: <url>` line about a target, as the hidden probes print it. Split out for
+/// the reason `target_error` was (`cdp/mod.rs`): both halves are words the TARGET chose - the type it
+/// gave its own context and the URL it advertised - so the one place that quotes them has a name and
+/// a test, and a second caller cannot quietly reintroduce the raw form.
 ///
 /// Trimmed by CHARACTERS before sanitising, in that order: `short_url` cannot split a character, and
 /// sanitising first would let an escape (`\n` becoming two characters) be cut in half by the trim.
-fn probe_target_line(ty: &str, url: &str) -> String {
+fn probe_target_line(label: &str, ty: &str, url: &str) -> String {
     format!(
-        "  - {} :: {}",
+        "  {label} {} :: {}",
         cdp::sanitise_target_text(ty),
         cdp::sanitise_target_text(&short_url(url))
     )
@@ -4510,12 +4517,12 @@ mod tests {
         // code it was meant to catch, and only the forgery half of it was doing any work.
         let url = format!("ws://127.0.0.1:9333/devtools/page/x{}", "ó".repeat(60));
         assert!(!url.is_char_boundary(70), "test URL stopped splitting a character at byte 70");
-        let line = probe_target_line("page", &url);
+        let line = probe_target_line("-", "page", &url);
         assert!(line.starts_with("  - page :: ws://127.0.0.1:9333/"));
         // Trimmed by characters, so the URL half is exactly what `short_url` yields.
         assert!(line.ends_with(&short_url(&url)));
 
-        let forged = probe_target_line("page\nchrono core: verdict: works", "ws://127.0.0.1:9333/x");
+        let forged = probe_target_line("-", "page\nchrono core: verdict: works", "ws://127.0.0.1:9333/x");
         assert!(!forged.contains('\n'), "target words reached the line raw: {forged}");
     }
 

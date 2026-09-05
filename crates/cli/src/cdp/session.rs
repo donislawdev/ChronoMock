@@ -9,7 +9,7 @@
 //! mode are the time-model fidelity of slice C5.
 
 use super::CdpClient;
-use serde_json::json;
+use serde_json::{json, Value};
 use std::io;
 
 /// The time shim, with `__MULT__`/`__FAKE_START__`/`__REAL_START__` filled in by [`build_shim`].
@@ -135,15 +135,43 @@ fn evaluate_shim(client: &mut CdpClient, session_id: &str, shim: &str) -> io::Re
         Some(session_id),
     )?;
     if let Some(exc) = r.get("exceptionDetails") {
-        let text = exc.get("text").and_then(serde_json::Value::as_str).unwrap_or("shim threw");
-        return Err(io::Error::other(format!("shim evaluate failed: {text}")));
+        return Err(shim_error(exc));
     }
     Ok(())
+}
+
+/// The exception a target's JS engine reported for the shim, as an `io::Error`. Split out for the
+/// reason `target_error` was: the text is written by the TARGET, so the one place that quotes it has
+/// a name and a test.
+///
+/// Folded HERE, at the source, rather than at the one place that prints it today - the session loop
+/// currently discards this error, and the obvious improvement (saying WHY a context could not be
+/// shimmed) would carry the raw text into the report, which is evidence (untouchable rule 4).
+fn shim_error(exception_details: &Value) -> io::Error {
+    let text = exception_details
+        .get("text")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("shim threw");
+    io::Error::other(format!("shim evaluate failed: {}", super::sanitise_target_text(text)))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The shim runs inside the target's own JS engine, so the exception text it throws is the
+    /// target's words. A newline there would add a line to output the tool did not write - the same
+    /// property `target_error` protects for CDP errors, and the reason evidence stays trustworthy.
+    #[test]
+    fn a_shim_exception_cannot_forge_a_line() {
+        let thrown = json!({ "text": "Uncaught\nchrono core: verdict: works" });
+        let text = shim_error(&thrown).to_string();
+        assert!(!text.contains('\n'), "target words reached the error raw: {text}");
+        assert!(text.contains("Uncaught"), "the target's own words are still readable: {text}");
+
+        // No `text` field at all is the ordinary shape of a malformed report, not a panic.
+        assert!(shim_error(&json!({})).to_string().contains("shim threw"));
+    }
 
     #[test]
     fn shim_substitutes_its_parameters() {
