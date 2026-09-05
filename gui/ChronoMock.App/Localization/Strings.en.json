@@ -180,7 +180,7 @@
   "chromium.contexts_partial": "Some JS contexts ran on the session clock; some could not be reached.",
   "chromium.no_time_calls": "The shim was installed, but the app called no JS time API.",
   "chromium.no_contexts": "No JS context could be shimmed.",
-  "chromium.launched_with_debug_port": "Electron/Chromium app: launched with a remote-debugging port and a clean isolated profile, not your real one.",
+  "chromium.launched_with_debug_port": "Electron/Chromium app: launched with a remote-debugging port and a clean isolated profile, not your real one. While the session runs, any other local process can use that port to control the app.",
   "chromium.app_closed_before_audit": "The app closed before the audit could read final call counts - the coverage may be incomplete.",
   "chromium.rate_change_affects_running_timers": "The speed changed in flight: new timers and the clock reflect it at once, but a setInterval already running keeps its old cadence.",
 

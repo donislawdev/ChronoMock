@@ -1412,8 +1412,13 @@ fn describe_warning(key: &str) -> String {
         "source.network_at_start" => {
             "the target opened a network connection - it may read time from a server, which no local hook can cover"
         }
+        // Says what the port MEANS, not just that there is one. Chromium's debugging port listens on
+        // loopback with no authentication, so for as long as the session runs, any other process on
+        // this machine can attach to it and drive the app - read its pages, run JavaScript in it,
+        // navigate it. That is a fact about the session the tester is entitled to before they point
+        // this at something that matters, and the previous wording read as a note about tidiness.
         "chromium.launched_with_debug_port" => {
-            "an Electron/Chromium app: launched with a remote-debugging port and a clean isolated profile, not your real one"
+            "an Electron/Chromium app: launched with a remote-debugging port and a clean isolated profile, not your real one - while the session runs, any other local process can use that port to control the app"
         }
         "chromium.app_closed_before_audit" => {
             "the app closed before the audit could read final call counts - the coverage below may be incomplete"
@@ -2664,21 +2669,64 @@ fn is_valid_catalogue_id(id: &str) -> bool {
     !id.is_empty() && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
 }
 
+/// Locate `<kind>/<id>.json` - the shared lookup behind calendars and presets.
+///
+/// Next to the executable first, then the working directory. The second is what makes a dev
+/// checkout work: `chrono.exe` is built into `target/<triple>/release/`, which has no `calendars/`
+/// beside it, so every `cargo run -- calc --calendar` and all 133 harness scenarios resolve through
+/// the working directory. It cannot simply be dropped.
+///
+/// What it must NOT do is rescue an INSTALLED layout. If the folder beside the executable exists but
+/// does not hold the file, the answer is "missing", not "here is one from wherever you happened to
+/// be standing" - otherwise `chrono calc --calendar us-banking`, run from a directory someone else
+/// can write to, silently answers business-day questions from THEIR holidays, in a report a tester
+/// then quotes as evidence (untouchable rule 4). Directories are taken as given so all three cases
+/// are testable without touching the process's real working directory.
+fn find_catalogue_in(exe_dir: Option<&std::path::Path>, cwd: &std::path::Path, kind: &str, id: &str) -> Option<std::path::PathBuf> {
+    let name = format!("{id}.json");
+    if let Some(dir) = exe_dir {
+        let installed = dir.join(kind);
+        let candidate = installed.join(&name);
+        if candidate.is_file() {
+            return Some(candidate);
+        }
+        if installed.is_dir() {
+            return None; // an installed catalogue answers for itself, including "not here"
+        }
+    }
+    let local = cwd.join(kind).join(&name);
+    local.is_file().then_some(local)
+}
+
+/// [`find_catalogue_in`] against this process's real executable and working directory.
+fn find_catalogue_file(kind: &str, id: &str) -> Option<std::path::PathBuf> {
+    let exe = std::env::current_exe().ok();
+    let exe_dir = exe.as_ref().and_then(|e| e.parent());
+    let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+    find_catalogue_in(exe_dir, &cwd, kind, id)
+}
+
+/// Where the lookup actually looked, for the "not found" message. The two layouts differ, and naming
+/// `./<kind>` for an installed one that never consulted it would send the reader to fix the wrong
+/// folder - in the single message they have to act on (rule 6).
+fn catalogue_search_places(kind: &str) -> String {
+    let installed = std::env::current_exe()
+        .ok()
+        .and_then(|e| e.parent().map(|d| d.join(kind)))
+        .is_some_and(|d| d.is_dir());
+    if installed {
+        format!("looked in <exe>/{kind}")
+    } else {
+        format!("looked in <exe>/{kind} and ./{kind}")
+    }
+}
+
 fn find_calendar_file(id: &str) -> Result<std::path::PathBuf, String> {
     if !is_valid_catalogue_id(id) {
         return Err(format!("invalid calendar id '{id}' (use letters, digits, '-' or '_')"));
     }
-    let name = format!("{id}.json");
-    let mut candidates: Vec<std::path::PathBuf> = Vec::new();
-    if let Ok(exe) = std::env::current_exe()
-        && let Some(dir) = exe.parent() {
-            candidates.push(dir.join("calendars").join(&name));
-        }
-    candidates.push(std::path::Path::new("calendars").join(&name));
-    candidates
-        .into_iter()
-        .find(|p| p.is_file())
-        .ok_or_else(|| format!("calendar '{id}' not found (looked in <exe>/calendars and ./calendars)"))
+    find_catalogue_file("calendars", id)
+        .ok_or_else(|| format!("calendar '{id}' not found ({})", catalogue_search_places("calendars")))
 }
 
 /// Load and validate a calendar by id, mapping the JSON schema to the core engine's types.
@@ -3297,17 +3345,8 @@ fn find_preset_file(id: &str) -> Result<std::path::PathBuf, PresetError> {
             "invalid preset id '{id}' (use letters, digits, '-' or '_')"
         )));
     }
-    let name = format!("{id}.json");
-    let mut candidates: Vec<std::path::PathBuf> = Vec::new();
-    if let Ok(exe) = std::env::current_exe()
-        && let Some(dir) = exe.parent() {
-            candidates.push(dir.join("presets").join(&name));
-        }
-    candidates.push(std::path::Path::new("presets").join(&name));
-    candidates
-        .into_iter()
-        .find(|p| p.is_file())
-        .ok_or_else(|| PresetError::NotFound(format!("preset '{id}' not found (looked in <exe>/presets and ./presets)")))
+    find_catalogue_file("presets", id)
+        .ok_or_else(|| PresetError::NotFound(format!("preset '{id}' not found ({})", catalogue_search_places("presets"))))
 }
 
 /// Load and validate a preset by id.
@@ -4549,6 +4588,44 @@ mod tests {
         // A short URL is returned whole, and ASCII behaves exactly as before.
         assert_eq!(short_url("ws://127.0.0.1:9333/x"), "ws://127.0.0.1:9333/x");
         assert_eq!(short_url(&"a".repeat(100)).len(), 66);
+    }
+
+    /// An installed layout answers for its own catalogue, "not here" included. Without that, running
+    /// `chrono calc --calendar us-banking` from a directory someone else can write to answered
+    /// business-day questions out of THEIR file whenever the shipped one was missing - different
+    /// holidays, different answers, no warning, in output a tester quotes as evidence.
+    ///
+    /// The working-directory fallback itself has to stay: `chrono.exe` is built into
+    /// `target/<triple>/release/`, which has no `calendars/` beside it, so a dev checkout and all
+    /// 133 harness scenarios resolve that way.
+    #[test]
+    fn an_installed_catalogue_is_not_rescued_from_the_working_directory() {
+        let root = std::env::temp_dir().join(format!("chrono-catalogue-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let exe_dir = root.join("app");
+        let cwd = root.join("elsewhere");
+        std::fs::create_dir_all(exe_dir.join("calendars")).unwrap();
+        std::fs::create_dir_all(cwd.join("calendars")).unwrap();
+        std::fs::write(cwd.join("calendars").join("us-banking.json"), "{}").unwrap();
+
+        // Installed layout, file absent from it: the one in the working directory is NOT used.
+        assert_eq!(find_catalogue_in(Some(&exe_dir), &cwd, "calendars", "us-banking"), None);
+
+        // Installed layout that does have it: that copy wins.
+        let shipped = exe_dir.join("calendars").join("us-banking.json");
+        std::fs::write(&shipped, "{}").unwrap();
+        assert_eq!(find_catalogue_in(Some(&exe_dir), &cwd, "calendars", "us-banking"), Some(shipped));
+
+        // No catalogue beside the executable at all - a dev checkout. The fallback still works, and
+        // this is the case the harness runs in.
+        let bare = root.join("bare");
+        std::fs::create_dir_all(&bare).unwrap();
+        assert_eq!(
+            find_catalogue_in(Some(&bare), &cwd, "calendars", "us-banking"),
+            Some(cwd.join("calendars").join("us-banking.json"))
+        );
+
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     /// The protocol line was the only input channel in this tool without a bound, so a writer that

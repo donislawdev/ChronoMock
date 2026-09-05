@@ -180,7 +180,7 @@
   "chromium.contexts_partial": "Część kontekstów JS działała na zegarze sesji, części nie udało się objąć.",
   "chromium.no_time_calls": "Shim został wstrzyknięty, ale aplikacja nie wywołała żadnego API czasu JS.",
   "chromium.no_contexts": "Nie udało się objąć żadnego kontekstu JS.",
-  "chromium.launched_with_debug_port": "Aplikacja Electron/Chromium: uruchomiona z portem zdalnego debugowania i czystym izolowanym profilem, nie Twoim prawdziwym.",
+  "chromium.launched_with_debug_port": "Aplikacja Electron/Chromium: uruchomiona z portem zdalnego debugowania i czystym izolowanym profilem, nie Twoim prawdziwym. Dopóki sesja trwa, dowolny inny lokalny proces może przez ten port sterować aplikacją.",
   "chromium.app_closed_before_audit": "Aplikacja zamknęła się, zanim audyt zdążył odczytać końcowe liczniki wywołań - pokrycie może być niepełne.",
   "chromium.rate_change_affects_running_timers": "Prędkość zmieniła się w locie: nowe timery i zegar odzwierciedlają ją od razu, ale już działający setInterval zachowuje stare tempo.",
 
