@@ -3,7 +3,7 @@
 
   "id": "date-test-scenarios",
   "order": 75,
-  "nav": false,
+  "nav": true,
 
   "languages": {
     "en": {

@@ -5,7 +5,7 @@
 
   "id": "runasdate-alternative",
   "order": 20,
-  "nav": false,
+  "nav": true,
 
   "languages": {
     "en": {

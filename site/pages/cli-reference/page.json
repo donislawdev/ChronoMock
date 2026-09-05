@@ -3,7 +3,7 @@
 
   "id": "cli-reference",
   "order": 85,
-  "nav": false,
+  "nav": true,
 
   "languages": {
     "en": {

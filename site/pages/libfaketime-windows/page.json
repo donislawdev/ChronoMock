@@ -5,7 +5,7 @@
 
   "id": "libfaketime-windows",
   "order": 30,
-  "nav": false,
+  "nav": true,
 
   "languages": {
     "en": {
