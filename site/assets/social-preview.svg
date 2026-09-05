@@ -1,11 +1,23 @@
-<!-- Source for social-preview.png, the picture shown when a link to this site is
-     pasted into a chat or a social network. Kept as SVG in the repository so it can be
-     regenerated rather than only inherited:
+<!-- Source for social-preview.png: the picture shown when a link to this project is pasted
+     into a chat or a social network, and the image uploaded as the repository's social
+     preview on GitHub. Kept as SVG in the repository so it can be regenerated rather than
+     only inherited:
 
        magick -density 384 -background none site/assets/social-preview.svg \
               -resize 1280x640 site/assets/social-preview.png
 
-     1280x640 is 2:1, which is what a large summary card crops to without cutting.
+     1280x640 is 2:1, which is what a large summary card crops to without cutting, and it is
+     also the size GitHub recommends. GitHub's other two rules are met by construction: the
+     file stays well under 1 MB, and the background is solid rather than transparent, because
+     platforms render transparency differently in dark mode. Uploading it to the repository is
+     a manual step in Settings > General > Social preview - GitHub exposes no API for it.
+
+     Judge a change to this file at about 300 pixels wide, not at full size: that is how it
+     arrives in a chat preview. What has to survive that shrink is the headline, the two dates
+     and the wordmark. The chips are texture at that size and are meant to be.
+
+     Every claim here is checkable: 36 is chrono_ctl::CHANNEL_COUNT, the calculator ships the
+     us-banking, us-federal and pl calendars, and "a day in a minute" is the x1440 multiplier.
      The bean path is the same one as assets/chrono-bean.svg. -->
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 640" width="1280" height="640">
   <defs>
@@ -14,13 +26,17 @@
       <stop offset="42%" stop-color="#C0392B"/>
       <stop offset="100%" stop-color="#6E1414"/>
     </radialGradient>
+    <linearGradient id="glow" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1a1216"/>
+      <stop offset="100%" stop-color="#0f1013"/>
+    </linearGradient>
   </defs>
 
-  <rect width="1280" height="640" fill="#0f1013"/>
+  <rect width="1280" height="640" fill="url(#glow)"/>
   <rect x="0" y="0" width="1280" height="6" fill="#c0392b"/>
 
   <!-- Wordmark -->
-  <g transform="translate(80,74) scale(0.1875)">
+  <g transform="translate(80,60) scale(0.1875)">
     <g transform="translate(128,128) scale(1.38) translate(-147,-128)">
       <path d="M 140 46 C 178 48, 204 82, 202 128 C 200 174, 180 210, 146 210
                C 118 210, 98 192, 94 166 C 90 150, 120 142, 122 128
@@ -30,28 +46,58 @@
                transform="rotate(-28 150 92)"/>
     </g>
   </g>
-  <text x="136" y="106" font-family="Segoe UI, Arial, Helvetica, sans-serif"
+  <text x="136" y="92" font-family="Segoe UI, Arial, Helvetica, sans-serif"
         font-size="30" font-weight="600" fill="#e7e9ee">Chrono Mock</text>
+  <rect x="80" y="112" width="92" height="5" rx="2.5" fill="#c0392b"/>
 
   <!-- Headline -->
-  <text x="80" y="240" font-family="Segoe UI, Arial, Helvetica, sans-serif"
-        font-size="76" font-weight="700" fill="#e7e9ee">Run a Windows app</text>
+  <text x="80" y="212" font-family="Segoe UI, Arial, Helvetica, sans-serif"
+        font-size="53" font-weight="700" fill="#e7e9ee">Run a Windows app</text>
+  <text x="80" y="276" font-family="Segoe UI, Arial, Helvetica, sans-serif"
+        font-size="53" font-weight="700" fill="#e4573f">at any date.</text>
+
+  <!-- Sub: the promise that removes the fear, then the second half of the product -->
   <text x="80" y="330" font-family="Segoe UI, Arial, Helvetica, sans-serif"
-        font-size="76" font-weight="700" fill="#e4573f">at any date</text>
-  <text x="80" y="404" font-family="Segoe UI, Arial, Helvetica, sans-serif"
-        font-size="34" font-weight="400" fill="#98a0ad">without touching the system clock</text>
+        font-size="24" fill="#a6adb9">Without touching the system clock. Plus a date</text>
+  <text x="80" y="362" font-family="Segoe UI, Arial, Helvetica, sans-serif"
+        font-size="24" fill="#a6adb9">calculator for working out which dates to test.</text>
 
-  <!-- The two clocks, the same idea as the panel on the page -->
-  <g transform="translate(80,470)">
-    <rect x="0" y="0" width="380" height="104" rx="12" fill="#16181d" stroke="#272b34"/>
-    <text x="20" y="34" font-family="Segoe UI, Arial, sans-serif" font-size="19" fill="#6f7783">The application sees</text>
-    <text x="20" y="76" font-family="Consolas, monospace" font-size="30" font-weight="600" fill="#e4573f">2027-12-31 23:59:50</text>
+  <!-- Chips: both halves of the product, six facts a reader can go and check -->
+  <g font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="20" fill="#c8ccd4">
+    <rect x="80"  y="398" width="250" height="42" rx="21" fill="#181c22" stroke="#2d323d"/>
+    <text x="100" y="426">no system clock change</text>
+    <rect x="342" y="398" width="202" height="42" rx="21" fill="#181c22" stroke="#2d323d"/>
+    <text x="362" y="426">a day in a minute</text>
 
-    <rect x="404" y="0" width="380" height="104" rx="12" fill="#16181d" stroke="#272b34"/>
-    <text x="424" y="34" font-family="Segoe UI, Arial, sans-serif" font-size="19" fill="#6f7783">The machine still sees</text>
-    <text x="424" y="76" font-family="Consolas, monospace" font-size="30" font-weight="600" fill="#e7e9ee">2026-09-04 18:12:33</text>
+    <rect x="80"  y="450" width="268" height="42" rx="21" fill="#181c22" stroke="#2d323d"/>
+    <text x="100" y="478">date calculator built in</text>
+    <rect x="360" y="450" width="192" height="42" rx="21" fill="#181c22" stroke="#2d323d"/>
+    <text x="380" y="478">US + PL holidays</text>
+
+    <rect x="80"  y="502" width="268" height="42" rx="21" fill="#181c22" stroke="#2d323d"/>
+    <text x="100" y="530">36 time channels audited</text>
+    <rect x="360" y="502" width="126" height="42" rx="21" fill="#181c22" stroke="#2d323d"/>
+    <text x="380" y="530">GUI + CLI</text>
   </g>
 
-  <text x="1200" y="592" text-anchor="end" font-family="Segoe UI, Arial, sans-serif"
-        font-size="22" fill="#6f7783">Free and open source &#183; GPL-3.0 &#183; Windows</text>
+  <text x="80" y="590" font-family="Segoe UI, Arial, Helvetica, sans-serif"
+        font-size="22" font-weight="600" fill="#c8ccd4">Windows<tspan fill="#6f7784" font-weight="400"> · portable, no install · free and open source, GPL-3.0</tspan></text>
+
+  <!-- Proof: the whole product idea in two timestamps, both of them real readings -->
+  <g>
+    <rect x="650" y="176" width="550" height="152" rx="14" fill="#17131a" stroke="#7d2b22"/>
+    <text x="682" y="222" font-family="Segoe UI, Arial, Helvetica, sans-serif"
+          font-size="22" fill="#9aa1ae">The application sees</text>
+    <text x="682" y="292" font-family="Consolas, Menlo, monospace"
+          font-size="42" font-weight="700" fill="#e4573f">2027-12-31 23:59:50</text>
+
+    <rect x="650" y="352" width="550" height="152" rx="14" fill="#141920" stroke="#2a2f39"/>
+    <text x="682" y="398" font-family="Segoe UI, Arial, Helvetica, sans-serif"
+          font-size="22" fill="#9aa1ae">The machine still sees</text>
+    <text x="682" y="468" font-family="Consolas, Menlo, monospace"
+          font-size="42" font-weight="700" fill="#e7e9ee">2026-09-05 18:12:33</text>
+
+    <text x="650" y="548" font-family="Segoe UI, Arial, Helvetica, sans-serif"
+          font-size="21" fill="#6f7784">same machine, same second</text>
+  </g>
 </svg>
