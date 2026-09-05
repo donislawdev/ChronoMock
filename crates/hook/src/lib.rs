@@ -310,6 +310,18 @@ unsafe extern "system" fn watcher_proc(_p: *mut c_void) -> u32 { unsafe {
 
 /// Spawn the watcher once, lazily - NOT from DllMain, to stay clear of the loader lock.
 fn ensure_watcher() {
+    // Relaxed load first, and it is the hot path that pays for it. `detached()` calls this on EVERY
+    // detour - every clock read, every wait, every timer arm - and `compare_exchange` emits a LOCKED
+    // read-modify-write whether or not it succeeds. So the one-time setup below was charging a bus
+    // lock to the hottest path this product has, forever, to re-learn a fact settled once.
+    //
+    // A relaxed read is enough because the flag is one-way: set once, never cleared, and nothing is
+    // published alongside it (the watcher's own result travels through DETACHED). Both ways of racing
+    // are harmless - a stale `false` falls through to the CAS, which then fails exactly as it does
+    // today, and a `true` means some thread already won and there is nothing left to do.
+    if WATCHER_STARTED.load(Ordering::Relaxed) {
+        return;
+    }
     if CORE_HANDLE.get().is_some()
         && WATCHER_STARTED
             .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
