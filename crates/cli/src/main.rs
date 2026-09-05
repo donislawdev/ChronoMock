@@ -403,6 +403,41 @@ fn short_url(url: &str) -> String {
     url.chars().take(66).collect()
 }
 
+/// The largest NDJSON line either side of the protocol will read, in bytes.
+///
+/// Every other input channel in this tool is bounded - `MAX_WS_BYTES`, `MAX_HTTP_BODY`,
+/// `MAX_HEADERS`, `MAX_HEADER_LINE`, `MAX_QUEUED_EVENTS`, the seqlock read budget, the
+/// business-day walk - and the protocol line was the one that was not: a writer that never sent a
+/// newline grew the reader's buffer for as long as it liked. Both ends are processes this tool
+/// started, so this is depth rather than a hole; the failure it actually guards is our own, a core
+/// stuck mid-line taking the driver's memory with it.
+///
+/// A megabyte is a deliberate 680x over the largest line MEASURED on 2026-09-05: a native session at
+/// full coverage (36 channels, `--scale-duration`) emits a 1 533-byte `coverage` event, and a CDP
+/// session 291. The cap is meant to catch a stream that has stopped making sense, not to be a size
+/// the protocol ever approaches.
+const MAX_PROTOCOL_LINE: usize = 1024 * 1024;
+
+/// Read one NDJSON protocol line, refusing one that never ends. `Ok(0)` is EOF, as with `read_line`.
+///
+/// A line at the cap with no newline in it is an error and NOT a truncated line handed onwards: the
+/// reader is then parked mid-line, so the remainder would arrive as the next "line" and parse as
+/// junk - or worse, as a different event than the writer sent.
+fn read_protocol_line<R: BufRead>(reader: &mut R, line: &mut String) -> std::io::Result<usize> {
+    line.clear();
+    // UFCS on purpose: method syntax auto-derefs to `R`, and `Read::take` consumes its receiver, so
+    // `reader.take(..)` tries to move the reader out of the borrow. Naming `&mut R` as the receiver
+    // borrows it for the length of the read instead.
+    let n = std::io::Read::take(&mut *reader, MAX_PROTOCOL_LINE as u64).read_line(line)?;
+    if n == MAX_PROTOCOL_LINE && !line.ends_with('\n') {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!("protocol line exceeds {MAX_PROTOCOL_LINE} bytes with no newline"),
+        ));
+    }
+    Ok(n)
+}
+
 /// One `<label> <type> :: <url>` line about a target, as the hidden probes print it. Split out for
 /// the reason `target_error` was (`cdp/mod.rs`): both halves are words the TARGET chose - the type it
 /// gave its own context and the URL it advertised - so the one place that quotes them has a name and
@@ -1066,12 +1101,19 @@ fn driver_run(argv: &[String]) -> i32 {
     let mut states_seen: u64 = 0;
     let mut end_sent = false;
     if let Some(stdout) = child.stdout.take() {
-        let reader = BufReader::new(stdout);
-        for line in reader.lines() {
-            let line = match line {
-                Ok(l) => l,
-                Err(_) => break,
-            };
+        let mut reader = BufReader::new(stdout);
+        // Not `reader.lines()`: that grows one line without limit, and this is the driver reading a
+        // core it launched. A line past the cap ends the stream like a read error would.
+        let mut raw = String::new();
+        loop {
+            match read_protocol_line(&mut reader, &mut raw) {
+                Ok(0) | Err(_) => break,
+                Ok(_) => {}
+            }
+            // `lines()` strips the terminator and this stands in its place, so every reader below
+            // sees exactly what it saw before.
+            let line = raw.strip_suffix('\n').unwrap_or(&raw);
+            let line = line.strip_suffix('\r').unwrap_or(line).to_string();
             if line.is_empty() {
                 continue;
             }
@@ -3858,7 +3900,9 @@ fn core_mode() -> i32 {
     // afterwards, so it can keep reading subsequent commands (query, end).
     let mut reader = BufReader::new(std::io::stdin());
     let mut line = String::new();
-    let n = reader.read_line(&mut line).unwrap_or(0);
+    // A line past the cap reads as "no command": the stream has stopped making sense, and the honest
+    // answer is the refusal below rather than a guess at what the first megabyte meant.
+    let n = read_protocol_line(&mut reader, &mut line).unwrap_or(0);
     if n == 0 {
         emit(&Event::Error {
             v: PROTOCOL_VERSION,
@@ -4075,8 +4119,10 @@ fn run_session(
         let mut reader = reader;
         let mut line = String::new();
         loop {
-            line.clear();
-            match reader.read_line(&mut line) {
+            // `read_protocol_line` clears the buffer itself, and a line past the cap comes back as
+            // an error - which lands on the same branch as EOF, ending the command stream rather
+            // than resyncing onto the tail of a line nobody can vouch for.
+            match read_protocol_line(&mut reader, &mut line) {
                 Ok(0) | Err(_) => break, // EOF or error: dropping tx signals Disconnected
                 Ok(_) => {
                     if let Ok(cmd) = parse_command(line.trim_end())
@@ -4503,6 +4549,36 @@ mod tests {
         // A short URL is returned whole, and ASCII behaves exactly as before.
         assert_eq!(short_url("ws://127.0.0.1:9333/x"), "ws://127.0.0.1:9333/x");
         assert_eq!(short_url(&"a".repeat(100)).len(), 66);
+    }
+
+    /// The protocol line was the only input channel in this tool without a bound, so a writer that
+    /// never sent a newline grew the reader's buffer as long as it liked.
+    #[test]
+    fn a_protocol_line_that_never_ends_is_refused() {
+        let endless = vec![b'x'; MAX_PROTOCOL_LINE + 10];
+        let mut reader = std::io::BufReader::new(std::io::Cursor::new(endless));
+        let mut line = String::new();
+        assert!(read_protocol_line(&mut reader, &mut line).is_err());
+    }
+
+    /// The bound must not change what an ordinary session reads, including the shapes that sit near
+    /// its edges: an empty stream, and a final line with no terminator (which is NOT over-long, and
+    /// reading it as an error would truncate the last event of a session).
+    #[test]
+    fn ordinary_protocol_lines_are_unaffected_by_the_bound() {
+        let stream = "{\"type\":\"ready\"}\n{\"type\":\"state\"}\nlast line without a newline";
+        let mut reader = std::io::BufReader::new(std::io::Cursor::new(stream.as_bytes().to_vec()));
+        let mut line = String::new();
+
+        assert_eq!(read_protocol_line(&mut reader, &mut line).unwrap(), 17);
+        assert_eq!(line, "{\"type\":\"ready\"}\n");
+        // The buffer is cleared by the reader, so a caller cannot accidentally append events.
+        assert_eq!(read_protocol_line(&mut reader, &mut line).unwrap(), 17);
+        assert_eq!(line, "{\"type\":\"state\"}\n");
+
+        assert_eq!(read_protocol_line(&mut reader, &mut line).unwrap(), 27);
+        assert_eq!(line, "last line without a newline");
+        assert_eq!(read_protocol_line(&mut reader, &mut line).unwrap(), 0, "EOF");
     }
 
     /// The probe's target list quotes two strings the target chose, and this one call site kept the
