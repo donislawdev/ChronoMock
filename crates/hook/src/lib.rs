@@ -397,6 +397,22 @@ fn real_quit() -> i64 {
 }
 
 fn compute_fake() -> Option<i64> {
+    fake_now_and_dur_m().map(|(fake, _)| fake)
+}
+
+/// The fake wall clock AND the duration multiplier, from ONE anchor snapshot.
+///
+/// `compute_fake` and `dur_multiplier` each open their own seqlock transaction, so a caller needing
+/// both read the block twice and paid for it twice. The cost is the smaller half. The larger half is
+/// that `set_multiplier` can land BETWEEN the two reads, and then an absolute timer due date is
+/// scaled by a rate that does not belong to the `fake_now` it was measured against - the two halves
+/// of one answer taken from two different clocks. `read_dur` and `read_qpc` exist precisely so a
+/// multiplier and its base cannot drift apart on the duration and QPC axes; the class-C timers were
+/// the one place left where they still could.
+///
+/// The multiplier comes back as the DURATION multiplier (never below 1, untouchable rule 3), which is
+/// what every caller of this pair wants: a frozen wall clock must not freeze a timer.
+fn fake_now_and_dur_m() -> Option<(i64, i64)> {
     if detached() {
         return None; // core gone: wall detours fall through to the real value
     }
@@ -416,7 +432,7 @@ fn compute_fake() -> Option<i64> {
     // This crate has overflow-checks off (a panic across the detour boundary is UB), so the bounds
     // are written out rather than left to a debug assertion.
     let advanced = dq.saturating_mul(m);
-    Some(a_fake.saturating_add(advanced).min(chrono_ctl::FAKE_WALL_MAX))
+    Some((a_fake.saturating_add(advanced).min(chrono_ctl::FAKE_WALL_MAX), m.max(1)))
 }
 
 fn cur_tz_bias() -> i32 {
@@ -1186,22 +1202,20 @@ impl Drop for TimerGuard {
 /// partner sees the flag set and passes through) when it is; None on an internal cascade (pass
 /// through, uncounted) or when the core has detached (real time). Mirrors try_enter_wait on its own
 /// flag. Bumps coverage only for a top-level app call (rule 4).
-fn try_enter_timer(idx: usize) -> Option<(i64, TimerGuard)> {
+fn try_enter_timer(idx: usize) -> Option<TimerGuard> {
     if SCALING_TIMER.get() {
         return None; // internal cascade: pass through, do not bump
     }
     bump(idx);
-    if detached() {
-        // Symmetric to try_enter_wait (R2-S4): hold the guard even with the core gone, so an internal
-        // cascade (SetWaitableTimer -> SetWaitableTimerEx, should a Windows version take that path)
-        // still counts as ONE application call rather than two (rule 4). Multiplier 1 is harmless
-        // either way - a detached compute_fake returns None, so the caller forwards the arguments
-        // untouched - but the flag has to be set on this path, and it was not.
-        SCALING_TIMER.set(true);
-        return Some((1, TimerGuard));
-    }
+    // The guard is raised whether or not the core is still there. Symmetric to try_enter_wait
+    // (R2-S4): with the core gone an internal cascade (SetWaitableTimer -> SetWaitableTimerEx, should
+    // a Windows version take that path) must still count as ONE application call rather than two
+    // (rule 4). Nothing else is decided here - the caller asks `fake_now_and_dur_m` for the clock and
+    // the rate together, and a detached session answers None there, so the arguments are forwarded
+    // untouched. This used to return a multiplier of its own, read from a second snapshot of the
+    // control block that nothing tied to the one the due date was measured against.
     SCALING_TIMER.set(true);
-    Some((dur_multiplier(), TimerGuard))
+    Some(TimerGuard)
 }
 
 unsafe extern "system" fn h_swt(
@@ -1220,8 +1234,8 @@ unsafe extern "system" fn h_swt(
         // _guard held across the whole original call, so an internal cascade to SetWaitableTimerEx
         // passes through uncounted and unscaled. A null due (the API would reject it) or a detach
         // mid-call falls through to the original untouched.
-        Some((m, _guard)) => match (due.is_null(), compute_fake()) {
-            (false, Some(fake_now)) => {
+        Some(_guard) => match (due.is_null(), fake_now_and_dur_m()) {
+            (false, Some((fake_now, m))) => {
                 let scaled_due = scale_timer_due(*due, fake_now, m);
                 let scaled_period = scale_timer_period(period, m);
                 o(timer, &scaled_due as *const i64, scaled_period, pfn, arg, resume)
@@ -1246,8 +1260,8 @@ unsafe extern "system" fn h_swtex(
         None => return 0,
     };
     match try_enter_timer(IDX_SWTEX) {
-        Some((m, _guard)) => match (due.is_null(), compute_fake()) {
-            (false, Some(fake_now)) => {
+        Some(_guard) => match (due.is_null(), fake_now_and_dur_m()) {
+            (false, Some((fake_now, m))) => {
                 let scaled_due = scale_timer_due(*due, fake_now, m);
                 let scaled_period = scale_timer_period(period, m);
                 o(timer, &scaled_due as *const i64, scaled_period, pfn, arg, wake_context, tolerable_delay)
@@ -1328,11 +1342,13 @@ unsafe extern "system" fn h_connect(s: usize, name: *const c_void, namelen: i32)
 ///
 /// # Safety
 /// `pft`, when non-null, must point to a valid FILETIME.
-unsafe fn scale_tp_timer(pft: *const FILETIME, period: u32, window: u32, m: i64) -> Option<(FILETIME, u32, u32)> { unsafe {
+unsafe fn scale_tp_timer(pft: *const FILETIME, period: u32, window: u32) -> Option<(FILETIME, u32, u32)> { unsafe {
     if pft.is_null() {
         return None; // NULL = cancel: forward untouched
     }
-    let fake_now = compute_fake()?; // detached: forward untouched
+    // One snapshot for both halves: the due date is absolute, so the rate it is divided by has to be
+    // the rate that belongs to this `fake_now` and not to whatever the block said a moment earlier.
+    let (fake_now, m) = fake_now_and_dur_m()?; // detached: forward untouched
     let scaled_due = scale_timer_due(ft_to_i64(*pft), fake_now, m);
     Some((i64_to_ft(scaled_due), scale_timer_period_ms(period, m), scale_timer_elapse(window, m)))
 }}
@@ -1344,7 +1360,7 @@ unsafe extern "system" fn h_set_tp_timer(pti: *mut c_void, pft: *const FILETIME,
     };
     match try_enter_timer(IDX_TPTIMER) {
         // _guard held across the whole original call, so a Set -> ...Ex cascade passes through once.
-        Some((m, _guard)) => match scale_tp_timer(pft, period, window, m) {
+        Some(_guard) => match scale_tp_timer(pft, period, window) {
             Some((ft, p, w)) => o(pti, &ft as *const FILETIME, p, w),
             None => o(pti, pft, period, window),
         },
@@ -1363,7 +1379,7 @@ unsafe extern "system" fn h_set_tp_timer_ex(
         None => return 0,
     };
     match try_enter_timer(IDX_TPTIMEREX) {
-        Some((m, _guard)) => match scale_tp_timer(pft, period, window, m) {
+        Some(_guard) => match scale_tp_timer(pft, period, window) {
             Some((ft, p, w)) => o(pti, &ft as *const FILETIME, p, w),
             None => o(pti, pft, period, window),
         },
