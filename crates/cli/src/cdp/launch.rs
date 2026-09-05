@@ -104,7 +104,7 @@ pub fn launch_chromium(target: &str, args: &[String]) -> io::Result<LaunchedChro
 
     sweep_orphan_profiles();
     let user_data_dir = unique_temp_dir();
-    std::fs::create_dir_all(&user_data_dir)?;
+    create_profile_dir(&user_data_dir)?;
 
     let mut cmd = Command::new(target);
     cmd.arg(format!("--user-data-dir={}", user_data_dir.display()))
@@ -220,6 +220,28 @@ fn owner_pid_of_profile(name: &str) -> Option<u32> {
     name.strip_prefix("chrono-cdp-")?.split('-').next()?.parse().ok()
 }
 
+/// Create the isolated profile directory, failing if something is already sitting on the name.
+///
+/// `create_dir_all` succeeds on a directory that already exists, so anything pre-created under our
+/// name - a directory, or a junction pointing elsewhere - was silently adopted, and the browser
+/// profile for the session landed wherever that thing pointed. `create_dir` refuses instead, which
+/// turns a substituted profile into a loud failure rather than a session that quietly ran somewhere
+/// else. The parent is still created leniently: a missing `%TEMP%` is a broken machine, not an
+/// attack, and refusing there would be a regression for no security gain.
+///
+/// The name keeps `<pid>-<nanos>` and does NOT get a random component. That was considered and
+/// rejected: `std`'s only randomness (`RandomState`) documents no source and no unpredictability
+/// guarantee, so building a security argument on it would be a claim without backing, and pulling in
+/// `BCryptGenRandom` costs a new `windows` feature for a threat that is already closed here - with
+/// `create_dir`, guessing the name gets an error rather than an adopted directory. `%TEMP%` is
+/// per-user on Windows besides.
+fn create_profile_dir(dir: &std::path::Path) -> io::Result<()> {
+    if let Some(parent) = dir.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    std::fs::create_dir(dir)
+}
+
 fn unique_temp_dir() -> PathBuf {
     let nanos = SystemTime::now()
         .duration_since(SystemTime::UNIX_EPOCH)
@@ -231,6 +253,39 @@ fn unique_temp_dir() -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The isolated profile must be a directory WE made. `create_dir_all` adopted whatever was
+    /// already sitting on the name, so a pre-created directory (or a junction pointing elsewhere)
+    /// became the session's browser profile without a word.
+    /// Removes its directory even when an assertion above it fails. A plain call at the end of the
+    /// test does not run on the failing path, and the first version of this test proved it: a revert
+    /// run left `chrono-cdp-test-<pid>` sitting in %TEMP%, under a name close enough to the real one
+    /// to be mistaken for a leaked session profile.
+    struct TempDirGuard(PathBuf);
+    impl Drop for TempDirGuard {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    #[test]
+    fn a_profile_directory_that_already_exists_is_refused_not_adopted() {
+        // Deliberately NOT the `chrono-cdp-<pid>-<nanos>` shape: this is a test fixture, and it has
+        // no business looking like a session profile to `sweep_orphan_profiles` or to a human
+        // reading %TEMP%.
+        let dir = std::env::temp_dir().join(format!("chrono-profile-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let guard = TempDirGuard(dir.clone());
+
+        create_profile_dir(&dir).expect("first create should succeed");
+        assert!(dir.is_dir());
+
+        let second = create_profile_dir(&dir);
+        assert!(second.is_err(), "an existing directory was adopted instead of refused");
+
+        drop(guard);
+        assert!(!dir.exists(), "the guard left its fixture behind");
+    }
 
     /// R2-N8: our isolated profile is added BEFORE the user's arguments, and Chromium takes the
     /// last --user-data-dir it is given - so a user-supplied one would have won and the session
