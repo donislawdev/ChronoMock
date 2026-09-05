@@ -35,10 +35,10 @@
             <TextBlock Text="{DynamicResource calc.presets_header}"
                        FontSize="{StaticResource FontSizeCaption}" FontWeight="SemiBold"
                        Foreground="{DynamicResource BrushTextSecondary}" Margin="{StaticResource SpaceXs}" />
-            <ui:TextBox Margin="{StaticResource SpaceXs}"
+            <ui:TextBox x:Name="PresetFilterBox" Margin="{StaticResource SpaceXs}"
                         Text="{Binding PresetFilter, UpdateSourceTrigger=PropertyChanged}"
                         PlaceholderText="{DynamicResource calc.filter_placeholder}" />
-            <ItemsControl ItemsSource="{Binding Presets}" Margin="{StaticResource SpaceXs}">
+            <ItemsControl x:Name="PresetList" ItemsSource="{Binding Presets}" Margin="{StaticResource SpaceXs}">
               <ItemsControl.ItemTemplate>
                 <DataTemplate>
                   <Button Click="OnPresetClick" Tag="{Binding}"
@@ -72,7 +72,7 @@
             <TextBlock Text="{DynamicResource calc.start_point}" Margin="{StaticResource SpaceXs}"
                        FontSize="{StaticResource FontSizeCaption}" Foreground="{DynamicResource BrushTextSecondary}" />
             <StackPanel Orientation="Horizontal" Margin="{StaticResource SpaceXs}">
-              <ComboBox ItemsSource="{Binding BaseKinds}" SelectedItem="{Binding SelectedBase}"
+              <ComboBox x:Name="BaseKindBox" ItemsSource="{Binding BaseKinds}" SelectedItem="{Binding SelectedBase}"
                         ItemContainerStyle="{StaticResource LabelKeyComboItem}" MinWidth="140" VerticalAlignment="Center"
                         ToolTip="{DynamicResource tip.base_kind}">
                 <ComboBox.ItemTemplate>
@@ -84,7 +84,7 @@
               <!-- Specific date: the shared moment input (ISO box plus a calendar popup, locale-safe, rule 2),
                    the same control the substitution panel uses. Its DataContext is the base MomentField, so
                    Visibility binds to the view model through the CalculatorView, not the field. -->
-              <controls:MomentInput DataContext="{Binding Base}"
+              <controls:MomentInput x:Name="BaseMoment" DataContext="{Binding Base}"
                                     Margin="{StaticResource SpaceSm}" VerticalAlignment="Center"
                                     Visibility="{Binding DataContext.IsSpecificBase, RelativeSource={RelativeSource AncestorType={x:Type UserControl}}, Converter={StaticResource BoolToVis}}" />
             </StackPanel>
@@ -191,7 +191,7 @@
                 </DataTemplate>
               </ItemsControl.ItemTemplate>
             </ItemsControl>
-            <Button Content="{DynamicResource calc.add_step}" Click="OnAddStepClick"
+            <Button x:Name="AddStepButton" Content="{DynamicResource calc.add_step}" Click="OnAddStepClick"
                     ToolTip="{DynamicResource tip.add_step}"
                     Margin="{StaticResource SpaceXs}" HorizontalAlignment="Left" />
 
@@ -199,7 +199,7 @@
               <TextBlock Text="{DynamicResource calc.field_calendar}" VerticalAlignment="Center"
                          FontSize="{StaticResource FontSizeCaption}"
                          Foreground="{DynamicResource BrushTextSecondary}" />
-              <ComboBox ItemsSource="{Binding Calendars}" SelectedItem="{Binding SelectedCalendar}"
+              <ComboBox x:Name="CalendarBox" ItemsSource="{Binding Calendars}" SelectedItem="{Binding SelectedCalendar}"
                         ItemContainerStyle="{StaticResource LabelKeyComboItem}" ToolTip="{DynamicResource tip.calc_calendar}"
                         Margin="{StaticResource SpaceSm}" VerticalAlignment="Center" MinWidth="140">
                 <ComboBox.ItemTemplate>
@@ -323,7 +323,7 @@
             <TextBlock Text="{DynamicResource calc.all_formats}" Margin="{StaticResource SpaceXs}"
                        FontSize="{StaticResource FontSizeCaption}" FontWeight="SemiBold"
                        Foreground="{DynamicResource BrushTextSecondary}" />
-            <ItemsControl ItemsSource="{Binding Formats}" Margin="{StaticResource SpaceXs}">
+            <ItemsControl x:Name="FormatList" ItemsSource="{Binding Formats}" Margin="{StaticResource SpaceXs}">
               <ItemsControl.ItemTemplate>
                 <DataTemplate>
                   <Grid Margin="{StaticResource SpaceXs}">
@@ -350,7 +350,7 @@
             <TextBlock Text="{DynamicResource calc.custom_format}" Margin="{StaticResource SpaceXs}"
                        FontSize="{StaticResource FontSizeCaption}" FontWeight="SemiBold"
                        Foreground="{DynamicResource BrushTextSecondary}" />
-            <ui:TextBox Margin="{StaticResource SpaceXs}" FontFamily="{StaticResource FontFamilyMono}"
+            <ui:TextBox x:Name="CustomFormatBox" Margin="{StaticResource SpaceXs}" FontFamily="{StaticResource FontFamilyMono}"
                         Text="{Binding CustomFormatMask, UpdateSourceTrigger=LostFocus}"
                         PlaceholderText="{DynamicResource calc.custom_format_hint}"
                         ToolTip="{DynamicResource tip.custom_format}"
@@ -374,7 +374,7 @@
             <TextBlock Text="{Binding MetadataLine}" TextWrapping="Wrap" Margin="{StaticResource SpaceXs}"
                        FontSize="{StaticResource FontSizeCaption}" Foreground="{DynamicResource BrushTextPrimary}" />
 
-            <Button Content="{DynamicResource calc.use_in_substitution}" Margin="{StaticResource SpaceMd}"
+            <Button x:Name="UseInSubstitutionButton" Content="{DynamicResource calc.use_in_substitution}" Margin="{StaticResource SpaceMd}"
                     HorizontalAlignment="Stretch" Click="OnUseInSubstitutionClick"
                     ToolTip="{DynamicResource tip.use_in_substitution}"
                     ToolTipService.ShowOnDisabled="True"
@@ -393,7 +393,7 @@
                    FontSize="{StaticResource FontSizeCaption}" FontWeight="SemiBold"
                    Foreground="{DynamicResource BrushTextSecondary}" Margin="{StaticResource SpaceXs}" />
         <StackPanel Orientation="Horizontal" Margin="{StaticResource SpaceXs}">
-          <TextBox Text="{Binding AnalyzeText, UpdateSourceTrigger=LostFocus}" Width="160" VerticalAlignment="Center"
+          <TextBox x:Name="AnalyzeBox" Text="{Binding AnalyzeText, UpdateSourceTrigger=LostFocus}" Width="160" VerticalAlignment="Center"
                    FontFamily="{StaticResource FontFamilyMono}" ToolTip="{DynamicResource tip.analyze}"
                    AutomationProperties.Name="{DynamicResource calc.reverse_header}" />
           <TextBlock Text="{DynamicResource calc.analyze_ambiguous}" VerticalAlignment="Center" Margin="{StaticResource SpaceSm}"
