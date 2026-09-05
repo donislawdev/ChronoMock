@@ -1037,6 +1037,12 @@ fn driver_run(argv: &[String]) -> i32 {
     let mut cov_by_pid: HashMap<u32, ProcessCoverage> = HashMap::new();
     let mut pid_order: Vec<u32> = Vec::new(); // first-seen order, so the parent still leads the report
     let mut timing: Option<(String, i64, i64)> = None; // (fake wall reached, real ms, fake ms) from `ended`
+    // The target's own exit code and whatever teardown could not remove, both from `ended`. The wire
+    // has carried them since the session report grew a duration, and the GUI panel has shown them
+    // since 7446a59 - the human CLI report dropped them on the floor, so a plain `chrono run` could
+    // not tell "the app closed itself with code 3" from "we ended the session" (rule 6).
+    let mut target_exit: Option<i32> = None;
+    let mut residue: Vec<String> = Vec::new();
     let mut states_seen: u64 = 0;
     let mut end_sent = false;
     if let Some(stdout) = child.stdout.take() {
@@ -1111,10 +1117,19 @@ fn driver_run(argv: &[String]) -> i32 {
                     }
                     cov_by_pid.insert(pid, ProcessCoverage { covered: cov, observed: obs, uncovered: unc });
                 }
-                Ok(Event::Ended { elapsed_real_ms, elapsed_fake_ms, fake_end_wall, .. }) => {
+                Ok(Event::Ended {
+                    elapsed_real_ms,
+                    elapsed_fake_ms,
+                    fake_end_wall,
+                    target_exit_code,
+                    residue_keys,
+                    ..
+                }) => {
                     if let Some(wall) = fake_end_wall {
                         timing = Some((wall, elapsed_real_ms, elapsed_fake_ms));
                     }
+                    target_exit = target_exit_code;
+                    residue = residue_keys;
                     break;
                 }
                 _ => {}
@@ -1154,6 +1169,8 @@ fn driver_run(argv: &[String]) -> i32 {
         covered,
         observed,
         timing,
+        target_exit,
+        residue,
         // The core auto-detects a Chromium target and runs it over CDP; label the report's coverage
         // unit accordingly. Same pure function, same path string the core sees, so the two never drift.
         cdp: cdp::is_chromium_target(&ra.target),
@@ -1225,9 +1242,18 @@ struct SessionReport {
     /// Channels hooked but deliberately left real (waits, network, multimedia timers) - their own
     /// bucket so a reader never reads them as substituted.
     observed: Vec<(u32, String, u64)>,
-    /// Last state heartbeat seen: (fake wall reached, real ms elapsed, fake ms elapsed), or None
-    /// when the session was too short for a heartbeat. View-only, sampled from the state stream.
+    /// Session duration as the core states it in `ended`: (fake wall reached, real ms elapsed,
+    /// fake ms elapsed), or None when `ended` carried no end wall (a session that never started).
+    /// Authoritative, not sampled from the heartbeats - one source of truth (3d35a79).
     timing: Option<(String, i64, i64)>,
+    /// The target's own exit code from `ended.target_exit_code` - present only when the app exited
+    /// on its own. None for a `--ticks` cutoff (the target is still running), for a CDP session (we
+    /// close our own instance), and for a session that never started. Informational: it is NOT this
+    /// tool's exit code, which is the session verdict (docs/08 section 8).
+    target_exit: Option<i32>,
+    /// What teardown could not remove, from `ended.residue_keys`. Empty on a native session (its
+    /// hooks unhook themselves); today the only key is a Chromium temp profile that stayed locked.
+    residue: Vec<String>,
     /// Whether this was a Chromium (CDP) session: its coverage unit is a JS context, not an OS
     /// process, so the report says "context" instead of "pid".
     cdp: bool,
@@ -1354,6 +1380,35 @@ fn describe_warning(key: &str) -> String {
         key.to_string()
     } else {
         format!("{text} ({key})")
+    }
+}
+
+/// English text for a cleanup residue key from `ended.residue_keys`. Same shape as
+/// `describe_warning`: a known key gets prose plus the key, an unknown one is printed literally
+/// rather than swallowed, because a key we cannot name is still a mess we left (rule 6).
+fn describe_residue(key: &str) -> String {
+    let text = match key {
+        "cleanup.chromium_profile_left" => {
+            "the temporary Chromium profile could not be removed - delete it by hand if it lingers in your temp folder"
+        }
+        _ => "",
+    };
+    if text.is_empty() {
+        key.to_string()
+    } else {
+        format!("{text} ({key})")
+    }
+}
+
+/// Human label for the target's own exit code. `GetExitCodeProcess` yields a u32 that the wire
+/// carries as an i32, so a crash arrives as a large negative number - an access violation reads as
+/// -1073741819, which tells a tester nothing. A negative code therefore also gets the hexadecimal
+/// form (0xC0000005 there), which is the one that can be looked up.
+fn exit_code_label(code: i32) -> String {
+    if code < 0 {
+        format!("{code} (0x{:08X})", code as u32)
+    } else {
+        code.to_string()
     }
 }
 
@@ -1531,6 +1586,16 @@ fn render_report(r: &SessionReport) -> String {
         ));
     }
 
+    // The target's own exit code, when the app closed itself. Spelled out rather than printed bare,
+    // because the report already carries a second number that means something else entirely: this
+    // tool's exit code is the verdict (docs/08 section 8), never the target's.
+    if let Some(code) = r.target_exit {
+        out.push_str(&format!(
+            "  exited:   the target closed itself with code {}\n",
+            exit_code_label(code)
+        ));
+    }
+
     if !r.covered.is_empty() {
         out.push_str("  covered channels (substituted, with call counts):\n");
         for (pid, ch, calls) in &r.covered {
@@ -1556,6 +1621,15 @@ fn render_report(r: &SessionReport) -> String {
         out.push_str("  warnings:\n");
         for w in &r.warnings {
             out.push_str(&format!("            - {}\n", describe_warning(w)));
+        }
+    }
+
+    // Mess the session left behind. A run that could not clean up after itself says so rather than
+    // ending on a tidy-looking report (rule 6) - the same list the GUI panel shows.
+    if !r.residue.is_empty() {
+        out.push_str("  not fully cleaned up:\n");
+        for key in &r.residue {
+            out.push_str(&format!("            - {}\n", describe_residue(key)));
         }
     }
 
@@ -4794,6 +4868,8 @@ mod tests {
             covered: vec![],
             observed: vec![],
             timing: None,
+            target_exit: None,
+            residue: vec![],
             cdp: false,
         }
     }
@@ -4929,6 +5005,83 @@ mod tests {
         assert!(out.contains("observed channels (hooked but left real)"), "got:\n{out}");
         // Singular reads correctly (1 call, not "1 calls").
         assert!(out.contains("pid 1234: WaitForSingleObject (1 call)"), "got:\n{out}");
+    }
+
+    #[test]
+    fn target_exit_code_is_shown_as_the_apps_own() {
+        // The wire has carried `ended.target_exit_code` all along and the GUI panel has shown it
+        // since 7446a59; the CLI report dropped it, so a plain run could not tell "the app failed
+        // with code 3" from "we ended the session" (rule 6). Spelled out, because this report also
+        // carries a verdict whose code means something else entirely (docs/08 section 8).
+        let r = SessionReport {
+            session_verdict: Some(("works".into(), "session.family_covered".into(), 1)),
+            target_exit: Some(3),
+            ..empty_report()
+        };
+        let out = render_report(&r);
+        assert!(out.contains("the target closed itself with code 3"), "got:\n{out}");
+    }
+
+    #[test]
+    fn a_target_that_did_not_close_itself_gets_no_exit_line() {
+        // No exit code means the app did not close itself: a --ticks cutoff (it is still running),
+        // a CDP session (we close our own instance), or a session that never started. Printing 0
+        // there would state a result the session never observed (untouchable rule 4).
+        let r = SessionReport {
+            session_verdict: Some(("works".into(), "session.family_covered".into(), 1)),
+            target_exit: None,
+            ..empty_report()
+        };
+        let out = render_report(&r);
+        assert!(!out.contains("closed itself"), "got:\n{out}");
+        assert!(!out.contains("exited:"), "got:\n{out}");
+    }
+
+    #[test]
+    fn a_crash_exit_code_carries_the_hex_form() {
+        // GetExitCodeProcess yields a u32 the wire carries as an i32, so an access violation arrives
+        // as -1073741819 - a number nobody recognises until it is written 0xC0000005.
+        let r = SessionReport {
+            session_verdict: Some(("works".into(), "session.family_covered".into(), 1)),
+            target_exit: Some(-1073741819),
+            ..empty_report()
+        };
+        let out = render_report(&r);
+        assert!(out.contains("-1073741819 (0xC0000005)"), "got:\n{out}");
+    }
+
+    #[test]
+    fn cleanup_residue_is_reported_unknown_key_verbatim() {
+        let r = SessionReport {
+            session_verdict: Some(("works".into(), "chromium.contexts_covered".into(), 1)),
+            residue: vec!["cleanup.chromium_profile_left".into(), "cleanup.something_new".into()],
+            cdp: true,
+            ..empty_report()
+        };
+        let out = render_report(&r);
+        assert!(out.contains("not fully cleaned up"), "got:\n{out}");
+        assert!(out.contains("temporary Chromium profile"), "got:\n{out}");
+        assert!(out.contains("cleanup.chromium_profile_left"), "got:\n{out}");
+        // Same rule as warnings: a key we cannot name is still shown, never swallowed.
+        assert!(out.contains("cleanup.something_new"), "got:\n{out}");
+    }
+
+    #[test]
+    fn evidence_export_carries_the_target_exit_code() {
+        // docs/08 section 9: --report writes "the same readable report", so the file a tester cites
+        // as proof must not be missing what the console showed.
+        let r = SessionReport {
+            session_verdict: Some(("works".into(), "session.family_covered".into(), 1)),
+            target_exit: Some(2),
+            ..empty_report()
+        };
+        let p = EvidenceParams {
+            moment: "2038-01-19T03:14:07".into(),
+            zone: "+00:00".into(),
+            mode: "x60".into(),
+        };
+        let out = render_evidence(&r, &p);
+        assert!(out.contains("the target closed itself with code 2"), "got:\n{out}");
     }
 
     #[test]
