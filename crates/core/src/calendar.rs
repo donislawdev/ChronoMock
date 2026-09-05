@@ -185,23 +185,62 @@ pub fn holiday_on<'a>(date: &CivilDateTime, cal: &'a Calendar) -> Option<&'a Hol
 /// of any holiday in force. Observance is what makes a weekday a day off, so a Saturday July 4
 /// shifted to Friday makes that Friday a non-business day (US federal) while leaving it a business
 /// day (US banking).
-fn is_business_day_days(target: i64, cal: &Calendar) -> bool {
-    if cal.weekend.contains(&weekday(target)) {
-        return false;
+/// The days off around one year, worked out once and reused while the walk stays in that year.
+///
+/// Deciding whether a single day is a business day means evaluating every holiday rule for three
+/// years - Easter by Meeus among them - and a day-by-day walk did that again for every day it
+/// stepped over. The answer only changes when the YEAR changes, which is once per ~365 steps.
+///
+/// Kept as a type rather than a loop-local so there is still exactly ONE definition of "is this a
+/// business day": `is_business_day_days` builds one of these and asks it a single question, and the
+/// walk builds one and asks it many. Two copies of that predicate is how a calendar starts giving
+/// two answers.
+struct OffDays<'a> {
+    cal: &'a Calendar,
+    /// The year the cache was built for; `None` before the first question.
+    year: Option<i64>,
+    /// Observed dates of the holidays in force for that year and its neighbours, as day-counts.
+    /// A flat scan, not a set: our calendars hold ~14 holidays, so this is at most a few dozen
+    /// integers laid out contiguously, and hashing one of them would cost more than reading them all.
+    days: Vec<i64>,
+}
+
+impl<'a> OffDays<'a> {
+    fn new(cal: &'a Calendar) -> Self {
+        Self { cal, year: None, days: Vec::new() }
     }
-    // A holiday can be observed in an adjacent year (a Jan 1 that falls on Saturday observes on
-    // Dec 31 of the previous year under some rules; a Dec 31 on Sunday observes on Jan 1 of the
-    // next). Check that year and its neighbours so a shifted observance near a boundary counts.
-    let (year, _, _) = crate::civil_from_days(target);
-    for y in [year - 1, year, year + 1] {
-        for h in &cal.holidays {
-            let observed = holiday_days(&h.rule, y).map(|d| observed_days(d, cal.observed));
-            if in_force(h, y) && observed == Some(target) {
-                return false;
+
+    fn is_business_day(&mut self, target: i64) -> bool {
+        if self.cal.weekend.contains(&weekday(target)) {
+            return false;
+        }
+        let (year, _, _) = crate::civil_from_days(target);
+        if self.year != Some(year) {
+            self.rebuild(year);
+        }
+        !self.days.contains(&target)
+    }
+
+    fn rebuild(&mut self, year: i64) {
+        // A holiday can be observed in an adjacent year (a Jan 1 that falls on Saturday observes on
+        // Dec 31 of the previous year under some rules; a Dec 31 on Sunday observes on Jan 1 of the
+        // next). Take that year and its neighbours so a shifted observance near a boundary counts.
+        self.days.clear();
+        for y in [year - 1, year, year + 1] {
+            for h in &self.cal.holidays {
+                if in_force(h, y)
+                    && let Some(d) = holiday_days(&h.rule, y)
+                {
+                    self.days.push(observed_days(d, self.cal.observed));
+                }
             }
         }
+        self.year = Some(year);
     }
-    true
+}
+
+fn is_business_day_days(target: i64, cal: &Calendar) -> bool {
+    OffDays::new(cal).is_business_day(target)
 }
 
 /// Whether `date` is a business day (see `is_business_day_days`).
@@ -274,13 +313,16 @@ pub fn add_business_days(
     // file that needs more than that is degenerate: report it as the same "no result" the caller
     // already handles, rather than hanging.
     let mut budget = n.abs().saturating_mul(7).saturating_add(400);
+    // One cache for the whole walk: it is rebuilt when the walk crosses into another year, so the
+    // holiday rules are evaluated about once per 365 steps instead of once per step.
+    let mut off = OffDays::new(cal);
     while remaining > 0 {
         if budget == 0 {
             return Err(BusinessDayLimit::DegenerateCalendar);
         }
         budget -= 1;
         d += step;
-        if is_business_day_days(d, cal) {
+        if off.is_business_day(d) {
             remaining -= 1;
         }
     }
@@ -330,6 +372,35 @@ mod tests {
                 h("thanksgiving", HolidayRule::NthWeekday { month: 11, weekday: 4, order: 4 }, None),
                 h("memorial", HolidayRule::NthWeekday { month: 5, weekday: 1, order: -1 }, None),
             ],
+        }
+    }
+
+    /// The year cache in `OffDays` must answer exactly as a from-scratch evaluation does, at every
+    /// date - a cache that forgets to rebuild when the walk crosses into a new year would still pass
+    /// every golden-value test, because those all sit inside one year. Reused instance versus a fresh
+    /// instance per question, over five years and across four year boundaries, on all four observance
+    /// modifiers (they move holidays across 31 December and 1 January, which is exactly where a stale
+    /// window shows).
+    #[test]
+    fn the_reused_year_cache_answers_as_a_fresh_one_does() {
+        for observed in [
+            Observed::None,
+            Observed::SatToFriSunToMon,
+            Observed::SunToMon,
+            Observed::WeekendToMon,
+        ] {
+            let cal = us(observed);
+            let mut reused = OffDays::new(&cal);
+            let start = days(2021, 1, 1);
+            for d in start..start + 5 * 365 {
+                let fresh = OffDays::new(&cal).is_business_day(d);
+                assert_eq!(reused.is_business_day(d), fresh, "day {d}, observed {observed:?}");
+            }
+            // ...and backwards, which is the direction a negative business-day shift walks.
+            let mut back = OffDays::new(&cal);
+            for d in (start..start + 5 * 365).rev() {
+                assert_eq!(back.is_business_day(d), OffDays::new(&cal).is_business_day(d), "back {d}");
+            }
         }
     }
 
