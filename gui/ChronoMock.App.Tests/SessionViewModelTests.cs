@@ -1140,17 +1140,66 @@ public class SessionViewModelTests
     }
 
     [Fact]
-    public void Record_session_prepends_to_the_panel_and_persists()
+    public async Task Record_session_prepends_to_the_panel_and_persists()
     {
         var store = new InMemorySessionHistoryStore();
         var vm = new SessionViewModel(store);
         vm.SetTarget(@"C:\apps\Ledger.exe");
         vm.Apply(Verdict("works", "verdict.works.covered"));
 
-        vm.RecordSession();
+        await vm.RecordSessionAsync();
 
         Assert.Equal("Ledger.exe", vm.History[0].TargetName); // prepended for the panel
         Assert.Equal("Ledger.exe", Assert.Single(store.Load()).TargetName); // persisted to the store
+    }
+
+    /// <summary>The panel's collection is bound to the window, so it must be updated on the thread that
+    /// called in - only the file write may leave it. The store here blocks inside Append, so the assertion
+    /// runs while the write is still in flight: the entry has to be on the panel ALREADY. That is what
+    /// fails if someone takes the obvious-looking shortcut and wraps the whole method in Task.Run, which
+    /// WPF rejects at runtime with a collection-changed-from-the-wrong-thread failure that no test over an
+    /// unbound collection would ever see.
+    ///
+    /// Checking a thread id instead does NOT work, and was tried: a Task.Run whose body is quick finishes
+    /// before the await, the continuation then runs synchronously on the same thread, and the test passes
+    /// whether the code is right or wrong.</summary>
+    [Fact]
+    public async Task Record_session_puts_the_entry_on_the_panel_before_the_write_finishes()
+    {
+        var store = new GatedHistoryStore();
+        var vm = new SessionViewModel(store);
+        vm.SetTarget(@"C:\apps\Ledger.exe");
+
+        var recording = vm.RecordSessionAsync();
+
+        Assert.Single(vm.History);   // on the panel already - the mutation did not wait for the write
+        Assert.Empty(store.Load());  // and the write really is still blocked
+
+        store.Release();
+        await recording;
+        Assert.Single(store.Load());
+    }
+
+    /// <summary>History store whose Append blocks until the test releases it, so a test can look at the
+    /// panel while the write is still in flight.</summary>
+    private sealed class GatedHistoryStore : ISessionHistoryStore
+    {
+        private readonly System.Threading.ManualResetEventSlim _gate = new(false);
+        private readonly List<SessionRecord> _records = [];
+
+        public void Release() => _gate.Set();
+
+        public IReadOnlyList<SessionRecord> Load() => [.. _records];
+
+        public void Append(SessionRecord record)
+        {
+            _gate.Wait();
+            _records.Add(record);
+        }
+
+        public void Remove(SessionRecord record) => _records.Remove(record);
+
+        public void Clear() => _records.Clear();
     }
 
     [Fact]
@@ -1184,14 +1233,14 @@ public class SessionViewModelTests
     }
 
     [Fact]
-    public void Record_session_caps_the_panel_at_the_maximum()
+    public async Task Record_session_caps_the_panel_at_the_maximum()
     {
         var vm = new SessionViewModel();
         vm.SetTarget(@"C:\apps\Ledger.exe");
 
         for (int i = 0; i < SessionHistoryLimits.Max + 5; i++)
         {
-            vm.RecordSession();
+            await vm.RecordSessionAsync();
         }
 
         Assert.Equal(SessionHistoryLimits.Max, vm.History.Count);

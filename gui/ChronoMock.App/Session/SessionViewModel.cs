@@ -1153,7 +1153,7 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
             if (_launched)
             {
                 // A session actually ran (the target launched) - record it with its final verdict.
-                RecordSession();
+                await RecordSessionAsync();
             }
 
             if (client is not null)
@@ -1550,8 +1550,20 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
         };
 
     /// <summary>Record the just-ended session: prepend it to the panel and persist it. A write failure is
-    /// surfaced, never swallowed (rule 6, docs/04 section 7).</summary>
-    internal void RecordSession()
+    /// surfaced, never swallowed (rule 6, docs/04 section 7).
+    ///
+    /// The split is deliberate. <see cref="History"/> is bound to the window, so it is mutated HERE, on the
+    /// caller's thread - the session loop deliberately does not use ConfigureAwait(false), which is what
+    /// keeps this on the UI thread. Only the WRITE goes to the pool, because
+    /// <c>FileSessionHistoryStore.Append</c> ends in a move-retry loop that sleeps 20, 40, 60, 80 and 100 ms
+    /// while the destination is locked - two portable instances finishing at once park the dispatcher for
+    /// up to ~300 ms exactly as the panel says "session ended". Measured without contention the whole
+    /// append cycle is about 5 ms at the 50-record cap, so this is about the contended case, not the
+    /// ordinary one.
+    ///
+    /// Moving the WHOLE method off the UI thread, which is the obvious-looking fix, is wrong: the panel's
+    /// collection would then be changed from a pool thread and WPF refuses that outright.</summary>
+    internal async Task RecordSessionAsync()
     {
         var record = BuildRecord();
         History.Insert(0, record);
@@ -1560,15 +1572,23 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
             History.RemoveAt(History.Count - 1); // keep the panel in step with the store's cap
         }
 
-        try
+        // The exception is carried back as a value rather than rethrown: the message belongs on the panel,
+        // and awaiting a faulted Task.Run would wrap it in an AggregateException-shaped rethrow whose type
+        // filter is easy to get subtly wrong.
+        var error = await Task.Run(() =>
         {
-            _store.Append(record);
-            HistoryError = string.Empty;
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            HistoryError = ex.Message;
-        }
+            try
+            {
+                _store.Append(record);
+                return null;
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                return ex.Message;
+            }
+        }).ConfigureAwait(true);
+
+        HistoryError = error ?? string.Empty;
     }
 
     /// <summary>Remove one past session from the panel and the store. Mild and left un-confirmed (zasady/13
