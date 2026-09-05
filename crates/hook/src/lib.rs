@@ -1541,6 +1541,11 @@ unsafe fn inject_self(hproc: HANDLE) -> bool { unsafe {
     // the DLL did not load - a child of the other bitness being the ordinary reason. Same reading as
     // `mech::inject` (H-2), which is where this check was already made and this one was missing.
     let mut loaded = false;
+    // Whether LoadLibraryW is PROVABLY finished with the path buffer below. Nothing else may free it:
+    // `remote` holds the very string LoadLibraryW is reading, so releasing it while that call is still
+    // in flight is a use-after-free inside somebody else's application - the nondeterministic crash
+    // that is the worst outcome this tool can produce. With no thread created, nothing is reading it.
+    let mut thread_done = true;
     if let Ok(hthread) =
         CreateRemoteThread(hproc, None, 0, start, Some(remote as *const c_void), 0, None)
     {
@@ -1549,12 +1554,23 @@ unsafe fn inject_self(hproc: HANDLE) -> bool { unsafe {
         // A timeout leaves `loaded` false: we did not establish that the hook is there, and claiming
         // coverage we have not established is the one thing the audit may never do (rule 4).
         let mut code: u32 = 0;
-        if GetExitCodeThread(hthread, &mut code).is_ok() && code != 0 && code != STILL_ACTIVE_CODE {
-            loaded = true;
-        }
+        let read = GetExitCodeThread(hthread, &mut code).is_ok();
+        // Anything we could not read counts as "still running": an unknown thread state is not
+        // permission to pull the memory out from under it.
+        thread_done = read && code != STILL_ACTIVE_CODE;
+        loaded = thread_done && code != 0;
         let _ = CloseHandle(hthread);
     }
-    let _ = VirtualFreeEx(hproc, remote, 0, MEM_RELEASE);
+    if thread_done {
+        let _ = VirtualFreeEx(hproc, remote, 0, MEM_RELEASE);
+    } else {
+        // Deliberately leaked: about half a kilobyte of committed memory in a child that is already
+        // wedged in its own loader, against the chance of faulting it. Said out loud rather than done
+        // quietly (rule 6) - and this is exactly why the timeout above is generous. Shortening it does
+        // not make anything faster in the ordinary case (measured: child injection costs about 68 ms,
+        // and the limit is 10 s); it only makes THIS branch, and the leak, more likely to be reached.
+        log("[chrono_hook] LoadLibraryW still running in the child - leaving its path buffer allocated");
+    }
     if !loaded {
         log("[chrono_hook] child not covered - LoadLibraryW did not load the hook there");
     }
