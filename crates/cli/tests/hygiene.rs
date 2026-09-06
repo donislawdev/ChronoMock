@@ -829,3 +829,235 @@ fn a_definition_that_only_names_itself_is_reported() {
         "recursion is being counted as life"
     );
 }
+
+// ---------------------------------------------------------------------------------------------
+// H3. Code nothing calls any more (C#)
+// ---------------------------------------------------------------------------------------------
+//
+// Measured 2026-09-06: a `private static int UnusedProbe() => 42;` added to `ProtocolJson.cs`
+// compiles with "Ostrzezenia: 0" despite `EnforceCodeStyleInBuild` and `TreatWarningsAsErrors`.
+// IDE0051 does not reach warning severity here, so on the C# side NOTHING catches dead code - not
+// private members, not public ones.
+//
+// 🔴 This lives in the Rust suite on purpose. The fixed point, the ratchet, the canary and the
+// rule that a test is not a consumer are one algorithm, and writing it twice would give two
+// implementations to keep in step - the very thing the rest of this file exists to prevent. The
+// price is that a C#-only change gets its red from `cargo test`, which `tools/gates.ps1` runs
+// anyway.
+
+/// Members the framework calls, so nothing in the codebase names them. The same trade as skipping
+/// Rust trait implementations, written as exact names rather than a pattern so a future method
+/// cannot quietly join the list by being called something similar.
+const CS_FRAMEWORK_MEMBERS: &[&str] = &[
+    "Convert",
+    "ConvertBack",
+    "Dispose",
+    "DisposeAsync",
+    "ToString",
+    "Equals",
+    "GetHashCode",
+    "InitializeComponent",
+    "Main",
+    "OnStartup",
+    "OnExit",
+    "OnClosed",
+];
+
+/// C# definitions of one file: types and members, at any nesting.
+fn cs_definitions(rel_path: &str, text: &str) -> Vec<Definition> {
+    let lines: Vec<&str> = text.lines().collect();
+    let mut out = Vec::new();
+    for (index, raw) in lines.iter().enumerate() {
+        let line = raw.trim();
+        if line.starts_with("//") || line.starts_with('*') {
+            continue;
+        }
+        let Some(rest) = line
+            .strip_prefix("public ")
+            .or_else(|| line.strip_prefix("internal "))
+            .or_else(|| line.strip_prefix("protected "))
+            .or_else(|| line.strip_prefix("private "))
+        else {
+            continue;
+        };
+        // A property or field the deserialiser fills is consumed by a caller nobody writes.
+        let attributed = index > 0 && lines[index - 1].contains("[Json");
+        if attributed || raw.contains("[Json") {
+            continue;
+        }
+        let mut words = rest.split_whitespace().peekable();
+        // An override answers a base class, and a partial half is not a definition of its own.
+        let mut is_override = false;
+        while let Some(word) = words.peek() {
+            if ["static", "sealed", "abstract", "readonly", "virtual", "async", "new", "required",
+                "partial", "const", "extern", "unsafe", "override", "event"]
+                .contains(word)
+            {
+                if *word == "override" {
+                    is_override = true;
+                }
+                words.next();
+            } else {
+                break;
+            }
+        }
+        if is_override {
+            continue;
+        }
+        let Some(first) = words.next() else { continue };
+        // A constructor has no return type, so the name IS the first word and it carries the open
+        // parenthesis. It is not a definition of its own either: `new Thing(...)` names the TYPE,
+        // which is tracked, so counting the constructor separately reported its first PARAMETER as
+        // dead code - `roleKey`, `fullPath` and `chronoPath` all arrived that way.
+        if first.contains('(') {
+            continue;
+        }
+        let name = if ["class", "record", "struct", "enum", "interface"].contains(&first) {
+            let candidate = words.next().unwrap_or("");
+            // `record struct X` and `record class X` put the shape between the two.
+            if ["struct", "class"].contains(&candidate) {
+                words.next().unwrap_or("")
+            } else {
+                candidate
+            }
+        } else {
+            // `Type Name(...)`, `Type Name { get; }`, `Type Name =>`, `Type Name;`
+            words.next().unwrap_or("")
+        };
+        let name: String = name
+            .chars()
+            .take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
+            .collect();
+        if name.is_empty() || CS_FRAMEWORK_MEMBERS.contains(&name.as_str()) {
+            continue;
+        }
+        out.push(Definition {
+            name,
+            file: rel_path.to_string(),
+            line: index + 1,
+        });
+    }
+    out
+}
+
+/// 🔴 The C# ratchet. Same rules as the Rust one: a reason, not a shrug, and it may only shrink.
+///
+/// "Nobody has decided yet" is a reason as long as it SAYS so - the point of this list is that an
+/// unused name carries one, and that the next session reads the reason rather than the silence.
+const CS_KNOWN_UNUSED: &[(&str, &str)] = &[
+    (
+        "AvailableCultures",
+        "Discovers which translation files ship, for a language picker that does not exist.          `App.xaml.cs` applies `DefaultCulture` at startup and nothing ever changes it, so the          shipped `Strings.pl.json` is unreachable from the interface. That gap is the decision,          not this method - it goes when the picker is built or when the owner rules PL out.",
+    ),
+    (
+        "AvailableCulturesIn",
+        "The folder-explicit half of `AvailableCultures`, split out so the odd-name cases can be          tested directly. It lives and dies with its pair.",
+    ),
+    (
+        "QueryCommand",
+        "Protocol surface that is deliberately unsent. The core knows `query`          (`chrono_proto::Command::Query`) and this is the client half of it, but the core already          beats `state` about once a real second, so no client has needed to ask. Deleting it          would make the C# client a subset of the contract rather than a mirror of it.",
+    ),
+    (
+        "Launch",
+        "`CoreClient.Launch` spawns the core and sends `start` in one step, for callers that do          not gate on `ready`. Its own XML comment says the conformance tests use it, and they are          its only callers - the GUI goes through `Connect` and waits. It exists FOR the tests,          which is a reason, and deleting it deletes what those five conformance tests drive.",
+    ),
+];
+
+fn collect_cs() -> (Vec<Definition>, BTreeMap<String, Vec<Site>>, usize) {
+    let mut definitions = Vec::new();
+    let mut sources = Vec::new();
+    for path in tracked_files(&["cs", "xaml", "csproj", "slnx"]) {
+        let r = rel(&path);
+        let Ok(text) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+        let is_test = r.contains(".Tests/") || r.contains("TestTarget");
+        if !is_test && r.ends_with(".cs") {
+            definitions.extend(cs_definitions(&r, &text));
+        }
+        sources.push((r, text, is_test));
+    }
+
+    let mut boundaries: BTreeMap<&str, Vec<(usize, usize)>> = BTreeMap::new();
+    for (index, definition) in definitions.iter().enumerate() {
+        boundaries
+            .entry(definition.file.as_str())
+            .or_default()
+            .push((definition.line, index));
+    }
+    for spans in boundaries.values_mut() {
+        spans.sort_unstable();
+    }
+
+    let names: std::collections::BTreeSet<&str> =
+        definitions.iter().map(|d| d.name.as_str()).collect();
+    let mut mentions: BTreeMap<String, Vec<Site>> = BTreeMap::new();
+    let mut files_read = 0;
+    for (r, text, is_test) in &sources {
+        files_read += 1;
+        let owns_definitions = boundaries.contains_key(r.as_str());
+        for (index, line) in text.lines().enumerate() {
+            for word in identifiers(line) {
+                if !names.contains(word) {
+                    continue;
+                }
+                let site = if *is_test {
+                    Site::Tests
+                } else if owns_definitions {
+                    boundaries[r.as_str()]
+                        .iter()
+                        .rev()
+                        .find(|(start, _)| *start <= index + 1)
+                        .map_or(Site::External, |(_, i)| Site::Inside(*i))
+                } else {
+                    Site::External
+                };
+                mentions.entry(word.to_string()).or_default().push(site);
+            }
+        }
+    }
+    (definitions, mentions, files_read)
+}
+
+#[test]
+fn no_definition_in_the_gui_is_unreferenced() {
+    let (definitions, mentions, files) = collect_cs();
+    let dead = unreferenced(&definitions, &mentions);
+
+    assert!(
+        files >= 30 && definitions.len() >= 200,
+        "the C# scan read {files} files and found {} definitions - it is reading the wrong place",
+        definitions.len()
+    );
+
+    let known: Vec<&str> = CS_KNOWN_UNUSED.iter().map(|(n, _)| *n).collect();
+    let unexpected: Vec<String> = dead
+        .iter()
+        .map(|i| &definitions[*i])
+        .filter(|d| !known.contains(&d.name.as_str()))
+        .map(|d| format!("{} ({}:{})", d.name, d.file, d.line))
+        .collect();
+    assert!(
+        unexpected.is_empty(),
+        "these definitions are named from nowhere that is alive - delete one, or add it to \
+         CS_KNOWN_UNUSED with the reason it stays: {unexpected:?}"
+    );
+}
+
+#[test]
+fn the_cs_known_unused_list_only_ever_shrinks() {
+    let (definitions, mentions, _files) = collect_cs();
+    let dead: Vec<&str> = unreferenced(&definitions, &mentions)
+        .iter()
+        .map(|i| definitions[*i].name.as_str())
+        .collect();
+    let revived: Vec<&str> = CS_KNOWN_UNUSED
+        .iter()
+        .map(|(n, _)| *n)
+        .filter(|n| !dead.contains(n))
+        .collect();
+    assert!(
+        revived.is_empty(),
+        "these names are used again, so they must come out of CS_KNOWN_UNUSED: {revived:?}"
+    );
+}
