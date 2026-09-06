@@ -66,11 +66,14 @@ public class RustConstantMirrorTests
     [Fact]
     public void The_preset_schema_matches_the_one_the_engine_accepts()
     {
-        var main = ReadRustSource("crates", "cli", "src", "main.rs");
-        // Anchored to the preset reader by name: `main.rs` gates two schemas (the calendar reader has
-        // the same shape), and the first version of this test matched both - which the guard itself
-        // caught, exactly as it should have.
-        var presetReader = Regex.Match(main, @"fn parse_preset.*?
+        // Reads `preset.rs`, where the preset reader moved when `main.rs` was split into modules -
+        // and this test found that move by going red, which is what it is for.
+        //
+        // Still anchored to the reader BY NAME rather than to the file: `main.rs` used to gate two
+        // schemas (the calendar reader has the same shape) and the first version of this test matched
+        // both, which the guard itself caught. The anchor survives the split for the same reason.
+        var preset = ReadRustSource("crates", "cli", "src", "preset.rs");
+        var presetReader = Regex.Match(preset, @"fn parse_preset.*?
 \}", RegexOptions.Singleline);
         Assert.True(presetReader.Success, "could not find parse_preset in the Rust source");
         var rust = CaptureOne(presetReader.Value, @"dto\.schema != ""([^""]+)""", "the preset schema check");

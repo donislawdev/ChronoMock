@@ -23,15 +23,27 @@ fn repo_root() -> PathBuf {
         .join("..")
 }
 
-/// Source text with `#[cfg(test)]` modules removed, so fixture keys invented by tests
+/// Source text with the inline test module removed, so fixture keys invented by tests
 /// (`some.future_key`, `cleanup.something_new`) never look like production emissions.
+///
+/// The cut is anchored on `#[cfg(test)] mod tests`, not on `#[cfg(test)]` alone, and the difference
+/// is not cosmetic. A crate-root `#[cfg(test)] mod testutil;` declaration sits among the other module
+/// declarations at the TOP of `main.rs`, and cutting on the bare attribute threw the whole file away -
+/// the scanner dropped from more than fifty keys to eighteen while still passing every other check.
+/// The canary below caught it. This is the fix, not the canary's removal.
 fn production_source(path: &Path) -> String {
     let text = std::fs::read_to_string(path)
         .unwrap_or_else(|e| panic!("cannot read {}: {e}", path.display()));
-    match text.find("#[cfg(test)]") {
-        Some(cut) => text[..cut].to_string(),
-        None => text,
+    let mut from = 0;
+    while let Some(hit) = text[from..].find("#[cfg(test)]") {
+        let at = from + hit;
+        let after = text[at + "#[cfg(test)]".len()..].trim_start();
+        if after.starts_with("mod tests") {
+            return text[..at].to_string();
+        }
+        from = at + "#[cfg(test)]".len();
     }
+    text
 }
 
 /// A wire key looks like `area.detail` - lowercase words joined by dots and underscores. This

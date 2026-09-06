@@ -18,11 +18,7 @@ use std::process::{Command as PCommand, Stdio};
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
-use serde::Deserialize;
-
-use chrono_core::calc::{
-    Base, EvalContext, EvalError, MomentExpr, NearestTarget, Sign, SnapTarget, Step, Unit,
-};
+use chrono_core::calc::{Base, EvalContext, EvalError, MomentExpr, Sign, Step};
 use chrono_core::{filetime_utc_to_wall, verdict_from_coverage, Moment, SessionSpec, TimeMode, Verdict};
 use chrono_proto::{
     parse_command, Clock, Command, CoveredChannel, Event, MomentSpec, TargetSpec, TimeSpec,
@@ -31,20 +27,35 @@ use chrono_proto::{
 
 /// The Chromium/Electron substitution mechanism (CDP faketime), a parallel path to the native core.
 mod cdp;
+/// Reading a shipped calendar catalogue and validating it.
+mod calendar;
 /// Hidden diagnostic probes for the Chromium path.
 mod cdp_probe;
 /// The Chromium/Electron session - the second substitution mechanism.
 mod cdp_session;
 /// The command surface: version, bitness, usage texts.
 mod cli;
+/// The step grammar shared by the calculator flags and the preset reader.
+mod grammar;
+/// Presets: a named moment with parameters (docs/04 section 4).
+mod preset;
+/// Test-only helpers shared by more than one module.
+#[cfg(test)]
+mod testutil;
 /// One NDJSON line off the machine protocol, bounded.
 mod wire;
 /// Session zone and instant conversions (untouchable rule 2).
 mod zone;
 
+use calendar::load_calendar;
 use cdp_probe::{cdp_date_probe, cdp_launch_probe, cdp_probe, cdp_shim_probe};
 use cdp_session::cdp_session;
 use cli::{print_calc_usage, print_usage, this_bitness, CORE_VERSION};
+use grammar::{parse_base, parse_nearest, parse_set_time, parse_shift, parse_snap};
+use preset::{
+    load_preset, preset_targets_calculator, preset_targets_substitution,
+    read_target_creation_date, resolve_moment, resolve_parameters,
+};
 use wire::read_protocol_line;
 use zone::{format_bias, now_filetime_utc, parse_zone_to_bias, session_zone_default};
 
@@ -1906,93 +1917,11 @@ fn parse_calc_args(argv: &[String]) -> Result<CalcArgs, String> {
     Ok(CalcArgs { base, steps, zone_bias_min, calendar, analyze, format, preset, params, json })
 }
 
-/// Parse a `--base` value: the keywords `today`/`now`, or an absolute civil date-time.
-fn parse_base(raw: &str) -> Result<Base, String> {
-    match raw {
-        "today" => Ok(Base::Today),
-        "now" => Ok(Base::Now),
-        _ => Ok(Base::Absolute(chrono_core::calc::parse_civil_datetime(raw)?)),
-    }
-}
 
-/// Parse a `--shift` value `±N<unit>` into a shift step. The sign is mandatory; the
-/// unit accepts short codes and full names. Minute stays `m`; month is `mo`, never `m`.
-fn parse_shift(raw: &str) -> Result<Step, String> {
-    let sign = match raw.as_bytes().first() {
-        Some(b'+') => Sign::Plus,
-        Some(b'-') => Sign::Minus,
-        _ => return Err(format!("shift must start with + or -, got '{raw}'")),
-    };
-    let rest = &raw[1..];
-    let split = rest.find(|c: char| !c.is_ascii_digit()).unwrap_or(rest.len());
-    let (num, unit_str) = rest.split_at(split);
-    if num.is_empty() {
-        return Err(format!("shift needs a number, got '{raw}'"));
-    }
-    let amount: i64 = num.parse().map_err(|_| format!("bad number in shift '{raw}'"))?;
-    let unit = parse_unit(unit_str).ok_or_else(|| format!("unknown unit '{unit_str}' in shift '{raw}'"))?;
-    Ok(Step::Shift { sign, amount, unit })
-}
 
-/// Map a unit token (short code or full name) to a canonical unit. 🔴 `m` is minutes,
-/// `mo` is months - never conflate them (the substitution `--at` delta already uses `m`
-/// for minutes, so calc keeps the same convention).
-fn parse_unit(s: &str) -> Option<Unit> {
-    Some(match s {
-        "s" | "sec" | "secs" | "seconds" => Unit::Seconds,
-        "m" | "min" | "mins" | "minutes" => Unit::Minutes,
-        "h" | "hr" | "hrs" | "hours" => Unit::Hours,
-        "d" | "day" | "days" => Unit::Days,
-        "w" | "week" | "weeks" => Unit::Weeks,
-        "mo" | "month" | "months" => Unit::Months,
-        "q" | "quarter" | "quarters" => Unit::Quarters,
-        "y" | "yr" | "yrs" | "year" | "years" => Unit::Years,
-        "bd" | "business_days" | "businessdays" => Unit::BusinessDays,
-        _ => return None,
-    })
-}
 
-/// Parse a `--snap` target token (full or short form) into a typed target.
-fn parse_snap(raw: &str) -> Result<SnapTarget, String> {
-    Ok(match raw {
-        "start-of-month" | "som" => SnapTarget::StartOfMonth,
-        "end-of-month" | "eom" => SnapTarget::EndOfMonth,
-        "start-of-quarter" | "soq" => SnapTarget::StartOfQuarter,
-        "end-of-quarter" | "eoq" => SnapTarget::EndOfQuarter,
-        "start-of-year" | "soy" => SnapTarget::StartOfYear,
-        "end-of-year" | "eoy" => SnapTarget::EndOfYear,
-        other => {
-            return Err(format!("unknown snap target '{other}' (use start-of/end-of month|quarter|year)"))
-        }
-    })
-}
 
-/// Parse a `--nearest` target token into a typed target.
-fn parse_nearest(raw: &str) -> Result<NearestTarget, String> {
-    Ok(match raw {
-        "next-business-day" | "nbd" => NearestTarget::NextBusinessDay,
-        "prev-business-day" | "previous-business-day" | "pbd" => NearestTarget::PrevBusinessDay,
-        "next-leap-day" | "next-feb-29" | "nld" => NearestTarget::NextLeapDay,
-        other => {
-            return Err(format!(
-                "unknown nearest target '{other}' (next-business-day, prev-business-day, next-leap-day)"
-            ))
-        }
-    })
-}
 
-/// Parse a `--set-time` value `HH:MM:SS`. Field ranges are validated in the core
-/// evaluator (BadSetTime), so parsing only checks the shape and numeric form here.
-fn parse_set_time(raw: &str) -> Result<Step, String> {
-    let p: Vec<&str> = raw.split(':').collect();
-    if p.len() != 3 {
-        return Err(format!("set-time must be HH:MM:SS, got '{raw}'"));
-    }
-    let hour = p[0].parse().map_err(|_| format!("bad hour in set-time '{raw}'"))?;
-    let minute = p[1].parse().map_err(|_| format!("bad minute in set-time '{raw}'"))?;
-    let second = p[2].parse().map_err(|_| format!("bad second in set-time '{raw}'"))?;
-    Ok(Step::SetTime { hour, minute, second })
-}
 
 
 /// Real current time in the session zone, as a civil date-time for the pure core.
@@ -2232,264 +2161,20 @@ fn describe_step(step: &Step) -> String {
 // The JSON schema is the contract (docs/04 section 5); this is one reader of it. Unknown
 // fields are ignored (additive evolution is safe); an unknown major schema version is refused.
 
-#[derive(Deserialize)]
-struct CalendarDto {
-    schema: String,
-    id: String,
-    country: String,
-    weekend: Vec<String>,
-    observed: String,
-    holidays: Vec<HolidayDto>,
-}
 
-#[derive(Deserialize)]
-struct HolidayDto {
-    id: String,
-    name: NameDto,
-    rule: RuleDto,
-    #[serde(default)]
-    valid_from: Option<i64>,
-    #[serde(default)]
-    valid_to: Option<i64>,
-    source: String,
-}
 
-#[derive(Deserialize)]
-struct NameDto {
-    en: String,
-    local: String,
-}
 
-#[derive(Deserialize)]
-#[serde(tag = "type", rename_all = "snake_case")]
-enum RuleDto {
-    Fixed { month: u32, day: u32 },
-    NthWeekday { month: u32, weekday: String, order: i32 },
-    EasterOffset { offset: i32 },
-}
 
-/// Map a weekday name to a Sunday-based index 0..=6.
-fn weekday_index(name: &str) -> Result<u32, String> {
-    Ok(match name.to_ascii_lowercase().as_str() {
-        "sunday" => 0,
-        "monday" => 1,
-        "tuesday" => 2,
-        "wednesday" => 3,
-        "thursday" => 4,
-        "friday" => 5,
-        "saturday" => 6,
-        other => return Err(format!("unknown weekday '{other}'")),
-    })
-}
 
-fn observed_from(s: &str) -> Result<chrono_core::calendar::Observed, String> {
-    use chrono_core::calendar::Observed;
-    Ok(match s {
-        "none" => Observed::None,
-        "sat_to_fri_sun_to_mon" => Observed::SatToFriSunToMon,
-        "sun_to_mon" => Observed::SunToMon,
-        "weekend_to_mon" => Observed::WeekendToMon,
-        other => return Err(format!("unknown observed rule '{other}'")),
-    })
-}
 
-/// Validate and map one holiday rule. The engine trusts its inputs, and a calendar is a data file from
-/// outside the build - the one documented extension point of this tool - so an out-of-range field must be
-/// refused HERE, naming the field. Left unchecked it does not fail, which is worse: `days_from_civil`
-/// happily rolls month 13 into the next January and day 40 into the following month, so the calendar
-/// silently marks the wrong dates as holidays and every business-day answer built on it is quietly wrong.
-fn rule_from(id: &str, dto: RuleDto) -> Result<chrono_core::calendar::HolidayRule, String> {
-    use chrono_core::calendar::HolidayRule;
-    Ok(match dto {
-        RuleDto::Fixed { month, day } => {
-            check_month(id, month)?;
-            // 1..=31 for the day, not the month's real length: a rule may legitimately name Feb 29,
-            // and the engine resolves an impossible date per year. Beyond 31 is a typo in any month.
-            if !(1..=31).contains(&day) {
-                return Err(format!("holiday '{id}': day {day} out of range (1..=31)"));
-            }
 
-            HolidayRule::Fixed { month, day }
-        }
-        RuleDto::NthWeekday { month, weekday, order } => {
-            check_month(id, month)?;
-            // -1 = "the last such weekday in the month"; 1..=5 counts from the start. A fifth exists
-            // only in some months, and the engine now answers "this holiday does not fall in that
-            // year" rather than borrowing a day from the next month - which is what it actually did
-            // while this comment claimed otherwise (R2-N4). Anything outside the range would walk
-            // past the end for every month, so it stays a load error.
-            if order != -1 && !(1..=5).contains(&order) {
-                return Err(format!(
-                    "holiday '{id}': order {order} out of range (-1 for last, or 1..=5)"
-                ));
-            }
 
-            HolidayRule::NthWeekday { month, weekday: weekday_index(&weekday)?, order }
-        }
-        RuleDto::EasterOffset { offset } => {
-            // A year either side of Easter covers every real observance (Corpus Christi is +60).
-            if !(-366..=366).contains(&offset) {
-                return Err(format!(
-                    "holiday '{id}': easter offset {offset} out of range (-366..=366 days)"
-                ));
-            }
 
-            HolidayRule::EasterOffset { offset }
-        }
-    })
-}
 
-fn check_month(id: &str, month: u32) -> Result<(), String> {
-    if !(1..=12).contains(&month) {
-        return Err(format!("holiday '{id}': month {month} out of range (1..=12)"));
-    }
 
-    Ok(())
-}
 
-/// Locate a calendar file: next to the executable (portable layout), else in ./calendars.
-/// Whether a catalogue id (calendar / preset) is safe to turn into a file name: non-empty and made
-/// only of letters, digits, '-' and '_'. This rejects any path separator, '..', drive letter, or
-/// ADS colon BEFORE the id becomes a path, so `--preset ../../secret` cannot read a file outside the
-/// catalogue directory (docs/04 4.1 - a shared catalogue entry can never smuggle a path).
-fn is_valid_catalogue_id(id: &str) -> bool {
-    !id.is_empty() && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
-}
 
-/// Locate `<kind>/<id>.json` - the shared lookup behind calendars and presets.
-///
-/// Next to the executable first, then the working directory. The second is what makes a dev
-/// checkout work: `chrono.exe` is built into `target/<triple>/release/`, which has no `calendars/`
-/// beside it, so every `cargo run -- calc --calendar` and all 133 harness scenarios resolve through
-/// the working directory. It cannot simply be dropped.
-///
-/// What it must NOT do is rescue an INSTALLED layout. If the folder beside the executable exists but
-/// does not hold the file, the answer is "missing", not "here is one from wherever you happened to
-/// be standing" - otherwise `chrono calc --calendar us-banking`, run from a directory someone else
-/// can write to, silently answers business-day questions from THEIR holidays, in a report a tester
-/// then quotes as evidence (untouchable rule 4). Directories are taken as given so all three cases
-/// are testable without touching the process's real working directory.
-fn find_catalogue_in(exe_dir: Option<&std::path::Path>, cwd: &std::path::Path, kind: &str, id: &str) -> Option<std::path::PathBuf> {
-    let name = format!("{id}.json");
-    if let Some(dir) = exe_dir {
-        let installed = dir.join(kind);
-        let candidate = installed.join(&name);
-        if candidate.is_file() {
-            return Some(candidate);
-        }
-        if installed.is_dir() {
-            return None; // an installed catalogue answers for itself, including "not here"
-        }
-    }
-    let local = cwd.join(kind).join(&name);
-    local.is_file().then_some(local)
-}
 
-/// [`find_catalogue_in`] against this process's real executable and working directory.
-fn find_catalogue_file(kind: &str, id: &str) -> Option<std::path::PathBuf> {
-    let exe = std::env::current_exe().ok();
-    let exe_dir = exe.as_ref().and_then(|e| e.parent());
-    let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
-    find_catalogue_in(exe_dir, &cwd, kind, id)
-}
-
-/// Where the lookup actually looked, for the "not found" message. The two layouts differ, and naming
-/// `./<kind>` for an installed one that never consulted it would send the reader to fix the wrong
-/// folder - in the single message they have to act on (rule 6).
-fn catalogue_search_places(kind: &str) -> String {
-    let installed = std::env::current_exe()
-        .ok()
-        .and_then(|e| e.parent().map(|d| d.join(kind)))
-        .is_some_and(|d| d.is_dir());
-    if installed {
-        format!("looked in <exe>/{kind}")
-    } else {
-        format!("looked in <exe>/{kind} and ./{kind}")
-    }
-}
-
-fn find_calendar_file(id: &str) -> Result<std::path::PathBuf, String> {
-    if !is_valid_catalogue_id(id) {
-        return Err(format!("invalid calendar id '{id}' (use letters, digits, '-' or '_')"));
-    }
-    find_catalogue_file("calendars", id)
-        .ok_or_else(|| format!("calendar '{id}' not found ({})", catalogue_search_places("calendars")))
-}
-
-/// Load and validate a calendar by id, mapping the JSON schema to the core engine's types.
-fn load_calendar(id: &str) -> Result<chrono_core::calendar::Calendar, String> {
-    let path = find_calendar_file(id)?;
-    let text = std::fs::read_to_string(&path).map_err(|e| format!("cannot read {}: {e}", path.display()))?;
-    calendar_from_text(&text).map_err(|e| format!("{e} (in {})", path.display()))
-}
-
-/// Parse and validate a calendar from its JSON text, mapping the `chronomock.calendar/1` schema to the
-/// engine's types. Separated from the on-disk lookup (symmetry with `parse_preset`) so the shipped
-/// calendars can be golden-tested against the real engine without the file-resolution step.
-fn calendar_from_text(text: &str) -> Result<chrono_core::calendar::Calendar, String> {
-    let dto: CalendarDto = serde_json::from_str(text).map_err(|e| format!("bad calendar JSON: {e}"))?;
-    // An unknown major schema version is refused, not half-understood (docs/04 section 3.1).
-    if dto.schema != "chronomock.calendar/1" {
-        return Err(format!(
-            "unsupported calendar schema '{}' (this build reads chronomock.calendar/1)",
-            dto.schema
-        ));
-    }
-    let mut weekend = dto.weekend.iter().map(|w| weekday_index(w)).collect::<Result<Vec<_>, _>>()?;
-    // Duplicates are harmless to the engine (membership is a contains) but they hide a typo, and
-    // they make the count below meaningless - so fold them away before counting.
-    weekend.sort_unstable();
-    weekend.dedup();
-    // A week with no working day leaves "+1 business day" with nothing to land on. The engine now
-    // bounds its walk instead of hanging (S-1), but a file this broken should never reach it: say
-    // which field is wrong, here, where the author can fix it.
-    if weekend.len() >= 7 {
-        return Err(
-            "calendar 'weekend' lists all seven days - no business day would ever exist".to_string()
-        );
-    }
-    let mut seen_ids: Vec<String> = Vec::new();
-    let holidays = dto
-        .holidays
-        .into_iter()
-        .map(|h| {
-            // A duplicate id makes the audit ambiguous - `holiday_on` names one of them and the reader
-            // cannot tell which. Cheap to catch, impossible to diagnose later.
-            if seen_ids.contains(&h.id) {
-                return Err(format!("duplicate holiday id '{}'", h.id));
-            }
-
-            // An inverted window silently means "never a holiday", which reads as a missing entry
-            // rather than as the mistake it is.
-            if let (Some(from), Some(to)) = (h.valid_from, h.valid_to)
-                && from > to {
-                    return Err(format!(
-                        "holiday '{}': valid_from {from} is after valid_to {to}",
-                        h.id
-                    ));
-                }
-
-            seen_ids.push(h.id.clone());
-            let rule = rule_from(&h.id, h.rule)?;
-            Ok(chrono_core::calendar::Holiday {
-                id: h.id,
-                name_en: h.name.en,
-                name_local: h.name.local,
-                rule,
-                valid_from: h.valid_from,
-                valid_to: h.valid_to,
-                source: h.source,
-            })
-        })
-        .collect::<Result<Vec<_>, String>>()?;
-    Ok(chrono_core::calendar::Calendar {
-        id: dto.id,
-        country: dto.country,
-        weekend,
-        observed: observed_from(&dto.observed)?,
-        holidays,
-    })
-}
 
 // ---------------------------------------------------------------------------
 // Preset loading (the shared catalogue, docs/04 section 4)
@@ -2510,539 +2195,42 @@ fn calendar_from_text(text: &str) -> Result<chrono_core::calendar::Calendar, Str
 // never starts a session; the substitution side (preset -> `run`) arrives with the proto step wire
 // (docs/08 section 11 item 1), and the full session-level path guard lands with it.
 
-/// A parsed preset: its declared parameters and its RAW moment (docs/04 4.3), not yet resolved to a
-/// `MomentExpr` - because a parametric base/shift needs values (`--param` / `default`) that the file
-/// alone does not carry. `resolve_parameters` + `resolve_moment` turn it into a concrete moment.
-/// A non-parametric preset (slices 16/17) has empty `parameters` and resolves trivially. Also carries
-/// the human framing (calculator) and the time mode (substitution); the calculator ignores time_mode.
-#[derive(Debug)]
-struct Preset {
-    id: String,
-    name_en: String,
-    explains_en: String,
-    /// `calculator` / `substitution` / `both` (docs/04 4.2). Each surface honours it.
-    applies_to: String,
-    parameters: Vec<Parameter>,
-    moment: MomentDto,
-    time_mode: PresetTimeMode,
-}
 
-/// A preset parameter (docs/04 4.2): a typed slot filled by `--param`, a file `default`, or (in a
-/// substitution session, a later slice) a `default_hint` such as the target's file date.
-#[derive(Debug)]
-struct Parameter {
-    id: String,
-    kind: ParamKind,
-    default: Option<ParamValue>,
-    /// Where to propose a value from when neither `--param` nor `default` is given (docs/04 4.2).
-    /// `target_file_creation` needs a target, so it is honoured only in `run` (a later slice); the
-    /// calculator, having no target, reports it as a value the user must supply.
-    default_hint: Option<String>,
-}
 
-/// A parameter's type. `date` fills a base; `duration` and `variant` fill a shift (a `variant` by a
-/// signed day offset - docs/05 3.6). (`int` is later.)
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum ParamKind {
-    Date,
-    Duration,
-    Variant,
-}
 
-/// A resolved parameter value, ready to substitute into the moment.
-#[derive(Debug, Clone)]
-enum ParamValue {
-    Date(chrono_core::calc::CivilDateTime),
-    Duration { amount: i64, unit: Unit },
-    /// A boundary variant (docs/05 3.6) resolved to a signed day offset: day_before -1, on_day 0,
-    /// day_after +1. It fills a shift and carries its own direction, so that shift step needs no sign.
-    Variant(i64),
-}
 
-/// A preset's time mode, resolved to the substitution surface's wire shape (the same `mode` /
-/// `multiplier` / `scale_duration` a `run` session carries). The contract carries `multiplier` and
-/// `scale_duration_clock` (docs/04 4.2); `multiplier == 1` is real-time `flow`, `> 1` is `xN`.
-#[derive(Debug, Clone)]
-struct PresetTimeMode {
-    /// Wire mode token: "flow" or "multiplier". (Presets do not express "frozen".)
-    mode: String,
-    multiplier: Option<i64>,
-    scale_duration: bool,
-}
 
-impl Default for PresetTimeMode {
-    /// A preset with no `time_mode` (e.g. a calculator-only one) runs at real speed.
-    fn default() -> Self {
-        Self { mode: "flow".into(), multiplier: None, scale_duration: false }
-    }
-}
 
-/// Why a preset could not be loaded for the calculator. Enumerated, not a shared string, so the
-/// exit code follows the cause: input problems are usage errors (1), while "the model has this in
-/// it but calc does not resolve it yet" is the honest not-built code (5), same split as calc's own
-/// error table (docs/08 section 9a).
-#[derive(Debug)]
-enum PresetError {
-    /// No such preset file.
-    NotFound(String),
-    /// Bad JSON, unknown schema, or a malformed field.
-    BadFile(String),
-    /// A shape the model allows but this build does not resolve yet (parameters).
-    NotBuilt(String),
-}
 
-impl PresetError {
-    fn exit_code(&self) -> i32 {
-        match self {
-            PresetError::NotBuilt(_) => 5,
-            PresetError::NotFound(_) | PresetError::BadFile(_) => 1,
-        }
-    }
-    fn message(&self) -> &str {
-        match self {
-            PresetError::NotFound(m) | PresetError::BadFile(m) | PresetError::NotBuilt(m) => m,
-        }
-    }
-}
 
-#[derive(Deserialize)]
-struct PresetDto {
-    schema: String,
-    id: String,
-    name: PresetTextDto,
-    explains: PresetTextDto,
-    applies_to: String,
-    // Typed parameters (docs/04 4.2): each is filled by --param, a file default, or a default_hint.
-    // The moment's parametric base/shift refer to these by id; resolve_parameters + resolve_moment
-    // substitute them into a concrete MomentExpr (the core never learns a parameter existed).
-    #[serde(default)]
-    parameters: Vec<ParameterDto>,
-    moment: MomentDto,
-    // Only substitution/both presets carry a time mode; a calculator-only one may omit it (the
-    // calculator ignores it either way). Absent = real-time flow (PresetTimeMode::default).
-    #[serde(default)]
-    time_mode: Option<TimeModeDto>,
-}
 
-/// A preset's `time_mode` object (docs/04 4.2): `{ "multiplier": N, "scale_duration_clock": bool }`.
-#[derive(Deserialize)]
-struct TimeModeDto {
-    #[serde(default)]
-    multiplier: Option<i64>,
-    #[serde(default)]
-    scale_duration_clock: bool,
-}
 
-/// A preset parameter as written in the file (docs/04 4.2): `{ "id", "type", "default"?, "default_hint"? }`.
-/// `default` shape depends on `type` (a string for `date`, `{ amount, unit }` for `duration`), so it
-/// stays a raw value here and is parsed against the type in `parse_parameter`.
-#[derive(Deserialize)]
-struct ParameterDto {
-    id: String,
-    #[serde(rename = "type")]
-    kind: String,
-    #[serde(default)]
-    default: Option<serde_json::Value>,
-    #[serde(default)]
-    default_hint: Option<String>,
-}
 
-/// A `duration` value/`default` object: `{ "amount": N, "unit": "days" }` (docs/04 4.2).
-#[derive(Deserialize)]
-struct DurationDto {
-    amount: i64,
-    unit: String,
-}
 
-/// The English text is what the CLI renders (rule 15 - CLI is English only); `pl` rides in the file
-/// for the GUI but this reader does not need it, so it is not a field here (unknown fields ignored).
-#[derive(Deserialize)]
-struct PresetTextDto {
-    en: String,
-}
 
-#[derive(Debug, Deserialize)]
-struct MomentDto {
-    base: BaseDto,
-    #[serde(default)]
-    steps: Vec<StepDto>,
-}
 
-/// A preset base: the keyword `today`/`now`, an `{ "absolute": "ISO" }` object, or a
-/// `{ "parameter": "name" }` object (docs/04 4.2) resolved from a `date` parameter.
-#[derive(Debug, Deserialize)]
-#[serde(untagged)]
-enum BaseDto {
-    Keyword(String),
-    Object {
-        #[serde(default)]
-        absolute: Option<String>,
-        #[serde(default)]
-        parameter: Option<String>,
-    },
-}
 
-/// One preset step, externally tagged exactly as docs/04 4.2 writes it: `{ "shift": {...} }`,
-/// `{ "set_time": "HH:MM:SS" }`, `{ "snap": "end-of-month" }`, `{ "nearest": "next-business-day" }`,
-/// `{ "zone": "+05:45" }`. The string forms reuse the CLI parsers, keeping one grammar.
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "snake_case")]
-enum StepDto {
-    Shift(ShiftDto),
-    SetTime(String),
-    Snap(String),
-    Nearest(String),
-    Zone(String),
-}
 
-/// A `shift` step in a preset: a literal `{ sign, amount, unit }`, a parametric `{ sign, parameter }`
-/// resolved from a `duration`, or a parametric `{ parameter }` resolved from a `variant` (docs/04 4.2).
-/// The sign is optional because a `variant` parameter carries its own direction (docs/05 3.6).
-#[derive(Debug, Deserialize)]
-struct ShiftDto {
-    #[serde(default)]
-    sign: Option<String>,
-    #[serde(default)]
-    amount: Option<i64>,
-    #[serde(default)]
-    unit: Option<String>,
-    #[serde(default)]
-    parameter: Option<String>,
-}
 
-/// Whether a preset's `applies_to` makes it a calculator question (docs/04 4.2, docs/05 3.1).
-fn preset_targets_calculator(applies_to: &str) -> bool {
-    matches!(applies_to, "calculator" | "both")
-}
 
-/// Map a preset base to the core `Base`. A parametric base is refused (not built), never silently
-/// treated as `today`.
-fn base_from(dto: BaseDto, values: &HashMap<String, ParamValue>) -> Result<Base, PresetError> {
-    match dto {
-        BaseDto::Keyword(k) => match k.as_str() {
-            "today" => Ok(Base::Today),
-            "now" => Ok(Base::Now),
-            other => Err(PresetError::BadFile(format!(
-                "unknown preset base '{other}' (use today, now, or an absolute/parameter object)"
-            ))),
-        },
-        // A parametric base takes its date from a `date` parameter (docs/04 4.2).
-        BaseDto::Object { parameter: Some(id), .. } => match values.get(&id) {
-            Some(ParamValue::Date(civil)) => Ok(Base::Absolute(*civil)),
-            Some(ParamValue::Duration { .. }) => {
-                Err(PresetError::BadFile(format!("base parameter '{id}' must be a date, not a duration")))
-            }
-            Some(ParamValue::Variant(_)) => {
-                Err(PresetError::BadFile(format!("base parameter '{id}' must be a date, not a variant")))
-            }
-            None => Err(PresetError::BadFile(format!("base parameter '{id}' has no value"))),
-        },
-        BaseDto::Object { absolute: Some(s), parameter: None } => {
-            let civil = chrono_core::calc::parse_civil_datetime(&s).map_err(PresetError::BadFile)?;
-            Ok(Base::Absolute(civil))
-        }
-        BaseDto::Object { absolute: None, parameter: None } => Err(PresetError::BadFile(
-            "preset base object needs 'absolute' or 'parameter'".into(),
-        )),
-    }
-}
 
-/// Map a preset step to a core `Step`, reusing the CLI parsers so a preset speaks the same step
-/// grammar as the flags. A `parameter` shift is resolved from the values map.
-fn step_from(dto: StepDto, values: &HashMap<String, ParamValue>) -> Result<Step, PresetError> {
-    match dto {
-        StepDto::Shift(s) => shift_from(s, values),
-        StepDto::SetTime(raw) => parse_set_time(&raw).map_err(PresetError::BadFile),
-        StepDto::Snap(raw) => parse_snap(&raw).map(Step::Snap).map_err(PresetError::BadFile),
-        StepDto::Nearest(raw) => parse_nearest(&raw).map(Step::Nearest).map_err(PresetError::BadFile),
-        StepDto::Zone(raw) => parse_zone_to_bias(&raw).map(Step::Zone).map_err(PresetError::BadFile),
-    }
-}
 
-fn shift_from(s: ShiftDto, values: &HashMap<String, ParamValue>) -> Result<Step, PresetError> {
-    // A parametric shift takes its shape from a parameter: a `duration` gives magnitude and unit (the
-    // step's sign carries direction), a `variant` gives a signed day offset (carrying its own sign).
-    if let Some(id) = &s.parameter {
-        return match values.get(id) {
-            Some(ParamValue::Duration { amount, unit }) => {
-                Ok(Step::Shift { sign: parse_shift_sign(&s.sign)?, amount: *amount, unit: *unit })
-            }
-            Some(ParamValue::Variant(days)) => {
-                let sign = if *days < 0 { Sign::Minus } else { Sign::Plus };
-                Ok(Step::Shift { sign, amount: days.abs(), unit: Unit::Days })
-            }
-            Some(ParamValue::Date(_)) => {
-                Err(PresetError::BadFile(format!("shift parameter '{id}' must be a duration or variant, not a date")))
-            }
-            None => Err(PresetError::BadFile(format!("shift parameter '{id}' has no value"))),
-        };
-    }
-    let sign = parse_shift_sign(&s.sign)?;
-    let amount = s.amount.ok_or_else(|| PresetError::BadFile("shift needs an amount or a parameter".into()))?;
-    if amount < 0 {
-        return Err(PresetError::BadFile("shift amount must be non-negative (the sign carries direction)".into()));
-    }
-    let unit_str = s.unit.ok_or_else(|| PresetError::BadFile("shift needs a unit".into()))?;
-    let unit = parse_unit(&unit_str).ok_or_else(|| PresetError::BadFile(format!("unknown unit '{unit_str}' in shift")))?;
-    Ok(Step::Shift { sign, amount, unit })
-}
 
-/// Parse a shift step's `sign` field (`+`/`-`). Required for a literal or `duration`-parametric shift;
-/// a `variant`-parametric shift omits it (the variant carries its own direction), so this runs only
-/// where a sign is actually needed.
-fn parse_shift_sign(sign: &Option<String>) -> Result<Sign, PresetError> {
-    match sign.as_deref() {
-        Some("+") => Ok(Sign::Plus),
-        Some("-") => Ok(Sign::Minus),
-        Some(other) => Err(PresetError::BadFile(format!("shift sign must be + or -, got '{other}'"))),
-        None => Err(PresetError::BadFile("shift needs a sign (+ or -)".into())),
-    }
-}
 
-/// Parse a preset from JSON WITHOUT resolving its moment (pure - no I/O, no parameter values). The
-/// moment stays raw because a parametric base/shift needs values `resolve_parameters` supplies later;
-/// a non-parametric preset resolves trivially (empty values). Unknown major schema is refused.
-fn parse_preset(text: &str) -> Result<Preset, PresetError> {
-    let dto: PresetDto =
-        serde_json::from_str(text).map_err(|e| PresetError::BadFile(format!("bad preset JSON: {e}")))?;
-    if dto.schema != "chronomock.preset/1" {
-        return Err(PresetError::BadFile(format!(
-            "unsupported preset schema '{}' (this build reads chronomock.preset/1)",
-            dto.schema
-        )));
-    }
-    let parameters = dto.parameters.into_iter().map(parse_parameter).collect::<Result<Vec<_>, _>>()?;
-    let time_mode = time_mode_from(dto.time_mode)?;
-    Ok(Preset {
-        id: dto.id,
-        name_en: dto.name.en,
-        explains_en: dto.explains.en,
-        applies_to: dto.applies_to,
-        parameters,
-        moment: dto.moment,
-        time_mode,
-    })
-}
 
-/// Parse one file parameter declaration into a typed `Parameter`, checking the type and any default.
-fn parse_parameter(dto: ParameterDto) -> Result<Parameter, PresetError> {
-    let kind = match dto.kind.as_str() {
-        "date" => ParamKind::Date,
-        "duration" => ParamKind::Duration,
-        "variant" => ParamKind::Variant,
-        other => {
-            return Err(PresetError::NotBuilt(format!(
-                "parameter '{}' has type '{other}', which calc does not resolve yet (built: date, duration, variant)",
-                dto.id
-            )))
-        }
-    };
-    let default = match dto.default {
-        Some(v) => Some(param_value_from_json(&dto.id, kind, &v)?),
-        None => None,
-    };
-    Ok(Parameter { id: dto.id, kind, default, default_hint: dto.default_hint })
-}
 
-/// Parse a parameter's file `default` (a JSON value) against its declared type.
-fn param_value_from_json(id: &str, kind: ParamKind, v: &serde_json::Value) -> Result<ParamValue, PresetError> {
-    match kind {
-        ParamKind::Date => {
-            let s = v
-                .as_str()
-                .ok_or_else(|| PresetError::BadFile(format!("parameter '{id}' default must be a date string")))?;
-            Ok(ParamValue::Date(parse_param_date(s).map_err(PresetError::BadFile)?))
-        }
-        ParamKind::Duration => {
-            let d: DurationDto = serde_json::from_value(v.clone())
-                .map_err(|_| PresetError::BadFile(format!("parameter '{id}' default must be {{ amount, unit }}")))?;
-            duration_value(id, d.amount, &d.unit)
-        }
-        ParamKind::Variant => {
-            let s = v
-                .as_str()
-                .ok_or_else(|| PresetError::BadFile(format!("parameter '{id}' default must be a variant label")))?;
-            Ok(ParamValue::Variant(variant_days(id, s)?))
-        }
-    }
-}
 
-/// Resolve every declared parameter to a value: `--param` first, then the file `default`, then a
-/// `default_hint` (in `run`, where a target exists), else an error. `target_date` carries the
-/// target's file creation date on the run path (`None` in calc, where a hint stays an honest request
-/// to pass `--param`). A `--param` naming no declared parameter is rejected - a silently ignored typo
-/// is a wrong result, not a warning.
-fn resolve_parameters(
-    params: &[Parameter],
-    cli: &HashMap<String, String>,
-    target_date: Option<chrono_core::calc::CivilDateTime>,
-) -> Result<HashMap<String, ParamValue>, PresetError> {
-    for id in cli.keys() {
-        if !params.iter().any(|p| &p.id == id) {
-            return Err(PresetError::BadFile(format!("unknown parameter '{id}' for this preset")));
-        }
-    }
-    let mut out = HashMap::new();
-    for p in params {
-        let value = if let Some(raw) = cli.get(&p.id) {
-            parse_param_value(&p.id, p.kind, raw)?
-        } else if let Some(def) = &p.default {
-            def.clone()
-        } else if let Some(hint) = &p.default_hint {
-            resolve_hint(&p.id, p.kind, hint, target_date)?
-        } else {
-            return Err(PresetError::BadFile(format!("parameter '{}' has no value - pass --param {}=<value>", p.id, p.id)));
-        };
-        out.insert(p.id.clone(), value);
-    }
-    Ok(out)
-}
 
-/// Resolve a parameter's `default_hint` to a value. Only `target_file_creation` is built (docs/04
-/// 4.2): it fills a `date` parameter from the target's file date, available only in `run`. Without a
-/// target it is an honest "not built" asking for `--param`, not a guess.
-fn resolve_hint(
-    id: &str,
-    kind: ParamKind,
-    hint: &str,
-    target_date: Option<chrono_core::calc::CivilDateTime>,
-) -> Result<ParamValue, PresetError> {
-    match hint {
-        "target_file_creation" => {
-            if kind != ParamKind::Date {
-                return Err(PresetError::BadFile(format!(
-                    "parameter '{id}': hint target_file_creation fills a date, but the parameter is not a date"
-                )));
-            }
-            match target_date {
-                Some(date) => Ok(ParamValue::Date(date)),
-                None => Err(PresetError::NotBuilt(format!(
-                    "parameter '{id}' takes its value from the target file date (only available when running a target) - pass --param {id}=<value>"
-                ))),
-            }
-        }
-        other => Err(PresetError::NotBuilt(format!(
-            "parameter '{id}' uses default_hint '{other}', which is not built yet (built: target_file_creation)"
-        ))),
-    }
-}
 
-/// Resolve a preset's raw moment to a concrete `MomentExpr`, substituting parameter values into a
-/// parametric base/shift. This is where the parametric preset becomes an ordinary moment the core
-/// evaluates - the core never sees a parameter.
-fn resolve_moment(moment: MomentDto, values: &HashMap<String, ParamValue>) -> Result<MomentExpr, PresetError> {
-    let base = base_from(moment.base, values)?;
-    let steps = moment.steps.into_iter().map(|s| step_from(s, values)).collect::<Result<Vec<_>, _>>()?;
-    Ok(MomentExpr { base, steps })
-}
 
-/// Parse a `--param` value string against the parameter's type. `date` accepts a bare date; a
-/// `duration` is a magnitude and a unit with no sign (the shift carries the sign).
-fn parse_param_value(id: &str, kind: ParamKind, raw: &str) -> Result<ParamValue, PresetError> {
-    match kind {
-        ParamKind::Date => Ok(ParamValue::Date(parse_param_date(raw).map_err(PresetError::BadFile)?)),
-        ParamKind::Duration => {
-            let split = raw.find(|c: char| !c.is_ascii_digit()).unwrap_or(raw.len());
-            let (num, unit_str) = raw.split_at(split);
-            let amount: i64 = num
-                .parse()
-                .map_err(|_| PresetError::BadFile(format!("parameter '{id}': bad duration '{raw}' (want e.g. 30days)")))?;
-            duration_value(id, amount, unit_str)
-        }
-        ParamKind::Variant => Ok(ParamValue::Variant(variant_days(id, raw)?)),
-    }
-}
 
-/// Map a boundary-variant label to its signed day offset (docs/05 3.6): the day before, on, or after
-/// the boundary. The three labels are the contract - an unknown one is a usage error, never a guess.
-fn variant_days(id: &str, label: &str) -> Result<i64, PresetError> {
-    match label {
-        "day_before" => Ok(-1),
-        "on_day" => Ok(0),
-        "day_after" => Ok(1),
-        other => Err(PresetError::BadFile(format!(
-            "parameter '{id}': unknown variant '{other}' (day_before, on_day, day_after)"
-        ))),
-    }
-}
 
-/// Build a `duration` value, mapping the unit token and rejecting a negative magnitude.
-fn duration_value(id: &str, amount: i64, unit_str: &str) -> Result<ParamValue, PresetError> {
-    if amount < 0 {
-        return Err(PresetError::BadFile(format!("parameter '{id}' amount must be non-negative")));
-    }
-    let unit = parse_unit(unit_str)
-        .ok_or_else(|| PresetError::BadFile(format!("parameter '{id}': unknown unit '{unit_str}'")))?;
-    Ok(ParamValue::Duration { amount, unit })
-}
 
-/// Parse a date or date-time; a bare date gets midnight so `--param start_date=2026-01-01` works.
-fn parse_param_date(s: &str) -> Result<chrono_core::calc::CivilDateTime, String> {
-    let normalized =
-        if s.contains('T') || s.contains(' ') { s.to_string() } else { format!("{s}T00:00:00") };
-    chrono_core::calc::parse_civil_datetime(&normalized)
-}
 
-/// Map a preset's `time_mode` to the substitution wire shape. `multiplier == 1` (or absent) is
-/// real-time `flow`; `> 1` is `xN`; `< 1` is rejected. Presets do not express `frozen`.
-fn time_mode_from(dto: Option<TimeModeDto>) -> Result<PresetTimeMode, PresetError> {
-    let Some(dto) = dto else { return Ok(PresetTimeMode::default()) };
-    let multiplier = dto.multiplier.unwrap_or(1);
-    let (mode, multiplier) = match multiplier {
-        1 => ("flow".to_string(), None),
-        m if m > 1 => ("multiplier".to_string(), Some(m)),
-        _ => return Err(PresetError::BadFile(format!("time_mode multiplier must be >= 1, got {multiplier}"))),
-    };
-    Ok(PresetTimeMode { mode, multiplier, scale_duration: dto.scale_duration_clock })
-}
 
-/// Whether a preset's `applies_to` makes it a substitution question (docs/04 4.2).
-fn preset_targets_substitution(applies_to: &str) -> bool {
-    matches!(applies_to, "substitution" | "both")
-}
 
-/// Read the target executable's creation date, expressed in the session zone, for a
-/// `target_file_creation` hint (docs/04 4.2). `None` if the file's metadata cannot be read (the
-/// launch will then fail plainly on its own), so a hint falls back to the honest "pass --param".
-fn read_target_creation_date(
-    target: &str,
-    tz_bias_min: Option<i32>,
-) -> Option<chrono_core::calc::CivilDateTime> {
-    use std::os::windows::fs::MetadataExt;
-    let meta = std::fs::metadata(target).ok()?;
-    // creation_time() is a Windows FILETIME (100ns since 1601-01-01 UTC) - the same shape the
-    // wall-clock conversion speaks - so express it in the session zone as a civil date.
-    //
-    // Zero means the file system does not record a creation time (some network and non-NTFS
-    // volumes), and it is not a date: taken literally it hands the preset 1601-01-01 and the trial
-    // computes from there without a word (R2-N13). None instead, which the caller already knows how
-    // to report - "this preset needs a start date" beats a confident wrong one (rule 6).
-    let created = meta.creation_time();
-    if created == 0 {
-        return None;
-    }
-    let wall = filetime_utc_to_wall(created as i64, tz_bias_min.unwrap_or(0));
-    chrono_core::calc::parse_civil_datetime(&wall).ok()
-}
 
-/// Locate a preset file: next to the executable (portable layout), else in ./presets.
-fn find_preset_file(id: &str) -> Result<std::path::PathBuf, PresetError> {
-    if !is_valid_catalogue_id(id) {
-        return Err(PresetError::NotFound(format!(
-            "invalid preset id '{id}' (use letters, digits, '-' or '_')"
-        )));
-    }
-    find_catalogue_file("presets", id)
-        .ok_or_else(|| PresetError::NotFound(format!("preset '{id}' not found ({})", catalogue_search_places("presets"))))
-}
 
-/// Load and validate a preset by id.
-fn load_preset(id: &str) -> Result<Preset, PresetError> {
-    let path = find_preset_file(id)?;
-    let text = std::fs::read_to_string(&path)
-        .map_err(|e| PresetError::BadFile(format!("cannot read {}: {e}", path.display())))?;
-    parse_preset(&text)
-}
 
 // ---------------------------------------------------------------------------
 // Core mode: `chrono __core`
@@ -3765,13 +2953,6 @@ fn map_prepare_error(e: chrono_mech::PrepareError) -> (i32, &'static str, &'stat
 mod tests {
     use super::*;
 
-    // Read a shipped data file from the repo (CARGO_MANIFEST_DIR is crates/cli). The golden tests below
-    // exercise the REAL calendars/ and presets/ that ship, through the real engine - so a typo in a
-    // holiday date, a wrong valid_from, or a broken observation rule fails the suite (RELEASE-004).
-    fn read_data(rel: &str) -> String {
-        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..").join(rel);
-        std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("cannot read {}: {e}", path.display()))
-    }
 
     /// A worker that is recycled re-attaches under the same targetId, and used to be counted as a
     /// new context each time - so a long accelerated session (the flagship use case: "a day a
@@ -3815,244 +2996,15 @@ mod tests {
         assert_eq!(driver_exit_code(None), 3, "no code at all is not a verdict either");
     }
 
-    /// S-1, first line. Calendars are the one catalogue outsiders are invited to write, so a file
-    /// that makes "next business day" unanswerable has to be refused where its author can see it -
-    /// not walked into by the engine. Duplicated weekend days are folded first, so the check counts
-    /// distinct days and a repeated "saturday" is not mistaken for a full week.
-    #[test]
-    fn calendar_with_every_day_as_weekend_is_refused() {
-        let all_week = r#"{"schema":"chronomock.calendar/1","id":"x","country":"XX",
-            "weekend":["monday","tuesday","wednesday","thursday","friday","saturday","sunday"],
-            "observed":"none","holidays":[]}"#;
-        let err = calendar_from_text(all_week).expect_err("a week with no working day is refused");
-        assert!(err.contains("weekend"), "the message must name the field: {err}");
-
-        // Duplicates alone are not an error - they fold, and the calendar still works.
-        let dupes = r#"{"schema":"chronomock.calendar/1","id":"x","country":"XX",
-            "weekend":["saturday","saturday","sunday"],"observed":"none","holidays":[]}"#;
-        let cal = calendar_from_text(dupes).expect("duplicate weekend days fold");
-        assert_eq!(cal.weekend.len(), 2);
-    }
-
-    /// S-17. Every rule field is refused out of range, naming the holiday and the field. Unchecked,
-    /// none of these fail loudly - the civil-date maths rolls month 13 into January and day 40 into the
-    /// next month, so the calendar quietly marks the WRONG dates and every business-day answer built on
-    /// it is wrong with it. Calendars are the documented third-party extension point, so this is the
-    /// place where a broken file has to stop.
-    #[test]
-    fn calendar_rules_out_of_range_are_refused_with_the_field_named() {
-        let cal = |rule: &str| {
-            format!(
-                r#"{{"schema":"chronomock.calendar/1","id":"x","country":"XX","weekend":["saturday","sunday"],
-                "observed":"none","holidays":[{{"id":"bad","name":{{"en":"B","local":"B"}},
-                "rule":{rule},"source":"test"}}]}}"#
-            )
-        };
-
-        for (rule, needle) in [
-            (r#"{"type":"fixed","month":13,"day":1}"#, "month 13"),
-            (r#"{"type":"fixed","month":1,"day":40}"#, "day 40"),
-            (r#"{"type":"nth_weekday","month":1,"weekday":"monday","order":9}"#, "order 9"),
-            (r#"{"type":"nth_weekday","month":0,"weekday":"monday","order":1}"#, "month 0"),
-            (r#"{"type":"easter_offset","offset":5000}"#, "5000"),
-        ] {
-            let err = calendar_from_text(&cal(rule)).expect_err("out of range must be refused");
-            assert!(err.contains("bad"), "the message must name the holiday: {err}");
-            assert!(err.contains(needle), "the message must name the value: {err}");
-        }
-
-        // The legitimate neighbours of those bounds still parse.
-        for rule in [
-            r#"{"type":"fixed","month":2,"day":29}"#,
-            r#"{"type":"nth_weekday","month":12,"weekday":"monday","order":-1}"#,
-            r#"{"type":"nth_weekday","month":5,"weekday":"monday","order":5}"#,
-            r#"{"type":"easter_offset","offset":60}"#,
-        ] {
-            calendar_from_text(&cal(rule)).unwrap_or_else(|e| panic!("{rule} should parse: {e}"));
-        }
-    }
-
-    /// S-17, the whole-file checks: a repeated id makes the audit ambiguous (holiday_on names one of
-    /// them and the reader cannot tell which), and an inverted validity window means "never a holiday",
-    /// which reads as a missing entry instead of the mistake it is.
-    #[test]
-    fn duplicate_holiday_ids_and_inverted_validity_windows_are_refused() {
-        let dupes = r#"{"schema":"chronomock.calendar/1","id":"x","country":"XX",
-            "weekend":["saturday","sunday"],"observed":"none","holidays":[
-            {"id":"same","name":{"en":"A","local":"A"},"rule":{"type":"fixed","month":1,"day":1},"source":"t"},
-            {"id":"same","name":{"en":"B","local":"B"},"rule":{"type":"fixed","month":2,"day":2},"source":"t"}]}"#;
-        assert!(calendar_from_text(dupes).expect_err("duplicate id").contains("same"));
-
-        let inverted = r#"{"schema":"chronomock.calendar/1","id":"x","country":"XX",
-            "weekend":["saturday","sunday"],"observed":"none","holidays":[
-            {"id":"w","name":{"en":"A","local":"A"},"rule":{"type":"fixed","month":1,"day":1},
-             "valid_from":2030,"valid_to":2020,"source":"t"}]}"#;
-        assert!(calendar_from_text(inverted).expect_err("inverted window").contains("valid_from"));
-    }
-
-
-    /// An installed layout answers for its own catalogue, "not here" included. Without that, running
-    /// `chrono calc --calendar us-banking` from a directory someone else can write to answered
-    /// business-day questions out of THEIR file whenever the shipped one was missing - different
-    /// holidays, different answers, no warning, in output a tester quotes as evidence.
-    ///
-    /// The working-directory fallback itself has to stay: `chrono.exe` is built into
-    /// `target/<triple>/release/`, which has no `calendars/` beside it, so a dev checkout and all
-    /// 133 harness scenarios resolve that way.
-    #[test]
-    fn an_installed_catalogue_is_not_rescued_from_the_working_directory() {
-        let root = std::env::temp_dir().join(format!("chrono-catalogue-test-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&root);
-        let exe_dir = root.join("app");
-        let cwd = root.join("elsewhere");
-        std::fs::create_dir_all(exe_dir.join("calendars")).unwrap();
-        std::fs::create_dir_all(cwd.join("calendars")).unwrap();
-        std::fs::write(cwd.join("calendars").join("us-banking.json"), "{}").unwrap();
-
-        // Installed layout, file absent from it: the one in the working directory is NOT used.
-        assert_eq!(find_catalogue_in(Some(&exe_dir), &cwd, "calendars", "us-banking"), None);
-
-        // Installed layout that does have it: that copy wins.
-        let shipped = exe_dir.join("calendars").join("us-banking.json");
-        std::fs::write(&shipped, "{}").unwrap();
-        assert_eq!(find_catalogue_in(Some(&exe_dir), &cwd, "calendars", "us-banking"), Some(shipped));
-
-        // No catalogue beside the executable at all - a dev checkout. The fallback still works, and
-        // this is the case the harness runs in.
-        let bare = root.join("bare");
-        std::fs::create_dir_all(&bare).unwrap();
-        assert_eq!(
-            find_catalogue_in(Some(&bare), &cwd, "calendars", "us-banking"),
-            Some(cwd.join("calendars").join("us-banking.json"))
-        );
-
-        let _ = std::fs::remove_dir_all(&root);
-    }
 
 
 
 
-    #[test]
-    fn shipped_calendars_parse_and_hit_golden_dates() {
-        use chrono_core::calc::CivilDateTime;
-        use chrono_core::calendar::{holiday_on, is_business_day};
-        let d = |y: i64, m: u32, day: u32| CivilDateTime {
-            year: y,
-            month: m,
-            day,
-            hour: 0,
-            minute: 0,
-            second: 0,
-        };
 
-        let pl = calendar_from_text(&read_data("calendars/pl.json")).expect("pl parses");
-        // Easter Monday 2026 = 2026-04-06 (Easter Sunday 2026-04-05): the easter_offset computus.
-        assert_eq!(holiday_on(&d(2026, 4, 6), &pl).map(|h| h.id.as_str()), Some("easter_monday"));
-        // Corpus Christi 2026 = Easter + 60 days = 2026-06-04: a larger easter_offset.
-        assert_eq!(holiday_on(&d(2026, 6, 4), &pl).map(|h| h.id.as_str()), Some("corpus_christi"));
-        // Epiphany was restored as a Polish public holiday from 2011 (valid_from:2011; law of 24 Sept
-        // 2010, abolished 1960): a holiday in 2026, NOT in 2010.
-        assert_eq!(holiday_on(&d(2026, 1, 6), &pl).map(|h| h.id.as_str()), Some("epiphany"));
-        assert!(holiday_on(&d(2010, 1, 6), &pl).is_none());
-        // Christmas Eve became a non-working day from 2025 (valid_from:2025): a holiday in 2025, not 2024.
-        assert_eq!(holiday_on(&d(2025, 12, 24), &pl).map(|h| h.id.as_str()), Some("christmas_eve"));
-        assert!(holiday_on(&d(2024, 12, 24), &pl).is_none());
 
-        let fed = calendar_from_text(&read_data("calendars/us-federal.json")).expect("us-federal parses");
-        let bank = calendar_from_text(&read_data("calendars/us-banking.json")).expect("us-banking parses");
-        // One country, two calendars: Independence Day 2026 falls on Saturday (Jul 4), so it is observed
-        // on Friday Jul 3 federally (sat->fri) - not a business day - while banking (sun->mon only) does
-        // not shift a Saturday holiday, so the same Friday IS a business day.
-        assert!(!is_business_day(&d(2026, 7, 3), &fed));
-        assert!(is_business_day(&d(2026, 7, 3), &bank));
-        // Juneteenth is a federal holiday from 2021 (valid_from:2021): a holiday in 2021, not in 2020.
-        assert_eq!(holiday_on(&d(2021, 6, 19), &fed).map(|h| h.id.as_str()), Some("juneteenth"));
-        assert!(holiday_on(&d(2020, 6, 19), &fed).is_none());
-        // MLK Day 2026 = the third Monday of January = 2026-01-19: an nth_weekday rule.
-        assert_eq!(holiday_on(&d(2026, 1, 19), &fed).map(|h| h.id.as_str()), Some("mlk_day"));
-        // Banking observes a Sunday holiday on the Monday: New Year 2023-01-01 (Sun) -> Mon 2023-01-02.
-        assert!(!is_business_day(&d(2023, 1, 2), &bank));
-    }
 
-    #[test]
-    fn shipped_presets_parse_and_hit_golden_dates() {
-        use chrono_core::calc::{CivilDateTime, EvalContext};
-        let now = CivilDateTime { year: 2026, month: 2, day: 15, hour: 12, minute: 0, second: 0 };
 
-        // Every shipped preset parses (a malformed one, or a bad schema/field, fails here).
-        let ids = [
-            "month-end",
-            "quarter-end",
-            "epoch-zero",
-            "year-2038",
-            "trial-first-day-after",
-            "trial-last-day",
-            "year-rollover",
-            "license-expired-year-ago",
-            "date-before-install",
-            "payment-due-business-days",
-            "clock-skew-plus-90s",
-            "feb-29",
-            "age-of-majority",
-            "fiscal-year-end",
-        ];
-        for id in ids {
-            let text = read_data(&format!("presets/{id}.json"));
-            parse_preset(&text).unwrap_or_else(|e| panic!("preset {id} parses: {}", e.message()));
-        }
 
-        // Evaluate a preset with its default parameters, through the real resolve + engine path.
-        let eval_preset = |id: &str, ctx: &EvalContext| {
-            let p = parse_preset(&read_data(&format!("presets/{id}.json"))).unwrap();
-            let values = resolve_parameters(&p.parameters, &HashMap::new(), None).unwrap();
-            let expr = resolve_moment(p.moment, &values).unwrap();
-            chrono_core::calc::eval(&expr, ctx).unwrap().result()
-        };
-
-        let no_cal = EvalContext { now, zone_bias_min: 0, calendar: None };
-        // Absolute-base presets are exact.
-        assert_eq!(eval_preset("epoch-zero", &no_cal).to_iso(), "1970-01-01T00:00:00");
-        assert_eq!(eval_preset("year-2038", &no_cal).to_iso(), "2038-01-19T03:14:07");
-        // month-end snaps today (2026-02-15) to the last day of February - a common year, so the 28th.
-        let month_end = eval_preset("month-end", &no_cal);
-        assert_eq!((month_end.year, month_end.month, month_end.day), (2026, 2, 28));
-
-        // clock-skew-plus-90s carries base "now" (not "today"): the +90 s shift is measured from the
-        // current instant WITH its seconds, so 12:00:00 + 90 s crosses the minute to 12:01:30. A base of
-        // "today" (midnight) would make the 2FA skew meaningless - this pins that the preset uses "now".
-        assert_eq!(eval_preset("clock-skew-plus-90s", &no_cal).to_iso(), "2026-02-15T12:01:30");
-
-        // feb-29 uses nearest next-leap-day, pure arithmetic with NO calendar: from 2026-02-15 the next
-        // 29 February is 2028 (2026 and 2027 are common years). Proves the leap-day nearest target
-        // resolves without a --calendar, unlike the business-day targets.
-        assert_eq!(eval_preset("feb-29", &no_cal).to_iso(), "2028-02-29T00:00:00");
-
-        // age-of-majority is parametric and calculator-only: a birth date + the default day_before
-        // variant is the day before the 18th birthday. 2008-03-15 + 18y = 2026-03-15, day_before ->
-        // 2026-03-14. Exercises the whole variant path (parse + resolve + sign-less shift).
-        let aom = parse_preset(&read_data("presets/age-of-majority.json")).unwrap();
-        let aom_vals = resolve_parameters(&aom.parameters, &param_map(&[("birth_date", "2008-03-15")]), None).unwrap();
-        let aom_expr = resolve_moment(aom.moment, &aom_vals).unwrap();
-        assert_eq!(chrono_core::calc::eval(&aom_expr, &no_cal).unwrap().result().to_iso(), "2026-03-14T00:00:00");
-
-        // fiscal-year-end takes a fiscal-year start date and returns its last day (start + 1 year - 1 day),
-        // never a hardcoded 31 December (docs/05 3.4). US federal 2025-10-01 -> 2026-09-30.
-        let fye = parse_preset(&read_data("presets/fiscal-year-end.json")).unwrap();
-        let fye_vals = resolve_parameters(&fye.parameters, &param_map(&[("fiscal_year_start", "2025-10-01")]), None).unwrap();
-        let fye_expr = resolve_moment(fye.moment, &fye_vals).unwrap();
-        assert_eq!(chrono_core::calc::eval(&fye_expr, &no_cal).unwrap().result().to_iso(), "2026-09-30T00:00:00");
-
-        // payment-due-business-days is calendar-aware: +90 business days from today lands on a different
-        // day per market, which is the whole point of a calendar-aware preset. Anchor at 2026-06-01 so the
-        // window spans US Labor Day (first Monday of September, a US weekday holiday Poland does not have),
-        // guaranteeing the two markets diverge; if the calendar were ignored they would be identical.
-        let now_pay = CivilDateTime { year: 2026, month: 6, day: 1, hour: 12, minute: 0, second: 0 };
-        let bank = calendar_from_text(&read_data("calendars/us-banking.json")).unwrap();
-        let pl = calendar_from_text(&read_data("calendars/pl.json")).unwrap();
-        let due_us = eval_preset("payment-due-business-days", &EvalContext { now: now_pay, zone_bias_min: 0, calendar: Some(&bank) });
-        let due_pl = eval_preset("payment-due-business-days", &EvalContext { now: now_pay, zone_bias_min: 0, calendar: Some(&pl) });
-        assert_ne!(due_us.to_iso(), due_pl.to_iso(), "US and PL must diverge over 90 business days");
-    }
 
     #[test]
     fn build_spec_rejects_a_multiplier_the_clock_cannot_survive() {
@@ -4160,20 +3112,6 @@ mod tests {
     }
 
 
-    #[test]
-    fn catalogue_id_rejects_path_traversal() {
-        // A catalogue id must never become a path escape: separators, '..', a drive colon, or empty
-        // are refused before the id is turned into a file name (docs/04 4.1).
-        assert!(is_valid_catalogue_id("month-end"));
-        assert!(is_valid_catalogue_id("us_banking"));
-        assert!(is_valid_catalogue_id("year-2038"));
-        assert!(!is_valid_catalogue_id(""));
-        assert!(!is_valid_catalogue_id(".."));
-        assert!(!is_valid_catalogue_id("../secret"));
-        assert!(!is_valid_catalogue_id("a/b"));
-        assert!(!is_valid_catalogue_id("a\\b"));
-        assert!(!is_valid_catalogue_id("c:evil"));
-    }
 
     #[test]
     fn args_split_plain_and_quoted() {
@@ -4520,42 +3458,10 @@ mod tests {
 
     // --- calc surface ---------------------------------------------------------
 
-    #[test]
-    fn parse_shift_reads_sign_amount_and_unit() {
-        assert_eq!(parse_shift("+18years").unwrap(), Step::Shift { sign: Sign::Plus, amount: 18, unit: Unit::Years });
-        assert_eq!(parse_shift("-1d").unwrap(), Step::Shift { sign: Sign::Minus, amount: 1, unit: Unit::Days });
-        assert_eq!(parse_shift("+2q").unwrap(), Step::Shift { sign: Sign::Plus, amount: 2, unit: Unit::Quarters });
-    }
 
-    #[test]
-    fn shift_unit_m_is_minutes_mo_is_months() {
-        // The collision that would silently corrupt every month calc if conflated.
-        assert_eq!(parse_shift("+5m").unwrap(), Step::Shift { sign: Sign::Plus, amount: 5, unit: Unit::Minutes });
-        assert_eq!(parse_shift("+5mo").unwrap(), Step::Shift { sign: Sign::Plus, amount: 5, unit: Unit::Months });
-    }
 
-    #[test]
-    fn parse_shift_rejects_bad_shapes() {
-        assert!(parse_shift("18years").is_err()); // no sign
-        assert!(parse_shift("+years").is_err()); // no number
-        assert!(parse_shift("+18zz").is_err()); // unknown unit
-        assert!(parse_shift("+").is_err()); // sign only
-    }
 
-    #[test]
-    fn parse_base_reads_keywords_and_absolute() {
-        assert_eq!(parse_base("today").unwrap(), Base::Today);
-        assert_eq!(parse_base("now").unwrap(), Base::Now);
-        assert!(matches!(parse_base("2025-01-31T12:00:00").unwrap(), Base::Absolute(_)));
-        assert!(parse_base("2025-02-31T00:00:00").is_err()); // impossible day rejected, not normalized
-    }
 
-    #[test]
-    fn parse_set_time_reads_hms() {
-        assert_eq!(parse_set_time("23:59:59").unwrap(), Step::SetTime { hour: 23, minute: 59, second: 59 });
-        assert!(parse_set_time("23:59").is_err()); // wrong shape
-        assert!(parse_set_time("aa:bb:cc").is_err()); // non-numeric
-    }
 
     #[test]
     fn calc_exit_codes_split_bad_input_from_needs_data() {
@@ -4687,29 +3593,8 @@ mod tests {
         assert!(text.contains("business day  no  (us-test)"), "got:\n{text}");
     }
 
-    #[test]
-    fn calendar_loader_maps_weekdays_and_observed() {
-        assert_eq!(weekday_index("Monday").unwrap(), 1);
-        assert_eq!(weekday_index("sunday").unwrap(), 0);
-        assert!(weekday_index("funday").is_err());
-        assert!(matches!(observed_from("sun_to_mon").unwrap(), chrono_core::calendar::Observed::SunToMon));
-        assert!(observed_from("whenever").is_err());
-    }
 
-    #[test]
-    fn parse_snap_reads_targets_and_rejects_unknown() {
-        assert_eq!(parse_snap("end-of-quarter").unwrap(), SnapTarget::EndOfQuarter);
-        assert_eq!(parse_snap("eom").unwrap(), SnapTarget::EndOfMonth);
-        assert_eq!(parse_snap("start-of-year").unwrap(), SnapTarget::StartOfYear);
-        assert!(parse_snap("end-of-week").is_err());
-    }
 
-    #[test]
-    fn parse_nearest_reads_targets_and_rejects_unknown() {
-        assert_eq!(parse_nearest("next-business-day").unwrap(), NearestTarget::NextBusinessDay);
-        assert_eq!(parse_nearest("pbd").unwrap(), NearestTarget::PrevBusinessDay);
-        assert!(parse_nearest("next-full-moon").is_err());
-    }
 
     #[test]
     fn calc_snap_end_of_quarter_end_to_end() {
@@ -4873,141 +3758,14 @@ mod tests {
 
     // --- Presets (Stage 4 slice 16-18): a named moment expression, docs/04 4.3 ----------------
 
-    /// Resolve a non-parametric preset's moment (empty parameter values) - the slice 16/17 path,
-    /// now that parse and resolve are separate.
-    fn resolve_no_params(p: Preset) -> Result<MomentExpr, PresetError> {
-        let values = resolve_parameters(&p.parameters, &HashMap::new(), None)?;
-        resolve_moment(p.moment, &values)
-    }
 
-    /// Build a --param map for tests.
-    fn param_map(pairs: &[(&str, &str)]) -> HashMap<String, String> {
-        pairs.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect()
-    }
 
-    /// A `both` preset over `today` with a snap step maps to the canonical moment and carries its
-    /// English framing. `snap` speaks the same token as the `--snap` flag (one grammar).
-    #[test]
-    fn preset_maps_to_canonical_moment_with_framing() {
-        let json = r#"{
-            "schema": "chronomock.preset/1", "id": "month-end",
-            "name": { "en": "Last day of month", "pl": "x" },
-            "explains": { "en": "Month-end close?", "pl": "x" },
-            "applies_to": "both",
-            "moment": { "base": "today", "steps": [ { "snap": "end-of-month" } ] }
-        }"#;
-        let p = parse_preset(json).unwrap();
-        assert_eq!(p.id, "month-end");
-        assert_eq!(p.name_en, "Last day of month");
-        assert_eq!(p.explains_en, "Month-end close?");
-        assert_eq!(p.applies_to, "both");
-        let m = resolve_no_params(p).unwrap();
-        assert_eq!(m.base, Base::Today);
-        assert_eq!(m.steps, vec![Step::Snap(SnapTarget::EndOfMonth)]);
-    }
 
-    /// An `{ "absolute": ... }` base resolves to a fixed civil moment; a malformed one is refused at
-    /// resolve time (the base is not parsed until then), never normalized silently.
-    #[test]
-    fn preset_absolute_base_parses_and_rejects_bad_date() {
-        let ok = r#"{
-            "schema": "chronomock.preset/1", "id": "epoch-zero",
-            "name": { "en": "n" }, "explains": { "en": "e" }, "applies_to": "both",
-            "moment": { "base": { "absolute": "1970-01-01T00:00:00" }, "steps": [] }
-        }"#;
-        let m = resolve_no_params(parse_preset(ok).unwrap()).unwrap();
-        assert_eq!(
-            m.base,
-            Base::Absolute(chrono_core::calc::CivilDateTime {
-                year: 1970, month: 1, day: 1, hour: 0, minute: 0, second: 0
-            })
-        );
-        assert!(m.steps.is_empty());
 
-        let bad = ok.replace("1970-01-01T00:00:00", "2025-02-31T00:00:00");
-        assert!(matches!(resolve_no_params(parse_preset(&bad).unwrap()), Err(PresetError::BadFile(_))));
-    }
 
-    /// An unknown major schema version is refused (docs/04 3.1), as a usage error.
-    #[test]
-    fn preset_unknown_schema_is_refused() {
-        let json = r#"{
-            "schema": "chronomock.preset/2", "id": "x",
-            "name": { "en": "n" }, "explains": { "en": "e" }, "applies_to": "both",
-            "moment": { "base": "today", "steps": [] }
-        }"#;
-        let e = parse_preset(json).unwrap_err();
-        assert!(matches!(e, PresetError::BadFile(_)));
-        assert_eq!(e.exit_code(), 1);
-    }
 
-    /// A parameter type not built yet (int) is the honest "not built" (exit 5) at parse time, never
-    /// guessed. (variant is now built - slice for age-of-majority.)
-    #[test]
-    fn preset_unbuilt_param_type_is_not_built() {
-        let json = r#"{
-            "schema": "chronomock.preset/1", "id": "age",
-            "name": { "en": "n" }, "explains": { "en": "e" }, "applies_to": "calculator",
-            "parameters": [ { "id": "count", "type": "int" } ],
-            "moment": { "base": "today", "steps": [] }
-        }"#;
-        let e = parse_preset(json).unwrap_err();
-        assert!(matches!(e, PresetError::NotBuilt(_)));
-        assert_eq!(e.exit_code(), 5);
-    }
 
-    /// A variant parameter resolves its label to a signed day offset that fills a sign-less shift step
-    /// (docs/05 3.6): day_before -1, on_day 0, day_after +1. The shift carries the variant's direction.
-    #[test]
-    fn variant_parameter_fills_a_signless_shift() {
-        use chrono_core::calc::{eval, CivilDateTime, EvalContext};
-        let json = r#"{
-            "schema": "chronomock.preset/1", "id": "b",
-            "name": { "en": "n" }, "explains": { "en": "e" }, "applies_to": "calculator",
-            "parameters": [ { "id": "boundary", "type": "variant", "default": "day_before" } ],
-            "moment": { "base": { "absolute": "2026-03-15T00:00:00" },
-                        "steps": [ { "shift": { "parameter": "boundary" } } ] }
-        }"#;
-        let ctx = EvalContext {
-            now: CivilDateTime { year: 2000, month: 1, day: 1, hour: 0, minute: 0, second: 0 },
-            zone_bias_min: 0,
-            calendar: None,
-        };
-        // Re-parse per case because resolve_moment consumes the raw moment (MomentDto is not Clone).
-        let resolve = |cli: &[(&str, &str)]| {
-            let p = parse_preset(json).unwrap();
-            let vals = resolve_parameters(&p.parameters, &param_map(cli), None).unwrap();
-            let expr = resolve_moment(p.moment, &vals).unwrap();
-            eval(&expr, &ctx).unwrap().result().to_iso()
-        };
-        assert_eq!(resolve(&[]), "2026-03-14T00:00:00"); // default day_before -> the day before
-        assert_eq!(resolve(&[("boundary", "day_after")]), "2026-03-16T00:00:00");
-        assert_eq!(resolve(&[("boundary", "on_day")]), "2026-03-15T00:00:00"); // on_day -> unchanged
-    }
 
-    /// docs/04 4.1: a preset describes TIME, never a TARGET. There is no path field in the model, so
-    /// a smuggled `"path"` is simply ignored - it cannot reach the moment. Structural enforcement.
-    #[test]
-    fn preset_ignores_a_path_field() {
-        let json = r#"{
-            "schema": "chronomock.preset/1", "id": "sneaky", "path": "C:/evil.exe",
-            "name": { "en": "n" }, "explains": { "en": "e" }, "applies_to": "both",
-            "moment": { "base": "today", "steps": [] }
-        }"#;
-        // It loads (unknown fields ignored, docs/04 section 3) and the result has no way to carry a
-        // path - `Preset` has no such field. The moment is exactly the declared one.
-        let m = resolve_no_params(parse_preset(json).unwrap()).unwrap();
-        assert_eq!(m.base, Base::Today);
-        assert!(m.steps.is_empty());
-    }
-
-    /// The calculator honours `applies_to`: substitution-only presets are not calculator questions.
-    #[test]
-    fn preset_applies_to_gates_the_calculator() {
-        assert!(preset_targets_calculator("calculator"));
-        assert!(preset_targets_calculator("both"));
-        assert!(!preset_targets_calculator("substitution"));
-    }
 
     /// `--preset` supplies its own moment, so combining it with a step flag (or --analyze) is a
     /// usage error; alone it parses.
@@ -5023,57 +3781,11 @@ mod tests {
         assert!(parse_calc_args(&["--preset".into(), "x".into(), "--analyze".into(), "2020-01-01".into()]).is_err());
     }
 
-    /// Bad JSON is a usage-level bad-file error, not a panic.
-    #[test]
-    fn preset_bad_json_is_reported() {
-        assert!(matches!(parse_preset("{ not json"), Err(PresetError::BadFile(_))));
-    }
 
     // --- run --preset (Stage 4 slice 17): the substitution bridge, docs/06.3 pkt 3 -----------
 
-    /// A preset's time_mode maps to the substitution wire shape: multiplier 1 (or absent) is flow,
-    /// >1 is xN, <1 is refused. scale_duration_clock rides through.
-    #[test]
-    fn preset_time_mode_maps_to_wire_shape() {
-        let none = time_mode_from(None).unwrap();
-        assert_eq!(none.mode, "flow");
-        assert_eq!(none.multiplier, None);
-        assert!(!none.scale_duration);
 
-        let flow = time_mode_from(Some(TimeModeDto { multiplier: Some(1), scale_duration_clock: false })).unwrap();
-        assert_eq!((flow.mode.as_str(), flow.multiplier), ("flow", None));
 
-        let xn = time_mode_from(Some(TimeModeDto { multiplier: Some(60), scale_duration_clock: true })).unwrap();
-        assert_eq!((xn.mode.as_str(), xn.multiplier, xn.scale_duration), ("multiplier", Some(60), true));
-
-        assert!(matches!(
-            time_mode_from(Some(TimeModeDto { multiplier: Some(0), scale_duration_clock: false })),
-            Err(PresetError::BadFile(_))
-        ));
-    }
-
-    /// A preset carrying a time_mode object surfaces it on the loaded preset.
-    #[test]
-    fn preset_from_json_reads_time_mode() {
-        let json = r#"{
-            "schema": "chronomock.preset/1", "id": "fast",
-            "name": { "en": "n" }, "explains": { "en": "e" }, "applies_to": "both",
-            "moment": { "base": "today", "steps": [] },
-            "time_mode": { "multiplier": 1440, "scale_duration_clock": true }
-        }"#;
-        let p = parse_preset(json).unwrap();
-        assert_eq!(p.time_mode.mode, "multiplier");
-        assert_eq!(p.time_mode.multiplier, Some(1440));
-        assert!(p.time_mode.scale_duration);
-    }
-
-    /// The substitution surface honours applies_to: calculator-only presets are not run questions.
-    #[test]
-    fn preset_applies_to_gates_substitution() {
-        assert!(preset_targets_substitution("substitution"));
-        assert!(preset_targets_substitution("both"));
-        assert!(!preset_targets_substitution("calculator"));
-    }
 
     /// `run --preset` supplies the moment and mode, so combining it with a time flag is a usage
     /// error; alone (with a target) it parses and carries the id.
@@ -5089,103 +3801,13 @@ mod tests {
 
     // --- Parametric presets (Stage 4 slice 18): --param, docs/04 4.2 --------------------------
 
-    /// The canonical trial preset (docs/04 4.2): a `date` parameter fills the base, a `duration`
-    /// parameter fills a shift. With both values the moment substitutes to a concrete expression.
-    const TRIAL_JSON: &str = r#"{
-        "schema": "chronomock.preset/1", "id": "trial-first-day-after",
-        "name": { "en": "n" }, "explains": { "en": "e" }, "applies_to": "both",
-        "parameters": [
-            { "id": "trial_length", "type": "duration", "default": { "amount": 30, "unit": "days" } },
-            { "id": "start_date", "type": "date", "default_hint": "target_file_creation" }
-        ],
-        "moment": {
-            "base": { "parameter": "start_date" },
-            "steps": [
-                { "shift": { "sign": "+", "parameter": "trial_length" } },
-                { "shift": { "sign": "+", "amount": 1, "unit": "days" } },
-                { "set_time": "00:00:01" }
-            ]
-        }
-    }"#;
 
-    fn civil(y: i64, mo: u32, d: u32, h: u32, mi: u32, s: u32) -> chrono_core::calc::CivilDateTime {
-        chrono_core::calc::CivilDateTime { year: y, month: mo, day: d, hour: h, minute: mi, second: s }
-    }
 
-    #[test]
-    fn param_date_base_and_duration_shift_substitute() {
-        let p = parse_preset(TRIAL_JSON).unwrap();
-        let values =
-            resolve_parameters(&p.parameters, &param_map(&[("start_date", "2026-01-01"), ("trial_length", "30days")]), None)
-                .unwrap();
-        let m = resolve_moment(p.moment, &values).unwrap();
-        assert_eq!(m.base, Base::Absolute(civil(2026, 1, 1, 0, 0, 0)));
-        assert_eq!(
-            m.steps,
-            vec![
-                Step::Shift { sign: Sign::Plus, amount: 30, unit: Unit::Days },
-                Step::Shift { sign: Sign::Plus, amount: 1, unit: Unit::Days },
-                Step::SetTime { hour: 0, minute: 0, second: 1 },
-            ]
-        );
-    }
 
-    /// A parameter with a file `default` (trial_length) may be omitted; the default is used.
-    #[test]
-    fn param_default_used_when_flag_absent() {
-        let p = parse_preset(TRIAL_JSON).unwrap();
-        let values = resolve_parameters(&p.parameters, &param_map(&[("start_date", "2026-01-01")]), None).unwrap();
-        let m = resolve_moment(p.moment, &values).unwrap();
-        assert_eq!(m.steps[0], Step::Shift { sign: Sign::Plus, amount: 30, unit: Unit::Days });
-    }
 
-    /// A required parameter with only a default_hint (start_date) is the honest "not built" in the
-    /// calculator (exit 5) - the hint's target date is not available here. Never guessed.
-    #[test]
-    fn param_hint_only_needs_a_value_in_calc() {
-        let p = parse_preset(TRIAL_JSON).unwrap();
-        let e = resolve_parameters(&p.parameters, &param_map(&[]), None).unwrap_err();
-        assert!(matches!(e, PresetError::NotBuilt(_)));
-        assert_eq!(e.exit_code(), 5);
-    }
 
-    /// A --param naming no declared parameter is rejected (a silently ignored typo is a wrong result).
-    #[test]
-    fn param_unknown_id_is_rejected() {
-        let p = parse_preset(TRIAL_JSON).unwrap();
-        let e = resolve_parameters(&p.parameters, &param_map(&[("start_date", "2026-01-01"), ("nope", "1")]), None).unwrap_err();
-        assert!(matches!(e, PresetError::BadFile(_)));
-    }
 
-    /// A --param value that does not parse against its type is a usage error, not a panic.
-    #[test]
-    fn param_bad_value_is_rejected() {
-        let p = parse_preset(TRIAL_JSON).unwrap();
-        assert!(matches!(
-            resolve_parameters(&p.parameters, &param_map(&[("start_date", "not-a-date")]), None),
-            Err(PresetError::BadFile(_))
-        ));
-        let p2 = parse_preset(TRIAL_JSON).unwrap();
-        assert!(matches!(
-            resolve_parameters(&p2.parameters, &param_map(&[("start_date", "2026-01-01"), ("trial_length", "30frobs")]), None),
-            Err(PresetError::BadFile(_))
-        ));
-    }
 
-    /// A duration value in a date slot (or vice versa) is refused at substitution, not misread.
-    #[test]
-    fn param_wrong_type_for_slot_is_refused() {
-        // Feed trial_length (a duration) where the base expects a date by pointing base at it.
-        let json = r#"{
-            "schema": "chronomock.preset/1", "id": "mismatch",
-            "name": { "en": "n" }, "explains": { "en": "e" }, "applies_to": "both",
-            "parameters": [ { "id": "d", "type": "duration", "default": { "amount": 5, "unit": "days" } } ],
-            "moment": { "base": { "parameter": "d" }, "steps": [] }
-        }"#;
-        let p = parse_preset(json).unwrap();
-        let values = resolve_parameters(&p.parameters, &param_map(&[]), None).unwrap();
-        assert!(matches!(resolve_moment(p.moment, &values), Err(PresetError::BadFile(_))));
-    }
 
     /// --param only makes sense with --preset.
     #[test]
@@ -5197,51 +3819,8 @@ mod tests {
 
     // --- run --param + default_hint (Stage 4 slice 19): trial in substitution ------------------
 
-    /// The target_file_creation hint fills a date parameter from the target's file date (run only);
-    /// without a target it is the honest not-built; a duration slot or an unbuilt hint is refused.
-    #[test]
-    fn hint_target_file_creation_resolves_only_with_a_target() {
-        let d = civil(2025, 6, 15, 9, 30, 0);
-        assert!(matches!(
-            resolve_hint("start_date", ParamKind::Date, "target_file_creation", Some(d)),
-            Ok(ParamValue::Date(x)) if x == d
-        ));
-        let e = resolve_hint("start_date", ParamKind::Date, "target_file_creation", None).unwrap_err();
-        assert!(matches!(e, PresetError::NotBuilt(_)));
-        assert_eq!(e.exit_code(), 5);
-        assert!(matches!(
-            resolve_hint("d", ParamKind::Duration, "target_file_creation", Some(d)),
-            Err(PresetError::BadFile(_))
-        ));
-        assert!(matches!(
-            resolve_hint("x", ParamKind::Date, "somewhere_else", Some(d)),
-            Err(PresetError::NotBuilt(_))
-        ));
-    }
 
-    /// In run, the trial's start_date resolves from the target date and trial_length from its default,
-    /// with no --param at all - the flagship "trial in substitution" flow.
-    #[test]
-    fn param_hint_resolves_from_target_date_in_run() {
-        let p = parse_preset(TRIAL_JSON).unwrap();
-        let target = civil(2025, 1, 10, 0, 0, 0);
-        let values = resolve_parameters(&p.parameters, &param_map(&[]), Some(target)).unwrap();
-        assert!(matches!(values.get("start_date"), Some(ParamValue::Date(x)) if *x == target));
-        assert!(matches!(
-            values.get("trial_length"),
-            Some(ParamValue::Duration { amount: 30, unit: Unit::Days })
-        ));
-    }
 
-    /// --param wins over the hint even when a target date is available.
-    #[test]
-    fn param_flag_overrides_hint_in_run() {
-        let p = parse_preset(TRIAL_JSON).unwrap();
-        let target = civil(2025, 1, 10, 0, 0, 0);
-        let values =
-            resolve_parameters(&p.parameters, &param_map(&[("start_date", "2030-12-31")]), Some(target)).unwrap();
-        assert!(matches!(values.get("start_date"), Some(ParamValue::Date(x)) if *x == civil(2030, 12, 31, 0, 0, 0)));
-    }
 
     /// --param in run needs --preset too.
     #[test]

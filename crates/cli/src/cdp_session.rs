@@ -21,9 +21,10 @@ use chrono_proto::{
 
 use crate::cdp;
 use crate::zone::{epoch_ms_to_wall, moment_epoch_ms, now_epoch_ms};
+use crate::grammar::parse_shift;
 use crate::{
     command_id, context_index_for, emit, ended_after_launch, ended_clean, jump_error_key,
-    parse_shift, unsupported_command,
+    unsupported_command,
 };
 /// One shimmed JS context of a Chromium target: the coverage unit of a CDP session (rule 4 - never
 /// summed across contexts).
