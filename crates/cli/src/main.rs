@@ -20,6 +20,8 @@ mod calc;
 mod calendar;
 /// The Chromium/Electron substitution mechanism (CDP faketime), a parallel path to the native core.
 mod cdp;
+/// The clock a Chromium session runs on, and the arithmetic that moves it.
+mod cdp_clock;
 /// Hidden diagnostic probes for the Chromium path.
 mod cdp_probe;
 /// The Chromium/Electron session - the second substitution mechanism.
