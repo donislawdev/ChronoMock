@@ -28,6 +28,11 @@ pub struct LaunchedChromium {
     child: Child,
     pub port: u16,
     user_data_dir: PathBuf,
+    /// Set by [`cleanup`], read by [`Drop`]. Two jobs, and the second is the reason it exists: it
+    /// keeps the drop from repeating work that already ran, and it keeps the drop from removing a
+    /// profile AFTER the session has reported that profile as left behind - which would make the
+    /// evidence a lie about the one thing it is there to record (untouchable rule 4).
+    cleaned: bool,
 }
 
 impl LaunchedChromium {
@@ -49,6 +54,17 @@ impl LaunchedChromium {
     /// report it honestly via `ended.residue_keys` instead of leaving a silent mess (untouchable rules
     /// 4 and 6).
     pub fn shutdown_with_residue(mut self) -> Vec<String> {
+        self.cleanup()
+    }
+
+    /// The cleanup itself, idempotent so the explicit shutdown above and the [`Drop`] net below
+    /// cannot both act on the same profile. The first caller does the work and gets the residue;
+    /// any later one gets an empty vec, because by then there is nothing left to report on.
+    fn cleanup(&mut self) -> Vec<String> {
+        if self.cleaned {
+            return Vec::new();
+        }
+        self.cleaned = true;
         let _ = self.child.kill();
         let _ = self.child.wait();
         // Chromium's own child processes (renderer, GPU) briefly outlive the main process we killed and
@@ -74,6 +90,24 @@ impl LaunchedChromium {
         } else {
             Vec::new()
         }
+    }
+}
+
+/// The net under every other way out, for the same stated reason `Session` and `SessionLock` have
+/// one in `chrono-mech`: the first `?` or early `return` added next to an explicit cleanup call
+/// would leak - silently. This type holds heavier resources than either of those two, a live child
+/// process and a temp directory, and `std::process::Child` deliberately does NOT kill on drop.
+/// Every exit path out of `cdp_session` calls `shutdown*` today; this makes the cleanup a property
+/// of the type instead of a property of the current shape of one function.
+///
+/// What it does NOT cover, so nobody reads more into it than it gives: a force-killed core. No
+/// destructor runs on `TerminateProcess`, and that path is real - measured by killing the core
+/// mid-session, after which the launched Pomotroid was still running with its debug port open, and
+/// its profile survived until the NEXT session's orphan sweep removed it. Bounding that case means
+/// bounding the client's grace period against the core's own deadlines, which is a different fix.
+impl Drop for LaunchedChromium {
+    fn drop(&mut self) {
+        let _ = self.cleanup();
     }
 }
 
@@ -127,7 +161,7 @@ pub fn launch_chromium(target: &str, args: &[String]) -> io::Result<LaunchedChro
     let mut child_exit: Option<String> = None;
     loop {
         if let Some(port) = read_active_port(&port_file) {
-            return Ok(LaunchedChromium { child, port, user_data_dir });
+            return Ok(LaunchedChromium { child, port, user_data_dir, cleaned: false });
         }
         // A target that dies immediately - wrong flags, not a Chromium app after all, a crash on
         // startup - used to cost the full 15 s and then a guess for an error message. Watch the
@@ -285,6 +319,76 @@ mod tests {
 
         drop(guard);
         assert!(!dir.exists(), "the guard left its fixture behind");
+    }
+
+    /// A long-lived stand-in for the launched browser. `ping` is on every Windows box and needs no
+    /// shell, so the process we spawn IS the child we hold - a `cmd /c ...` wrapper would leave the
+    /// real worker running when the wrapper is killed, which is exactly the confusion these two
+    /// tests must not have.
+    fn spawn_placeholder_child() -> Child {
+        std::process::Command::new("ping")
+            .args(["-n", "30", "127.0.0.1"])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .expect("ping should spawn on Windows")
+    }
+
+    fn process_is_running(pid: u32) -> bool {
+        let out = std::process::Command::new("tasklist")
+            .args(["/FI", &format!("PID eq {pid}"), "/NH"])
+            .output()
+            .expect("tasklist should run");
+        String::from_utf8_lossy(&out.stdout).contains(&pid.to_string())
+    }
+
+    /// The net. An instance that goes out of scope without an explicit shutdown must still end the
+    /// process and remove the profile. Every exit path out of `cdp_session` calls `shutdown*` today,
+    /// so this guards the NEXT early return someone adds - the same reason `Session` and
+    /// `SessionLock` in `chrono-mech` release in `Drop` rather than only in a named method.
+    #[test]
+    fn dropping_a_launched_instance_ends_the_process_and_removes_the_profile() {
+        let dir = std::env::temp_dir().join(format!("chrono-drop-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let guard = TempDirGuard(dir.clone());
+        std::fs::create_dir_all(&dir).expect("fixture profile");
+
+        let child = spawn_placeholder_child();
+        let pid = child.id();
+        assert!(process_is_running(pid), "the placeholder child never started");
+
+        drop(LaunchedChromium { child, port: 1, user_data_dir: dir.clone(), cleaned: false });
+
+        assert!(!process_is_running(pid), "the drop left the launched process running");
+        assert!(!dir.exists(), "the drop left the profile directory behind");
+        drop(guard);
+    }
+
+    /// Cleanup runs once. A second run is not merely wasted work: `shutdown_with_residue` may have
+    /// just reported the profile as left behind, and a drop that removed it afterwards would turn
+    /// that report into a lie about the one thing it records (untouchable rule 4).
+    #[test]
+    fn cleanup_runs_once_so_a_reported_leftover_stays_true() {
+        let dir = std::env::temp_dir().join(format!("chrono-drop-once-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let guard = TempDirGuard(dir.clone());
+        std::fs::create_dir_all(&dir).expect("fixture profile");
+
+        let mut inst = LaunchedChromium {
+            child: spawn_placeholder_child(),
+            port: 1,
+            user_data_dir: dir.clone(),
+            cleaned: false,
+        };
+        assert!(inst.cleanup().is_empty(), "an unlocked profile should clear on the first pass");
+        assert!(!dir.exists());
+
+        // Stands in for a profile the session has already reported as left behind: if the drop below
+        // cleaned up again, this directory would vanish and the report would no longer be true.
+        std::fs::create_dir_all(&dir).expect("re-create fixture");
+        drop(inst);
+        assert!(dir.exists(), "the drop cleaned up a second time");
+        drop(guard);
     }
 
     /// R2-N8: our isolated profile is added BEFORE the user's arguments, and Chromium takes the

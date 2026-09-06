@@ -3463,7 +3463,7 @@ fn cdp_session(target: TargetSpec, time: TimeSpec, reader: BufReader<std::io::St
     let mut client = match cdp::CdpClient::connect_to_port("127.0.0.1", launched.port) {
         Ok(c) => c,
         Err(e) => {
-            launched.shutdown();
+            let residue = launched.shutdown_with_residue();
             emit(&Event::Error {
                 v: PROTOCOL_VERSION,
                 id: Some(1),
@@ -3472,7 +3472,7 @@ fn cdp_session(target: TargetSpec, time: TimeSpec, reader: BufReader<std::io::St
                 origin: "mechanism".into(),
             });
             eprintln!("chrono core: cannot attach over CDP: {e}");
-            emit(&ended_clean());
+            emit(&ended_after_launch(residue));
             return 2;
         }
     };
@@ -3481,7 +3481,7 @@ fn cdp_session(target: TargetSpec, time: TimeSpec, reader: BufReader<std::io::St
         serde_json::json!({ "autoAttach": true, "waitForDebuggerOnStart": true, "flatten": true }),
         None,
     ) {
-        launched.shutdown();
+        let residue = launched.shutdown_with_residue();
         emit(&Event::Error {
             v: PROTOCOL_VERSION,
             id: Some(1),
@@ -3490,7 +3490,7 @@ fn cdp_session(target: TargetSpec, time: TimeSpec, reader: BufReader<std::io::St
             origin: "mechanism".into(),
         });
         eprintln!("chrono core: cannot set up auto-attach: {e}");
-        emit(&ended_clean());
+        emit(&ended_after_launch(residue));
         return 2;
     }
     // No start verdict for CDP: unlike the native guard window, at start there is nothing to judge yet
@@ -4137,6 +4137,28 @@ fn ended_clean() -> Event {
         v: PROTOCOL_VERSION,
         clean: true,
         residue_keys: vec![],
+        target_exit_code: None,
+        elapsed_real_ms: 0,
+        elapsed_fake_ms: 0,
+        fake_end_wall: None,
+    }
+}
+
+/// `ended` for a start that failed AFTER the browser was launched. Same shape as [`ended_clean`] -
+/// the session never ran, so both elapsed clocks stay zero and there is no target exit code to
+/// report - except that it carries whatever cleanup could not remove.
+///
+/// The distinction is the whole point: a failed attach that ALSO left a locked profile on disk used
+/// to announce the session as ended cleanly, because both error paths threw the residue away
+/// (`shutdown()`) and then emitted a hard-coded `clean: true`. That is exactly the silence rules 4
+/// and 6 exist to prevent, and exactly what the success path a hundred lines below already avoids.
+/// `ended_clean` stays for the paths where nothing was ever launched - a missing hook DLL, a
+/// rejected start, an unparsable moment - and there it is the truth, not a shortcut.
+fn ended_after_launch(residue: Vec<String>) -> Event {
+    Event::Ended {
+        v: PROTOCOL_VERSION,
+        clean: residue.is_empty(),
+        residue_keys: residue,
         target_exit_code: None,
         elapsed_real_ms: 0,
         elapsed_fake_ms: 0,
