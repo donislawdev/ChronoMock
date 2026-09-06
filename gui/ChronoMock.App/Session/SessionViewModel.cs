@@ -585,73 +585,24 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     internal async Task ApplyScenarioAsync(ScenarioItem scenario)
     {
         ArgumentNullException.ThrowIfNull(scenario);
-        if (_calcClient is null)
+        ScenarioErrorKey = string.Empty;
+
+        var resolved = await ScenarioMoment.ResolveAsync(_calcClient, scenario, SelectedZone.BiasMinutes);
+        if (resolved.Iso is null)
         {
-            ScenarioErrorKey = "scenario.engine_missing";
+            ScenarioErrorKey = resolved.ErrorKey!;
             return;
         }
 
-        ScenarioErrorKey = string.Empty;
+        _applyingScenario = true;
         try
         {
-            var result = await _calcClient.EvaluateAsync(
-                BuildScenarioArgs(scenario, SelectedZone.BiasMinutes));
-            var iso = result.Moment?.Iso;
-            if (iso is null)
-            {
-                ScenarioErrorKey = "scenario.failed";
-                return;
-            }
-
-            _applyingScenario = true;
-            try
-            {
-                Moment.LoadCanonical(iso);
-            }
-            finally
-            {
-                _applyingScenario = false;
-            }
+            Moment.LoadCanonical(resolved.Iso);
         }
-        catch (NotSupportedException)
+        finally
         {
-            // A hand-edited preset the unpacker cannot represent - one honest failure type (R2-S8).
-            ScenarioErrorKey = "scenario.unsupported";
+            _applyingScenario = false;
         }
-        catch (CalcException)
-        {
-            ScenarioErrorKey = "scenario.failed";
-        }
-        catch (Exception ex) when (ex is IOException or InvalidOperationException
-                                       or UnauthorizedAccessException
-                                       or System.ComponentModel.Win32Exception)
-        {
-            // The engine itself could not be run (a broken or incomplete install).
-            ScenarioErrorKey = "scenario.engine_missing";
-        }
-    }
-
-    /// <summary>
-    /// The <c>chrono calc</c> arguments that turn one scenario into a moment. Pure, so the two things that
-    /// would only ever show up as a wrong date are asserted rather than trusted: that the preset is
-    /// evaluated as explicit steps (not <c>--preset</c>, which refuses substitution-only presets), and that
-    /// it is computed in the SESSION zone rather than the host's - "the end of this month" is a different
-    /// day on either side of midnight, and the session runs in the zone chosen in this panel (rule 2).
-    /// </summary>
-    internal static IReadOnlyList<string> BuildScenarioArgs(ScenarioItem scenario, int zoneBiasMinutes)
-    {
-        ArgumentNullException.ThrowIfNull(scenario);
-        var unpacked = PresetUnpack.UnpackMoment(scenario.Info.Moment);
-        return
-        [
-            .. CalculatorViewModel.BuildCalcArgs(
-                unpacked.Base,
-                unpacked.BaseText,
-                unpacked.Steps.Select(UnpackedMoment.StepArgs),
-                PresetInfo.CalendarIdForMarket(scenario.Info.Market)),
-            "--zone",
-            ZoneLabel.OffsetFromBiasMinutes(zoneBiasMinutes),
-        ];
     }
 
     /// <summary>Drop the scenario selection without re-computing anything - the moment no longer came from

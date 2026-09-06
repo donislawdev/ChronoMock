@@ -101,7 +101,7 @@ public class ScenarioTests
     {
         var scenario = ScenarioCatalog.Load(PresetsDir()).Ready.First(s => s.Id == "year-rollover");
 
-        var args = SessionViewModel.BuildScenarioArgs(scenario, zoneBiasMinutes: 300); // UTC-05:00
+        var args = ScenarioMoment.BuildArgs(scenario, zoneBiasMinutes: 300); // UTC-05:00
 
         // The session zone travels with the request (rule 2) - without it the engine answers in the HOST's
         // zone, which is a different calendar day either side of midnight.

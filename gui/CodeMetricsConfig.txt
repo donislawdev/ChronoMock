@@ -20,16 +20,16 @@
 # without. The second pair came out the other way round, which is the honest way of saying the
 # analyzer costs nothing measurable here.
 
-# `SessionViewModel`, coupled to 91 types across 19 namespaces. The runners-up are `MainWindow` at
-# 68 and `CalculatorViewModel` at 67, both inside the 70% band, so this is not one outlier but the
-# shape of the GUI.
+# `SessionViewModel`. The runners-up are `MainWindow` at 68 and `CalculatorViewModel` at 67, both
+# inside the 70% band, so this is not one outlier but the shape of the GUI.
 #
-# Was 97 when this ceiling was written, which put the class ABOVE the analyzer's own default of 95 -
-# the one place in the codebase where somebody else's tool, at its factory setting, already said
-# "too much". Driving the core moved out to `CoreSession` and took six types with it, so the class
-# is now under that default as well. Down is the routine door and this is what walking through it
-# looks like: the number comes down in the same change as the code.
-CA1506: 91
+# 97 when this ceiling was written, which put the class ABOVE the analyzer's own default of 95 - the
+# one place in the codebase where somebody else's tool, at its factory setting, already said "too
+# much". Two carve-outs since, each measured before and after: driving the core moved to
+# `CoreSession` (97 to 91) and turning a scenario into a moment moved to `ScenarioMoment`, taking
+# the calculator's own types with it (91 to 81). Down is the routine door, and this is what walking
+# through it looks like - the number comes down in the same change as the code, never after it.
+CA1506: 81
 
 # `PresetCatalog.ReadParameters`, a JSON reader that validates each field as it goes. Next are
 # `SessionViewModel.Apply` at 15 and `SessionViewModel`'s event router at 13. The analyzer's default
