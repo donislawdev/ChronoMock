@@ -1,0 +1,17 @@
+# The tightened copy of the C# metric ceilings: every threshold in gui/CodeMetricsConfig.txt,
+# minus one.
+#
+# Not a stricter policy - the second half of a pinning check, and the exact counterpart of
+# .github/clippy-tight/clippy.toml on the Rust side. A one-sided ratchet asks only whether the code
+# is under the number, so it cannot see a number standing above the code, granting headroom nobody
+# decided to grant. Asking whether the number STILL COSTS ANYTHING can.
+#
+# CI builds the solution a second time against this file and requires that build to FAIL. A pass
+# would mean nothing in the GUI actually reaches either ceiling, and both have to come down to the
+# real maxima.
+#
+# 🔴 Keep in step with gui/CodeMetricsConfig.txt. `MetricsCeilingTests` compares the two files rule
+# by rule and fails unless every value here is exactly one below its counterpart.
+
+CA1506: 96
+CA1502: 17

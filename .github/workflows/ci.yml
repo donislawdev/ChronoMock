@@ -63,6 +63,33 @@ jobs:
       - name: C# format
         run: dotnet format gui/ChronoMock.slnx --verify-no-changes
 
+      # The C# half of the same pinning idea as the clippy step below. The ordinary build already
+      # enforces the ceilings in gui/CodeMetricsConfig.txt, because TreatWarningsAsErrors turns a
+      # CA1502 or CA1506 finding into an error. This build asks the other question: do those numbers
+      # still cost anything. One lower on every rule, and it must FAIL - a pass would mean neither
+      # ceiling is actually reached, that both stand above the measurement, and that the next
+      # arrival slips in under them in silence.
+      #
+      # An absolute path on purpose: an AdditionalFiles item resolves against each project's own
+      # directory, so a repository-relative path would resolve to nothing and this run would pass
+      # for entirely the wrong reason. `--no-incremental` for the same class of reason - a cached
+      # compilation would answer with the previous run's thresholds.
+      #
+      # `$PSNativeCommandUseErrorActionPreference` is turned off for the reason spelled out at the
+      # clippy step: GitHub's pwsh shell sets `$ErrorActionPreference = 'stop'`, and where that
+      # variable defaults to true a failing native command throws before its exit code can be read,
+      # which would invert the meaning of this gate.
+      - name: C# metric ceilings are the measurement, not headroom
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $false
+          dotnet build gui/ChronoMock.slnx --no-incremental -p:ChronoMetricsConfig=${{ github.workspace }}/.github/metrics-tight/CodeMetricsConfig.txt
+          if ($LASTEXITCODE -eq 0) {
+            Write-Host "::error::Both metric ceilings in gui/CodeMetricsConfig.txt have room in them: the build is clean one below each. Lower them to the real maxima, and .github/metrics-tight/CodeMetricsConfig.txt with them."
+            exit 1
+          }
+          Write-Host "The failures above are the point: each metric ceiling is a real measurement."
+          exit 0
+
       # -D warnings makes clippy a gate rather than a suggestion. A newer stable Rust can add a lint and
       # turn this red without a code change; that is the intended signal, not a false alarm.
       - name: Clippy

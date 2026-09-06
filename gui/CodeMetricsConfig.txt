@@ -1,0 +1,40 @@
+# Metric ceilings for the C# half, as a RATCHET: these numbers may only come down.
+#
+# The counterpart of clippy.toml, one language over, and the same rule governs both: the number IS
+# today's measurement, not a figure above it. A ceiling standing above the truth grants headroom
+# nobody decided to grant, and the next arrival slips in under it in silence. The tightened copy in
+# .github/metrics-tight/ is one lower on every line, and CI requires a build against it to FAIL.
+#
+# Down is routine, up is the owner's decision. When something crosses one of these, the answer is to
+# move code out, not to move the number.
+#
+# 🔴 This file is the ONLY way to set these thresholds - measured 2026-09-06, not read in a document.
+# `dotnet_code_quality.CA1502.threshold` in .editorconfig is silently ignored for these rules, and
+# the silence looks exactly like "the analyzer is not in the SDK". It is: all four metric rules live
+# in Microsoft.CodeAnalysis.NetAnalyzers.dll, which ships with the SDK, so none of this costs a
+# dependency. It reaches the compiler through <AdditionalFiles> in gui/Directory.Build.props, and
+# `TreatWarningsAsErrors` there is what makes a finding an error rather than a note.
+#
+# Cost, measured alternately on two pairs of `--no-incremental` builds because consecutive runs
+# measure machine drift and not the difference: 3 438 / 3 730 ms and 3 206 / 3 140 ms, with and
+# without. The second pair came out the other way round, which is the honest way of saying the
+# analyzer costs nothing measurable here.
+
+# `SessionViewModel` is coupled to 97 types across 19 namespaces. The runners-up are `MainWindow`
+# at 68 and `CalculatorViewModel` at 67, both already inside the 70% band, so this is not one
+# outlier but the shape of the GUI. 🔴 Worth knowing: the analyzer's OWN default for this rule is
+# 95, so this class is the one place in the codebase where somebody else's tool, at its factory
+# setting, already says "too much".
+CA1506: 97
+
+# `PresetCatalog.ReadParameters`, a JSON reader that validates each field as it goes. Next are
+# `SessionViewModel.Apply` at 15 and `SessionViewModel`'s event router at 13. The analyzer's default
+# here is 25, which nothing in this codebase approaches - left at the default, the rule would never
+# have fired and would have been a gate in name only.
+CA1502: 18
+
+# CA1501 (inheritance depth) and CA1505 (maintainability index) are deliberately absent. Measured
+# before deciding: CA1501 tops out at 1 across the whole tree, so a ceiling on it guards nothing.
+# CA1505 is a composite of three other metrics and its lowest value here is 40, with 28 members
+# within a 70% band of that - a threshold there would move for reasons nobody could attribute to a
+# change, which is a gate that teaches people to ignore it.

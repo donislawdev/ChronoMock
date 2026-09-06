@@ -1,0 +1,22 @@
+# Analyzer severities for the C# tree, and nothing else.
+#
+# Separate from the repository root .editorconfig on purpose. That file says, in its own words, that
+# it is about line endings and deliberately carries no style or naming rules, because those would
+# change what `dotnet format` enforces everywhere as a side effect of an unrelated fix. These two
+# lines are not style rules and they apply only to C#, so they live beside the C# code instead.
+#
+# `root = true` is deliberately absent: the root file's line-ending settings must still reach these
+# files, and a second root would cut them off.
+#
+# Both rules are disabled by default in the SDK analyzers, so raising the severity is what turns
+# them on at all. `TreatWarningsAsErrors` in Directory.Build.props is what makes them a gate - the
+# same division of labour as `-D warnings` and [workspace.lints.clippy] on the Rust side. The
+# THRESHOLDS are not here and cannot be: see the note at the top of CodeMetricsConfig.txt.
+
+[*.cs]
+
+# Class coupling. Ceiling in gui/CodeMetricsConfig.txt.
+dotnet_diagnostic.CA1506.severity = warning
+
+# Cyclomatic complexity. Ceiling in gui/CodeMetricsConfig.txt.
+dotnet_diagnostic.CA1502.severity = warning

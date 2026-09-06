@@ -46,4 +46,24 @@
     <!-- Keep ProductVersion a clean "0.1.0" - do not append the git commit hash to it. -->
     <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
   </PropertyGroup>
+
+  <!--
+    Metric ceilings (CA1502 cyclomatic complexity, CA1506 class coupling). The numbers and the
+    reasoning live in CodeMetricsConfig.txt beside this file; the severities that switch the two
+    rules on live in gui/.editorconfig. This is the only wiring: the analyzer reads its thresholds
+    from an AdditionalFiles entry NAMED CodeMetricsConfig.txt, which is why the tightened copy used
+    by the pinning run carries the same file name in a different directory.
+
+    The indirection through a property is what lets CI point the same build at the tightened copy
+    (-p:ChronoMetricsConfig=<abs path>) and require THAT build to fail. Pass an absolute path: an
+    AdditionalFiles item is resolved against each project's own directory, so a repository-relative
+    path would silently resolve to nothing and the pinning run would pass for the wrong reason.
+  -->
+  <PropertyGroup>
+    <ChronoMetricsConfig Condition="'$(ChronoMetricsConfig)' == ''">$(MSBuildThisFileDirectory)CodeMetricsConfig.txt</ChronoMetricsConfig>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <AdditionalFiles Include="$(ChronoMetricsConfig)" />
+  </ItemGroup>
 </Project>
