@@ -69,6 +69,7 @@ public class LocalizationTests
         "moment.needs_calendar", "moment.unsupported_kind",
         "protocol.version_mismatch",
         "session.control_failed", "target.launch_failed", "target.inject_failed",
+        "target.cwd_missing",
         "target.attach_failed", "target.bitness_mismatch", "session.already_active",
         "protocol.no_command", "protocol.bad_command",
         "protocol.bad_command_ignored",

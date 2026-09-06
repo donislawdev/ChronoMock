@@ -120,6 +120,8 @@
   "moment.unsupported_kind": "Rdzeń nie rozpoznał tego rodzaju celu skoku.",
   "session.control_failed": "Nie udało się utworzyć kanału sterowania sesji - podmiana nie zadziałała.",
   "target.launch_failed": "Nie udało się uruchomić celu - podmiana nie zadziałała.",
+  // Sprawdzane w rdzeniu, zanim ruszy którykolwiek mechanizm. Bez tego awaria przychodzi jako target.launch_failed, czyli obwinia aplikację za katalog, którego po prostu nie ma.
+  "target.cwd_missing": "Katalog roboczy nie istnieje - sesja nie wystartowała. Wskaż istniejący katalog albo zostaw pole puste, żeby aplikacja wystartowała tam, gdzie normalnie.",
   "target.inject_failed": "Nie udało się wstrzyknąć haka czasu - podmiana nie zadziałała (mógł ją zablokować antywirus albo utwardzony cel).",
   "target.attach_failed": "Nie udało się podłączyć do aplikacji Chromium/Electron - podmiana nie zadziałała.",
   // R2-S1. GUI zwykle łapie to samo wcześniej (HandshakeGate, z nagłówka PE celu), więc to druga linia

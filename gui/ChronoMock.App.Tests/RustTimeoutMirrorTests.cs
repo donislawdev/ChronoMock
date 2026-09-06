@@ -94,9 +94,13 @@ public class RustTimeoutMirrorTests
             Regex.IsMatch(launch, @"on_wait\(\);"),
             "the port wait no longer calls its progress callback, so a slow launch is silent again");
 
+        // The argument list is deliberately NOT pinned: this guard is about the callback emitting
+        // state, and spelling out every parameter made it fail the day `cwd` was added to the
+        // signature - a red test over code that had not changed behaviour at all. Anchored on the
+        // real session call (`&target.path`, not the diagnostic probes) and on what it must do.
         var main = ReadRustSource("crates", "cli", "src", "main.rs");
         Assert.True(
-            Regex.IsMatch(main, @"launch_chromium\(&target\.path, &target\.args, \|\| \{[^}]*state_event_at", RegexOptions.Singleline),
+            Regex.IsMatch(main, @"launch_chromium\(&target\.path,.*?\|\| \{[^}]*state_event_at", RegexOptions.Singleline),
             "the session no longer emits state while waiting for the debug port");
     }
 }

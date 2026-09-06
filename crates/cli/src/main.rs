@@ -66,11 +66,12 @@ fn main() {
 const DRIVER_IDLE_TIMEOUT_SECS: u64 = 15;
 
 fn print_usage() {
-    eprintln!("usage: chrono run <target> [--at <local-moment>] [--preset <id>] [--param id=value]... [--zone <+HH:MM>] [--mode <flow|frozen|xN>] [--scale-duration] [--scale-qpc] [--ticks N] [--timeout <s>] [--set-after T:M] [--jump-after T:moment] [--args \"...\"] [--report <path>] [--force] [--json]");
+    eprintln!("usage: chrono run <target> [--at <local-moment>] [--preset <id>] [--param id=value]... [--zone <+HH:MM>] [--mode <flow|frozen|xN>] [--scale-duration] [--scale-qpc] [--ticks N] [--timeout <s>] [--set-after T:M] [--jump-after T:moment] [--args \"...\"] [--cwd <dir>] [--report <path>] [--force] [--json]");
     eprintln!("       without --at (or --preset) the session clock starts at the real current time, so `--mode xN` alone just runs the target faster");
     eprintln!("       --scale-qpc also scales the high-resolution counter, which is where Python 3.13+ monotonic, .NET Stopwatch and Java nanoTime read elapsed time");
     eprintln!("       --force runs on even when the opening verdict says the substitution did not take effect (the target is stopped otherwise)");
     eprintln!("       --timeout gives up after N seconds and exits 6, for a pipeline that must not hang; a core that stops answering for 15 s exits 6 on its own");
+    eprintln!("       --cwd starts the target in that directory; without it the target inherits ours, and a directory that does not exist stops the session rather than looking like a broken target");
     eprintln!("       (--preset supplies the moment and mode from presets/<id>.json, exclusive of --at/--mode/--scale-duration; --param fills its parameters, a trial start_date defaults to the target's file date)");
     print_calc_usage();
 }
@@ -152,7 +153,7 @@ fn cdp_launch_probe(argv: &[String]) -> i32 {
     }
     println!("chromium target detected: {target}");
 
-    let launched = match cdp::launch_chromium(target, &[], || {}) {
+    let launched = match cdp::launch_chromium(target, &[], None, || {}) {
         Ok(l) => l,
         Err(e) => {
             eprintln!("chrono: {e}");
@@ -208,7 +209,7 @@ fn cdp_shim_probe(argv: &[String]) -> i32 {
         return 1;
     }
 
-    let launched = match cdp::launch_chromium(target, &[], || {}) {
+    let launched = match cdp::launch_chromium(target, &[], None, || {}) {
         Ok(l) => l,
         Err(e) => {
             eprintln!("chrono: {e}");
@@ -334,7 +335,7 @@ fn cdp_date_probe(argv: &[String]) -> i32 {
     let fake = moment_epoch_ms(iso, Some(0)).unwrap_or(real); // the probe treats the moment as UTC
     let shim = cdp::build_shim(fake, real, 1); // flow: a wall offset, no acceleration
 
-    let launched = match cdp::launch_chromium(target, &[], || {}) {
+    let launched = match cdp::launch_chromium(target, &[], None, || {}) {
         Ok(l) => l,
         Err(e) => {
             eprintln!("chrono: {e}");
@@ -527,6 +528,9 @@ fn poll_counts(
 struct RunArgs {
     target: String,
     args: Vec<String>,
+    /// Working directory for the target (`--cwd`). `None` means "do not ask for one", and the target
+    /// then inherits ours - the behaviour every run had before this flag existed.
+    cwd: Option<String>,
     at: Option<String>,
     zone_bias_min: Option<i32>,
     /// Wire mode token: "flow", "frozen", or "multiplier".
@@ -624,9 +628,21 @@ fn split_args(raw: &str) -> Vec<String> {
     out
 }
 
+/// What the driver puts in `start.target`. Separated from the command so a test can see it: the
+/// three fields used to be written inline with `cwd` hard-coded to `None`, and putting that back
+/// changed nothing any test could notice - measured, by reverting it.
+fn target_spec_for(ra: &RunArgs) -> TargetSpec {
+    TargetSpec {
+        path: ra.target.clone(),
+        args: ra.args.clone(),
+        cwd: ra.cwd.clone(),
+    }
+}
+
 fn parse_run_args(argv: &[String]) -> Result<RunArgs, String> {
     let mut target: Option<String> = None;
     let mut args: Vec<String> = Vec::new();
+    let mut cwd: Option<String> = None;
     let mut at: Option<String> = None;
     let mut zone_bias_min: Option<i32> = None;
     let mut mode = String::from("flow");
@@ -686,6 +702,17 @@ fn parse_run_args(argv: &[String]) -> Result<RunArgs, String> {
                 i += 1;
                 let raw = argv.get(i).ok_or("--args needs a value")?;
                 args = split_args(raw);
+            }
+            "--cwd" => {
+                i += 1;
+                let raw = argv.get(i).ok_or("--cwd needs a value")?;
+                // An explicitly empty value is a usage error, not "no directory". The two mean
+                // different things on the wire (absent vs present-and-empty) and only one of them is
+                // something CreateProcessW can be given.
+                if raw.trim().is_empty() {
+                    return Err("--cwd needs a directory - omit the flag to start where the tool does".into());
+                }
+                cwd = Some(raw.clone());
             }
             "--scale-duration" => {
                 scale_duration = true;
@@ -778,6 +805,7 @@ fn parse_run_args(argv: &[String]) -> Result<RunArgs, String> {
     Ok(RunArgs {
         target: target.ok_or("missing <target>")?,
         args,
+        cwd,
         at,
         zone_bias_min,
         mode,
@@ -1077,11 +1105,7 @@ fn driver_run(argv: &[String]) -> i32 {
     let start = Command::Start {
         v: PROTOCOL_VERSION,
         id: 1,
-        target: TargetSpec {
-            path: ra.target.clone(),
-            args: ra.args.clone(),
-            cwd: None,
-        },
+        target: target_spec_for(&ra),
         time: TimeSpec {
             moment: MomentSpec {
                 kind: "absolute".into(),
@@ -1495,6 +1519,7 @@ fn describe_error(key: &str) -> &'static str {
         "session.control_failed" => "the session's control memory could not be set up",
         "session.already_active" => "another Chrono Mock session is already running - one at a time",
         "target.launch_failed" => "the target application could not be started",
+        "target.cwd_missing" => "the working directory asked for does not exist",
         "target.inject_failed" => "the hook could not be injected into the target",
         "target.bitness_mismatch" => {
             "the target and this chrono.exe are different bitness - run the chrono.exe that matches the target"
@@ -3592,7 +3617,7 @@ fn cdp_session(target: TargetSpec, time: TimeSpec, reader: BufReader<std::io::St
     // watchdog is 15 s, so a slow Electron and a dead core looked the same to it. Measured on
     // Pomotroid the gap is about 1.6 s, so this is about the tail, not the common case (R3-3).
     let mut last_beat = std::time::Instant::now();
-    let mut launched = match cdp::launch_chromium(&target.path, &target.args, || {
+    let mut launched = match cdp::launch_chromium(&target.path, &target.args, target.cwd.as_deref(), || {
         if last_beat.elapsed() >= std::time::Duration::from_secs(1) {
             last_beat = std::time::Instant::now();
             emit(&clock.state_event_at(now_epoch_ms()));
@@ -4166,6 +4191,25 @@ fn core_mode() -> i32 {
                     key: "protocol.version_mismatch".into(),
                     origin: "core".into(),
                 });
+                return 1;
+            }
+            // A working directory that does not exist. Checked here, before either mechanism starts,
+            // because both of them would otherwise report it as a failure of the TARGET: the native
+            // path surfaces a bare CreateProcessW error as `target.launch_failed` ("the target
+            // application could not be started"), which is true and useless - the target is fine, the
+            // folder is not. Checked in the core rather than in the argument parser so it covers the
+            // panel as well, which sends the same field over the wire (rule 6).
+            if let Some(dir) = target.cwd.as_deref()
+                && !std::path::Path::new(dir).is_dir()
+            {
+                emit(&Event::Error {
+                    v: PROTOCOL_VERSION,
+                    id: Some(1),
+                    code: 1,
+                    key: "target.cwd_missing".into(),
+                    origin: "core".into(),
+                });
+                emit(&ended_clean());
                 return 1;
             }
             (target, time, force)
@@ -5262,6 +5306,41 @@ mod tests {
         assert_eq!(ok.set_after, Some((5, 60)));
         assert!(parse_run_args(&["t".into(), "--set-after".into(), "5:0".into()]).is_err());
         assert!(parse_run_args(&["t".into(), "--set-after".into(), "5:-3".into()]).is_err());
+    }
+
+    /// `--cwd` closes an asymmetry that lasted from the day the protocol was written: `TargetSpec.cwd`
+    /// has always been on the wire and `chrono-mech` has always handed it to CreateProcessW, but no
+    /// surface offered it - the CLI had `--args` and nothing else, and the driver hard-coded `cwd: None`.
+    #[test]
+    fn cwd_is_parsed_from_the_command_line() {
+        let ok = parse_run_args(&["app.exe".into(), "--cwd".into(), r"C:\work".into()]).unwrap();
+        assert_eq!(ok.cwd.as_deref(), Some(r"C:\work"));
+
+        // Absent stays absent: "do not ask for a directory" is not the same as asking for one.
+        let none = parse_run_args(&["app.exe".into()]).unwrap();
+        assert_eq!(none.cwd, None);
+    }
+
+    /// The half the parser test does NOT cover. The driver used to write `cwd: None` inline, so a
+    /// parser that read the flag perfectly still sent nothing - and reverting that line failed no
+    /// test at all until this one existed.
+    #[test]
+    fn the_driver_puts_the_parsed_cwd_on_the_wire() {
+        let ra = parse_run_args(&["app.exe".into(), "--cwd".into(), "C:/work".into()]).unwrap();
+        assert_eq!(target_spec_for(&ra).cwd.as_deref(), Some("C:/work"));
+
+        let bare = parse_run_args(&["app.exe".into()]).unwrap();
+        assert_eq!(target_spec_for(&bare).cwd, None);
+    }
+
+    /// An explicitly empty value is a usage error rather than a quiet "no directory". The two are
+    /// different on the wire (absent vs present-and-empty), and only absent is something the
+    /// mechanism can act on - CreateProcessW cannot be given an empty directory.
+    #[test]
+    fn an_empty_cwd_is_refused_rather_than_read_as_no_directory() {
+        assert!(parse_run_args(&["app.exe".into(), "--cwd".into(), String::new()]).is_err());
+        assert!(parse_run_args(&["app.exe".into(), "--cwd".into(), "   ".into()]).is_err());
+        assert!(parse_run_args(&["app.exe".into(), "--cwd".into()]).is_err());
     }
 
     #[test]

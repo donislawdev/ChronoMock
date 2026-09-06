@@ -90,6 +90,15 @@
               rzecz, która stać się nie może.</td>
           </tr>
           <tr>
+            <td><code>--cwd &lt;katalog&gt;</code></td>
+            <td>Uruchamia cel w tym katalogu. Bez flagi cel dziedziczy nasz - tak działał każdy
+              przebieg, zanim ta flaga powstała. Pusta wartość to błąd użycia, a nie „brak
+              katalogu": brak i pustka to co innego, a tylko brak jest czymś, co Windows przyjmie.
+              Katalog, którego nie ma, zatrzymuje sesję z kluczem <code>target.cwd_missing</code>
+              jeszcze przed uruchomieniem czegokolwiek, zamiast wyjść później jako cel, który nie
+              chciał wystartować.</td>
+          </tr>
+          <tr>
             <td><code>--preset &lt;id&gt;</code></td>
             <td>Bierze moment i tempo z <code>presets/&lt;id&gt;.json</code>. Wyłączna wobec
               <code>--at</code>, <code>--mode</code> i <code>--scale-duration</code>, bo preset

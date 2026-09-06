@@ -196,6 +196,28 @@ fn tie_lifetime_to_ours(child: &Child) -> Option<KillOnCloseJob> {
     }
 }
 
+/// The command that launches the browser. Separated from [`launch_chromium`] so the flags it
+/// carries can be checked without a Chromium on the machine - there is no portable one to test
+/// against, and the working directory in particular is a single call that nothing else would notice
+/// going missing.
+fn chromium_command(target: &str, user_data_dir: &Path, args: &[String], cwd: Option<&str>) -> Command {
+    let mut cmd = Command::new(target);
+    cmd.arg(format!("--user-data-dir={}", user_data_dir.display()))
+        .arg("--remote-debugging-port=0")
+        .args(args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    // The working directory the caller asked for. The wire has carried `cwd` since the protocol was
+    // written and the native mechanism has always honoured it - this path did not, so a folder set in
+    // the panel or on the command line was silently ignored for exactly the targets the CDP mechanism
+    // owns (rule 6). It does NOT touch the profile: that stays in our own temp directory.
+    if let Some(dir) = cwd {
+        cmd.current_dir(dir);
+    }
+    cmd
+}
+
 /// How long to wait for a launched Chromium to publish its debug port. Named so the client-side
 /// watchdog can be checked against it rather than guessed at (see `RustTimeoutMirrorTests`).
 pub const PORT_WAIT_SECS: u64 = 15;
@@ -215,6 +237,7 @@ pub const PORT_WAIT_SECS: u64 = 15;
 pub fn launch_chromium(
     target: &str,
     args: &[String],
+    cwd: Option<&str>,
     mut on_wait: impl FnMut(),
 ) -> io::Result<LaunchedChromium> {
     // A user-supplied --user-data-dir would win over ours (Chromium takes the last one), and the
@@ -239,13 +262,7 @@ pub fn launch_chromium(
     let user_data_dir = unique_temp_dir();
     create_profile_dir(&user_data_dir)?;
 
-    let mut cmd = Command::new(target);
-    cmd.arg(format!("--user-data-dir={}", user_data_dir.display()))
-        .arg("--remote-debugging-port=0")
-        .args(args)
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null());
+    let mut cmd = chromium_command(target, &user_data_dir, args, cwd);
     let mut child = match cmd.spawn() {
         Ok(c) => c,
         Err(e) => {
@@ -468,6 +485,38 @@ mod tests {
         drop(guard);
     }
 
+    /// The CDP path ignored `cwd` entirely: the wire carried it, `chrono-mech` honoured it, and a
+    /// folder set in the panel or with `--cwd` did nothing for exactly the targets this mechanism
+    /// owns. Silently - which is the part that makes it worth a test rather than a comment.
+    #[test]
+    fn the_launch_command_starts_the_browser_in_the_requested_folder() {
+        let profile = PathBuf::from("C:/temp/profile");
+        let with = chromium_command("app.exe", &profile, &[], Some("C:/work"));
+        assert_eq!(with.get_current_dir(), Some(Path::new("C:/work")));
+
+        // Absent means "wherever we are", not an empty directory.
+        let without = chromium_command("app.exe", &profile, &[], None);
+        assert_eq!(without.get_current_dir(), None);
+    }
+
+    /// The working directory must not disturb the isolated profile: the profile is ours, lives in our
+    /// own temp directory, and a target that starts elsewhere still gets that same profile.
+    #[test]
+    fn a_working_folder_does_not_move_the_isolated_profile() {
+        let profile = PathBuf::from("C:/temp/profile");
+        let cmd = chromium_command("app.exe", &profile, &[], Some("C:/work"));
+        let args: Vec<String> = cmd
+            .get_args()
+            .map(|a| a.to_string_lossy().into_owned())
+            .collect();
+
+        assert!(
+            args.iter().any(|a| a == "--user-data-dir=C:/temp/profile"),
+            "the isolated profile flag went missing: {args:?}"
+        );
+        assert!(args.iter().any(|a| a == "--remote-debugging-port=0"));
+    }
+
     /// The case no destructor can reach: the core dies without running any code of its own.
     ///
     /// Dropping the job handle without touching the child stands in for exactly that - when a
@@ -533,14 +582,14 @@ mod tests {
     #[test]
     fn a_user_supplied_profile_or_port_flag_is_refused_not_silently_overridden() {
         for arg in ["--user-data-dir=/home/me/real", "--remote-debugging-port=9222"] {
-            match launch_chromium("no-such-app.exe", &[arg.to_string()], || {}) {
+            match launch_chromium("no-such-app.exe", &[arg.to_string()], None, || {}) {
                 Err(e) => assert_eq!(e.kind(), io::ErrorKind::InvalidInput, "for {arg}"),
                 Ok(_) => panic!("a colliding flag must be refused: {arg}"),
             }
         }
         // An ordinary argument still passes the check (this one then fails to launch, which is a
         // different error entirely - the point is that it got that far).
-        match launch_chromium("no-such-app.exe", &["--enable-logging".to_string()], || {}) {
+        match launch_chromium("no-such-app.exe", &["--enable-logging".to_string()], None, || {}) {
             Err(e) => assert_ne!(e.kind(), io::ErrorKind::InvalidInput),
             Ok(_) => panic!("a missing target cannot launch"),
         }

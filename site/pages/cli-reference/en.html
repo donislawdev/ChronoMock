@@ -90,6 +90,15 @@
               running on your real browser profile is the one thing that must not happen.</td>
           </tr>
           <tr>
+            <td><code>--cwd &lt;dir&gt;</code></td>
+            <td>Start the target in that directory. Without it the target inherits ours, which is
+              what every run did before this flag existed. An empty value is a usage error rather
+              than "no directory" - absent and empty are different things, and only absent is
+              something Windows can be given. A directory that does not exist stops the session
+              with <code>target.cwd_missing</code> before anything is launched, instead of
+              surfacing later as a target that would not start.</td>
+          </tr>
+          <tr>
             <td><code>--preset &lt;id&gt;</code></td>
             <td>Take the moment and the speed from <code>presets/&lt;id&gt;.json</code>. Exclusive
               with <code>--at</code>, <code>--mode</code> and <code>--scale-duration</code>, since

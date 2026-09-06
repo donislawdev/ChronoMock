@@ -120,6 +120,8 @@
   "moment.unsupported_kind": "The core did not recognise that kind of jump target.",
   "session.control_failed": "Could not set up the session's control channel - the substitution did not take effect.",
   "target.launch_failed": "Could not launch the target - the substitution did not take effect.",
+  // Checked in the core before either mechanism starts. Without it the failure arrives as target.launch_failed, which blames the application for a folder that is simply not there.
+  "target.cwd_missing": "The working folder does not exist - the session did not start. Pick a folder that is there, or leave it empty to start where the application normally would.",
   "target.inject_failed": "Could not inject the time hook - the substitution did not take effect (an antivirus or a hardened target may have blocked it).",
   "target.attach_failed": "Could not attach to the Chromium/Electron app - the substitution did not take effect.",
   // R2-S1. The GUI normally catches this itself (HandshakeGate, from the target's PE), so this is the
