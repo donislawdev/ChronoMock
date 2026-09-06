@@ -22,9 +22,8 @@ use chrono_proto::{
 use crate::cdp;
 use crate::zone::{epoch_ms_to_wall, moment_epoch_ms, now_epoch_ms};
 use crate::grammar::parse_shift;
-use crate::{
-    command_id, context_index_for, emit, ended_after_launch, ended_clean, jump_error_key,
-    unsupported_command,
+use crate::events::{
+    command_id, emit, ended_after_launch, ended_clean, jump_error_key, unsupported_command,
 };
 /// One shimmed JS context of a Chromium target: the coverage unit of a CDP session (rule 4 - never
 /// summed across contexts).
@@ -635,9 +634,65 @@ pub(crate) fn cdp_jump_expr(fake0: i64, real0: i64) -> String {
     )
 }
 
+/// The context index for a CDP target, stable across re-attaches.
+///
+/// Keyed by the CDP targetId, which Chromium keeps when a context re-attaches, rather than by a
+/// counter that ticks once per attach. A recycled worker - an ordinary pattern in Electron apps,
+/// and the very shape the CDP mechanism was built for - re-attaches under the SAME targetId, and
+/// the counter gave it a new identity every time: `process_count` grew with the LENGTH of the
+/// session instead of describing the application, `counts` gained entries per recycle and released
+/// none, and the end-of-session emit walked seen x covered. The merge rule for counts is already
+/// "max, so a peak survives a reload" - it was only ever missing a stable key (R3-7).
+///
+/// A target that names no id gets a fresh index: with no identity to match on, treating it as new
+/// is the honest answer rather than a guess that would fold two contexts into one.
+pub(crate) fn context_index_for(
+    target_id: &str,
+    index_by_target: &mut HashMap<String, u32>,
+    next_index: &mut u32,
+) -> u32 {
+    if !target_id.is_empty()
+        && let Some(existing) = index_by_target.get(target_id)
+    {
+        return *existing;
+    }
+    *next_index += 1;
+    if !target_id.is_empty() {
+        index_by_target.insert(target_id.to_string(), *next_index);
+    }
+    *next_index
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A worker that is recycled re-attaches under the same targetId, and used to be counted as a
+    /// new context each time - so a long accelerated session (the flagship use case: "a day a
+    /// minute") reported hundreds of contexts for an application with one worker (R3-7).
+    #[test]
+    fn a_reattached_context_keeps_the_index_it_already_had() {
+        let mut map = HashMap::new();
+        let mut next = 0u32;
+
+        let page = context_index_for("T-page", &mut map, &mut next);
+        let worker = context_index_for("T-worker", &mut map, &mut next);
+        assert_eq!((page, worker), (1, 2));
+
+        // The worker is recycled twice: same target, same index, and the counter does not move.
+        assert_eq!(context_index_for("T-worker", &mut map, &mut next), worker);
+        assert_eq!(context_index_for("T-worker", &mut map, &mut next), worker);
+        assert_eq!(next, 2, "a re-attach must not mint a new context index");
+
+        // A genuinely new target still gets one.
+        assert_eq!(context_index_for("T-other", &mut map, &mut next), 3);
+
+        // No id means no identity to match on, so each one is new rather than folded together -
+        // two anonymous contexts are two contexts, and pretending otherwise would under-report.
+        let a = context_index_for("", &mut map, &mut next);
+        let b = context_index_for("", &mut map, &mut next);
+        assert_ne!(a, b);
+    }
 
     #[test]
     fn cdp_verdict_counts_every_context_the_session_covered_not_the_survivors() {

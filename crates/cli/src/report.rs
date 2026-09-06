@@ -497,7 +497,7 @@ pub(crate) fn render_evidence(r: &SessionReport, p: &EvidenceParams) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::map_prepare_error;
+    use crate::core::map_prepare_error;
     use crate::testutil::unique_temp_dir;
 
     fn empty_report() -> SessionReport {

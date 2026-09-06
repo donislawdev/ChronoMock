@@ -5,7 +5,13 @@
 //! than a date, so the same file answers differently on different days - `resolve_parameters` and
 //! `resolve_moment` turn it into a concrete moment.
 //!
-//! The step grammar it accepts is `crate::grammar`, the same one the calculator flags use.
+//! The step grammar it accepts is `crate::grammar`, the same one the calculator flags use. As with
+//! the calendar reader, this consumer owns the I/O and the serde and the core engine stays pure.
+//!
+//! 🔴 SECURITY (docs/04 4.1): a preset describes TIME, never a TARGET. The schema has no path field,
+//! so a shared preset cannot smuggle an executable path - enforced structurally, because there is no
+//! field to put it in, which `preset_ignores_a_path_field` pins. Unknown fields are ignored (additive
+//! evolution, docs/04 section 3); an unknown major schema version is refused (section 3.1).
 
 
 use std::collections::HashMap;

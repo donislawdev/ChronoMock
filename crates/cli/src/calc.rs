@@ -5,6 +5,17 @@
 //! (ADR-6). Both come from the same evaluation, so they cannot disagree.
 //!
 //! The step grammar is `crate::grammar` - the same parser the preset reader uses.
+//!
+//! The calculator surface of the shared step grammar (docs/04 section 4.3). The driver parses typed
+//! flags into a canonical `MomentExpr`, resolves "now" for a today/now base (the core stays pure and
+//! takes now as data), evaluates, and renders. No natural language (6.2): each flag is one step,
+//! order is step order.
+//!
+//! The calc engine lives in `chrono-core` (serde-free), so the CLI owns serialization: the JSON DTOs
+//! here are populated from the core's typed results, the mirror of the calendar and preset loaders.
+//! The GUI is a thin client of this contract (ADR-6), consuming the same engine output the human
+//! render shows. Contract keys are public names (rule 17); a breaking change needs a schema bump.
+//! An error still goes to stderr with a non-zero exit - stdout carries a result only on success.
 
 
 use std::collections::HashMap;

@@ -6,6 +6,10 @@
 //!
 //! The catalogue lookup lives here too, including the identifier check that refuses path traversal -
 //! an id names a shipped file, never a path.
+//!
+//! The consumer owns the I/O and serde; the core engine works over already-parsed rules. The JSON
+//! schema is the contract (docs/04 section 5) and this is one reader of it. Unknown fields are
+//! ignored (additive evolution is safe); an unknown major schema version is refused.
 
 
 use serde::Deserialize;
