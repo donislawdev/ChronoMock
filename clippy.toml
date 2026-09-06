@@ -1,0 +1,58 @@
+# Shape ceilings for the Rust half, as a RATCHET: these numbers may only come down.
+#
+# Why a ceiling when nothing has gone wrong yet
+# ---------------------------------------------
+# Nobody reads 9 000 lines of Rust line by line, and there is no reviewer to notice that a function
+# reached three hundred lines over four sessions, each of which added twenty and each of which was
+# reasonable on its own. A ceiling is the only thing that notices, and it costs nothing while
+# nothing grows. Measured 2026-09-06 on the whole workspace with `--all-targets`: at these three
+# numbers there are ZERO findings, so no code has to be rewritten to make this pass.
+#
+# Why these three lints and not a size guard of our own
+# ----------------------------------------------------
+# `too_many_lines` counts EXECUTABLE lines, not raw ones, which is the property that matters here:
+# 35% of this workspace is comments and blank lines, so a raw-line ceiling would be a ceiling on
+# EXPLAINING and the cheapest way under it would be deleting the paragraph that says why a constant
+# is what it is. Measured: `cdp_session` is 315 raw lines and 225 by this lint, `mech::prepare` is
+# 206 raw and 144. Depth and branch count are two further questions a length ceiling cannot see,
+# and a hand-written metric for either is a trap - the first draft of one written for this project
+# scored `mech::gather_coverage` at 7 because `-> Coverage { unsafe {` is two braces on one line
+# and one indent on screen. A ceiling standing on a metric that lies is worse than no ceiling.
+#
+# Down is routine, up is the owner's decision
+# -------------------------------------------
+# When something crosses one of these, the answer is to move code out, not to move the number. A
+# threshold bent to fit the code has stopped being a threshold. Lowering one is ordinary work and
+# comes with a chore: the tightened copy in .github/clippy-tight/clippy.toml comes down with it,
+# and `crates/cli/tests/shape.rs` fails until it does.
+#
+# 🔴 EVERY NUMBER HERE IS TODAY'S MEASUREMENT, EXACTLY, and that is enforced rather than promised.
+# A ceiling standing one above the truth grants headroom nobody decided to grant and the next
+# arrival slips in under it in silence - a one-sided ratchet cannot see that, because it only ever
+# asks whether the code is under the number. The tightened copy is the missing half: CI runs clippy
+# a second time with every threshold one lower and REQUIRES that run to fail. If it passes, the
+# ceiling had room in it.
+
+# `crates/cli/src/cdp_session.rs::cdp_session` at 225. The runner-up is `run::driver_run` at 169,
+# then `run::args::parse_run_args` at 165 and `mech::prepare` at 144.
+too-many-lines-threshold = 225
+
+# A tie at 25: `run::driver_run` and `report::render_report`. This happens to be clippy's own
+# default, which is worth saying out loud rather than leaving to look like a copied number - it
+# means the workspace sits exactly on the line the lint would have drawn anyway, with no headroom
+# at all. The next one down is `site::render::build` at 19.
+cognitive-complexity-threshold = 25
+
+# Three blocks reach 6 and nothing reaches 7: `cdp_session.rs:294` plus two in `tests/hygiene.rs`.
+# The lint is OFF by default (its default threshold is 0, meaning disabled), so this line is what
+# turns the axis on at all.
+excessive-nesting-threshold = 6
+
+# `too-many-arguments-threshold` is deliberately NOT set here, and the reason is specific to this
+# product rather than a preference. The four widest signatures in the workspace are detours that
+# mirror Win32 entry points - `h_ntcup` is NtCreateUserProcess, `h_cpw` and `h_cpa` are
+# CreateProcessW and CreateProcessA - and their parameter lists are Microsoft's, not ours to split.
+# All four already carry `#[allow(clippy::too_many_arguments)]`. A width ratchet here would be
+# measuring somebody else's API, so the honest guard is a ratchet on the number of those escape
+# hatches instead, and it lives in `crates/cli/tests/shape.rs`. The lint stays on at clippy's
+# default of 7, where the workspace is green.

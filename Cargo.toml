@@ -42,6 +42,26 @@ chrono-ctl = { path = "crates/ctl" }
 chrono-mech = { path = "crates/mech" }
 chrono-proto = { path = "crates/proto" }
 
+# Shape ceilings: the three axes a reviewer would catch and nothing else here does. All three lints
+# are off by default in clippy (`too_many_lines` is pedantic, the other two are nursery), so this
+# block is what turns them on, and `-D warnings` in CI and in tools/gates.ps1 is what makes them a
+# gate rather than a suggestion. The NUMBERS live in clippy.toml, with the measurement that set
+# each one and the reason down is routine while up is a decision.
+#
+# Every crate opts in with `[lints] workspace = true`, and a crate that quietly stops doing so is a
+# crate nothing watches - `crates/cli/tests/shape.rs` fails if any member drops the line or if a
+# lint disappears from this block.
+#
+# 🔴 Two of the three are NURSERY lints, which means their metric may change under a toolchain
+# upgrade and redden a branch in which nobody touched a line of code. That is a different event
+# from the "a newer stable Rust can add a lint" note in ci.yml - a new lint is a real finding,
+# a shifted metric is not - and the answer when it happens is to re-measure and move the number in
+# clippy.toml, in a commit that says so, rather than to reach for an allow.
+[workspace.lints.clippy]
+too_many_lines = "warn"
+cognitive_complexity = "warn"
+excessive_nesting = "warn"
+
 # Catch integer overflow in the release build too, not only in dev (RELEASE-008). For a tool whose whole
 # job is exact time arithmetic (rules 2, 3), a silent wrap in an unaudited path would produce the WRONG
 # TIME instead of a loud failure (against rule 6). The critical paths are already `checked_`; this turns a

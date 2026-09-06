@@ -39,6 +39,7 @@ const ROOT_FILES: &[&str] = &[
     "CHANGELOG.md",
     "THIRD-PARTY-NOTICES.md",
     "Cargo.toml",
+    "clippy.toml",
     "deny.toml",
     "global.json",
 ];

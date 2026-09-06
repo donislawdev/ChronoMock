@@ -1,0 +1,19 @@
+# The tightened copy of the shape ceilings: every threshold in ../../clippy.toml, minus one.
+#
+# This file is not a stricter policy. It is the second half of a pinning check, and it exists
+# because a one-sided ratchet has a blind spot that costs nothing to open and nothing to notice:
+# a ceiling left standing above the truth grants headroom nobody decided to grant, and the next
+# arrival slips in under it in silence. Asking "is the code under the number" can never see that.
+# Asking "does the number STILL cost something" can.
+#
+# So CI runs clippy twice. The first run uses the real ceilings and must pass. The second run uses
+# this file and must FAIL - if it passes, then nothing in the workspace actually reaches any of the
+# ceilings, they have room in them, and the real file has to come down to the measurement.
+#
+# 🔴 Keep this in step with ../../clippy.toml. `crates/cli/tests/shape.rs` compares the two files
+# key by key and fails unless every value here is exactly one below its counterpart, so the two
+# cannot drift apart in silence - but it cannot tell you which of the two you meant to change.
+
+too-many-lines-threshold = 224
+cognitive-complexity-threshold = 24
+excessive-nesting-threshold = 5

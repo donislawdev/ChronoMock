@@ -68,6 +68,35 @@ jobs:
       - name: Clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
 
+      # The other half of the shape ceilings, and the half a one-sided ratchet can never give. The
+      # step above asks "is the code under the numbers". This one asks "do the numbers still cost
+      # anything": same lints, every threshold one lower, and the run must FAIL. A pass here would
+      # mean nothing in the workspace actually reaches any ceiling - that they stand ABOVE the
+      # measurement, granting headroom nobody decided to grant, with the next arrival slipping in
+      # under them in silence. That is not hypothetical, it is the failure this pattern was written
+      # for in another project: a ceiling stayed twelve lines above its file for a week after a
+      # carve-out and was found only because somebody printed the numbers.
+      #
+      # Cheap because clippy re-reads its configuration without rebuilding the crates - measured
+      # 2026-09-06 on the maintainer's machine, 2.9 s for the run above and 1.7 s for this one.
+      #
+      # `$PSNativeCommandUseErrorActionPreference` is turned off deliberately. GitHub's pwsh shell
+      # sets `$ErrorActionPreference = 'stop'`, and on the PowerShell versions where that variable
+      # defaults to true, a failing native command throws before the exit code can be read - which
+      # would turn the expected failure into a step failure and invert the meaning of this gate.
+      - name: Clippy shape ceilings are the measurement, not headroom
+        env:
+          CLIPPY_CONF_DIR: .github/clippy-tight
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $false
+          cargo clippy --workspace --all-targets -- -D warnings
+          if ($LASTEXITCODE -eq 0) {
+            Write-Host "::error::Every shape ceiling in clippy.toml has room in it: clippy is clean one below all of them. Lower the ceilings to the real maxima, and .github/clippy-tight/clippy.toml with them."
+            exit 1
+          }
+          Write-Host "The failures above are the point: each shape ceiling is a real measurement."
+          exit 0
+
       - name: Rust tests
         run: cargo test --workspace
 

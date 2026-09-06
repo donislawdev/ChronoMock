@@ -6,6 +6,10 @@ license.workspace = true
 publish.workspace = true
 build = "build.rs"
 
+# Shape ceilings - see [workspace.lints.clippy] and clippy.toml in the repository root.
+[lints]
+workspace = true
+
 # The friendly driver AND the hidden core mode live in one binary. `chrono run`
 # spawns `chrono __core` and talks NDJSON over stdio (ADR-6). The CLI is the
 # outermost consumer, so depending on all inner layers is correct.
