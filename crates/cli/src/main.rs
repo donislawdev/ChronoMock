@@ -31,8 +31,19 @@ use chrono_proto::{
 
 /// The Chromium/Electron substitution mechanism (CDP faketime), a parallel path to the native core.
 mod cdp;
+/// The command surface: version, bitness, usage texts.
+mod cli;
+/// One NDJSON line off the machine protocol, bounded.
+mod wire;
+/// Session zone and instant conversions (untouchable rule 2).
+mod zone;
 
-const CORE_VERSION: &str = env!("CARGO_PKG_VERSION");
+use cli::{print_calc_usage, print_usage, this_bitness, CORE_VERSION};
+use wire::read_protocol_line;
+use zone::{
+    epoch_ms_to_wall, format_bias, moment_epoch_ms, now_epoch_ms, now_filetime_utc,
+    parse_zone_to_bias, session_zone_default,
+};
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
@@ -65,32 +76,8 @@ fn main() {
 /// mode, so 15 s is fifteen missed heartbeats.
 const DRIVER_IDLE_TIMEOUT_SECS: u64 = 15;
 
-fn print_usage() {
-    eprintln!("usage: chrono run <target> [--at <local-moment>] [--preset <id>] [--param id=value]... [--zone <+HH:MM>] [--mode <flow|frozen|xN>] [--scale-duration] [--scale-qpc] [--ticks N] [--timeout <s>] [--set-after T:M] [--jump-after T:moment] [--args \"...\"] [--cwd <dir>] [--report <path>] [--force] [--json]");
-    eprintln!("       without --at (or --preset) the session clock starts at the real current time, so `--mode xN` alone just runs the target faster");
-    eprintln!("       --scale-qpc also scales the high-resolution counter, which is where Python 3.13+ monotonic, .NET Stopwatch and Java nanoTime read elapsed time");
-    eprintln!("       --force runs on even when the opening verdict says the substitution did not take effect (the target is stopped otherwise)");
-    eprintln!("       --timeout gives up after N seconds and exits 6, for a pipeline that must not hang; a core that stops answering for 15 s exits 6 on its own");
-    eprintln!("       --cwd starts the target in that directory; without it the target inherits ours, and a directory that does not exist stops the session rather than looking like a broken target");
-    eprintln!("       (--preset supplies the moment and mode from presets/<id>.json, exclusive of --at/--mode/--scale-duration; --param fills its parameters, a trial start_date defaults to the target's file date)");
-    print_calc_usage();
-}
 
-fn print_calc_usage() {
-    eprintln!("usage: chrono calc [--base <today|now|YYYY-MM-DDTHH:MM:SS>] [--shift <±N<unit>>]... [--set-time <HH:MM:SS>] [--snap <target>] [--nearest <target>] [--to-zone <+HH:MM>] [--zone <+HH:MM>] [--calendar <us-banking|us-federal|pl>] [--format <mask>] [--json]");
-    eprintln!("       or: chrono calc --preset <id> [--param id=value]...   (named moment, e.g. month-end, trial-first-day-after)");
-    eprintln!("       or: chrono calc --analyze <pasted-date>   (interpret a date, e.g. 04/08/2008; shows both readings when ambiguous)");
-    eprintln!("       --json emits machine output (chronomock.calc/1) for any of the above");
-    eprintln!("       units: s m h d w mo q y bd (minute=m, month=mo)");
-}
 
-fn this_bitness() -> &'static str {
-    if cfg!(target_pointer_width = "64") {
-        "x64"
-    } else {
-        "x86"
-    }
-}
 
 /// Hidden probe (CDP slice C1 verification): connect to a running Chromium/Electron debug port and
 /// print what CDP sees. Not a user command - it proves the WebSocket + JSON-RPC transport against a
@@ -187,12 +174,6 @@ fn cdp_launch_probe(argv: &[String]) -> i32 {
     code
 }
 
-fn now_epoch_ms() -> i64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_millis() as i64)
-        .unwrap_or(0)
-}
 
 /// Hidden probe (CDP slice C3 verification): launch a Chromium target, auto-attach to every context,
 /// inject the time shim through the production path, then (Pomotroid-specific) drive its worker timer
@@ -413,40 +394,7 @@ fn short_url(url: &str) -> String {
     url.chars().take(66).collect()
 }
 
-/// The largest NDJSON line either side of the protocol will read, in bytes.
-///
-/// Every other input channel in this tool is bounded - `MAX_WS_BYTES`, `MAX_HTTP_BODY`,
-/// `MAX_HEADERS`, `MAX_HEADER_LINE`, `MAX_QUEUED_EVENTS`, the seqlock read budget, the
-/// business-day walk - and the protocol line was the one that was not: a writer that never sent a
-/// newline grew the reader's buffer for as long as it liked. Both ends are processes this tool
-/// started, so this is depth rather than a hole; the failure it actually guards is our own, a core
-/// stuck mid-line taking the driver's memory with it.
-///
-/// A megabyte is a deliberate 680x over the largest line MEASURED on 2026-09-05: a native session at
-/// full coverage (36 channels, `--scale-duration`) emits a 1 533-byte `coverage` event, and a CDP
-/// session 291. The cap is meant to catch a stream that has stopped making sense, not to be a size
-/// the protocol ever approaches.
-const MAX_PROTOCOL_LINE: usize = 1024 * 1024;
 
-/// Read one NDJSON protocol line, refusing one that never ends. `Ok(0)` is EOF, as with `read_line`.
-///
-/// A line at the cap with no newline in it is an error and NOT a truncated line handed onwards: the
-/// reader is then parked mid-line, so the remainder would arrive as the next "line" and parse as
-/// junk - or worse, as a different event than the writer sent.
-fn read_protocol_line<R: BufRead>(reader: &mut R, line: &mut String) -> std::io::Result<usize> {
-    line.clear();
-    // UFCS on purpose: method syntax auto-derefs to `R`, and `Read::take` consumes its receiver, so
-    // `reader.take(..)` tries to move the reader out of the borrow. Naming `&mut R` as the receiver
-    // borrows it for the length of the read instead.
-    let n = std::io::Read::take(&mut *reader, MAX_PROTOCOL_LINE as u64).read_line(line)?;
-    if n == MAX_PROTOCOL_LINE && !line.ends_with('\n') {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::InvalidData,
-            format!("protocol line exceeds {MAX_PROTOCOL_LINE} bytes with no newline"),
-        ));
-    }
-    Ok(n)
-}
 
 /// One `<label> <type> :: <url>` line about a target, as the hidden probes print it. Split out for
 /// the reason `target_error` was (`cdp/mod.rs`): both halves are words the TARGET chose - the type it
@@ -463,24 +411,8 @@ fn probe_target_line(label: &str, ty: &str, url: &str) -> String {
     )
 }
 
-/// FILETIME ticks (100 ns since 1601) at the Unix epoch (1970-01-01T00:00:00Z).
-const FT_UNIX_EPOCH: i64 = 116_444_736_000_000_000;
 
-/// Unix-epoch ms for a session moment (local-in-zone, internally UTC - rule 2), reusing the core's
-/// anchor math so the CDP and native paths agree on the instant. `None` if the moment is out of the
-/// representable range.
-fn moment_epoch_ms(local: &str, bias: Option<i32>) -> Option<i64> {
-    let m = Moment { local: local.to_string(), tz_bias_min: bias };
-    let ft = chrono_core::moment_to_filetime_utc(&m).ok()?;
-    Some((ft - FT_UNIX_EPOCH) / 10_000)
-}
 
-/// Session-zone wall-clock text for a Unix-epoch ms instant, via the core formatter (one source of
-/// truth for the civil half).
-fn epoch_ms_to_wall(epoch_ms: i64, bias: i32) -> String {
-    let ft = epoch_ms.saturating_mul(10_000).saturating_add(FT_UNIX_EPOCH);
-    filetime_utc_to_wall(ft, bias)
-}
 
 /// One shimmed JS context of a Chromium target: the coverage unit of a CDP session (rule 4 - never
 /// summed across contexts).
@@ -824,44 +756,7 @@ fn parse_run_args(argv: &[String]) -> Result<RunArgs, String> {
     })
 }
 
-/// Parse a "+HH:MM" / "-HH:MM" offset into a session bias in minutes.
-/// UTC = local + bias, so a local zone of UTC+2 gives bias -120.
-fn parse_zone_to_bias(raw: &str) -> Result<i32, String> {
-    let bytes = raw.as_bytes();
-    let sign = match bytes.first() {
-        Some(b'+') => 1,
-        Some(b'-') => -1,
-        _ => return Err(format!("zone must start with + or -, got '{raw}'")),
-    };
-    let rest = &raw[1..];
-    let (h, m) = rest
-        .split_once(':')
-        .ok_or_else(|| format!("zone must look like +HH:MM, got '{raw}'"))?;
-    // Parse as u32 so an INNER sign (e.g. `+-5:00` or `+05:-30`) is rejected, not silently taken as a
-    // negative component (M-4). Range-check hours 0..=14 (the max real offset is +14:00) and minutes
-    // 0..=59, which also keeps `hours * 60 + mins` well inside i32: the old i32 parse overflowed on a
-    // huge value and, in a release build (no overflow-checks), WRAPPED to a wrong bias - a silently
-    // wrong session time, exactly the "off by N hours" error untouchable rule 2 guards against.
-    let hours: u32 = h.parse().map_err(|_| format!("bad zone hours in '{raw}' (digits only)"))?;
-    let mins: u32 = m.parse().map_err(|_| format!("bad zone minutes in '{raw}' (digits only)"))?;
-    if hours > 14 {
-        return Err(format!("zone hours out of range in '{raw}' (0..=14)"));
-    }
-    if mins > 59 {
-        return Err(format!("zone minutes out of range in '{raw}' (0..=59)"));
-    }
-    let offset = sign * (hours as i32 * 60 + mins as i32);
-    Ok(-offset)
-}
 
-/// Real UTC now as FILETIME ticks (100 ns since 1601), via std - the driver is not
-/// hooked, so this is genuine.
-fn now_filetime_utc() -> i64 {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    let d = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default();
-    const DAYS_1601_TO_1970: i64 = 134_774;
-    (DAYS_1601_TO_1970 * 86_400 + d.as_secs() as i64) * 10_000_000 + (d.subsec_nanos() as i64 / 100)
-}
 
 /// Resolve the `--at` value to an absolute wall string (the core only ever sees an
 /// absolute moment). A leading `+`/`-` marks a relative moment - now plus one shift
@@ -1872,13 +1767,6 @@ fn session_is_reliable(r: &SessionReport) -> bool {
     false
 }
 
-/// Format a session bias (minutes, UTC = local + bias) back to a "+HH:MM" zone label.
-fn format_bias(bias: i32) -> String {
-    let offset = -bias;
-    let sign = if offset < 0 { '-' } else { '+' };
-    let abs = offset.abs();
-    format!("{sign}{:02}:{:02}", abs / 60, abs % 60)
-}
 
 /// Human label for the requested time mode.
 fn mode_label(mode: &str, multiplier: Option<i64>) -> String {
@@ -2463,17 +2351,6 @@ fn parse_set_time(raw: &str) -> Result<Step, String> {
     Ok(Step::SetTime { hour, minute, second })
 }
 
-/// The session zone in minutes (UTC = local + bias) for a command that named one or did not: the
-/// caller's `--zone` when given, else the HOST's offset.
-///
-/// A named function rather than an `unwrap_or_else` repeated at each site, because it was repeated
-/// at each site and the copies drifted: `chrono run` with no `--at` followed the host while `chrono
-/// calc`, a relative `--at` and `run --preset` all fell back to UTC. Two halves of one tool then
-/// disagreed about what day it is, and in a zone ahead of UTC `--base today` returned YESTERDAY
-/// between midnight and the offset (R2-S7). One rule, one place, one test.
-fn session_zone_default(named: Option<i32>) -> i32 {
-    named.unwrap_or_else(chrono_mech::host_tz_bias_min)
-}
 
 /// Real current time in the session zone, as a civil date-time for the pure core.
 /// Reuses the tested UTC-now and wall-clock conversion, then parses back to civil.
@@ -4986,35 +4863,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
-    /// The protocol line was the only input channel in this tool without a bound, so a writer that
-    /// never sent a newline grew the reader's buffer as long as it liked.
-    #[test]
-    fn a_protocol_line_that_never_ends_is_refused() {
-        let endless = vec![b'x'; MAX_PROTOCOL_LINE + 10];
-        let mut reader = std::io::BufReader::new(std::io::Cursor::new(endless));
-        let mut line = String::new();
-        assert!(read_protocol_line(&mut reader, &mut line).is_err());
-    }
 
-    /// The bound must not change what an ordinary session reads, including the shapes that sit near
-    /// its edges: an empty stream, and a final line with no terminator (which is NOT over-long, and
-    /// reading it as an error would truncate the last event of a session).
-    #[test]
-    fn ordinary_protocol_lines_are_unaffected_by_the_bound() {
-        let stream = "{\"type\":\"ready\"}\n{\"type\":\"state\"}\nlast line without a newline";
-        let mut reader = std::io::BufReader::new(std::io::Cursor::new(stream.as_bytes().to_vec()));
-        let mut line = String::new();
-
-        assert_eq!(read_protocol_line(&mut reader, &mut line).unwrap(), 17);
-        assert_eq!(line, "{\"type\":\"ready\"}\n");
-        // The buffer is cleared by the reader, so a caller cannot accidentally append events.
-        assert_eq!(read_protocol_line(&mut reader, &mut line).unwrap(), 17);
-        assert_eq!(line, "{\"type\":\"state\"}\n");
-
-        assert_eq!(read_protocol_line(&mut reader, &mut line).unwrap(), 27);
-        assert_eq!(line, "last line without a newline");
-        assert_eq!(read_protocol_line(&mut reader, &mut line).unwrap(), 0, "EOF");
-    }
 
     /// The probe's target list quotes two strings the target chose, and this one call site kept the
     /// byte slice that S-20 removed everywhere else - so a target whose URL carried a non-ASCII
@@ -5343,26 +5192,6 @@ mod tests {
         assert!(parse_run_args(&["app.exe".into(), "--cwd".into()]).is_err());
     }
 
-    #[test]
-    fn zone_parses_valid_offsets_and_rejects_garbage() {
-        // UTC = local + bias, so a local +HH:MM gives bias -(H*60 + M). Real offsets across the range parse.
-        assert_eq!(parse_zone_to_bias("+00:00").unwrap(), 0);
-        assert_eq!(parse_zone_to_bias("+02:00").unwrap(), -120);
-        assert_eq!(parse_zone_to_bias("-05:00").unwrap(), 300);
-        assert_eq!(parse_zone_to_bias("+05:45").unwrap(), -345); // Nepal
-        assert_eq!(parse_zone_to_bias("+14:00").unwrap(), -840); // max real offset
-        assert_eq!(parse_zone_to_bias("-12:00").unwrap(), 720);
-        // An INNER sign is rejected (M-4), never silently taken as a negative component.
-        assert!(parse_zone_to_bias("+-5:00").is_err());
-        assert!(parse_zone_to_bias("+05:-30").is_err());
-        // Out of range, non-digit, missing parts - all rejected, no silent overflow/wrap.
-        assert!(parse_zone_to_bias("+99:00").is_err());
-        assert!(parse_zone_to_bias("+05:99").is_err());
-        assert!(parse_zone_to_bias("+99999999:00").is_err()); // used to overflow i32 in a release build
-        assert!(parse_zone_to_bias("05:00").is_err()); // no leading sign
-        assert!(parse_zone_to_bias("+ab:cd").is_err());
-        assert!(parse_zone_to_bias("+05").is_err()); // no minutes
-    }
 
     #[test]
     fn catalogue_id_rejects_path_traversal() {
@@ -5708,12 +5537,6 @@ mod tests {
         assert!(out.contains("DID NOT TAKE EFFECT"), "got:\n{out}");
     }
 
-    #[test]
-    fn format_bias_maps_common_zones() {
-        assert_eq!(format_bias(0), "+00:00");
-        assert_eq!(format_bias(-120), "+02:00"); // UTC+2
-        assert_eq!(format_bias(300), "-05:00"); // UTC-5
-    }
 
     #[test]
     fn session_timing_section_shows_reached_clock_and_elapsed() {
@@ -6581,20 +6404,6 @@ mod tests {
 
     // ---- Hook DLL presence (R2-W3): a broken install must not be reported as the target's fault ----
 
-    #[test]
-    fn the_session_zone_default_is_the_host_not_utc() {
-        // R2-S7. `chrono calc --base today` used to resolve "now" in UTC while `chrono run` beside it
-        // already followed the host, so in a zone ahead of UTC the calculator returned YESTERDAY
-        // between midnight and the offset - a silent wrong date, the class this project calls
-        // inadmissible. An explicit --zone still wins.
-        assert_eq!(session_zone_default(Some(-120)), -120, "an explicit zone is never overridden");
-        assert_eq!(session_zone_default(Some(0)), 0, "an explicit UTC is a choice, not an absence");
-        assert_eq!(
-            session_zone_default(None),
-            chrono_mech::host_tz_bias_min(),
-            "with no zone named, both surfaces read the host's"
-        );
-    }
 
     #[test]
     fn hook_dll_is_only_found_when_it_is_actually_there() {

@@ -62,23 +62,49 @@ fn is_key_shaped(s: &str) -> bool {
     !FILE_SUFFIXES.iter().any(|suffix| s.ends_with(suffix))
 }
 
+/// Every `.rs` file under `dir`, recursively. The canary is part of the helper: a walk that finds
+/// nothing looks exactly like a codebase with no keys in it.
+fn rust_sources_under(dir: &Path) -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    let mut stack = vec![dir.to_path_buf()];
+    while let Some(d) = stack.pop() {
+        let entries =
+            std::fs::read_dir(&d).unwrap_or_else(|e| panic!("cannot read {}: {e}", d.display()));
+        for entry in entries {
+            let path = entry.expect("directory entry").path();
+            if path.is_dir() {
+                stack.push(path);
+            } else if path.extension().is_some_and(|e| e == "rs") {
+                out.push(path);
+            }
+        }
+    }
+    out.sort();
+    assert!(
+        out.len() >= 5,
+        "the walk found only {} Rust sources under {} - it is reading the wrong place",
+        out.len(),
+        dir.display()
+    );
+    out
+}
+
 /// Keys emitted onto the wire by the core, gathered from the shapes this codebase actually uses.
 fn emitted_keys(root: &Path) -> BTreeSet<String> {
     let mut keys = BTreeSet::new();
 
-    let sources = [
-        root.join("crates/cli/src/main.rs"),
-        root.join("crates/cli/src/cdp/mod.rs"),
-        root.join("crates/cli/src/cdp/session.rs"),
-        root.join("crates/cli/src/cdp/launch.rs"),
-        root.join("crates/proto/src/lib.rs"),
-    ];
+    // Every production source of the CLI crate, FOUND rather than listed. A hand-kept list has to be
+    // extended on every file split, and forgetting is invisible: the keys of the moved code leave the
+    // set silently, and the canary below (more than twenty keys) does not notice a set that merely
+    // shrank. Measured when `main.rs` was split into modules - the list named four files and the
+    // crate had eight. A walk cannot forget.
     // Scanning only the emission SITES misses most of the set: many keys are not literals where
     // the event is built (`reason_key: reason.to_string()`), they arrive through helpers whose
     // match arms hold the literal (`session_reason_key`, `jump_error_key`, `describe_reason`).
     // Measured 2026-09-05: site-only scanning found 19 of them. So the scan is by SHAPE over
     // production code, and `is_key_shaped` plus the test-module cut carry the precision.
-    let mut all = sources.to_vec();
+    let mut all = rust_sources_under(&root.join("crates/cli/src"));
+    all.push(root.join("crates/proto/src/lib.rs"));
     all.push(root.join("crates/mech/src/lib.rs"));
     for path in &all {
         let text = production_source(path);
