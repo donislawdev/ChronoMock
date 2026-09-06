@@ -18,9 +18,25 @@ public partial class App : Application
         {
             // Merge the interface strings before the first window loads, so translation keys resolve.
             // Default culture is English; a language swap is a later slice.
-            LocalizationService.Apply(this, LocalizationService.DefaultCulture);
+            //
+            // A damaged strings file degrades the interface instead of stopping the app: the window
+            // then shows raw keys, which is ugly and honest, rather than "cannot be opened", which
+            // is total (R3-11). Everything that matters - the target, the verdict, the coverage - is
+            // data, not translation.
+            var stringsProblem = LocalizationService.ApplyOrDegrade(this, LocalizationService.DefaultCulture);
 
             new MainWindow().Show();
+
+            if (stringsProblem is not null)
+            {
+                // Deliberately a literal, and the one place in the app where that is right: the
+                // dictionary this text would be looked up in is precisely what failed to load.
+                System.Windows.MessageBox.Show(
+                    $"The interface strings could not be loaded, so labels show their internal keys.\n\n{stringsProblem}",
+                    "Chrono Mock - interface strings",
+                    System.Windows.MessageBoxButton.OK,
+                    System.Windows.MessageBoxImage.Warning);
+            }
         }
         catch (Exception ex)
         {

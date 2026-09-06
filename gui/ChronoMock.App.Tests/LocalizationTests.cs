@@ -176,4 +176,45 @@ public class LocalizationTests
             Directory.Delete(dir, recursive: true);
         }
     }
+    /// <summary>
+    /// A damaged strings file must degrade the interface, not stop the application. Before this,
+    /// `OnStartup` caught the load failure, showed a box and called `Shutdown(1)`: the app could not
+    /// be opened at all because one loose JSON file next to the exe was missing - and adding files
+    /// there is exactly what the product tells people to do. The fallback was already written and
+    /// tested (a missing key renders AS the key), it simply was not allowed to run (R3-11).
+    /// </summary>
+    [Fact]
+    public void A_missing_strings_file_degrades_the_interface_instead_of_stopping_the_app()
+    {
+        var reason = WpfTestHost.Invoke(() =>
+        {
+            try
+            {
+                // A well-formed culture tag with no file behind it - the shape of a user who added
+                // a language to the picker and not the file, or deleted the English one.
+                return LocalizationService.ApplyOrDegrade(System.Windows.Application.Current, "zz-ZZ");
+            }
+            finally
+            {
+                // Restore the real dictionary: Application.Current is process-wide, and every
+                // window-rendering test after this one resolves its labels through it.
+                LocalizationService.Apply(System.Windows.Application.Current, LocalizationService.DefaultCulture);
+            }
+        });
+
+        Assert.NotNull(reason);
+        Assert.Contains("zz-ZZ", reason, StringComparison.Ordinal);
+    }
+
+    /// <summary>The healthy path still reports success, so "degrade" cannot quietly become the
+    /// normal case - a fallback that always fires is indistinguishable from a broken loader.</summary>
+    [Fact]
+    public void A_present_strings_file_reports_no_problem()
+    {
+        var reason = WpfTestHost.Invoke(() =>
+            LocalizationService.ApplyOrDegrade(System.Windows.Application.Current, LocalizationService.DefaultCulture));
+
+        Assert.Null(reason);
+    }
+
 }

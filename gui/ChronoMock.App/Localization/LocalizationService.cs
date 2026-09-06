@@ -156,6 +156,44 @@ public static class LocalizationService
         app.Resources.MergedDictionaries.Add(dictionary);
     }
 
+    /// <summary>
+    /// Apply a culture, or fall back to an EMPTY dictionary and return why - never throw.
+    /// </summary>
+    /// <remarks>
+    /// A missing or hand-broken strings file used to take the whole application down before the
+    /// first window appeared. For a portable tool whose own contract says a language is added by
+    /// dropping a file next to the exe, damaging that file is a likely user mistake, and "the app
+    /// will not start" is a total outcome for a partial cause.
+    ///
+    /// The fallback is already written and already tested: <c>TranslationKeyConverter</c> renders a
+    /// missing key AS the key, deliberately, so nothing is ever blank. An app with an empty
+    /// dictionary starts and works - target selection, Start, Stop, the verdict and the coverage
+    /// list are data, not translations. The interface reads as `status.running` instead of
+    /// "Running": ugly and honest, which rule 6 prefers over "cannot be opened" (R3-11).
+    ///
+    /// Returns null on success, or the reason the strings could not be loaded.
+    /// </remarks>
+    public static string? ApplyOrDegrade(Application app, string culture)
+    {
+        ArgumentNullException.ThrowIfNull(app);
+
+        try
+        {
+            Apply(app, culture);
+            return null;
+        }
+        catch (Exception e) when (e is FileNotFoundException
+                                      or InvalidOperationException
+                                      or IOException
+                                      or UnauthorizedAccessException)
+        {
+            var empty = new ResourceDictionary { [MarkerKey] = culture };
+            RemovePrevious(app.Resources.MergedDictionaries);
+            app.Resources.MergedDictionaries.Add(empty);
+            return e.Message;
+        }
+    }
+
     private static void RemovePrevious(ICollection<ResourceDictionary> merged)
     {
         var existing = merged.FirstOrDefault(d => d.Contains(MarkerKey));

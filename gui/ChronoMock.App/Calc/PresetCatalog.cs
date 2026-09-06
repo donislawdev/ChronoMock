@@ -73,7 +73,7 @@ public static class PresetCatalog
     /// exactly (R2-S8). The keys of that schema are a public contract (untouchable rule 17), so a file
     /// written to a later version has to be refused HERE - listing it and letting it fail inside the engine
     /// would answer a schema question with a date error.</summary>
-    private const string SupportedSchema = "chronomock.preset/1";
+    internal const string SupportedSchema = "chronomock.preset/1";
 
     public static IReadOnlyList<PresetInfo> Load(string presetsDir)
     {
