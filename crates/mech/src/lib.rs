@@ -149,8 +149,7 @@ pub struct SessionState {
 /// held at the clamp while `state` announced the year -27627, a date no channel ever showed anyone,
 /// in the event the panel and the evidence export are built from (R2-X2).
 pub fn project_fake_ft(anchor_fake: i64, anchor_real: i64, now_real: i64, multiplier: i64) -> i64 {
-    let advanced = now_real.wrapping_sub(anchor_real).saturating_mul(multiplier);
-    anchor_fake.saturating_add(advanced).min(chrono_ctl::FAKE_WALL_MAX)
+    chrono_ctl::fake_wall_at(anchor_fake, anchor_real, now_real, multiplier)
 }
 
 impl SessionState {

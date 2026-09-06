@@ -665,6 +665,68 @@ pub unsafe fn read_dur(p: *const Ctl) -> (u64, i64, i64, i64) { unsafe {
     )
 }}
 
+/// The fake wall instant at `now_real`, from the anchor and the rate.
+///
+/// One implementation, called from both sides, because the two sides answer different questions
+/// about the same clock: the hook computes what the TARGET sees, the mechanism computes what the
+/// session REPORTS about itself. A difference between them is the tool lying about its own clock,
+/// and until this moved here the invariant was two copies of the formula plus a comment asking
+/// that they be kept in step - which is exactly the shape untouchable rule 12 calls worse than no
+/// guard at all. `chrono-ctl` already hosts this class of pure projection (`dur_tick_at`,
+/// `dur_quit_at`, `dur_qpc_at`), so this is finishing an existing split, not inventing one.
+///
+/// Saturating, then clamped to the last representable instant. Wrapping handed different channels
+/// different answers once the fake clock ran past the end of the range: the raw FILETIME channels
+/// reported the wrapped number, while `GetSystemTime` and `GetLocalTime` go through
+/// `FileTimeToSystemTime`, which rejects it - so they fell back to the REAL clock. One process, two
+/// epochs, and the audit still saying `works` (R2-K2). Measured at 30828-09-01 under the maximum
+/// multiplier, the target held at the clamp while `state` announced the year -27627 (R2-X2).
+///
+/// Both crates that call this run with `overflow-checks` off (a panic unwinding across the FFI
+/// detour boundary is undefined behaviour), so every bound here is written out rather than left to
+/// a debug assertion.
+pub fn fake_wall_at(anchor_fake: i64, anchor_real: i64, now_real: i64, multiplier: i64) -> i64 {
+    let advanced = now_real.wrapping_sub(anchor_real).saturating_mul(multiplier);
+    anchor_fake.saturating_add(advanced).min(FAKE_WALL_MAX)
+}
+
+/// Copy `s` into a fixed-length UTF-16 buffer, always NUL-terminated, never overrunning.
+///
+/// Lives here rather than in the hook for one reason: the hook is a `cdylib` and has no tests at
+/// all (0 across 1966 lines), while this is the classic place for an off-by-one - a fixed buffer,
+/// a terminator, and a caller that cannot check. The behaviour is unchanged; what is new is that
+/// it is now checkable, including the `len == 0` case where there is no room even for the
+/// terminator.
+pub fn set_wide(dst: &mut [u16], s: &str) {
+    let mut i = 0;
+    for c in s.encode_utf16() {
+        if i + 1 >= dst.len() {
+            break;
+        }
+        dst[i] = c;
+        i += 1;
+    }
+    if i < dst.len() {
+        dst[i] = 0;
+    }
+}
+
+/// Move a FILETIME tick count by a zone bias, or `None` if the result is not a FILETIME.
+///
+/// The pure half of the hook's `shift_filetime`. FILETIME 0 is the very common "no time recorded",
+/// and a positive bias pushes it below zero - which, read back as the unsigned value it is, becomes
+/// a date tens of thousands of years out. The old code wrapped there and still reported success, so
+/// the caller had no way to notice; `None` here is what lets the detour fail honestly and leave the
+/// caller's original value alone.
+pub fn shift_ticks_by_bias(ticks: i64, bias_min: i32, add: bool) -> Option<i64> {
+    let bias_100ns = bias_min as i64 * 60 * 10_000_000;
+    let shifted = if add { ticks.checked_add(bias_100ns) } else { ticks.checked_sub(bias_100ns) };
+    match shifted {
+        Some(v) if v >= 0 => Some(v),
+        _ => None,
+    }
+}
+
 /// Project the duration tick (milliseconds, `GetTickCount64` scale) at real time `real_now` (QUIT, 100 ns)
 /// from the anchor: `dur_tick_c0 + (real_now - dur_q0) * M / 10_000`. Monotonic in `real_now` for a fixed
 /// anchor; `freeze_dur` keeps it continuous across a multiplier change. `m` is clamped to >= 1, so a frozen
@@ -1569,5 +1631,71 @@ mod tests {
         // Frozen and slow motion clamp to real length (>= 1) - rule 3.
         assert_eq!(scale_timer_elapse(6000, 0), 6000);
         assert_eq!(scale_timer_elapse(6000, -5), 6000);
+    }
+
+    /// The projection the target sees and the projection the session reports are now the same
+    /// function; these pin its shape so a "small simplification" cannot quietly change what one
+    /// side answers. The clamp is the load-bearing part: past the end of the range, wrapping gave
+    /// the raw FILETIME channels one epoch and the SYSTEMTIME channels another (R2-K2, R2-X2).
+    #[test]
+    fn the_fake_wall_projection_scales_clamps_and_never_wraps() {
+        // Plain acceleration: 1 s of real time at x60 is 60 s of fake time.
+        let one_sec = 10_000_000;
+        assert_eq!(fake_wall_at(1_000, 0, one_sec, 60), 1_000 + one_sec * 60);
+        // Frozen (M = 0) holds the anchor exactly - the wall does not creep.
+        assert_eq!(fake_wall_at(1_000, 0, one_sec * 3, 0), 1_000);
+        // At the top of the range it holds at the clamp instead of wrapping to a negative year.
+        assert_eq!(fake_wall_at(FAKE_WALL_MAX - 5, 0, one_sec, 1_000_000), FAKE_WALL_MAX);
+        assert_eq!(fake_wall_at(i64::MAX, 0, one_sec, 1), FAKE_WALL_MAX);
+        // A real clock that appears to run backwards (a wrapped QUIT reading) must not push the
+        // fake clock past the clamp either.
+        assert!(fake_wall_at(1_000, one_sec, 0, 60) <= FAKE_WALL_MAX);
+    }
+
+    /// A fixed buffer, a terminator, and a caller that cannot check - the classic off-by-one. This
+    /// code was correct and untested for its whole life because it lived in a crate with no tests.
+    #[test]
+    fn set_wide_always_terminates_and_never_overruns() {
+        let mut buf = [0xFFFFu16; 8];
+        set_wide(&mut buf, "abc");
+        assert_eq!(&buf[..4], &['a' as u16, 'b' as u16, 'c' as u16, 0]);
+        assert_eq!(buf[4], 0xFFFF, "wrote past the string it was given");
+
+        // Longer than the buffer: truncated, still terminated, last slot never a character.
+        let mut buf = [0xFFFFu16; 4];
+        set_wide(&mut buf, "abcdefgh");
+        assert_eq!(buf, ['a' as u16, 'b' as u16, 'c' as u16, 0]);
+
+        // Exactly one slot: no room for a character, so it holds only the terminator.
+        let mut buf = [0xFFFFu16; 1];
+        set_wide(&mut buf, "abc");
+        assert_eq!(buf, [0]);
+
+        // Zero-length: nothing to write and nothing to overrun. The loop's `i + 1 >= dst.len()`
+        // test is what makes this safe, and it is the case no caller can observe.
+        let mut buf: [u16; 0] = [];
+        set_wide(&mut buf, "abc");
+
+        // Non-BMP input is UTF-16, so one character takes two slots - and truncation must still
+        // leave room for the terminator.
+        let mut buf = [0xFFFFu16; 3];
+        set_wide(&mut buf, "\u{1F600}x");
+        assert_eq!(buf[2], 0);
+    }
+
+    /// FILETIME 0 means "no time recorded" and is extremely common; a positive bias pushes it below
+    /// zero, which read back as the unsigned value it is becomes a date tens of thousands of years
+    /// out. `None` is what lets the detour report failure and leave the caller's value alone.
+    #[test]
+    fn a_bias_shift_that_leaves_the_filetime_range_is_refused() {
+        let hour = 60 * 60 * 10_000_000i64;
+        assert_eq!(shift_ticks_by_bias(hour * 5, 120, true), Some(hour * 5 + hour * 2));
+        assert_eq!(shift_ticks_by_bias(hour * 5, 120, false), Some(hour * 3));
+        // The common one: zero minus a positive bias is not a FILETIME.
+        assert_eq!(shift_ticks_by_bias(0, 120, false), None);
+        // Exactly zero is still a FILETIME, so it is allowed.
+        assert_eq!(shift_ticks_by_bias(hour * 2, 120, false), Some(0));
+        // An addition that would overflow i64 is refused rather than wrapped.
+        assert_eq!(shift_ticks_by_bias(i64::MAX, 120, true), None);
     }
 }

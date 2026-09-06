@@ -423,18 +423,11 @@ fn fake_now_and_dur_m() -> Option<(i64, i64)> {
     if !still_ours(p) {
         return None; // the block was reclaimed by another session mid-read (R2-S6): real time
     }
-    let dq = real_quit().wrapping_sub(a_real);
-    // Saturating, then clamped to the last representable instant. Wrapping here handed different
-    // channels different answers once the fake clock ran past the end of the range: the raw FILETIME
-    // channels reported the wrapped number, while GetSystemTime and GetLocalTime go through
-    // FileTimeToSystemTime, which rejects it - so they fell back to the REAL clock. One process, two
-    // epochs, and the audit still saying `works` (R2-K2). Holding at the edge keeps every channel
-    // agreeing and never turns the fake clock back into the real one.
-    //
-    // This crate has overflow-checks off (a panic across the detour boundary is UB), so the bounds
-    // are written out rather than left to a debug assertion.
-    let advanced = dq.saturating_mul(m);
-    Some((a_fake.saturating_add(advanced).min(chrono_ctl::FAKE_WALL_MAX), m.max(1)))
+    // The projection itself lives in `chrono-ctl`, and is the SAME call the mechanism makes for its
+    // own `state` reporting. It used to be this formula written out twice, in two crates, with a
+    // comment asking that the copies be kept in step - a guard in prose is not a guard (rule 12),
+    // and a difference between them is the tool lying about its own clock.
+    Some((chrono_ctl::fake_wall_at(a_fake, a_real, real_quit(), m), m.max(1)))
 }
 
 fn cur_tz_bias() -> i32 {
@@ -624,19 +617,7 @@ const SESSION_ZONE_NAME: &str = "Chrono Session";
 const TIME_ZONE_ID_INVALID: u32 = 0xFFFF_FFFF;
 
 /// Copy `s` into a fixed-length UTF-16 field, NUL-terminated (zone name buffers).
-fn set_wide(dst: &mut [u16], s: &str) {
-    let mut i = 0;
-    for c in s.encode_utf16() {
-        if i + 1 >= dst.len() {
-            break;
-        }
-        dst[i] = c;
-        i += 1;
-    }
-    if i < dst.len() {
-        dst[i] = 0;
-    }
-}
+use chrono_ctl::set_wide;
 
 unsafe extern "system" fn h_gtzi(lp: *mut TIME_ZONE_INFORMATION) -> u32 { unsafe {
     bump(IDX_GTZI);
@@ -721,17 +702,14 @@ unsafe fn write_session_utc(local: *const SYSTEMTIME, utc: *mut SYSTEMTIME) -> b
 /// # Safety
 /// `src` and `dst` must be valid, non-null FILETIME pointers.
 unsafe fn shift_filetime(src: *const FILETIME, dst: *mut FILETIME, add: bool) -> i32 { unsafe {
-    let bias_100ns = cur_tz_bias() as i64 * 60 * 10_000_000;
     let ticks = ft_to_i64(*src);
-    // FILETIME 0 is the very common "no time recorded", and a positive bias pushes it below zero -
-    // which, read back as the unsigned value it is, becomes a date tens of thousands of years out.
-    // The old code wrapped there and still returned success, so the caller had no way to notice.
-    // Out of range now means "we cannot express this", reported as failure so the caller falls back
-    // to the original, exactly as `write_systemtime` already does (L-3). This crate runs with
-    // overflow-checks off (a panic across the FFI detour boundary is UB), so the check is explicit.
-    let shifted = match if add { ticks.checked_add(bias_100ns) } else { ticks.checked_sub(bias_100ns) } {
-        Some(v) if v >= 0 => v,
-        _ => {
+    // Out of range means "we cannot express this", reported as failure so the caller falls back to
+    // the original, exactly as `write_systemtime` already does (L-3). The arithmetic and the
+    // "still a FILETIME" test live in `chrono-ctl` (`shift_ticks_by_bias`), where they can be
+    // tested - this crate is a cdylib and has no tests of its own.
+    let shifted = match chrono_ctl::shift_ticks_by_bias(ticks, cur_tz_bias(), add) {
+        Some(v) => v,
+        None => {
             // FALSE means "call GetLastError" to a Win32 caller, and leaving the thread's last error
             // as whatever the previous operation set it to is how a caller ends up reporting an
             // unrelated failure (R2-N16). Say what actually happened.
