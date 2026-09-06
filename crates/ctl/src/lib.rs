@@ -687,7 +687,19 @@ pub unsafe fn read_dur(p: *const Ctl) -> (u64, i64, i64, i64) { unsafe {
 /// a debug assertion.
 pub fn fake_wall_at(anchor_fake: i64, anchor_real: i64, now_real: i64, multiplier: i64) -> i64 {
     let advanced = now_real.wrapping_sub(anchor_real).saturating_mul(multiplier);
-    anchor_fake.saturating_add(advanced).min(FAKE_WALL_MAX)
+    // Both ends, not just the top. A FILETIME counts from 1601 and Windows types it unsigned, so a
+    // negative value is not a small date - read back as unsigned it is a year around 59000, and
+    // `FileTimeToSystemTime` refuses it, which drops `GetSystemTime` and `GetLocalTime` back to the
+    // REAL clock while the raw channels keep the nonsense. That is the same two-epochs-in-one-process
+    // failure the top clamp exists for (R2-K2, R2-X2), and it was measured at the bottom with
+    // `--at 1000-01-01T00:00:00`. The moment is refused before a session starts now, so this floor
+    // should never be reached - which is exactly why it is cheap to keep as the net.
+    //
+    // `clamp` panics if its bounds are crossed, which matters in a crate whose panics would unwind
+    // across an FFI detour boundary (undefined behaviour). Here both bounds are constants and
+    // `FAKE_WALL_MAX > 0` is a compile-time assertion where it is defined, so the panic is
+    // unreachable by construction rather than by hope.
+    anchor_fake.saturating_add(advanced).clamp(0, FAKE_WALL_MAX)
 }
 
 /// Copy `s` into a fixed-length UTF-16 buffer, always NUL-terminated, never overrunning.
@@ -1648,8 +1660,13 @@ mod tests {
         assert_eq!(fake_wall_at(FAKE_WALL_MAX - 5, 0, one_sec, 1_000_000), FAKE_WALL_MAX);
         assert_eq!(fake_wall_at(i64::MAX, 0, one_sec, 1), FAKE_WALL_MAX);
         // A real clock that appears to run backwards (a wrapped QUIT reading) must not push the
-        // fake clock past the clamp either.
-        assert!(fake_wall_at(1_000, one_sec, 0, 60) <= FAKE_WALL_MAX);
+        // fake clock past either clamp - and the LOW one matters as much as the high one, because a
+        // negative FILETIME is not an early date, it is an unsigned number around year 59000 that
+        // `FileTimeToSystemTime` rejects (measured at `--at 1000-01-01`, where the raw channels
+        // showed nonsense and the SYSTEMTIME channels fell back to the real clock).
+        let back = fake_wall_at(1_000, one_sec, 0, 60);
+        assert!((0..=FAKE_WALL_MAX).contains(&back), "the fake clock left the representable range");
+        assert_eq!(fake_wall_at(-5, 0, 0, 1), 0, "a negative anchor must not produce a negative clock");
     }
 
     /// A fixed buffer, a terminator, and a caller that cannot check - the classic off-by-one. This

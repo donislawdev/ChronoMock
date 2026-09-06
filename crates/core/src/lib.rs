@@ -357,14 +357,46 @@ pub(crate) fn civil_fields_to_filetime_utc(
 ) -> Option<i64> {
     // Days between the FILETIME epoch (1601-01-01) and the Unix epoch (1970-01-01).
     const DAYS_1601_TO_1970: i64 = 134_774;
+    let ft = civil_fields_to_epoch_secs(y, mo, d, h, mi, s, bias_min)?
+        .checked_add(DAYS_1601_TO_1970 * 86_400)?
+        .checked_mul(10_000_000)?;
+    // A FILETIME counts 100 ns intervals SINCE 1601-01-01 and Windows types it unsigned, so a
+    // moment before that epoch has no FILETIME at all - and until this check existed the tool
+    // produced one anyway, as a negative i64, then handed it around as if it were real.
+    //
+    // Measured, because the consequence is not cosmetic. `chrono run --at 1000-01-01T00:00:00`
+    // reported the session as WORKS with a fake wall of 1000-01-01, while inside the target the
+    // probe read: raw FILETIME 18257086497710184170 (the negative value read back as the unsigned
+    // number it is - a year around 59000), and `GetSystemTime`/`GetLocalTime` showing the REAL
+    // clock, because `FileTimeToSystemTime` refuses that value and the channel falls through.
+    // One process, two epochs, and an audit calling it a pass - the same failure R2-X2 fixed at the
+    // TOP of the range, which had no counterpart at the bottom (untouchable rules 2 and 4).
+    (ft >= 0).then_some(ft)
+}
+
+/// The same civil fields as a UTC instant in SECONDS since the Unix epoch, which unlike a FILETIME
+/// is perfectly happy to be negative.
+///
+/// Split from the FILETIME conversion because the two answer different questions and only one of
+/// them has a floor. Year 1000 has a real instant (-30 610 231 200) and a real RFC 1123 rendering;
+/// what it does not have is a FILETIME. Deriving the epoch fields from the FILETIME, as the
+/// calculator used to, meant that fixing the FILETIME would have thrown away two correct answers
+/// with the wrong one.
+pub(crate) fn civil_fields_to_epoch_secs(
+    y: i64,
+    mo: i64,
+    d: i64,
+    h: i64,
+    mi: i64,
+    s: i64,
+    bias_min: i64,
+) -> Option<i64> {
     // h/mi/s are range-checked before they get here, so this sum is exact (max 86_400).
     let tod = h * 3_600 + mi * 60 + s;
     days_from_civil(y, mo, d)
         .checked_mul(86_400)
         .and_then(|day_secs| day_secs.checked_add(tod))
         .and_then(|local_secs| local_secs.checked_add(bias_min * 60)) // UTC = local + bias
-        .and_then(|utc_secs| utc_secs.checked_add(DAYS_1601_TO_1970 * 86_400))
-        .and_then(|secs_1601| secs_1601.checked_mul(10_000_000))
 }
 
 /// Civil date `(year, month, day)` from a day count since 1970-01-01 (Howard
@@ -513,11 +545,43 @@ mod tests {
         assert!(moment_to_filetime_utc(&moment("9223372036854775807-01-01T00:00:00", Some(0))).is_err());
     }
 
+    /// A moment before 1601 has no FILETIME, and saying otherwise was not harmless.
+    ///
+    /// This test used to assert the opposite - that `moment_to_filetime_utc` stays `Ok` for such a
+    /// date - so that the calculator could still show its epoch. The intent was right and the
+    /// mechanism was wrong: the conversion returned a NEGATIVE i64, and a FILETIME counts from
+    /// 1601 unsigned. Measured consequence on the substitution path, which is what makes this a
+    /// defect rather than a display quirk: `chrono run --at 1000-01-01T00:00:00` reported WORKS
+    /// with a fake wall of 1000-01-01, while inside the target the raw FILETIME channel read
+    /// 18257086497710184170 and `GetSystemTime`/`GetLocalTime` showed the REAL clock, because
+    /// `FileTimeToSystemTime` rejects that value. One process, two epochs, audit calling it a pass.
+    ///
+    /// The epoch the old test was protecting is still there - it just no longer comes from the
+    /// FILETIME (see `formats`), which is what let both answers be right at once.
     #[test]
-    fn pre_1601_year_still_converts() {
-        // The fix must NOT regress pre-FILETIME-epoch dates: a year before 1601 yields a (negative)
-        // instant with no overflow, so it stays Ok and the calculator can still show its epoch.
-        assert!(moment_to_filetime_utc(&moment("1000-06-15T00:00:00", Some(0))).is_ok());
+    fn a_moment_before_the_filetime_epoch_is_refused_not_returned_negative() {
+        assert!(moment_to_filetime_utc(&moment("1000-06-15T00:00:00", Some(0))).is_err());
+        // The epoch itself is exactly on the boundary and IS representable.
+        assert!(moment_to_filetime_utc(&moment("1601-01-01T00:00:00", Some(0))).is_ok());
+        // One second earlier is not.
+        assert!(moment_to_filetime_utc(&moment("1600-12-31T23:59:59", Some(0))).is_err());
+        // And the zone moves that boundary, which is the case a tester actually hits: midnight on
+        // the epoch date in a positive-offset session is BEFORE the epoch in UTC.
+        assert!(moment_to_filetime_utc(&moment("1601-01-01T00:00:00", Some(-120))).is_err());
+        assert!(moment_to_filetime_utc(&moment("1601-01-01T02:00:00", Some(-120))).is_ok());
+    }
+
+    /// The property the old test was really after: a date before 1601 still has an instant, and the
+    /// calculator still reports it. Refusing the FILETIME must not take the epoch down with it.
+    #[test]
+    fn a_date_before_the_filetime_epoch_still_has_an_epoch_and_an_rfc_rendering() {
+        let civil = calc::parse_civil_datetime("1000-01-01T00:00:00").expect("a valid civil date");
+        let f = calc::formats(&civil, -120);
+        assert_eq!(f.epoch_seconds, Some(-30_610_231_200));
+        assert_eq!(f.epoch_millis, Some(-30_610_231_200_000));
+        assert_eq!(f.rfc1123.as_deref(), Some("Tue, 31 Dec 0999 22:00:00 GMT"));
+        assert_eq!(f.iso_date, "1000-01-01");
+        assert!(f.filetime.is_none(), "a pre-1601 moment has no FILETIME");
     }
 
     #[test]

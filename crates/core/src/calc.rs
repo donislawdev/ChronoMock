@@ -368,7 +368,10 @@ fn convert_zone(
     // about the size of numbers handed to someone whose date simply could not be written in the
     // form the parser read (R3-6). Now the only way this fails is the real one: an instant outside
     // FILETIME.
-    let ft = super::civil_fields_to_filetime_utc(
+    // Through the INSTANT, not the FILETIME. A zone step re-expresses the same moment in another
+    // offset and needs no epoch of its own, so tying it to the FILETIME floor would have made
+    // `--to-zone` fail on every date before 1601 - dates the calculator can otherwise handle.
+    let secs = super::civil_fields_to_epoch_secs(
         civil.year,
         civil.month as i64,
         civil.day as i64,
@@ -378,7 +381,7 @@ fn convert_zone(
         bias_from as i64,
     )
     .ok_or(EvalError::Overflow { index })?;
-    Ok(filetime_to_civil(ft, bias_to))
+    Ok(epoch_secs_to_civil(secs, bias_to))
 }
 
 /// Jump to the nearest business day in the target's direction (calendar::nearest_business_day).
@@ -556,13 +559,20 @@ fn shift_months(cur: CivilDateTime, months: i64, index: usize) -> Result<CivilDa
 /// Session-local civil fields from a UTC FILETIME. Pure arithmetic mirroring the civil half
 /// of `filetime_utc_to_wall` (no string, no parse, so it cannot fail).
 fn filetime_to_civil(ft_utc: i64, tz_bias_min: i32) -> CivilDateTime {
-    // Session-local = UTC - bias (UTC = local + bias).
-    let local_ticks = ft_utc - (tz_bias_min as i64) * 60 * 10_000_000;
     const DAYS_1601_TO_1970: i64 = 134_774;
-    let secs_1601 = local_ticks.div_euclid(10_000_000);
-    let secs_1970 = secs_1601 - DAYS_1601_TO_1970 * 86_400;
-    let days = secs_1970.div_euclid(86_400);
-    let tod = secs_1970.rem_euclid(86_400);
+    let secs_1601 = ft_utc.div_euclid(10_000_000);
+    epoch_secs_to_civil(secs_1601 - DAYS_1601_TO_1970 * 86_400, tz_bias_min)
+}
+
+/// Session-local civil fields from a UTC instant in seconds since the Unix epoch.
+///
+/// The civil half of the conversion, with the FILETIME epoch factored out - so it works for a
+/// moment before 1601, which has an instant but no FILETIME. Pure arithmetic, so it cannot fail.
+fn epoch_secs_to_civil(secs_utc: i64, tz_bias_min: i32) -> CivilDateTime {
+    // Session-local = UTC - bias (UTC = local + bias).
+    let local = secs_utc - (tz_bias_min as i64) * 60;
+    let days = local.div_euclid(86_400);
+    let tod = local.rem_euclid(86_400);
     let (y, mo, d) = civil_from_days(days);
     CivilDateTime {
         year: y,
@@ -683,7 +693,29 @@ const FT_1970: i64 = 116_444_736_000_000_000;
 /// round-trip). The single instant conversion behind both the instant-based output formats and
 /// the instant-based significance markers.
 fn instant_filetime(civil: &CivilDateTime, tz_bias_min: i32) -> Option<i64> {
-    super::moment_to_filetime_utc(&super::Moment { local: civil.to_iso(), tz_bias_min: Some(tz_bias_min) }).ok()
+    super::civil_fields_to_filetime_utc(
+        civil.year,
+        civil.month as i64,
+        civil.day as i64,
+        civil.hour as i64,
+        civil.minute as i64,
+        civil.second as i64,
+        tz_bias_min as i64,
+    )
+}
+
+/// The same moment as a UTC instant in seconds since the Unix epoch - defined for dates the
+/// FILETIME cannot express, which is the whole reason it is a separate function.
+fn instant_epoch_secs(civil: &CivilDateTime, tz_bias_min: i32) -> Option<i64> {
+    super::civil_fields_to_epoch_secs(
+        civil.year,
+        civil.month as i64,
+        civil.day as i64,
+        civil.hour as i64,
+        civil.minute as i64,
+        civil.second as i64,
+        tz_bias_min as i64,
+    )
 }
 
 /// Render `civil` (wall-clock in the session zone `tz_bias_min`) in every fixed format.
@@ -694,23 +726,36 @@ pub fn formats(civil: &CivilDateTime, tz_bias_min: i32) -> Formats {
     let pl = format!("{:02}.{:02}.{}", civil.day, civil.month, format_year(civil.year));
 
     // Instant-based formats: the civil moment interpreted in the session zone as a UTC instant.
-    let (rfc1123, epoch_seconds, epoch_millis, filetime) = match instant_filetime(civil, tz_bias_min) {
-        Some(ft) => {
-            let utc = filetime_to_civil(ft, 0);
-            let rfc = format!(
-                "{}, {:02} {} {:04} {:02}:{:02}:{:02} GMT",
-                DOW_ABBR[day_of_week(&utc)],
-                utc.day,
-                MONTH_ABBR[(utc.month - 1) as usize],
-                utc.year,
-                utc.hour,
-                utc.minute,
-                utc.second
-            );
-            (Some(rfc), Some((ft - FT_1970) / 10_000_000), Some((ft - FT_1970) / 10_000), Some(ft))
+    //
+    // The epoch fields and RFC 1123 come from the INSTANT, not from the FILETIME, because those
+    // three exist for moments the FILETIME cannot hold. Year 1000 has an instant of
+    // -30 610 231 200 and reads as "Tue, 31 Dec 0999 22:00:00 GMT"; what it does not have is a
+    // FILETIME, which counts from 1601 and is unsigned. Deriving all four from the FILETIME made
+    // one wrong answer (a negative FILETIME) and, once that was refused, would have taken two
+    // correct ones down with it.
+    let (rfc1123, epoch_seconds, epoch_millis) = match instant_epoch_secs(civil, tz_bias_min) {
+        Some(secs) => {
+            let utc = epoch_secs_to_civil(secs, 0);
+            // RFC 1123 spells the year in FOUR digits, so a year outside 0..=9999 has no rendering
+            // in it - printing six digits there would be a string in no format at all. The epoch
+            // fields have no such limit and stay.
+            let rfc = (0..=9999).contains(&utc.year).then(|| {
+                format!(
+                    "{}, {:02} {} {:04} {:02}:{:02}:{:02} GMT",
+                    DOW_ABBR[day_of_week(&utc)],
+                    utc.day,
+                    MONTH_ABBR[(utc.month - 1) as usize],
+                    utc.year,
+                    utc.hour,
+                    utc.minute,
+                    utc.second
+                )
+            });
+            (rfc, Some(secs), secs.checked_mul(1_000))
         }
-        None => (None, None, None, None),
+        None => (None, None, None),
     };
+    let filetime = instant_filetime(civil, tz_bias_min);
 
     Formats { iso_date, iso_datetime, us, pl, rfc1123, epoch_seconds, epoch_millis, filetime }
 }
@@ -1498,10 +1543,12 @@ mod tests {
         let f = formats(&dt(crate::CIVIL_YEAR_MAX, 1, 1, 0, 0, 0), 0);
         assert_eq!(f.iso_date, "262143-01-01");
         assert_eq!(f.us, "01/01/262143");
+        // No FILETIME (it saturates near 30828) and no RFC 1123 (its year field is four digits),
+        // but the INSTANT itself is an ordinary number and is reported. Those are three different
+        // limits, and folding them into one used to drop two correct answers with the wrong one.
         assert!(f.filetime.is_none());
-        assert!(f.epoch_seconds.is_none());
-        assert!(f.epoch_millis.is_none());
         assert!(f.rfc1123.is_none());
+        assert_eq!(f.epoch_seconds, Some(8_210_266_876_800));
 
         // And at the bottom, which nothing covered at all: a year before 1 CE renders with its sign
         // in front of a four-digit field, in every format, which is the form the parser reads back.
