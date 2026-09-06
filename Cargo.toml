@@ -26,6 +26,7 @@ minhook = "0.9"
 windows = { version = "0.62", features = [
     "Win32_Foundation",
     "Win32_Security",
+    "Win32_System_JobObjects",
     "Win32_System_Memory",
     "Win32_System_LibraryLoader",
     "Win32_System_Performance",

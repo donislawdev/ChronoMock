@@ -19,6 +19,10 @@ chrono-mech = { workspace = true }
 chrono-proto = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+# Job objects only, for the CDP mechanism: a browser we launched must not outlive the core that
+# launched it, and no portable API can express that. Not a new third-party dependency - the same
+# crate and version the native layers already use (rule 8), one more feature.
+windows = { workspace = true }
 
 # Only for the Rule 16 architecture guard test (reads chrono-core's manifest).
 [dev-dependencies]
