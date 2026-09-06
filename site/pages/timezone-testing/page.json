@@ -3,7 +3,8 @@
 
   "id": "timezone-testing",
   "order": 50,
-  "nav": true,
+  "nav": false,
+  "group": "features",
 
   "languages": {
     "en": {

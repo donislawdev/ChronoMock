@@ -6,6 +6,7 @@
   "id": "faq",
   "order": 90,
   "nav": true,
+  "group": "start",
 
   "languages": {
     "en": {

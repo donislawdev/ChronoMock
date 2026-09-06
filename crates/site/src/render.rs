@@ -65,6 +65,25 @@ pub fn build(root: &Path, out: &Path) -> Result<Report> {
         }
     }
 
+    // The header bar holds only a few addresses, so the footer map is what stands
+    // between a page and being published with nothing linking to it. A page that names
+    // no column, or misspells one, would drop out of that map without any error - the
+    // way `/electron-chromium/` was once reachable from the sitemap alone. Both cases
+    // stop the build instead.
+    for page in &pages {
+        if !page.meta.indexable || page.meta.group.is_empty() {
+            continue;
+        }
+        if !FOOTER_GROUPS.contains(&page.meta.group.as_str()) {
+            return Err(format!(
+                "page '{}' names footer group '{}', which does not exist - use one of: {}",
+                page.meta.id,
+                page.meta.group,
+                FOOTER_GROUPS.join(", ")
+            ));
+        }
+    }
+
     prepare_out(out)?;
 
     let ctx = Ctx {
@@ -78,7 +97,10 @@ pub fn build(root: &Path, out: &Path) -> Result<Report> {
         languages: cfg.languages.len(),
         ..Report::default()
     };
-    let mut rendered: Vec<(String, String)> = Vec::new();
+    // (label for humans, page id, html). The id is carried separately because the
+    // orphan check has to know which page a link came FROM, and parsing it back out
+    // of the label would be one silent bug away from being wrong.
+    let mut rendered: Vec<(String, String, String)> = Vec::new();
 
     for page in &pages {
         for lang in page.meta.languages.keys() {
@@ -92,7 +114,11 @@ pub fn build(root: &Path, out: &Path) -> Result<Report> {
             };
 
             write_file(&out.join(&rel), &html)?;
-            rendered.push((format!("{}[{lang}]", page.meta.id), html));
+            rendered.push((
+                format!("{}[{lang}]", page.meta.id),
+                page.meta.id.clone(),
+                html,
+            ));
             report.pages_written += 1;
         }
     }
@@ -105,7 +131,7 @@ pub fn build(root: &Path, out: &Path) -> Result<Report> {
     copy_assets(root, &site_dir, out)?;
 
     // Link check last, once everything that could satisfy a link exists on disk.
-    for (whence, html) in &rendered {
+    for (whence, _, html) in &rendered {
         for link in internal_links(html) {
             if !out.join(link_target(&link)).exists() {
                 report
@@ -117,7 +143,55 @@ pub fn build(root: &Path, out: &Path) -> Result<Report> {
         }
     }
 
+    // ...and the same question asked backwards: which emitted page does nothing link
+    // to? A dead link is loud - the reader lands on the 404 - while an orphan is
+    // silent, indexed and unreachable.
+    //
+    // The 404 is excluded as a source on purpose. It deliberately links to every page,
+    // so counting it would make the whole site look reachable no matter what the
+    // navigation actually holds. That is not hypothetical: an audit of this very site
+    // once came back green for exactly that reason.
+    let mut linked: BTreeMap<PathBuf, BTreeSet<&str>> = BTreeMap::new();
+    for (_, id, html) in &rendered {
+        if id == "404" {
+            continue;
+        }
+        for link in internal_links(html) {
+            linked
+                .entry(link_target(&link))
+                .or_default()
+                .insert(id.as_str());
+        }
+    }
+    for page in &pages {
+        if !page.meta.indexable {
+            continue;
+        }
+        for (lang, entry) in &page.meta.languages {
+            if !reached_from_elsewhere(&linked, &output_path(lang, &entry.slug), &page.meta.id) {
+                report.orphans.insert(format!("{}[{lang}]", page.meta.id));
+            }
+        }
+    }
+
     Ok(report)
+}
+
+/// Whether some page OTHER than `whose` links to `address`.
+///
+/// The "other" is the whole subtlety, and it is worth a named function because getting
+/// it wrong is silent. Every page carries a link to its own counterpart in the other
+/// language, so a check that accepts a page as its own source makes each pair vouch for
+/// itself and can never report anything. Measured: the first version of this did
+/// exactly that and passed while `/electron-chromium/` was reachable from nothing else.
+fn reached_from_elsewhere(
+    linked: &BTreeMap<PathBuf, BTreeSet<&str>>,
+    address: &Path,
+    whose: &str,
+) -> bool {
+    linked
+        .get(address)
+        .is_some_and(|sources| sources.iter().any(|src| *src != whose))
 }
 
 /// Empty the output directory, but only one this tool made. A stray `--out` pointing
@@ -393,19 +467,63 @@ fn render_header(ctx: &Ctx, page: &Page, lang: &str) -> Result<String> {
     Ok(h)
 }
 
+/// The footer columns, in the order they are shown. The membership of a page lives in
+/// its own `page.json`, but the set of columns lives here so that a typo in one page
+/// cannot invent a column that silently holds a single orphan: `build` rejects a group
+/// that is not on this list.
+///
+/// Each id needs a `footer_group_<id>` heading in every dictionary, which the language
+/// parity check then holds to both languages.
+pub const FOOTER_GROUPS: [&str; 3] = ["start", "tools", "features"];
+
 fn render_footer(ctx: &Ctx, lang: &str) -> Result<String> {
     let repo = &ctx.cfg.repo;
-    Ok(format!(
-        "<footer>\n<div class=\"shell fgrid\">\n<div>{}</div>\n<div class=\"flinks\">\
+    let mut h = String::from("<footer>\n<div class=\"shell\">\n");
+
+    // The site map. The header bar can only carry a handful of addresses before it
+    // wraps, so every content page is listed here instead - this is what keeps a page
+    // from being published and orphaned at the same time, and it is on every page.
+    h.push_str(&format!(
+        "<nav class=\"fmap\" aria-label=\"{}\">\n",
+        esc(ctx.s(lang, "footer_nav_label")?)
+    ));
+    for group in FOOTER_GROUPS {
+        let mut links = String::new();
+        for page in ctx.pages {
+            if page.meta.group != group || !page.meta.indexable {
+                continue;
+            }
+            let Some(entry) = page.meta.languages.get(lang) else {
+                continue;
+            };
+            links.push_str(&format!(
+                "<a href=\"{}\">{}</a>\n",
+                url_path(lang, &entry.slug),
+                esc(&entry.link_text)
+            ));
+        }
+        if links.is_empty() {
+            continue;
+        }
+        h.push_str(&format!(
+            "<div class=\"fcol\">\n<h2>{}</h2>\n{links}</div>\n",
+            esc(ctx.s(lang, &format!("footer_group_{group}"))?)
+        ));
+    }
+    h.push_str("</nav>\n");
+
+    h.push_str(&format!(
+        "<div class=\"fgrid\">\n<div>{}</div>\n<div class=\"flinks\">\
          <a href=\"{repo}\">{}</a>\
          <a href=\"{repo}/releases\">{}</a>\
          <a href=\"{repo}/blob/main/LICENSE\">{}</a>\
-         </div>\n</div>\n</footer>\n",
+         </div>\n</div>\n</div>\n</footer>\n",
         esc(ctx.s(lang, "footer_summary")?),
         esc(ctx.s(lang, "footer_source")?),
         esc(ctx.s(lang, "footer_releases")?),
         esc(ctx.s(lang, "footer_license")?),
-    ))
+    ));
+    Ok(h)
 }
 
 // --------------------------------------------------------------- site-wide files --
@@ -456,4 +574,63 @@ fn copy_assets(root: &Path, site_dir: &Path, out: &Path) -> Result<()> {
     let bean = root.join("assets").join("chrono-bean.svg");
     fs::copy(&bean, dst.join("bean.svg")).map_err(|e| format!("{}: {e}", bean.display()))?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn sources(pairs: &[(&'static str, &'static str)]) -> BTreeMap<PathBuf, BTreeSet<&'static str>> {
+        let mut m: BTreeMap<PathBuf, BTreeSet<&str>> = BTreeMap::new();
+        for (address, from) in pairs {
+            m.entry(PathBuf::from(address)).or_default().insert(from);
+        }
+        m
+    }
+
+    #[test]
+    fn a_page_linked_from_another_page_is_reachable() {
+        let linked = sources(&[("faq/index.html", "home")]);
+        assert!(reached_from_elsewhere(
+            &linked,
+            &PathBuf::from("faq/index.html"),
+            "faq"
+        ));
+    }
+
+    #[test]
+    fn the_language_switch_does_not_make_a_page_reach_itself() {
+        // Every page links to its own counterpart in the other language, so the Polish
+        // FAQ is always linked "from faq". If that counted, no page could ever be
+        // reported - which is what the first version of this check did.
+        let linked = sources(&[("pl/faq/index.html", "faq")]);
+        assert!(!reached_from_elsewhere(
+            &linked,
+            &PathBuf::from("pl/faq/index.html"),
+            "faq"
+        ));
+    }
+
+    #[test]
+    fn a_page_nothing_points_at_is_not_reachable() {
+        let linked = sources(&[("faq/index.html", "home")]);
+        assert!(!reached_from_elsewhere(
+            &linked,
+            &PathBuf::from("electron-chromium/index.html"),
+            "electron-chromium"
+        ));
+    }
+
+    #[test]
+    fn one_foreign_source_is_enough_even_among_self_links() {
+        let linked = sources(&[
+            ("pl/faq/index.html", "faq"),
+            ("pl/faq/index.html", "download"),
+        ]);
+        assert!(reached_from_elsewhere(
+            &linked,
+            &PathBuf::from("pl/faq/index.html"),
+            "faq"
+        ));
+    }
 }

@@ -4,6 +4,7 @@
   "id": "cli-reference",
   "order": 85,
   "nav": true,
+  "group": "start",
 
   "languages": {
     "en": {

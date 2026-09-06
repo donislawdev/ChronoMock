@@ -66,18 +66,24 @@ header{
   background:rgba(15,16,19,.92);
   backdrop-filter:blur(8px);
 }
-.bar{display:flex;align-items:center;gap:28px;height:58px}
+/* min-height, not height. With a fixed height a navigation that wraps is taller than
+   the bar containing it, so the first row is laid out ABOVE the header and clipped -
+   measured at 1440px with twelve links: nav 69.8px inside a 58px bar, first row at
+   -6px. Six links fit today; this makes the seventh wrap instead of disappear. */
+.bar{display:flex;align-items:center;gap:28px;min-height:58px}
 .brand{
   display:flex;align-items:center;gap:10px;
   font-weight:650;letter-spacing:-.01em;color:var(--text);white-space:nowrap;
 }
 .brand:hover{text-decoration:none}
 .bean{width:20px;height:20px;flex:0 0 20px}
-nav{display:flex;gap:22px;margin-left:auto;flex-wrap:wrap}
-nav a{color:var(--muted);font-size:14.5px}
-nav a:hover{color:var(--text);text-decoration:none}
-nav a[aria-current="page"]{color:var(--text)}
-nav a.lang{color:var(--dim);border-left:1px solid var(--line);padding-left:22px}
+/* Scoped to the bar on purpose: the footer site map is a <nav> too, and a bare `nav`
+   rule pushes `margin-left:auto` and this padding onto it. */
+.bar nav{display:flex;gap:10px 22px;margin-left:auto;flex-wrap:wrap;justify-content:flex-end;padding:9px 0}
+.bar nav a{color:var(--muted);font-size:14.5px}
+.bar nav a:hover{color:var(--text);text-decoration:none}
+.bar nav a[aria-current="page"]{color:var(--text)}
+.bar nav a.lang{color:var(--dim);border-left:1px solid var(--line);padding-left:22px}
 
 /* ------------------------------------------------------------------ hero --- */
 
@@ -256,7 +262,25 @@ td.n{color:var(--dim)}
 
 /* ---------------------------------------------------------------- footer --- */
 
-footer{border-top:1px solid var(--line-soft);padding:36px 0 56px;color:var(--dim);font-size:14px}
+footer{border-top:1px solid var(--line-soft);padding:44px 0 56px;color:var(--dim);font-size:14px}
+
+/* The site map. The header bar carries six addresses; every other page is reached
+   from here, which is why this block is what actually keeps the site navigable.
+   auto-fit rather than a fixed three columns, so a fourth group - or a narrow window -
+   rearranges instead of overflowing the way the header bar did. */
+.fmap{
+  display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));
+  gap:26px 36px;padding-bottom:32px;margin-bottom:26px;
+  border-bottom:1px solid var(--line-soft);
+}
+.fcol{display:flex;flex-direction:column;align-items:flex-start;gap:9px}
+.fcol h2{
+  font-size:12px;font-weight:600;letter-spacing:.075em;text-transform:uppercase;
+  color:var(--dim);margin:0 0 2px;
+}
+.fcol a{color:var(--muted)}
+.fcol a:hover{color:var(--text)}
+
 .fgrid{display:flex;gap:36px;flex-wrap:wrap;justify-content:space-between}
 footer a{color:var(--muted)}
 .flinks{display:flex;gap:20px;flex-wrap:wrap}
@@ -277,14 +301,15 @@ footer a{color:var(--muted)}
   header{position:static}
   /* Keep the shell's own 24px gutter here. A bare `padding:12px 0 0` silently
      overrides it and puts the wordmark flush against the screen edge (measured). */
-  .bar{height:auto;flex-wrap:wrap;gap:0;padding:12px 24px 0}
-  nav{
+  .bar{height:auto;min-height:0;flex-wrap:wrap;gap:0;padding:12px 24px 0}
+  .bar nav{
     margin:10px -24px 0;padding:0 24px 12px;width:100vw;
     flex-wrap:nowrap;overflow-x:auto;gap:18px;scrollbar-width:none;
+    justify-content:flex-start;
   }
-  nav::-webkit-scrollbar{display:none}
-  nav a{white-space:nowrap}
-  nav a.lang{border-left:0;padding-left:0}
+  .bar nav::-webkit-scrollbar{display:none}
+  .bar nav a{white-space:nowrap}
+  .bar nav a.lang{border-left:0;padding-left:0}
 }
 
 @media (prefers-reduced-motion:reduce){

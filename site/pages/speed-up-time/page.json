@@ -4,6 +4,7 @@
   "id": "speed-up-time",
   "order": 40,
   "nav": true,
+  "group": "features",
 
   "languages": {
     "en": {

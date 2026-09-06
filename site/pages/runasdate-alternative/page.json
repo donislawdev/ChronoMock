@@ -6,6 +6,7 @@
   "id": "runasdate-alternative",
   "order": 20,
   "nav": true,
+  "group": "tools",
 
   "languages": {
     "en": {

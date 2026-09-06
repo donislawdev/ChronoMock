@@ -11,6 +11,12 @@
   "language_name": "Polski",
   "language_title": "Ta strona po polsku",
 
+  "//footer_group": "Nagłówki mapy serwisu w stopce. Pasek u góry niesie tylko te kilka adresów, których potrzebuje ktoś, kto trafia tu pierwszy raz - to ta mapa utrzymuje każdą stronę osiągalną. Jeden nagłówek na każdą grupę z render.rs.",
+  "footer_nav_label": "Mapa serwisu",
+  "footer_group_start": "Zacznij tu",
+  "footer_group_tools": "Porównania i środowiska",
+  "footer_group_features": "Możliwości",
+
   "footer_summary": "Chrono Mock - GPL-3.0. Bez konta, bez telemetrii, nigdy nie łączy się z siecią.",
   "footer_source": "Kod na GitHubie",
   "footer_releases": "Wydania",

@@ -4,6 +4,7 @@
   "id": "date-calculator",
   "order": 70,
   "nav": true,
+  "group": "features",
 
   "languages": {
     "en": {

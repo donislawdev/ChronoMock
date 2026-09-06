@@ -11,6 +11,12 @@
   "language_name": "English",
   "language_title": "This page in English",
 
+  "//footer_group": "Headings of the footer site map. The header bar carries only the handful of addresses a first-time reader needs, so this map is what actually keeps every page reachable - one heading per group id in render.rs, and the build refuses a page that names a group with no heading here.",
+  "footer_nav_label": "Site map",
+  "footer_group_start": "Start here",
+  "footer_group_tools": "Alternatives and runtimes",
+  "footer_group_features": "What it does",
+
   "footer_summary": "Chrono Mock - GPL-3.0. No account, no telemetry, and it never talks to the internet.",
   "footer_source": "Source on GitHub",
   "footer_releases": "Releases",

@@ -5,7 +5,8 @@
 
   "id": "electron-chromium",
   "order": 55,
-  "nav": true,
+  "nav": false,
+  "group": "tools",
 
   "languages": {
     "en": {

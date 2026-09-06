@@ -45,24 +45,37 @@ fn main() -> ExitCode {
         out.display()
     );
 
-    if report.dangling_count() == 0 {
+    if report.problem_count() == 0 {
         return ExitCode::SUCCESS;
     }
 
     // Reported whether or not it is fatal. A build that quietly drops a dead link is
     // how one gets published.
-    eprintln!(
-        "\nchrono-site: {} internal link(s) point at pages that do not exist yet:",
-        report.dangling_count()
-    );
-    for (page, links) in &report.dangling_links {
-        for link in links {
-            eprintln!("  {page} -> {link}");
+    if report.dangling_count() > 0 {
+        eprintln!(
+            "\nchrono-site: {} internal link(s) point at pages that do not exist yet:",
+            report.dangling_count()
+        );
+        for (page, links) in &report.dangling_links {
+            for link in links {
+                eprintln!("  {page} -> {link}");
+            }
         }
     }
 
+    if !report.orphans.is_empty() {
+        eprintln!(
+            "\nchrono-site: {} page(s) are indexed but nothing links to them:",
+            report.orphans.len()
+        );
+        for page in &report.orphans {
+            eprintln!("  {page}");
+        }
+        eprintln!("  (add each one to a footer group, or to the header bar)");
+    }
+
     if strict {
-        eprintln!("\nrefusing to publish a site with dead internal links (--strict)");
+        eprintln!("\nrefusing to publish a site with unreachable pages (--strict)");
         return ExitCode::from(1);
     }
     eprintln!("\n(not fatal without --strict - these pages are still to be written)");

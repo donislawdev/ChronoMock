@@ -5,7 +5,8 @@
 
   "id": "time-source-audit",
   "order": 60,
-  "nav": true,
+  "nav": false,
+  "group": "features",
 
   "languages": {
     "en": {

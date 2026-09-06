@@ -4,6 +4,7 @@
   "id": "download",
   "order": 10,
   "nav": true,
+  "group": "start",
 
   "languages": {
     "en": {

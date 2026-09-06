@@ -3,7 +3,8 @@
 
   "id": "cli-and-ci",
   "order": 80,
-  "nav": true,
+  "nav": false,
+  "group": "features",
 
   "languages": {
     "en": {

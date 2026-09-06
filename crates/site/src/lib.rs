@@ -73,8 +73,16 @@ pub struct PageMeta {
     pub id: String,
     #[serde(default)]
     pub order: u32,
+    /// Whether the page appears in the header bar. The bar holds the few addresses a
+    /// first-time reader needs; everything else is reached from the footer map, which
+    /// is on every page and has no width to run out of.
     #[serde(default = "yes")]
     pub nav: bool,
+    /// Which footer column the page belongs to. Empty means the page is not listed
+    /// there - only the home page, reached through the wordmark, and pages that are
+    /// not indexable may leave it empty, and `build` refuses anything else.
+    #[serde(default)]
+    pub group: String,
     #[serde(default = "yes")]
     pub indexable: bool,
     pub languages: BTreeMap<String, PageLang>,
@@ -223,11 +231,20 @@ pub struct Report {
     /// only under `--strict`, so that a half-built site can still be looked at while
     /// never being publishable with a dead link in it.
     pub dangling_links: BTreeMap<String, BTreeSet<String>>,
+    /// The mirror image: pages that were emitted and indexed, but that no other page
+    /// links to. Published and unreachable at the same time - which is how
+    /// `/electron-chromium/` once lived, discoverable only from the sitemap.
+    pub orphans: BTreeSet<String>,
 }
 
 impl Report {
     pub fn dangling_count(&self) -> usize {
         self.dangling_links.values().map(BTreeSet::len).sum()
+    }
+
+    /// Everything `--strict` refuses to publish.
+    pub fn problem_count(&self) -> usize {
+        self.dangling_count() + self.orphans.len()
     }
 }
 
