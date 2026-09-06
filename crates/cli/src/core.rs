@@ -304,61 +304,7 @@ pub(crate) fn run_session(
         let wait = deadline.min(child_deadline).saturating_duration_since(Instant::now());
         match rx.recv_timeout(wait) {
             Ok(Command::End { .. }) => break,
-            Ok(Command::Query { id, .. }) => {
-                emit(&state_event(&session));
-                emit(&Event::Ack { v: PROTOCOL_VERSION, id });
-            }
-            Ok(Command::SetMultiplier { id, multiplier, .. }) => {
-                // Bounded here as well as at start: a rate change in flight reaches the same anchor
-                // arithmetic, so an unchecked one walks the clock out of range (or backwards) just as
-                // effectively (R2-K2, R2-K3). Rejecting ONE command never ends the session - the
-                // session keeps running at the rate it had, and the client is told why (rule 6).
-                if chrono_core::multiplier_in_range(multiplier) {
-                    session.set_multiplier(multiplier);
-                    emit(&Event::Ack { v: PROTOCOL_VERSION, id });
-                    emit(&state_event(&session));
-                } else {
-                    emit(&Event::Error {
-                        v: PROTOCOL_VERSION,
-                        id: Some(id),
-                        code: 1,
-                        key: "time.bad_multiplier".into(),
-                        origin: "core".into(),
-                    });
-                }
-            }
-            Ok(Command::Jump { id, to, .. }) => {
-                // Relative jump (current fake + one step) resolves in the core through the SHARED
-                // evaluator, so `jump` accepts the same calendar units as calc and `--at`. The core
-                // alone knows the live fake clock. Absolute resolves through moment_from_spec. Both
-                // re-anchor under one clock read.
-                let resolved: Result<(), &str> = if to.kind == "relative" {
-                    match to.delta.as_deref() {
-                        Some(d) => match parse_shift(d) {
-                            Ok(step) => session.jump_step(&step).map_err(jump_error_key),
-                            Err(_) => Err("moment.invalid"),
-                        },
-                        None => Err("moment.invalid"),
-                    }
-                } else {
-                    moment_from_spec(&to).map(|ft| session.jump(ft))
-                };
-                match resolved {
-                    Ok(()) => {
-                        emit(&Event::Ack { v: PROTOCOL_VERSION, id });
-                        emit(&state_event(&session));
-                    }
-                    Err(key) => emit(&Event::Error {
-                        v: PROTOCOL_VERSION,
-                        id: Some(id),
-                        code: 1,
-                        key: key.into(),
-                        origin: "core".into(),
-                    }),
-                }
-            }
-            // Same as the CDP loop: a command this state does not act on is answered, not dropped.
-            Ok(other) => emit(&unsupported_command(command_id(&other))),
+            Ok(cmd) => apply_command(&mut session, cmd),
             Err(mpsc::RecvTimeoutError::Timeout) => {} // the tick below handles it
             Err(mpsc::RecvTimeoutError::Disconnected) => break, // stdin closed
         }
@@ -386,6 +332,106 @@ pub(crate) fn run_session(
         }
     }
 
+    close_session(session, family, family_pids, clock_clamped, target_exit)
+}
+
+/// Act on one command that arrived mid-session.
+///
+/// `end` never reaches here. Whether the loop keeps running is the loop's business rather than a
+/// command's effect on the session, so that one arm stays where the decision is made. Everything
+/// else is answered: a command this state cannot act on gets `unsupported` WITH its id, so a client
+/// waiting on `ack` learns the outcome instead of waiting for ever.
+pub(crate) fn apply_command(session: &mut chrono_mech::Session, cmd: Command) {
+    match cmd {
+        Command::Query { id, .. } => {
+            emit(&state_event(session));
+            emit(&Event::Ack { v: PROTOCOL_VERSION, id });
+        }
+        Command::SetMultiplier { id, multiplier, .. } => {
+            // Bounded here as well as at start: a rate change in flight reaches the same anchor
+            // arithmetic, so an unchecked one walks the clock out of range (or backwards) just as
+            // effectively (R2-K2, R2-K3). Rejecting ONE command never ends the session - the
+            // session keeps running at the rate it had, and the client is told why (rule 6).
+            if chrono_core::multiplier_in_range(multiplier) {
+                session.set_multiplier(multiplier);
+                emit(&Event::Ack { v: PROTOCOL_VERSION, id });
+                emit(&state_event(session));
+            } else {
+                emit(&Event::Error {
+                    v: PROTOCOL_VERSION,
+                    id: Some(id),
+                    code: 1,
+                    key: "time.bad_multiplier".into(),
+                    origin: "core".into(),
+                });
+            }
+        }
+        Command::Jump { id, to, .. } => {
+            // Relative jump (current fake + one step) resolves in the core through the SHARED
+            // evaluator, so `jump` accepts the same calendar units as calc and `--at`. The core
+            // alone knows the live fake clock. Absolute resolves through moment_from_spec. Both
+            // re-anchor under one clock read.
+            let resolved: Result<(), &str> = if to.kind == "relative" {
+                match to.delta.as_deref() {
+                    Some(d) => match parse_shift(d) {
+                        Ok(step) => session.jump_step(&step).map_err(jump_error_key),
+                        Err(_) => Err("moment.invalid"),
+                    },
+                    None => Err("moment.invalid"),
+                }
+            } else {
+                moment_from_spec(&to).map(|ft| session.jump(ft))
+            };
+            match resolved {
+                Ok(()) => {
+                    emit(&Event::Ack { v: PROTOCOL_VERSION, id });
+                    emit(&state_event(session));
+                }
+                Err(key) => emit(&Event::Error {
+                    v: PROTOCOL_VERSION,
+                    id: Some(id),
+                    code: 1,
+                    key: key.into(),
+                    origin: "core".into(),
+                }),
+            }
+        }
+        // Same as the CDP loop: a command this state does not act on is answered, not dropped.
+        other => emit(&unsupported_command(command_id(&other))),
+    }
+}
+
+/// The warnings a finished native session carries beside its verdict, each said only when it
+/// happened.
+///
+/// A full PID registry means processes of this family ran with nowhere to report coverage into, so
+/// the process count and the channel lists are both short. No per-process event can carry that,
+/// because those processes have no pid here (R2-S9), so it rides the session verdict instead - the
+/// one event that speaks for the whole family.
+///
+/// The clock reaching the end of the representable range and standing there means the session did
+/// less than it promised: the wall stopped while fake time kept being counted, and a still picture
+/// is not an explanation (R2-X2, rule 6).
+pub(crate) fn native_session_warnings(uncovered_processes: u32, clamped: bool) -> Vec<String> {
+    let mut warnings = Vec::new();
+    if uncovered_processes > 0 {
+        warnings.push("coverage.pid_registry_full".to_string());
+    }
+    if clamped {
+        warnings.push("time.fake_clock_clamped".to_string());
+    }
+    warnings
+}
+
+/// End the session and state what it did: one last fold so a late child still counts, the coverage
+/// every process ENDED with, the family verdict and `ended`. Returns the family's exit code.
+pub(crate) fn close_session(
+    mut session: chrono_mech::Session,
+    mut family: Verdict,
+    mut family_pids: HashSet<u32>,
+    clock_clamped: bool,
+    target_exit: Option<i32>,
+) -> i32 {
     // Final fold so a child that joined since the last heartbeat still counts in the family.
     fold_children(&mut session, &mut family, &mut family_pids);
     // Capture the session clocks before ending so `ended` can state the duration and the fake wall
@@ -407,18 +453,12 @@ pub(crate) fn run_session(
         emit_coverage(*pid, cov, &[]);
     }
     session.end();
-    let mut session_warnings = Vec::new();
-    if uncovered_processes > 0 {
-        session_warnings.push("coverage.pid_registry_full".to_string());
-    }
-
-    // The clock reached the end of the representable range and stood there. The session then did less
-    // than it promised - the wall stopped while fake time kept being counted - and a still picture is
-    // not an explanation (R2-X2, rule 6). Checked on the final sample too, so a session shorter than
-    // one heartbeat still reports it.
-    if clock_clamped || final_state.clock_at_range_end() {
-        session_warnings.push("time.fake_clock_clamped".to_string());
-    }
+    // The sticky flag OR the final sample, so a session too short to have emitted a heartbeat still
+    // reports a clamped clock.
+    let session_warnings = native_session_warnings(
+        uncovered_processes,
+        clock_clamped || final_state.clock_at_range_end(),
+    );
     emit(&Event::SessionVerdict {
         v: PROTOCOL_VERSION,
         verdict: family.wire().into(),
@@ -728,5 +768,19 @@ mod tests {
         assert_eq!(time.mode, "flow");
         assert_eq!(time.moment.local.as_deref(), Some("2038-01-19T03:14:07"));
         assert!(!force);
+    }
+
+    /// Each caveat is said only when it happened, and both together keep the order the report prints
+    /// them in. A session that ran cleanly says nothing extra, which is what makes the two that do
+    /// appear worth reading.
+    #[test]
+    fn the_native_session_warnings_say_only_what_happened() {
+        assert!(native_session_warnings(0, false).is_empty());
+        assert_eq!(native_session_warnings(2, false), vec!["coverage.pid_registry_full"]);
+        assert_eq!(native_session_warnings(0, true), vec!["time.fake_clock_clamped"]);
+        assert_eq!(
+            native_session_warnings(1, true),
+            vec!["coverage.pid_registry_full", "time.fake_clock_clamped"]
+        );
     }
 }
