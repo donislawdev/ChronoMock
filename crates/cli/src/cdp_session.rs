@@ -12,9 +12,8 @@ use std::io::BufReader;
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
-use chrono_core::Verdict;
 use chrono_proto::{
-    Command, CoveredChannel, Event, TargetSpec, TimeSpec,
+    Command, Event, TargetSpec, TimeSpec,
     PROTOCOL_VERSION,
 };
 
@@ -25,6 +24,10 @@ use crate::events::{
 };
 use crate::wire::spawn_command_reader;
 use crate::cdp_clock::{cdp_resolve_jump, CdpClock};
+use crate::cdp_audit::{
+    context_index_for, covered_channels, coverage_events, cdp_verdict, session_warnings,
+    verdict_keys,
+};
 /// One shimmed JS context of a Chromium target: the coverage unit of a CDP session (rule 4 - never
 /// summed across contexts).
 pub(crate) struct CdpContext {
@@ -344,61 +347,17 @@ pub(crate) fn cdp_session(target: TargetSpec, time: TimeSpec, reader: BufReader<
     poll_counts(&mut client, &contexts, &mut counts); // final best-effort read
     let audited = !counts.is_empty();
 
-    // Coverage = APIs the app actually called (count > 0), per context - honest "covered", like native.
-    let mut covered: Vec<(u32, String, u64)> = counts
-        .into_iter()
-        .filter(|(_, n)| *n > 0)
-        .map(|((idx, ch), n)| (idx, ch, n))
-        .collect();
-    covered.sort();
+    let covered = covered_channels(counts);
 
     let verdict = cdp_verdict(seen.len(), !covered.is_empty(), failed);
-    let (token, reason) = match &verdict {
-        Verdict::Works => ("works", "chromium.contexts_covered"),
-        Verdict::Partial => ("partial", "chromium.contexts_partial"),
-        Verdict::Fails => ("fails", "chromium.no_contexts"),
-        Verdict::Undetermined => ("undetermined", "chromium.no_time_calls"),
-    };
+    let (token, reason) = verdict_keys(&verdict);
 
-    let mut warnings = vec!["chromium.launched_with_debug_port".to_string()];
-    if app_closed && !audited {
-        warnings.push("chromium.app_closed_before_audit".to_string());
-    }
-    if rate_changed_in_flight {
-        // Honest caveat: a rate change reaches Date.now/new Date/performance.now and every NEW timer at
-        // once, but a setInterval already scheduled at the old rate keeps its old cadence - the JS engine
-        // had already queued it (rule 4). The native hook has no equivalent gap (it divides Ctl live).
-        warnings.push("chromium.rate_change_affects_running_timers".to_string());
-    }
-
-    // Emit one `coverage` per attached context (pid = context index), never summed across contexts
-    // (rule 4). The invasive-launch warning rides on the FIRST event, and if no context attached at
-    // all we still emit one bare coverage - so the warning is never lost for an idle or zero-context app.
-    if seen.is_empty() {
-        emit(&Event::Coverage {
-            v: PROTOCOL_VERSION,
-            pid: 0,
-            covered: Vec::new(),
-            observed: Vec::new(),
-            uncovered: Vec::new(),
-            warning_keys: std::mem::take(&mut warnings),
-        });
-    } else {
-        for index in &seen {
-            let chans: Vec<CoveredChannel> = covered
-                .iter()
-                .filter(|(idx, _, _)| idx == index)
-                .map(|(_, ch, n)| CoveredChannel { channel: ch.clone(), calls: *n })
-                .collect();
-            emit(&Event::Coverage {
-                v: PROTOCOL_VERSION,
-                pid: *index,
-                covered: chans,
-                observed: Vec::new(),
-                uncovered: Vec::new(),
-                warning_keys: std::mem::take(&mut warnings),
-            });
-        }
+    for event in coverage_events(
+        &seen,
+        &covered,
+        session_warnings(app_closed, audited, rate_changed_in_flight),
+    ) {
+        emit(&event);
     }
 
     emit(&Event::SessionVerdict {
@@ -433,29 +392,6 @@ pub(crate) fn cdp_session(target: TargetSpec, time: TimeSpec, reader: BufReader<
 }
 
 
-/// The verdict of a CDP session, from the three facts that decide it. Pulled out of the session loop
-/// so it can be tested without a browser - the bug it exists to pin needed a real Chromium and a
-/// gracefully closed window to reproduce (R2-W1).
-///
-/// `shimmed` counts every context the session EVER covered, not the ones still attached. Chromium
-/// destroys its targets while shutting down, so a healthy session with full coverage could reach the
-/// end with an empty live list; counting those, it reported `fails` with exit code 11 and emitted no
-/// coverage at all. Measured on Pomotroid: closing the window mid-session turned a `works` run with
-/// four covered APIs into `DID NOT TAKE EFFECT (contexts: 0)`, exit 11. What a session covered does
-/// not stop being true when the app closes.
-pub(crate) fn cdp_verdict(shimmed: usize, any_covered: bool, failed: usize) -> Verdict {
-    if shimmed == 0 {
-        // Nothing was ever shimmed: the substitution genuinely never reached the app.
-        Verdict::Fails
-    } else if !any_covered {
-        // Shimmed, but the app never called a time API - honest "we do not know", never a fake works.
-        Verdict::Undetermined
-    } else if failed > 0 {
-        Verdict::Partial
-    } else {
-        Verdict::Works
-    }
-}
 
 
 /// Evaluate a JS expression in every attached context (best-effort: a context that just closed errors
@@ -489,85 +425,4 @@ pub(crate) fn cdp_jump_expr(fake0: i64, real0: i64) -> String {
         "(function(){{var S=globalThis.__chronomock;if(!S)return 'no-shim';\
          S.fakeStart={fake0};S.realStart={real0};return 'ok';}})()"
     )
-}
-
-/// The context index for a CDP target, stable across re-attaches.
-///
-/// Keyed by the CDP targetId, which Chromium keeps when a context re-attaches, rather than by a
-/// counter that ticks once per attach. A recycled worker - an ordinary pattern in Electron apps,
-/// and the very shape the CDP mechanism was built for - re-attaches under the SAME targetId, and
-/// the counter gave it a new identity every time: `process_count` grew with the LENGTH of the
-/// session instead of describing the application, `counts` gained entries per recycle and released
-/// none, and the end-of-session emit walked seen x covered. The merge rule for counts is already
-/// "max, so a peak survives a reload" - it was only ever missing a stable key (R3-7).
-///
-/// A target that names no id gets a fresh index: with no identity to match on, treating it as new
-/// is the honest answer rather than a guess that would fold two contexts into one.
-pub(crate) fn context_index_for(
-    target_id: &str,
-    index_by_target: &mut HashMap<String, u32>,
-    next_index: &mut u32,
-) -> u32 {
-    if !target_id.is_empty()
-        && let Some(existing) = index_by_target.get(target_id)
-    {
-        return *existing;
-    }
-    *next_index += 1;
-    if !target_id.is_empty() {
-        index_by_target.insert(target_id.to_string(), *next_index);
-    }
-    *next_index
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// A worker that is recycled re-attaches under the same targetId, and used to be counted as a
-    /// new context each time - so a long accelerated session (the flagship use case: "a day a
-    /// minute") reported hundreds of contexts for an application with one worker (R3-7).
-    #[test]
-    fn a_reattached_context_keeps_the_index_it_already_had() {
-        let mut map = HashMap::new();
-        let mut next = 0u32;
-
-        let page = context_index_for("T-page", &mut map, &mut next);
-        let worker = context_index_for("T-worker", &mut map, &mut next);
-        assert_eq!((page, worker), (1, 2));
-
-        // The worker is recycled twice: same target, same index, and the counter does not move.
-        assert_eq!(context_index_for("T-worker", &mut map, &mut next), worker);
-        assert_eq!(context_index_for("T-worker", &mut map, &mut next), worker);
-        assert_eq!(next, 2, "a re-attach must not mint a new context index");
-
-        // A genuinely new target still gets one.
-        assert_eq!(context_index_for("T-other", &mut map, &mut next), 3);
-
-        // No id means no identity to match on, so each one is new rather than folded together -
-        // two anonymous contexts are two contexts, and pretending otherwise would under-report.
-        let a = context_index_for("", &mut map, &mut next);
-        let b = context_index_for("", &mut map, &mut next);
-        assert_ne!(a, b);
-    }
-
-    #[test]
-    fn cdp_verdict_counts_every_context_the_session_covered_not_the_survivors() {
-        // R2-W1, the case that needed a real browser to reproduce: Chromium destroys its targets while
-        // shutting down, so a healthy session could reach the verdict with an empty LIVE context list.
-        // Counting survivors called it `fails` with exit code 11 and dropped the coverage entirely -
-        // measured on Pomotroid, a closing window turned a four-channel `works` into
-        // "DID NOT TAKE EFFECT (contexts: 0)". Two contexts shimmed and covered stays `works` however
-        // many of them are still attached, because the argument is what the session covered.
-        assert_eq!(cdp_verdict(2, true, 0), Verdict::Works);
-
-        // Nothing ever shimmed is the one genuine failure: the substitution never reached the app.
-        assert_eq!(cdp_verdict(0, false, 0), Verdict::Fails);
-
-        // Shimmed but never asked the time: honest "we do not know", never a fake works (rule 4).
-        assert_eq!(cdp_verdict(1, false, 0), Verdict::Undetermined);
-
-        // Some contexts failed to take the shim: covered in part, and said so.
-        assert_eq!(cdp_verdict(3, true, 1), Verdict::Partial);
-    }
 }
