@@ -28,6 +28,16 @@
   // Marks a recent target whose file is gone (a wiped build output, an uninstalled app). Shown rather than the entry being dropped, so the list never goes quiet about why a shortcut will not work (rule 6).
   "target.missing": "(missing)",
 
+  // Shown only while no target is chosen: dropping a file on the window is not discoverable on its own, and once there is a target the hint would be noise on every later run (chrono-mock 7.1 pt 1).
+  "target.drop_hint": "…or drag an application onto this window",
+  "target.drop_rejected": "Only .exe files can be run - that is what the hook and the Chromium detection both need.",
+
+  // Arguments and working folder (chrono-mock 7.1 pt 1). Collapsed by default: most sessions need neither. The wire and the mechanism have carried both since the protocol was written; only the surfaces did not offer them.
+  "launch.header": "Arguments and working folder",
+  "launch.args_label": "Arguments:",
+  "launch.cwd_label": "Working folder:",
+  "launch.cwd_note": "Leave the folder empty to let the application start where it normally would. Quote an argument that contains spaces, exactly as on the command line.",
+
   // Time inputs (chrono-mock 7.1). The moment is the local time in the session zone (rule 2).
   "moment.label": "At:",
   "moment.date_placeholder": "YYYY-MM-DD",
@@ -36,6 +46,8 @@
   "moment.date_format": "Use the form YYYY-MM-DD.",
   "moment.date_invalid": "That date does not exist.",
   "moment.time_format": "Use HH:MM (24-hour).",
+  // Reads the typed moment back in plain language (chrono-mock 7.1 pt 3). Only a lead-in: the date itself is formatted in the interface culture, so no sentence has to be assembled from fragments.
+  "moment.preview_label": "The application will see",
   "action.pick_date": "Pick a date",
   "action.today": "Today",
   "action.now": "Now",
@@ -63,6 +75,7 @@
   // Actions.
   "action.start": "Start",
   "action.choose_target": "Choose…",
+  "action.browse_folder": "Browse…",
   "action.freeze": "Freeze",
   "action.jump_to": "Jump to",
   "action.set_speed": "Set",
@@ -332,6 +345,9 @@
 
   // Tooltips (hover help). Keys, not literals (rule 15); shown in the current language.
   "tip.choose_target": "Pick the application to run under the fake clock.",
+  "tip.target_args": "Command line the application is started with. Quote an argument containing spaces, as you would in a terminal.",
+  "tip.working_folder": "Folder the application starts in. Leave empty to start where it normally would.",
+  "tip.browse_folder": "Pick the folder the application starts in.",
   "tip.target_recent": "The targets you have run before. Choose… picks one this machine has not run yet.",
   "tip.scenario": "Pick a scenario to fill the date below. It never starts the session.",
   "tip.date_field": "Type the date as YYYY-MM-DD, or pick it from the calendar.",

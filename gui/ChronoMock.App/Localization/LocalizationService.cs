@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.IO;
 using System.Text.Json;
 using System.Windows;
@@ -47,6 +48,27 @@ public static class LocalizationService
             }
 
             return DefaultCulture;
+        }
+    }
+
+    /// <summary>
+    /// <see cref="CurrentCulture"/> as a format provider, for text the interface FORMATS rather than looks
+    /// up - a weekday or month name has no key, it comes from the culture. Falls back to the invariant
+    /// culture if the tag names no culture this machine knows, so an unusual or damaged marker degrades
+    /// to English month names instead of throwing inside a property a binding is reading.
+    /// </summary>
+    public static CultureInfo CurrentFormatCulture
+    {
+        get
+        {
+            try
+            {
+                return CultureInfo.GetCultureInfo(CurrentCulture);
+            }
+            catch (CultureNotFoundException)
+            {
+                return CultureInfo.InvariantCulture;
+            }
         }
     }
 

@@ -51,4 +51,11 @@
        catalogue instead of down. -->
   <sys:Double x:Key="ScenarioListMaxWidth">560</sys:Double>
 
+  <!-- The two launch fields (arguments, working folder) line up on one label column, so the boxes start at
+       the same x whichever label is longer - including in Polish, where both labels are longer than in
+       English. Named, because a hand-tuned margin per row drifts apart the first time a label changes. -->
+  <sys:Double x:Key="LaunchLabelWidth">128</sys:Double>
+  <sys:Double x:Key="LaunchFieldWidth">340</sys:Double>
+  <sys:Double x:Key="LaunchNoteMaxWidth">480</sys:Double>
+
 </ResourceDictionary>

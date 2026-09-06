@@ -28,6 +28,16 @@
   // Oznacza ostatnio używany cel, którego pliku już nie ma (skasowany wynik budowy, odinstalowana aplikacja). Pokazywany zamiast usuwania wpisu, żeby lista nie milczała o tym, czemu skrót nie zadziała (reguła 6).
   "target.missing": "(brak pliku)",
 
+  // Pokazywane tylko dopóki nie wybrano celu: przeciągnięcie pliku na okno samo z siebie nie jest odkrywalne, a gdy cel już jest, wskazówka byłaby szumem przy każdym kolejnym uruchomieniu (chrono-mock 7.1 pkt 1).
+  "target.drop_hint": "…albo przeciągnij aplikację na to okno",
+  "target.drop_rejected": "Uruchomić można tylko pliki .exe - tego wymaga i hook, i wykrywanie Chromium.",
+
+  // Argumenty i katalog roboczy (chrono-mock 7.1 pkt 1). Domyślnie zwinięte: większość sesji nie potrzebuje żadnego z nich. Drut i mechanizm niosą oba od czasu powstania protokołu; brakowało ich tylko na powierzchniach.
+  "launch.header": "Argumenty i katalog roboczy",
+  "launch.args_label": "Argumenty:",
+  "launch.cwd_label": "Katalog roboczy:",
+  "launch.cwd_note": "Zostaw katalog pusty, żeby aplikacja wystartowała tam, gdzie normalnie. Argument ze spacjami ujmij w cudzysłów, dokładnie jak w wierszu poleceń.",
+
   // Wejścia czasu (chrono-mock 7.1). Moment to czas lokalny w strefie sesji (reguła 2).
   "moment.label": "Moment:",
   "moment.date_placeholder": "YYYY-MM-DD",
@@ -36,6 +46,8 @@
   "moment.date_format": "Użyj formatu YYYY-MM-DD.",
   "moment.date_invalid": "Taka data nie istnieje.",
   "moment.time_format": "Użyj HH:MM (format 24h).",
+  // Odczytuje wpisany moment w ludzkim języku (chrono-mock 7.1 pkt 3). To tylko wprowadzenie: sama data jest formatowana kulturą interfejsu, więc nie trzeba składać zdania z kawałków.
+  "moment.preview_label": "Aplikacja zobaczy",
   "action.pick_date": "Wybierz datę",
   "action.today": "Dziś",
   "action.now": "Teraz",
@@ -63,6 +75,7 @@
   // Actions.
   "action.start": "Start",
   "action.choose_target": "Wybierz…",
+  "action.browse_folder": "Przeglądaj…",
   "action.freeze": "Zamroź",
   "action.jump_to": "Skocz do",
   "action.set_speed": "Ustaw",
@@ -330,6 +343,9 @@
 
   // Podpowiedzi (pomoc po najechaniu). Klucze, nie literały (reguła 15); w języku interfejsu.
   "tip.choose_target": "Wybierz aplikację do uruchomienia z podmienionym zegarem.",
+  "tip.target_args": "Wiersz poleceń, z którym startuje aplikacja. Argument ze spacjami ujęty w cudzysłów, tak jak w terminalu.",
+  "tip.working_folder": "Katalog, w którym startuje aplikacja. Pusty znaczy: tam, gdzie normalnie.",
+  "tip.browse_folder": "Wskaż katalog, w którym ma wystartować aplikacja.",
   "tip.target_recent": "Cele uruchamiane wcześniej. Przycisk „Wybierz…” wskazuje taki, którego ta maszyna jeszcze nie uruchamiała.",
   "tip.scenario": "Wybierz scenariusz, żeby wypełnić datę poniżej. To nigdy nie startuje sesji.",
   "tip.date_field": "Wpisz datę jako YYYY-MM-DD albo wybierz z kalendarza.",

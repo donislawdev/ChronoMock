@@ -12,7 +12,10 @@
                  Background="{DynamicResource BrushBgBase}"
                  ExtendsContentIntoTitleBar="True"
                  WindowBackdropType="None"
-                 WindowStartupLocation="CenterScreen">
+                 WindowStartupLocation="CenterScreen"
+                 AllowDrop="True"
+                 DragOver="OnWindowDragOver"
+                 Drop="OnWindowDrop">
   <Grid>
     <Grid.RowDefinitions>
       <RowDefinition Height="Auto" />
@@ -96,6 +99,54 @@
             <Button Margin="{StaticResource SpaceSm}" Content="{DynamicResource action.choose_target}"
                     ToolTip="{DynamicResource tip.choose_target}" Click="OnChooseTargetClick" />
           </StackPanel>
+
+          <!-- How to get a target here without the picker (chrono-mock 7.1 pt 1). Shown only while no target
+               is set: once there is one, the hint has done its job and would just be noise on every later
+               run. Drag and drop itself works whether or not this line is visible. -->
+          <TextBlock Text="{DynamicResource target.drop_hint}" HorizontalAlignment="Center"
+                     Visibility="{Binding ShowsDropHint, Converter={StaticResource BoolToVis}}"
+                     FontSize="{StaticResource FontSizeCaption}"
+                     Foreground="{DynamicResource BrushTextSecondary}" />
+
+          <!-- Arguments and working folder (chrono-mock 7.1 pt 1). Collapsed, because most sessions need
+               neither, and the panel is dense enough that two always-visible fields would push the date
+               below the fold. Grouped with the target rather than the time: both describe WHAT is launched.
+               The wire and the mechanism have carried args and cwd all along - only the surfaces did not. -->
+          <Expander Margin="{StaticResource SpaceXs}" IsEnabled="{Binding IsIdle}"
+                    HorizontalAlignment="Center">
+            <Expander.Header>
+              <TextBlock Text="{DynamicResource launch.header}" FontSize="{StaticResource FontSizeBody}"
+                         Foreground="{DynamicResource BrushTextSecondary}" />
+            </Expander.Header>
+            <StackPanel Margin="{StaticResource SpaceXs}">
+              <StackPanel Orientation="Horizontal" Margin="{StaticResource SpaceXs}">
+                <TextBlock Text="{DynamicResource launch.args_label}" VerticalAlignment="Center"
+                           MinWidth="{StaticResource LaunchLabelWidth}"
+                           FontSize="{StaticResource FontSizeBody}"
+                           Foreground="{DynamicResource BrushTextSecondary}" />
+                <TextBox x:Name="TargetArgsBox" Text="{Binding TargetArgs, UpdateSourceTrigger=PropertyChanged}"
+                         ToolTip="{DynamicResource tip.target_args}"
+                         Width="{StaticResource LaunchFieldWidth}" VerticalAlignment="Center" />
+              </StackPanel>
+              <StackPanel Orientation="Horizontal" Margin="{StaticResource SpaceXs}">
+                <TextBlock Text="{DynamicResource launch.cwd_label}" VerticalAlignment="Center"
+                           MinWidth="{StaticResource LaunchLabelWidth}"
+                           FontSize="{StaticResource FontSizeBody}"
+                           Foreground="{DynamicResource BrushTextSecondary}" />
+                <TextBox x:Name="WorkingFolderBox" Text="{Binding WorkingFolder, UpdateSourceTrigger=PropertyChanged}"
+                         ToolTip="{DynamicResource tip.working_folder}"
+                         Width="{StaticResource LaunchFieldWidth}" VerticalAlignment="Center" />
+                <Button Margin="{StaticResource SpaceXs}" Content="{DynamicResource action.browse_folder}"
+                        ToolTip="{DynamicResource tip.browse_folder}" Click="OnBrowseFolderClick"
+                        VerticalAlignment="Center" />
+              </StackPanel>
+              <TextBlock Text="{DynamicResource launch.cwd_note}" TextWrapping="Wrap"
+                         MaxWidth="{StaticResource LaunchNoteMaxWidth}"
+                         Margin="{StaticResource SpaceXs}"
+                         FontSize="{StaticResource FontSizeCaption}"
+                         Foreground="{DynamicResource BrushTextSecondary}" />
+            </StackPanel>
+          </Expander>
 
           <!-- Scenarios (chrono-mock 7.1 pt 2): the named moments from the shared preset catalogue, so the
                default path is clicking a scenario rather than typing a date. Picking one fills the date
@@ -186,6 +237,22 @@
                      Visibility="{Binding Moment.HasError, Converter={StaticResource BoolToVis}}"
                      HorizontalAlignment="Center" Margin="{StaticResource SpaceXs}" TextWrapping="Wrap"
                      FontSize="{StaticResource FontSizeCaption}" Foreground="{DynamicResource BrushStatusPartial}" />
+
+          <!-- What the target will actually be told (chrono-mock 7.1 pt 3). The inputs above are
+               locale-invariant ISO on purpose - a dev box in one locale and a test VM in another must not
+               read the same typed date differently - and this line pays back the readability that costs,
+               without weakening the input: it is output only. It names the weekday, which is frequently the
+               whole point of the test, and the zone, because a bare date is the ambiguity rule 2 exists to
+               prevent.
+               Occupies the SAME slot as the validation message above and is mutually exclusive with it
+               (HasMomentPreview is false exactly when the moment does not parse), so the row never shows
+               both and never changes height. -->
+          <TextBlock HorizontalAlignment="Center" Margin="{StaticResource SpaceXs}" TextWrapping="Wrap"
+                     Visibility="{Binding HasMomentPreview, Converter={StaticResource BoolToVis}}"
+                     FontSize="{StaticResource FontSizeCaption}">
+            <Run Text="{DynamicResource moment.preview_label}" Foreground="{DynamicResource BrushTextSecondary}" />
+            <Run Text="{Binding MomentPreview, Mode=OneWay}" Foreground="{DynamicResource BrushTextPrimary}" />
+          </TextBlock>
 
           <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="{StaticResource SpaceXs}">
             <TextBlock Text="{DynamicResource mode.label}" VerticalAlignment="Center"

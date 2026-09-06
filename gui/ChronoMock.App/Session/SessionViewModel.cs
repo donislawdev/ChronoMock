@@ -4,6 +4,7 @@ using System.IO; // The WPF SDK trims System.IO from implicit usings (Path colli
 using System.Text;
 using System.Threading.Channels;
 using ChronoMock.App.Calc;
+using ChronoMock.App.Localization;
 using ChronoMock.Protocol;
 
 namespace ChronoMock.App;
@@ -62,6 +63,8 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     private bool _scaleDuration;
     private bool _scaleQpc;
     private bool _forceStart;
+    private string _targetArgs = string.Empty;
+    private string _workingFolder = string.Empty;
     private readonly ISessionHistoryStore _store;
     private readonly IDiagnosticsLog _diagnosticsLog;
     private bool _launched;
@@ -100,6 +103,7 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
         Moment.Changed += (_, _) =>
         {
             RaisePropertyChanged(nameof(CanStart));
+            RaiseMomentPreviewChanged();
 
             // A hand-edited moment is no longer the scenario's moment, so the selection stops claiming it
             // is (the calculator's active-preset banner clears the same way). Guarded, because filling the
@@ -245,6 +249,7 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
                 PromoteRecentTarget(value);
                 RaisePropertyChanged(nameof(TargetName));
                 RaisePropertyChanged(nameof(HasTarget));
+                RaisePropertyChanged(nameof(ShowsDropHint));
                 RaisePropertyChanged(nameof(CanStart));
             }
         }
@@ -286,6 +291,59 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     /// <summary>True once a target has been chosen - Start stays disabled until then.</summary>
     public bool HasTarget => _targetPath is not null;
 
+    /// <summary>Whether to show the "or drop an application here" hint: only until a target is set, after
+    /// which the hint has done its job and would be noise on every later run (chrono-mock 7.1 pt 1). Drag
+    /// and drop stays available either way.</summary>
+    public bool ShowsDropHint => _targetPath is null;
+
+    /// <summary>
+    /// The moment about to be handed to the target, written out the way a person reads a date
+    /// (chrono-mock 7.1 pt 3): "Tuesday, 31 December 2027, 23:59:50 (-05:00)".
+    /// <para>
+    /// The panel's own inputs are deliberately locale-invariant ISO, because a machine in one locale and a
+    /// test VM in another must not read the same typed date differently. That safety costs readability -
+    /// "2027-12-31" does not tell you it is a Tuesday, and the weekday is often the whole point of the
+    /// test. This line pays it back WITHOUT weakening the input: it is output only, and it is where a
+    /// mistyped year or an off-by-one month becomes visible before the application starts.
+    /// </para>
+    /// <para>
+    /// Formatted in the interface language (the weekday name is interface text, not data), and always
+    /// carries the session zone explicitly - a bare date would be the exact ambiguity rule 2 exists to
+    /// prevent.
+    /// </para>
+    /// </summary>
+    public string MomentPreview
+    {
+        get
+        {
+            if (!Moment.IsValid
+                || !DateTime.TryParseExact(
+                    Moment.Canonical,
+                    "yyyy-MM-dd'T'HH:mm:ss",
+                    CultureInfo.InvariantCulture,
+                    DateTimeStyles.None,
+                    out var moment))
+            {
+                return string.Empty;
+            }
+
+            return string.Create(
+                LocalizationService.CurrentFormatCulture,
+                $"{moment:dddd, d MMMM yyyy, HH:mm:ss} ({_selectedZone.Label})");
+        }
+    }
+
+    /// <summary>Whether the preview line has something to say. False for a moment that does not parse -
+    /// the validation message takes that line instead, so the two never appear together and the row
+    /// never changes height.</summary>
+    public bool HasMomentPreview => MomentPreview.Length > 0;
+
+    private void RaiseMomentPreviewChanged()
+    {
+        RaisePropertyChanged(nameof(MomentPreview));
+        RaisePropertyChanged(nameof(HasMomentPreview));
+    }
+
 
     /// <summary>The session-zone options (fixed offsets, MVP markets).</summary>
     public IReadOnlyList<ZoneOption> Zones => TimeInputs.Zones;
@@ -293,7 +351,13 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     /// <summary>The time-mode options (flowing, frozen, xN).</summary>
     public IReadOnlyList<ModeOption> Modes => TimeInputs.Modes;
 
-    public ZoneOption SelectedZone { get => _selectedZone; set => Set(ref _selectedZone, value); }
+    public ZoneOption SelectedZone
+    {
+        get => _selectedZone;
+        // The preview names the zone, so changing the zone rewrites the line - the same moment in a
+        // different zone is a different thing for the target to see (rule 2).
+        set { if (Set(ref _selectedZone, value)) { RaiseMomentPreviewChanged(); } }
+    }
 
     public ModeOption SelectedMode
     {
@@ -341,6 +405,18 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     /// default: the core stops the target in that case, because an application that looks time-shifted
     /// but is not produces evidence about a session that never happened. Start-only.</summary>
     public bool ForceStart { get => _forceStart; set => Set(ref _forceStart, value); }
+
+    /// <summary>Command-line arguments for the target (chrono-mock 7.1 pt 1), as one line the tester types.
+    /// Split into the wire's argument list by <see cref="TargetArguments"/>, which mirrors the CLI's own
+    /// rule so <c>--args</c> and this field cannot launch the same application two different ways.
+    /// Start-only: arguments are fixed once the process exists.</summary>
+    public string TargetArgs { get => _targetArgs; set => Set(ref _targetArgs, value); }
+
+    /// <summary>Working folder for the target (chrono-mock 7.1 pt 1). Empty means "do not ask for one", and
+    /// the target then inherits ours - the behaviour every session had before this field existed. The wire
+    /// and the mechanism have carried <c>cwd</c> since the protocol was written; only the two surfaces
+    /// never offered it. Start-only.</summary>
+    public string WorkingFolder { get => _workingFolder; set => Set(ref _workingFolder, value); }
 
     /// <summary>True when a session may be started: nothing is running, a target is chosen, moment is valid.</summary>
     public bool CanStart => _idle && HasTarget && Moment.IsValid;
@@ -1065,7 +1141,12 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
             SessionPlan plan;
             try
             {
-                plan = SessionPlan.Build(TargetPath!, BuildTime(), _forceStart);
+                plan = SessionPlan.Build(
+                    TargetPath!,
+                    BuildTime(),
+                    _forceStart,
+                    TargetArguments.Split(_targetArgs),
+                    _workingFolder);
             }
             catch (InvalidOperationException ex)
             {

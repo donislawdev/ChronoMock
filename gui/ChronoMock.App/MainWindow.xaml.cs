@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.IO; // The WPF SDK trims System.IO from implicit usings (Path collides with Shapes.Path).
 using System.Runtime.InteropServices;
 using System.Windows;
 using Microsoft.Win32;
@@ -117,6 +118,71 @@ public partial class MainWindow : FluentWindow
     // network path would otherwise freeze the window for as long as the share takes to fail.
     private async void OnRecentTargetsOpened(object sender, EventArgs e)
         => await _session.RefreshRecentTargetsAsync();
+
+    // The folder the target starts in (chrono-mock 7.1 pt 1). Seeded with whatever is already typed so
+    // browsing from a filled field starts where the tester was, not at the shell root.
+    private void OnBrowseFolderClick(object sender, RoutedEventArgs e)
+    {
+        var dialog = new OpenFolderDialog { Title = Text("launch.cwd_label") };
+        if (!string.IsNullOrWhiteSpace(_session.WorkingFolder) && Directory.Exists(_session.WorkingFolder))
+        {
+            dialog.InitialDirectory = _session.WorkingFolder;
+        }
+
+        if (dialog.ShowDialog(this) == true)
+        {
+            _session.WorkingFolder = dialog.FolderName;
+        }
+    }
+
+    // Dropping an application on the window (chrono-mock 7.1 pt 1). Only fills the target - it never
+    // starts a session (rule 7), exactly like picking one from the dialog or the recent list.
+    //
+    // The window accepts the drop, not one small panel: aiming at a strip is the part people miss, and
+    // the whole window is the obvious target for "run this app". Refused while a session runs, because
+    // the target is start-only and a silently ignored drop would look like the drop failed.
+    private void OnWindowDragOver(object sender, DragEventArgs e)
+    {
+        e.Effects = DroppedExecutable(e) is null ? DragDropEffects.None : DragDropEffects.Copy;
+        e.Handled = true;
+    }
+
+    private void OnWindowDrop(object sender, DragEventArgs e)
+    {
+        e.Handled = true;
+        if (!_session.IsIdle)
+        {
+            return;
+        }
+
+        if (DroppedExecutable(e) is { } path)
+        {
+            _session.SetTarget(path);
+            return;
+        }
+
+        // Say why nothing happened rather than swallowing the drop (rule 6). A dropped .lnk or .bat could
+        // only fail later, and failing at the drop is the honest place for it.
+        if (e.Data.GetDataPresent(DataFormats.FileDrop))
+        {
+            System.Windows.MessageBox.Show(this, Text("target.drop_rejected"), Text("app.title"));
+        }
+    }
+
+    /// <summary>The single .exe in a drop, or null - several files, a folder or another format is not a target.</summary>
+    private string? DroppedExecutable(DragEventArgs e)
+    {
+        if (!_session.IsIdle || !e.Data.GetDataPresent(DataFormats.FileDrop))
+        {
+            return null;
+        }
+
+        return e.Data.GetData(DataFormats.FileDrop) is string[] { Length: 1 } paths
+            && paths[0].EndsWith(".exe", StringComparison.OrdinalIgnoreCase)
+            && File.Exists(paths[0])
+                ? paths[0]
+                : null;
+    }
 
     private async void OnStartClick(object sender, RoutedEventArgs e) => await _session.StartAsync();
 
