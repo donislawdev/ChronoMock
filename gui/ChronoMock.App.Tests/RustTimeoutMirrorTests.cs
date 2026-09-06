@@ -98,9 +98,11 @@ public class RustTimeoutMirrorTests
         // state, and spelling out every parameter made it fail the day `cwd` was added to the
         // signature - a red test over code that had not changed behaviour at all. Anchored on the
         // real session call (`&target.path`, not the diagnostic probes) and on what it must do.
-        var main = ReadRustSource("crates", "cli", "src", "main.rs");
+        // Reads `cdp_session.rs`, where the Chromium session moved when `main.rs` was split into
+        // modules. This test caught that move by going red, which is the right kind of red.
+        var session = ReadRustSource("crates", "cli", "src", "cdp_session.rs");
         Assert.True(
-            Regex.IsMatch(main, @"launch_chromium\(&target\.path,.*?\|\| \{[^}]*state_event_at", RegexOptions.Singleline),
+            Regex.IsMatch(session, @"launch_chromium\(&target\.path,.*?\|\| \{[^}]*state_event_at", RegexOptions.Singleline),
             "the session no longer emits state while waiting for the debug port");
     }
 }
