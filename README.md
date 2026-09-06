@@ -77,10 +77,15 @@ Antivirus software may flag the injected library. That is expected, and
 
 ## Two minutes with it
 
-**In the window:** pick the application, click a scenario (`Year rollover`, `Last day of month`,
-`2038 boundary`, ...) or type a date, choose a speed, press Start. The panel then shows the
-application's clock and the real clock side by side, the verdict, and which time channels the
-application is actually reading.
+**In the window:** pick the application - or drag its `.exe` onto the window, or reopen one you
+ran before - then click a scenario (`Year rollover`, `Last day of month`, `2038 boundary`, ...) or
+type a date, choose a speed, press Start. Before you start, the panel reads the date back to you in
+plain language ("The application will see Friday, 25 December 2026, 09:00:00 (UTC+02:00)"), so a
+mistyped year or an off-by-one month is visible while it is still cheap. If the application needs
+command-line arguments or a particular working folder, they are under *Arguments and working folder*.
+
+Once it starts, the panel shows the application's clock and the real clock side by side, the
+verdict, and which time channels the application is actually reading.
 
 ![The Chrono Mock session panel: the application's clock reading 2038-01-19, the real clock reading 2026-09-04, a green Works verdict, and a list of 26 covered time channels each with a call count.](site/assets/session-panel.png)
 
@@ -98,6 +103,9 @@ chrono run "C:\apps\test.exe" --preset year-rollover --report session.txt
 
 # Countdowns and timers are on a separate axis - add --scale-duration to speed those up too
 chrono run "C:\apps\Timer.exe" --mode x60 --scale-duration
+
+# In CI, put a ceiling on the run: --timeout ends the session and exits 6, which is not a verdict
+chrono run "C:\apps\test.exe" --at 2027-12-31T23:59:59 --timeout 120
 ```
 
 The calculator answers the other half of date testing - *which* date to use:
@@ -119,7 +127,9 @@ Chrono Mock - date calculator
     RFC 1123      Sat, 03 Oct 2026 22:00:00 GMT
 ```
 
-Every command speaks `--json` as well, and exits with a code your pipeline can branch on.
+Every command speaks `--json` as well, and exits with a code your pipeline can branch on. Every flag
+and every exit code of both commands is listed in the
+[CLI reference](https://chronomock.donislawdev.com/cli-reference/).
 
 <details>
 <summary><strong>Table of contents</strong></summary>
