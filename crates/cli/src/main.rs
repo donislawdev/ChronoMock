@@ -3533,12 +3533,25 @@ fn cdp_session(target: TargetSpec, time: TimeSpec, reader: BufReader<std::io::St
             line.clear();
             match reader.read_line(&mut line) {
                 Ok(0) | Err(_) => break,
-                Ok(_) => {
-                    if let Ok(cmd) = parse_command(line.trim_end())
-                        && tx.send(cmd).is_err() {
+                Ok(_) => match parse_command(line.trim_end()) {
+                    Ok(cmd) => {
+                        if tx.send(cmd).is_err() {
                             break;
                         }
-                }
+                    }
+                    // Say so, and keep going. An unreadable line used to vanish without a word:
+                    // the FIRST command (`start`) answers bad input properly, every one after it
+                    // did not, and the protocol has an `ack` - so a client that waits for one waits
+                    // for ever. `--json` is advertised for CI, which is exactly where such a client
+                    // gets written. No id, because the id lives in the line we could not read.
+                    Err(_) => emit(&Event::Error {
+                        v: PROTOCOL_VERSION,
+                        id: None,
+                        code: 1,
+                        key: "protocol.bad_command_ignored".into(),
+                        origin: "core".into(),
+                    }),
+                },
             }
         }
     });
@@ -3613,7 +3626,9 @@ fn cdp_session(target: TargetSpec, time: TimeSpec, reader: BufReader<std::io::St
                         }),
                     }
                 }
-                Ok(_) => {} // Start or another command: ignore
+                // A command this loop does not handle here (a second `start`, say). Answered rather
+                // than dropped, and with the id, so a client waiting on `ack` learns the outcome.
+                Ok(other) => emit(&unsupported_command(command_id(&other))),
                 Err(mpsc::TryRecvError::Empty) => break,
                 Err(mpsc::TryRecvError::Disconnected) => break 'session, // stdin closed (EOF)
             }
@@ -4157,6 +4172,29 @@ fn core_mode() -> i32 {
     }
 }
 
+/// The id carried by any command, so a refusal can name the command it refuses.
+fn command_id(cmd: &Command) -> u64 {
+    match cmd {
+        Command::Start { id, .. }
+        | Command::Query { id, .. }
+        | Command::SetMultiplier { id, .. }
+        | Command::Jump { id, .. }
+        | Command::End { id, .. } => *id,
+    }
+}
+
+/// `error` for a well-formed command the running session does not act on. The session continues -
+/// this reports an outcome, it does not end anything.
+fn unsupported_command(id: u64) -> Event {
+    Event::Error {
+        v: PROTOCOL_VERSION,
+        id: Some(id),
+        code: 1,
+        key: "protocol.unsupported_command".into(),
+        origin: "core".into(),
+    }
+}
+
 fn ended_clean() -> Event {
     Event::Ended {
         v: PROTOCOL_VERSION,
@@ -4210,12 +4248,25 @@ fn run_session(
             // than resyncing onto the tail of a line nobody can vouch for.
             match read_protocol_line(&mut reader, &mut line) {
                 Ok(0) | Err(_) => break, // EOF or error: dropping tx signals Disconnected
-                Ok(_) => {
-                    if let Ok(cmd) = parse_command(line.trim_end())
-                        && tx.send(cmd).is_err() {
+                Ok(_) => match parse_command(line.trim_end()) {
+                    Ok(cmd) => {
+                        if tx.send(cmd).is_err() {
                             break;
                         }
-                }
+                    }
+                    // Say so, and keep going. An unreadable line used to vanish without a word:
+                    // the FIRST command (`start`) answers bad input properly, every one after it
+                    // did not, and the protocol has an `ack` - so a client that waits for one waits
+                    // for ever. `--json` is advertised for CI, which is exactly where such a client
+                    // gets written. No id, because the id lives in the line we could not read.
+                    Err(_) => emit(&Event::Error {
+                        v: PROTOCOL_VERSION,
+                        id: None,
+                        code: 1,
+                        key: "protocol.bad_command_ignored".into(),
+                        origin: "core".into(),
+                    }),
+                },
             }
         }
     });
@@ -4301,7 +4352,8 @@ fn run_session(
                     }),
                 }
             }
-            Ok(_) => {} // Start or a not-yet-supported command: ignore
+            // Same as the CDP loop: a command this state does not act on is answered, not dropped.
+            Ok(other) => emit(&unsupported_command(command_id(&other))),
             Err(mpsc::RecvTimeoutError::Timeout) => {} // the tick below handles it
             Err(mpsc::RecvTimeoutError::Disconnected) => break, // stdin closed
         }

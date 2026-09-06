@@ -116,6 +116,8 @@
   "session.already_active": "Inna sesja Chrono Mock już działa - tylko jedna naraz.",
   "protocol.no_command": "Rdzeń nie otrzymał komendy - sesja nie wystartowała.",
   "protocol.bad_command": "Rdzeń otrzymał błędną komendę - sesja nie wystartowała.",
+  "protocol.bad_command_ignored": "Rdzeń nie odczytał komendy i ją pominął - sesja nadal trwa.",
+  "protocol.unsupported_command": "Rdzeń otrzymał komendę, której w tym miejscu nie obsługuje, i ją pominął - sesja nadal trwa.",
   "protocol.expected_start": "Rdzeń oczekiwał komendy start - sesja nie wystartowała.",
 
   // Odmowy bramki uzgodnienia (zgłaszane, zanim cel zostanie uruchomiony).

@@ -70,7 +70,9 @@ public class LocalizationTests
         "protocol.version_mismatch",
         "session.control_failed", "target.launch_failed", "target.inject_failed",
         "target.attach_failed", "target.bitness_mismatch", "session.already_active",
-        "protocol.no_command", "protocol.bad_command", "protocol.expected_start",
+        "protocol.no_command", "protocol.bad_command",
+        "protocol.bad_command_ignored",
+        "protocol.unsupported_command", "protocol.expected_start",
     ];
 
     [Fact]

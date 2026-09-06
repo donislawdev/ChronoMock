@@ -116,6 +116,10 @@
   "session.already_active": "Another Chrono Mock session is already running - only one at a time.",
   "protocol.no_command": "The core received no command - the session did not start.",
   "protocol.bad_command": "The core received a malformed command - the session did not start.",
+  // Mid-session, unlike the two above: the session is still running, the line was simply not
+  // readable. Reported rather than dropped, so a client waiting on `ack` is not left waiting.
+  "protocol.bad_command_ignored": "The core could not read a command and ignored it - the session is still running.",
+  "protocol.unsupported_command": "The core received a command it does not act on here and ignored it - the session is still running.",
   "protocol.expected_start": "The core expected a start command - the session did not start.",
 
   // Handshake gate refusals (surfaced before the target is launched).
