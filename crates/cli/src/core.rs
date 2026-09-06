@@ -9,7 +9,7 @@
 
 
 use std::collections::HashSet;
-use std::io::BufReader;
+use std::io::{BufRead, BufReader};
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
@@ -17,7 +17,7 @@ use chrono_core::{
     filetime_utc_to_wall, verdict_from_coverage, Moment, SessionSpec, TimeMode, Verdict,
 };
 use chrono_proto::{
-    parse_command, Command, Event, MomentSpec, TimeSpec, PROTOCOL_VERSION,
+    parse_command, Command, Event, MomentSpec, TargetSpec, TimeSpec, PROTOCOL_VERSION,
 };
 
 use crate::cdp;
@@ -45,81 +45,19 @@ pub(crate) fn core_mode() -> i32 {
     // Read the first command (`start`) from a reader we hand to the session loop
     // afterwards, so it can keep reading subsequent commands (query, end).
     let mut reader = BufReader::new(std::io::stdin());
-    let mut line = String::new();
-    // A line past the cap reads as "no command": the stream has stopped making sense, and the honest
-    // answer is the refusal below rather than a guess at what the first megabyte meant.
-    let n = read_protocol_line(&mut reader, &mut line).unwrap_or(0);
-    if n == 0 {
-        emit(&Event::Error {
-            v: PROTOCOL_VERSION,
-            id: None,
-            code: 1,
-            key: "protocol.no_command".into(),
-            origin: "core".into(),
-        });
-        return 1;
-    }
-
-    let cmd = match parse_command(line.trim_end()) {
-        Ok(c) => c,
-        Err(_) => {
+    let (target, time, force) = match read_start(&mut reader) {
+        Ok(start) => start,
+        Err(refusal) => {
             emit(&Event::Error {
                 v: PROTOCOL_VERSION,
-                id: None,
+                id: refusal.id,
                 code: 1,
-                key: "protocol.bad_command".into(),
+                key: refusal.key.into(),
                 origin: "core".into(),
             });
-            return 1;
-        }
-    };
-
-    let (target, time, force) = match cmd {
-        Command::Start { v, target, time, force, .. } => {
-            // The version field is in every message BECAUSE the receiver is meant to check it. Nobody
-            // did on this side, so it was a field the contract promised and the code ignored (R2-K3) -
-            // a client speaking a version this core does not would have been served silently, with
-            // whatever its fields happened to mean here. Checked once, at the only command that opens
-            // a session: refuse before anything is launched, and say so.
-            if v != PROTOCOL_VERSION {
-                emit(&Event::Error {
-                    v: PROTOCOL_VERSION,
-                    id: None,
-                    code: 1,
-                    key: "protocol.version_mismatch".into(),
-                    origin: "core".into(),
-                });
-                return 1;
-            }
-            // A working directory that does not exist. Checked here, before either mechanism starts,
-            // because both of them would otherwise report it as a failure of the TARGET: the native
-            // path surfaces a bare CreateProcessW error as `target.launch_failed` ("the target
-            // application could not be started"), which is true and useless - the target is fine, the
-            // folder is not. Checked in the core rather than in the argument parser so it covers the
-            // panel as well, which sends the same field over the wire (rule 6).
-            if let Some(dir) = target.cwd.as_deref()
-                && !std::path::Path::new(dir).is_dir()
-            {
-                emit(&Event::Error {
-                    v: PROTOCOL_VERSION,
-                    id: Some(1),
-                    code: 1,
-                    key: "target.cwd_missing".into(),
-                    origin: "core".into(),
-                });
+            if refusal.needs_ended {
                 emit(&ended_clean());
-                return 1;
             }
-            (target, time, force)
-        }
-        _ => {
-            emit(&Event::Error {
-                v: PROTOCOL_VERSION,
-                id: None,
-                code: 1,
-                key: "protocol.expected_start".into(),
-                origin: "core".into(),
-            });
             return 1;
         }
     };
@@ -255,6 +193,75 @@ pub(crate) fn core_mode() -> i32 {
             emit(&ended_clean());
             code
         }
+    }
+}
+
+/// Why an opening `start` was refused.
+///
+/// Every one of these is exit code 1 and an error event. What differs is the key, the id it answers
+/// (a refusal that arrives before a valid `start` has no id to answer), and whether a session had
+/// begun far enough to owe an `ended` before the process leaves.
+#[derive(Debug)]
+pub(crate) struct StartRefusal {
+    key: &'static str,
+    id: Option<u64>,
+    needs_ended: bool,
+}
+
+/// Read and validate the one command that opens a session.
+///
+/// This is the protocol's front door: the first line any client sends is judged here, and while it
+/// lived inside `core_mode` not one of its five refusals had a test, because reaching them meant
+/// running the process. The reader is handed back afterwards, so the session loop keeps reading
+/// `query`, `set_multiplier`, `jump` and `end` off the same stream.
+///
+/// The refusal travels as a value rather than an event, which keeps this a pure function of its
+/// input and leaves what to emit, and in what order, with the caller.
+pub(crate) fn read_start<R: BufRead>(
+    reader: &mut R,
+) -> Result<(TargetSpec, TimeSpec, bool), StartRefusal> {
+    let mut line = String::new();
+    // A line past the cap reads as "no command": the stream has stopped making sense, and the honest
+    // answer is the refusal below rather than a guess at what the first megabyte meant.
+    let n = read_protocol_line(reader, &mut line).unwrap_or(0);
+    if n == 0 {
+        return Err(StartRefusal { key: "protocol.no_command", id: None, needs_ended: false });
+    }
+    let Ok(cmd) = parse_command(line.trim_end()) else {
+        return Err(StartRefusal { key: "protocol.bad_command", id: None, needs_ended: false });
+    };
+    match cmd {
+        Command::Start { v, target, time, force, .. } => {
+            // The version field is in every message BECAUSE the receiver is meant to check it. Nobody
+            // did on this side, so it was a field the contract promised and the code ignored (R2-K3) -
+            // a client speaking a version this core does not would have been served silently, with
+            // whatever its fields happened to mean here. Checked once, at the only command that opens
+            // a session: refuse before anything is launched, and say so.
+            if v != PROTOCOL_VERSION {
+                return Err(StartRefusal {
+                    key: "protocol.version_mismatch",
+                    id: None,
+                    needs_ended: false,
+                });
+            }
+            // A working directory that does not exist. Checked here, before either mechanism starts,
+            // because both of them would otherwise report it as a failure of the TARGET: the native
+            // path surfaces a bare CreateProcessW error as `target.launch_failed` ("the target
+            // application could not be started"), which is true and useless - the target is fine, the
+            // folder is not. Checked in the core rather than in the argument parser so it covers the
+            // panel as well, which sends the same field over the wire (rule 6).
+            if let Some(dir) = target.cwd.as_deref()
+                && !std::path::Path::new(dir).is_dir()
+            {
+                return Err(StartRefusal {
+                    key: "target.cwd_missing",
+                    id: Some(1),
+                    needs_ended: true,
+                });
+            }
+            Ok((target, time, force))
+        }
+        _ => Err(StartRefusal { key: "protocol.expected_start", id: None, needs_ended: false }),
     }
 }
 
@@ -619,5 +626,107 @@ mod tests {
 
         std::fs::remove_dir_all(&dir).ok();
         std::fs::remove_dir_all(&other).ok();
+    }
+
+    fn read(stream: &str) -> Result<(TargetSpec, TimeSpec, bool), StartRefusal> {
+        read_start(&mut BufReader::new(std::io::Cursor::new(stream.as_bytes().to_vec())))
+    }
+
+    /// A `start` built through the real serializer rather than hand-written JSON, so the test cannot
+    /// drift from the shape the wire actually carries.
+    fn start_line(v: u32, cwd: Option<&str>) -> String {
+        serde_json::to_string(&Command::Start {
+            v,
+            id: 1,
+            target: TargetSpec {
+                path: "app.exe".into(),
+                args: Vec::new(),
+                cwd: cwd.map(str::to_string),
+            },
+            time: TimeSpec {
+                moment: MomentSpec {
+                    kind: "absolute".into(),
+                    local: Some("2038-01-19T03:14:07".into()),
+                    tz_bias_min: Some(0),
+                    delta: None,
+                },
+                mode: "flow".into(),
+                multiplier: None,
+                scale_duration: false,
+                scale_qpc: false,
+            },
+            force: false,
+        })
+        .expect("a start command serializes")
+            + "\n"
+    }
+
+    fn refusal(stream: &str) -> &'static str {
+        read(stream).expect_err("expected a refusal").key
+    }
+
+    /// Nothing at all is "no command", which is a refusal rather than a guess at what the client
+    /// meant to say.
+    #[test]
+    fn an_empty_stream_is_no_command() {
+        assert_eq!(refusal(""), "protocol.no_command");
+    }
+
+    /// A line past the cap reads the same way. The stream has stopped making sense, and the honest
+    /// answer is a refusal rather than a guess at what the first megabyte meant.
+    #[test]
+    fn a_line_past_the_cap_reads_as_no_command() {
+        let mut stream = "x".repeat(crate::wire::MAX_PROTOCOL_LINE + 10);
+        stream.push('\n');
+        assert_eq!(refusal(&stream), "protocol.no_command");
+    }
+
+    /// A line that is not a command at all is answered, not ignored.
+    #[test]
+    fn a_line_that_is_not_json_is_a_bad_command() {
+        assert_eq!(refusal("not a command\n"), "protocol.bad_command");
+    }
+
+    /// Only `start` opens a session. Anything else arriving first is told so rather than being
+    /// silently waited past.
+    #[test]
+    fn a_command_other_than_start_cannot_open_a_session() {
+        let end = serde_json::to_string(&Command::End { v: PROTOCOL_VERSION, id: 1 }).unwrap();
+        assert_eq!(refusal(&(end + "\n")), "protocol.expected_start");
+    }
+
+    /// R2-K3: the version field is in every message because the receiver is meant to check it. A
+    /// client speaking another version is refused BEFORE anything is launched.
+    #[test]
+    fn a_client_speaking_another_version_is_refused_before_anything_launches() {
+        assert_eq!(
+            refusal(&start_line(PROTOCOL_VERSION + 1, None)),
+            "protocol.version_mismatch"
+        );
+    }
+
+    /// A working directory that does not exist is the folder's fault, not the target's. Both
+    /// mechanisms would otherwise report it as `target.launch_failed`, which is true and useless.
+    /// This is also the one refusal that owes an `ended`, because a valid `start` had been accepted.
+    #[test]
+    fn a_working_directory_that_does_not_exist_is_named_as_such() {
+        let refused = read(&start_line(PROTOCOL_VERSION, Some("C:/no-such-folder-chrono-mock-test")))
+            .expect_err("expected a refusal");
+        assert_eq!(refused.key, "target.cwd_missing");
+        assert_eq!(refused.id, Some(1), "it answers the start it refused");
+        assert!(refused.needs_ended, "a session that got this far owes an ended");
+    }
+
+    /// The happy path carries the target and the time through untouched, and nothing else opens a
+    /// session on the way.
+    #[test]
+    fn a_well_formed_start_carries_its_target_and_time_through() {
+        let (target, time, force) =
+            read(&start_line(PROTOCOL_VERSION, None)).expect("a well-formed start is accepted");
+        assert_eq!(target.path, "app.exe");
+        assert_eq!(target.cwd, None);
+        assert_eq!(time.mode, "flow");
+        assert_eq!(time.moment.local.as_deref(), Some("2038-01-19T03:14:07"));
+        assert!(!force);
     }
 }
