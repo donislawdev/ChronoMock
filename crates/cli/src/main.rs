@@ -854,6 +854,11 @@ fn describe_at_error(e: EvalError) -> String {
         EvalError::StepUnsupported { kind, .. } => format!("relative --at step '{kind}' is not supported"),
         EvalError::DegenerateCalendar { .. } => "relative --at found no matching date".to_string(),
         EvalError::BadSetTime { .. } => "relative --at has an invalid time".to_string(),
+        EvalError::BaseYearOutOfRange | EvalError::YearOutOfRange { .. } => format!(
+            "relative --at lands outside the year range this build computes on ({}..={})",
+            chrono_core::CIVIL_YEAR_MIN,
+            chrono_core::CIVIL_YEAR_MAX
+        ),
     }
 }
 
@@ -2341,7 +2346,13 @@ fn resolve_now_civil(zone_bias_min: Option<i32>) -> Result<chrono_core::calc::Ci
 fn calc_error_exit_code(e: &EvalError) -> i32 {
     match e {
         EvalError::StepUnsupported { .. } | EvalError::NeedsCalendar { .. } => 5,
-        EvalError::Overflow { .. } | EvalError::BadSetTime { .. } | EvalError::DegenerateCalendar { .. } => 1,
+        EvalError::Overflow { .. }
+        | EvalError::BadSetTime { .. }
+        | EvalError::DegenerateCalendar { .. }
+        // Out of the year band is bad INPUT, not an unbuilt operation: the step is built, the year
+        // is one this build will not compute a calendar on. Exit 1, next to the other usage errors.
+        | EvalError::BaseYearOutOfRange
+        | EvalError::YearOutOfRange { .. } => 1,
     }
 }
 
@@ -2366,6 +2377,20 @@ fn describe_calc_error(e: &EvalError) -> String {
         EvalError::BadSetTime { index } => {
             format!("chrono calc: step {} has an out-of-range time (calc.bad_set_time)", index + 1)
         }
+        EvalError::BaseYearOutOfRange => format!(
+            "chrono calc: the base year is outside the range this build computes on ({}..={}) (calc.year_out_of_range)",
+            chrono_core::CIVIL_YEAR_MIN,
+            chrono_core::CIVIL_YEAR_MAX
+        ),
+        // Deliberately not phrased as an overflow: nothing overflowed. The step produced an exact
+        // year that this build does not compute calendars on, and naming it that way is the whole
+        // reason it is a separate variant.
+        EvalError::YearOutOfRange { index } => format!(
+            "chrono calc: step {} lands on a year outside the range this build computes on ({}..={}) (calc.year_out_of_range)",
+            index + 1,
+            chrono_core::CIVIL_YEAR_MIN,
+            chrono_core::CIVIL_YEAR_MAX
+        ),
     }
 }
 

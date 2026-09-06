@@ -30,12 +30,29 @@ pub struct CivilDateTime {
     pub second: u32,
 }
 
+/// A year as text: at least four digits, and for a year before 1 CE the sign goes in FRONT of that
+/// field rather than being folded into its width.
+///
+/// One function because the year used to be formatted at six different call sites with `{:04}`, and
+/// `{:04}` on -9 gives "-009" - a string the parser cannot read back. That was half of the tool
+/// printing a date it would then refuse as input (R3-6); the parser learning the leading minus is
+/// the other half. Fixing `to_iso` alone left `formats()` still printing the short form, which is
+/// exactly the kind of split a shared helper prevents.
+fn format_year(year: i64) -> String {
+    if year < 0 { format!("-{:04}", -year) } else { format!("{year:04}") }
+}
+
 impl CivilDateTime {
     /// Format as "YYYY-MM-DDTHH:MM:SS" - the ISO shape the rest of the tool speaks.
     pub fn to_iso(&self) -> String {
         format!(
-            "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}",
-            self.year, self.month, self.day, self.hour, self.minute, self.second
+            "{}-{:02}-{:02}T{:02}:{:02}:{:02}",
+            format_year(self.year),
+            self.month,
+            self.day,
+            self.hour,
+            self.minute,
+            self.second
         )
     }
 
@@ -236,6 +253,17 @@ pub enum EvalError {
     Overflow { index: usize },
     /// `set_time` fields out of range (hour > 23, minute/second > 59).
     BadSetTime { index: usize },
+    /// The base moment's year is outside the band this build computes on
+    /// ([`crate::CIVIL_YEAR_MIN`]..=[`crate::CIVIL_YEAR_MAX`]). Everything that reaches `eval`
+    /// through the CLI has been through `parse_civil` and cannot hit this; `eval` is public API, so
+    /// it checks rather than trusting its caller with a value that would panic the civil math.
+    BaseYearOutOfRange,
+    /// A step COMPUTED a year outside that band. Its own variant, and not folded into `Overflow`,
+    /// because nothing overflowed: `+300000y` from 2026 is an exact, representable number that this
+    /// build simply will not compute a calendar on, and saying "overflow" would point at the wrong
+    /// thing. A step is the second door into the year band - it builds its year arithmetically and
+    /// never goes back through the parser (R3-1).
+    YearOutOfRange { index: usize },
 }
 
 /// Parse a civil date-time in "YYYY-MM-DDTHH:MM:SS" form (a space may replace the `T`). The core's
@@ -262,6 +290,9 @@ pub fn eval(expr: &MomentExpr, ctx: &EvalContext) -> Result<EvalOutcome, EvalErr
         Base::Now => ctx.now,
         Base::Absolute(c) => *c,
     };
+    if !crate::civil_year_in_band(base.year) {
+        return Err(EvalError::BaseYearOutOfRange);
+    }
     let mut cur = base;
     let mut cur_bias = ctx.zone_bias_min;
     let mut after_each = Vec::with_capacity(expr.steps.len());
@@ -276,6 +307,13 @@ pub fn eval(expr: &MomentExpr, ctx: &EvalContext) -> Result<EvalOutcome, EvalErr
             cur_bias = *target_bias;
         } else {
             cur = apply_step(cur, step, i, ctx.calendar)?;
+        }
+        // Checked after EVERY step, not only after the ones that obviously move years. A snap keeps
+        // the year, a business-day walk can cross one, a zone step can cross one at the boundary,
+        // and `nearest next-leap-day` walks forward until it finds a leap year - one check here
+        // covers all of them, and covers the next step kind for free (rule 6: one place, not seven).
+        if !crate::civil_year_in_band(cur.year) {
+            return Err(EvalError::YearOutOfRange { index: i });
         }
         after_each.push(cur);
     }
@@ -324,11 +362,22 @@ fn convert_zone(
     bias_to: i32,
     index: usize,
 ) -> Result<CivilDateTime, EvalError> {
-    let ft = super::moment_to_filetime_utc(&super::Moment {
-        local: civil.to_iso(),
-        tz_bias_min: Some(bias_from),
-    })
-    .map_err(|_| EvalError::Overflow { index })?;
+    // Straight through the shared instant arithmetic, with no string in the middle. The round trip
+    // through `to_iso` + `parse_civil` that used to sit here made this the only calculator step
+    // that could fail on FORMATTING, and it reported every such failure as `Overflow` - a message
+    // about the size of numbers handed to someone whose date simply could not be written in the
+    // form the parser read (R3-6). Now the only way this fails is the real one: an instant outside
+    // FILETIME.
+    let ft = super::civil_fields_to_filetime_utc(
+        civil.year,
+        civil.month as i64,
+        civil.day as i64,
+        civil.hour as i64,
+        civil.minute as i64,
+        civil.second as i64,
+        bias_from as i64,
+    )
+    .ok_or(EvalError::Overflow { index })?;
     Ok(filetime_to_civil(ft, bias_to))
 }
 
@@ -353,6 +402,11 @@ fn apply_nearest_leap_day(cur: CivilDateTime) -> CivilDateTime {
     let on_or_before_feb29 = cur.month < 2 || (cur.month == 2 && cur.day <= 29);
     let mut year = cur.year;
     if !(is_leap(year) && on_or_before_feb29) {
+        // Bounded by the calendar, not by a counter: in the proleptic Gregorian rule a leap year
+        // occurs at least every 8 years (the widest gap is across a non-leap century, e.g. 1896 to
+        // 1904), so this walks at most eight steps. `cur.year` is inside the year band by then, so
+        // the additions cannot overflow either; a year that lands just past the band is caught by
+        // the check `eval` runs after every step.
         year += 1;
         while !is_leap(year) {
             year += 1;
@@ -554,11 +608,23 @@ fn shift_filetime(ft_utc: i64, tz_bias_min: i32, step: &Step) -> Result<i64, Eva
     let civil = filetime_to_civil(ft_utc, tz_bias_min);
     // No calendar on the jump path, so a business-day step stays unsupported here.
     let shifted = apply_step(civil, step, 0, None)?;
-    super::moment_to_filetime_utc(&super::Moment {
-        local: shifted.to_iso(),
-        tz_bias_min: Some(tz_bias_min),
-    })
-    .map_err(|_| EvalError::Overflow { index: 0 })
+    // The same two things `eval` does for the calculator, for the same two reasons: the step
+    // computed this year arithmetically (so the parser never saw it), and going back out through a
+    // string would make formatting a failure mode of a jump. The instant check below then rejects
+    // anything FILETIME cannot hold, which on this path is nearly everything above year 30828.
+    if !crate::civil_year_in_band(shifted.year) {
+        return Err(EvalError::YearOutOfRange { index: 0 });
+    }
+    super::civil_fields_to_filetime_utc(
+        shifted.year,
+        shifted.month as i64,
+        shifted.day as i64,
+        shifted.hour as i64,
+        shifted.minute as i64,
+        shifted.second as i64,
+        tz_bias_min as i64,
+    )
+    .ok_or(EvalError::Overflow { index: 0 })
 }
 
 /// The target UTC FILETIME after applying ONE shift step to the current fake instant - the
@@ -622,10 +688,10 @@ fn instant_filetime(civil: &CivilDateTime, tz_bias_min: i32) -> Option<i64> {
 
 /// Render `civil` (wall-clock in the session zone `tz_bias_min`) in every fixed format.
 pub fn formats(civil: &CivilDateTime, tz_bias_min: i32) -> Formats {
-    let iso_date = format!("{:04}-{:02}-{:02}", civil.year, civil.month, civil.day);
+    let iso_date = format!("{}-{:02}-{:02}", format_year(civil.year), civil.month, civil.day);
     let iso_datetime = format!("{}{}", civil.to_iso(), offset_label(tz_bias_min));
-    let us = format!("{:02}/{:02}/{:04}", civil.month, civil.day, civil.year);
-    let pl = format!("{:02}.{:02}.{:04}", civil.day, civil.month, civil.year);
+    let us = format!("{:02}/{:02}/{}", civil.month, civil.day, format_year(civil.year));
+    let pl = format!("{:02}.{:02}.{}", civil.day, civil.month, format_year(civil.year));
 
     // Instant-based formats: the civil moment interpreted in the session zone as a UTC instant.
     let (rfc1123, epoch_seconds, epoch_millis, filetime) = match instant_filetime(civil, tz_bias_min) {
@@ -683,7 +749,7 @@ fn mask_token(civil: &CivilDateTime, c: char, n: usize) -> Option<String> {
     let month = (civil.month - 1) as usize;
     let dow = day_of_week(civil);
     Some(match (c, n) {
-        ('y', 4) => format!("{:04}", civil.year),
+        ('y', 4) => format_year(civil.year),
         ('y', 2) => format!("{:02}", civil.year.rem_euclid(100)),
         ('M', 4) => MONTH_FULL[month].to_string(),
         ('M', 3) => MONTH_ABBR[month].to_string(),
@@ -1425,23 +1491,119 @@ mod tests {
 
     #[test]
     fn formats_out_of_filetime_range_keep_civil_drop_instant() {
-        // An extreme but civilly-valid year: the civil formats still render from the fields, while
-        // the instant-based ones honestly become None ("(out of range)") - never a wrapped number.
-        let f = formats(&dt(40000, 1, 1, 0, 0, 0), 0);
-        assert_eq!(f.iso_date, "40000-01-01");
-        assert_eq!(f.us, "01/01/40000");
+        // At the very TOP of the year band, not at a comfortable round number. Both this test and
+        // the one below used year 40 000 and passed while the real edge sat eleven orders of
+        // magnitude further out, where the same call panicked (R3-1): the property was right, the
+        // value never reached far enough to test it.
+        let f = formats(&dt(crate::CIVIL_YEAR_MAX, 1, 1, 0, 0, 0), 0);
+        assert_eq!(f.iso_date, "262143-01-01");
+        assert_eq!(f.us, "01/01/262143");
         assert!(f.filetime.is_none());
         assert!(f.epoch_seconds.is_none());
         assert!(f.epoch_millis.is_none());
         assert!(f.rfc1123.is_none());
+
+        // And at the bottom, which nothing covered at all: a year before 1 CE renders with its sign
+        // in front of a four-digit field, in every format, which is the form the parser reads back.
+        //
+        // Its `filetime` is deliberately NOT asserted here. A date before 1601 yields a negative
+        // FILETIME, and this build prints it - measured to predate this change (the binary at the
+        // previous commit prints the same -189657576000000000 for year 1000), so it is a separate,
+        // older question about a field Windows defines as unsigned, not something to settle inside
+        // a formatting test.
+        let neg = formats(&dt(-9, 1, 1, 0, 0, 0), 0);
+        assert_eq!(neg.iso_date, "-0009-01-01");
+        assert_eq!(neg.us, "01/01/-0009");
+        assert_eq!(neg.pl, "01.01.-0009");
     }
 
     #[test]
     fn significance_out_of_range_year_does_not_panic() {
         // The instant markers (epoch, 2038) are skipped when the year has no FILETIME instant;
-        // the calendar-independent civil landmarks still work, with no panic.
-        let s = sig(&dt(40000, 1, 1, 0, 0, 0), 0);
+        // the calendar-independent civil landmarks still work, with no panic - checked at the edge
+        // of the band rather than well short of it.
+        let s = sig(&dt(crate::CIVIL_YEAR_MAX, 1, 1, 0, 0, 0), 0);
         assert!(s.contains(&Significance::StartOfYear));
+        let s = sig(&dt(crate::CIVIL_YEAR_MIN, 1, 1, 0, 0, 0), 0);
+        assert!(s.contains(&Significance::StartOfYear));
+    }
+
+    /// A step BUILDS its year arithmetically and never returns through the parser, so a guard at
+    /// the parser alone leaves this door open. Measured before the fix: this exact expression died
+    /// with `attempt to add with overflow` and exit 101 from a base that was perfectly legal.
+    #[test]
+    fn a_step_that_computes_a_year_past_the_band_is_refused_not_panicked() {
+        let expr = MomentExpr {
+            base: Base::Absolute(dt(2026, 1, 1, 0, 0, 0)),
+            steps: vec![shift(Sign::Plus, 25_252_734_927_766_000, Unit::Years)],
+        };
+        assert!(matches!(
+            eval_at(&expr, dt(2026, 1, 1, 0, 0, 0)),
+            Err(EvalError::YearOutOfRange { index: 0 })
+        ));
+
+        // Just past the edge counts too - the band is the rule, not "somewhere near an overflow".
+        let expr = MomentExpr {
+            base: Base::Absolute(dt(crate::CIVIL_YEAR_MAX, 1, 1, 0, 0, 0)),
+            steps: vec![shift(Sign::Plus, 1, Unit::Years)],
+        };
+        assert!(matches!(
+            eval_at(&expr, dt(2026, 1, 1, 0, 0, 0)),
+            Err(EvalError::YearOutOfRange { index: 0 })
+        ));
+
+        // And one step inside it still computes.
+        let expr = MomentExpr {
+            base: Base::Absolute(dt(crate::CIVIL_YEAR_MAX - 1, 1, 1, 0, 0, 0)),
+            steps: vec![shift(Sign::Plus, 1, Unit::Years)],
+        };
+        assert_eq!(eval_at(&expr, dt(2026, 1, 1, 0, 0, 0)).unwrap().after_each[0].year, crate::CIVIL_YEAR_MAX);
+    }
+
+    /// `eval` is public API of the core, so it does not take its caller's word for the base either.
+    #[test]
+    fn a_base_year_past_the_band_is_refused_by_eval_itself() {
+        let expr = MomentExpr {
+            base: Base::Absolute(dt(crate::CIVIL_YEAR_MAX + 1, 1, 1, 0, 0, 0)),
+            steps: vec![],
+        };
+        assert!(matches!(eval_at(&expr, dt(2026, 1, 1, 0, 0, 0)), Err(EvalError::BaseYearOutOfRange)));
+    }
+
+    /// The calculator can produce a date before 1 CE (any shift back past year 1), and until this
+    /// was fixed it printed one it would then refuse as input - a closed loop that did not close,
+    /// on the surface whose whole job is "work out a date, then use it" (R3-6).
+    #[test]
+    fn a_date_before_year_one_can_be_read_back_in() {
+        for step in [
+            shift(Sign::Minus, 10, Unit::Years),
+            shift(Sign::Minus, 400, Unit::Years),
+            shift(Sign::Minus, 1000, Unit::Days),
+        ] {
+            let expr =
+                MomentExpr { base: Base::Absolute(dt(1, 1, 1, 0, 0, 0)), steps: vec![step] };
+            let out = eval_at(&expr, dt(2026, 1, 1, 0, 0, 0)).expect("shift back past year 1");
+            let printed = out.after_each[0].to_iso();
+            assert!(printed.starts_with('-'), "expected a negative year, got {printed}");
+            let read_back = parse_civil_datetime(&printed)
+                .unwrap_or_else(|e| panic!("the tool refused its own output {printed}: {e}"));
+            assert_eq!(read_back, out.after_each[0]);
+        }
+    }
+
+    /// A `zone` step used to go out through `to_iso` and back through the parser, which made it the
+    /// one step that could fail on FORMATTING - and every such failure was reported as an
+    /// arithmetic overflow. Before the fix this returned `Err(Overflow)`; the instant is unchanged
+    /// by a zone step, so the only honest answer is the same moment read in the other zone.
+    #[test]
+    fn a_zone_step_works_on_a_date_before_year_one() {
+        let expr = MomentExpr {
+            base: Base::Absolute(dt(1, 1, 1, 0, 0, 0)),
+            steps: vec![shift(Sign::Minus, 10, Unit::Years), Step::Zone(-120)],
+        };
+        let out = eval_at(&expr, dt(2026, 1, 1, 0, 0, 0)).expect("a zone step must not fail on formatting");
+        assert_eq!(out.result_bias, -120);
+        assert_eq!(out.after_each[1].year, -9);
     }
 
     #[test]

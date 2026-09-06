@@ -193,7 +193,40 @@ pub fn verdict_from_coverage(cov: &Coverage) -> Verdict {
 // UTC = local + bias. A `None` bias treats the moment as UTC (host-zone handling
 // and full DST/leap validation are a later slice; docs/08 open item).
 
+/// The proleptic Gregorian year band this build works in, stated once, for everyone.
+///
+/// [`days_from_civil`] below does unchecked i64 math internally, so a year far enough out overflows
+/// it. Measured: at year 25 252 734 927 766 555 `chrono calc` died with `attempt to add with
+/// overflow` and exit 101 instead of answering, on `--base` alone - metadata is computed for every
+/// result, so no extra step was needed to reach it.
+///
+/// The guard used to live inside [`moment_to_filetime_utc`] and nowhere else, which made the
+/// substitution path safe and the calculator not: `run --at 300000-01-01T00:00:00` was refused
+/// while `calc --base 300000-01-01T00:00:00` was accepted, so a date the calculator produced could
+/// not be carried across its own "use in substitution" bridge. One band, checked wherever a year
+/// enters or is computed, removes both the panic and that split.
+///
+/// FILETIME saturates near year 30828, far inside this band, so out-of-instant moments are still
+/// dropped honestly long before this limit matters: the band keeps the CIVIL arithmetic sound, it
+/// is not a statement about what can be represented as an instant.
+pub const CIVIL_YEAR_MIN: i64 = -262_143;
+/// Upper end of the civil year band - see [`CIVIL_YEAR_MIN`].
+pub const CIVIL_YEAR_MAX: i64 = 262_143;
+
+/// Whether a year is inside the band this build can compute on.
+///
+/// Checked at both kinds of entry, because they are genuinely different doors: parsing (`--base`,
+/// `--at`, `--analyze`, presets) and each calculator step that COMPUTES a year. A step builds its
+/// year arithmetically and never returns through the parser, so a guard at the parser alone leaves
+/// the second door open - measured: `--base 2026-01-01T00:00:00 --shift +25252734927766000y`
+/// panicked from a base that was perfectly legal.
+pub fn civil_year_in_band(year: i64) -> bool {
+    (CIVIL_YEAR_MIN..=CIVIL_YEAR_MAX).contains(&year)
+}
+
 /// Days from 1970-01-01 for a civil date (Howard Hinnant's branchless algorithm).
+///
+/// Precondition: `y` is inside [`CIVIL_YEAR_MIN`]..=[`CIVIL_YEAR_MAX`] - see [`civil_year_in_band`].
 fn days_from_civil(y: i64, m: i64, d: i64) -> i64 {
     let y = if m <= 2 { y - 1 } else { y };
     let era = (if y >= 0 { y } else { y - 399 }) / 400;
@@ -233,6 +266,14 @@ fn parse_civil(local: &str) -> Result<(i64, i64, i64, i64, i64, i64), String> {
     let (date, time) = local
         .split_once(['T', ' '])
         .ok_or_else(|| format!("moment must be YYYY-MM-DDTHH:MM:SS, got '{local}'"))?;
+    // A year before 1 CE carries a leading minus, and splitting on '-' would turn that into a
+    // fourth field. The calculator can PRODUCE such a date - any shift back past year 1 does it -
+    // so refusing to read one back meant the tool would not accept its own output: `--shift -10y`
+    // from 0001-01-01 printed a date that `--base` then rejected (R3-6).
+    let (negative_year, date) = match date.strip_prefix('-') {
+        Some(rest) => (true, rest),
+        None => (false, date),
+    };
     let d: Vec<&str> = date.split('-').collect();
     let t: Vec<&str> = time.split(':').collect();
     if d.len() != 3 || t.len() != 3 {
@@ -242,6 +283,15 @@ fn parse_civil(local: &str) -> Result<(i64, i64, i64, i64, i64, i64), String> {
         s.parse::<i64>().map_err(|_| format!("bad {what} in moment '{local}'"))
     };
     let (year, month, day) = (p(d[0], "year")?, p(d[1], "month")?, p(d[2], "day")?);
+    // Rejected here rather than after the field checks: a year outside the band makes the leap-year
+    // test below meaningless, and `days_from_civil` further down would overflow on it.
+    let year = if negative_year { -year } else { year };
+    if !civil_year_in_band(year) {
+        return Err(format!(
+            "year {year} in moment '{local}' is outside the range this build computes on \
+             ({CIVIL_YEAR_MIN}..={CIVIL_YEAR_MAX})"
+        ));
+    }
     let (hour, min, sec) = (p(t[0], "hour")?, p(t[1], "minute")?, p(t[2], "second")?);
     if !(1..=12).contains(&month) {
         return Err(format!("month out of range in '{local}'"));
@@ -276,28 +326,45 @@ fn parse_civil(local: &str) -> Result<(i64, i64, i64, i64, i64, i64), String> {
 
 /// Convert a session moment to a UTC FILETIME (100 ns ticks since 1601-01-01).
 pub fn moment_to_filetime_utc(moment: &Moment) -> Result<i64, String> {
+    // The year band is enforced by `parse_civil`, so by here the civil math is sound and what can
+    // still fail is the instant: FILETIME saturates i64 near year 30828, far inside the band, so
+    // the checked chain below is what rejects an out-of-FILETIME-range moment - as an honest Err,
+    // never a panic (debug) or a wrapped number (release).
     let (y, mo, d, h, mi, s) = parse_civil(&moment.local)?;
+    let bias = moment.tz_bias_min.unwrap_or(0) as i64;
+    civil_fields_to_filetime_utc(y, mo, d, h, mi, s, bias)
+        .ok_or_else(|| format!("moment '{}' is out of the representable FILETIME range", moment.local))
+}
+
+/// Civil fields (already validated) plus a zone bias to a UTC FILETIME, or `None` if the instant
+/// falls outside what FILETIME can hold.
+///
+/// Split out of [`moment_to_filetime_utc`] so a caller that already HAS the fields does not have to
+/// format them into a string and parse them straight back. The calculator's `zone` step did exactly
+/// that, and it was not merely wasteful: it was the one place where a calculator step could fail on
+/// FORMATTING, and every such failure was reported as an arithmetic overflow (R3-6).
+///
+/// Precondition: `y` is inside the band ([`civil_year_in_band`]), and the time fields are in range
+/// - both hold for anything that came through `parse_civil` or a checked calculator step.
+pub(crate) fn civil_fields_to_filetime_utc(
+    y: i64,
+    mo: i64,
+    d: i64,
+    h: i64,
+    mi: i64,
+    s: i64,
+    bias_min: i64,
+) -> Option<i64> {
     // Days between the FILETIME epoch (1601-01-01) and the Unix epoch (1970-01-01).
     const DAYS_1601_TO_1970: i64 = 134_774;
-    // `days_from_civil` does unchecked internal i64 math; keep its input within a proleptic
-    // Gregorian year band far inside that overflow limit. FILETIME itself saturates i64 near year
-    // 30828 - well inside this band - so the checked chain below is what actually rejects an
-    // out-of-FILETIME-range moment; this guard only keeps the civil math sound for an absurd year,
-    // so such a moment is an honest Err, never a panic (debug) or a wrapped number (release).
-    if !(-262_143..=262_143).contains(&y) {
-        return Err(format!("year {y} in moment '{}' is out of range", moment.local));
-    }
-    let bias = moment.tz_bias_min.unwrap_or(0) as i64;
-    // h/mi/s are range-checked in parse_civil, so this sum is exact (max 86_400) - no overflow.
+    // h/mi/s are range-checked before they get here, so this sum is exact (max 86_400).
     let tod = h * 3_600 + mi * 60 + s;
-    let out_of_range = || format!("moment '{}' is out of the representable FILETIME range", moment.local);
     days_from_civil(y, mo, d)
         .checked_mul(86_400)
         .and_then(|day_secs| day_secs.checked_add(tod))
-        .and_then(|local_secs| local_secs.checked_add(bias * 60)) // UTC = local + bias
+        .and_then(|local_secs| local_secs.checked_add(bias_min * 60)) // UTC = local + bias
         .and_then(|utc_secs| utc_secs.checked_add(DAYS_1601_TO_1970 * 86_400))
         .and_then(|secs_1601| secs_1601.checked_mul(10_000_000))
-        .ok_or_else(out_of_range)
 }
 
 /// Civil date `(year, month, day)` from a day count since 1970-01-01 (Howard
