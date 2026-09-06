@@ -39,7 +39,7 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     /// command or an unsolicited failure - a start/fatal error, never an in-flight rejection.</summary>
     private const long FirstInFlightCommandId = 10;
 
-    private CoreClient? _client;
+    private CoreSession? _session;
     private long _nextCommandId = FirstInFlightCommandId;
     private string _statusKey = "status.idle";
     private SessionStatusKind _statusKind = SessionStatusKind.Idle;
@@ -677,24 +677,14 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     /// </summary>
     public void SendMultiplier(long multiplier)
     {
-        var client = _client;
-        if (client is null || !IsRunning)
+        var session = _session;
+        if (session is null || !IsRunning)
         {
             return;
         }
 
         InFlightErrorKey = string.Empty;
-        try
-        {
-            client.Send(new SetMultiplierCommand { Id = _nextCommandId++, Multiplier = multiplier });
-        }
-        catch (Exception e) when (e is IOException or ObjectDisposedException or InvalidOperationException)
-        {
-            // The core is already gone, or its stdin was disposed by a Stop racing this click. Neither is
-            // an error worth a dialog - the read loop surfaces the end. ObjectDisposedException derives
-            // from InvalidOperationException, NOT from IOException, so catching IOException alone let it
-            // reach the dispatcher handler and pop a message box after a perfectly ordinary Stop.
-        }
+        session.SendInFlight(new SetMultiplierCommand { Id = _nextCommandId++, Multiplier = multiplier });
     }
 
     /// <summary>
@@ -738,28 +728,18 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     /// </summary>
     public void SendJump(string delta)
     {
-        var client = _client;
-        if (client is null || !IsRunning)
+        var session = _session;
+        if (session is null || !IsRunning)
         {
             return;
         }
 
         InFlightErrorKey = string.Empty; // a fresh attempt clears any prior in-flight error
-        try
+        session.SendInFlight(new JumpCommand
         {
-            client.Send(new JumpCommand
-            {
-                Id = _nextCommandId++,
-                To = new MomentSpec { Kind = "relative", Delta = delta },
-            });
-        }
-        catch (Exception e) when (e is IOException or ObjectDisposedException or InvalidOperationException)
-        {
-            // The core is already gone, or its stdin was disposed by a Stop racing this click. Neither is
-            // an error worth a dialog - the read loop surfaces the end. ObjectDisposedException derives
-            // from InvalidOperationException, NOT from IOException, so catching IOException alone let it
-            // reach the dispatcher handler and pop a message box after a perfectly ordinary Stop.
-        }
+            Id = _nextCommandId++,
+            To = new MomentSpec { Kind = "relative", Delta = delta },
+        });
     }
 
     /// <summary>
@@ -770,28 +750,18 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     /// </summary>
     public void SendJumpAbsolute(string momentLocal, int zoneBiasMinutes)
     {
-        var client = _client;
-        if (client is null || !IsRunning)
+        var session = _session;
+        if (session is null || !IsRunning)
         {
             return;
         }
 
         InFlightErrorKey = string.Empty;
-        try
+        session.SendInFlight(new JumpCommand
         {
-            client.Send(new JumpCommand
-            {
-                Id = _nextCommandId++,
-                To = new MomentSpec { Kind = "absolute", Local = momentLocal, TzBiasMin = zoneBiasMinutes },
-            });
-        }
-        catch (Exception e) when (e is IOException or ObjectDisposedException or InvalidOperationException)
-        {
-            // The core is already gone, or its stdin was disposed by a Stop racing this click. Neither is
-            // an error worth a dialog - the read loop surfaces the end. ObjectDisposedException derives
-            // from InvalidOperationException, NOT from IOException, so catching IOException alone let it
-            // reach the dispatcher handler and pop a message box after a perfectly ordinary Stop.
-        }
+            Id = _nextCommandId++,
+            To = new MomentSpec { Kind = "absolute", Local = momentLocal, TzBiasMin = zoneBiasMinutes },
+        });
     }
 
     /// <summary>Jump the wall to the moment currently in the At field, in the session zone (rule 2). No-op
@@ -1126,7 +1096,7 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
         ResetSession();
         SetStatus("status.connecting", SessionStatusKind.Connecting);
 
-        CoreClient? client = null;
+        CoreSession? session = null;
         try
         {
             // Snapshot the start moment and mode NOW, before they can be changed in flight, so history and
@@ -1162,32 +1132,25 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
             }
 
             IsCdp = plan.IsCdp;
-            client = CoreClient.Connect(plan.CorePath);
-            _client = client;
 
-            var ready = await ReadReadyAsync(client, ReadyTimeout);
-            if (ready is null)
+            // The handshake and its two refusals (no ready, or a gate that says no) come back as ONE
+            // translation key, because that is all the difference amounts to here - both refuse before the
+            // target is ever launched (docs/08 section 3, zasady/13 section 11). The session comes back
+            // either way so the finally below still disposes the core and still captures its stderr.
+            var open = await CoreSession.OpenAsync(plan, ReadyTimeout);
+            session = open.Session;
+            _session = session;
+            if (open.RefusalKey is not null)
             {
-                SetStatus("status.no_ready", SessionStatusKind.Error);
+                SetStatus(open.RefusalKey, SessionStatusKind.Error);
                 return;
             }
 
-            // A Chromium (CDP) session skips the bitness check - we do not inject, so the core's bitness is
-            // irrelevant (docs/08 section 3, ADR-9). The protocol version is still checked.
-            var gate = HandshakeGate.Check(
-                ready, ProtocolJson.ProtocolVersion, plan.Machine, checkBitness: !plan.IsCdp);
-            if (!gate.IsOk)
-            {
-                // Refuse before the target is ever launched (docs/08 section 3, zasady/13 section 11).
-                SetStatus(gate.ReasonKey!, SessionStatusKind.Error);
-                return;
-            }
-
-            client.Send(plan.Start);
+            session.Send(plan.Start);
             _launched = true; // the target is now running - this session will be recorded in history on exit
             SetStatus("status.running", SessionStatusKind.Running);
 
-            var watchdogFired = await ConsumeEventsAsync(client.Events, IdleTimeout);
+            var watchdogFired = await CoreSession.PumpAsync(session.Events, Apply, IdleTimeout);
 
             // The event stream ended. Decide the final status by WHY it ended (M-10):
             if (_stopRequested)
@@ -1237,20 +1200,21 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
                 await RecordSessionAsync();
             }
 
-            if (client is not null)
+            if (session is not null)
             {
-                // DisposeAsync blocks briefly (it waits for the core to exit), so keep it off the UI thread.
-                await Task.Run(() => client.DisposeAsync().AsTask());
+                // Dispose blocks briefly (it waits for the core to exit) and keeps that wait off the UI
+                // thread itself - see CoreSession.DisposeAsync.
+                await session.DisposeAsync();
 
                 // Now that dispose has drained the core's stderr, capture diagnostics for support if the
                 // session was anything but a clean success (RELEASE-012). A clean works session captures
-                // nothing. (On a Stop the client was already disposed off-thread, so this is best-effort -
+                // nothing. (On a Stop the core was already disposed off-thread, so this is best-effort -
                 // but a stopped healthy session has no error stderr to lose.)
-                CaptureDiagnostics(client.Diagnostics);
+                CaptureDiagnostics(session.Diagnostics);
 
-                if (ReferenceEquals(_client, client))
+                if (ReferenceEquals(_session, session))
                 {
-                    _client = null;
+                    _session = null;
                 }
             }
 
@@ -1268,8 +1232,8 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     /// </summary>
     public void RequestStop()
     {
-        var client = _client;
-        if (client is null || !IsRunning)
+        var session = _session;
+        if (session is null || !IsRunning)
         {
             return;
         }
@@ -1279,72 +1243,17 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
         // period, and until now IsRunning stayed true throughout - so a click on Jump or a speed button
         // in that window reached a stream that was already closing and threw where nothing caught it.
         SetStatus("status.stopping", SessionStatusKind.Stopping);
-        _ = Task.Run(() => client.DisposeAsync().AsTask());
-    }
-
-    /// <summary>
-    /// Relay events until the stream ends, resetting an idle watchdog on each one. Returns <c>true</c> if the
-    /// watchdog fired - no event for <paramref name="idleTimeout"/>, i.e. the core stopped emitting its ~1 s
-    /// heartbeat and is treated as hung (M-10) - and <c>false</c> if the stream completed normally (the core
-    /// exited or was disposed). Kept separate and <c>internal</c> so the watchdog is unit-tested with a fake
-    /// channel and a short timeout, no core process needed. No ConfigureAwait, so <see cref="Apply"/> stays on
-    /// the caller's (UI) thread.
-    /// </summary>
-    internal async Task<bool> ConsumeEventsAsync(ChannelReader<ChronoEvent> events, TimeSpan idleTimeout)
-    {
-        using var idleCts = new CancellationTokenSource();
-        try
-        {
-            while (true)
-            {
-                idleCts.CancelAfter(idleTimeout); // (re)arm the idle window before each wait
-                if (!await events.WaitToReadAsync(idleCts.Token))
-                {
-                    return false; // the stream completed - the core exited or was disposed (e.g. by Stop)
-                }
-
-                while (events.TryRead(out var evt))
-                {
-                    Apply(evt);
-                }
-            }
-        }
-        catch (OperationCanceledException)
-        {
-            return true; // the idle watchdog fired - no event within the window
-        }
+        _ = session.DisposeAsync().AsTask();
     }
 
     public async ValueTask DisposeAsync()
     {
-        var client = _client;
-        _client = null;
-        if (client is not null)
+        var session = _session;
+        _session = null;
+        if (session is not null)
         {
-            await Task.Run(() => client.DisposeAsync().AsTask());
+            await session.DisposeAsync();
         }
-    }
-
-    /// <summary>Read events until the <c>ready</c> handshake, or null on timeout or an early end of stream.</summary>
-    private static async Task<ReadyEvent?> ReadReadyAsync(CoreClient client, TimeSpan timeout)
-    {
-        using var cts = new CancellationTokenSource(timeout);
-        try
-        {
-            await foreach (var evt in client.Events.ReadAllAsync(cts.Token))
-            {
-                if (evt is ReadyEvent ready)
-                {
-                    return ready;
-                }
-            }
-        }
-        catch (OperationCanceledException)
-        {
-            return null; // timed out waiting for ready - the caller reports it, never hangs
-        }
-
-        return null; // the stream ended before ready arrived
     }
 
     private void ResetSession()

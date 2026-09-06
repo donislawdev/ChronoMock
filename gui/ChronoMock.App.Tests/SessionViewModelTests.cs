@@ -722,7 +722,7 @@ public class SessionViewModelTests
         var channel = Channel.CreateUnbounded<ChronoEvent>();
         await channel.Writer.WriteAsync(State("2038-01-19T03:14:07", "2026-08-26T00:00:00", bias: 0, multiplier: 60), TestContext.Current.CancellationToken);
 
-        var fired = await vm.ConsumeEventsAsync(channel.Reader, TimeSpan.FromMilliseconds(150));
+        var fired = await CoreSession.PumpAsync(channel.Reader, vm.Apply, TimeSpan.FromMilliseconds(150));
 
         Assert.True(fired); // the idle watchdog fired
         Assert.Equal("2038-01-19T03:14:07", vm.Fake.Wall); // the event before the silence was still applied
@@ -738,7 +738,7 @@ public class SessionViewModelTests
         await channel.Writer.WriteAsync(State("2038-01-19T03:14:07", "2026-08-26T00:00:00", bias: 0, multiplier: 60), TestContext.Current.CancellationToken);
         channel.Writer.Complete();
 
-        var fired = await vm.ConsumeEventsAsync(channel.Reader, TimeSpan.FromSeconds(30));
+        var fired = await CoreSession.PumpAsync(channel.Reader, vm.Apply, TimeSpan.FromSeconds(30));
 
         Assert.False(fired); // completed normally
         Assert.Equal("2038-01-19T03:14:07", vm.Fake.Wall);
