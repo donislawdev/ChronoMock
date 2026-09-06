@@ -1061,3 +1061,131 @@ fn the_cs_known_unused_list_only_ever_shrinks() {
         "these names are used again, so they must come out of CS_KNOWN_UNUSED: {revived:?}"
     );
 }
+
+// ---------------------------------------------------------------------------------------------
+// H7 and H8. What the repository is written in, and how
+// ---------------------------------------------------------------------------------------------
+
+/// Polish diacritics. Untouchable rule 9 makes the criterion the PLACE, not the reader: everything
+/// in the repository is English, everything outside it is Polish.
+const POLISH_LETTERS: &[char] = &[
+    'ą', 'ć', 'ę', 'ł', 'ń', 'ó', 'ś', 'ź', 'ż', 'Ą', 'Ć', 'Ę', 'Ł', 'Ń', 'Ó', 'Ś', 'Ź', 'Ż',
+];
+
+fn is_comment(line: &str) -> bool {
+    let trimmed = line.trim_start();
+    trimmed.starts_with("//") || trimmed.starts_with("<!--") || trimmed.starts_with("///")
+}
+
+/// Untouchable rules 9 and 14: comments in the repository are English, without exception.
+///
+/// VALUES are a different question and are deliberately not checked. `Strings.pl.json` is Polish
+/// from end to end and must be, and `calendars/pl.json` carries `Święto Trzech Króli` because the
+/// locale of DATA is not the language of the INTERFACE (rule 15). Only the comments are English.
+///
+/// Measured when this was written: 37 Polish comment lines in `Strings.pl.json`, all of them
+/// translations of comments that already existed in English in the file beside it. They were
+/// aligned by key and the values were left untouched - proven by comparing the parsed objects
+/// before and after, 285 keys, deep-equal.
+#[test]
+fn every_comment_in_the_repository_is_english() {
+    let files = tracked_files(&["rs", "cs", "xaml", "json", "ps1", "yml", "toml", "md"]);
+    let mut offenders = Vec::new();
+    for path in &files {
+        if is_this_file(path) {
+            continue; // POLISH_LETTERS lives here
+        }
+        let Ok(text) = std::fs::read_to_string(path) else {
+            continue;
+        };
+        for (number, line) in text.lines().enumerate() {
+            if is_comment(line) && line.chars().any(|c| POLISH_LETTERS.contains(&c)) {
+                offenders.push(format!("{}:{}", rel(path), number + 1));
+            }
+        }
+    }
+    assert!(files.len() >= 60, "the language scan read only {} files", files.len());
+    assert!(
+        offenders.is_empty(),
+        "a comment in the repository is not English (untouchable rules 9 and 14 - the criterion is \
+         the PLACE, not the reader): {offenders:?}"
+    );
+}
+
+/// Untouchable rule 13: a flat hyphen, and no semicolons in prose.
+///
+/// The weakest guard here and it says so: the rule is kept without effort today and breaking it is
+/// cosmetic rather than functional. It is in because a ratchet costs a few lines - if anything on
+/// this list ever has to go, this goes first.
+///
+/// Scoped to comments and Markdown prose. A semicolon is syntax in every language in this tree, and
+/// an en dash inside a string may be someone's data.
+#[test]
+fn prose_uses_a_flat_hyphen_and_no_semicolons() {
+    let files = tracked_files(&["rs", "cs", "xaml", "ps1", "md"]);
+    let mut offenders = Vec::new();
+    let mut semicolons_in_prose = 0usize;
+    for path in &files {
+        if is_this_file(path) {
+            continue;
+        }
+        let markdown = has_extension(path, &["md"]);
+        let Ok(text) = std::fs::read_to_string(path) else {
+            continue;
+        };
+        let mut in_fence = false;
+        for (number, line) in text.lines().enumerate() {
+            if markdown && line.trim_start().starts_with("```") {
+                in_fence = !in_fence;
+                continue;
+            }
+            let prose = if markdown {
+                !in_fence && !line.starts_with("    ")
+            } else {
+                is_comment(line)
+            };
+            if !prose {
+                continue;
+            }
+            for (bad, what) in [('\u{2014}', "an em dash"), ('\u{2013}', "an en dash")] {
+                if line.contains(bad) {
+                    offenders.push(format!("{}:{} has {what}", rel(path), number + 1));
+                }
+            }
+            // A semicolon inside inline code, a URL or an XML entity is not prose.
+            let mut outside_code = String::new();
+            let mut inside = false;
+            for c in line.chars() {
+                if c == '`' {
+                    inside = !inside;
+                } else if !inside {
+                    outside_code.push(c);
+                }
+            }
+            let entities = outside_code.matches('&').count();
+            let semicolons = outside_code.matches(';').count();
+            if semicolons > entities && !outside_code.contains("http") {
+                semicolons_in_prose += 1;
+            }
+        }
+    }
+    assert!(files.len() >= 60, "the punctuation scan read only {} files", files.len());
+    assert!(
+        offenders.is_empty(),
+        "untouchable rule 13 - a flat hyphen, never an em or en dash: {offenders:?}"
+    );
+
+    // 🔴 The semicolon half is a RATCHET, not a rule, and the honest reason is that the plan for
+    // this guard called H8 green after measuring only dashes in code and semicolons in the two
+    // root Markdown files. It never measured semicolons in COMMENTS, and there were 282 of them -
+    // real prose, not XML entities, spread across carefully written doc comments in both languages.
+    // Rewriting all of them in a hygiene commit would be a large edit to prose nobody asked to
+    // change, so the count may fall and may not rise while the owner decides. Recorded in
+    // docs/zasady/00-ODSTEPSTWA.md as required by untouchable rule 11.
+    const SEMICOLON_BASELINE: usize = 282;
+    assert!(
+        semicolons_in_prose <= SEMICOLON_BASELINE,
+        "semicolons in prose rose from {SEMICOLON_BASELINE} to {semicolons_in_prose} - rule 13          says none, and this ratchet only ever comes down"
+    );
+    println!("semicolons in prose: {semicolons_in_prose} (baseline {SEMICOLON_BASELINE})");
+}

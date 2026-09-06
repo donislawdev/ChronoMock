@@ -1,8 +1,8 @@
-// Polskie teksty interfejsu. Klucze sa stabilne i angielskie, wartosci to tekst widoczny.
-// Nowy jezyk to kopia tego pliku nazwana Strings.<kultura>.json z przetlumaczonymi
-// wartosciami - bez rekompilacji (regula nietykalna 15). JSON z komentarzami //: ten plik
-// jest DANYMI i tak jest czytany. Wczesniej byl XAML-em parsowanym przez XamlReader, ktory
-// tworzy obiekty, wiec wykonywal sie jak kod - luzny plik obok exe nie moze tego robic.
+// English interface strings. Keys are stable and English; values are the display text.
+// A new language is a copy of this file named Strings.<culture>.json with the values
+// translated - no recompile (untouchable rule 15). JSON with // comments: this file is
+// DATA, read as data. It used to be XAML parsed by XamlReader, which instantiates types
+// and therefore ran as code - a loose file next to the exe must never be able to do that.
 {
 
   "app.title": "Chrono Mock",
@@ -11,34 +11,34 @@
   "clock.fake": "Zegar fałszywy",
   "clock.real": "Zegar rzeczywisty",
 
-  // Wybór celu (chrono-mock 7.1). Teksty dialogu też jako klucze (reguła 15).
+  // Target selection (chrono-mock 7.1). The dialog strings are keyed too (rule 15).
   "target.label": "Cel:",
   "target.dialog_title": "Wybierz cel",
 
-  // Tylko .exe: natywna injekcja wymaga PE, a CDP aplikacji Electron/Chromium .exe. Zawężenie filtra chroni przed wyborem .lnk/.bat/.txt, który mógłby tylko zawieść (RELEASE-007).
+  // Only .exe: native injection needs a PE and CDP needs an Electron/Chromium .exe. Narrowing the filter keeps a user from picking a .lnk/.bat/.txt that could only fail (RELEASE-007).
   "target.dialog_filter": "Pliki wykonywalne (*.exe)|*.exe",
 
-  // Scenariusze (chrono-mock 7.1 pkt 2): nazwane momenty ze wspólnego katalogu presetów. NAZWY scenariuszy i ich opisy „co ta data testuje" pochodzą z plików katalogu (locale danych), nie stąd.
+  // Scenarios (chrono-mock 7.1 pt 2): named moments from the shared preset catalogue. The scenario NAMES and their "what this date tests" lines come from the catalogue files (data locales), not from here.
   "scenario.label": "Scenariusz",
   "scenario.needs_parameters": "kolejne scenariusze wymagają parametrów - zbuduj taki w kalkulatorze, potem użyj „Use in substitution”.",
   "scenario.failed": "Nie udało się policzyć daty dla tego scenariusza.",
   "scenario.unsupported": "Plik presetu tego scenariusza ma kształt, którego ta wersja nie czyta.",
   "scenario.engine_missing": "Nie udało się uruchomić silnika kalkulatora, więc scenariuszy nie da się policzyć.",
 
-  // Oznacza ostatnio używany cel, którego pliku już nie ma (skasowany wynik budowy, odinstalowana aplikacja). Pokazywany zamiast usuwania wpisu, żeby lista nie milczała o tym, czemu skrót nie zadziała (reguła 6).
+  // Marks a recent target whose file is gone (a wiped build output, an uninstalled app). Shown rather than the entry being dropped, so the list never goes quiet about why a shortcut will not work (rule 6).
   "target.missing": "(brak pliku)",
 
-  // Pokazywane tylko dopóki nie wybrano celu: przeciągnięcie pliku na okno samo z siebie nie jest odkrywalne, a gdy cel już jest, wskazówka byłaby szumem przy każdym kolejnym uruchomieniu (chrono-mock 7.1 pkt 1).
+  // Shown only while no target is chosen: dropping a file on the window is not discoverable on its own, and once there is a target the hint would be noise on every later run (chrono-mock 7.1 pt 1).
   "target.drop_hint": "…albo przeciągnij aplikację na to okno",
   "target.drop_rejected": "Uruchomić można tylko pliki .exe - tego wymaga i hook, i wykrywanie Chromium.",
 
-  // Argumenty i katalog roboczy (chrono-mock 7.1 pkt 1). Domyślnie zwinięte: większość sesji nie potrzebuje żadnego z nich. Drut i mechanizm niosą oba od czasu powstania protokołu; brakowało ich tylko na powierzchniach.
+  // Arguments and working folder (chrono-mock 7.1 pt 1). Collapsed by default: most sessions need neither. The wire and the mechanism have carried both since the protocol was written; only the surfaces did not offer them.
   "launch.header": "Argumenty i katalog roboczy",
   "launch.args_label": "Argumenty:",
   "launch.cwd_label": "Katalog roboczy:",
   "launch.cwd_note": "Zostaw katalog pusty, żeby aplikacja wystartowała tam, gdzie normalnie. Argument ze spacjami ujmij w cudzysłów, dokładnie jak w wierszu poleceń.",
 
-  // Wejścia czasu (chrono-mock 7.1). Moment to czas lokalny w strefie sesji (reguła 2).
+  // Time inputs (chrono-mock 7.1). The moment is the local time in the session zone (rule 2).
   "moment.label": "Moment:",
   "moment.date_placeholder": "YYYY-MM-DD",
   "moment.time_placeholder": "HH:MM",
@@ -46,14 +46,14 @@
   "moment.date_format": "Użyj formatu YYYY-MM-DD.",
   "moment.date_invalid": "Taka data nie istnieje.",
   "moment.time_format": "Użyj HH:MM (format 24h).",
-  // Odczytuje wpisany moment w ludzkim języku (chrono-mock 7.1 pkt 3). To tylko wprowadzenie: sama data jest formatowana kulturą interfejsu, więc nie trzeba składać zdania z kawałków.
+  // Reads the typed moment back in plain language (chrono-mock 7.1 pt 3). Only a lead-in: the date itself is formatted in the interface culture, so no sentence has to be assembled from fragments.
   "moment.preview_label": "Aplikacja zobaczy",
   "action.pick_date": "Wybierz datę",
   "action.today": "Dziś",
   "action.now": "Teraz",
   "zone.label": "Strefa:",
 
-  // Nazwy rynków pokazywane obok każdego offsetu w dropdownie strefy, żeby nie był samą liczbą.
+  // Market-name hints shown beside each offset in the zone dropdown, so it is not a bare number.
   "zone.utc": "Uniwersalny czas koordynowany",
   "zone.pl_standard": "Polska (czas zimowy)",
   "zone.pl_summer": "Polska (czas letni)",
@@ -81,16 +81,16 @@
   "action.set_speed": "Ustaw",
   "speed.invalid": "Wpisz liczbę całkowitą, np. 500.",
 
-  // Skoki w locie (jednostki w Tag przycisku).
+  // In-flight jump deltas (units carried in the button Tag).
   "jump.minus_day": "-1 dzień",
   "jump.minus_hour": "-1 godz.",
   "jump.plus_hour": "+1 godz.",
   "jump.plus_day": "+1 dzień",
 
-  // Sterowanie sesją (M-10). Znaczenie niesie etykieta, nigdy sam kolor.
+  // Session control (M-10). Meaning is carried by the label, never by colour alone.
   "control.stop": "Zatrzymaj sesję",
 
-  // Session status.
+  // Session status. Meaning is carried by this label, never by colour alone.
   "status.idle": "Nie uruchomiono",
   "status.connecting": "Uruchamianie rdzenia",
   "status.running": "Działa",
@@ -107,26 +107,26 @@
   "status.no_ready": "Brak uzgodnienia z rdzeniem",
   "status.error": "Błąd sesji",
 
-  // Powody awarii rdzenia (RELEASE-001). Gdy błąd startu/fatalny kończy sesję, jego konkretny powód staje się nagłówkiem statusu, więc nieudany start nigdy nie czyta się jak „Sesja zakończona". Sformułowane jako zdania o awarii, bo SĄ linią statusu. Emitowane przez rdzeń (crates/cli, crates/mech).
+  // Core failure reasons (RELEASE-001). When a start/fatal error ends a session, its specific reason becomes the status headline, so a failed start never reads as "Session ended". Phrased as failure statements because they ARE the status line. Emitted by the core (crates/cli, crates/mech).
   "core.hook_dll_missing": "Brak haka czasu - aplikacja nie została uruchomiona z fałszywym zegarem (zainstaluj Chrono Mock ponownie).",
   "protocol.version_mismatch": "Aplikacja i rdzeń mówią różnymi wersjami protokołu - zainstaluj Chrono Mock ponownie, żeby oba pochodziły z tej samej kompilacji.",
   "time.bad_mode": "Nieobsługiwany tryb czasu - sesja nie wystartowała.",
-  // Odrzucone, nie zastosowane: powyżej granicy fałszywy zegar wychodzi w trakcie sesji poza
-  // reprezentowalny zakres dat i kanały czasu zaczynają się rozjeżdżać, a ujemne tempo cofałoby
-  // zegar w sposób ciągły - a to model czasu ma jako skok, nigdy jako prędkość.
+  // Rejected rather than applied: past the bound the fake clock leaves the representable date range
+  // mid-session and the time channels start disagreeing, and a negative rate would run the clock
+  // continuously backward - which the time model has as a jump, never as a speed.
   "time.bad_multiplier": "Prędkość poza zakresem - musi mieścić się między 0 (zamrożenie) a 1,000,000. Sesja nie wystartowała.",
   "moment.invalid": "Nieprawidłowy moment (luka czasu letniego, 29 lutego w roku nieprzestępnym albo poza zakresem) - sesja nie wystartowała.",
   "moment.needs_calendar": "Ten skok liczy dni robocze, a trwająca sesja nie ma kalendarza - skocz do konkretnej daty albo policz ją najpierw w kalkulatorze.",
   "moment.unsupported_kind": "Rdzeń nie rozpoznał tego rodzaju celu skoku.",
   "session.control_failed": "Nie udało się utworzyć kanału sterowania sesji - podmiana nie zadziałała.",
   "target.launch_failed": "Nie udało się uruchomić celu - podmiana nie zadziałała.",
-  // Sprawdzane w rdzeniu, zanim ruszy którykolwiek mechanizm. Bez tego awaria przychodzi jako target.launch_failed, czyli obwinia aplikację za katalog, którego po prostu nie ma.
+  // Checked in the core before either mechanism starts. Without it the failure arrives as target.launch_failed, which blames the application for a folder that is simply not there.
   "target.cwd_missing": "Katalog roboczy nie istnieje - sesja nie wystartowała. Wskaż istniejący katalog albo zostaw pole puste, żeby aplikacja wystartowała tam, gdzie normalnie.",
   "target.inject_failed": "Nie udało się wstrzyknąć haka czasu - podmiana nie zadziałała (mógł ją zablokować antywirus albo utwardzony cel).",
   "target.attach_failed": "Nie udało się podłączyć do aplikacji Chromium/Electron - podmiana nie zadziałała.",
-  // R2-S1. GUI zwykle łapie to samo wcześniej (HandshakeGate, z nagłówka PE celu), więc to druga linia
-  // obrony po stronie rdzenia - osiągalna dla celu, którego realna bitowość różni się od zadeklarowanej
-  // w nagłówku pliku, jak plik wykonywalny .NET AnyCPU.
+  // R2-S1. The GUI normally catches this itself (HandshakeGate, from the target's PE), so this is the
+  // core's own second line of defence - reachable for a target whose real bitness differs from what its
+  // file header declares, such as a .NET AnyCPU executable.
   "target.bitness_mismatch": "Cel działa w innej bitowości niż ten rdzeń - hak czasu nie przechodzi przez granicę bitowości.",
   "session.already_active": "Inna sesja Chrono Mock już działa - tylko jedna naraz.",
   "protocol.no_command": "Rdzeń nie otrzymał komendy - sesja nie wystartowała.",
@@ -135,23 +135,23 @@
   "protocol.unsupported_command": "Rdzeń otrzymał komendę, której w tym miejscu nie obsługuje, i ją pominął - sesja nadal trwa.",
   "protocol.expected_start": "Rdzeń oczekiwał komendy start - sesja nie wystartowała.",
 
-  // Odmowy bramki uzgodnienia (zgłaszane, zanim cel zostanie uruchomiony).
+  // Handshake gate refusals (surfaced before the target is launched).
   "handshake.protocol_mismatch": "Niezgodna wersja protokołu - nie uruchomiono",
   "handshake.bitness_mismatch": "Niezgodna bitowość rdzenia - nie uruchomiono",
 
-  // Werdykt weryfikatora (chrono-mock 7.1). Etykieta w parze z glifem i kolorem.
+  // Verifier verdict (chrono-mock 7.1). The label is paired with a glyph and a colour.
   "verdict.works": "Działa",
   "verdict.partial": "Częściowo",
   "verdict.fails": "Nie działa",
   "verdict.undetermined": "Nieokreślony",
   "verdict.unknown": "Nieznany",
 
-  // Jedno zdanie „co to znaczy dla testu" dla werdyktu innego niż działa.
+  // One-sentence "what this means for the test" for a non-works verdict.
   "verdict.partial.meaning": "Część kanałów czasu nie została objęta - ich odczyty są prawdziwe, więc test może być niewiarygodny.",
   "verdict.fails.meaning": "Podmiana nie objęła kluczowych kanałów - sesja odrzucona jako niewiarygodna.",
   "verdict.undetermined.meaning": "Nie dało się ustalić pokrycia - traktowane jako niepotwierdzone, nigdy jako działające.",
 
-  // Klucze powodów werdyktu emitowane przez rdzeń (VerdictEvent / SessionVerdict reason_key), pokazywane przy werdykcie innym niż działa. Warianty rodziny (session.family_*) lustrzą per-procesowe i są emitowane dla agregatu rodziny na końcu. Brzmienie lustrzy raport CLI (describe_reason). RELEASE-002.
+  // Verdict reason keys the core sends over the wire (VerdictEvent / SessionVerdict reason_key), shown under a non-works verdict. The family variants (session.family_*) mirror the per-process ones and are emitted for the family aggregate at end. Wording mirrors the CLI report (describe_reason). RELEASE-002.
   "coverage.time_channels_covered": "Każdy proces, który odczytał czas, widział zegar sesji.",
   "coverage.time_channels_partial": "Część kanałów czasu objęto, część odpytano ale nie objęto.",
   "coverage.time_channels_uncovered": "Czas był odpytywany, ale nie objęto żadnego kanału.",
@@ -161,7 +161,7 @@
   "session.family_uncovered": "Czas był odpytywany, ale nie objęto żadnego kanału.",
   "session.family_undetermined": "Żaden proces nie odczytał objętego kanału czasu.",
 
-  // Pokrycie / podgląd audytu (chrono-mock 7.2). Nazwy kanałów to surowe identyfikatory API, nietłumaczone.
+  // Coverage / audit preview (chrono-mock 7.2). Channel names are raw API identifiers, not translated.
   "coverage.covered": "Objęte kanały",
   "coverage.observed": "Obserwowane (podpięte, pozostawione realne)",
   "coverage.uncovered": "Nieobjęte kanały",
@@ -169,30 +169,30 @@
   "coverage.family_note": "Sesja rodziny - liczniki wywołań z procesu rodzica, ostrzeżenia i nieobjęte kanały ze wszystkich procesów.",
   "coverage.contexts_note": "Sesja Chromium - pokazano każdy kontekst JS (stronę i workery), nigdy sumowane.",
 
-  // Klucze ostrzeżeń pokrycia emitowane przez rdzeń (CoverageEvent warning_keys) oraz powód zniknięcia (VanishedEvent reason_key, pokazywany w report.vanish_detail). Brzmienie lustrzy raport CLI (describe_warning). Ostrzeżenia Chromium (CDP) są w sekcji niżej. RELEASE-002.
+  // Coverage warning keys the core raises (CoverageEvent warning_keys), and the vanish reason (VanishedEvent reason_key, shown inside report.vanish_detail). Wording mirrors the CLI report (describe_warning). The Chromium (CDP) warnings live in the section below. RELEASE-002.
   "source.network_at_start": "Cel otworzył połączenie sieciowe - może czytać czas z serwera, którego żaden lokalny hak nie obejmie.",
   "wait.object_waits_not_scaled": "Oczekiwania na obiekty są podpięte, ale pozostawione realne - limit czasu I/O lub sprzętu nie jest skracany.",
   "timer.multimedia_not_scaled": "Timer multimedialny (timeSetEvent) jest obserwowany, ale nie skalowany.",
   "inheritance.ntcreateuserprocess_child_maybe_uncovered": "Dziecko utworzone bezpośrednio przez NtCreateUserProcess może nie być objęte.",
-  // R2-S2. Inne niz ostrzezenie o NtCreateUserProcess nad nim: tam swiadomie nie wstrzykujemy,
-  // tu probowalismy i sie nie udalo, wiec proces tej rodziny naprawde chodzil na realnym zegarze.
+  // R2-S2. Distinct from the NtCreateUserProcess warning above it: there we choose not to inject,
+  // here we tried and it did not take, so a process of this family really did run on the real clock.
   "inheritance.child_not_injected": "Proces potomny nie został objęty i działał na realnym zegarze - zwykle dziecko o innej bitowości. Liczba procesów jest o tyle zaniżona.",
-  // R2-S9. Poziom sesji, nie procesu: rzecz dotyczy procesow, ktore nie dostaly slotu pokrycia,
-  // wiec przychodzi w session_verdict, a nie w ktoryms zdarzeniu coverage.
+  // R2-S9. Session-level, not per-process: it is about processes that never got a coverage slot,
+  // so it arrives on session_verdict rather than on any one coverage event.
   "coverage.pid_registry_full": "Ta sesja uruchomiła więcej procesów, niż audyt potrafi śledzić (256). Część działała bez pokrycia i nie ma jej w liczbie procesów ani na listach kanałów.",
   "time.fake_clock_clamped": "Fałszywy zegar doszedł do ostatniej daty, jaką ta wersja potrafi wyrazić (rok 30828), i stanął tam do końca sesji. Późniejsze odczyty nie są momentami, które dałaby wybrana prędkość.",
   "target.single_instance_suspected": "zakończył się zaraz po injekcji, zanim podmianę dało się potwierdzić",
 
-  // Runtime wykryty statycznie z plików celu (B1): jego zegary monotoniczne/elapsed stoją na QueryPerformanceCounter, który zostaje realny (ADR-2), więc licznik na nich oparty nie skaluje, choć zegar ścienny tak. Brzmienie lustrzące CLI describe_warning.
+  // Runtime detected statically from the target's files (B1): its monotonic/elapsed clocks stand on QueryPerformanceCounter, which stays real (ADR-2), so a timer built on them does not scale even though the wall clock does. Wording mirrors the CLI describe_warning.
   "runtime.python_monotonic_qpc": "Ta aplikacja Python mierzy czas przez perf_counter i monotonic - oba używają QueryPerformanceCounter w Pythonie 3.13+, który zostaje realny, więc licznik na nich oparty nie skaluje (time.time i zegar ścienny tak).",
   "runtime.python_perfcounter_qpc": "perf_counter tej aplikacji Python używa QueryPerformanceCounter, który zostaje realny, więc licznik na perf_counter nie skaluje - w Pythonie 3.13+ monotonic też używa QPC (time.time i zegar ścienny skalują).",
   "runtime.dotnet_stopwatch_qpc": "Stopwatch tej aplikacji .NET używa QueryPerformanceCounter, który zostaje realny, więc licznik na Stopwatch nie skaluje (DateTime i Environment.TickCount tak).",
   "runtime.java_nanotime_qpc": "System.nanoTime tej aplikacji Java używa QueryPerformanceCounter, który zostaje realny, więc licznik na nanoTime nie skaluje (System.currentTimeMillis tak).",
 
-  // Pokazywane, gdy skalowanie QPC jest WŁĄCZONE (opcja scale-qpc, odwrócenie ADR-2): zegar monotoniczny/elapsed teraz skaluje, ale cel liczący render z QPC może wyglądać na zniekształcony.
+  // Shown when QPC scaling is ON (the scale-qpc option, ADR-2 reversal): the monotonic/elapsed clock now scales, but a target that times rendering off QPC may look distorted. Replaces the runtime QPC warnings.
   "qpc.scaled_render_may_distort": "QueryPerformanceCounter jest skalowany, więc zegar monotoniczny/elapsed oparty na QPC przyspiesza - ale cel liczący render lub animację z QPC może wyglądać na zniekształcony.",
 
-  // Tryb Chromium/Electron (CDP), ADR-8/ADR-9: powody werdyktu i ostrzeżenia z rdzenia CDP. Jednostką pokrycia jest kontekst JS, nie proces systemowy.
+  // Chromium/Electron (CDP) mode, ADR-8/ADR-9: verdict reasons and warnings the CDP core emits. The coverage unit is a JS context, not an OS process.
   "chromium.contexts_covered": "Każdy kontekst JS działał na zegarze sesji.",
   "chromium.contexts_partial": "Część kontekstów JS działała na zegarze sesji, części nie udało się objąć.",
   "chromium.no_time_calls": "Shim został wstrzyknięty, ale aplikacja nie wywołała żadnego API czasu JS.",
@@ -201,16 +201,16 @@
   "chromium.app_closed_before_audit": "Aplikacja zamknęła się, zanim audyt zdążył odczytać końcowe liczniki wywołań - pokrycie może być niepełne.",
   "chromium.rate_change_affects_running_timers": "Prędkość zmieniła się w locie: nowe timery i zegar odzwierciedlają ją od razu, ale już działający setInterval zachowuje stare tempo.",
 
-  // Pozostałości sprzątania, które rdzeń zgłasza w `ended.residue_keys`, gdy zamknięcie nie zdążyło się dokończyć (reguły 4, 6). Dziś tylko sesja CDP je podnosi (nie udało się usunąć tymczasowego profilu przeglądarki); sesja natywna zawsze kończy się czysto. Renderowane dosłownie w panelu i podsumowaniu.
+  // Cleanup residue the core reports in `ended.residue_keys` when a teardown could not finish (rules 4, 6). Today only a CDP session raises one (the temporary browser profile could not be removed); a native session always ends clean. Rendered verbatim in the panel and the summary.
   "cleanup.chromium_profile_left": "Nie udało się usunąć tymczasowego profilu Chromium - usuń go ręcznie, jeśli został w folderze tymczasowym.",
 
-  // Kopiowanie podsumowania sesji (chrono-mock 7.2, 8.8). Raport do wklejenia w zgłoszenie; sesja inna niż „działa" prowadzi banerem nierzetelności. Klucze z szablonem niosą pola {0}.
+  // Copy session summary (chrono-mock 7.2, 8.8). A paste-into-ticket report; a non-works session leads with the unreliable-evidence banner. Keys ending in a template carry {0}-style placeholders.
   "action.copy_summary": "Kopiuj podsumowanie",
   "action.copy_diagnostics": "Kopiuj diagnostykę",
   "copy.done": "Skopiowano do schowka",
   "copy.failed": "Nie można skopiować - schowek jest zajęty",
 
-  // Gdzie zapisano log diagnostyczny (RELEASE-012); ścieżka następuje po tym prefiksie.
+  // Where the diagnostics log was written (RELEASE-012); the path follows this prefix.
   "diagnostics.saved": "Diagnostykę zapisano do",
   "report.unreliable_banner": "!! DOWÓD NIERZETELNY - podmiana czasu nie zadziałała w pełni. Nie cytuj tego jako dowodu zachowania.",
   "report.title": "Chrono Mock - raport sesji",
@@ -224,12 +224,12 @@
   "report.session_reached": "fałszywy zegar osiągnął {0}",
   "report.elapsed": "realnie {0}s, fałszywie {1}s",
 
-  // Własny kod wyjścia celu (informacyjny; sesje natywne, gdzie aplikacja zamknęła się sama) oraz pozostałości, których rdzeń nie usunął - jedno i drugie z `ended`, żeby sesja niczego nie ukryła.
+  // The target's own exit code (informational; native sessions where the app exited on its own) and any cleanup residue the core could not remove - both surfaced from `ended` so a session never hides them.
   "report.target_exit": "cel zakończył się kodem",
   "report.cleanup": "nie sprzątnięto do końca",
   "report.requested": "żądano: {0} (strefa {1}, tryb {2})",
 
-  // Historia sesji (chrono-mock 7.2, 8.8, 11.1 pkt 13). Tylko lokalnie; klik wpisu wypełnia formularz setup i nigdy nie uruchamia sesji (reguła nietykalna 7, docs/04 §6).
+  // Session history (chrono-mock 7.2, 8.8, 11.1 pt 13). Local-only; clicking an entry fills the setup form and never starts a session (untouchable rule 7, docs/04 section 6).
   "history.header": "Historia",
   "history.save_failed": "Nie udało się zapisać do historii:",
   "history.delete": "Usuń tę sesję",
@@ -237,11 +237,11 @@
   "history.clear_title": "Wyczyść historię",
   "history.clear_confirm": "Wyczyścić wszystkie zapisane sesje? Tej operacji nie można cofnąć.",
 
-  // Przełącznik modułów: dwie połowy produktu (chrono-mock 6.1/7).
+  // Module switch: the two halves of the product (chrono-mock 6.1/7).
   "nav.substitution": "Podmiana",
   "nav.calculator": "Kalkulator",
 
-  // Kalkulator dat (chrono-mock 7.3). Plasterek G1 to szkielet układu; więcej kluczy z podpięciem.
+  // Date calculator (chrono-mock 7.3). Slice G1 is the layout shell; more keys arrive with the wiring.
   "calc.presets_header": "Presety",
   "calc.filter_placeholder": "Filtruj scenariusze…",
   "calc.preset_note": "Preset to punkt startowy - nie certyfikat kompletności testu.",
@@ -270,7 +270,7 @@
   "calc.reading.us_month_day": "Odczyt US (MM/DD/RRRR)",
   "calc.reading.pl_day_month": "Odczyt PL (DD/MM/RRRR)",
 
-  // Konstruktor kalkulatora (G3b): rodzaje bazy, jednostki shift, kalendarze i markery znaczenia.
+  // Calculator builder (G3b): base kinds, shift units, calendars, and the significance markers.
   "calc.base.today": "Dziś",
   "calc.base.now": "Teraz",
   "calc.base.specific": "Konkretna data",
@@ -290,7 +290,7 @@
   "calc.cal.us_federal": "USA federalny",
   "calc.cal.pl": "Polska",
 
-  // Cele kroku snap (G3c-1): granica okresu, do której skacze krok. Tokeny lustrzą flagę snap.
+  // Snap-step targets (G3c-1): the period boundary the step jumps to. Tokens mirror the snap flag.
   "calc.snap.som": "Początek miesiąca",
   "calc.snap.eom": "Koniec miesiąca",
   "calc.snap.soq": "Początek kwartału",
@@ -298,7 +298,7 @@
   "calc.snap.soy": "Początek roku",
   "calc.snap.eoy": "Koniec roku",
 
-  // Cele kroku nearest (G3c-2): dostrojenie do najbliższego dnia roboczego w danym kierunku. Wymaga kalendarza.
+  // Nearest-step targets (G3c-2): roll to the nearest business day in a direction. Needs a calendar.
   "calc.nearest.nbd": "Następny dzień roboczy",
   "calc.nearest.pbd": "Poprzedni dzień roboczy",
   "calc.nearest.leap": "Następny 29 lutego",
@@ -319,7 +319,7 @@
   "calc.sig.public_holiday": "Święto",
   "calc.sig.observed_holiday": "Obchodzone święto - dzień wolny przesunięty z weekendowego święta",
 
-  // Render wyniku kalkulatora (RELEASE-006): dzień tygodnia (mapowany z angielskiej nazwy z silnika), etykiety formatów, linia metadanych i marker poza-zakresem - klucze, nie literały C# (reguła 15).
+  // Calculator result rendering (RELEASE-006): the weekday (mapped from the engine's English name), the format labels, the metadata line and the out-of-range marker - keys, not C# literals (rule 15).
   "calc.weekday.monday": "Poniedziałek",
   "calc.weekday.tuesday": "Wtorek",
   "calc.weekday.wednesday": "Środa",
@@ -343,7 +343,7 @@
   "calc.md.business_day": "dzień roboczy",
   "calc.md.not_business_day": "nie dzień roboczy",
 
-  // Podpowiedzi (pomoc po najechaniu). Klucze, nie literały (reguła 15); w języku interfejsu.
+  // Tooltips (hover help). Keys, not literals (rule 15); shown in the current language.
   "tip.choose_target": "Wybierz aplikację do uruchomienia z podmienionym zegarem.",
   "tip.target_args": "Wiersz poleceń, z którym startuje aplikacja. Argument ze spacjami ujęty w cudzysłów, tak jak w terminalu.",
   "tip.working_folder": "Katalog, w którym startuje aplikacja. Pusty znaczy: tam, gdzie normalnie.",
