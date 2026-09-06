@@ -8,14 +8,14 @@
 
 
 use std::collections::HashMap;
-use std::io::{BufRead, BufReader};
+use std::io::BufReader;
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
 use chrono_core::calc::{Base, EvalContext, MomentExpr};
 use chrono_core::Verdict;
 use chrono_proto::{
-    parse_command, Clock, Command, CoveredChannel, Event, MomentSpec, TargetSpec, TimeSpec,
+    Clock, Command, CoveredChannel, Event, MomentSpec, TargetSpec, TimeSpec,
     PROTOCOL_VERSION,
 };
 
@@ -25,6 +25,7 @@ use crate::grammar::parse_shift;
 use crate::events::{
     command_id, emit, ended_after_launch, ended_clean, jump_error_key, unsupported_command,
 };
+use crate::wire::spawn_command_reader;
 /// One shimmed JS context of a Chromium target: the coverage unit of a CDP session (rule 4 - never
 /// summed across contexts).
 pub(crate) struct CdpContext {
@@ -179,36 +180,7 @@ pub(crate) fn cdp_session(target: TargetSpec, time: TimeSpec, reader: BufReader<
 
     // A stdin reader thread turns command lines into `Command`s (end/query/set_multiplier/jump) so the
     // main loop can interleave them with CDP polling and the heartbeat without blocking on read_line.
-    let (tx, rx) = mpsc::channel::<Command>();
-    std::thread::spawn(move || {
-        let mut reader = reader;
-        let mut line = String::new();
-        loop {
-            line.clear();
-            match reader.read_line(&mut line) {
-                Ok(0) | Err(_) => break,
-                Ok(_) => match parse_command(line.trim_end()) {
-                    Ok(cmd) => {
-                        if tx.send(cmd).is_err() {
-                            break;
-                        }
-                    }
-                    // Say so, and keep going. An unreadable line used to vanish without a word:
-                    // the FIRST command (`start`) answers bad input properly, every one after it
-                    // did not, and the protocol has an `ack` - so a client that waits for one waits
-                    // for ever. `--json` is advertised for CI, which is exactly where such a client
-                    // gets written. No id, because the id lives in the line we could not read.
-                    Err(_) => emit(&Event::Error {
-                        v: PROTOCOL_VERSION,
-                        id: None,
-                        code: 1,
-                        key: "protocol.bad_command_ignored".into(),
-                        origin: "core".into(),
-                    }),
-                },
-            }
-        }
-    });
+    let rx = spawn_command_reader(reader);
 
     // Install the shim into every context as it attaches (page and its Web Workers), beat a ~1 s
     // `state` heartbeat, and sample per-context call counts, until `end`, stdin EOF, or the app closes.

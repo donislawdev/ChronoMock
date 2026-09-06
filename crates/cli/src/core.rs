@@ -29,7 +29,7 @@ use crate::events::{
 };
 use crate::grammar::parse_shift;
 use crate::report::detect_runtime_warnings;
-use crate::wire::read_protocol_line;
+use crate::wire::{read_protocol_line, spawn_command_reader};
 pub(crate) fn core_mode() -> i32 {
     // Handshake first - before reading any command - so a client can verify `protocol` and
     // `bitness` before it sends `start` (docs/08 section 3). Emitting `ready` ahead of the read also
@@ -267,38 +267,7 @@ pub(crate) fn run_session(
 ) -> i32 {
     // A reader thread turns stdin lines into commands so the main thread can beat the
     // heartbeat and watch the target without blocking on read_line.
-    let (tx, rx) = mpsc::channel::<Command>();
-    std::thread::spawn(move || {
-        let mut reader = reader;
-        let mut line = String::new();
-        loop {
-            // `read_protocol_line` clears the buffer itself, and a line past the cap comes back as
-            // an error - which lands on the same branch as EOF, ending the command stream rather
-            // than resyncing onto the tail of a line nobody can vouch for.
-            match read_protocol_line(&mut reader, &mut line) {
-                Ok(0) | Err(_) => break, // EOF or error: dropping tx signals Disconnected
-                Ok(_) => match parse_command(line.trim_end()) {
-                    Ok(cmd) => {
-                        if tx.send(cmd).is_err() {
-                            break;
-                        }
-                    }
-                    // Say so, and keep going. An unreadable line used to vanish without a word:
-                    // the FIRST command (`start`) answers bad input properly, every one after it
-                    // did not, and the protocol has an `ack` - so a client that waits for one waits
-                    // for ever. `--json` is advertised for CI, which is exactly where such a client
-                    // gets written. No id, because the id lives in the line we could not read.
-                    Err(_) => emit(&Event::Error {
-                        v: PROTOCOL_VERSION,
-                        id: None,
-                        code: 1,
-                        key: "protocol.bad_command_ignored".into(),
-                        origin: "core".into(),
-                    }),
-                },
-            }
-        }
-    });
+    let rx = spawn_command_reader(reader);
 
     // Report any child that already joined during the guard window, before the first
     // heartbeat, so a fast child does not wait a whole second to appear. Seed the family
