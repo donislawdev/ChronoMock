@@ -40,7 +40,46 @@ use std::ptr::{addr_of, addr_of_mut, read_volatile, write_volatile};
 use std::sync::atomic::{fence, AtomicU32, Ordering};
 
 /// Named shared section for a session's control memory (per interactive session).
+///
+/// 🔴 This is the ONE source of the name, and until 2026-09-06 it was not: the constant sat here
+/// reading like a contract while the real name was a `w!` literal repeated in FOUR places across
+/// `chrono-hook` and `chrono-mech`, so changing it changed nothing. The dead-code guard in
+/// `crates/cli/tests/hygiene.rs` found it by noticing that nothing read it.
 pub const CTL_SECTION_NAME: &str = "Local\\ChronoCtl";
+
+/// The same name as a NUL-terminated UTF-16 string, which is what the Win32 object APIs take.
+///
+/// `w!` cannot serve here - it is a macro over a string LITERAL and cannot be handed a constant -
+/// and `chrono-ctl` deliberately has no dependencies at all (the layer guard enforces that), so
+/// the `windows` crate's `PCWSTR` cannot appear in this crate either. A `static` rather than a
+/// `const` on purpose: a `const` is inlined at every use, so taking a pointer to one hands the
+/// API a pointer into a temporary.
+pub static CTL_SECTION_NAME_W: [u16; 16] = ascii_utf16_z(CTL_SECTION_NAME);
+
+/// Cross-process lock guarding the creation of the section above.
+pub const CTL_LOCK_NAME: &str = concat!("Local", "\\", "ChronoCtl.lock");
+
+/// The lock name as NUL-terminated UTF-16.
+pub static CTL_LOCK_NAME_W: [u16; 21] = ascii_utf16_z(CTL_LOCK_NAME);
+
+/// ASCII string to a NUL-terminated UTF-16 array, at compile time.
+///
+/// ASCII only, and it refuses anything else: these are fixed object names this crate owns, not
+/// user input. `N` must be the length plus one for the terminator, and a mismatch is a COMPILE
+/// error rather than a truncated object name - which would silently open a different section and
+/// hand the target a clock nobody is driving.
+const fn ascii_utf16_z<const N: usize>(s: &str) -> [u16; N] {
+    let bytes = s.as_bytes();
+    assert!(bytes.len() + 1 == N, "N must be the string length plus the NUL terminator");
+    let mut out = [0u16; N];
+    let mut i = 0;
+    while i < bytes.len() {
+        assert!(bytes[i] < 128, "ascii_utf16_z takes ASCII only");
+        out[i] = bytes[i] as u16;
+        i += 1;
+    }
+    out
+}
 
 /// The last fake instant the wall channels will report: the final whole second Windows can still turn
 /// into a calendar date (`FileTimeToSystemTime` rejects anything past the signed range, which lands in
@@ -1145,6 +1184,23 @@ pub fn scale_timer_period_ms(period_ms: u32, m: i64) -> u32 {
 
 #[cfg(test)]
 mod tests {
+
+    /// The UTF-16 forms must be exactly the names, terminator included. `ascii_utf16_z` checks the
+    /// LENGTH at compile time, which catches an off-by-one in `N`, and this checks the CONTENT -
+    /// a wrong name would open a different kernel object and hand the target a clock nobody drives,
+    /// which no other test in this workspace would notice.
+    #[test]
+    fn the_utf16_object_names_match_the_strings_they_come_from() {
+        for (text, wide) in [
+            (CTL_SECTION_NAME, &CTL_SECTION_NAME_W[..]),
+            (CTL_LOCK_NAME, &CTL_LOCK_NAME_W[..]),
+        ] {
+            let expected: Vec<u16> = text.encode_utf16().chain(std::iter::once(0)).collect();
+            assert_eq!(wide, expected.as_slice(), "wide form of {text:?} drifted");
+            assert_eq!(*wide.last().expect("non-empty"), 0, "not NUL-terminated");
+        }
+    }
+
     use super::*;
 
     /// Boxed, not returned by value: the block now carries a `Cov` per slot (tens of kilobytes), and

@@ -421,3 +421,411 @@ fn the_allowed_dependency_table_covers_every_crate() {
          dependency direction: {missing:?}"
     );
 }
+
+// ---------------------------------------------------------------------------------------------
+// H2. Code nothing calls any more (Rust)
+// ---------------------------------------------------------------------------------------------
+//
+// Measured 2026-09-06, and it is why this exists at all: `clippy -D warnings` catches an unused
+// PRIVATE item and says nothing about a `pub` one - in a library crate AND in a binary crate. The
+// probe that proved it injected both at once, so the silence about `pub` could not be mistaken for
+// clippy failing to run. 472 of the workspace's definitions are private and already guarded; these
+// 278 were not guarded by anything.
+
+/// One definition the scan knows about.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Definition {
+    name: String,
+    file: String,
+    line: usize,
+}
+
+/// Where a mention came from. `Tests` is deliberately not a consumer: a definition whose only
+/// callers are its own tests is dead code with a test suite attached - it passes, it reads as
+/// maintained, and nothing in the program would notice if it vanished.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum Site {
+    /// Inside the definition at this index in the definition list.
+    Inside(usize),
+    Tests,
+    External,
+}
+
+/// The pure half of the dead-code scan: life SPREADS FROM ROOTS, to a fixed point.
+///
+/// 🔴 The direction matters and is the one place this improves on the file it was modelled on.
+/// Accumulating deadness from the leaves - start with everything alive, cross out what has no
+/// living mention - handles a CHAIN (a dead caller stops keeping its callee alive) but not a
+/// CYCLE: two functions that only name each other each see one live mention and both survive
+/// forever. Starting from the roots instead, a cycle nothing outside it reaches is correctly
+/// reported. Proven by `two_definitions_that_only_call_each_other_are_both_reported`, which was
+/// red until this was turned round.
+fn unreferenced(definitions: &[Definition], mentions: &BTreeMap<String, Vec<Site>>) -> Vec<usize> {
+    let mut alive: Vec<bool> = definitions
+        .iter()
+        .map(|d| {
+            mentions
+                .get(&d.name)
+                .is_some_and(|sites| sites.contains(&Site::External))
+        })
+        .collect();
+    loop {
+        let mut grew = false;
+        for (index, definition) in definitions.iter().enumerate() {
+            if alive[index] {
+                continue;
+            }
+            let reached = mentions.get(&definition.name).is_some_and(|sites| {
+                sites.iter().any(|site| match site {
+                    Site::External => true,
+                    // A test is not a consumer, and a definition naming itself is recursion.
+                    Site::Tests => false,
+                    Site::Inside(other) => *other != index && alive[*other],
+                })
+            });
+            if reached {
+                alive[index] = true;
+                grew = true;
+            }
+        }
+        if !grew {
+            return alive
+                .iter()
+                .enumerate()
+                .filter_map(|(i, a)| (!a).then_some(i))
+                .collect();
+        }
+    }
+}
+
+/// 🔴 Unreferenced ON PURPOSE, each with the reason it stays. A RATCHET: it may shrink and may not
+/// grow without somebody deciding that it should. A list that absorbs whatever the scan finds is
+/// not a guard, it is a place to put things.
+const KNOWN_UNUSED: &[(&str, &str)] = &[];
+
+fn production_rust(text: &str) -> &str {
+    let mut from = 0;
+    while let Some(hit) = text[from..].find("#[cfg(test)]") {
+        let at = from + hit;
+        if text[at + "#[cfg(test)]".len()..].trim_start().starts_with("mod tests") {
+            return &text[..at];
+        }
+        from = at + "#[cfg(test)]".len();
+    }
+    text
+}
+
+/// Top-level `pub` definitions of a Rust source, with the line each one starts on.
+///
+/// Trait implementations are skipped whole: the language calls `fmt`, `from` and `drop` for you, so
+/// nothing in the codebase names them. The cost is named rather than discovered later - a method in
+/// such a block that really did die is invisible here. Fewer false accusations, more misses, which
+/// is the right way round for a guard people have to believe.
+fn pub_definitions(rel_path: &str, text: &str) -> Vec<Definition> {
+    let mut out = Vec::new();
+    let mut in_trait_impl = false;
+    let mut depth = 0i32;
+    for (index, line) in text.lines().enumerate() {
+        if !in_trait_impl && line.starts_with("impl ") && line.contains(" for ") {
+            in_trait_impl = true;
+            depth = 0;
+        }
+        if in_trait_impl {
+            depth += line.matches('{').count() as i32 - line.matches('}').count() as i32;
+            if depth <= 0 && line.contains('}') {
+                in_trait_impl = false;
+            }
+            continue;
+        }
+        let Some(rest) = line.strip_prefix("pub ").or_else(|| {
+            line.strip_prefix("pub(crate) ")
+                .or_else(|| line.strip_prefix("pub(super) "))
+        }) else {
+            continue;
+        };
+        // An export the operating system calls by address: nothing in this repository names it.
+        if index > 0 && text.lines().nth(index - 1).is_some_and(|l| l.contains("no_mangle")) {
+            continue;
+        }
+        // 🔴 `const` is a MODIFIER only in `const fn`. Treating it as one unconditionally made the
+        // scan skip every `pub const NAME` in the workspace - including `CTL_SECTION_NAME`, the one
+        // finding the prototype had already produced. A scan that silently drops a whole kind of
+        // definition is the failure this file's canaries exist to catch, and this one slipped past
+        // them because the count stayed plausible.
+        let mut words: Vec<&str> = rest.split_whitespace().collect();
+        while let Some(first) = words.first().copied() {
+            let is_modifier = matches!(first, "unsafe" | "async" | "default" | "extern")
+                || first.starts_with('"')
+                || (first == "const" && words.get(1) == Some(&"fn"));
+            if is_modifier {
+                words.remove(0);
+            } else {
+                break;
+            }
+        }
+        let Some(kind) = words.first().copied() else { continue };
+        let mut words = words.into_iter().skip(1);
+        if !["fn", "struct", "enum", "trait", "union", "type", "const", "static"].contains(&kind) {
+            continue;
+        }
+        let Some(raw) = words.next() else { continue };
+        let name: String = raw
+            .chars()
+            .take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
+            .collect();
+        if name.is_empty() || name.starts_with('_') || name == "main" {
+            continue;
+        }
+        out.push(Definition {
+            name,
+            file: rel_path.to_string(),
+            line: index + 1,
+        });
+    }
+    out
+}
+
+fn is_identifier_char(c: char) -> bool {
+    c.is_ascii_alphanumeric() || c == '_'
+}
+
+/// Every identifier on a line, as whole words.
+///
+/// 🔴 EVERY word counts, including one inside a comment or a string, and that is a deliberate trade
+/// rather than laziness: prose that still names a symbol is a sign somebody thinks it is alive, and
+/// a guard that accuses living code is a guard people learn to ignore. The price is the other
+/// direction - a definition whose name is an ordinary English word survives on prose alone - so this
+/// catches an abandoned helper with a distinctive name and is not a substitute for reading.
+fn identifiers(line: &str) -> Vec<&str> {
+    let mut out = Vec::new();
+    let mut start = None;
+    for (i, c) in line.char_indices() {
+        match (is_identifier_char(c), start) {
+            (true, None) => start = Some(i),
+            (false, Some(s)) => {
+                out.push(&line[s..i]);
+                start = None;
+            }
+            _ => {}
+        }
+    }
+    if let Some(s) = start {
+        out.push(&line[s..]);
+    }
+    out
+}
+
+/// Collect the whole workspace: definitions, and where every name is mentioned from.
+fn collect_rust() -> (Vec<Definition>, BTreeMap<String, Vec<Site>>, usize) {
+    let root = repo_root();
+    let mut definitions = Vec::new();
+    let mut sources = Vec::new();
+    for path in tracked_files(&["rs"]) {
+        let r = rel(&path);
+        let Ok(text) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+        let is_production_source = r.starts_with("crates/") && r.contains("/src/");
+        if is_production_source {
+            definitions.extend(pub_definitions(&r, production_rust(&text)));
+        }
+        sources.push((r, text, is_production_source));
+    }
+    // Non-Rust consumers: the GUI mirrors two Rust constants by name, the workflows name binaries,
+    // the packaging script names files.
+    for path in tracked_files(&["cs", "ps1", "yml", "xaml", "toml", "json"]) {
+        if is_this_file(&path) {
+            continue;
+        }
+        if let Ok(text) = std::fs::read_to_string(&path) {
+            sources.push((rel(&path), text, false));
+        }
+    }
+    let _ = &root;
+
+    // Which item encloses a line: the last TOP-LEVEL thing that starts at or before it.
+    //
+    // 🔴 The boundaries come from every top-level item, not only the tracked `pub` ones, and that is
+    // a correctness fix rather than a refinement. With only `pub` boundaries, a mention inside a
+    // plain `impl` block was attributed to whatever `pub fn` happened to precede it - so
+    // `project_fake_ft`, called from a method eleven lines below its own definition, looked like it
+    // was calling ITSELF and was reported dead. A boundary that maps to no tracked definition means
+    // a production consumer this scan does not model, which counts as life: the safe direction.
+    let mut boundaries: BTreeMap<&str, Vec<(usize, Option<usize>)>> = BTreeMap::new();
+    for (r, text, is_production_source) in &sources {
+        if !is_production_source {
+            continue;
+        }
+        let entry = boundaries.entry(r.as_str()).or_default();
+        for (index, line) in text.lines().enumerate() {
+            if line.starts_with(|c: char| c.is_ascii_lowercase()) {
+                entry.push((index + 1, None));
+            }
+        }
+    }
+    for (index, definition) in definitions.iter().enumerate() {
+        boundaries
+            .entry(definition.file.as_str())
+            .or_default()
+            .push((definition.line, Some(index)));
+    }
+    for spans in boundaries.values_mut() {
+        // A tracked definition and a bare boundary can land on the same line - the definition wins.
+        spans.sort_unstable_by_key(|(line, def)| (*line, def.is_none()));
+        spans.dedup_by_key(|(line, _)| *line);
+    }
+
+    let names: std::collections::BTreeSet<&str> =
+        definitions.iter().map(|d| d.name.as_str()).collect();
+    let mut mentions: BTreeMap<String, Vec<Site>> = BTreeMap::new();
+    let mut files_read = 0;
+    for (r, text, is_production_source) in &sources {
+        files_read += 1;
+        let test_region = if *is_production_source {
+            production_rust(text).len()
+        } else {
+            usize::MAX
+        };
+        // A test tree is read but its mentions are marked, never counted as life.
+        let whole_file_is_tests = r.contains("/tests/") || r.contains(".Tests/");
+        let mut offset = 0usize;
+        for (index, line) in text.lines().enumerate() {
+            let in_tests = whole_file_is_tests || offset > test_region;
+            offset += line.len() + 1;
+            for word in identifiers(line) {
+                if !names.contains(word) {
+                    continue;
+                }
+                let site = if in_tests {
+                    Site::Tests
+                } else if *is_production_source {
+                    match boundaries.get(r.as_str()) {
+                        Some(spans) => spans
+                            .iter()
+                            .rev()
+                            .find(|(start, _)| *start <= index + 1)
+                            .and_then(|(_, i)| *i)
+                            .map_or(Site::External, Site::Inside),
+                        None => Site::External,
+                    }
+                } else {
+                    Site::External
+                };
+                mentions.entry(word.to_string()).or_default().push(site);
+            }
+        }
+    }
+    (definitions, mentions, files_read)
+}
+
+/// Nothing in the workspace is left over from a change that moved on without it.
+///
+/// A helper written in one session and superseded in the next keeps compiling, keeps passing, keeps
+/// being read as something that matters, and the only thing that notices is a scan.
+#[test]
+fn no_public_definition_in_the_workspace_is_unreferenced() {
+    let (definitions, mentions, files) = collect_rust();
+    let dead = unreferenced(&definitions, &mentions);
+
+    // The canary: a scan that read nothing finds no dead code and looks exactly like one that works.
+    assert!(
+        files >= 60 && definitions.len() >= 150,
+        "the dead-code scan read {files} files and found {} definitions - it is reading the wrong \
+         place, which is worse than not reading at all",
+        definitions.len()
+    );
+
+    let known: Vec<&str> = KNOWN_UNUSED.iter().map(|(n, _)| *n).collect();
+    let unexpected: Vec<String> = dead
+        .iter()
+        .map(|i| &definitions[*i])
+        .filter(|d| !known.contains(&d.name.as_str()))
+        .map(|d| format!("{} ({}:{})", d.name, d.file, d.line))
+        .collect();
+    assert!(
+        unexpected.is_empty(),
+        "these public definitions are named from nowhere that is alive - delete one, or add it to \
+         KNOWN_UNUSED with the reason it stays: {unexpected:?}"
+    );
+}
+
+/// A name that got a caller back must LEAVE the list, or the list rots.
+///
+/// Without this, an exception written once outlives its reason and the next session reads it as a
+/// rule. The cheap direction is free, the other one is a decision.
+#[test]
+fn the_known_unused_list_only_ever_shrinks() {
+    let (definitions, mentions, _files) = collect_rust();
+    let dead: Vec<&str> = unreferenced(&definitions, &mentions)
+        .iter()
+        .map(|i| definitions[*i].name.as_str())
+        .collect();
+    let revived: Vec<&str> = KNOWN_UNUSED
+        .iter()
+        .map(|(n, _)| *n)
+        .filter(|n| !dead.contains(n))
+        .collect();
+    assert!(
+        revived.is_empty(),
+        "these names are used again, so they must come out of KNOWN_UNUSED: {revived:?}"
+    );
+}
+
+// --- the guard for the guard ------------------------------------------------------------------
+//
+// The scan's own correctness, on synthetic input rather than on a real symbol. The file it was
+// modelled on uses a live symbol as the probe, which works only for as long as that symbol exists.
+
+fn fixture(name: &str, line: usize) -> Definition {
+    Definition {
+        name: name.to_string(),
+        file: "fixture.rs".to_string(),
+        line,
+    }
+}
+
+#[test]
+fn a_definition_only_its_tests_name_is_reported_unused() {
+    let defs = vec![fixture("only_tested", 1)];
+    let mentions = BTreeMap::from([("only_tested".to_string(), vec![Site::Tests, Site::Tests])]);
+    assert_eq!(
+        unreferenced(&defs, &mentions),
+        vec![0],
+        "a test mention is being counted as a consumer again"
+    );
+}
+
+#[test]
+fn a_definition_named_from_a_living_site_is_left_alone() {
+    let defs = vec![fixture("used", 1), fixture("caller", 10)];
+    let mentions = BTreeMap::from([
+        ("used".to_string(), vec![Site::Inside(1)]),
+        ("caller".to_string(), vec![Site::External]),
+    ]);
+    assert!(unreferenced(&defs, &mentions).is_empty());
+}
+
+#[test]
+fn two_definitions_that_only_call_each_other_are_both_reported() {
+    let defs = vec![fixture("a", 1), fixture("b", 10)];
+    let mentions = BTreeMap::from([
+        ("a".to_string(), vec![Site::Inside(1)]),
+        ("b".to_string(), vec![Site::Inside(0)]),
+    ]);
+    assert_eq!(
+        unreferenced(&defs, &mentions),
+        vec![0, 1],
+        "a dead caller is keeping its callee alive - the scan is not reaching a fixed point"
+    );
+}
+
+#[test]
+fn a_definition_that_only_names_itself_is_reported() {
+    let defs = vec![fixture("recursive", 1)];
+    let mentions = BTreeMap::from([("recursive".to_string(), vec![Site::Inside(0)])]);
+    assert_eq!(
+        unreferenced(&defs, &mentions),
+        vec![0],
+        "recursion is being counted as life"
+    );
+}

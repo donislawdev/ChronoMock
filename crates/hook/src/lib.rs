@@ -73,7 +73,7 @@ use chrono_ctl::{
     IDX_TPTIMER, IDX_TPTIMEREX, IDX_NTCUP, IDX_CONNECT, IDX_QPC,
 };
 use minhook::MinHook;
-use windows::core::{s, w, PCSTR};
+use windows::core::{s, PCSTR, PCWSTR};
 use windows::Win32::Foundation::{
     CloseHandle, SetLastError, ERROR_INVALID_PARAMETER, FILETIME, HANDLE, HMODULE, SYSTEMTIME,
     WAIT_FAILED,
@@ -1732,7 +1732,7 @@ unsafe fn make_hook<T: Copy>(
 /// multi-threaded process without moving hook-enabling off the loader lock (the watcher thread is
 /// created OUTSIDE DllMain, in `ensure_watcher`, for exactly this reason).
 unsafe fn install() -> Result<(), String> { unsafe {
-    let hmap = OpenFileMappingW(FILE_MAP_ALL_ACCESS.0, false, w!("Local\\ChronoCtl"))
+    let hmap = OpenFileMappingW(FILE_MAP_ALL_ACCESS.0, false, PCWSTR(chrono_ctl::CTL_SECTION_NAME_W.as_ptr()))
         .map_err(|e| format!("OpenFileMappingW: {e:?}"))?;
     let view = MapViewOfFile(hmap, FILE_MAP_ALL_ACCESS, 0, 0, chrono_ctl::ctl_size());
     if view.Value.is_null() {

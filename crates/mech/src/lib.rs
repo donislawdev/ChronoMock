@@ -488,7 +488,7 @@ unsafe fn read_active_core_pid() -> u32 { unsafe {
     // Read access only. This function reads a single u32 and has never written anything, so asking
     // for write was a right we could not use - and the block it opens belongs to a session that is
     // still running.
-    let Ok(hmap) = OpenFileMappingW(FILE_MAP_READ.0, false, windows::core::w!("Local\\ChronoCtl"))
+    let Ok(hmap) = OpenFileMappingW(FILE_MAP_READ.0, false, windows::core::PCWSTR(chrono_ctl::CTL_SECTION_NAME_W.as_ptr()))
     else {
         return 0;
     };
@@ -518,7 +518,7 @@ unsafe fn read_active_core_pid() -> u32 { unsafe {
 /// # Safety
 /// Calls the Win32 synchronization APIs.
 unsafe fn take_session_lock() -> Result<SessionLock, PrepareError> { unsafe {
-    let h = CreateMutexW(None, false, windows::core::w!("Local\\ChronoCtl.lock"))
+    let h = CreateMutexW(None, false, windows::core::PCWSTR(chrono_ctl::CTL_LOCK_NAME_W.as_ptr()))
         .map_err(|e| PrepareError::Control(format!("CreateMutexW: {e:?}")))?;
     let lock = SessionLock(h);
     if lock_is_ours(WaitForSingleObject(h, 0)) {
@@ -737,7 +737,7 @@ pub fn prepare(spec: &SessionSpec, target: &Target, hook_dll: &Path) -> Result<P
             PAGE_READWRITE,
             0,
             ctl_size() as u32,
-            windows::core::w!("Local\\ChronoCtl"),
+            windows::core::PCWSTR(chrono_ctl::CTL_SECTION_NAME_W.as_ptr()),
         )
         .map_err(|e| PrepareError::Control(format!("CreateFileMappingW: {e:?}")))?;
         // The section name is fixed, so it may survive a prior session. GetLastError right after the
