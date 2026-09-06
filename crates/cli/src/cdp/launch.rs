@@ -111,13 +111,27 @@ impl Drop for LaunchedChromium {
     }
 }
 
+/// How long to wait for a launched Chromium to publish its debug port. Named so the client-side
+/// watchdog can be checked against it rather than guessed at (see `RustTimeoutMirrorTests`).
+pub const PORT_WAIT_SECS: u64 = 15;
+
 /// Launch a Chromium/Electron target with an isolated profile and an auto-assigned debug port, then
 /// wait for its `DevToolsActivePort` file and return the resolved port. The isolated `--user-data-dir`
 /// sidesteps single-instance apps (a fresh profile is a new instance) and never touches the user's
 /// real profile; `--remote-debugging-port=0` lets Chromium choose a free port (no collision) and
 /// record it in the file. Fails loudly if the port never appears (remote debugging disabled, or not
 /// actually a Chromium app) rather than pretending the session started.
-pub fn launch_chromium(target: &str, args: &[String]) -> io::Result<LaunchedChromium> {
+///
+/// `on_wait` is called on every pass of the wait loop (about every 150 ms). It exists because this
+/// wait is the longest stretch of silence in a CDP session: the caller has accepted `start` and can
+/// emit nothing until the port appears, so a client watching for liveness cannot tell a browser
+/// that is still unpacking from a core that has died. Beating the session heartbeat from here
+/// removes that race without shortening the wait, which is the part a slow Electron needs (R3-3).
+pub fn launch_chromium(
+    target: &str,
+    args: &[String],
+    mut on_wait: impl FnMut(),
+) -> io::Result<LaunchedChromium> {
     // A user-supplied --user-data-dir would win over ours (Chromium takes the last one), and the
     // session would then run on the REAL profile of a real browser - the one thing the isolated
     // profile exists to prevent, and something the tester was told in writing does not happen
@@ -156,7 +170,7 @@ pub fn launch_chromium(target: &str, args: &[String]) -> io::Result<LaunchedChro
     };
 
     let port_file = user_data_dir.join("DevToolsActivePort");
-    let mut deadline = Instant::now() + Duration::from_secs(15);
+    let mut deadline = Instant::now() + Duration::from_secs(PORT_WAIT_SECS);
     // Set once the process we spawned has exited, so its code can go into the error message.
     let mut child_exit: Option<String> = None;
     loop {
@@ -193,6 +207,7 @@ pub fn launch_chromium(target: &str, args: &[String]) -> io::Result<LaunchedChro
                 ),
             ));
         }
+        on_wait();
         std::thread::sleep(Duration::from_millis(150));
     }
 }
@@ -398,14 +413,14 @@ mod tests {
     #[test]
     fn a_user_supplied_profile_or_port_flag_is_refused_not_silently_overridden() {
         for arg in ["--user-data-dir=/home/me/real", "--remote-debugging-port=9222"] {
-            match launch_chromium("no-such-app.exe", &[arg.to_string()]) {
+            match launch_chromium("no-such-app.exe", &[arg.to_string()], || {}) {
                 Err(e) => assert_eq!(e.kind(), io::ErrorKind::InvalidInput, "for {arg}"),
                 Ok(_) => panic!("a colliding flag must be refused: {arg}"),
             }
         }
         // An ordinary argument still passes the check (this one then fails to launch, which is a
         // different error entirely - the point is that it got that far).
-        match launch_chromium("no-such-app.exe", &["--enable-logging".to_string()]) {
+        match launch_chromium("no-such-app.exe", &["--enable-logging".to_string()], || {}) {
             Err(e) => assert_ne!(e.kind(), io::ErrorKind::InvalidInput),
             Ok(_) => panic!("a missing target cannot launch"),
         }

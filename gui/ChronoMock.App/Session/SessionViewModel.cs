@@ -30,7 +30,7 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     /// (flow/frozen/xN), so 15 s is 15 missed heartbeats - comfortably above the noise, and above the
     /// worst-case latency to the FIRST event (the core's prepare: launch + inject, itself bounded by
     /// INJECT_TIMEOUT), so a slow start never trips it.</summary>
-    private static readonly TimeSpan IdleTimeout = TimeSpan.FromSeconds(15);
+    internal static readonly TimeSpan IdleTimeout = TimeSpan.FromSeconds(15);
 
     /// <summary>The start command uses id 1 (see <see cref="SessionPlan"/>); in-flight commands (jump,
     /// set_multiplier) take ids from here up. An error's id tells the two apart (RELEASE-001): an id at or

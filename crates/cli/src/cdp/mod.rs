@@ -31,6 +31,17 @@ pub enum Msg {
 
 /// A live CDP session over one WebSocket. Commands are sent with a monotonic id; events that arrive
 /// while waiting for a reply are queued so a later event loop can drain them (`next`).
+/// How long to wait for a reply to one CDP command.
+///
+/// It must stay BELOW the client's idle watchdog, and that is the whole point of naming it. The
+/// bound was added so a command whose reply never comes could not park the session loop for ever -
+/// the comment at the deadline says, in as many words, that the risk being avoided is "the GUI's
+/// 15 s watchdog calling a healthy core unresponsive". The value chosen was 20 s, which is longer
+/// than that watchdog, so the guard did not close by five seconds (R3-3). A stuck target now costs
+/// at most ten seconds of silence, and `RustTimeoutMirrorTests` fails the build if the watchdog is
+/// ever moved below this.
+pub const CALL_DEADLINE_SECS: u64 = 10;
+
 pub struct CdpClient {
     ws: WsClient,
     next_id: u64,
@@ -146,7 +157,7 @@ impl CdpClient {
         self.ws.send_text(&Value::Object(req).to_string())?;
 
         // A reply should come promptly; poll until it does, bounded so a hung target cannot block us.
-        let deadline = Instant::now() + Duration::from_secs(20);
+        let deadline = Instant::now() + Duration::from_secs(CALL_DEADLINE_SECS);
         loop {
             // Checked every pass, not only when the socket goes quiet. A target that keeps pushing
             // events - a page logging in a loop, a worker chattering - would otherwise never let the

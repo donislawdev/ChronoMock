@@ -76,6 +76,12 @@
               the tool stays attached until the target exits.</td>
           </tr>
           <tr>
+            <td><code>--timeout &lt;s&gt;</code></td>
+            <td>Give up after this many seconds and exit 6, for a pipeline that must not hang.
+              Independently of this flag, a core that says nothing for 15 seconds is stopped and
+              also exits 6 - in both cases the run is cut short, so it carries no verdict.</td>
+          </tr>
+          <tr>
             <td><code>--args "..."</code></td>
             <td>Arguments for the target, as one string, split by the same rule Windows uses - so
               an argument containing spaces survives. For a Chromium target,
@@ -152,6 +158,7 @@
           <tr><td>2</td><td>the target could not be launched or injected</td></tr>
           <tr><td>3</td><td>internal error - the engine could not start or hit an unexpected state</td></tr>
           <tr><td>5</td><td>the operation is not built in this release - for example a preset whose moment needs a calendar, which <code>run</code> cannot load yet. Deliberately distinct from a usage error: you asked for something that does not exist yet, not for something wrong</td></tr>
+          <tr><td>6</td><td>the run was cut short - <code>--timeout</code> expired, or the engine stopped answering for 15 seconds and was stopped. This is not a verdict: the session was interrupted, so it proves nothing about the target either way</td></tr>
         </tbody>
       </table>
     </div>

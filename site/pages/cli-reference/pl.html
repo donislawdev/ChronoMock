@@ -75,6 +75,12 @@
               Bez tej flagi narzędzie zostaje przy celu do jego wyjścia.</td>
           </tr>
           <tr>
+            <td><code>--timeout &lt;s&gt;</code></td>
+            <td>Poddaje się po tylu sekundach i kończy kodem 6, dla potoku, który nie może wisieć.
+              Niezależnie od tej flagi rdzeń, który milczy przez 15 sekund, zostaje zatrzymany
+              i też daje kod 6 - w obu przypadkach przebieg został ucięty, więc nie niesie werdyktu.</td>
+          </tr>
+          <tr>
             <td><code>--args "..."</code></td>
             <td>Argumenty dla celu, jako jeden łańcuch, dzielony tą samą regułą, której używa
               Windows - więc argument ze spacją przeżywa podróż. Dla celu Chromium
@@ -152,6 +158,7 @@
           <tr><td>2</td><td>nie udało się uruchomić celu albo wstrzyknąć do niego biblioteki</td></tr>
           <tr><td>3</td><td>błąd wewnętrzny - rdzeń nie wystartował albo trafił na nieoczekiwany stan</td></tr>
           <tr><td>5</td><td>operacja niezbudowana w tym wydaniu - na przykład preset, którego moment wymaga kalendarza, a <code>run</code> nie umie go jeszcze wczytać. Celowo odróżnialne od błędu użycia: poprosiłeś o coś, czego jeszcze nie ma, a nie o coś złego</td></tr>
+          <tr><td>6</td><td>przebieg został ucięty - minął <code>--timeout</code> albo rdzeń przestał odpowiadać na 15 sekund i został zatrzymany. To nie jest werdykt: sesję przerwano, więc nie dowodzi ona niczego o celu w żadną stronę</td></tr>
         </tbody>
       </table>
     </div>

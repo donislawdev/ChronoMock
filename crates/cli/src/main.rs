@@ -57,11 +57,20 @@ fn main() {
     std::process::exit(code);
 }
 
+/// How long `chrono run` waits for ANY event from the core before calling it hung.
+///
+/// Deliberately the same 15 s the GUI uses (`SessionViewModel.IdleTimeout`), because it is the same
+/// core with the same internal deadlines behind it - and those deadlines are checked against this
+/// number by `RustTimeoutMirrorTests`. The core beats `state` about once a real second in every
+/// mode, so 15 s is fifteen missed heartbeats.
+const DRIVER_IDLE_TIMEOUT_SECS: u64 = 15;
+
 fn print_usage() {
-    eprintln!("usage: chrono run <target> [--at <local-moment>] [--preset <id>] [--param id=value]... [--zone <+HH:MM>] [--mode <flow|frozen|xN>] [--scale-duration] [--scale-qpc] [--ticks N] [--set-after T:M] [--jump-after T:moment] [--args \"...\"] [--report <path>] [--force] [--json]");
+    eprintln!("usage: chrono run <target> [--at <local-moment>] [--preset <id>] [--param id=value]... [--zone <+HH:MM>] [--mode <flow|frozen|xN>] [--scale-duration] [--scale-qpc] [--ticks N] [--timeout <s>] [--set-after T:M] [--jump-after T:moment] [--args \"...\"] [--report <path>] [--force] [--json]");
     eprintln!("       without --at (or --preset) the session clock starts at the real current time, so `--mode xN` alone just runs the target faster");
     eprintln!("       --scale-qpc also scales the high-resolution counter, which is where Python 3.13+ monotonic, .NET Stopwatch and Java nanoTime read elapsed time");
     eprintln!("       --force runs on even when the opening verdict says the substitution did not take effect (the target is stopped otherwise)");
+    eprintln!("       --timeout gives up after N seconds and exits 6, for a pipeline that must not hang; a core that stops answering for 15 s exits 6 on its own");
     eprintln!("       (--preset supplies the moment and mode from presets/<id>.json, exclusive of --at/--mode/--scale-duration; --param fills its parameters, a trial start_date defaults to the target's file date)");
     print_calc_usage();
 }
@@ -143,7 +152,7 @@ fn cdp_launch_probe(argv: &[String]) -> i32 {
     }
     println!("chromium target detected: {target}");
 
-    let launched = match cdp::launch_chromium(target, &[]) {
+    let launched = match cdp::launch_chromium(target, &[], || {}) {
         Ok(l) => l,
         Err(e) => {
             eprintln!("chrono: {e}");
@@ -199,7 +208,7 @@ fn cdp_shim_probe(argv: &[String]) -> i32 {
         return 1;
     }
 
-    let launched = match cdp::launch_chromium(target, &[]) {
+    let launched = match cdp::launch_chromium(target, &[], || {}) {
         Ok(l) => l,
         Err(e) => {
             eprintln!("chrono: {e}");
@@ -325,7 +334,7 @@ fn cdp_date_probe(argv: &[String]) -> i32 {
     let fake = moment_epoch_ms(iso, Some(0)).unwrap_or(real); // the probe treats the moment as UTC
     let shim = cdp::build_shim(fake, real, 1); // flow: a wall offset, no acceleration
 
-    let launched = match cdp::launch_chromium(target, &[]) {
+    let launched = match cdp::launch_chromium(target, &[], || {}) {
         Ok(l) => l,
         Err(e) => {
             eprintln!("chrono: {e}");
@@ -544,6 +553,10 @@ struct RunArgs {
     /// Preset parameter values from `--param id=value` (docs/04 4.2). Only meaningful with --preset.
     /// In run, a `target_file_creation` hint also resolves from the target's file date.
     params: HashMap<String, String>,
+    /// Give up after this many seconds of wall time, whatever the session is doing (`--timeout`).
+    /// None = no ceiling, which stays the default because the normal way to bound a run is
+    /// `--ticks`, and a session driving a real app has no business being cut off by surprise.
+    timeout_secs: Option<u64>,
 }
 
 /// Parse `--mode` into a wire mode token and optional multiplier.
@@ -622,6 +635,7 @@ fn parse_run_args(argv: &[String]) -> Result<RunArgs, String> {
     let mut scale_qpc = false;
     let mut force = false;
     let mut ticks: u64 = 0;
+    let mut timeout_secs: Option<u64> = None;
     let mut set_after: Option<(u64, i64)> = None;
     let mut jump_after: Option<(u64, String)> = None;
     let mut json = false;
@@ -690,6 +704,15 @@ fn parse_run_args(argv: &[String]) -> Result<RunArgs, String> {
                 i += 1;
                 let raw = argv.get(i).ok_or("--ticks needs a value")?;
                 ticks = raw.parse().map_err(|_| format!("bad --ticks value '{raw}'"))?;
+            }
+            "--timeout" => {
+                i += 1;
+                let raw = argv.get(i).ok_or("--timeout needs a value in seconds")?;
+                let secs: u64 = raw.parse().map_err(|_| format!("bad --timeout value '{raw}'"))?;
+                if secs == 0 {
+                    return Err("--timeout must be at least 1 second".into());
+                }
+                timeout_secs = Some(secs);
             }
             "--set-after" => {
                 i += 1;
@@ -763,6 +786,7 @@ fn parse_run_args(argv: &[String]) -> Result<RunArgs, String> {
         scale_qpc,
         force,
         ticks,
+        timeout_secs,
         set_after,
         jump_after,
         report,
@@ -1105,16 +1129,78 @@ fn driver_run(argv: &[String]) -> i32 {
     let mut residue: Vec<String> = Vec::new();
     let mut states_seen: u64 = 0;
     let mut end_sent = false;
+    // Why the read runs on its own thread rather than in this loop: the driver has to be able to
+    // give up. Reading straight from the pipe here had no time limit and no liveness check, so a
+    // core that stopped answering hung `chrono run` with nothing in the log to say why - on the
+    // surface the README points at CI, where the only thing that eventually notices is the runner's
+    // own job timeout (R3-5). The GUI has had an idle watchdog since M-10; this is the same idea on
+    // the other client, and the two now use the same 15 s.
+    //
+    // The second reason is measured, not assumed: EOF on the core's stdout does NOT arrive when the
+    // core dies, because the TARGET inherits the write end of that pipe and holds it open. "Read
+    // until EOF" is really "read until the tested application exits", which is no liveness signal
+    // for the core at all.
+    let mut timed_out: Option<&'static str> = None;
     if let Some(stdout) = child.stdout.take() {
-        let mut reader = BufReader::new(stdout);
-        // Not `reader.lines()`: that grows one line without limit, and this is the driver reading a
-        // core it launched. A line past the cap ends the stream like a read error would.
-        let mut raw = String::new();
-        loop {
-            match read_protocol_line(&mut reader, &mut raw) {
-                Ok(0) | Err(_) => break,
-                Ok(_) => {}
+        let (line_tx, line_rx) = mpsc::channel::<String>();
+        std::thread::spawn(move || {
+            let mut reader = BufReader::new(stdout);
+            // Not `reader.lines()`: that grows one line without limit, and this is the driver reading
+            // a core it launched. A line past the cap ends the stream like a read error would.
+            let mut raw = String::new();
+            loop {
+                match read_protocol_line(&mut reader, &mut raw) {
+                    Ok(0) | Err(_) => break,
+                    Ok(_) => {}
+                }
+                if line_tx.send(std::mem::take(&mut raw)).is_err() {
+                    break;
+                }
             }
+        });
+
+        let started = Instant::now();
+        loop {
+            // Whether the CORE is still alive, asked before every wait - because a line arriving on
+            // this pipe does NOT mean it is. The target inherits the write end of the core's stdout
+            // and writes its own output there: measured with `ping` as the target, whose once-a-
+            // second reply line is 49 bytes, the idle timer was reset for as long as the target ran,
+            // so a core killed 45 s earlier still looked alive. EOF is no signal either, for the
+            // same reason - the pipe stays open while the target holds it (R3-5).
+            //
+            // Once the core is gone the only thing left to do is drain what it already said, so the
+            // wait shrinks to a moment: anything queued still arrives (a queued line returns
+            // immediately), and the loop then ends as a normal end-of-session, not a timeout.
+            let core_gone = matches!(child.try_wait(), Ok(Some(_)));
+            // The idle limit, or whatever is left of `--timeout` when that is the nearer of the two,
+            // so a ceiling is honoured to the second rather than to the end of the next idle window.
+            let idle_budget = Duration::from_secs(DRIVER_IDLE_TIMEOUT_SECS);
+            let budget = if core_gone {
+                Duration::from_millis(200)
+            } else {
+                match ra.timeout_secs {
+                    Some(secs) => Duration::from_secs(secs)
+                        .checked_sub(started.elapsed())
+                        .map_or(Duration::ZERO, |left| left.min(idle_budget)),
+                    None => idle_budget,
+                }
+            };
+            let raw = match line_rx.recv_timeout(budget) {
+                Ok(line) => line,
+                Err(mpsc::RecvTimeoutError::Disconnected) => break,
+                Err(mpsc::RecvTimeoutError::Timeout) if core_gone => break,
+                Err(mpsc::RecvTimeoutError::Timeout) => {
+                    // Which limit ran out decides only what we SAY. Both end the same way - the core
+                    // is killed and the exit code is 6 - because a driver that printed a verdict it
+                    // never received would be the tool inventing evidence (untouchable rule 4).
+                    timed_out = Some(match ra.timeout_secs {
+                        Some(secs) if started.elapsed() >= Duration::from_secs(secs) => "timeout",
+                        _ => "idle",
+                    });
+                    let _ = child.kill();
+                    break;
+                }
+            };
             // `lines()` strips the terminator and this stands in its place, so every reader below
             // sees exactly what it saw before.
             let line = raw.strip_suffix('\n').unwrap_or(&raw);
@@ -1263,11 +1349,42 @@ fn driver_run(argv: &[String]) -> i32 {
         print!("{}", render_report(&report));
     }
 
+    // A session that timed out has no verdict to report, and must not borrow one: the core was
+    // killed mid-flight, so its exit code says how it died, not what it found (untouchable rule 4).
+    if let Some(which) = timed_out {
+        match which {
+            "timeout" => eprintln!(
+                "chrono: gave up after the --timeout of {}s - the core was stopped, so this run has no verdict",
+                ra.timeout_secs.unwrap_or(0)
+            ),
+            _ => eprintln!(
+                "chrono: the core sent nothing for {DRIVER_IDLE_TIMEOUT_SECS}s and was stopped - this run has no verdict"
+            ),
+        }
+        return 6;
+    }
+
     // The tool's exit code is the session verdict, carried by the core's exit code
     // (docs/08 section 8).
-    match status {
-        Ok(s) => s.code().unwrap_or(3),
-        Err(_) => 3,
+    let code = driver_exit_code(status.ok().and_then(|s| s.code()));
+    if code == 3 {
+        eprintln!("chrono: the core ended without a verdict - this run proves nothing about the target");
+    }
+    code
+}
+
+/// Map the core's exit code to the tool's.
+///
+/// Normally it passes straight through: the core's exit code IS the session verdict (docs/08
+/// section 8). What this adds is the case where it is not a verdict at all - a core killed from
+/// outside comes back as the operating system's status, which reached the caller unchanged and
+/// unexplained (measured: killing the core mid-session made `chrono run` exit -1). A number no
+/// table describes is worse than an error, because a pipeline branches on it, so it is reported as
+/// the internal-error code with a line saying what happened (rules 4 and 6).
+fn driver_exit_code(core_code: Option<i32>) -> i32 {
+    match core_code {
+        Some(c) if matches!(c, 0 | 1 | 2 | 3 | 4 | 5 | 6 | 10 | 11 | 12) => c,
+        _ => 3,
     }
 }
 
@@ -3470,7 +3587,17 @@ fn cdp_session(target: TargetSpec, time: TimeSpec, reader: BufReader<std::io::St
 
     // Launch under our own isolated profile + debug port, then attach. Any failure is an honest error
     // event plus exit 2 (could not launch/attach), never a faked verdict.
-    let mut launched = match cdp::launch_chromium(&target.path, &target.args) {
+    // The heartbeat starts here, not after the attach. Everything between accepting `start` and the
+    // first `state` used to be silence, bounded by the port wait (15 s) - and the client's idle
+    // watchdog is 15 s, so a slow Electron and a dead core looked the same to it. Measured on
+    // Pomotroid the gap is about 1.6 s, so this is about the tail, not the common case (R3-3).
+    let mut last_beat = std::time::Instant::now();
+    let mut launched = match cdp::launch_chromium(&target.path, &target.args, || {
+        if last_beat.elapsed() >= std::time::Duration::from_secs(1) {
+            last_beat = std::time::Instant::now();
+            emit(&clock.state_event_at(now_epoch_ms()));
+        }
+    }) {
         Ok(l) => l,
         Err(e) => {
             emit(&Event::Error {
@@ -3565,6 +3692,8 @@ fn cdp_session(target: TargetSpec, time: TimeSpec, reader: BufReader<std::io::St
     let mut counts: std::collections::BTreeMap<(u32, String), u64> = std::collections::BTreeMap::new();
     let mut failed = 0usize;
     let mut next_index = 0u32;
+    // targetId -> context index, so a re-attached context keeps the identity it already had.
+    let mut index_by_target: HashMap<String, u32> = HashMap::new();
     let mut app_closed = false;
     let heartbeat = Duration::from_secs(1);
     let mut deadline = Instant::now() + heartbeat;
@@ -3640,7 +3769,19 @@ fn cdp_session(target: TargetSpec, time: TimeSpec, reader: BufReader<std::io::St
                 let ty = params["targetInfo"]["type"].as_str().unwrap_or("").to_string();
                 let tid = params["targetInfo"]["targetId"].as_str().unwrap_or("").to_string();
                 if !sid.is_empty() && cdp::is_shimmable(&ty) {
-                    next_index += 1;
+                    // The context index is keyed by the CDP targetId, which Chromium keeps across
+                    // re-attaches, not by a counter that ticks once per attach. A worker that is
+                    // recycled - an ordinary pattern in Electron apps, and the very shape the CDP
+                    // mechanism was built for - re-attaches under the SAME targetId, and the counter
+                    // gave it a new identity every time: `process_count` grew with the length of the
+                    // session rather than describing the application, `counts` gained four entries
+                    // per recycle and released none, and the end-of-session emit walked seen x
+                    // covered. The merge rule for counts is already "max, so a peak survives a
+                    // reload" - it was only ever missing a stable key (R3-7).
+                    //
+                    // A target that names no id keeps the old behaviour (a fresh index): with no
+                    // identity to match on, treating it as new is the honest choice, not a guess.
+                    let index = context_index_for(&tid, &mut index_by_target, &mut next_index);
                     // Build the shim from the clock's CURRENT origin, not the session's initial values, so
                     // a context attaching after an in-flight rate change or jump starts on the same clock
                     // as every other context (one absolute origin; rule 3). Before any change this is
@@ -3658,9 +3799,12 @@ fn cdp_session(target: TargetSpec, time: TimeSpec, reader: BufReader<std::io::St
                             // session loop. `seen` is who this session ever COVERED, and it only grows:
                             // the audit is a record of what happened, not of what is still open, so a
                             // context that reloaded or closed keeps its evidence (R2-W1).
-                            seen.push(next_index);
+                            // Append-only, and now once per CONTEXT rather than once per attach.
+                            if !seen.contains(&index) {
+                                seen.push(index);
+                            }
                             contexts.push(CdpContext {
-                                index: next_index,
+                                index,
                                 session_id: sid,
                                 // The target named its own context type, and that name becomes a
                                 // coverage key in the report and on the wire. Cleaned here, at the
@@ -4172,6 +4316,35 @@ fn core_mode() -> i32 {
     }
 }
 
+/// The context index for a CDP target, stable across re-attaches.
+///
+/// Keyed by the CDP targetId, which Chromium keeps when a context re-attaches, rather than by a
+/// counter that ticks once per attach. A recycled worker - an ordinary pattern in Electron apps,
+/// and the very shape the CDP mechanism was built for - re-attaches under the SAME targetId, and
+/// the counter gave it a new identity every time: `process_count` grew with the LENGTH of the
+/// session instead of describing the application, `counts` gained entries per recycle and released
+/// none, and the end-of-session emit walked seen x covered. The merge rule for counts is already
+/// "max, so a peak survives a reload" - it was only ever missing a stable key (R3-7).
+///
+/// A target that names no id gets a fresh index: with no identity to match on, treating it as new
+/// is the honest answer rather than a guess that would fold two contexts into one.
+fn context_index_for(
+    target_id: &str,
+    index_by_target: &mut HashMap<String, u32>,
+    next_index: &mut u32,
+) -> u32 {
+    if !target_id.is_empty()
+        && let Some(existing) = index_by_target.get(target_id)
+    {
+        return *existing;
+    }
+    *next_index += 1;
+    if !target_id.is_empty() {
+        index_by_target.insert(target_id.to_string(), *next_index);
+    }
+    *next_index
+}
+
 /// The id carried by any command, so a refusal can name the command it refuses.
 fn command_id(cmd: &Command) -> u64 {
     match cmd {
@@ -4596,6 +4769,48 @@ mod tests {
     fn read_data(rel: &str) -> String {
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..").join(rel);
         std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("cannot read {}: {e}", path.display()))
+    }
+
+    /// A worker that is recycled re-attaches under the same targetId, and used to be counted as a
+    /// new context each time - so a long accelerated session (the flagship use case: "a day a
+    /// minute") reported hundreds of contexts for an application with one worker (R3-7).
+    #[test]
+    fn a_reattached_context_keeps_the_index_it_already_had() {
+        let mut map = HashMap::new();
+        let mut next = 0u32;
+
+        let page = context_index_for("T-page", &mut map, &mut next);
+        let worker = context_index_for("T-worker", &mut map, &mut next);
+        assert_eq!((page, worker), (1, 2));
+
+        // The worker is recycled twice: same target, same index, and the counter does not move.
+        assert_eq!(context_index_for("T-worker", &mut map, &mut next), worker);
+        assert_eq!(context_index_for("T-worker", &mut map, &mut next), worker);
+        assert_eq!(next, 2, "a re-attach must not mint a new context index");
+
+        // A genuinely new target still gets one.
+        assert_eq!(context_index_for("T-other", &mut map, &mut next), 3);
+
+        // No id means no identity to match on, so each one is new rather than folded together -
+        // two anonymous contexts are two contexts, and pretending otherwise would under-report.
+        let a = context_index_for("", &mut map, &mut next);
+        let b = context_index_for("", &mut map, &mut next);
+        assert_ne!(a, b);
+    }
+
+    /// A core killed from outside carries no verdict, and the number it does carry is in no table
+    /// the contract publishes - measured at -1. A pipeline branches on this, so an unknown code
+    /// becomes the internal-error code instead of being passed through as if it meant something
+    /// (R3-5).
+    #[test]
+    fn an_exit_code_outside_the_contract_becomes_the_internal_error_code() {
+        for verdict in [0, 1, 2, 3, 4, 5, 6, 10, 11, 12] {
+            assert_eq!(driver_exit_code(Some(verdict)), verdict);
+        }
+        assert_eq!(driver_exit_code(Some(-1)), 3, "a killed core must not look like a verdict");
+        assert_eq!(driver_exit_code(Some(7)), 3);
+        assert_eq!(driver_exit_code(Some(0xC000_0005u32 as i32)), 3, "an access violation is not a verdict");
+        assert_eq!(driver_exit_code(None), 3, "no code at all is not a verdict either");
     }
 
     /// S-1, first line. Calendars are the one catalogue outsiders are invited to write, so a file
