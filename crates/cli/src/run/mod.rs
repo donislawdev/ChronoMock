@@ -10,10 +10,11 @@
 
 /// Reading the command line: `RunArgs` and every flag that fills it.
 mod args;
+/// Gathering what the session said, event by event.
+mod collect;
 /// Deciding what time the session runs with, before anything is spawned.
 mod moment;
 
-use std::collections::HashMap;
 use std::io::{BufReader, Write};
 use std::process::{Command as PCommand, Stdio};
 use std::sync::mpsc;
@@ -22,12 +23,11 @@ use std::time::{Duration, Instant};
 use chrono_proto::{Command, Event, MomentSpec, PROTOCOL_VERSION};
 
 use args::{parse_run_args, target_spec_for};
+use collect::Collector;
 use moment::resolve_time_spec;
 use crate::cdp;
 use crate::cli::print_usage;
-use crate::report::{
-    mode_label, render_evidence, render_report, EvidenceParams, ProcessCoverage, SessionReport,
-};
+use crate::report::{mode_label, render_evidence, render_report, EvidenceParams};
 use crate::wire::read_protocol_line;
 use crate::zone::{format_bias, session_zone_default};
 /// How long `chrono run` waits for ANY event from the core before calling it hung.
@@ -143,24 +143,7 @@ pub(crate) fn driver_run(argv: &[String]) -> i32 {
 
     // Stream events. Send `end` after `--ticks` state heartbeats, or right after the
     // verdict when ticks is 0 (one-shot), then read through to `ended`.
-    let mut verdict_line: Option<(String, String)> = None; // parent (start) verdict, fallback
-    let mut session_line: Option<(String, String, u32)> = None; // family: (verdict, reason_key, count)
-    let mut vanished: Option<(String, u64)> = None; // (reason_key, lived_ms)
-    let mut errors: Vec<(String, String)> = Vec::new(); // (key, origin) - why a session did not start
-    let mut warnings: Vec<String> = Vec::new();
-    // Coverage per process, LATEST snapshot wins. The core emits one event per process as it is
-    // discovered and a final one for every process at the end, because the first is sampled inside
-    // the guard window and its call counts never move again (R2-X8). Appending every event instead
-    // would print each channel twice, once with a number from the session's first blink.
-    let mut cov_by_pid: HashMap<u32, ProcessCoverage> = HashMap::new();
-    let mut pid_order: Vec<u32> = Vec::new(); // first-seen order, so the parent still leads the report
-    let mut timing: Option<(String, i64, i64)> = None; // (fake wall reached, real ms, fake ms) from `ended`
-    // The target's own exit code and whatever teardown could not remove, both from `ended`. The wire
-    // has carried them since the session report grew a duration, and the GUI panel has shown them
-    // since 7446a59 - the human CLI report dropped them on the floor, so a plain `chrono run` could
-    // not tell "the app closed itself with code 3" from "we ended the session" (rule 6).
-    let mut target_exit: Option<i32> = None;
-    let mut residue: Vec<String> = Vec::new();
+    let mut collected = Collector::default();
     let mut states_seen: u64 = 0;
     let mut end_sent = false;
     // Why the read runs on its own thread rather than in this loop: the driver has to be able to
@@ -246,13 +229,6 @@ pub(crate) fn driver_run(argv: &[String]) -> i32 {
                 println!("{line}");
             }
             match chrono_proto::parse_event(&line) {
-                Ok(Event::Verdict { verdict, reason_key, .. }) => {
-                    verdict_line = Some((verdict, reason_key));
-                    // ticks == 0: stay attached until the target exits. Detaching
-                    // early would revert it to real time (self-detach), so a run with
-                    // no tick budget keeps the substitution for the target's whole
-                    // life. ticks > 0 ends after that many state heartbeats.
-                }
                 Ok(Event::State { .. }) => {
                     states_seen += 1;
                     if let Some((t, m)) = ra.set_after
@@ -274,52 +250,17 @@ pub(crate) fn driver_run(argv: &[String]) -> i32 {
                         end_sent = true;
                     }
                 }
-                Ok(Event::SessionVerdict { verdict, reason_key, process_count, warning_keys, .. }) => {
-                    session_line = Some((verdict, reason_key, process_count));
-                    // Session-level warnings join the same de-duplicated list as the per-process ones:
-                    // the report has one `warnings:` block, and where a warning came from is a wire
-                    // detail, not something the reader should have to know.
-                    for k in warning_keys {
-                        if !warnings.contains(&k) {
-                            warnings.push(k);
-                        }
+                // Everything else is evidence rather than a cue to act, so the collector owns
+                // it. Nothing happens on a verdict on purpose: with ticks == 0 the run stays
+                // attached until the target exits, because detaching early would revert it to
+                // real time (self-detach). With ticks > 0 the state arm above ends the session
+                // after that many heartbeats. `ended` is the one event that stops the read.
+                Ok(event) => {
+                    if collected.record(event) {
+                        break;
                     }
                 }
-                Ok(Event::Vanished { reason_key, lived_ms, .. }) => {
-                    vanished = Some((reason_key, lived_ms));
-                }
-                Ok(Event::Error { key, origin, .. }) => {
-                    errors.push((key, origin));
-                }
-                Ok(Event::Coverage { pid, covered: cov, observed: obs, uncovered: unc, warning_keys, .. }) => {
-                    // Warnings are a union across every event - a later snapshot for the same process
-                    // carries no driver-side warning, and dropping the earlier one would lose it.
-                    for k in warning_keys {
-                        if !warnings.contains(&k) {
-                            warnings.push(k);
-                        }
-                    }
-                    if !cov_by_pid.contains_key(&pid) {
-                        pid_order.push(pid);
-                    }
-                    cov_by_pid.insert(pid, ProcessCoverage { covered: cov, observed: obs, uncovered: unc });
-                }
-                Ok(Event::Ended {
-                    elapsed_real_ms,
-                    elapsed_fake_ms,
-                    fake_end_wall,
-                    target_exit_code,
-                    residue_keys,
-                    ..
-                }) => {
-                    if let Some(wall) = fake_end_wall {
-                        timing = Some((wall, elapsed_real_ms, elapsed_fake_ms));
-                    }
-                    target_exit = target_exit_code;
-                    residue = residue_keys;
-                    break;
-                }
-                _ => {}
+                Err(_) => {}
             }
         }
     }
@@ -327,41 +268,12 @@ pub(crate) fn driver_run(argv: &[String]) -> i32 {
 
     let status = child.wait();
 
-    // Flatten the per-process snapshots into report rows, parent first (first-seen order).
-    let mut uncovered: Vec<(u32, String)> = Vec::new(); // (pid, channel) - the honest gaps
-    let mut covered: Vec<(u32, String, u64)> = Vec::new(); // (pid, channel, calls) - what took effect
-    let mut observed: Vec<(u32, String, u64)> = Vec::new(); // (pid, channel, calls) - hooked, left real
-    for pid in &pid_order {
-        if let Some(pc) = cov_by_pid.get(pid) {
-            for ch in &pc.covered {
-                covered.push((*pid, ch.channel.clone(), ch.calls));
-            }
-            for ch in &pc.observed {
-                observed.push((*pid, ch.channel.clone(), ch.calls));
-            }
-            for ch in &pc.uncovered {
-                uncovered.push((*pid, ch.clone()));
-            }
-        }
-    }
-
-    let report = SessionReport {
-        target: ra.target.clone(),
-        session_verdict: session_line,
-        parent_verdict: verdict_line,
-        vanished,
-        errors,
-        warnings,
-        uncovered,
-        covered,
-        observed,
-        timing,
-        target_exit,
-        residue,
+    let report = collected.into_report(
+        ra.target.clone(),
         // The core auto-detects a Chromium target and runs it over CDP; label the report's coverage
         // unit accordingly. Same pure function, same path string the core sees, so the two never drift.
-        cdp: cdp::is_chromium_target(&ra.target),
-    };
+        cdp::is_chromium_target(&ra.target),
+    );
     if let Some(path) = &ra.report {
         let params = EvidenceParams {
             moment: spec.moment.local.clone().unwrap_or_else(|| "(default)".into()),
