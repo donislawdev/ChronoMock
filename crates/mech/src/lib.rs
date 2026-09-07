@@ -555,6 +555,7 @@ unsafe fn gather_coverage(
     // direct NtCreateUserProcess left un-injected (ADR-3).
     let mut any_wait_observed = false;
     let mut any_timer_observed = false;
+    let mut any_clock_observed = false;
     let mut any_spawn_observed = false;
     let mut any_source_observed = false;
     for (idx, ch) in CHANNELS.iter().enumerate() {
@@ -563,7 +564,10 @@ unsafe fn gather_coverage(
         // is watched regardless - so it is absent from this gate.
         if matches!(
             ch.category,
-            ChannelCategory::Duration | ChannelCategory::WaitObserved | ChannelCategory::TimerObserved
+            ChannelCategory::Duration
+                | ChannelCategory::WaitObserved
+                | ChannelCategory::TimerObserved
+                | ChannelCategory::ClockObserved
         ) && !scale_duration
         {
             continue;
@@ -579,7 +583,11 @@ unsafe fn gather_coverage(
         // install just means we are not observing it - not a verdict-affecting gap, so it goes nowhere.
         if matches!(
             ch.category,
-            ChannelCategory::WaitObserved | ChannelCategory::TimerObserved | ChannelCategory::SpawnObserved | ChannelCategory::SourceObserved
+            ChannelCategory::WaitObserved
+                | ChannelCategory::TimerObserved
+                | ChannelCategory::ClockObserved
+                | ChannelCategory::SpawnObserved
+                | ChannelCategory::SourceObserved
         ) {
             if installed & ch.bit != 0 {
                 let calls = read_calls(cov, idx);
@@ -587,6 +595,7 @@ unsafe fn gather_coverage(
                     match ch.category {
                         ChannelCategory::WaitObserved => any_wait_observed = true,
                         ChannelCategory::TimerObserved => any_timer_observed = true,
+                        ChannelCategory::ClockObserved => any_clock_observed = true,
                         ChannelCategory::SpawnObserved => any_spawn_observed = true,
                         ChannelCategory::SourceObserved => any_source_observed = true,
                         _ => {}
@@ -625,6 +634,12 @@ unsafe fn gather_coverage(
     }
     if any_timer_observed {
         out.warning_keys.push("timer.multimedia_not_scaled".to_string());
+    }
+    // The target READ the winmm millisecond clock (ADR-2, left real). Separate from the multimedia
+    // TIMER above, because the consequence a tester has to act on is different: an unscaled timer fires
+    // late, an unscaled clock makes a target that paces itself from it ignore the session entirely.
+    if any_clock_observed {
+        out.warning_keys.push("clock.timegettime_not_scaled".to_string());
     }
     // A child this process spawned through the COVERED CreateProcess* path could not be followed into
     // (R2-S2). Distinct from the observed NtCreateUserProcess warning below, which is about a spawn path
@@ -1082,6 +1097,8 @@ mod tests {
     use super::*;
     // Only the QPC-channel test needs this bit, so it is imported here rather than in the lib.
     use chrono_ctl::CH_QPC;
+    // Same for the winmm-clock test: the bit, its counter index, and the counter writer.
+    use chrono_ctl::{bump_calls, CH_TIMEGETTIME, IDX_TIMEGETTIME};
 
     /// R2-X2. The projection the core reports has to be the one the target sees - the hook clamps at
     /// the end of the range, so this must clamp there too. Before it did, a session at the edge showed
@@ -1255,6 +1272,45 @@ mod tests {
         let failed = unsafe { gather_coverage(&cov as *const Cov, all & !CH_QPC, false, true) };
         assert!(failed.uncovered.iter().any(is_qpc), "a QPC detour that did not install is a gap");
         assert_eq!(chrono_core::verdict_from_coverage(&failed), chrono_core::Verdict::Partial);
+    }
+
+    /// `timeGetTime` is OBSERVED: counted, never scaled (ADR-2), and never allowed to move the verdict.
+    /// The warning is what the whole channel exists for, so it must fire only when the target actually
+    /// read the clock - a warning on a target that never touched winmm would be noise, and silence on a
+    /// target pacing itself from it is the gap this closes (untouchable rule 4).
+    #[test]
+    fn the_winmm_clock_is_observed_and_warns_only_when_the_target_read_it() {
+        let all = CHANNELS.iter().fold(0u64, |acc, ch| acc | ch.bit);
+        let is_tgt = |name: &String| name == "timeGetTime";
+        let warned = |c: &Coverage| c.warning_keys.iter().any(|k| k == "clock.timegettime_not_scaled");
+
+        // Installed but never called: observed with a zero count, and NO warning.
+        let quiet = zeroed_cov();
+        let idle = unsafe { gather_coverage(&quiet as *const Cov, all, true, false) };
+        let seen = idle.observed.iter().find(|c| is_tgt(&c.channel)).expect("must be observed");
+        assert_eq!(seen.calls, 0);
+        assert!(!warned(&idle), "a clock nobody read is not a finding");
+
+        // Called: same bucket, real count, and the warning that names the clock.
+        let mut busy = zeroed_cov();
+        unsafe { bump_calls(&mut busy as *mut Cov, IDX_TIMEGETTIME) };
+        let hot = unsafe { gather_coverage(&busy as *const Cov, all, true, false) };
+        assert_eq!(hot.observed.iter().find(|c| is_tgt(&c.channel)).map(|c| c.calls), Some(1));
+        assert!(warned(&hot), "a clock the target read must be named");
+
+        // Observed never sways the verdict, in either bucket, and a winmm channel that did not install
+        // is not a gap either - a target without winmm loaded cannot call it (the User32/Winmm rule).
+        assert!(!hot.covered.iter().any(|c| is_tgt(&c.channel)));
+        assert!(!hot.uncovered.iter().any(is_tgt));
+        let absent = unsafe { gather_coverage(&busy as *const Cov, all & !CH_TIMEGETTIME, true, false) };
+        assert!(!absent.uncovered.iter().any(is_tgt), "winmm absent is not a coverage gap");
+        assert_eq!(chrono_core::verdict_from_coverage(&hot), chrono_core::Verdict::Works);
+
+        // It rides scale_duration like the other time observers: off, the whole duration axis is left
+        // real on purpose, so singling out this one clock would warn about a non-problem.
+        let off = unsafe { gather_coverage(&busy as *const Cov, all, false, false) };
+        assert!(!off.observed.iter().any(|c| is_tgt(&c.channel)));
+        assert!(!warned(&off));
     }
 
     /// The paired direction, so the guard above cannot pass by reporting nothing at all: a full

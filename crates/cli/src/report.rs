@@ -140,6 +140,12 @@ pub(crate) fn describe_warning(key: &str) -> String {
             "object waits are hooked but left real - an I/O or hardware timeout is not shortened"
         }
         "timer.multimedia_not_scaled" => "the multimedia timer (timeSetEvent) is observed but not scaled",
+        // Named the way the failure actually reaches a tester: the session looked like it worked and
+        // the target ignored it. The count in the observed list below says how hard the target leaned
+        // on this clock, which is what separates "read it twice at startup" from "paces itself on it".
+        "clock.timegettime_not_scaled" => {
+            "the target read the winmm clock timeGetTime, which is left real (ADR-2) - a target that paces itself from it keeps running at real speed no matter how fast the session is, and native game engines commonly do"
+        }
         "inheritance.ntcreateuserprocess_child_maybe_uncovered" => {
             "a child spawned directly via NtCreateUserProcess may not be covered"
         }

@@ -177,6 +177,7 @@
   "source.network_at_start": "Cel otworzył połączenie sieciowe - może czytać czas z serwera, którego żaden lokalny hak nie obejmie.",
   "wait.object_waits_not_scaled": "Oczekiwania na obiekty są podpięte, ale pozostawione realne - limit czasu I/O lub sprzętu nie jest skracany.",
   "timer.multimedia_not_scaled": "Timer multimedialny (timeSetEvent) jest obserwowany, ale nie skalowany.",
+  "clock.timegettime_not_scaled": "Cel odczytał zegar winmm timeGetTime, który pozostaje realny - cel odmierzający własne tempo z tego zegara działa w tempie rzeczywistym niezależnie od prędkości sesji, a natywne silniki gier robią tak powszechnie.",
   "inheritance.ntcreateuserprocess_child_maybe_uncovered": "Dziecko utworzone bezpośrednio przez NtCreateUserProcess może nie być objęte.",
   // R2-S2. Distinct from the NtCreateUserProcess warning above it: there we choose not to inject,
   // here we tried and it did not take, so a process of this family really did run on the real clock.

@@ -13,6 +13,13 @@ Notable changes to Chrono Mock, newest first. The format follows
   it. Until now the tool could not answer the first question any bug report asks.
 - **The version in the window title and title bar**, so a screenshot says which build it came
   from without anyone having to ask.
+- **The audit now reports `timeGetTime`**, the winmm millisecond clock. Chrono Mock deliberately
+  leaves that clock running at real speed, because scaling it shifts audio and render timing. Until
+  now it left it silently: the channel was not watched at all, so a native target that paces itself
+  from `timeGetTime` ran at real speed under a fast session, was told the substitution worked, and
+  got no hint which clock had kept it there. Game engines commonly read this clock. A session now
+  counts every call to it and names it in the report. The clock itself is unchanged - still real,
+  still never scaled.
 
 ### Fixed
 

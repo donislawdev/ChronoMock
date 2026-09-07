@@ -14,8 +14,10 @@
 //! scaled by the multiplier only when scale_duration is set, and never below real speed - so the
 //! monotonic clock keeps advancing even when the wall clock is frozen (untouchable
 //! rule 3). `QueryPerformanceCounter` and `timeGetTime` are deliberately left real
-//! (ADR-2). Once QUIT is hooked, the anchor math reads it through the trampoline so the
-//! scaled output never feeds back.
+//! (ADR-2) - QPC scales only under its own opt-in, and `timeGetTime` is hooked to be
+//! COUNTED, never scaled, so the audit can name it instead of staying silent about a clock
+//! the target paced itself from. Once QUIT is hooked, the anchor math reads it through the
+//! trampoline so the scaled output never feeds back.
 //!
 //! Under the SAME scale_duration flag the wait axis is scaled too (ADR-7): a wait's
 //! timeout is divided by the multiplier (real wait = requested / M), so a thread that
@@ -70,7 +72,7 @@ use chrono_ctl::{
     IDX_GTZI, IDX_NTDELAY, IDX_NTQSI, IDX_NTQST, IDX_QUIT, IDX_SLEEP, IDX_SLEEPEX, IDX_STSL,
     IDX_STSLEX, IDX_FTLFT, IDX_LFTFT, IDX_TLTST, IDX_TLTSTEX, IDX_WFSO, IDX_WFSOEX, IDX_WFMO,
     IDX_WFMOEX, IDX_SOAW, IDX_MWFMO, IDX_MWFMOEX, IDX_SWT, IDX_SWTEX, IDX_SETTIMER, IDX_TIMESETEVENT,
-    IDX_TPTIMER, IDX_TPTIMEREX, IDX_NTCUP, IDX_CONNECT, IDX_QPC,
+    IDX_TPTIMER, IDX_TPTIMEREX, IDX_NTCUP, IDX_CONNECT, IDX_QPC, IDX_TIMEGETTIME,
 };
 use minhook::MinHook;
 use windows::core::{s, PCSTR, PCWSTR};
@@ -147,6 +149,11 @@ type SetTimerFn = unsafe extern "system" fn(*mut c_void, usize, u32, *const c_vo
 // (the winmm cost ADR-2 avoids, like timeGetTime), so the detour only counts and forwards untouched.
 // All args are opaque to us (lpTimeProc is a callback or an event handle depending on fuEvent).
 type TimeSetEventFn = unsafe extern "system" fn(u32, u32, *const c_void, usize, u32) -> u32;
+// timeGetTime() -> DWORD (winmm): milliseconds since Windows started, the coarse clock a media stack or
+// a game engine reads after raising the timer resolution with timeBeginPeriod. ClockObserved: ADR-2
+// leaves the winmm family real, so the detour only COUNTS and returns the trampoline's value untouched.
+// Takes no argument, which is what makes counting it free of any judgement about what to scale.
+type TimeGetTimeFn = unsafe extern "system" fn() -> u32;
 // connect(SOCKET s, const sockaddr *name, int namelen) -> int (ws2_32). SourceObserved: we only COUNT a
 // network connection (a suspected server time source) and forward every arg untouched. SOCKET is a
 // UINT_PTR (usize), the sockaddr* is opaque (never dereferenced), namelen is int (i32).
@@ -237,6 +244,7 @@ static O_SWT: OnceLock<SwtFn> = OnceLock::new();
 static O_SWTEX: OnceLock<SwtexFn> = OnceLock::new();
 static O_SETTIMER: OnceLock<SetTimerFn> = OnceLock::new();
 static O_TIMESETEVENT: OnceLock<TimeSetEventFn> = OnceLock::new();
+static O_TIMEGETTIME: OnceLock<TimeGetTimeFn> = OnceLock::new();
 static O_TPTIMER: OnceLock<SetTpTimerFn> = OnceLock::new();
 static O_TPTIMEREX: OnceLock<SetTpTimerExFn> = OnceLock::new();
 static O_NTCUP: OnceLock<NtcupFn> = OnceLock::new();
@@ -1294,6 +1302,24 @@ unsafe extern "system" fn h_timesetevent(
     o(delay, resolution, time_proc, user, event)
 }}
 
+// timeGetTime (winmm, ClockObserved): count the winmm millisecond clock and return the REAL value.
+// ADR-2 keeps the winmm family unscaled, so nothing here touches the number - the point is that the
+// audit can now say the target read it, which it could not while the channel was outside CHANNELS.
+// No guard (it cannot cascade onto another hooked export, it takes no argument) and no detached check
+// (we never modify the value, so detached state changes nothing), exactly like h_timesetevent.
+//
+// The None arm is unreachable - make_hook fills the slot from create_hook before any hook is enabled -
+// but a clock has no error value to return, so it hands back 0 rather than inventing a reading. A
+// target that somehow reached it would see the boot instant, not a plausible wrong time.
+unsafe extern "system" fn h_timegettime() -> u32 { unsafe {
+    let o = match O_TIMEGETTIME.get() {
+        Some(o) => o,
+        None => return 0,
+    };
+    bump(IDX_TIMEGETTIME);
+    o()
+}}
+
 // connect (ws2_32, SourceObserved): a network connection is a suspected SERVER time source, which no
 // local hook can cover. We only COUNT it and forward untouched (never modify the connection) - the audit
 // then warns source.network_at_start. Like timeSetEvent: no guard, no detached check (we never change the
@@ -1832,7 +1858,8 @@ unsafe fn install() -> Result<(), String> { unsafe {
     // Duration axis (opt-in). The anchor lives in the shared Ctl now: the core initialized it in
     // prepare (from the real GetTickCount64 / QUIT, before the target ran) and rebases it on every
     // set_multiplier, so a speed change never rewinds the axis (H-1). No per-process capture here - the
-    // detours read it under the same seqlock as the wall multiplier. QPC / timeGetTime stay real (ADR-2).
+    // detours read it under the same seqlock as the wall multiplier. QPC and timeGetTime stay real
+    // (ADR-2) - timeGetTime is hooked here only to be counted, so the audit can name it.
     if read_scale_dur(ctl as *const Ctl) {
         make_hook(&mut pending, k32, ntdll, IDX_GTC64, h_tick as *const () as *mut c_void, &O_TICK);
         make_hook(&mut pending, k32, ntdll, IDX_GTC, h_tick32 as *const () as *mut c_void, &O_TICK32);
@@ -1851,6 +1878,7 @@ unsafe fn install() -> Result<(), String> { unsafe {
         make_hook(&mut pending, k32, ntdll, IDX_SWTEX, h_swtex as *const () as *mut c_void, &O_SWTEX);
         make_hook(&mut pending, k32, ntdll, IDX_SETTIMER, h_settimer as *const () as *mut c_void, &O_SETTIMER);
         make_hook(&mut pending, k32, ntdll, IDX_TIMESETEVENT, h_timesetevent as *const () as *mut c_void, &O_TIMESETEVENT);
+        make_hook(&mut pending, k32, ntdll, IDX_TIMEGETTIME, h_timegettime as *const () as *mut c_void, &O_TIMEGETTIME);
         make_hook(&mut pending, k32, ntdll, IDX_TPTIMER, h_set_tp_timer as *const () as *mut c_void, &O_TPTIMER);
         make_hook(&mut pending, k32, ntdll, IDX_TPTIMEREX, h_set_tp_timer_ex as *const () as *mut c_void, &O_TPTIMEREX);
     }

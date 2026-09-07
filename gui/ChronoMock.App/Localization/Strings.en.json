@@ -178,6 +178,7 @@
   "source.network_at_start": "The target opened a network connection - it may read time from a server, which no local hook can cover.",
   "wait.object_waits_not_scaled": "Object waits are hooked but left real - an I/O or hardware timeout is not shortened.",
   "timer.multimedia_not_scaled": "The multimedia timer (timeSetEvent) is observed but not scaled.",
+  "clock.timegettime_not_scaled": "The target read the winmm clock timeGetTime, which is left real - a target that paces itself from it keeps running at real speed no matter how fast the session is, and native game engines commonly do.",
   "inheritance.ntcreateuserprocess_child_maybe_uncovered": "A child spawned directly via NtCreateUserProcess may not be covered.",
   // R2-S2. Distinct from the NtCreateUserProcess warning above it: there we choose not to inject,
   // here we tried and it did not take, so a process of this family really did run on the real clock.

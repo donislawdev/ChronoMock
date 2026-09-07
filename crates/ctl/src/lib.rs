@@ -212,6 +212,8 @@ pub const CH_NTCUP: u64 = 1 << 33;
 pub const CH_CONNECT: u64 = 1 << 34;
 /// Coverage bit: `QueryPerformanceCounter` is hooked (QPC axis, opt-in `scale_qpc`, ADR-2 reversal).
 pub const CH_QPC: u64 = 1 << 35;
+/// Coverage bit: `timeGetTime` is hooked (winmm millisecond clock, observed not scaled, ADR-2).
+pub const CH_TIMEGETTIME: u64 = 1 << 36;
 
 /// Index of each channel into the `calls` array (== its position in `CHANNELS`).
 pub const IDX_GSTAFT: usize = 0;
@@ -250,11 +252,12 @@ pub const IDX_TPTIMEREX: usize = 32;
 pub const IDX_NTCUP: usize = 33;
 pub const IDX_CONNECT: usize = 34;
 pub const IDX_QPC: usize = 35;
+pub const IDX_TIMEGETTIME: usize = 36;
 
 /// Number of channels tracked (wall-clock, session zone, duration axis, object/message waits,
 /// settable timers, multimedia timer, thread-pool timers, direct process creation, network connect,
-/// the QPC axis).
-pub const CHANNEL_COUNT: usize = 36;
+/// the QPC axis, the winmm millisecond clock).
+pub const CHANNEL_COUNT: usize = 37;
 
 /// Which system module exports a channel (the hook resolves it there).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -291,6 +294,16 @@ pub enum ChannelCategory {
     /// timeGetTime), so it is left real. A separate category only so the audit can name the right
     /// reason (multimedia timer, not an object wait).
     TimerObserved,
+    /// Hooked and counted, but deliberately never scaled (ADR-2, observed): `timeGetTime` (winmm), the
+    /// millisecond clock a game engine or media stack reads to pace itself. ADR-2 leaves it real for the
+    /// same reason it leaves the rest of winmm real - scaling it shifts audio and render timing - and
+    /// that part does not change here. What changes is that leaving it real used to be SILENT: the
+    /// channel was outside this table, so a target could read it thousands of times a second and the
+    /// audit had no way to say so. The tester then read `works` beside a target that never sped up, with
+    /// nothing in the report pointing at the clock that kept it at real speed (untouchable rule 4, and
+    /// the same gap R2-S3 closed for QPC). Its own category rather than `TimerObserved`, because the
+    /// audit must name the right reason: a clock the target READ, not a timer it armed.
+    ClockObserved,
     /// Hooked and counted, but deliberately never injected into (ADR-3, observed): a DIRECT
     /// NtCreateUserProcess (a child spawned bypassing CreateProcessW/A). Self-injecting there means
     /// manipulating undocumented native structures, a crash risk for near-zero real value (real QA
@@ -357,8 +370,7 @@ pub struct ChannelDef {
 // whether it took (rule 4). NtQueryPerformanceCounter stays out - ADR-2 unchanged for it.
 //
 // DELIBERATELY EXCLUDED, for two different reasons:
-//   - ADR-2 (scaling them destabilizes the target): timeGetTime and the native
-//     NtQueryPerformanceCounter.
+//   - ADR-2 (scaling them destabilizes the target): the native NtQueryPerformanceCounter.
 //   - not a "now" clock at all: GetFileTime returns a file's stored creation / last-access /
 //     last-write timestamps (MS Learn, fileapi.h), not the current time. Shifting them would
 //     falsify filesystem metadata, never advance a clock - the target must read real file times
@@ -377,8 +389,12 @@ pub struct ChannelDef {
 // double-counted. This is the wait-axis analog of ADR-2's QPC exclusion, except we still hook it to
 // count and warn honestly. The multimedia timer timeSetEvent (winmm, ADR-7 class C) joins the same
 // observed bucket under its own warning (timer.multimedia_not_scaled): scaling its uDelay would shift
-// audio/MIDI timing - the winmm cost ADR-2 avoids, like timeGetTime - so it is hooked, counted, and
-// left real, never scaled. A DIRECT NtCreateUserProcess (ntdll, ADR-3) - a child spawned bypassing
+// audio/MIDI timing - the winmm cost ADR-2 avoids - so it is hooked, counted, and left real, never
+// scaled. The winmm CLOCK timeGetTime joins them on the same terms (ClockObserved, its own warning
+// clock.timegettime_not_scaled): ADR-2 still leaves it real, but no longer silently. A native target
+// that paces itself from timeGetTime - a game engine calling timeBeginPeriod and then reading
+// milliseconds is the ordinary case - used to run at real speed under a fast session with nothing in
+// the report naming the clock responsible, which is the shape of gap R2-S3 closed for QPC. A DIRECT NtCreateUserProcess (ntdll, ADR-3) - a child spawned bypassing
 // CreateProcessW/A - joins the observed bucket under inheritance.ntcreateuserprocess_child_maybe_uncovered:
 // self-injecting there means manipulating undocumented native structures, a crash risk for near-zero
 // value (real targets spawn through CreateProcess*, which we do inject), so we count the direct call
@@ -428,6 +444,7 @@ pub const CHANNELS: [ChannelDef; CHANNEL_COUNT] = [
     ChannelDef { bit: CH_NTCUP, name: "NtCreateUserProcess", module: ChannelModule::Ntdll, category: ChannelCategory::SpawnObserved },
     ChannelDef { bit: CH_CONNECT, name: "connect", module: ChannelModule::Ws2_32, category: ChannelCategory::SourceObserved },
     ChannelDef { bit: CH_QPC, name: "QueryPerformanceCounter", module: ChannelModule::Kernel32, category: ChannelCategory::Qpc },
+    ChannelDef { bit: CH_TIMEGETTIME, name: "timeGetTime", module: ChannelModule::Winmm, category: ChannelCategory::ClockObserved },
 ];
 
 /// Marks the control block as one WE built. The section name is fixed and lives in a namespace any
@@ -440,7 +457,12 @@ pub const CTL_MAGIC: u64 = 0x4348_524F_4E4F_4354; // "CHRONOCT"
 /// Layout version of [`Ctl`]. Bumped whenever fields move, so a hook from one build refuses a block
 /// written by another instead of reading the wrong offsets as a clock (untouchable rules 2 and 4).
 /// This is an internal seam - mechanism and hook ship in the same package - not a wire contract.
-pub const CTL_LAYOUT_VERSION: u32 = 1;
+///
+/// 2: `CHANNEL_COUNT` grew for the `timeGetTime` channel, which widens `Cov` and so moves every
+/// `covs` slot after the first. The dangerous direction is a NEW hook against an OLD core: the wider
+/// stride would put a write past the end of the smaller mapping the core created. Bumping is what
+/// turns that into a refusal.
+pub const CTL_LAYOUT_VERSION: u32 = 2;
 
 /// Session-wide control block in `Local\ChronoCtl`. `#[repr(C)]` so both processes
 /// agree on the layout. Coverage lives here too, one `Cov` per registry slot, so a
