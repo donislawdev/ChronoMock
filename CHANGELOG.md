@@ -29,11 +29,19 @@ Notable changes to Chrono Mock, newest first. The format follows
     ordinary working day for seven years, before Public Law 94-97 moved it back from 1978.
 
   Each of these is a separate calendar entry with its own validity window rather than a single
-  rule with a start year, because three of the four holidays existed before the change and only
-  moved. The first year of the pre-1971 entries is deliberately left open: it is known from
-  secondary sources and this project puts only primary sources into calendar data.
+  rule with a start year, because three of the four holidays that Act touched existed before it
+  and only moved. The first year of the pre-1971 entries is deliberately left open: it is known
+  from secondary sources and this project puts only primary sources into calendar data.
 - Four Polish holiday sources used a semicolon in prose, and the Polish strings file described
   itself as the English one.
+
+### Security
+
+- **The promise that this tool never reaches the network is now guarded rather than only
+  stated.** A test scans every Rust and C# source for network APIs and permits only the ones
+  registered by file with a reason, refuses a dependency that could speak to a network, and
+  refuses a networking feature of the `windows` crate. What it cannot prove is written in its
+  own header, and `SECURITY.md` says the same in the section on what this tool does.
 
 ## [0.1.0] - 2026-09-04
 
