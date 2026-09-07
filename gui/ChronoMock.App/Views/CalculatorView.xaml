@@ -87,6 +87,24 @@
               <controls:MomentInput x:Name="BaseMoment" DataContext="{Binding Base}"
                                     Margin="{StaticResource SpaceSm}" VerticalAlignment="Center"
                                     Visibility="{Binding DataContext.IsSpecificBase, RelativeSource={RelativeSource AncestorType={x:Type UserControl}}, Converter={StaticResource BoolToVis}}" />
+              <!-- The SESSION zone the start point is read in (engine flag: zone). Worded "in zone" rather
+                   than "zone", because the step list below already offers a "to zone" step that means the
+                   opposite direction - re-express the ANSWER, not read the base. Same closed catalogue and
+                   same item template as the substitution panel, so one idea has one idiom. The first entry
+                   is the host, which sends no flag at all: that is what this panel always did, so the
+                   default changes no result, it only says out loud which zone it was (rule 2). -->
+              <TextBlock Text="{DynamicResource calc.base_zone}" Margin="{StaticResource SpaceSm}"
+                         VerticalAlignment="Center"
+                         FontSize="{StaticResource FontSizeBody}" Foreground="{DynamicResource BrushTextSecondary}" />
+              <ComboBox x:Name="BaseZoneBox" ItemsSource="{Binding BaseZones}" SelectedItem="{Binding SelectedBaseZone}"
+                        ToolTip="{DynamicResource tip.base_zone}"
+                        Margin="{StaticResource SpaceXs}" VerticalAlignment="Center">
+                <ComboBox.ItemTemplate>
+                  <DataTemplate>
+                    <TextBlock><Run Text="{Binding Label, Mode=OneWay}" /><Run Text="  ·  " /><Run Text="{Binding HintKey, Converter={StaticResource KeyToText}, Mode=OneWay}" /></TextBlock>
+                  </DataTemplate>
+                </ComboBox.ItemTemplate>
+              </ComboBox>
             </StackPanel>
             <!-- Validation message BELOW the start-point row (only for a malformed Specific base), so it never
                  shifts the row - mirrors the substitution At row. -->

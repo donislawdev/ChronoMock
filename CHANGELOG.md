@@ -13,6 +13,13 @@ Notable changes to Chrono Mock, newest first. The format follows
   it. Until now the tool could not answer the first question any bug report asks.
 - **The version in the window title and title bar**, so a screenshot says which build it came
   from without anyone having to ask.
+- **A zone for the calculator's start point.** The command line has always been able to say which zone a
+  base is read in - `chrono calc --base today --zone -08:00` asks what "today" is on the US west coast,
+  which is a different day either side of midnight. The calculator panel could only re-express an answer
+  in another zone, never read the start point in one, so that question had no answer in the window. The
+  start point now carries a zone picker, offering this machine's zone first and the same closed list the
+  substitution panel uses. The default is this machine, which is what the panel always did, so no existing
+  calculation changes - it just says out loud which zone it was using.
 - **The audit now reports `timeGetTime`**, the winmm millisecond clock. Chrono Mock deliberately
   leaves that clock running at real speed, because scaling it shifts audio and render timing. Until
   now it left it silently: the channel was not watched at all, so a native target that paces itself

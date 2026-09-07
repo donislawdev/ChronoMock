@@ -73,6 +73,47 @@ public class CalculatorArgsTests
         Assert.Equal(new[] { "--base", "today" }, args);
     }
 
+    /// <summary>The base zone is the SESSION zone the start point is read in, so it reaches the engine as
+    /// <c>--zone</c> - not as the <c>--to-zone</c> step, which re-expresses the answer instead.</summary>
+    [Fact]
+    public void A_picked_base_zone_reaches_the_engine_as_the_session_zone_flag()
+    {
+        var args = CalculatorViewModel.BuildCalcArgs(
+            BaseKind.Today, string.Empty, [], null, null, "-08:00");
+        Assert.Equal(new[] { "--base", "today", "--zone", "-08:00" }, args);
+        Assert.DoesNotContain("--to-zone", args);
+    }
+
+    /// <summary>The host entry sends NOTHING. This is the whole reason it exists: the calculator never sent
+    /// <c>--zone</c> before the picker was added, so any default that pinned an offset would silently change
+    /// every result for a machine not sitting on it. A blank is treated as host too, so a whitespace value
+    /// can never reach the command line as an empty flag (which is a usage error).</summary>
+    [Fact]
+    public void The_host_base_zone_sends_no_flag_at_all()
+    {
+        Assert.Equal(
+            new[] { "--base", "today" },
+            CalculatorViewModel.BuildCalcArgs(BaseKind.Today, string.Empty, [], null, null, null));
+        Assert.Equal(
+            new[] { "--base", "today" },
+            CalculatorViewModel.BuildCalcArgs(BaseKind.Today, string.Empty, [], null, null, "  "));
+    }
+
+    /// <summary>The catalogue's first entry is the host, and it is the one that sends no flag. Ordering is
+    /// asserted because the view model selects index 0 as its default - a reorder would change what an
+    /// untouched calculator computes.</summary>
+    [Fact]
+    public void The_calculator_zone_catalogue_leads_with_the_host_and_only_the_host_is_host()
+    {
+        var zones = TimeInputs.CalcZones();
+        Assert.True(zones[0].IsHost, "the default selection is index 0, and it must be the host entry");
+        Assert.Equal("zone.host", zones[0].HintKey);
+        Assert.Single(zones, z => z.IsHost);
+        // The rest is the substitution panel's closed list, unchanged and still explicit.
+        Assert.Equal(TimeInputs.Zones.Count + 1, zones.Count);
+        Assert.All(TimeInputs.Zones, z => Assert.False(z.IsHost));
+    }
+
     [Fact]
     public void A_new_step_defaults_to_a_days_shift()
     {
@@ -174,6 +215,29 @@ public class CalculatorArgsTests
         Assert.Equal(
             new[] { "--base", "2030-05-05T12:30:00" },
             CalculatorViewModel.BuildCalcArgs(BaseKind.Specific, vm.Base.Canonical, [], null));
+    }
+
+    /// <summary>The wiring, not just the builder: what the PANEL would send. An untouched calculator sends
+    /// no zone at all, and picking one puts it on the command line with the offset the label shows. Without
+    /// this the argument tests above would stay green over a picker that was bound to nothing, or over a
+    /// sign flip - bias 480 is UTC-08:00, and getting that backwards moves the answer sixteen hours and a
+    /// calendar day (untouchable rule 2).</summary>
+    [Fact]
+    public void The_panel_sends_no_zone_until_one_is_picked_and_then_sends_that_one()
+    {
+        var vm = new CalculatorViewModel(new CalcClient(() => "chrono"));
+
+        Assert.True(vm.SelectedBaseZone.IsHost, "an untouched calculator starts on the host entry");
+        Assert.DoesNotContain("--zone", vm.BuildCurrentArgs());
+
+        vm.SelectedBaseZone = vm.BaseZones.First(z => z.HintKey == "zone.us_pacific");
+        var args = vm.BuildCurrentArgs();
+        Assert.Equal("-08:00", args[args.ToList().IndexOf("--zone") + 1]);
+        Assert.Single(args, a => a == "--zone");
+
+        // Back to host: the flag disappears again rather than sticking at the last pick.
+        vm.SelectedBaseZone = vm.BaseZones.First(z => z.IsHost);
+        Assert.DoesNotContain("--zone", vm.BuildCurrentArgs());
     }
 
     // A step built the way the view model builds it (real option lists), without a UI thread. The calc

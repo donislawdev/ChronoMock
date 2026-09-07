@@ -37,9 +37,9 @@ internal static class ScenarioMoment
                 unpacked.Base,
                 unpacked.BaseText,
                 unpacked.Steps.Select(UnpackedMoment.StepArgs),
-                PresetInfo.CalendarIdForMarket(scenario.Info.Market)),
-            "--zone",
-            ZoneLabel.OffsetFromBiasMinutes(zoneBiasMinutes),
+                PresetInfo.CalendarIdForMarket(scenario.Info.Market),
+                customFormatMask: null,
+                zoneOffset: ZoneLabel.OffsetFromBiasMinutes(zoneBiasMinutes)),
         ];
     }
 

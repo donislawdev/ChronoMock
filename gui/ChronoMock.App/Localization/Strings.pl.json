@@ -58,6 +58,7 @@
   "zone.label": "Strefa:",
 
   // Market-name hints shown beside each offset in the zone dropdown, so it is not a bare number.
+  "zone.host": "ta maszyna",
   "zone.utc": "Uniwersalny czas koordynowany",
   "zone.pl_standard": "Polska (czas zimowy)",
   "zone.pl_summer": "Polska (czas letni)",
@@ -254,6 +255,7 @@
   "calc.preset_needs_params": "Uzupełnij parametry poniżej, aby policzyć ten preset.",
   "calc.build_header": "Zbuduj moment",
   "calc.start_point": "Punkt startowy",
+  "calc.base_zone": "w strefie",
   "calc.steps_header": "Kroki",
   "calc.add_step": "+ Dodaj krok",
   "calc.kind_shift": "Przesuń ±",
@@ -372,6 +374,7 @@
   "tip.copy_summary": "Skopiuj gotowe podsumowanie sesji do zgłoszenia.",
   "tip.copy_diagnostics": "Skopiuj diagnostykę rdzenia (jego stderr), by dołączyć do zgłoszenia.",
   "tip.base_kind": "Od czego zaczyna się obliczenie: dziś, teraz, albo konkretna data.",
+  "tip.base_zone": "Strefa, w której czytany jest punkt startowy - dziś to inny dzień po obu stronach północy. Bez wyboru używana jest strefa tej maszyny. To nie to samo co krok do strefy, który przelicza wynik.",
   "tip.add_step": "Dodaj krok: przesuń, przyciągnij, najbliższy dzień roboczy, ustaw czas, zmień strefę.",
   "tip.calc_calendar": "Kalendarz świąt i dni roboczych używany przez kroki dni roboczych i najbliższy.",
   "tip.custom_format": "Sformatuj wynik własną maską (tokeny .NET/Java).",

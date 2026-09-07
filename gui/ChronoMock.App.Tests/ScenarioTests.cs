@@ -108,6 +108,11 @@ public class ScenarioTests
         Assert.Contains("--zone", args);
         Assert.Equal("-05:00", args[args.ToList().IndexOf("--zone") + 1]);
 
+        // Exactly ONE, asserted since the calculator gained its own base-zone picker: both surfaces now go
+        // through the same builder, and a second flag here would mean one of them appends its own. The
+        // engine would take the last, so the wrong zone would win silently rather than fail.
+        Assert.Single(args, a => a == "--zone");
+
         // Evaluated as explicit steps: `calc --preset` gates on applies_to and refuses this very preset.
         Assert.DoesNotContain("--preset", args);
         Assert.Contains("--base", args);

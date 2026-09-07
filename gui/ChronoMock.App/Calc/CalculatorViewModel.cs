@@ -309,6 +309,7 @@ public sealed class CalculatorViewModel : ObservableObject
 
     private BaseKindOption _baseKind;
     private CalendarOption _calendar;
+    private ZoneOption _baseZone;
     private string _resultWeekday = string.Empty;
     private string _resultDate = "-";
     private string _resultTime = string.Empty;
@@ -413,6 +414,12 @@ public sealed class CalculatorViewModel : ObservableObject
         ];
         _calendar = Calendars[0];
 
+        // Host first and selected, so opening the calculator computes exactly what it computed before this
+        // picker existed. Built once here rather than cached statically, so the host label is read at the
+        // moment this panel is created.
+        BaseZones = TimeInputs.CalcZones();
+        _baseZone = BaseZones[0];
+
         Steps.CollectionChanged += (_, _) => TriggerRecompute();
     }
 
@@ -513,6 +520,40 @@ public sealed class CalculatorViewModel : ObservableObject
             }
         }
     }
+
+    /// <summary>The zone catalogue for the start point: the host entry first, then the closed list the
+    /// substitution panel offers.</summary>
+    public IReadOnlyList<ZoneOption> BaseZones { get; }
+
+    /// <summary>The session zone the start point is read in. Changing it changes which civil day "today" is,
+    /// so it re-runs the calculation like any other builder edit (through the debounce, never around it).
+    /// </summary>
+    public ZoneOption SelectedBaseZone
+    {
+        get => _baseZone;
+        set
+        {
+            if (Set(ref _baseZone, value))
+            {
+                TriggerRecompute();
+            }
+        }
+    }
+
+    /// <summary>The <c>--zone</c> argument for the current pick, or null for the host entry, which means
+    /// "send nothing and let the engine read the host's zone" (untouchable rule 2: the panel still SHOWS
+    /// which zone that is, it just does not pin it).</summary>
+    private string? BaseZoneOffset =>
+        _baseZone.IsHost ? null : ZoneLabel.OffsetFromBiasMinutes(_baseZone.BiasMinutes);
+
+    /// <summary>The argument list the CURRENT builder state produces - the one <see cref="RecomputeAsync"/>
+    /// actually sends. Its own method so a test can read what this panel would ask for: asserting
+    /// <see cref="BuildCalcArgs"/> alone proves the builder is right and says nothing about whether the
+    /// view model passes it the zone the user picked, which is the half that would silently do nothing.
+    /// </summary>
+    internal IReadOnlyList<string> BuildCurrentArgs() => BuildCalcArgs(
+        _baseKind.Kind, Base.Canonical, Steps.Select(s => s.ToArgs()), _calendar.Id, _customFormatMask,
+        BaseZoneOffset);
 
     /// <summary>Free-text filter over the preset list (matches the name or the "what it tests" line).</summary>
     public string PresetFilter
@@ -932,13 +973,21 @@ public sealed class CalculatorViewModel : ObservableObject
     }
 
     /// <summary>Build the calc arguments for the current builder state (pure - unit-tested). Each step
-    /// contributes its own flag pair, so the grammar is not shift-specific.</summary>
+    /// contributes its own flag pair, so the grammar is not shift-specific.
+    /// <para>
+    /// <paramref name="zoneOffset"/> is the SESSION zone the base is read in (<c>--zone</c>), not the
+    /// <c>--to-zone</c> step that re-expresses the answer: "today" is a different day either side of
+    /// midnight, so the two are different questions. Null means send nothing and let the engine use the
+    /// host's zone - the calculator's behaviour before the base-zone picker existed. This is the ONE place
+    /// that emits <c>--zone</c> for a calc invocation, so no caller can end up passing it twice.
+    /// </para></summary>
     public static IReadOnlyList<string> BuildCalcArgs(
         BaseKind baseKind,
         string baseText,
         IEnumerable<IReadOnlyList<string>> stepArgLists,
         string? calendarId,
-        string? customFormatMask = null)
+        string? customFormatMask = null,
+        string? zoneOffset = null)
     {
         var args = new List<string> { "--base", baseKind switch
         {
@@ -965,6 +1014,14 @@ public sealed class CalculatorViewModel : ObservableObject
             args.Add(customFormatMask.Trim());
         }
 
+        // Last, so the argument list a scenario produces is byte-for-byte what it produced when this flag
+        // was appended at the call site - the move into here is a de-duplication, not a change of wire.
+        if (!string.IsNullOrWhiteSpace(zoneOffset))
+        {
+            args.Add("--zone");
+            args.Add(zoneOffset.Trim());
+        }
+
         return args;
     }
 
@@ -985,8 +1042,7 @@ public sealed class CalculatorViewModel : ObservableObject
         var previous = Interlocked.Exchange(ref _cts, cts);
         previous?.Dispose();
 
-        var args = BuildCalcArgs(
-            _baseKind.Kind, Base.Canonical, Steps.Select(s => s.ToArgs()), _calendar.Id, _customFormatMask);
+        var args = BuildCurrentArgs();
         try
         {
             var result = await _client.EvaluateAsync(args, cts.Token);

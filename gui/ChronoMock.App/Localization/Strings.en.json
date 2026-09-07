@@ -57,6 +57,7 @@
   "zone.label": "Zone:",
 
   // Market-name hints shown beside each offset in the zone dropdown, so it is not a bare number.
+  "zone.host": "this machine",
   "zone.utc": "Coordinated Universal Time",
   "zone.pl_standard": "Poland (standard)",
   "zone.pl_summer": "Poland (summer)",
@@ -255,6 +256,7 @@
   "calc.preset_needs_params": "Fill in the parameters below to compute this preset.",
   "calc.build_header": "Build the moment",
   "calc.start_point": "Start point",
+  "calc.base_zone": "in zone",
   "calc.steps_header": "Steps",
   "calc.add_step": "+ Add step",
   "calc.kind_shift": "Shift ±",
@@ -373,6 +375,7 @@
   "tip.copy_summary": "Copy a paste-ready session summary for a ticket.",
   "tip.copy_diagnostics": "Copy the core diagnostics (its stderr) to attach to a support ticket.",
   "tip.base_kind": "Where the calculation starts: today, now, or a specific date.",
+  "tip.base_zone": "The zone the start point is read in - today is a different day either side of midnight. This machine's zone is used unless you pick another. Not the same as a to-zone step, which re-expresses the answer.",
   "tip.add_step": "Add a step: shift, snap, nearest business day, set time, or change zone.",
   "tip.calc_calendar": "The holiday and business-day calendar used by business-day and nearest steps.",
   "tip.custom_format": "Render the result with your own format mask (.NET/Java tokens).",
