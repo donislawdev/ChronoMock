@@ -25,7 +25,7 @@
       "rule": { "type": "nth_weekday", "month": 1, "weekday": "monday", "order": 3 },
       "valid_from": null,
       "valid_to": null,
-      "source": "5 U.S.C. 6103 (first observance year unconfirmed; see docs/02 section 12)"
+      "source": "5 U.S.C. 6103 (first observance year unconfirmed, so no valid_from is claimed)"
     },
     {
       "id": "washingtons_birthday",
