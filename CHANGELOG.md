@@ -16,12 +16,22 @@ Notable changes to Chrono Mock, newest first. The format follows
 
 ### Fixed
 
-- **Martin Luther King Jr. Day was treated as a holiday in every year**, in both United States
-  calendars, so any date calculation reaching back before 1986 was wrong. The holiday was created
-  by Public Law 98-144, which took effect on the first 1 January after a two-year period, so it
-  now carries `valid_from: 1986` and the third Monday of January 1985 is an ordinary business day
-  again. The entry previously cited a source document that is not part of this repository, which
-  no reader could follow.
+- **Five United States holidays answered with today's rule for every year in history.** Both
+  calendars now carry the changes that actually happened, so a date before 1986 - or before 1971 -
+  comes back correct:
+  - **Martin Luther King Jr. Day** did not exist before 1986 (Public Law 98-144 took effect on the
+    first 1 January after a two-year period). The third Monday of January 1985 is an ordinary
+    business day again.
+  - **Washington's Birthday** was 22 February, and **Memorial Day** was 30 May, until the Uniform
+    Monday Holiday Act moved both to a Monday with effect from 1971.
+  - **Columbus Day** did not exist as a federal holiday before that Act created it in 1971.
+  - **Veterans Day** spent 1971 to 1977 on the fourth Monday in October, so 11 November was an
+    ordinary working day for seven years, before Public Law 94-97 moved it back from 1978.
+
+  Each of these is a separate calendar entry with its own validity window rather than a single
+  rule with a start year, because three of the four holidays existed before the change and only
+  moved. The first year of the pre-1971 entries is deliberately left open: it is known from
+  secondary sources and this project puts only primary sources into calendar data.
 - Four Polish holiday sources used a semicolon in prose, and the Polish strings file described
   itself as the English one.
 

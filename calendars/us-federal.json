@@ -31,17 +31,33 @@
       "id": "washingtons_birthday",
       "name": { "en": "Washington's Birthday", "local": "Washington's Birthday" },
       "rule": { "type": "nth_weekday", "month": 2, "weekday": "monday", "order": 3 },
-      "valid_from": null,
+      "valid_from": 1971,
       "valid_to": null,
-      "source": "5 U.S.C. 6103 (federal holidays)"
+      "source": "5 U.S.C. 6103, moved to the third Monday in February by Public Law 90-363 (Uniform Monday Holiday Act) with effect from 1971-01-01"
+    },
+    {
+      "id": "washingtons_birthday_pre_1971",
+      "name": { "en": "Washington's Birthday", "local": "Washington's Birthday" },
+      "rule": { "type": "fixed", "month": 2, "day": 22 },
+      "valid_from": null,
+      "valid_to": 1970,
+      "source": "5 U.S.C. 6103 as it read before Public Law 90-363 substituted the third Monday in February with effect from 1971-01-01. The first year is left unclaimed rather than guessed"
     },
     {
       "id": "memorial_day",
       "name": { "en": "Memorial Day", "local": "Memorial Day" },
       "rule": { "type": "nth_weekday", "month": 5, "weekday": "monday", "order": -1 },
-      "valid_from": null,
+      "valid_from": 1971,
       "valid_to": null,
-      "source": "5 U.S.C. 6103 (federal holidays)"
+      "source": "5 U.S.C. 6103, moved to the last Monday in May by Public Law 90-363 (Uniform Monday Holiday Act) with effect from 1971-01-01"
+    },
+    {
+      "id": "memorial_day_pre_1971",
+      "name": { "en": "Memorial Day", "local": "Memorial Day" },
+      "rule": { "type": "fixed", "month": 5, "day": 30 },
+      "valid_from": null,
+      "valid_to": 1970,
+      "source": "5 U.S.C. 6103 as it read before Public Law 90-363 substituted the last Monday in May with effect from 1971-01-01. The first year is left unclaimed rather than guessed"
     },
     {
       "id": "juneteenth",
@@ -71,17 +87,33 @@
       "id": "columbus_day",
       "name": { "en": "Columbus Day", "local": "Columbus Day" },
       "rule": { "type": "nth_weekday", "month": 10, "weekday": "monday", "order": 2 },
-      "valid_from": null,
+      "valid_from": 1971,
       "valid_to": null,
-      "source": "5 U.S.C. 6103 (federal holidays)"
+      "source": "5 U.S.C. 6103, added as a legal public holiday by Public Law 90-363 (Uniform Monday Holiday Act) with effect from 1971-01-01"
     },
     {
       "id": "veterans_day",
       "name": { "en": "Veterans Day", "local": "Veterans Day" },
       "rule": { "type": "fixed", "month": 11, "day": 11 },
-      "valid_from": null,
+      "valid_from": 1978,
       "valid_to": null,
-      "source": "5 U.S.C. 6103 (federal holidays)"
+      "source": "5 U.S.C. 6103, returned to 11 November by Public Law 94-97 with effect from 1978-01-01"
+    },
+    {
+      "id": "veterans_day_october_monday",
+      "name": { "en": "Veterans Day", "local": "Veterans Day" },
+      "rule": { "type": "nth_weekday", "month": 10, "weekday": "monday", "order": 4 },
+      "valid_from": 1971,
+      "valid_to": 1977,
+      "source": "5 U.S.C. 6103, moved to the fourth Monday in October by Public Law 90-363 with effect from 1971-01-01, until Public Law 94-97 returned it to 11 November from 1978-01-01"
+    },
+    {
+      "id": "veterans_day_pre_1971",
+      "name": { "en": "Veterans Day", "local": "Veterans Day" },
+      "rule": { "type": "fixed", "month": 11, "day": 11 },
+      "valid_from": null,
+      "valid_to": 1970,
+      "source": "5 U.S.C. 6103 as it read before Public Law 90-363 moved this holiday to the fourth Monday in October with effect from 1971-01-01. The first year is left unclaimed rather than guessed"
     },
     {
       "id": "thanksgiving_day",

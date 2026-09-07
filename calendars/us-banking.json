@@ -31,17 +31,33 @@
       "id": "washingtons_birthday",
       "name": { "en": "Washington's Birthday", "local": "Washington's Birthday" },
       "rule": { "type": "nth_weekday", "month": 2, "weekday": "monday", "order": 3 },
-      "valid_from": null,
+      "valid_from": 1971,
       "valid_to": null,
-      "source": "U.S. Federal Reserve Bank holiday schedule"
+      "source": "U.S. Federal Reserve Bank holiday schedule, which carries the federal legal public holidays. Public Law 90-363 (Uniform Monday Holiday Act) substituted the third Monday in February with effect from 1971-01-01"
+    },
+    {
+      "id": "washingtons_birthday_pre_1971",
+      "name": { "en": "Washington's Birthday", "local": "Washington's Birthday" },
+      "rule": { "type": "fixed", "month": 2, "day": 22 },
+      "valid_from": null,
+      "valid_to": 1970,
+      "source": "5 U.S.C. 6103 as it read before Public Law 90-363, carried by the Federal Reserve Bank schedule. The first year is left unclaimed rather than guessed"
     },
     {
       "id": "memorial_day",
       "name": { "en": "Memorial Day", "local": "Memorial Day" },
       "rule": { "type": "nth_weekday", "month": 5, "weekday": "monday", "order": -1 },
-      "valid_from": null,
+      "valid_from": 1971,
       "valid_to": null,
-      "source": "U.S. Federal Reserve Bank holiday schedule"
+      "source": "U.S. Federal Reserve Bank holiday schedule, which carries the federal legal public holidays. Public Law 90-363 (Uniform Monday Holiday Act) substituted the last Monday in May with effect from 1971-01-01"
+    },
+    {
+      "id": "memorial_day_pre_1971",
+      "name": { "en": "Memorial Day", "local": "Memorial Day" },
+      "rule": { "type": "fixed", "month": 5, "day": 30 },
+      "valid_from": null,
+      "valid_to": 1970,
+      "source": "5 U.S.C. 6103 as it read before Public Law 90-363, carried by the Federal Reserve Bank schedule. The first year is left unclaimed rather than guessed"
     },
     {
       "id": "juneteenth",
@@ -71,17 +87,33 @@
       "id": "columbus_day",
       "name": { "en": "Columbus Day", "local": "Columbus Day" },
       "rule": { "type": "nth_weekday", "month": 10, "weekday": "monday", "order": 2 },
-      "valid_from": null,
+      "valid_from": 1971,
       "valid_to": null,
-      "source": "U.S. Federal Reserve Bank holiday schedule"
+      "source": "U.S. Federal Reserve Bank holiday schedule, which carries the federal legal public holidays. Public Law 90-363 (Uniform Monday Holiday Act) added this holiday with effect from 1971-01-01"
     },
     {
       "id": "veterans_day",
       "name": { "en": "Veterans Day", "local": "Veterans Day" },
       "rule": { "type": "fixed", "month": 11, "day": 11 },
-      "valid_from": null,
+      "valid_from": 1978,
       "valid_to": null,
-      "source": "U.S. Federal Reserve Bank holiday schedule"
+      "source": "U.S. Federal Reserve Bank holiday schedule, which carries the federal legal public holidays. Public Law 94-97 returned this holiday to 11 November with effect from 1978-01-01"
+    },
+    {
+      "id": "veterans_day_october_monday",
+      "name": { "en": "Veterans Day", "local": "Veterans Day" },
+      "rule": { "type": "nth_weekday", "month": 10, "weekday": "monday", "order": 4 },
+      "valid_from": 1971,
+      "valid_to": 1977,
+      "source": "5 U.S.C. 6103 between Public Law 90-363 and Public Law 94-97, carried by the Federal Reserve Bank schedule"
+    },
+    {
+      "id": "veterans_day_pre_1971",
+      "name": { "en": "Veterans Day", "local": "Veterans Day" },
+      "rule": { "type": "fixed", "month": 11, "day": 11 },
+      "valid_from": null,
+      "valid_to": 1970,
+      "source": "5 U.S.C. 6103 as it read before Public Law 90-363, carried by the Federal Reserve Bank schedule. The first year is left unclaimed rather than guessed"
     },
     {
       "id": "thanksgiving_day",

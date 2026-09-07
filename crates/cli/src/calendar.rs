@@ -441,6 +441,61 @@ mod tests {
         assert!(!is_business_day(&d(2023, 1, 2), &bank));
     }
 
+    /// Four United States holidays have a history rather than one rule, and until 2026-09-07 both
+    /// calendars answered with today's rule for every year back to year one. That put Washington's
+    /// Birthday on the wrong February day for every date before 1971, invented a Columbus Day that
+    /// did not exist, and missed the seven years Veterans Day spent in October.
+    ///
+    /// Public Law 90-363 (the Uniform Monday Holiday Act) took effect on 1971-01-01, and Public Law
+    /// 94-97 returned Veterans Day to 11 November from 1978-01-01. Both calendars carry the same
+    /// dates, so both are asserted - the banking file is not a copy that can quietly drift.
+    #[test]
+    fn us_calendars_follow_the_uniform_monday_holiday_act() {
+        use chrono_core::calc::CivilDateTime;
+        use chrono_core::calendar::holiday_on;
+        let d = |y: i64, m: u32, day: u32| CivilDateTime {
+            year: y,
+            month: m,
+            day,
+            hour: 0,
+            minute: 0,
+            second: 0,
+        };
+
+        let fed = calendar_from_text(&read_data("calendars/us-federal.json")).expect("us-federal parses");
+        let bank = calendar_from_text(&read_data("calendars/us-banking.json")).expect("us-banking parses");
+
+        for (which, cal) in [("us-federal", &fed), ("us-banking", &bank)] {
+            let id_on = |date: CivilDateTime| {
+                holiday_on(&date, cal).map(|h| h.id.clone()).unwrap_or_default()
+            };
+
+            // Washington's Birthday: 22 February through 1970, the third Monday from 1971. In 1971
+            // the 22nd was itself a Monday, which is why it is asserted - a rule that had merely
+            // slipped a week would still pass on the 15th alone.
+            assert_eq!(id_on(d(1970, 2, 22)), "washingtons_birthday_pre_1971", "{which}");
+            assert_eq!(id_on(d(1970, 2, 16)), "", "{which}");
+            assert_eq!(id_on(d(1971, 2, 15)), "washingtons_birthday", "{which}");
+            assert_eq!(id_on(d(1971, 2, 22)), "", "{which}");
+
+            // Memorial Day: 30 May through 1970, the last Monday from 1971.
+            assert_eq!(id_on(d(1970, 5, 30)), "memorial_day_pre_1971", "{which}");
+            assert_eq!(id_on(d(1971, 5, 31)), "memorial_day", "{which}");
+
+            // Columbus Day did not exist as a federal holiday before the Act created it.
+            assert_eq!(id_on(d(1970, 10, 12)), "", "{which}");
+            assert_eq!(id_on(d(1971, 10, 11)), "columbus_day", "{which}");
+
+            // Veterans Day has three periods, and the middle one is the whole reason this test is
+            // worth writing: for seven years 11 November was an ordinary working day.
+            assert_eq!(id_on(d(1965, 11, 11)), "veterans_day_pre_1971", "{which}");
+            assert_eq!(id_on(d(1975, 11, 11)), "", "{which}");
+            assert_eq!(id_on(d(1975, 10, 27)), "veterans_day_october_monday", "{which}");
+            assert_eq!(id_on(d(1978, 11, 11)), "veterans_day", "{which}");
+            assert_eq!(id_on(d(2026, 11, 11)), "veterans_day", "{which}");
+        }
+    }
+
     #[test]
     fn catalogue_id_rejects_path_traversal() {
         // A catalogue id must never become a path escape: separators, '..', a drive colon, or empty
