@@ -161,6 +161,11 @@ pub(crate) fn describe_warning(key: &str) -> String {
         "source.network_at_start" => {
             "the target opened a network connection - it may read time from a server, which no local hook can cover"
         }
+        // Says what it costs the READER, not what happened inside. The channel is covered and listed
+        // like any other, so without this line its call count reads as a total when it is a floor.
+        "coverage.channel_installed_late" => {
+            "a time channel was only hooked once its module loaded, so calls made before that are not in the count below - and a scaled channel made a single jump when it joined the session clock"
+        }
         // Says what the port MEANS, not just that there is one. Chromium's debugging port listens on
         // loopback with no authentication, so for as long as the session runs, any other process on
         // this machine can attach to it and drive the app - read its pages, run JavaScript in it,

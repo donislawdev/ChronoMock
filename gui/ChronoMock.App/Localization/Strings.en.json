@@ -187,6 +187,7 @@
   "wait.object_waits_not_scaled": "Object waits are hooked but left real - an I/O or hardware timeout is not shortened.",
   "timer.multimedia_not_scaled": "The multimedia timer (timeSetEvent) is observed but not scaled.",
   "clock.timegettime_scaled_audio_may_shift": "The winmm clock timeGetTime is being scaled with the rest of the duration axis, so a target that paces itself from it follows the session - but a media application that positions audio from that clock may drift.",
+  "coverage.channel_installed_late": "A time channel was only hooked after its module loaded, so calls the target made before that were not counted - and if the channel is a scaled one, its clock made a single jump when it joined the session.",
   "inheritance.ntcreateuserprocess_child_maybe_uncovered": "A child spawned directly via NtCreateUserProcess may not be covered.",
   // R2-S2. Distinct from the NtCreateUserProcess warning above it: there we choose not to inject,
   // here we tried and it did not take, so a process of this family really did run on the real clock.

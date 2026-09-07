@@ -458,7 +458,10 @@ pub const CTL_MAGIC: u64 = 0x4348_524F_4E4F_4354; // "CHRONOCT"
 /// `covs` slot after the first. The dangerous direction is a NEW hook against an OLD core: the wider
 /// stride would put a write past the end of the smaller mapping the core created. Bumping is what
 /// turns that into a refusal.
-pub const CTL_LAYOUT_VERSION: u32 = 2;
+///
+/// 3: `Cov` gained `late_installed`, which widens it by 8 bytes and moves every slot after the first
+/// for the same reason.
+pub const CTL_LAYOUT_VERSION: u32 = 3;
 
 /// Session-wide control block in `Local\ChronoCtl`. `#[repr(C)]` so both processes
 /// agree on the layout. Coverage lives here too, one `Cov` per registry slot, so a
@@ -544,6 +547,18 @@ pub struct Cov {
     /// Counted here, in the SPAWNING parent's own slot, because that is the process the fact belongs to:
     /// the child never reserved a slot of its own, and never will.
     pub uninjected_children: u64,
+    /// Channels this process hooked only AFTER `DllMain`, once their module finally showed up.
+    ///
+    /// Always a subset of `installed_channels` - a late channel IS covered, and the report lists it
+    /// like any other. This says something the coverage mask cannot: the channel was not live for the
+    /// whole session. Two consequences follow and the audit has to own both (untouchable rule 4).
+    /// Calls the target made before the hook landed were never counted, so the counter is a floor
+    /// rather than a total. And a SCALED channel rejoins the shared duration base at that moment,
+    /// which is a one-off jump - measured at +32 575 ms under x60, because the base had been drifting
+    /// away from the real clock the whole time the channel ran real.
+    ///
+    /// Reported as one warning rather than two, because it is one event with two effects.
+    pub late_installed: u64,
     /// Per-channel call counters for this process, indexed by IDX_*.
     pub calls: [u64; CHANNEL_COUNT],
 }
@@ -552,7 +567,7 @@ impl Cov {
     /// An empty slot. A `const` rather than `Default` so `[Cov::ZEROED; MAX_COV_PIDS]` builds the
     /// `Ctl` array without requiring `Copy` on a type that must never be copied around by accident.
     pub const ZEROED: Cov =
-        Cov { installed_channels: 0, uninjected_children: 0, calls: [0; CHANNEL_COUNT] };
+        Cov { installed_channels: 0, uninjected_children: 0, late_installed: 0, calls: [0; CHANNEL_COUNT] };
 }
 
 /// Stamp the block as ours, at the layout this build speaks.
@@ -1056,6 +1071,27 @@ pub unsafe fn set_channels_installed(p: *mut Cov, mask: u64) { unsafe {
 /// `p` must point to a live, correctly aligned `Cov`.
 pub unsafe fn read_installed(p: *const Cov) -> u64 { unsafe {
     read_volatile(addr_of!((*p).installed_channels))
+}}
+
+/// Record which channels were hooked only after `DllMain` (hook side, per-process `Cov`).
+///
+/// Written BEFORE the matching bits reach `installed_channels`, and that ordering does not have to
+/// be the safe one: the mechanism reads these two masks as an intersection, so a reader that catches
+/// the pair half-written sees a late channel only once it is also a covered one. Neither order can
+/// produce a warning about a channel the report does not list.
+///
+/// # Safety
+/// `p` must point to a live, correctly aligned `Cov`.
+pub unsafe fn set_late_installed(p: *mut Cov, mask: u64) { unsafe {
+    write_volatile(addr_of_mut!((*p).late_installed), mask);
+}}
+
+/// Read the late-install bitmask (mechanism side, per-process `Cov`).
+///
+/// # Safety
+/// `p` must point to a live, correctly aligned `Cov`.
+pub unsafe fn read_late_installed(p: *const Cov) -> u64 { unsafe {
+    read_volatile(addr_of!((*p).late_installed))
 }}
 
 /// Increment a channel's call counter (hook side, per-process `Cov`). `idx` must be

@@ -19,7 +19,7 @@ use std::time::Instant;
 use chrono_core::{ChannelCoverage, Coverage, SessionSpec, TimeMode};
 use chrono_ctl::{
     cov_at, ctl_size, freeze_dur, freeze_qpc, header_is_ours, read_anchor, read_calls,
-    read_core_pid, read_dur, read_installed, read_pid, read_pid_count, read_qpc,
+    read_core_pid, read_dur, read_installed, read_late_installed, read_pid, read_pid_count, read_qpc,
     read_uninjected_children,
     write_anchor, write_anchor_full, write_header,
     write_core_pid, write_scale_dur, write_scale_qpc, write_tz_bias, ChannelCategory, ChannelModule,
@@ -652,6 +652,21 @@ unsafe fn gather_coverage(
     if any_source_observed {
         out.warning_keys.push("source.network_at_start".to_string());
     }
+    // At least one channel was hooked only after its module turned up, which for a runtime that pulls
+    // in winmm or ws2_32 during startup is the ordinary case rather than the exotic one - measured on
+    // four of nine processes across six real targets.
+    //
+    // The INTERSECTION, not the late mask alone. The hook writes the two masks in sequence and this is
+    // what makes any order of those two stores safe to read: a channel counts as late only once it is
+    // also installed, so a half-written pair can under-report for one sample but can never warn about
+    // a channel the report does not list.
+    //
+    // Warned even when the counter is zero, and that is the point rather than an oversight: calls made
+    // before the hook landed were never counted, so we cannot tell an idle channel from one that was
+    // busy in the window. Claiming otherwise is exactly what untouchable rule 4 forbids.
+    if read_late_installed(cov) & installed != 0 {
+        out.warning_keys.push("coverage.channel_installed_late".to_string());
+    }
     out
 }}
 
@@ -1090,7 +1105,7 @@ mod tests {
     // Only the QPC-channel test needs this bit, so it is imported here rather than in the lib.
     use chrono_ctl::CH_QPC;
     // Same for the winmm-clock test: the bit, its counter index, and the counter writer.
-    use chrono_ctl::{bump_calls, CH_TIMEGETTIME, IDX_TIMEGETTIME};
+    use chrono_ctl::{bump_calls, set_late_installed, CH_TIMEGETTIME, IDX_TIMEGETTIME};
 
     /// R2-X2. The projection the core reports has to be the one the target sees - the hook clamps at
     /// the end of the range, so this must clamp there too. Before it did, a session at the edge showed
@@ -1305,6 +1320,44 @@ mod tests {
         assert!(!off.covered.iter().any(|c| is_tgt(&c.channel)));
         assert!(!off.observed.iter().any(|c| is_tgt(&c.channel)));
         assert!(!warned(&off));
+    }
+
+    /// A channel hooked late is covered, and the audit says the count is a floor.
+    ///
+    /// The interesting case is the third one. The hook writes `late_installed` and
+    /// `installed_channels` as two separate stores, so a reader can catch the pair half-written -
+    /// and the intersection is what makes either order safe. Without it, a late bit arriving first
+    /// would warn about a channel the report does not list, which is the audit describing something
+    /// that is not there (untouchable rule 4).
+    #[test]
+    fn a_channel_installed_late_is_covered_and_the_count_is_called_a_floor() {
+        let all = CHANNELS.iter().fold(0u64, |acc, ch| acc | ch.bit);
+        let warned =
+            |c: &Coverage| c.warning_keys.iter().any(|k| k == "coverage.channel_installed_late");
+
+        // Nothing late: the ordinary session, and no warning to make the reader doubt the counts.
+        let plain = zeroed_cov();
+        let early = unsafe { gather_coverage(&plain as *const Cov, all, true, true) };
+        assert!(!warned(&early), "a session with nothing late must not carry the caution");
+
+        // Late AND installed: covered like any other channel, plus the warning. The channel keeps its
+        // place in `covered` on purpose - it WAS substituted, just not for the whole session.
+        let mut late = zeroed_cov();
+        unsafe { set_late_installed(&mut late as *mut Cov, CH_TIMEGETTIME) };
+        let hooked_late = unsafe { gather_coverage(&late as *const Cov, all, true, true) };
+        assert!(warned(&hooked_late), "a late channel makes its call count a floor, and that is said");
+        assert!(
+            hooked_late.covered.iter().any(|c| c.channel == "timeGetTime"),
+            "late is still covered - it is not a gap"
+        );
+
+        // Late but NOT in the installed mask: the half-written pair. Silence, because the report does
+        // not list this channel at all and a warning about it would point at nothing.
+        let torn = unsafe { gather_coverage(&late as *const Cov, all & !CH_TIMEGETTIME, true, true) };
+        assert!(
+            !warned(&torn),
+            "the masks are read as an intersection - a late bit alone must never warn"
+        );
     }
 
     /// The paired direction, so the guard above cannot pass by reporting nothing at all: a full

@@ -186,6 +186,7 @@
   "wait.object_waits_not_scaled": "Oczekiwania na obiekty są podpięte, ale pozostawione realne - limit czasu I/O lub sprzętu nie jest skracany.",
   "timer.multimedia_not_scaled": "Timer multimedialny (timeSetEvent) jest obserwowany, ale nie skalowany.",
   "clock.timegettime_scaled_audio_may_shift": "Zegar winmm timeGetTime jest skalowany razem z resztą osi trwania, więc cel odmierzający z niego własne tempo podąża za sesją - ale aplikacja multimedialna pozycjonująca dźwięk z tego zegara może dryfować.",
+  "coverage.channel_installed_late": "Kanał czasu został podpięty dopiero po załadowaniu jego modułu, więc wywołania sprzed tego momentu nie zostały policzone - a jeśli kanał jest skalowany, jego zegar wykonał jednorazowy skok w chwili dołączenia do sesji.",
   "inheritance.ntcreateuserprocess_child_maybe_uncovered": "Dziecko utworzone bezpośrednio przez NtCreateUserProcess może nie być objęte.",
   // R2-S2. Distinct from the NtCreateUserProcess warning above it: there we choose not to inject,
   // here we tried and it did not take, so a process of this family really did run on the real clock.

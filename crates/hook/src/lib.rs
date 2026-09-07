@@ -66,8 +66,8 @@ use chrono_ctl::{
     bump_calls, bump_uninjected_children, cov_at_mut, dur_qpc_at, dur_quit_at, dur_tick_at,
     header_is_ours,
     publish_pid, read_anchor, read_core_pid, read_dur, read_qpc, read_scale_dur, read_scale_qpc,
-    read_installed, read_tz_bias, reserve_cov_slot, scale_delay_interval, scale_timer_due, scale_timer_elapse, scale_timer_period,
-    scale_timer_period_ms, scale_wait, set_channels_installed, ChannelModule, Cov,
+    read_installed, read_late_installed, read_tz_bias, reserve_cov_slot, scale_delay_interval, scale_timer_due, scale_timer_elapse, scale_timer_period,
+    scale_timer_period_ms, scale_wait, set_channels_installed, set_late_installed, ChannelModule, Cov,
     Ctl, CHANNELS, IDX_GDTZI, IDX_GLT, IDX_GST, IDX_GSTAFT, IDX_GSTPAFT, IDX_GTC, IDX_GTC64,
     IDX_GTZI, IDX_NTDELAY, IDX_NTQSI, IDX_NTQST, IDX_QUIT, IDX_SLEEP, IDX_SLEEPEX, IDX_STSL,
     IDX_STSLEX, IDX_FTLFT, IDX_LFTFT, IDX_TLTST, IDX_TLTSTEX, IDX_WFSO, IDX_WFSOEX, IDX_WFMO,
@@ -554,6 +554,10 @@ unsafe fn late_scan() { unsafe {
         return;
     }
     if let Some(c) = cov_ptr() {
+        // The late mask FIRST, the coverage mask second. The mechanism reads the two as an
+        // intersection, so this order cannot produce a warning about a channel the report does not
+        // list - and the other order could not either. Stated rather than left to luck.
+        set_late_installed(c, read_late_installed(c) | newly);
         // OR, never a plain store: `install` owns the startup bits and this thread owns the late
         // ones. Read-modify-write is safe here because this is the only writer after INSTALL_DONE.
         set_channels_installed(c, read_installed(c) | newly);

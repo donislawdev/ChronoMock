@@ -44,6 +44,7 @@ public class LocalizationTests
         // Coverage warning keys (CoverageEvent warning_keys).
         "source.network_at_start", "wait.object_waits_not_scaled",
         "timer.multimedia_not_scaled", "clock.timegettime_scaled_audio_may_shift",
+        "coverage.channel_installed_late",
         "inheritance.ntcreateuserprocess_child_maybe_uncovered",
         "inheritance.child_not_injected",
         // Session-level warning keys (SessionVerdict warning_keys).
