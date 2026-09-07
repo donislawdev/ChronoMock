@@ -3,6 +3,7 @@
 
 # Binary assets - never touch line endings.
 *.png binary
+*.gif binary
 *.ico binary
 *.exe binary
 *.dll binary

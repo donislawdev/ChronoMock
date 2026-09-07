@@ -19,11 +19,6 @@ been nothing comparable.
 ⭐ **If it saved you a 30-day wait, leave a star.** That is how the next tester who needs it finds out
 it exists.
 
-![Chrono Mock running another Windows application at a fake date. The left window shows the application's clock on 2028-06-03 against the real clock on 2026-09-04, with the speed changed from frozen to x10 while it runs. The right window is the program under test, whose own session log records 2028-06-03.](site/assets/chrono-in-action.gif)
-
-*A real session. The window on the right is the program under test - and it wrote **2028-06-03** into
-its own session log, which is the whole point.*
-
 **What it can do**
 
 - **Any moment, absolute or relative** - a specific date and time, or `+30 days`, `-1 year`.
@@ -43,6 +38,13 @@ its own session log, which is the whole point.*
   sandboxed renderer where injection does not reach.
 - **A window and a command line** - the same engine behind both, exit codes for CI.
 - **Portable** - no installer, no administrator rights, runs from a USB stick.
+
+![Chrono Mock running another Windows application at a fake date. The left window shows the application's clock on 2028-06-03 against the real clock on 2026-09-04, with the speed changed from frozen to x10 while it runs. The right window is the program under test, whose own session log records 2028-06-03.](site/assets/chrono-in-action.gif)
+
+*A real session. The window on the right is the program under test - and it wrote **2028-06-03** into
+its own session log, which is the whole point.*
+
+![Clicking the Star button at the top of the Chrono Mock repository page: the counter goes from Star 0 to Starred 1.](assets/sta-chono.gif)
 
 ---
 
@@ -353,13 +355,21 @@ exercise every rule type: fixed dates, nth-weekday-of-month, dates calculated fr
 observation rules. Adding a country is a data file with sources cited - no code changes. If code
 changes turn out to be needed, that is a bug in the data model.
 
-Interface translations are welcome on the same terms.
+Interface translations are welcome on the same terms, with one caveat stated up front rather than
+discovered afterwards: the window has no language switcher yet, so a translation lands in the
+repository before a user can select it.
+
+**[CONTRIBUTING.md](CONTRIBUTING.md)** has the file format, the three rule types and what makes a
+calendar acceptable. Behaviour here follows the [Code of Conduct](CODE_OF_CONDUCT.md), and security
+problems go through [SECURITY.md](SECURITY.md) rather than the issue tracker.
 
 ---
 
 ## License
 
 GPL-3.0. See [LICENSE](LICENSE). Free, no account, no telemetry, and it never talks to the internet.
+
+Chrono Mock is built with an AI-assisted workflow.
 
 ---
 
