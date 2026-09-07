@@ -548,7 +548,11 @@ public sealed class CalculatorViewModel : ObservableObject
         {
             if (Set(ref _customFormatMask, value) && _computedOnce)
             {
-                _ = RecomputeAsync();
+                // Through the debounce, like every other edit. This setter predates the quiet period by
+                // five days and was simply not moved onto it, so typing a ten-character mask cost ten
+                // process launches - measured, not supposed. It does NOT go through TriggerRecompute,
+                // because that also drops the active preset and reformatting the same moment must not.
+                _ = _recomputeDebounce.RunAsync(RecomputeAsync);
             }
         }
     }
@@ -851,7 +855,11 @@ public sealed class CalculatorViewModel : ObservableObject
         }
 
         ShowActivePreset(preset, culture, needsParameters: false);
-        _ = RecomputeAsync();
+
+        // Debounced for the same reason as the mask above: this runs again on every keystroke in a
+        // parameter input, and each complete value used to spawn its own calc. The unpack itself is
+        // in-memory and stays immediate - it is the process launch that is worth waiting a moment for.
+        _ = _recomputeDebounce.RunAsync(RecomputeAsync);
     }
 
     private void ClearParamInputsOnly()

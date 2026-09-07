@@ -26,6 +26,13 @@ Notable changes to Chrono Mock, newest first. The format follows
   the error box reported the throw. Typing into the reverse-analysis field, pausing, and typing
   again went the same way.
 
+- **Two calculator fields launched the engine once per keystroke.** The custom output format
+  mask and a preset's parameter inputs both recalculated on every character typed rather than
+  waiting for the quarter-second pause the rest of the builder uses - measured at ten launches
+  for a ten-character mask. Both were call sites that predated the pause and were never moved
+  onto it. On a test machine with an antivirus scanner watching process creation, that was
+  visible as the field stuttering while you typed in it.
+
 - **Five United States holidays answered with today's rule for every year in history.** Both
   calendars now carry the changes that actually happened, so a date before 1986 - or before 1971 -
   comes back correct:
