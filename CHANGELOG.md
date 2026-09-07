@@ -13,6 +13,13 @@ Notable changes to Chrono Mock, newest first. The format follows
   it. Until now the tool could not answer the first question any bug report asks.
 - **The version in the window title and title bar**, so a screenshot says which build it came
   from without anyone having to ask.
+- **A start moment relative to now, in the window.** The command line has always taken
+  `chrono run --at +30d` - start the application as if it were thirty days from now, which is how a trial
+  expiry or a licence renewal gets tested. The panel could only take an absolute date, so the tester had to
+  work the date out by hand first. There is now a line under the moment: a direction, an amount and a unit,
+  and a button that fills the moment above with the answer. Months, quarters and years land on the calendar
+  date rather than on a fixed number of hours, because the same engine works it out as in the calculator.
+  Business days are not offered - a session carries no calendar, so they could only be refused.
 - **A zone for the calculator's start point.** The command line has always been able to say which zone a
   base is read in - `chrono calc --base today --zone -08:00` asks what "today" is on the US west coast,
   which is a different day either side of midnight. The calculator panel could only re-express an answer

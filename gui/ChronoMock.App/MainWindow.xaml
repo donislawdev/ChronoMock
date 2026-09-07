@@ -239,6 +239,51 @@
                      HorizontalAlignment="Center" Margin="{StaticResource SpaceXs}" TextWrapping="Wrap"
                      FontSize="{StaticResource FontSizeCaption}" Foreground="{DynamicResource BrushStatusPartial}" />
 
+          <!-- A start moment relative to now, which the command line spells `chrono run at +30d`. Its own
+               line: the At row above already carries nine controls and does not wrap, so four more would
+               push the zone off a narrow window. The sign, amount and unit are the calculator's shift step,
+               the same idiom for the same idea, and the button fills the field above rather than holding a
+               delta of its own - so the preview keeps naming the exact instant the application will see.
+               Business days are absent from the unit list on purpose: a session has no calendar, so the
+               engine could only refuse them.
+
+               Its DataContext is set in code-behind to a RelativeMomentViewModel, the same way this window
+               already bridges the calculator into the session's moment. The panel's own view model sits on
+               its coupling ceiling (CA1506), and raising a pinned ceiling is the owner's call, not a side
+               effect of adding a row. IsEnabled therefore reaches back to the window's DataContext for
+               CanEditTime, exactly as the At row's moment input does. -->
+          <StackPanel x:Name="RelativeMomentRow"
+                      IsEnabled="{Binding DataContext.CanEditTime, RelativeSource={RelativeSource AncestorType={x:Type ui:FluentWindow}}}">
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="{StaticResource SpaceXs}">
+              <TextBlock Text="{DynamicResource moment.relative_label}" VerticalAlignment="Center"
+                         FontSize="{StaticResource FontSizeBody}" Foreground="{DynamicResource BrushTextSecondary}" />
+              <ComboBox ItemsSource="{Binding Signs}" SelectedItem="{Binding Sign}" MinWidth="48"
+                        AutomationProperties.Name="{DynamicResource moment.relative_sign}"
+                        Margin="{StaticResource SpaceSm}" VerticalAlignment="Center" />
+              <TextBox Text="{Binding Amount, UpdateSourceTrigger=PropertyChanged}"
+                       Width="64" VerticalAlignment="Center"
+                       FontFamily="{StaticResource FontFamilyMono}"
+                       AutomationProperties.Name="{DynamicResource moment.relative_amount}" />
+              <ComboBox ItemsSource="{Binding Units}" SelectedItem="{Binding Unit}" MinWidth="120"
+                        ItemContainerStyle="{StaticResource LabelKeyComboItem}"
+                        AutomationProperties.Name="{DynamicResource moment.relative_unit}"
+                        Margin="{StaticResource SpaceSm}" VerticalAlignment="Center">
+                <ComboBox.ItemTemplate>
+                  <DataTemplate>
+                    <TextBlock Text="{Binding LabelKey, Converter={StaticResource KeyToText}}" />
+                  </DataTemplate>
+                </ComboBox.ItemTemplate>
+              </ComboBox>
+              <Button Content="{DynamicResource action.set_relative}" Click="OnRelativeSetClick"
+                      ToolTip="{DynamicResource tip.relative_moment}"
+                      VerticalAlignment="Center" Margin="{StaticResource SpaceXs}" />
+            </StackPanel>
+            <TextBlock Text="{Binding ErrorKey, Converter={StaticResource KeyToText}}"
+                       Visibility="{Binding HasError, Converter={StaticResource BoolToVis}}"
+                       HorizontalAlignment="Center" Margin="{StaticResource SpaceXs}" TextWrapping="Wrap"
+                       FontSize="{StaticResource FontSizeCaption}" Foreground="{DynamicResource BrushStatusPartial}" />
+          </StackPanel>
+
           <!-- What the target will actually be told (chrono-mock 7.1 pt 3). The inputs above are
                locale-invariant ISO on purpose - a dev box in one locale and a test VM in another must not
                read the same typed date differently - and this line pays back the readability that costs,

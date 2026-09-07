@@ -61,6 +61,23 @@ public sealed class StepViewModel : ObservableObject
 {
     public static IReadOnlyList<string> Signs { get; } = ["+", "-"];
 
+    /// <summary>Every shift unit the engine's step grammar accepts, in the order the pickers show them.
+    /// Static and shared, because the substitution panel offers the same units for a moment relative to now
+    /// (its own list is this one minus business days, which need a calendar a session has not got) - two
+    /// hand-kept copies would drift the day a unit is added.</summary>
+    public static IReadOnlyList<UnitOption> AllUnits { get; } =
+    [
+        new UnitOption("s", "calc.unit.seconds"),
+        new UnitOption("m", "calc.unit.minutes"),
+        new UnitOption("h", "calc.unit.hours"),
+        new UnitOption("d", "calc.unit.days"),
+        new UnitOption("w", "calc.unit.weeks"),
+        new UnitOption("mo", "calc.unit.months"),
+        new UnitOption("q", "calc.unit.quarters"),
+        new UnitOption("y", "calc.unit.years"),
+        new UnitOption("bd", "calc.unit.business_days"),
+    ];
+
     private StepKindOption _kind;
     private string _sign = "+";
     private string _amount = "1";
@@ -375,18 +392,7 @@ public sealed class CalculatorViewModel : ObservableObject
             new StepKindOption(StepKind.Zone, "calc.kind_zone"),
         ];
 
-        Units =
-        [
-            new UnitOption("s", "calc.unit.seconds"),
-            new UnitOption("m", "calc.unit.minutes"),
-            new UnitOption("h", "calc.unit.hours"),
-            new UnitOption("d", "calc.unit.days"),
-            new UnitOption("w", "calc.unit.weeks"),
-            new UnitOption("mo", "calc.unit.months"),
-            new UnitOption("q", "calc.unit.quarters"),
-            new UnitOption("y", "calc.unit.years"),
-            new UnitOption("bd", "calc.unit.business_days"),
-        ];
+        Units = StepViewModel.AllUnits;
 
         SnapTargets =
         [

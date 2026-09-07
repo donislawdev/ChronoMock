@@ -18,6 +18,12 @@ public partial class MainWindow : FluentWindow
         FileSessionHistoryStore.ForApp(), FileDiagnosticsLog.ForApp(), AppPaths.CalcClient, AppPaths.PresetsDir);
     private readonly CalculatorViewModel _calculator = CreateCalculator();
 
+    // The "relative to now" line under the moment field. Owned here rather than by the session view model
+    // for the reason the XAML states: that class is on its coupling ceiling, and raising a pinned ceiling is
+    // a decision, not a side effect. Wiring a control into the session's moment is what this window already
+    // does for the calculator bridge.
+    private readonly RelativeMomentViewModel _relative;
+
     // The calculator is a client of the same engine (ADR-6) - it reads the shared preset catalogue and the
     // calendars from the portable install beside the exe, or from the cargo outputs in a dev checkout - the
     // layout seam lives in AppPaths, not here.
@@ -29,6 +35,8 @@ public partial class MainWindow : FluentWindow
         InitializeComponent();
         DataContext = _session;
         CalculatorContainer.DataContext = _calculator;
+        _relative = new RelativeMomentViewModel(_session.Moment, AppPaths.CalcClient);
+        RelativeMomentRow.DataContext = _relative;
 
         // Bridge: the calculator asks to send its result to substitution - this window fills the panel.
         _calculator.UseInSubstitutionRequested += OnUseInSubstitution;
@@ -216,6 +224,12 @@ public partial class MainWindow : FluentWindow
 
     private void OnNowClick(object sender, RoutedEventArgs e)
         => _session.Moment.SetNow(_session.SelectedZone.BiasMinutes);
+
+    // "Now, shifted" - the panel's equivalent of `--at +30d`. Awaited rather than fire-and-forget: the
+    // engine runs out of process, and a discarded task would carry any failure away with it (the view model
+    // turns every reachable one into an error key on screen, and this keeps the unreachable ones loud).
+    private async void OnRelativeSetClick(object sender, RoutedEventArgs e)
+        => await _relative.ApplyAsync(_session.SelectedZone.BiasMinutes);
 
     // In-flight arbitrary speed: the view model parses the custom-speed box ("500" or "x500") and either
     // applies it or surfaces an in-flight error, so a bad value is not a silent no-op (rule 6, RELEASE P3).

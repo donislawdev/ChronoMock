@@ -51,9 +51,16 @@
   "moment.time_format": "Use HH:MM (24-hour).",
   // Reads the typed moment back in plain language (chrono-mock 7.1 pt 3). Only a lead-in: the date itself is formatted in the interface culture, so no sentence has to be assembled from fragments.
   "moment.preview_label": "The application will see",
+  "moment.relative_label": "Relative to now:",
+  "moment.relative_sign": "Direction",
+  "moment.relative_amount": "Amount",
+  "moment.relative_unit": "Unit",
+  "moment.relative_bad_amount": "Enter a whole number above zero, e.g. 30.",
+  "moment.relative_failed": "That delta could not be turned into a date - it may land outside the range this build computes on.",
   "action.pick_date": "Pick a date",
   "action.today": "Today",
   "action.now": "Now",
+  "action.set_relative": "Set",
   "zone.label": "Zone:",
 
   // Market-name hints shown beside each offset in the zone dropdown, so it is not a bare number.
@@ -363,6 +370,7 @@
   "tip.today": "Fill in today's date (session zone), at midnight.",
   "tip.now": "Fill in the current date and time (session zone).",
   "tip.zone": "The session time zone - a fixed offset with no daylight saving. The moment is read in it.",
+  "tip.relative_moment": "Fill the moment above with now, shifted by this much - the command line spells it --at +30d. Months, quarters and years land on the calendar date, not on a fixed number of hours.",
   "tip.mode": "How fast the fake clock runs: flowing at real speed, frozen, or N times faster.",
   "tip.scale_duration": "Also speed up timers, sleeps and countdowns inside the app - not just the wall clock.",
   "tip.scale_qpc": "Also speed up QPC-based clocks (Python monotonic, .NET Stopwatch, Java nanoTime). May distort an app that times its rendering off QPC.",

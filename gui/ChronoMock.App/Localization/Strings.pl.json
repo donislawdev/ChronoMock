@@ -52,9 +52,16 @@
   "moment.time_format": "Użyj HH:MM (format 24h).",
   // Reads the typed moment back in plain language (chrono-mock 7.1 pt 3). Only a lead-in: the date itself is formatted in the interface culture, so no sentence has to be assembled from fragments.
   "moment.preview_label": "Aplikacja zobaczy",
+  "moment.relative_label": "Względem teraz:",
+  "moment.relative_sign": "Kierunek",
+  "moment.relative_amount": "Liczba",
+  "moment.relative_unit": "Jednostka",
+  "moment.relative_bad_amount": "Podaj liczbę całkowitą większą od zera, np. 30.",
+  "moment.relative_failed": "Nie udało się zamienić tej delty na datę - może wypadać poza zakresem, w którym ta kompilacja liczy.",
   "action.pick_date": "Wybierz datę",
   "action.today": "Dziś",
   "action.now": "Teraz",
+  "action.set_relative": "Ustaw",
   "zone.label": "Strefa:",
 
   // Market-name hints shown beside each offset in the zone dropdown, so it is not a bare number.
@@ -362,6 +369,7 @@
   "tip.today": "Wstaw dzisiejszą datę (strefa sesji), o północy.",
   "tip.now": "Wstaw bieżącą datę i godzinę (strefa sesji).",
   "tip.zone": "Strefa czasowa sesji - stały offset bez zmiany czasu. Moment jest w niej liczony.",
+  "tip.relative_moment": "Wypełnia moment powyżej czasem teraz, przesuniętym o tę wartość - w wierszu poleceń to --at +30d. Miesiące, kwartały i lata trafiają na datę kalendarzową, nie na stałą liczbę godzin.",
   "tip.mode": "Jak szybko idzie podmieniony zegar: płynnie, zamrożony, albo N razy szybciej.",
   "tip.scale_duration": "Przyśpiesz też liczniki, uśpienia i odliczania w aplikacji - nie tylko zegar ścienny.",
   "tip.scale_qpc": "Przyśpiesz też zegary na QPC (Python monotonic, .NET Stopwatch, Java nanoTime). Może zniekształcić aplikację liczącą render z QPC.",
