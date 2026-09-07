@@ -1196,3 +1196,92 @@ fn prose_uses_a_flat_hyphen_and_no_semicolons() {
     );
     println!("punctuation scan: {} files, {semicolons_in_prose} semicolons in prose", files.len());
 }
+
+// ---------------------------------------------------------------------------------------------
+// H9. Every channel from an optional module survives a late load
+// ---------------------------------------------------------------------------------------------
+
+/// The channels that live in user32, winmm or ws2_32, by the `CH_*` constant `CHANNELS` names them
+/// with. Read out of the table's source rather than linked in, because `chrono-ctl` is deliberately
+/// not a dependency of the CLI's tests.
+fn optional_module_channels(ctl_src: &str) -> Vec<String> {
+    ctl_src
+        .lines()
+        .filter(|l| l.contains("ChannelDef {"))
+        .filter(|l| {
+            l.contains("ChannelModule::User32")
+                || l.contains("ChannelModule::Winmm")
+                || l.contains("ChannelModule::Ws2_32")
+        })
+        .filter_map(|l| {
+            let after = l.split("bit: ").nth(1)?;
+            Some(after.split(',').next()?.trim().to_string())
+        })
+        .collect()
+}
+
+/// The body of one free function in the hook, by brace depth - the same shape scan `hook_detours`
+/// uses, so a rename shows up as an empty body rather than as a silent pass.
+fn hook_fn_body(text: &str, signature: &str) -> Option<String> {
+    let start = text.lines().position(|l| l.starts_with(signature))?;
+    let lines: Vec<&str> = text.lines().collect();
+    let mut depth = 0i32;
+    let mut seen = false;
+    for (i, l) in lines.iter().enumerate().skip(start) {
+        depth += l.matches('{').count() as i32 - l.matches('}').count() as i32;
+        if l.contains('{') {
+            seen = true;
+        }
+        if seen && depth == 0 {
+            return Some(lines[start..=i].join("\n"));
+        }
+    }
+    None
+}
+
+/// A channel whose module can arrive after `DllMain` must be installable AFTER `DllMain`.
+///
+/// Measured 2026-09-07, which is why this guard exists at all: a video player and a flash runtime
+/// both ran with winmm mapped while `timeGetTime` and `timeSetEvent` were never hooked, and the
+/// report did not carry the channel at all - not covered, not uncovered, absent. `make_hook` resolves
+/// these three modules once, at `DllMain`, and for a runtime that loads later that is too early.
+/// `late_scan` is the second chance, and this checks that every channel which needs one gets one.
+///
+/// The failure it is built to catch is a channel ADDED to `CHANNELS` in an optional module and not
+/// added to `late_scan` - which today would be silent twice over, because such a channel is dropped
+/// from the report rather than listed as a gap (untouchable rule 4).
+#[test]
+fn every_optional_module_channel_can_be_installed_late() {
+    let root = repo_root();
+    let ctl_src = std::fs::read_to_string(root.join("crates/ctl/src/lib.rs")).expect("ctl source");
+    let hook_src = std::fs::read_to_string(root.join("crates/hook/src/lib.rs")).expect("hook source");
+
+    let channels = optional_module_channels(&ctl_src);
+
+    // Canary, with a LITERAL rather than a count derived from the same list it checks: six channels
+    // live in optional modules today (timeGetTime, timeSetEvent, SetTimer, both message waits,
+    // connect). Fewer means the scan stopped matching the table's shape and went blind.
+    assert!(
+        channels.len() >= 6,
+        "found only {} channels in optional modules - the CHANNELS table changed shape and this \
+         guard went blind, fix the scan rather than this number: {channels:?}",
+        channels.len()
+    );
+
+    let body = hook_fn_body(&hook_src, "unsafe fn late_scan()")
+        .expect("late_scan not found in the hook - late module installation is gone, or renamed");
+
+    let missing: Vec<String> = channels
+        .iter()
+        .map(|ch| ch.replacen("CH_", "IDX_", 1))
+        .filter(|idx| !body.contains(idx.as_str()))
+        .collect();
+
+    assert!(
+        missing.is_empty(),
+        "these channels live in a module the target may load AFTER DllMain, but late_scan never \
+         installs them - they would be missing from the report entirely, not reported as a gap: \
+         {missing:?}"
+    );
+    println!("late-load guard: {} optional-module channels, all reachable", channels.len());
+}

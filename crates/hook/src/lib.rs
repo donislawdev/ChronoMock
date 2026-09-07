@@ -59,14 +59,14 @@
 
 use std::cell::Cell;
 use std::ffi::{c_void, CString};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::OnceLock;
 
 use chrono_ctl::{
     bump_calls, bump_uninjected_children, cov_at_mut, dur_qpc_at, dur_quit_at, dur_tick_at,
     header_is_ours,
     publish_pid, read_anchor, read_core_pid, read_dur, read_qpc, read_scale_dur, read_scale_qpc,
-    read_tz_bias, reserve_cov_slot, scale_delay_interval, scale_timer_due, scale_timer_elapse, scale_timer_period,
+    read_installed, read_tz_bias, reserve_cov_slot, scale_delay_interval, scale_timer_due, scale_timer_elapse, scale_timer_period,
     scale_timer_period_ms, scale_wait, set_channels_installed, ChannelModule, Cov,
     Ctl, CHANNELS, IDX_GDTZI, IDX_GLT, IDX_GST, IDX_GSTAFT, IDX_GSTPAFT, IDX_GTC, IDX_GTC64,
     IDX_GTZI, IDX_NTDELAY, IDX_NTQSI, IDX_NTQST, IDX_QUIT, IDX_SLEEP, IDX_SLEEPEX, IDX_STSL,
@@ -82,7 +82,8 @@ use windows::Win32::Foundation::{
 };
 use windows::Win32::System::Diagnostics::Debug::{OutputDebugStringA, WriteProcessMemory};
 use windows::Win32::System::LibraryLoader::{
-    GetModuleFileNameW, GetModuleHandleA, GetProcAddress,
+    GetModuleFileNameW, GetModuleHandleA, GetModuleHandleExA, GetProcAddress,
+    GET_MODULE_HANDLE_EX_FLAG_PIN,
 };
 use windows::Win32::System::Memory::{
     MapViewOfFile, OpenFileMappingW, UnmapViewOfFile, VirtualAllocEx, VirtualFreeEx,
@@ -283,14 +284,10 @@ fn cov_ptr() -> Option<*mut Cov> {
 ///
 /// # Safety
 /// `h` must be a valid handle to wait on.
-unsafe fn wait_raw(h: HANDLE, ms: u32) { unsafe {
+unsafe fn wait_raw(h: HANDLE, ms: u32) -> u32 { unsafe {
     match O_WFSO.get() {
-        Some(o) => {
-            o(h, ms);
-        }
-        None => {
-            WaitForSingleObject(h, ms);
-        }
+        Some(o) => o(h, ms),
+        None => WaitForSingleObject(h, ms).0,
     }
 }}
 
@@ -311,12 +308,257 @@ const CHILD_INJECT_TIMEOUT_MS: u32 = 10_000;
 // dies (clean end, crash, or kill -9) the OS signals it, we flip DETACHED, and every
 // detour falls through to the original - the target's clock returns to real time.
 
+/// `WAIT_TIMEOUT` as the raw value the wait returns. Spelled out because the wait goes through the
+/// `WaitForSingleObject` TRAMPOLINE (`O_WFSO`), which hands back a bare `u32`, not the typed
+/// `WAIT_EVENT` the windows crate would.
+const WAIT_TIMEOUT_CODE: u32 = 258;
+
+/// How long the watcher sleeps between two looks, while a target is still starting up.
+///
+/// The interval is a compromise with two sides that pull opposite ways, and both were measured rather
+/// than guessed. Short is better for COVERAGE: everything the target calls before the hook lands runs
+/// on the real clock, and on `timeGetTime` that window ends in a JUMP, because the channel rejoins the
+/// shared duration base - which under x60 had drifted 138 694 ms from the real one after ~2 s. Long is
+/// better for COST: this is a thread inside somebody else's application, and every wake-up is charged
+/// to them for the whole session.
+///
+/// Hence two speeds instead of one number - though the measurement that settled them also said the
+/// interval is NOT what dominates, and that is worth writing down rather than implying otherwise.
+/// A flat 100 ms lost 7 calls out of 101, identically across three runs. Dropping to 20 ms - five
+/// times as often - moved it to 4-10, which is not a win. What actually moved it was giving the
+/// WATCHER a head start: the thread is spawned lazily from the first detour, so a target that loads
+/// its modules before touching any covered channel pays for the thread's creation as well, and
+/// letting it exist first took the loss to a steady 4-5.
+///
+/// So the floor is roughly 60-100 ms and it is scheduling, not sleeping. The fast interval is still
+/// worth its cost for a DIFFERENT case than the one the probe exercises: a module pulled in minutes
+/// into a session, long after the watcher exists, where the interval is the only thing between the
+/// module and the hook.
+const LATE_POLL_FAST_MS: u32 = 20;
+
+/// The interval after the startup burst is over.
+const LATE_POLL_SLOW_MS: u32 = 250;
+
+/// How many fast looks before backing off - 100 x 20 ms covers the first two seconds of the target's
+/// life. A target that pulls in a module later than that (a plugin loaded on demand) is still picked
+/// up, just at the slow interval, where a wake-up costs four a second instead of fifty.
+const LATE_FAST_TRIES: u32 = 100;
+
+/// Watch the core AND look for modules that arrive after `DllMain`.
+///
+/// These two jobs share one loop rather than one thread each, because they are the same wait: the
+/// watcher already blocks on the core's handle, and a bounded wait on that handle is both "has the
+/// core died" and "time to look again". A second thread in the target would buy nothing and cost a
+/// stack.
+///
+/// The loop degenerates to the original INFINITE block as soon as `late_scan` reports nothing left to
+/// settle, which for a target whose modules were all present at `DllMain` is the FIRST call - so the
+/// common case pays one extra wait of 100 ms and nothing after that.
 unsafe extern "system" fn watcher_proc(_p: *mut c_void) -> u32 { unsafe {
     if let Some(&h) = CORE_HANDLE.get() {
-        wait_raw(HANDLE(h as *mut c_void), INFINITE);
+        let handle = HANDLE(h as *mut c_void);
+        let mut tries: u32 = 0;
+        loop {
+            // Look FIRST, wait second. The watcher is spawned from the first detour, which for most
+            // targets fires before `main` - so by the time the loop is running the modules a target
+            // pulls in early may already be there, and sleeping before the first look would hand
+            // back a whole interval for nothing.
+            late_scan();
+            if !late_pending() {
+                wait_raw(handle, INFINITE);
+                break;
+            }
+            let interval =
+                if tries < LATE_FAST_TRIES { LATE_POLL_FAST_MS } else { LATE_POLL_SLOW_MS };
+            tries = tries.saturating_add(1);
+            if wait_raw(handle, interval) != WAIT_TIMEOUT_CODE {
+                break; // the core is gone (or the wait failed) - detach, do not install anything
+            }
+        }
     }
     DETACHED.store(true, Ordering::SeqCst);
     0
+}}
+
+// --- Late module arrival --------------------------------------------------------
+//
+// `make_hook` resolves user32 / winmm / ws2_32 at `DllMain` time and treats a missing module as
+// "the target cannot call this". For a runtime that arrives LATER that assumption is false, and it
+// was measured false: a video player and a flash runtime both ran with winmm mapped while their
+// `timeGetTime` and `timeSetEvent` channels were never installed - and the report did not say so,
+// because a channel from an optional module that fails to install is dropped from the report
+// entirely rather than listed as uncovered. Under x60 that left `timeGetTime` 138 694 ms adrift
+// from `GetTickCount`, two clocks that both mean "milliseconds since boot".
+//
+// Six channels can land here: `timeGetTime` and `SetTimer` are SCALED (their absence is a hole in
+// the acceleration, not just in the audit), `timeSetEvent`, both message waits and `connect` are
+// observed.
+//
+// WHY THE INSTALL RUNS ON THE WATCHER THREAD AND NOT WHERE THE MODULE ARRIVES
+// ---------------------------------------------------------------------------
+// Both plausible triggers - a detour on the loader, or `LdrRegisterDllNotification` - deliver their
+// signal UNDER THE LOADER LOCK, and neither can install from there. Microsoft's own note on the
+// notification callback is blunt: "It is unsafe for the notification callback to call functions in
+// ANY other module other than itself", which rules out even `GetProcAddress`. Our hygiene guard says
+// the same thing from the other side: a detour may not allocate, and resolving a channel formats
+// diagnostics. And `MH_EnableHook` freezes every thread in the process, which is the one thing that
+// must not happen while another thread sits in the loader.
+//
+// So the install is asynchronous no matter which trigger is chosen - and once that is settled, a
+// signal buys nothing that a bounded wait does not, while `LdrRegisterDllNotification` would add an
+// undocumented entry point that ships with "may be changed or removed from Windows without further
+// notice". The watcher already waits on the core's handle for the whole session - it now waits with a
+// timeout instead of forever, and looks around each time it expires.
+//
+// The consequence is a race that is NOT an oversight: between the module arriving and the hook
+// landing, the target's calls run real. That window is the price of not freezing threads inside the
+// loader, and the audit is what makes it honest.
+
+/// Channels whose module was absent at `DllMain` and which the session still wants. Filled ONCE by
+/// `install` from what it could not resolve, then cleared bit by bit as each one is settled. Zero
+/// means the watcher can go back to blocking forever, which is the steady state of a target whose
+/// modules were all present at startup.
+static LATE_TODO: AtomicU64 = AtomicU64::new(0);
+
+/// Has `install` published its coverage mask yet.
+///
+/// This is R1, and it is a real ordering hazard rather than a theoretical one: `install` enables the
+/// detours BEFORE it stores `pending`, a detour calls `detached()`, and `detached()` is what spawns
+/// this watcher. So the watcher can exist while the mask is still unwritten, and a late bit ORed in
+/// during that gap would be erased by the plain volatile store that follows. The watcher simply does
+/// not touch the Cov until this flag says the store has happened.
+static INSTALL_DONE: AtomicBool = AtomicBool::new(false);
+
+const USER32_LATE: u64 =
+    CHANNELS[IDX_MWFMO].bit | CHANNELS[IDX_MWFMOEX].bit | CHANNELS[IDX_SETTIMER].bit;
+const WINMM_LATE: u64 = CHANNELS[IDX_TIMESETEVENT].bit | CHANNELS[IDX_TIMEGETTIME].bit;
+const WS2_32_LATE: u64 = CHANNELS[IDX_CONNECT].bit;
+
+/// Every channel that lives in a module which may show up after `DllMain`.
+const LATE_CHANNELS: u64 = USER32_LATE | WINMM_LATE | WS2_32_LATE;
+
+/// Is there still a channel worth looking for.
+fn late_pending() -> bool {
+    LATE_TODO.load(Ordering::Relaxed) != 0
+}
+
+/// Get a handle to an already-loaded module and PIN it for the life of the process.
+///
+/// Pinning, not a plain `GetModuleHandleA`, and the reason is correctness rather than convenience.
+/// A hook is bytes written into the module's own code: if the target later calls `FreeLibrary` and
+/// the module unmaps, those bytes go with it while our coverage mask still claims the channel is
+/// substituted - the audit would be lying (untouchable rule 4), and a call through a stale trampoline
+/// is worse than a lie. `GET_MODULE_HANDLE_EX_FLAG_PIN` is documented as keeping the module loaded
+/// "until the process is terminated, no matter how many times FreeLibrary is called".
+///
+/// This is NOT the force-load that `make_hook` deliberately avoids. We never bring in a module the
+/// target did not want - `GetModuleHandleExA` fails for a module that was never loaded, and we simply
+/// look again later. We only refuse to let go of one the target already chose to load.
+unsafe fn pin_module(name: PCSTR) -> Option<HMODULE> { unsafe {
+    let mut h = HMODULE::default();
+    match GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_PIN, name, &mut h) {
+        Ok(()) if !h.is_invalid() => Some(h),
+        _ => None,
+    }
+}}
+
+/// Resolve, create and record ONE late channel's detour. Mirrors `make_hook`, with two differences
+/// that both come from running after startup instead of during it.
+///
+/// The bit leaves `LATE_TODO` whether or not this succeeds. The module is present by the time we get
+/// here, so a missing export is a permanent answer, not a temporary one - retrying it every 100 ms
+/// for the rest of the session would burn the target's CPU to re-learn the same no (R6).
+///
+/// The trampoline is stored in `slot` BEFORE anything enables the detour, exactly as `make_hook`
+/// does. Reversing that would let a detour fire with no original to call (R4).
+///
+/// # Safety
+/// `detour` must be correct for `slot`, and `module` must be a live, pinned module handle.
+unsafe fn late_one<T: Copy>(
+    newly: &mut u64,
+    module: HMODULE,
+    idx: usize,
+    detour: *mut c_void,
+    slot: &OnceLock<T>,
+) { unsafe {
+    let ch = &CHANNELS[idx];
+    LATE_TODO.fetch_and(!ch.bit, Ordering::Relaxed);
+    if slot.get().is_some() {
+        return; // already installed at DllMain time - nothing owed here
+    }
+    let Ok(cname) = CString::new(ch.name) else {
+        log(&format!("[chrono_hook] late: bad channel name: {}", ch.name));
+        return;
+    };
+    let Some(target) = GetProcAddress(module, PCSTR(cname.as_ptr() as *const u8)) else {
+        log(&format!("[chrono_hook] late: no export: {}", ch.name));
+        return;
+    };
+    match MinHook::create_hook(target as *const () as *mut c_void, detour) {
+        Ok(original) => {
+            let _ = slot.set(std::mem::transmute_copy::<*mut c_void, T>(&original));
+            *newly |= ch.bit;
+        }
+        Err(e) => log(&format!("[chrono_hook] late: create_hook {} failed: {e:?}", ch.name)),
+    }
+}}
+
+/// One look for modules that arrived after `DllMain`, and an install for whatever is now reachable.
+///
+/// Ordering is the whole safety argument here (R2). Every module handle and every export address is
+/// resolved, and every trampoline built, BEFORE a single hook is enabled - because `MH_EnableHook`
+/// freezes all other threads, and calling into the loader while threads are frozen is how a hooking
+/// library deadlocks a process. `MinHook::enable_all_hooks` is the last step and it takes one
+/// freeze for the whole batch, and it skips hooks that are already live, so the ones installed at
+/// startup are not touched.
+unsafe fn late_scan() { unsafe {
+    if !INSTALL_DONE.load(Ordering::Acquire) {
+        return; // install has not published its mask yet (R1)
+    }
+    if DETACHED.load(Ordering::SeqCst) {
+        LATE_TODO.store(0, Ordering::Relaxed);
+        return; // the session is over - never install into a target that went back to real time
+    }
+    let todo = LATE_TODO.load(Ordering::Relaxed);
+    if todo == 0 {
+        return;
+    }
+
+    let mut newly: u64 = 0;
+    if todo & USER32_LATE != 0
+        && let Some(m) = pin_module(s!("user32.dll"))
+    {
+        late_one(&mut newly, m, IDX_MWFMO, h_mwfmo as *const () as *mut c_void, &O_MWFMO);
+        late_one(&mut newly, m, IDX_MWFMOEX, h_mwfmoex as *const () as *mut c_void, &O_MWFMOEX);
+        late_one(&mut newly, m, IDX_SETTIMER, h_settimer as *const () as *mut c_void, &O_SETTIMER);
+    }
+    if todo & WINMM_LATE != 0
+        && let Some(m) = pin_module(s!("winmm.dll"))
+    {
+        late_one(&mut newly, m, IDX_TIMESETEVENT, h_timesetevent as *const () as *mut c_void, &O_TIMESETEVENT);
+        late_one(&mut newly, m, IDX_TIMEGETTIME, h_timegettime as *const () as *mut c_void, &O_TIMEGETTIME);
+    }
+    if todo & WS2_32_LATE != 0
+        && let Some(m) = pin_module(s!("ws2_32.dll"))
+    {
+        late_one(&mut newly, m, IDX_CONNECT, h_connect as *const () as *mut c_void, &O_CONNECT);
+    }
+    if newly == 0 {
+        return;
+    }
+
+    if let Err(e) = MinHook::enable_all_hooks() {
+        // Nothing may be claimed: the trampolines exist but no new detour is live. The bits stay out
+        // of the Cov, so the audit reports these channels as it did before - not as covered.
+        log(&format!("[chrono_hook] late: enable_all_hooks: {e:?}"));
+        return;
+    }
+    if let Some(c) = cov_ptr() {
+        // OR, never a plain store: `install` owns the startup bits and this thread owns the late
+        // ones. Read-modify-write is safe here because this is the only writer after INSTALL_DONE.
+        set_channels_installed(c, read_installed(c) | newly);
+    }
+    log(&format!("[chrono_hook] late: installed 0x{newly:x}"));
 }}
 
 /// Spawn the watcher once, lazily - NOT from DllMain, to stay clear of the loader lock.
@@ -1958,6 +2200,19 @@ unsafe fn install() -> Result<(), String> { unsafe {
     if let Some(c) = cov {
         set_channels_installed(c, pending);
     }
+
+    // Hand the watcher whatever this session WANTED from an optional module and did not get. The set
+    // is computed here rather than in the watcher so the opt-in gates are stated once: without
+    // scale_duration the duration and observed-time channels are not wanted at all, and looking for
+    // them later would install channels the session deliberately did not ask for. `connect` is not
+    // gated - the network is watched regardless.
+    //
+    // `INSTALL_DONE` is released LAST, after the mask store above, and that ordering is the whole
+    // point of the flag (R1): until it is set the watcher will not touch the Cov, so a late bit
+    // cannot be ORed in and then wiped by our own store.
+    let wanted_late = if read_scale_dur(ctl as *const Ctl) { LATE_CHANNELS } else { WS2_32_LATE };
+    LATE_TODO.store(wanted_late & !pending, Ordering::Relaxed);
+    INSTALL_DONE.store(true, Ordering::Release);
 
     // Publish our PID LAST - after the coverage slot holds the installed mask and the detours are
     // live - so the mechanism never reads a pid whose slot is not yet filled in. Only if we actually
