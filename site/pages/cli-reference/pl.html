@@ -22,11 +22,17 @@
         <code>chrono calc</code> liczy datę i mówi, co w niej ciekawego. Obie mówią tą samą
         gramatyką kroków, więc przesunięcie napisane dla jednej znaczy w drugiej to samo.
       </p>
+      <p>
+        <code>chrono version</code> odpowiada na trzecie, dużo mniejsze pytanie: która to wersja,
+        którym z dwóch rdzeni jest ten plik i jaką wersję protokołu mówi. Jedna linia na
+        standardowym wyjściu, więc skrypt może ją przechwycić.
+      </p>
     </div>
 
     <pre class="term"><span class="p">chrono</span> run &lt;target&gt; [options]
 <span class="p">chrono</span> calc [options]
-<span class="p">chrono</span> --help          <span class="c"># usage for both</span></pre>
+<span class="p">chrono</span> version        <span class="c"># chrono {{version}} (x64, protocol 1)</span>
+<span class="p">chrono</span> --help          <span class="c"># usage for all of them</span></pre>
   </section>
 
   <section>

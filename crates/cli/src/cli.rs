@@ -3,7 +3,27 @@
 //! Split out of `main.rs` so the crate root is a dispatcher and nothing else. The usage strings are
 //! CLI text, which is English-only by rule 15 - they are not translation keys and never will be.
 
+use chrono_proto::PROTOCOL_VERSION;
+
 pub(crate) const CORE_VERSION: &str = env!("CARGO_PKG_VERSION");
+
+/// The single line `chrono version` prints.
+///
+/// Built as a value rather than printed directly, so a test can assert on it without capturing
+/// stdout. Three facts rather than one, because each answers a question a bug report otherwise has
+/// to guess at: which build, which of the two cores this executable is, and which wire version it
+/// speaks - the last one being what a "protocol version mismatch" is actually about.
+pub(crate) fn version_line() -> String {
+    format!("chrono {CORE_VERSION} ({}, protocol {PROTOCOL_VERSION})", this_bitness())
+}
+
+/// `chrono version`, and the `--version` and `-V` spellings of the same question.
+///
+/// On stdout and exit 0. Asking a question is a success rather than a usage error, and the answer
+/// has to survive a pipe, which is the whole reason someone types it in a script.
+pub(crate) fn print_version() {
+    println!("{}", version_line());
+}
 
 pub(crate) fn print_usage() {
     eprintln!("usage: chrono run <target> [--at <local-moment>] [--preset <id>] [--param id=value]... [--zone <+HH:MM>] [--mode <flow|frozen|xN>] [--scale-duration] [--scale-qpc] [--ticks N] [--timeout <s>] [--set-after T:M] [--jump-after T:moment] [--args \"...\"] [--cwd <dir>] [--report <path>] [--force] [--json]");
@@ -14,6 +34,7 @@ pub(crate) fn print_usage() {
     eprintln!("       --cwd starts the target in that directory; without it the target inherits ours, and a directory that does not exist stops the session rather than looking like a broken target");
     eprintln!("       (--preset supplies the moment and mode from presets/<id>.json, exclusive of --at/--mode/--scale-duration; --param fills its parameters, a trial start_date defaults to the target's file date)");
     print_calc_usage();
+    eprintln!("usage: chrono version   (also --version, -V)   the build, which core it is, and the protocol it speaks");
 }
 
 pub(crate) fn print_calc_usage() {
@@ -29,5 +50,30 @@ pub(crate) fn this_bitness() -> &'static str {
         "x64"
     } else {
         "x86"
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_version_line_carries_the_build_the_bitness_and_the_protocol() {
+        let line = version_line();
+
+        // Each assertion stands for a question a bug report has to answer. Naming them separately
+        // means a change that drops one of the three fails here rather than being noticed by
+        // whoever ends up reading a report that no longer says which core it came from.
+        assert!(line.starts_with("chrono "), "the line must name the tool first: {line}");
+        assert!(line.contains(CORE_VERSION), "no build version in {line}");
+        assert!(line.contains(this_bitness()), "no bitness in {line}");
+        assert!(
+            line.contains(&format!("protocol {PROTOCOL_VERSION}")),
+            "no protocol version in {line}"
+        );
+
+        // One line, because `chrono version` in a script is read with a single capture and a second
+        // line would silently become part of it.
+        assert!(!line.contains('\n'), "the version answer must be one line: {line}");
     }
 }

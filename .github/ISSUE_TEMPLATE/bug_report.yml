@@ -20,12 +20,12 @@ body:
     attributes:
       label: Version
       description: >-
-        There is no `chrono version` command yet, so take it from the file. In
-        PowerShell, next to the unzipped build:
-        `(Get-Item .\ChronoMock.exe).VersionInfo.ProductVersion` - or
-        `.\chrono.exe` for the command-line package. The release tag you
-        downloaded works too.
-      placeholder: "0.1.0"
+        `chrono version` prints it, along with which of the two cores that
+        executable is and the protocol it speaks. Paste the whole line. For the
+        window, the title bar carries the version, or in PowerShell next to the
+        unzipped build:
+        `(Get-Item .\ChronoMock.exe).VersionInfo.ProductVersion`.
+      placeholder: "chrono 0.1.0 (x64, protocol 1)"
     validations:
       required: true
   - type: dropdown

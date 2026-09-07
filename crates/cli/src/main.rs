@@ -1,7 +1,8 @@
 //! Chrono Mock command-line interface - a first-class interface from v0.1
 //! (chrono-mock.md 11.1 item 15), not an add-on to the GUI.
 //!
-//! One binary, four roles:
+//! One binary, four roles and one question (`chrono version`, which names the build, which of the
+//! two cores this executable is, and the protocol it speaks):
 //!   * `chrono run <target> ...` - the friendly driver ([`run`]). Spawns the core process
 //!     and speaks the machine protocol (ADR-6) to it over stdio.
 //!   * `chrono calc ...` - the date calculator ([`calc`]), the product's second half.
@@ -52,7 +53,7 @@ mod zone;
 
 use calc::calc_run;
 use cdp_probe::{cdp_date_probe, cdp_launch_probe, cdp_probe, cdp_shim_probe};
-use cli::print_usage;
+use cli::{print_usage, print_version};
 use core::core_mode;
 use run::driver_run;
 
@@ -66,6 +67,10 @@ fn main() {
         Some("__cdp-launch") => cdp_launch_probe(&args[2..]),
         Some("__cdp-shim") => cdp_shim_probe(&args[2..]),
         Some("__cdp-date") => cdp_date_probe(&args[2..]),
+        Some("version") | Some("--version") | Some("-V") => {
+            print_version();
+            0
+        }
         Some("--help") | Some("-h") | None => {
             print_usage();
             0
