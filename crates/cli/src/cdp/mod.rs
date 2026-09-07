@@ -29,7 +29,7 @@ pub enum Msg {
     Event { method: String, params: Value, session_id: Option<String> },
 }
 
-/// A live CDP session over one WebSocket. Commands are sent with a monotonic id; events that arrive
+/// A live CDP session over one WebSocket. Commands are sent with a monotonic id - events that arrive
 /// while waiting for a reply are queued so a later event loop can drain them (`next`).
 /// How long to wait for a reply to one CDP command.
 ///
@@ -156,7 +156,7 @@ impl CdpClient {
         }
         self.ws.send_text(&Value::Object(req).to_string())?;
 
-        // A reply should come promptly; poll until it does, bounded so a hung target cannot block us.
+        // A reply should come promptly - poll until it does, bounded so a hung target cannot block us.
         let deadline = Instant::now() + Duration::from_secs(CALL_DEADLINE_SECS);
         loop {
             // Checked every pass, not only when the socket goes quiet. A target that keeps pushing

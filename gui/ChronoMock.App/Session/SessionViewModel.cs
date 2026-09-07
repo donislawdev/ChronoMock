@@ -18,7 +18,7 @@ namespace ChronoMock.App;
 /// The event-to-view mapping lives in <see cref="Apply"/>, which is pure and synchronous, so it is unit
 /// tested without a core process. <see cref="StartAsync"/> is entered on the UI thread and never configures
 /// its awaits off it, so every <see cref="Apply"/> call lands on the UI thread and property changes are
-/// raised there. The core stays the single source of truth for the clocks (untouchable rule 2); the panel
+/// raised there. The core stays the single source of truth for the clocks (untouchable rule 2) - the panel
 /// only renders what the heartbeat reports and never derives time itself.
 /// </para>
 /// </summary>
@@ -33,7 +33,7 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     /// INJECT_TIMEOUT), so a slow start never trips it.</summary>
     internal static readonly TimeSpan IdleTimeout = TimeSpan.FromSeconds(15);
 
-    /// <summary>The start command uses id 1 (see <see cref="SessionPlan"/>); in-flight commands (jump,
+    /// <summary>The start command uses id 1 (see <see cref="SessionPlan"/>) - in-flight commands (jump,
     /// set_multiplier) take ids from here up. An error's id tells the two apart (RELEASE-001): an id at or
     /// above this answers one of OUR in-flight commands, while id 1 (or none) is the response to the start
     /// command or an unsolicited failure - a start/fatal error, never an in-flight rejection.</summary>
@@ -141,7 +141,7 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     private int _processCount;
     private bool _coverageKnown;
     /// <summary>The pid of the process whose call counts the panel shows - the first one reported,
-    /// which is the parent. Later events for it replace its counts; other pids never do (R2-X8).</summary>
+    /// which is the parent. Later events for it replace its counts - other pids never do (R2-X8).</summary>
     private uint? _parentPid;
     private bool _isCdp;
     private IReadOnlyList<string> _covered = [];
@@ -156,7 +156,7 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     private string _vanishReasonKey = string.Empty;
     private long _livedMs;
     // Final-state facts the core reports in `ended` (RELEASE audit): the target's own exit code (native
-    // sessions where the app exited on its own; null for Stop/end and for CDP) and any cleanup residue it
+    // sessions where the app exited on its own - null for Stop/end and for CDP) and any cleanup residue it
     // could not remove (today only a CDP temp profile). Surfaced honestly, never dropped (rule 6).
     private int? _targetExitCode;
     private IReadOnlyList<string> _residueKeys = [];
@@ -391,12 +391,12 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
 
     /// <summary>Scale the duration axis too (chrono-mock 11.1 pt 4): with a multiplier, timers, sleeps and
     /// tick counts advance N times as well, so a countdown or animation runs N times faster - not just the
-    /// wall clock. Off by default (the wall clock alone covers date-dependent behaviour); a duration-based
+    /// wall clock. Off by default (the wall clock alone covers date-dependent behaviour) - a duration-based
     /// target like a countdown needs it. Maps to the wire <c>scale_duration</c> the core already accepts.</summary>
     public bool ScaleDuration { get => _scaleDuration; set => Set(ref _scaleDuration, value); }
 
     /// <summary>Also scale QueryPerformanceCounter (ADR-2 reversal, opt-in). QPC backs the monotonic/elapsed
-    /// clock of Python 3.13+ (monotonic/perf_counter), .NET (Stopwatch) and Java (nanoTime); with this on,
+    /// clock of Python 3.13+ (monotonic/perf_counter), .NET (Stopwatch) and Java (nanoTime) - with this on,
     /// a timer built on those accelerates too. SEPARATE from ScaleDuration because scaling QPC can distort a
     /// target that times its rendering off QPC. Off by default (ADR-2). Maps to the wire <c>scale_qpc</c>.</summary>
     public bool ScaleQpc { get => _scaleQpc; set => Set(ref _scaleQpc, value); }
@@ -414,7 +414,7 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
 
     /// <summary>Working folder for the target (chrono-mock 7.1 pt 1). Empty means "do not ask for one", and
     /// the target then inherits ours - the behaviour every session had before this field existed. The wire
-    /// and the mechanism have carried <c>cwd</c> since the protocol was written; only the two surfaces
+    /// and the mechanism have carried <c>cwd</c> since the protocol was written - only the two surfaces
     /// never offered it. Start-only.</summary>
     public string WorkingFolder { get => _workingFolder; set => Set(ref _workingFolder, value); }
 
@@ -674,7 +674,7 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
 
     /// <summary>
     /// Jump the fake clock by a relative delta (e.g. "+1d", "-2h" - units s/m/h/d/w). The core adds it to
-    /// the current fake time and re-anchors; a backward jump never rewinds the duration axis (rule 3). The
+    /// the current fake time and re-anchors - a backward jump never rewinds the duration axis (rule 3). The
     /// core validates the delta and reports a bad one as an error. No-op unless a session is running.
     /// </summary>
     public void SendJump(string delta)
@@ -730,7 +730,7 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     public bool IsIdle => _idle;
 
     /// <summary>Whether the time inputs (moment and mode) may be edited. When idle they set the START
-    /// config; while a session runs they act live (moment -> jump, mode -> set_multiplier). Locked only
+    /// config - while a session runs they act live (moment -> jump, mode -> set_multiplier). Locked only
     /// during the brief connecting/ending transitions. Target, zone and scale-duration stay start-only
     /// (zone cannot re-render in flight, scale-duration has no in-flight command).</summary>
     public bool CanEditTime => _idle || IsRunning;
@@ -850,7 +850,7 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
 
     /// <summary>The target's own exit code, from <c>ended.target_exit_code</c> - present only for a native
     /// session whose app exited on its own (null for a Stop/end or a CDP session). Informational, never a
-    /// verdict; shown so the reader can tell "the app closed itself (code N)" from "the session was stopped".</summary>
+    /// verdict - shown so the reader can tell "the app closed itself (code N)" from "the session was stopped".</summary>
     public int? TargetExitCode
     {
         get => _targetExitCode;
@@ -860,7 +860,7 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     public bool HasTargetExit => _targetExitCode.HasValue;
 
     /// <summary>Cleanup residue translation keys from <c>ended.residue_keys</c> - what a teardown could not
-    /// remove (today only a CDP temp profile that stayed locked). Empty on a clean end; rendered as
+    /// remove (today only a CDP temp profile that stayed locked). Empty on a clean end - rendered as
     /// warnings so a session reports the mess it left rather than hiding it (rule 6).</summary>
     public IReadOnlyList<string> ResidueKeys
     {
@@ -902,7 +902,7 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
 
     /// <summary>
     /// Fold one event into the view state. Pure and synchronous (no I/O, no threading) so the mapping is
-    /// unit-testable; the live loop marshals each call onto the UI thread. A late <c>state</c> after a
+    /// unit-testable - the live loop marshals each call onto the UI thread. A late <c>state</c> after a
     /// terminal outcome is ignored, so a finished session is never resurrected as "running".
     /// </summary>
     public void Apply(ChronoEvent evt)
@@ -986,7 +986,7 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
                 break;
             case CoverageEvent c when _isCdp:
                 // CDP emits one coverage per JS context - accumulate them all (each context's counts stay
-                // its own, never summed across contexts, rule 4); union the warnings and uncovered lists.
+                // its own, never summed across contexts, rule 4) - union the warnings and uncovered lists.
                 // The channel strings already carry the context type ("page setInterval"), so the reader
                 // can tell contexts apart without a per-context breakdown.
                 Covered = [.. _covered, .. c.Covered.Select(FormatChannel)];
@@ -1249,7 +1249,7 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     private static string FormatChannel(CoveredChannel channel) => $"{channel.Channel}  ×{channel.Calls}";
 
     /// <summary>Build the wire time from the inputs. The moment is the local time in the session zone
-    /// (rule 2, chrono-mock 9.5); the core turns it into UTC and validates it (docs/08 section 5).</summary>
+    /// (rule 2, chrono-mock 9.5) - the core turns it into UTC and validates it (docs/08 section 5).</summary>
     internal TimeSpec BuildTime()
     {
         var canonical = Moment.Canonical;
@@ -1267,7 +1267,7 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     /// Compose the paste-into-ticket session summary (chrono-mock 7.2, 8.8) in the interface language. It
     /// mirrors the CLI evidence export (crates/cli render_evidence): a session that is anything other than a
     /// clean "works" ALWAYS leads with an unreliable-evidence banner - evidence that hides doubt is worse
-    /// than none. Pure over the view state, so it is unit tested with a fake translator; the caller supplies
+    /// than none. Pure over the view state, so it is unit tested with a fake translator - the caller supplies
     /// the key resolver (rule 15), never Application.Current directly, so this stays testable without WPF.
     /// </summary>
     public string BuildSummary(Func<string, string> translate)
@@ -1322,7 +1322,7 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
 
         if (_hasTiming)
         {
-            // Prefer the authoritative end wall from `ended`; fall back to the last heartbeat's fake clock.
+            // Prefer the authoritative end wall from `ended` - fall back to the last heartbeat's fake clock.
             var fakeWall = _fakeEndWall.Length > 0 ? _fakeEndWall : Fake.Wall;
             sb.Append("  ").Append(translate("report.session")).Append(": ")
               .Append(Fmt(translate("report.session_reached"), fakeWall)).Append('\n');
@@ -1338,7 +1338,7 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
               .Append(code.ToString(CultureInfo.InvariantCulture)).Append('\n');
         }
 
-        // Channel names are raw API identifiers (not translated); warnings are keys the core raised.
+        // Channel names are raw API identifiers (not translated) - warnings are keys the core raised.
         AppendList(sb, translate, "coverage.covered", _covered, translateItems: false);
         AppendList(sb, translate, "coverage.observed", _observed, translateItems: false);
         AppendList(sb, translate, "coverage.uncovered", _uncovered, translateItems: false);
@@ -1383,7 +1383,7 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     /// <summary>Compose the diagnostics block: a header naming the status, target, and requested moment, then
     /// the core's stderr and parse-error lines verbatim. English and stable, like the core's own stderr and
     /// the CLI report - it is a technical artifact for a bug report, not interface text (rule 15 governs the
-    /// UI; this is data). Pure over the view state, so it is unit tested with a fake line list.</summary>
+    /// UI - this is data). Pure over the view state, so it is unit tested with a fake line list.</summary>
     internal string BuildDiagnosticsBlock(IEnumerable<string> lines)
     {
         var mode = _startMode ?? SelectedMode;
@@ -1415,7 +1415,7 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
         return sb.ToString();
     }
 
-    /// <summary>A clean "works" session is the only reliable one; anything else must carry the unreliable
+    /// <summary>A clean "works" session is the only reliable one - anything else must carry the unreliable
     /// banner in an export (chrono-mock 8.8), mirroring the CLI's session_is_reliable.</summary>
     private bool IsReliable => _verdictKind == VerdictKind.Works
                               && _statusKind != SessionStatusKind.DidNotTakeEffect;
@@ -1456,13 +1456,13 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     }
 
     /// <summary>Build a history record from the current setup and the session's final verdict (docs/04
-    /// section 6). Pure over the view state, so it is unit tested; the GUI's own clock is real (only the
+    /// section 6). Pure over the view state, so it is unit tested - the GUI's own clock is real (only the
     /// target is faked), so DateTime.UtcNow is the true end time.</summary>
     internal SessionRecord BuildRecord()
     {
         // Record the START moment and mode (snapshot), not any in-flight change (rule 4). The zone is
         // start-only (never changed in flight), so the live SelectedZone is the start zone. The snapshot
-        // is already canonical; the fallback (no session started, e.g. a unit test) canonicalizes too.
+        // is already canonical - the fallback (no session started, e.g. a unit test) canonicalizes too.
         var mode = _startMode ?? SelectedMode;
         var moment = _startMomentText.Length > 0 ? _startMomentText : Moment.Canonical;
 

@@ -16,7 +16,7 @@ namespace ChronoMock.App.Tests;
 /// two numbers live in different languages, different projects and different build systems (R3-3).
 ///
 /// So they are compared here, by reading the Rust sources - the same technique as
-/// <see cref="RustConstantMirrorTests"/>. This does not stop anyone changing a deadline; it stops
+/// <see cref="RustConstantMirrorTests"/>. This does not stop anyone changing a deadline - it stops
 /// them changing it past the point where the client would misreport the result.
 /// </summary>
 public class RustTimeoutMirrorTests

@@ -41,7 +41,7 @@ impl CdpClock {
     }
 
     /// The fake wall instant (epoch ms) at `now`: the current segment's origin plus scaled real time.
-    /// Frozen (mult 0) holds it at the origin; xN accelerates.
+    /// Frozen (mult 0) holds it at the origin - xN accelerates.
     pub(crate) fn fake_wall_ms(&self, now: i64) -> i64 {
         // Saturating on BOTH operations, not just the product. `chrono-cli` keeps the workspace's
         // release `overflow-checks`, so an unsaturated add here panics the core mid-session (R2-W2) -
@@ -72,7 +72,7 @@ impl CdpClock {
     }
 
     /// Re-anchor for a new multiplier at `now`: the wall and the duration both continue from where they
-    /// are, so neither jumps (rule 3); only the future rate changes. A negative rate would run the wall
+    /// are, so neither jumps (rule 3) - only the future rate changes. A negative rate would run the wall
     /// backward, which is never valid, so it clamps to 0 (freeze). Returns (fake0, real0, mult) to push
     /// to the shim.
     pub(crate) fn set_multiplier_at(&mut self, m: i64, now: i64) -> (i64, i64, i64) {
@@ -85,7 +85,7 @@ impl CdpClock {
         (self.wall_fake0, self.wall_real0, self.mult)
     }
 
-    /// Re-anchor for a jump to a new fake wall at `now`: the wall moves and continues at the same rate;
+    /// Re-anchor for a jump to a new fake wall at `now`: the wall moves and continues at the same rate -
     /// the duration axis is untouched, so a backward jump never rewinds elapsed time (rule 3). Returns
     /// (fake0, real0) to push to the shim.
     pub(crate) fn jump_to_at(&mut self, new_fake_ms: i64, now: i64) -> (i64, i64) {
@@ -109,7 +109,7 @@ impl CdpClock {
             Some(local) => moment_epoch_ms(local, time.moment.tz_bias_min).ok_or("moment.invalid")?,
             None => real_now_ms, // no --at: the fake clock starts at real now (pure offset/acceleration)
         };
-        // flow = x1 (a plain wall offset), xN accelerates, frozen = x0 (the wall is held; the shim keeps
+        // flow = x1 (a plain wall offset), xN accelerates, frozen = x0 (the wall is held - the shim keeps
         // timers real via TS = M || 1).
         let mult = match time.mode.as_str() {
             "multiplier" => time.multiplier.unwrap_or(1).max(1),
@@ -164,7 +164,7 @@ mod tests {
         // R2-W2: `chrono-cli` keeps the workspace's release overflow-checks, so an unsaturated add
         // panics the core mid-session - and a panicking CDP core never runs its shutdown, leaving a
         // launched Chromium with an open debug port and a temp profile behind. The multiplier bound
-        // makes this unreachable from either surface; this is the layer behind it.
+        // makes this unreachable from either surface - this is the layer behind it.
         let c = CdpClock::new(i64::MAX - 1, 0, chrono_core::MULTIPLIER_MAX, 0);
         assert_eq!(c.fake_wall_ms(i64::MAX), i64::MAX);
         assert_eq!(c.elapsed_fake_ms(i64::MAX), i64::MAX);

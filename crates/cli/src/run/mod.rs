@@ -51,7 +51,7 @@ pub(crate) fn send_set_multiplier(stdin: &mut std::process::ChildStdin, m: i64) 
 }
 
 /// Send a `jump` command in flight. A leading +/- marks a relative jump (current fake + one step),
-/// carried in `delta`; anything else is an absolute moment in the session zone, carried in `local`.
+/// carried in `delta` - anything else is an absolute moment in the session zone, carried in `local`.
 pub(crate) fn send_jump(stdin: &mut std::process::ChildStdin, moment: &str, tz_bias_min: Option<i32>) {
     let first = moment.as_bytes().first().copied();
     let to = if first == Some(b'+') || first == Some(b'-') {
@@ -150,7 +150,7 @@ pub(crate) fn driver_run(argv: &[String]) -> i32 {
     // give up. Reading straight from the pipe here had no time limit and no liveness check, so a
     // core that stopped answering hung `chrono run` with nothing in the log to say why - on the
     // surface the README points at CI, where the only thing that eventually notices is the runner's
-    // own job timeout (R3-5). The GUI has had an idle watchdog since M-10; this is the same idea on
+    // own job timeout (R3-5). The GUI has had an idle watchdog since M-10 - this is the same idea on
     // the other client, and the two now use the same 15 s.
     //
     // The second reason is measured, not assumed: EOF on the core's stdout does NOT arrive when the
@@ -270,7 +270,7 @@ pub(crate) fn driver_run(argv: &[String]) -> i32 {
 
     let report = collected.into_report(
         ra.target.clone(),
-        // The core auto-detects a Chromium target and runs it over CDP; label the report's coverage
+        // The core auto-detects a Chromium target and runs it over CDP - label the report's coverage
         // unit accordingly. Same pure function, same path string the core sees, so the two never drift.
         cdp::is_chromium_target(&ra.target),
     );

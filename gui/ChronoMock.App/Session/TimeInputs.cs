@@ -10,7 +10,7 @@ public sealed record ModeOption(string LabelKey, string Mode, long? Multiplier);
 
 /// <summary>
 /// The fixed input catalogs - closed lists, not free axes (zasady/13 section 2.3). Zones cover the MVP
-/// markets (US + PL) plus UTC; modes are flowing, frozen, and the xN presets from chrono-mock 7.1.
+/// markets (US + PL) plus UTC - modes are flowing, frozen, and the xN presets from chrono-mock 7.1.
 /// </summary>
 public static class TimeInputs
 {

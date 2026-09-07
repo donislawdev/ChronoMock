@@ -5,7 +5,7 @@ namespace ChronoMock.Protocol.Tests;
 /// <summary>
 /// The bitness router (PeReader + CoreLocator) proven on BOTH bitnesses without injecting into anything:
 /// the built x86 and x64 cores are themselves real x86 and x64 PE fixtures. Full x86 end-to-end through
-/// the client is deferred (it needs an own x86 long-lived target); the x86 injection path itself is
+/// the client is deferred (it needs an own x86 long-lived target) - the x86 injection path itself is
 /// already covered by the run-targets harness and the spike.
 /// </summary>
 public class BitnessRouterTests

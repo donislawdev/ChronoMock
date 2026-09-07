@@ -61,7 +61,7 @@ public class LaunchOptionsTests
 
     /// <summary>
     /// The preview reads the ISO input back in words. The inputs are locale-invariant on purpose (a dev box
-    /// and a test VM in different locales must read the same typed date the same way); this line is what
+    /// and a test VM in different locales must read the same typed date the same way) - this line is what
     /// pays back the readability that costs, and the weekday is frequently the whole point of the test.
     /// </summary>
     [Fact]

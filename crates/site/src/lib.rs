@@ -74,7 +74,7 @@ pub struct PageMeta {
     #[serde(default)]
     pub order: u32,
     /// Whether the page appears in the header bar. The bar holds the few addresses a
-    /// first-time reader needs; everything else is reached from the footer map, which
+    /// first-time reader needs - everything else is reached from the footer map, which
     /// is on every page and has no width to run out of.
     #[serde(default = "yes")]
     pub nav: bool,

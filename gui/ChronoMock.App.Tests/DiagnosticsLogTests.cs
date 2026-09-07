@@ -36,7 +36,7 @@ public sealed class DiagnosticsLogTests : IDisposable
     public void Save_keeps_only_the_most_recent_maximum()
     {
         Directory.CreateDirectory(_dir);
-        // Seed more than the cap with older-sorting names so pruning has something to drop; the just-saved
+        // Seed more than the cap with older-sorting names so pruning has something to drop - the just-saved
         // file (a 2026 timestamp) sorts after them and must survive.
         for (int i = 0; i < DiagnosticsLogLimits.Max + 2; i++)
         {

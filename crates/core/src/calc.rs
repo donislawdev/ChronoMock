@@ -11,7 +11,7 @@
 //! Why a step list and not a tick delta: months, quarters, and years are NOT a
 //! fixed number of ticks (`+1 month` from Jan 31 is Feb 28, not +31 days), so the
 //! canonical model folds typed steps onto a running civil date, not a scalar.
-//! Stage-4 slice 1 builds `shift` (fixed and calendar units) and `set_time`;
+//! Stage-4 slice 1 builds `shift` (fixed and calendar units) and `set_time` -
 //! `snap`, `nearest`, `zone`, and the `business_days` unit are present in the
 //! model so the surface is complete, and return the product's honest "not built
 //! yet" vocabulary rather than a silent skip or a faked result (zasady/01 section 2).
@@ -35,7 +35,7 @@ pub struct CivilDateTime {
 ///
 /// One function because the year used to be formatted at six different call sites with `{:04}`, and
 /// `{:04}` on -9 gives "-009" - a string the parser cannot read back. That was half of the tool
-/// printing a date it would then refuse as input (R3-6); the parser learning the leading minus is
+/// printing a date it would then refuse as input (R3-6) - the parser learning the leading minus is
 /// the other half. Fixing `to_iso` alone left `formats()` still printing the short form, which is
 /// exactly the kind of split a shared helper prevents.
 fn format_year(year: i64) -> String {
@@ -70,7 +70,7 @@ pub enum Sign {
     Minus,
 }
 
-/// A shift unit. Fixed-length units are a constant number of seconds; calendar
+/// A shift unit. Fixed-length units are a constant number of seconds - calendar
 /// units depend on the anchor date and are folded through civil arithmetic.
 /// `BusinessDays` is in the model but needs a calendar, so it is not built yet.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -201,7 +201,7 @@ pub struct MomentExpr {
 /// test can pin it (docs/07 section 4), the session zone the base is expressed in (needed so a
 /// `zone` step can convert away from it), plus an optional calendar for business-day arithmetic.
 /// `calendar` is `None` on the substitution `--at`/`jump` paths, where `business_days` is then
-/// honestly unsupported; `zone_bias_min` is the base zone there too (those paths build no `zone`
+/// honestly unsupported - `zone_bias_min` is the base zone there too (those paths build no `zone`
 /// step, so it only sets the result zone, which they ignore).
 #[derive(Debug, Clone, Copy)]
 pub struct EvalContext<'a> {
@@ -255,7 +255,7 @@ pub enum EvalError {
     BadSetTime { index: usize },
     /// The base moment's year is outside the band this build computes on
     /// ([`crate::CIVIL_YEAR_MIN`]..=[`crate::CIVIL_YEAR_MAX`]). Everything that reaches `eval`
-    /// through the CLI has been through `parse_civil` and cannot hit this; `eval` is public API, so
+    /// through the CLI has been through `parse_civil` and cannot hit this - `eval` is public API, so
     /// it checks rather than trusting its caller with a value that would panic the civil math.
     BaseYearOutOfRange,
     /// A step COMPUTED a year outside that band. Its own variant, and not folded into `Overflow`,
@@ -299,7 +299,7 @@ pub fn eval(expr: &MomentExpr, ctx: &EvalContext) -> Result<EvalOutcome, EvalErr
     for (i, step) in expr.steps.iter().enumerate() {
         // A `zone` step re-expresses the running moment in another fixed-offset zone (same
         // instant, new wall-clock and bias). It is the only step that changes the zone, so it is
-        // handled here where the bias lives; every other step folds the civil date and keeps the
+        // handled here where the bias lives - every other step folds the civil date and keeps the
         // current zone. The substitution jump path never builds a `zone` step, so `apply_step`
         // still reports it as unsupported there.
         if let Step::Zone(target_bias) = step {
@@ -408,7 +408,7 @@ fn apply_nearest_leap_day(cur: CivilDateTime) -> CivilDateTime {
         // Bounded by the calendar, not by a counter: in the proleptic Gregorian rule a leap year
         // occurs at least every 8 years (the widest gap is across a non-leap century, e.g. 1896 to
         // 1904), so this walks at most eight steps. `cur.year` is inside the year band by then, so
-        // the additions cannot overflow either; a year that lands just past the band is caught by
+        // the additions cannot overflow either - a year that lands just past the band is caught by
         // the check `eval` runs after every step.
         year += 1;
         while !is_leap(year) {
@@ -450,7 +450,7 @@ fn apply_shift(
     index: usize,
     calendar: Option<&crate::calendar::Calendar>,
 ) -> Result<CivilDateTime, EvalError> {
-    // The amount is a non-negative magnitude; apply the sign here.
+    // The amount is a non-negative magnitude - apply the sign here.
     let signed = match sign {
         Sign::Plus => amount,
         Sign::Minus => amount.checked_neg().ok_or(EvalError::Overflow { index })?,
@@ -468,12 +468,12 @@ fn apply_shift(
         Unit::Years => {
             shift_months(cur, signed.checked_mul(12).ok_or(EvalError::Overflow { index })?, index)
         }
-        // Business days need a calendar (weekends plus holidays). With one, walk the calendar;
+        // Business days need a calendar (weekends plus holidays). With one, walk the calendar -
         // without one (the substitution paths), stay honestly unsupported.
         Unit::BusinessDays => match calendar {
             Some(cal) => {
                 crate::calendar::add_business_days(&cur, signed, cal).map_err(|limit| match limit {
-                    // The request is out of range; the calendar is fine.
+                    // The request is out of range - the calendar is fine.
                     crate::calendar::BusinessDayLimit::TooManyDays => EvalError::Overflow { index },
                     // The calendar is the problem, and the message has to say so.
                     crate::calendar::BusinessDayLimit::DegenerateCalendar => {
@@ -552,8 +552,8 @@ fn shift_months(cur: CivilDateTime, months: i64, index: usize) -> Result<CivilDa
 
 // --- Bridge to the substitution tick world (the relative `jump` path) ---------------
 //
-// The substitution fake clock is a UTC FILETIME; a relative jump means "advance the fake
-// clock by one step". Fixed-length units are a tick delta (kept exact, sub-second and all);
+// The substitution fake clock is a UTC FILETIME - a relative jump means "advance the fake
+// clock by one step". Fixed-length units are a tick delta (kept exact, sub-second and all) -
 // calendar units are defined on the civil date in the SESSION zone, so they fold through it.
 
 /// Session-local civil fields from a UTC FILETIME. Pure arithmetic mirroring the civil half
@@ -639,7 +639,7 @@ fn shift_filetime(ft_utc: i64, tz_bias_min: i32, step: &Step) -> Result<i64, Eva
 
 /// The target UTC FILETIME after applying ONE shift step to the current fake instant - the
 /// single source of truth for "current fake + one step" on the substitution jump path. A
-/// fixed-length unit adds a tick delta (sub-second precision preserved); a calendar unit
+/// fixed-length unit adds a tick delta (sub-second precision preserved) - a calendar unit
 /// folds through the civil date in the session zone. Business days are not built yet.
 pub fn step_target(fake_now_ft: i64, tz_bias_min: i32, step: &Step) -> Result<i64, EvalError> {
     if let Some(ticks) = fixed_shift_ticks(step)? {
@@ -671,7 +671,7 @@ fn offset_label(tz_bias_min: i32) -> String {
 }
 
 /// A moment rendered in every fixed output format at once (docs/02 section 8, in that order).
-/// The civil formats are always present; the instant-based ones (epoch, FILETIME, RFC 1123)
+/// The civil formats are always present - the instant-based ones (epoch, FILETIME, RFC 1123)
 /// need the UTC instant and are `None` only when the civil date is outside the FILETIME range.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Formats {
@@ -729,7 +729,7 @@ pub fn formats(civil: &CivilDateTime, tz_bias_min: i32) -> Formats {
     //
     // The epoch fields and RFC 1123 come from the INSTANT, not from the FILETIME, because those
     // three exist for moments the FILETIME cannot hold. Year 1000 has an instant of
-    // -30 610 231 200 and reads as "Tue, 31 Dec 0999 22:00:00 GMT"; what it does not have is a
+    // -30 610 231 200 and reads as "Tue, 31 Dec 0999 22:00:00 GMT" - what it does not have is a
     // FILETIME, which counts from 1601 and is unsigned. Deriving all four from the FILETIME made
     // one wrong answer (a negative FILETIME) and, once that was refused, would have taken two
     // correct ones down with it.
@@ -765,7 +765,7 @@ pub fn formats(civil: &CivilDateTime, tz_bias_min: i32) -> Formats {
 /// Render `civil` in a user-supplied .NET/Java-style mask so the output can match the exact format
 /// the target app uses. Case-sensitive: `M` is month, `m` is minute. A token is a maximal run of
 /// one letter (`yyyy`, `MM`, `dd`, `HH`, `mm`, `ss`, plus `MMM`/`MMMM` month names and `ddd`/`dddd`
-/// weekday names); anything else, and any run whose length is not a known token (e.g. `yyy`), is
+/// weekday names) - anything else, and any run whose length is not a known token (e.g. `yyy`), is
 /// emitted literally - never guessed. Escaping a literal that happens to be a token letter, a zone
 /// token, and single `y` are not built yet.
 pub fn format_with_mask(civil: &CivilDateTime, mask: &str) -> String {
@@ -842,7 +842,7 @@ fn is_long_iso_year(year: i64) -> bool {
 }
 
 /// ISO 8601 week: (week-numbering year, week 1..=53). The week-year can differ from the
-/// calendar year at the boundaries (2005-01-01 is 2004-W53; 2019-12-30 is 2020-W01).
+/// calendar year at the boundaries (2005-01-01 is 2004-W53 - 2019-12-30 is 2020-W01).
 fn iso_week(civil: &CivilDateTime) -> (i64, u32) {
     let week = (day_of_year(civil) - iso_weekday(civil) + 10) / 7;
     if week < 1 {
@@ -899,7 +899,7 @@ pub fn metadata(civil: &CivilDateTime, today: &CivilDateTime) -> Metadata {
 //
 // The calculator names the edge case a result date lands on, instead of giving a number and
 // staying silent like an online date calculator (6.2). Calendar-independent landmarks are always
-// checked; the weekend / holiday / observed-holiday landmarks need a calendar and are added only
+// checked - the weekend / holiday / observed-holiday landmarks need a calendar and are added only
 // when one is supplied. Daylight-saving transitions (which need the zone's DST rules the tool does
 // not carry) are honestly NOT built yet, not silently omitted (docs/08 section 9a, rule 4).
 
@@ -998,7 +998,7 @@ impl Significance {
 /// and a year that cannot be represented as an instant at all is skipped rather than guessed.
 ///
 /// The weekend / holiday / observed-holiday landmarks are added only when `calendar` is supplied
-/// (the same opt-in the metadata block uses); without one they are simply absent, never guessed.
+/// (the same opt-in the metadata block uses) - without one they are simply absent, never guessed.
 pub fn significance(
     civil: &CivilDateTime,
     tz_bias_min: i32,
@@ -1064,10 +1064,10 @@ pub fn significance(
     out
 }
 
-// --- Reverse analysis (7.3 - paste a date, name what it is; show both readings when ambiguous) ---
+// --- Reverse analysis (7.3 - paste a date, name what it is, show both readings when ambiguous) ---
 
 /// One reading of an analyzed date string. A numeric date with no clear order has two (US month-
-/// first, PL day-first); an ISO date has one. Stable variants, English `label` like the other enums.
+/// first, PL day-first) - an ISO date has one. Stable variants, English `label` like the other enums.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DateReading {
     /// An unambiguous ISO 8601 date (dash-separated).
@@ -1123,7 +1123,7 @@ fn civil_date(year: i64, month: i64, day: i64) -> Option<CivilDateTime> {
 }
 
 /// Recognise a pasted date and return its reading(s). ISO (dash-separated, optional time) is
-/// unambiguous; a slash- or dot-separated `N/N/YYYY` yields the US and PL readings, keeping only
+/// unambiguous - a slash- or dot-separated `N/N/YYYY` yields the US and PL readings, keeping only
 /// the ones that form a real date (so 29/02 is PL-only, 02/29 US-only, 02/30 an error, 05/05 one).
 /// Formats beyond these - epoch, FILETIME, RFC 1123, year-first numeric - are honestly not
 /// recognised yet (an error, never a guess).
@@ -1150,7 +1150,7 @@ pub fn analyze_date(input: &str) -> Result<DateAnalysis, String> {
     }
     let num = |p: &str| p.parse::<i64>().map_err(|_| format!("bad number in '{input}'"));
     let (a, b, year) = (num(parts[0])?, num(parts[1])?, num(parts[2])?);
-    // Two candidate orders; keep the ones that form a real date, and never list one date twice.
+    // Two candidate orders - keep the ones that form a real date, and never list one date twice.
     let mut readings = Vec::new();
     if let Some(c) = civil_date(year, a, b) {
         readings.push((DateReading::UsMonthDay, c)); // month = a, day = b
@@ -1334,7 +1334,7 @@ mod tests {
             observed: Observed::None,
             holidays: vec![],
         };
-        // 2026-07-10 is a Friday; +1 business day is Monday 2026-07-13, time of day kept.
+        // 2026-07-10 is a Friday - +1 business day is Monday 2026-07-13, time of day kept.
         let expr = MomentExpr {
             base: abs(dt(2026, 7, 10, 9, 0, 0)),
             steps: vec![shift(Sign::Plus, 1, Unit::BusinessDays)],
@@ -1424,7 +1424,7 @@ mod tests {
             observed: Observed::None,
             holidays: vec![],
         };
-        // 2026-07-04 is a Saturday; the next business day is Monday 2026-07-06.
+        // 2026-07-04 is a Saturday - the next business day is Monday 2026-07-06.
         let expr = MomentExpr {
             base: abs(dt(2026, 7, 4, 0, 0, 0)),
             steps: vec![Step::Nearest(NearestTarget::NextBusinessDay)],
@@ -1566,7 +1566,7 @@ mod tests {
 
     #[test]
     fn significance_out_of_range_year_does_not_panic() {
-        // The instant markers (epoch, 2038) are skipped when the year has no FILETIME instant;
+        // The instant markers (epoch, 2038) are skipped when the year has no FILETIME instant -
         // the calendar-independent civil landmarks still work, with no panic - checked at the edge
         // of the band rather than well short of it.
         let s = sig(&dt(crate::CIVIL_YEAR_MAX, 1, 1, 0, 0, 0), 0);
@@ -1640,7 +1640,7 @@ mod tests {
 
     /// A `zone` step used to go out through `to_iso` and back through the parser, which made it the
     /// one step that could fail on FORMATTING - and every such failure was reported as an
-    /// arithmetic overflow. Before the fix this returned `Err(Overflow)`; the instant is unchanged
+    /// arithmetic overflow. Before the fix this returned `Err(Overflow)` - the instant is unchanged
     /// by a zone step, so the only honest answer is the same moment read in the other zone.
     #[test]
     fn a_zone_step_works_on_a_date_before_year_one() {
@@ -1710,7 +1710,7 @@ mod tests {
     #[test]
     fn step_target_zone_is_unsupported_on_the_jump_path() {
         // The substitution jump advances the fake clock by a time delta - it cannot change zone.
-        // `eval` builds the `zone` step; `jump` never does, so the jump path reports it unsupported.
+        // `eval` builds the `zone` step - `jump` never does, so the jump path reports it unsupported.
         let ft = ft_of("2026-01-01T00:00:00", 0);
         assert_eq!(
             step_target(ft, 0, &Step::Zone(-345)),
@@ -1918,7 +1918,7 @@ mod tests {
             significance(&dt(2026, 7, 3, 0, 0, 0), 0, Some(&federal)),
             vec![Significance::ObservedHoliday]
         );
-        // An ordinary Saturday (2026-07-11) is just a weekend; an ordinary weekday hits nothing.
+        // An ordinary Saturday (2026-07-11) is just a weekend - an ordinary weekday hits nothing.
         assert_eq!(significance(&dt(2026, 7, 11, 0, 0, 0), 0, Some(&federal)), vec![Significance::Weekend]);
         assert!(significance(&dt(2026, 7, 7, 0, 0, 0), 0, Some(&federal)).is_empty());
     }
@@ -2040,7 +2040,7 @@ mod tests {
     #[test]
     fn format_mask_literals_and_unknown_runs_pass_through() {
         let d = dt(2008, 8, 4, 0, 0, 0);
-        // A single 'y' and non-token characters are literal; a 3-run 'yyy' is not a token, so verbatim.
+        // A single 'y' and non-token characters are literal - a 3-run 'yyy' is not a token, so verbatim.
         assert_eq!(format_with_mask(&d, "year=yyyy"), "year=2008");
         assert_eq!(format_with_mask(&d, "yyy"), "yyy");
         assert_eq!(format_with_mask(&d, "yyyy//MM"), "2008//08");

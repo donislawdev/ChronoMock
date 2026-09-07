@@ -16,7 +16,7 @@ namespace ChronoMock.App.Tests;
 /// across the language boundary - the direction nothing crossed before (R3-9).
 ///
 /// These are deliberately textual. A build-time link between a Rust constant and a C# one would be
-/// a code generator and a new moving part; a regex over one line of source is enough to fail loudly
+/// a code generator and a new moving part - a regex over one line of source is enough to fail loudly
 /// on the day someone changes one side, which is the entire job.
 /// </summary>
 public class RustConstantMirrorTests

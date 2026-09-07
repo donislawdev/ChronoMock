@@ -7,9 +7,9 @@
 //! The catalogue lookup lives here too, including the identifier check that refuses path traversal -
 //! an id names a shipped file, never a path.
 //!
-//! The consumer owns the I/O and serde; the core engine works over already-parsed rules. The JSON
+//! The consumer owns the I/O and serde - the core engine works over already-parsed rules. The JSON
 //! schema is the contract (docs/04 section 5) and this is one reader of it. Unknown fields are
-//! ignored (additive evolution is safe); an unknown major schema version is refused.
+//! ignored (additive evolution is safe) - an unknown major schema version is refused.
 
 
 use serde::Deserialize;
@@ -94,7 +94,7 @@ pub(crate) fn rule_from(id: &str, dto: RuleDto) -> Result<chrono_core::calendar:
         }
         RuleDto::NthWeekday { month, weekday, order } => {
             check_month(id, month)?;
-            // -1 = "the last such weekday in the month"; 1..=5 counts from the start. A fifth exists
+            // -1 = "the last such weekday in the month" - 1..=5 counts from the start. A fifth exists
             // only in some months, and the engine now answers "this holiday does not fall in that
             // year" rather than borrowing a day from the next month - which is what it actually did
             // while this comment claimed otherwise (R2-N4). Anything outside the range would walk
@@ -408,7 +408,7 @@ mod tests {
         assert_eq!(holiday_on(&d(2026, 4, 6), &pl).map(|h| h.id.as_str()), Some("easter_monday"));
         // Corpus Christi 2026 = Easter + 60 days = 2026-06-04: a larger easter_offset.
         assert_eq!(holiday_on(&d(2026, 6, 4), &pl).map(|h| h.id.as_str()), Some("corpus_christi"));
-        // Epiphany was restored as a Polish public holiday from 2011 (valid_from:2011; law of 24 Sept
+        // Epiphany was restored as a Polish public holiday from 2011 (valid_from:2011 - law of 24 Sept
         // 2010, abolished 1960): a holiday in 2026, NOT in 2010.
         assert_eq!(holiday_on(&d(2026, 1, 6), &pl).map(|h| h.id.as_str()), Some("epiphany"));
         assert!(holiday_on(&d(2010, 1, 6), &pl).is_none());

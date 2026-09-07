@@ -8,7 +8,7 @@
 //! is installed before the target's first instruction - no race), injects the hook
 //! DLL, reads back which channels were covered, then resumes.
 //!
-//! The tool injects its OWN probes on the host; injecting into third-party or system
+//! The tool injects its OWN probes on the host - injecting into third-party or system
 //! processes stays on the VM or requires explicit consent.
 
 use std::ffi::{c_void, OsStr};
@@ -59,7 +59,7 @@ pub struct Target<'a> {
 }
 
 /// Why preparing a session failed. Each variant carries a message from the point of
-/// origin (zasady/06 section 9); the caller maps it to a protocol error key.
+/// origin (zasady/06 section 9) - the caller maps it to a protocol error key.
 #[derive(Debug)]
 pub enum PrepareError {
     Moment(String),
@@ -113,7 +113,7 @@ pub struct Session {
     fake_elapsed_before: std::cell::Cell<i64>,
     rate_segment_real0: std::cell::Cell<i64>,
     tz_bias: i32,
-    /// The duration axis is opt-in; coverage gathering needs it to know whether the
+    /// The duration axis is opt-in - coverage gathering needs it to know whether the
     /// Duration channels are expected.
     scale_duration: bool,
     /// The QPC axis is a SEPARATE opt-in from the duration axis, so coverage gathering needs its own
@@ -278,7 +278,7 @@ impl Session {
     }
 
     /// Jump the wall clock by ONE shift step from its CURRENT fake value, keeping the
-    /// multiplier. Fixed-length units add a tick delta (sub-second precision preserved);
+    /// multiplier. Fixed-length units add a tick delta (sub-second precision preserved) -
     /// calendar units (months/quarters/years) fold through the civil date in the session
     /// zone. Computed under ONE anchor read so no real time leaks between reading the
     /// current fake and re-anchoring - a calendar jump is as race-free as a fixed one
@@ -309,7 +309,7 @@ impl Session {
         unsafe {
             for i in 0..MAX_COV_PIDS {
                 let pid = read_pid(self.ctl(), i);
-                // 0 = empty or reserved-but-not-yet-published; skip and retry later.
+                // 0 = empty or reserved-but-not-yet-published - skip and retry later.
                 if pid == 0 || self.reported_slots[i] {
                     continue;
                 }
@@ -351,7 +351,7 @@ impl Session {
     }
 
     /// How many processes of this session ran with NO coverage slot, because the registry was already
-    /// full. Zero for every ordinary session; `MAX_COV_PIDS` is 256 and an installer spawning dozens of
+    /// full. Zero for every ordinary session - `MAX_COV_PIDS` is 256 and an installer spawning dozens of
     /// helpers is the realistic way past it (docs/07 open item 2).
     ///
     /// These processes are invisible to `poll_new_coverage` - they published no pid, because they had
@@ -483,7 +483,7 @@ impl Drop for SessionLock {
 /// session in a refusal message - the refusal itself comes from the lock, never from this value.
 ///
 /// # Safety
-/// Maps and unmaps the control section; safe to call with no session running.
+/// Maps and unmaps the control section - safe to call with no session running.
 unsafe fn read_active_core_pid() -> u32 { unsafe {
     // Read access only. This function reads a single u32 and has never written anything, so asking
     // for write was a right we could not use - and the block it opens belongs to a session that is
@@ -607,7 +607,7 @@ unsafe fn gather_coverage(
             // just is not loaded in this process (a console app or service never loaded user32), so
             // the app cannot call it at all - not a gap, so it goes nowhere rather than faking a
             // partial verdict (rule 4: never claim a gap the target could not hit). Static imports,
-            // the common case, are already loaded in our DllMain; only a target that loads the module
+            // the common case, are already loaded in our DllMain - only a target that loads the module
             // dynamically after startup and then uses the channel would slip past here (documented).
             match ch.module {
                 ChannelModule::Kernel32 | ChannelModule::Ntdll => {
@@ -762,7 +762,7 @@ pub fn prepare(spec: &SessionSpec, target: &Target, hook_dll: &Path) -> Result<P
             // this session can create it, so a section already sitting on it was zeroed and used as
             // if we had made it - handing whoever made it a mapping of the session's anchor and its
             // coverage counters for the whole run. The audit is evidence (untouchable rule 4) and
-            // the anchor decides what the target sees (rule 2); neither may come from a block we
+            // the anchor decides what the target sees (rule 2) - neither may come from a block we
             // cannot recognise. A section the OS just created is zero-filled, so a bare name-squat
             // fails this, and so does a block written by a build with a different layout.
             if !header_is_ours(ctl) {
@@ -783,7 +783,7 @@ pub fn prepare(spec: &SessionSpec, target: &Target, hook_dll: &Path) -> Result<P
         let start_real = quit_now();
         // Initialize the duration anchor from the REAL clock (the core is not hooked, so GetTickCount64 and
         // QUIT are genuine). GetTickCount64 gives the millisecond base, so a target's GetTickCount64 starts
-        // near the real uptime; the fake-QUIT base and the real base both start at `start_real`. The axis is
+        // near the real uptime - the fake-QUIT base and the real base both start at `start_real`. The axis is
         // re-anchored on every set_multiplier so it never rewinds (H-1). Written in the wall anchor's seqlock.
         // The QPC axis (ADR-2 reversal, opt-in) starts fake == real at the current QPC, so elapsed begins at 0.
         let dur_tick0 = GetTickCount64();
@@ -894,7 +894,7 @@ pub fn prepare(spec: &SessionSpec, target: &Target, hook_dll: &Path) -> Result<P
         };
 
         // 6. Hand back a live session. We keep the control section mapped and the process handle
-        // open - only the thread handle is released here. Session::end releases the rest; the
+        // open - only the thread handle is released here. Session::end releases the rest - the
         // target's own mapped view keeps the control section alive regardless. The parent's slot is
         // marked reported, since its coverage is handed back right here in `Prepared` - without that
         // the first child poll would emit the parent a second time.
@@ -1011,7 +1011,7 @@ fn build_command_line(path: &str, args: &[String]) -> Vec<u16> {
 }
 
 /// How long to wait for the remote `LoadLibraryW` thread. The hook's `DllMain` does no heavy work (it
-/// defers the watcher off the loader lock, ADR-3), so injection is quick; a thread still stuck past this
+/// defers the watcher off the loader lock, ADR-3), so injection is quick - a thread still stuck past this
 /// means the target's loader deadlocked (loader lock), and we treat it as an injection failure rather than
 /// hang `prepare` forever (M-1).
 const INJECT_TIMEOUT_MS: u32 = 10_000;
@@ -1054,10 +1054,10 @@ unsafe fn inject(hproc: HANDLE, dll_wide: &[u16]) -> Result<(), PrepareError> { 
 
     // Bounded wait (M-1): a hung DllMain (loader lock) must not hang prepare forever.
     let waited = WaitForSingleObject(hthread, INJECT_TIMEOUT_MS);
-    // The remote thread's exit code is the low 32 bits of the HMODULE LoadLibraryW returned; 0 means the
+    // The remote thread's exit code is the low 32 bits of the HMODULE LoadLibraryW returned - 0 means the
     // DLL did not load (bad architecture, missing runtime dependency, AV block, target tearing down). We
     // only read it when the thread actually finished. (On x64 a module base whose low 32 bits are exactly
-    // 0 - a 4 GB-aligned load - would read as 0 too; that false negative is astronomically rare, and
+    // 0 - a 4 GB-aligned load - would read as 0 too. That false negative is astronomically rare, and
     // refusing is the safe direction: a retry lands a different ASLR base, never an unhooked target.)
     let mut exit_code: u32 = 0;
     let got_code = waited != WAIT_TIMEOUT && GetExitCodeThread(hthread, &mut exit_code).is_ok();

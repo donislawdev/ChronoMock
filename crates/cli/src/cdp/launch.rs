@@ -60,7 +60,7 @@ impl LaunchedChromium {
     }
 
     /// Like [`shutdown`] but reports cleanup residue: an empty vec means the process was terminated and
-    /// the temp profile removed cleanly; a non-empty vec names what was left behind (e.g. the profile
+    /// the temp profile removed cleanly - a non-empty vec names what was left behind (e.g. the profile
     /// could not be removed because the OS had not released its file handles yet) so a session can
     /// report it honestly via `ended.residue_keys` instead of leaving a silent mess (untouchable rules
     /// 4 and 6).
@@ -69,7 +69,7 @@ impl LaunchedChromium {
     }
 
     /// The cleanup itself, idempotent so the explicit shutdown above and the [`Drop`] net below
-    /// cannot both act on the same profile. The first caller does the work and gets the residue;
+    /// cannot both act on the same profile. The first caller does the work and gets the residue -
     /// any later one gets an empty vec, because by then there is nothing left to report on.
     fn cleanup(&mut self) -> Vec<String> {
         if self.cleaned {
@@ -113,7 +113,7 @@ impl LaunchedChromium {
 /// one in `chrono-mech`: the first `?` or early `return` added next to an explicit cleanup call
 /// would leak - silently. This type holds heavier resources than either of those two, a live child
 /// process and a temp directory, and `std::process::Child` deliberately does NOT kill on drop.
-/// Every exit path out of `cdp_session` calls `shutdown*` today; this makes the cleanup a property
+/// Every exit path out of `cdp_session` calls `shutdown*` today - this makes the cleanup a property
 /// of the type instead of a property of the current shape of one function.
 ///
 /// What it does NOT cover, so nobody reads more into it than it gives: a force-killed core. No
@@ -154,7 +154,7 @@ impl Drop for KillOnCloseJob {
     }
 }
 
-// SAFETY: a job handle is a kernel object usable from any thread; nothing here is thread-affine.
+// SAFETY: a job handle is a kernel object usable from any thread - nothing here is thread-affine.
 // Needed because the session that owns a LaunchedChromium is not pinned to one thread.
 unsafe impl Send for KillOnCloseJob {}
 
@@ -163,7 +163,7 @@ unsafe impl Send for KillOnCloseJob {}
 /// guarantee, and says so on stderr rather than silently (rule 6).
 fn tie_lifetime_to_ours(child: &Child) -> Option<KillOnCloseJob> {
     // SAFETY: all three calls are the documented sequence for a job object. The handle is owned by
-    // KillOnCloseJob from the moment it is created, so no path leaks it; `info` outlives the call.
+    // KillOnCloseJob from the moment it is created, so no path leaks it - `info` outlives the call.
     unsafe {
         let job = match CreateJobObjectW(None, None) {
             Ok(h) => KillOnCloseJob(h),
@@ -225,7 +225,7 @@ pub const PORT_WAIT_SECS: u64 = 15;
 /// Launch a Chromium/Electron target with an isolated profile and an auto-assigned debug port, then
 /// wait for its `DevToolsActivePort` file and return the resolved port. The isolated `--user-data-dir`
 /// sidesteps single-instance apps (a fresh profile is a new instance) and never touches the user's
-/// real profile; `--remote-debugging-port=0` lets Chromium choose a free port (no collision) and
+/// real profile - `--remote-debugging-port=0` lets Chromium choose a free port (no collision) and
 /// record it in the file. Fails loudly if the port never appears (remote debugging disabled, or not
 /// actually a Chromium app) rather than pretending the session started.
 ///
@@ -318,7 +318,7 @@ pub fn launch_chromium(
     }
 }
 
-/// The first line of `DevToolsActivePort` is the port; a `0` there means "not chosen yet".
+/// The first line of `DevToolsActivePort` is the port - a `0` there means "not chosen yet".
 fn read_active_port(port_file: &Path) -> Option<u16> {
     let contents = std::fs::read_to_string(port_file).ok()?;
     let port: u16 = contents.lines().next()?.trim().parse().ok()?;
@@ -523,7 +523,7 @@ mod tests {
     /// process is terminated, the kernel closes its handles whatever the process was doing, and
     /// kill-on-close is what turns that into the browser going away. Before this existed, killing
     /// the core mid-session left the launched browser running with its debug port open (measured on
-    /// Pomotroid); the placeholder child here plays that browser.
+    /// Pomotroid) - the placeholder child here plays that browser.
     #[test]
     fn closing_the_job_ends_the_browser_with_no_destructor_involved() {
         let mut child = spawn_placeholder_child();

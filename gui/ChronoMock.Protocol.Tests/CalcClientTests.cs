@@ -6,7 +6,7 @@ namespace ChronoMock.Protocol.Tests;
 /// <summary>
 /// The calculator client (Stage 4, GUI slice G3): parsing the chronomock.calc/1 contract, and driving
 /// the REAL <c>chrono calc</c> end to end (like the conformance tests drive the real core). The parse
-/// tests need no process; the integration tests spawn the built core and require a release build.
+/// tests need no process - the integration tests spawn the built core and require a release build.
 /// </summary>
 public class CalcClientTests
 {

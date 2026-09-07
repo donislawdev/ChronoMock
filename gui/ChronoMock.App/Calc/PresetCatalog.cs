@@ -62,7 +62,7 @@ public sealed record PresetInfo(
 }
 
 /// <summary>
-/// Reads the shared preset catalogue from disk. A preset is a named moment expression (docs/04 4.2); the
+/// Reads the shared preset catalogue from disk. A preset is a named moment expression (docs/04 4.2) - the
 /// calculator is a consumer of that contract, mirroring only what the list and the builder need. A file
 /// that fails to parse is skipped rather than taking down the whole list (rule 6 - an honest partial list
 /// beats a crash), and a missing directory yields an empty catalogue.

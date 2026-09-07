@@ -10,7 +10,7 @@ public abstract record ParamValue;
 /// <summary>A date value for a <c>date</c> parameter (becomes an absolute base). A bare date is midnight.</summary>
 public sealed record DateValue(string DateTimeText) : ParamValue;
 
-/// <summary>A magnitude and unit for a <c>duration</c> parameter (becomes a shift; the sign is the step's).</summary>
+/// <summary>A magnitude and unit for a <c>duration</c> parameter (becomes a shift - the sign is the step's).</summary>
 public sealed record DurationValue(string Amount, string UnitToken) : ParamValue;
 
 /// <summary>A boundary label for a <c>variant</c> parameter (day_before / on_day / day_after) - becomes a
@@ -18,7 +18,7 @@ public sealed record DurationValue(string Amount, string UnitToken) : ParamValue
 public sealed record VariantValue(string Label) : ParamValue;
 
 /// <summary>A preset's moment expressed as builder inputs: the base and a list of steps ready to configure
-/// <see cref="StepViewModel"/>s. Each step carries the value(s) its kind reads; the others keep the same
+/// <see cref="StepViewModel"/>s. Each step carries the value(s) its kind reads - the others keep the same
 /// defaults a fresh step has.</summary>
 public sealed record UnpackedStep(
     StepKind Kind,
@@ -54,7 +54,7 @@ public sealed record UnpackedMoment(BaseKind Base, string BaseText, IReadOnlyLis
 /// <summary>
 /// Translates a preset's <c>moment</c> (raw JSON, schema <c>chronomock.preset/1</c>) into builder inputs so
 /// a click fills the constructor (7.3). This keeps ONE source of truth - the builder - and reuses the whole
-/// live-recompute pipeline; there is no separate preset compute path. Pure and unit-tested. A parametric
+/// live-recompute pipeline - there is no separate preset compute path. Pure and unit-tested. A parametric
 /// piece (a <c>{ "parameter": ... }</c> base or shift) or an unrecognized shape throws
 /// <see cref="NotSupportedException"/>: the caller checks the parametric flag first and never fills the
 /// builder from a preset it cannot represent honestly (rule 6).
@@ -130,7 +130,7 @@ public static class PresetUnpack
     private static UnpackedStep ParseStep(JsonElement step, IReadOnlyDictionary<string, ParamValue> values)
     {
         // A step is a one-key object ({"shift": ...}). An empty object, an array or a bare string used to
-        // leave through InvalidOperationException from First(); it leaves as an unsupported shape now.
+        // leave through InvalidOperationException from First() - it leaves as an unsupported shape now.
         if (step.ValueKind != JsonValueKind.Object
             || step.EnumerateObject().Select(p => (JsonProperty?)p).FirstOrDefault() is not { } property)
         {
@@ -220,7 +220,7 @@ public static class PresetUnpack
             ? value
             : $"{value}T00:00:00";
 
-    // The preset files carry full-form tokens (end-of-month, seconds); the builder options use the short
+    // The preset files carry full-form tokens (end-of-month, seconds) - the builder options use the short
     // codes (eom, s). Normalize to short so the builder can select the matching option. Both forms accepted.
     private static string NormalizeSnap(string token) => token switch
     {

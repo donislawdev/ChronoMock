@@ -121,7 +121,7 @@ impl WsClient {
 
     /// Return the next complete text message, or `None` if the poll interval elapsed with no message
     /// ready (the caller can then do other work, e.g. check whether the target exited). Pings are
-    /// answered transparently; a close frame or EOF is an error so the caller can end the session.
+    /// answered transparently - a close frame or EOF is an error so the caller can end the session.
     pub fn poll_text(&mut self) -> io::Result<Option<String>> {
         loop {
             if let Some(text) = self.take_message()? {

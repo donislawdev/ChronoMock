@@ -17,7 +17,7 @@ public partial class App : Application
         try
         {
             // Merge the interface strings before the first window loads, so translation keys resolve.
-            // Default culture is English; a language swap is a later slice.
+            // Default culture is English - a language swap is a later slice.
             //
             // A damaged strings file degrades the interface instead of stopping the app: the window
             // then shows raw keys, which is ugly and honest, rather than "cannot be opened", which

@@ -1,8 +1,8 @@
 //! Business-day and holiday calendar engine - pure, data-driven (docs/02, docs/04 section 5).
 //!
 //! The rules (fixed date, n-th weekday of a month, Easter offset) and the weekend-observance
-//! modifier drive the computation; the code never hard-codes a country's holidays. Calendar
-//! DATA lives in `calendars/*.json` (loaded by the consumer, which owns the I/O and serde);
+//! modifier drive the computation - the code never hard-codes a country's holidays. Calendar
+//! DATA lives in `calendars/*.json` (loaded by the consumer, which owns the I/O and serde) -
 //! this module is the pure engine over already-parsed rules, unit-testable without files.
 //!
 //! All three rule types are built - `Fixed`, `NthWeekday` and `EasterOffset` (Meeus) - together
@@ -29,11 +29,11 @@ pub enum HolidayRule {
 /// BEHAVIOUR, never a country (a second country with the same behaviour reuses the value).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Observed {
-    /// Nothing shifts; the holiday stays on its date (Poland).
+    /// Nothing shifts - the holiday stays on its date (Poland).
     None,
     /// Saturday -> the preceding Friday, Sunday -> the following Monday (US federal).
     SatToFriSunToMon,
-    /// Only Sunday -> the following Monday; Saturday does not shift (US banking).
+    /// Only Sunday -> the following Monday - Saturday does not shift (US banking).
     SunToMon,
     /// Saturday and Sunday both -> the following Monday (UK-style, unconfirmed).
     WeekendToMon,
@@ -121,7 +121,7 @@ fn easter_sunday(year: i64) -> (u32, u32) {
 }
 
 /// The calendar date (day count since 1970-01-01) of a holiday in `year`. Every rule type is
-/// built; a rule this build did not know would have been rejected by the loader, and adding a
+/// built - a rule this build did not know would have been rejected by the loader, and adding a
 /// `HolidayRule` variant without handling it here is a compile error (the match is exhaustive).
 fn holiday_days(rule: &HolidayRule, year: i64) -> Option<i64> {
     match rule {
@@ -151,7 +151,7 @@ fn in_force(h: &Holiday, year: i64) -> bool {
 }
 
 /// The weekday a holiday whose calendar date is `d` (day count) is OBSERVED on, per the modifier.
-/// A weekday holiday observes on its own day; a weekend one shifts (or not) by the rule.
+/// A weekday holiday observes on its own day - a weekend one shifts (or not) by the rule.
 fn observed_days(d: i64, observed: Observed) -> i64 {
     match (weekday(d), observed) {
         // Saturday.
@@ -197,7 +197,7 @@ pub fn holiday_on<'a>(date: &CivilDateTime, cal: &'a Calendar) -> Option<&'a Hol
 /// two answers.
 struct OffDays<'a> {
     cal: &'a Calendar,
-    /// The year the cache was built for; `None` before the first question.
+    /// The year the cache was built for - `None` before the first question.
     year: Option<i64>,
     /// Observed dates of the holidays in force for that year and its neighbours, as day-counts.
     /// A flat scan, not a set: our calendars hold ~14 holidays, so this is at most a few dozen
@@ -223,7 +223,7 @@ impl<'a> OffDays<'a> {
 
     fn rebuild(&mut self, year: i64) {
         // A holiday can be observed in an adjacent year (a Jan 1 that falls on Saturday observes on
-        // Dec 31 of the previous year under some rules; a Dec 31 on Sunday observes on Jan 1 of the
+        // Dec 31 of the previous year under some rules - a Dec 31 on Sunday observes on Jan 1 of the
         // next). Take that year and its neighbours so a shifted observance near a boundary counts.
         self.days.clear();
         for y in [year - 1, year, year + 1] {
@@ -308,7 +308,7 @@ pub fn add_business_days(
     // calendar that has none - every weekday marked weekend, which a data file can say, and calendars
     // are the one part of this tool outsiders are invited to write - spins here forever at 100% CPU
     // with nothing to interrupt it. `nearest_business_day` has carried such a bound since it was
-    // written; this walk did not. Seven calendar days per business day plus a year of slack clears
+    // written - this walk did not. Seven calendar days per business day plus a year of slack clears
     // every real calendar (the worst shipped case is a long weekend wrapped around a holiday), and a
     // file that needs more than that is degenerate: report it as the same "no result" the caller
     // already handles, rather than hanging.
@@ -462,7 +462,7 @@ mod tests {
 
     #[test]
     fn observance_variants_differ_on_a_saturday_holiday() {
-        // 2026-07-04 is a Saturday. Federal shifts the day off to Friday July 3; banking does not
+        // 2026-07-04 is a Saturday. Federal shifts the day off to Friday July 3 - banking does not
         // (banks are open that Friday) - the docs/02 section 5.2 difference, the point of two US
         // calendars.
         let federal = us(Observed::SatToFriSunToMon);
@@ -474,7 +474,7 @@ mod tests {
 
     #[test]
     fn sunday_holiday_shifts_to_monday_in_both_us_rules() {
-        // 2027-07-04 is a Sunday; both US rules observe it on Monday July 5.
+        // 2027-07-04 is a Sunday - both US rules observe it on Monday July 5.
         assert_eq!(weekday(days(2027, 7, 4)), 0, "guard: July 4 2027 is a Sunday");
         for observed in [Observed::SatToFriSunToMon, Observed::SunToMon] {
             let cal = us(observed);
@@ -520,7 +520,7 @@ mod tests {
         // Easter 2026 = April 5. Easter Monday = April 6.
         assert_eq!(holiday_on(&dt(2026, 4, 5), &cal).unwrap().id, "easter_sunday");
         assert_eq!(holiday_on(&dt(2026, 4, 6), &cal).unwrap().id, "easter_monday");
-        // Pentecost = +49 = 2026-05-24; Corpus Christi = +60 = 2026-06-04 (a Thursday).
+        // Pentecost = +49 = 2026-05-24 - Corpus Christi = +60 = 2026-06-04 (a Thursday).
         assert_eq!(holiday_on(&dt(2026, 5, 24), &cal).unwrap().id, "pentecost");
         assert_eq!(holiday_on(&dt(2026, 6, 4), &cal).unwrap().id, "corpus_christi");
         assert_eq!(weekday(days(2026, 6, 4)), 4, "Corpus Christi is a Thursday");
@@ -576,9 +576,9 @@ mod tests {
     #[test]
     fn add_business_days_skips_weekends() {
         let cal = us(Observed::SunToMon);
-        // 2026-07-10 is a Friday; +1 business day is the next Monday, 2026-07-13.
+        // 2026-07-10 is a Friday - +1 business day is the next Monday, 2026-07-13.
         assert_eq!(add_business_days(&dt(2026, 7, 10), 1, &cal).unwrap(), dt(2026, 7, 13));
-        // 2026-07-06 is a Monday; +5 business days is the next Monday.
+        // 2026-07-06 is a Monday - +5 business days is the next Monday.
         assert_eq!(add_business_days(&dt(2026, 7, 6), 5, &cal).unwrap(), dt(2026, 7, 13));
     }
 
@@ -659,7 +659,7 @@ mod tests {
     #[test]
     fn nearest_business_day_rolls_and_includes_a_business_day() {
         let cal = us(Observed::SunToMon);
-        // A Saturday rolls forward to Monday; a business day is itself (roll includes it).
+        // A Saturday rolls forward to Monday - a business day is itself (roll includes it).
         assert_eq!(nearest_business_day(&dt(2026, 7, 4), true, &cal).unwrap(), dt(2026, 7, 6));
         assert_eq!(nearest_business_day(&dt(2026, 7, 6), true, &cal).unwrap(), dt(2026, 7, 6));
         // A Sunday rolls backward to the Friday (a business day under banking).

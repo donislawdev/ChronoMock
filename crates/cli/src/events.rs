@@ -14,7 +14,7 @@ use chrono_core::calc::EvalError;
 use chrono_core::filetime_utc_to_wall;
 use chrono_proto::{Clock, Command, CoveredChannel, Event, PROTOCOL_VERSION};
 /// Translation key for a relative-jump eval error (docs/08 section 10). Business days need a
-/// calendar (not built yet); anything else is an invalid moment. Honest, never silent (rule 6).
+/// calendar (not built yet) - anything else is an invalid moment. Honest, never silent (rule 6).
 pub(crate) fn jump_error_key(e: EvalError) -> &'static str {
     match e {
         EvalError::NeedsCalendar { .. } => "moment.needs_calendar",

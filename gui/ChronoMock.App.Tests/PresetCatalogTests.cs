@@ -74,7 +74,7 @@ public class PresetCatalogTests
     public void A_bad_amount_does_not_crash_the_whole_catalogue()
     {
         // RELEASE-011: a preset whose default.amount is out of Int32 range or fractional must not take down
-        // the whole list. GetInt32 threw FormatException/OverflowException the catch did not cover; now the
+        // the whole list. GetInt32 threw FormatException/OverflowException the catch did not cover - now the
         // amount is read as i64 (TryGetInt64, no throw), and a fractional one leaves the default unset.
         var dir = Path.Combine(Path.GetTempPath(), $"chrono-presets-{Guid.NewGuid():N}");
         Directory.CreateDirectory(dir);

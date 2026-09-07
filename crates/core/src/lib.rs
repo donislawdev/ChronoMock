@@ -122,7 +122,7 @@ impl Verdict {
     }
 
     /// Combine two verdicts into the family (session-wide) verdict. Each verdict encodes
-    /// exactly the pair `(has_covered, has_uncovered)`; the family ORs those bits across
+    /// exactly the pair `(has_covered, has_uncovered)` - the family ORs those bits across
     /// processes, so the family `works` only when something is covered and nothing is left
     /// uncovered anywhere (untouchable rule 4 at the session level). This aggregates
     /// JUDGMENTS, never call counts - per-process reports stay separate (plasterek 11). OR
@@ -188,10 +188,10 @@ pub fn verdict_from_coverage(cov: &Coverage) -> Verdict {
 
 // --- Anchor math: a session moment -> UTC FILETIME (100 ns ticks since 1601) ---
 //
-// The entered moment is wall-clock time in the SESSION zone; internally everything
+// The entered moment is wall-clock time in the SESSION zone - internally everything
 // is UTC (untouchable rule 2). `tz_bias_min` follows the Win32 convention
 // UTC = local + bias. A `None` bias treats the moment as UTC (host-zone handling
-// and full DST/leap validation are a later slice; docs/08 open item).
+// and full DST/leap validation are a later slice - docs/08 open item).
 
 /// The proleptic Gregorian year band this build works in, stated once, for everyone.
 ///
@@ -237,7 +237,7 @@ fn days_from_civil(y: i64, m: i64, d: i64) -> i64 {
     era * 146097 + doe - 719468
 }
 
-/// Proleptic Gregorian leap-year test. A shared civil primitive next to `days_from_civil`;
+/// Proleptic Gregorian leap-year test. A shared civil primitive next to `days_from_civil` -
 /// the `calc` submodule reuses it, so the leap rule lives in exactly one place (rule 6).
 fn is_leap(year: i64) -> bool {
     (year % 4 == 0 && year % 100 != 0) || year % 400 == 0
@@ -261,7 +261,7 @@ fn last_day_of_month(year: i64, month: i64) -> u32 {
 }
 
 /// Parse "YYYY-MM-DDTHH:MM:SS" (a space may replace the `T`). Strict on shape and
-/// on field ranges; deeper calendar validation comes later.
+/// on field ranges - deeper calendar validation comes later.
 fn parse_civil(local: &str) -> Result<(i64, i64, i64, i64, i64, i64), String> {
     let (date, time) = local
         .split_once(['T', ' '])
@@ -378,7 +378,7 @@ pub(crate) fn civil_fields_to_filetime_utc(
 /// is perfectly happy to be negative.
 ///
 /// Split from the FILETIME conversion because the two answer different questions and only one of
-/// them has a floor. Year 1000 has a real instant (-30 610 231 200) and a real RFC 1123 rendering;
+/// them has a floor. Year 1000 has a real instant (-30 610 231 200) and a real RFC 1123 rendering -
 /// what it does not have is a FILETIME. Deriving the epoch fields from the FILETIME, as the
 /// calculator used to, meant that fixing the FILETIME would have thrown away two correct answers
 /// with the wrong one.
@@ -449,7 +449,7 @@ mod tests {
         for m in [1, 10, 60, 1440, 86_400, MULTIPLIER_MAX] {
             assert!(multiplier_in_range(m), "x{m} must be allowed");
         }
-        // Backward is a jump, never a rate (rule 3); past the bound the clock leaves the
+        // Backward is a jump, never a rate (rule 3) - past the bound the clock leaves the
         // representable range mid-session (rule 2). Both measured before this gate existed.
         for m in [-1, -1_000_000, i64::MIN, MULTIPLIER_MAX + 1, i64::MAX] {
             assert!(!multiplier_in_range(m), "x{m} must be refused");
@@ -540,7 +540,7 @@ mod tests {
         // reported Err (so callers show "(out of range)"), never a panic (debug) or a wrapped,
         // plausible-but-false number (release) - the promise "never a bad number".
         assert!(moment_to_filetime_utc(&moment("40000-01-01T00:00:00", Some(0))).is_err());
-        // An absurd year would overflow days_from_civil's own internal math; the year guard rejects
+        // An absurd year would overflow days_from_civil's own internal math - the year guard rejects
         // it before that, so there is no panic even here.
         assert!(moment_to_filetime_utc(&moment("9223372036854775807-01-01T00:00:00", Some(0))).is_err());
     }
@@ -599,7 +599,7 @@ mod tests {
     #[test]
     fn full_wall_set_is_works() {
         // The whole point of Stage 3: `works` means the full wall-clock set, not one
-        // channel. The core stays name-agnostic; it only sees covered vs uncovered.
+        // channel. The core stays name-agnostic - it only sees covered vs uncovered.
         let cov = Coverage {
             covered: vec![
                 ch("GetSystemTimeAsFileTime"),

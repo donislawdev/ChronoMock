@@ -79,7 +79,7 @@ pub(crate) fn cdp_session(target: TargetSpec, time: TimeSpec, reader: BufReader<
     // Resolve the fake-clock origin ONCE, in Unix-epoch ms, and share it with both the shim and every
     // `state` event, so the panel's fake clock matches what the app's own `Date.now()` reads (no skew
     // from the launch+attach duration). The moment is absolute here (the driver resolved a relative
-    // --at before spawning); an out-of-range moment is an honest error, never a silent fall-back to
+    // --at before spawning) - an out-of-range moment is an honest error, never a silent fall-back to
     // real time (untouchable rule 4).
     let real_start_ms = now_epoch_ms();
     let bias = time.moment.tz_bias_min.unwrap_or(0);
@@ -204,7 +204,7 @@ pub(crate) fn cdp_session(target: TargetSpec, time: TimeSpec, reader: BufReader<
                 }
                 Ok(Command::SetMultiplier { id, multiplier, .. }) => {
                     // Re-anchor the clock (wall and duration both continue from now at the new rate) and
-                    // push the new origin + rate to every context. New timers pick up the rate at once;
+                    // push the new origin + rate to every context. New timers pick up the rate at once -
                     // Date.now/new Date/performance.now reflect it immediately - only an already-queued
                     // setInterval keeps its old cadence, which the end report warns about (rule 4).
                     if !chrono_core::multiplier_in_range(multiplier) {
@@ -274,7 +274,7 @@ pub(crate) fn cdp_session(target: TargetSpec, time: TimeSpec, reader: BufReader<
                     let index = context_index_for(&tid, &mut index_by_target, &mut next_index);
                     // Build the shim from the clock's CURRENT origin, not the session's initial values, so
                     // a context attaching after an in-flight rate change or jump starts on the same clock
-                    // as every other context (one absolute origin; rule 3). Before any change this is
+                    // as every other context (one absolute origin - rule 3). Before any change this is
                     // identical to the initial shim.
                     let (shim_fake0, shim_real0, shim_mult) = clock.shim_origin();
                     let shim = cdp::build_shim(shim_fake0, shim_real0, shim_mult);
@@ -418,7 +418,7 @@ pub(crate) fn cdp_set_multiplier_expr(fake0: i64, real0: i64, mult: i64) -> Stri
     )
 }
 
-/// The JS to push a new wall origin into a context's `__chronomock` for a jump - wall only; the rate
+/// The JS to push a new wall origin into a context's `__chronomock` for a jump - wall only - the rate
 /// and the duration axis are untouched, so a backward jump never rewinds elapsed time (rule 3).
 pub(crate) fn cdp_jump_expr(fake0: i64, real0: i64) -> String {
     format!(

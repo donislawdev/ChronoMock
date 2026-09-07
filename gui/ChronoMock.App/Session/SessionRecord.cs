@@ -25,7 +25,7 @@ public sealed record SessionRecord
 
     [JsonPropertyName("ended_at_utc")] public required string EndedAtUtc { get; init; }
 
-    /// <summary>The target's file name for display; the full path stays in <see cref="TargetPath"/>.</summary>
+    /// <summary>The target's file name for display - the full path stays in <see cref="TargetPath"/>.</summary>
     [JsonIgnore] public string TargetName => Path.GetFileName(TargetPath);
 
     /// <summary>The verdict as a kind, so a row reuses the panel's glyph and colour converters.</summary>

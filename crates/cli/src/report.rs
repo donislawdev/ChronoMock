@@ -18,7 +18,7 @@ pub(crate) struct ProcessCoverage {
 }
 
 /// The captured outcome of a `chrono run` session, rendered as a human report in the
-/// non-json path. The core emits stable KEYS; this consumer renders English prose (rule 15:
+/// non-json path. The core emits stable KEYS - this consumer renders English prose (rule 15:
 /// the CLI is English-only, so the key->text table lives here, never in the core - rule 16).
 /// The Stage 2 verifier is exactly this: a view over what the core already emits, one that
 /// makes a NON-effect as legible as an effect.
@@ -30,10 +30,10 @@ pub(crate) struct SessionReport {
     pub(crate) parent_verdict: Option<(String, String)>,
     /// The target vanished right after injection - an honest non-effect (ADR-4).
     pub(crate) vanished: Option<(String, u64)>,
-    /// Error events the core emitted, as (key, origin). The `--json` surface always carried these;
+    /// Error events the core emitted, as (key, origin). The `--json` surface always carried these -
     /// the human report used to drop them on the floor and print `<no verdict emitted>`, so a session
     /// that never started said nothing about WHY (untouchable rule 6). A start failure becomes the
-    /// headline; anything the core rejected mid-session (an out-of-range `set_multiplier`, which does
+    /// headline - anything the core rejected mid-session (an out-of-range `set_multiplier`, which does
     /// not end the session) is listed below the verdict instead of vanishing.
     pub(crate) errors: Vec<(String, String)>,
     pub(crate) warnings: Vec<String>,
@@ -56,7 +56,7 @@ pub(crate) struct SessionReport {
     /// tool's exit code, which is the session verdict (docs/08 section 8).
     pub(crate) target_exit: Option<i32>,
     /// What teardown could not remove, from `ended.residue_keys`. Empty on a native session (its
-    /// hooks unhook themselves); today the only key is a Chromium temp profile that stayed locked.
+    /// hooks unhook themselves) - today the only key is a Chromium temp profile that stayed locked.
     pub(crate) residue: Vec<String>,
     /// Whether this was a Chromium (CDP) session: its coverage unit is a JS context, not an OS
     /// process, so the report says "context" instead of "pid".
@@ -271,7 +271,7 @@ pub(crate) fn detect_runtime_warnings(target_path: &std::path::Path, scale_qpc: 
                 None => continue,
             };
             if let Some(minor) = python_dll_minor(&name) {
-                // Python 3.13+ moved monotonic onto QPC too (CPython PR 116781); earlier, only
+                // Python 3.13+ moved monotonic onto QPC too (CPython PR 116781) - earlier, only
                 // perf_counter is on QPC and monotonic (GetTickCount64) still scales.
                 add(
                     &mut keys,
@@ -654,7 +654,7 @@ mod tests {
     #[test]
     fn target_exit_code_is_shown_as_the_apps_own() {
         // The wire has carried `ended.target_exit_code` all along and the GUI panel has shown it
-        // since 7446a59; the CLI report dropped it, so a plain run could not tell "the app failed
+        // since 7446a59 - the CLI report dropped it, so a plain run could not tell "the app failed
         // with code 3" from "we ended the session" (rule 6). Spelled out, because this report also
         // carries a verdict whose code means something else entirely (docs/08 section 8).
         let r = SessionReport {
@@ -808,7 +808,7 @@ mod tests {
 
     #[test]
     fn detect_runtime_flags_python_312_perfcounter_only() {
-        // Python 3.12: only perf_counter is on QPC; monotonic (GetTickCount64) still scales.
+        // Python 3.12: only perf_counter is on QPC - monotonic (GetTickCount64) still scales.
         let dir = unique_temp_dir("chrono-rt-py312");
         std::fs::create_dir_all(dir.join("_internal")).unwrap();
         std::fs::write(dir.join("_internal").join("python312.dll"), b"").unwrap();

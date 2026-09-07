@@ -7,7 +7,7 @@ namespace ChronoMock.App;
 /// ships the Chromium runtime. Such a target is not driven by the native hook - its time-dependent logic
 /// runs in a sandboxed renderer the hook cannot reach, and Chromium timers are QPC-based (ADR-2). The core
 /// auto-detects it and drives it over the DevTools protocol instead (ADR-8/ADR-9), speaking the same
-/// machine protocol; the GUI routes it there (skips the bitness gate, labels coverage as JS contexts).
+/// machine protocol - the GUI routes it there (skips the bitness gate, labels coverage as JS contexts).
 /// </summary>
 internal static class ChromiumTarget
 {

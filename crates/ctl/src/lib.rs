@@ -34,7 +34,7 @@
 //!
 //! Fake wall time is `a_fake + (quit_now - a_real) * multiplier`, in 100 ns units,
 //! anchored on `QueryUnbiasedInterruptTime` (ADR-5). UTC channels return that instant
-//! directly; `GetLocalTime` returns it shifted back into the session zone by `tz_bias`.
+//! directly - `GetLocalTime` returns it shifted back into the session zone by `tz_bias`.
 
 use std::ptr::{addr_of, addr_of_mut, read_volatile, write_volatile};
 use std::sync::atomic::{fence, AtomicU32, Ordering};
@@ -129,7 +129,7 @@ const _: () = {
 };
 
 /// Maximum number of processes (parent + children) whose coverage a session tracks.
-/// Installers can spawn dozens of helpers (docs/07 open item 2); 256 leaves headroom.
+/// Installers can spawn dozens of helpers (docs/07 open item 2) - 256 leaves headroom.
 /// Beyond it, `reserve_cov_slot` returns None and that process runs uncovered in the
 /// audit - an honest partial, never a silent overwrite. It also sets the size of the
 /// control block, since every slot carries a `Cov`.
@@ -262,13 +262,13 @@ pub enum ChannelModule {
     Kernel32,
     Ntdll,
     /// user32.dll - the message waits. May be absent in a console/service target that never
-    /// loads it; the hook then leaves the channel uninstalled (honest partial), never forces it.
+    /// loads it - the hook then leaves the channel uninstalled (honest partial), never forces it.
     User32,
     /// winmm.dll - the multimedia timer timeSetEvent. Often absent (a console/service target rarely
-    /// loads winmm); resolved lazily like User32, honest partial if absent, never force-loaded.
+    /// loads winmm) - resolved lazily like User32, honest partial if absent, never force-loaded.
     Winmm,
     /// ws2_32.dll - the sockets `connect`. Often absent (a target that never touches the network never
-    /// loads it); resolved lazily like Winmm, honest partial if absent, never force-loaded.
+    /// loads it) - resolved lazily like Winmm, honest partial if absent, never force-loaded.
     Ws2_32,
 }
 
@@ -386,7 +386,7 @@ pub struct ChannelDef {
 // the CreateProcess* funnel to NtCreateUserProcess NOT count (the child is already inherited).
 //
 // KNOWN GAPS, not yet covered (the verifier should report these honestly): none of the major time or
-// spawn surfaces remain; residual exotica (SetThreadpoolWait timeouts, RtlCreateUserProcess legacy
+// spawn surfaces remain - residual exotica (SetThreadpoolWait timeouts, RtlCreateUserProcess legacy
 // path) are out of scope and would be reported honestly if a target hit them.
 
 /// All time channels, ordered by their `calls` index (IDX_*): the wall-clock set, the
@@ -478,7 +478,7 @@ pub struct Ctl {
     /// QPC axis anchor (opt-in `scale_qpc`, ADR-2 reversal). QPC is a SEPARATE system counter from QUIT
     /// (different ticks and epoch), so it needs its own base rather than riding `dur_q0`. Fake QPC base,
     /// in raw QPC ticks. Rebased on every `set_multiplier` like the tick axis (freeze then re-anchor), so
-    /// a speed change never rewinds it (untouchable rule 3); left untouched on `jump`.
+    /// a speed change never rewinds it (untouchable rule 3) - left untouched on `jump`.
     pub dur_qpc_c0: i64,
     /// Real QPC base (raw ticks) the QPC elapsed is measured from - QPC is a system-wide counter, so the
     /// core reads the same value the target's hook does.
@@ -494,7 +494,7 @@ pub struct Ctl {
     /// real time when the core vanishes (clean end, crash, or kill -9). Stable.
     pub core_pid: u32,
     /// PID registry slot counter, reserved atomically by `register_pid`. Only ever
-    /// increases; the mechanism does not read it - it scans `pids` for nonzero entries.
+    /// increases. The mechanism does not read it - it scans `pids` for nonzero entries.
     pub pid_count: u32,
     pub _pad: u32,
     /// Registered PIDs (parent + children), indexed by reserved slot. A hook publishes its own PID
@@ -506,13 +506,13 @@ pub struct Ctl {
     pub covs: [Cov; MAX_COV_PIDS],
 }
 
-/// One process's coverage, living in the `Ctl` slot that process reserved. `#[repr(C)]`; written
+/// One process's coverage, living in the `Ctl` slot that process reserved. `#[repr(C)]` - written
 /// only by the owning process's hook, read by the mechanism. One slot per process, so each
 /// process's evidence is attributed to it and never summed with the rest of the tree.
 #[repr(C)]
 pub struct Cov {
     /// Bitmask of channels this process's hook installed. u64 (63 usable bits) so the channel set can
-    /// grow past 32 without a layout break; the low bits still hold channels 0..N as before. Being u64
+    /// grow past 32 without a layout break - the low bits still hold channels 0..N as before. Being u64
     /// also aligns `calls` to 8 bytes with no explicit padding (the old u32 + u32 pad was the same 8
     /// bytes, so the section size is unchanged).
     pub installed_channels: u64,
@@ -584,7 +584,7 @@ pub unsafe fn write_anchor(p: *mut Ctl, a_fake: i64, a_real: i64, multiplier: i6
     // Release fence: the odd-seq store is ordered before the data writes, and (below) the data
     // writes complete before the even-seq store. Paired with the reader's Acquire fences this is a
     // true cross-thread/-process seqlock, not merely a compiler barrier. On x86/x64 (TSO) a Release
-    // or Acquire fence emits no instruction, so the hot anchor-read path keeps its cost; on a weakly
+    // or Acquire fence emits no instruction, so the hot anchor-read path keeps its cost - on a weakly
     // ordered ISA (ARM64) it emits the barrier that stops the anchor read from tearing.
     fence(Ordering::Release);
     write_volatile(addr_of_mut!((*p).a_fake), a_fake);
@@ -596,7 +596,7 @@ pub unsafe fn write_anchor(p: *mut Ctl, a_fake: i64, a_real: i64, multiplier: i6
 
 /// Write the FULL anchor (wall triple plus the duration anchor) under the seqlock, in one transaction
 /// so a reader never sees a new multiplier against an old duration base. This is the `prepare` (initial)
-/// and `set_multiplier` (rebase) writer; `jump` uses `write_anchor` to leave the duration axis alone.
+/// and `set_multiplier` (rebase) writer - `jump` uses `write_anchor` to leave the duration axis alone.
 ///
 /// # Safety
 /// `p` must point to a live, correctly aligned `Ctl`.
@@ -659,7 +659,7 @@ pub unsafe fn read_anchor(p: *const Ctl) -> (i64, i64, i64) { unsafe {
     }
     // The seqlock never settled within the bound: the writer (the core) was force-killed mid-write, leaving
     // `seq` odd forever (RELEASE-009). Do not spin at 100% CPU - read the fields once and return them. A
-    // dead writer's fields are stable (a rare one-time tear is far better than a permanent hang); the
+    // dead writer's fields are stable (a rare one-time tear is far better than a permanent hang) - the
     // self-detach watcher flips DETACHED right after the core dies, so the detour stops reading this block
     // on its next call and the target falls back to real time.
     fence(Ordering::Acquire);
@@ -745,7 +745,7 @@ pub fn fake_wall_at(anchor_fake: i64, anchor_real: i64, now_real: i64, multiplie
 ///
 /// Lives here rather than in the hook for one reason: the hook is a `cdylib` and has no tests at
 /// all (0 across 1966 lines), while this is the classic place for an off-by-one - a fixed buffer,
-/// a terminator, and a caller that cannot check. The behaviour is unchanged; what is new is that
+/// a terminator, and a caller that cannot check. The behaviour is unchanged - what is new is that
 /// it is now checkable, including the `len == 0` case where there is no room even for the
 /// terminator.
 pub fn set_wide(dst: &mut [u16], s: &str) {
@@ -767,7 +767,7 @@ pub fn set_wide(dst: &mut [u16], s: &str) {
 /// The pure half of the hook's `shift_filetime`. FILETIME 0 is the very common "no time recorded",
 /// and a positive bias pushes it below zero - which, read back as the unsigned value it is, becomes
 /// a date tens of thousands of years out. The old code wrapped there and still reported success, so
-/// the caller had no way to notice; `None` here is what lets the detour fail honestly and leave the
+/// the caller had no way to notice - `None` here is what lets the detour fail honestly and leave the
 /// caller's original value alone.
 pub fn shift_ticks_by_bias(ticks: i64, bias_min: i32, add: bool) -> Option<i64> {
     let bias_100ns = bias_min as i64 * 60 * 10_000_000;
@@ -780,7 +780,7 @@ pub fn shift_ticks_by_bias(ticks: i64, bias_min: i32, add: bool) -> Option<i64> 
 
 /// Project the duration tick (milliseconds, `GetTickCount64` scale) at real time `real_now` (QUIT, 100 ns)
 /// from the anchor: `dur_tick_c0 + (real_now - dur_q0) * M / 10_000`. Monotonic in `real_now` for a fixed
-/// anchor; `freeze_dur` keeps it continuous across a multiplier change. `m` is clamped to >= 1, so a frozen
+/// anchor - `freeze_dur` keeps it continuous across a multiplier change. `m` is clamped to >= 1, so a frozen
 /// wall clock (M = 0) still advances the duration axis at real speed (untouchable rule 3). Pure so the
 /// monotonicity is unit-tested without injection.
 pub fn dur_tick_at(dur_tick_c0: u64, dur_q0: i64, m: i64, real_now: i64) -> u64 {
@@ -1085,7 +1085,7 @@ pub unsafe fn read_uninjected_children(p: *const Cov) -> u64 { unsafe {
 /// requested / M (ADR-7). `INFINITE` (0xFFFFFFFF) and 0 pass through untouched - never
 /// turn "wait forever" into a finite wait, never lengthen a poll. `m` is clamped to >= 1,
 /// so frozen (M=0) leaves waits at real length (untouchable rule 3). The multiplier is an integer,
-/// so a fractional "slow motion" (0<M<1) is not representable and never arises; symmetric to the
+/// so a fractional "slow motion" (0<M<1) is not representable and never arises - symmetric to the
 /// duration axis. Integer division truncates: a sub-M timeout
 /// collapses to a yield, the honest coarse behavior under heavy acceleration.
 pub fn scale_wait(ms: u32, m: i64) -> u32 {
@@ -1119,7 +1119,7 @@ pub fn scale_delay_interval(interval: i64, m: i64) -> i64 {
 /// kernel reads the REAL clock for an absolute timer, so an unconverted fake instant would fire
 /// years off. An absolute due already at or before `fake_now` fires immediately (`-1`).
 ///
-/// `m` is clamped to >= 1, so frozen (M=0) leaves the timer at real length; the multiplier is an
+/// `m` is clamped to >= 1, so frozen (M=0) leaves the timer at real length - the multiplier is an
 /// integer, so a fractional "slow motion" (0<M<1) is not representable and never arises (symmetric
 /// to the duration axis, untouchable rule 3). One consequence: an ABSOLUTE timer under
 /// frozen fires as if M=1 - a frozen wall clock never reaches a future absolute due on its own, so
@@ -1323,7 +1323,7 @@ mod tests {
         let mut m: i64 = 60;
 
         // Real QUIT (100 ns) advances by 1 ms each sample. The multiplier drops (x60 -> x10 -> freeze
-        // -> x1) then jumps back up (-> x1440); the down-steps are the ones that used to rewind.
+        // -> x1) then jumps back up (-> x1440) - the down-steps are the ones that used to rewind.
         let changes: &[(i64, i64)] = &[(500, 10), (900, 0), (1300, 1), (1700, 1440)]; // (sample index, new m)
         let mut last_tick: u64 = dur_tick_at(tick_c0, q0, m, q0);
         let mut last_quit: i64 = dur_quit_at(quit_c0, q0, m, q0);
@@ -1432,7 +1432,7 @@ mod tests {
                 assert_eq!(slot, i, "slots are handed out in order");
                 publish_pid(p, slot, pid);
             }
-            // Three distinct slots, in order, readable back; the rest stay zero.
+            // Three distinct slots, in order, readable back - the rest stay zero.
             assert_eq!(read_pid(p, 0), 1111);
             assert_eq!(read_pid(p, 1), 2222);
             assert_eq!(read_pid(p, 2), 3333);
@@ -1636,7 +1636,7 @@ mod tests {
         assert_eq!(scale_timer_due(-6_000_000, 0, 60), -100_000);
         assert_eq!(scale_timer_due(-6_000_000, 0, 1), -6_000_000);
         // Absolute (positive) fake instant -> relative real interval until the fake clock reaches it.
-        // due = fake_now + 6s (60_000_000 ticks) ahead; at x60 the real wait is 0.1s (1_000_000 ticks).
+        // due = fake_now + 6s (60_000_000 ticks) ahead - at x60 the real wait is 0.1s (1_000_000 ticks).
         let fake_now = 1_000_000_000;
         assert_eq!(scale_timer_due(fake_now + 60_000_000, fake_now, 60), -1_000_000);
         // Absolute already at or before fake_now: fire immediately.
@@ -1665,7 +1665,7 @@ mod tests {
         assert_eq!(scale_timer_period(6000, 1), 6000);
         // A >0 period never collapses to 0 (that would turn a periodic timer one-shot).
         assert_eq!(scale_timer_period(30, 60), 1);
-        // 0 = one-shot stays 0; negative (API error) passes through untouched.
+        // 0 = one-shot stays 0 - negative (API error) passes through untouched.
         assert_eq!(scale_timer_period(0, 60), 0);
         assert_eq!(scale_timer_period(-5, 60), -5);
         // Frozen and slow motion clamp to real length (>= 1) - rule 3.
@@ -1692,7 +1692,7 @@ mod tests {
         // Real interval = uElapse / M.
         assert_eq!(scale_timer_elapse(6000, 60), 100);
         assert_eq!(scale_timer_elapse(6000, 1), 6000);
-        // Sub-M truncates toward 0; Windows then clamps up to USER_TIMER_MINIMUM (not our job).
+        // Sub-M truncates toward 0 - Windows then clamps up to USER_TIMER_MINIMUM (not our job).
         assert_eq!(scale_timer_elapse(30, 60), 0);
         // No INFINITE guard, unlike scale_wait: a huge interval still scales.
         assert_eq!(scale_timer_elapse(0xFFFF_FFFF, 60), 0xFFFF_FFFF / 60);
@@ -1702,7 +1702,7 @@ mod tests {
     }
 
     /// The projection the target sees and the projection the session reports are now the same
-    /// function; these pin its shape so a "small simplification" cannot quietly change what one
+    /// function - these pin its shape so a "small simplification" cannot quietly change what one
     /// side answers. The clamp is the load-bearing part: past the end of the range, wrapping gave
     /// the raw FILETIME channels one epoch and the SYSTEMTIME channels another (R2-K2, R2-X2).
     #[test]
@@ -1756,7 +1756,7 @@ mod tests {
         assert_eq!(buf[2], 0);
     }
 
-    /// FILETIME 0 means "no time recorded" and is extremely common; a positive bias pushes it below
+    /// FILETIME 0 means "no time recorded" and is extremely common - a positive bias pushes it below
     /// zero, which read back as the unsigned value it is becomes a date tens of thousands of years
     /// out. `None` is what lets the detour report failure and leave the caller's value alone.
     #[test]

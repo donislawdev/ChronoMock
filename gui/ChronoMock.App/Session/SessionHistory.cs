@@ -7,7 +7,7 @@ namespace ChronoMock.App;
 /// <summary>Limits on the local history - it is a convenience log, not an archive.</summary>
 public static class SessionHistoryLimits
 {
-    /// <summary>The most recent sessions kept; older ones are dropped on append.</summary>
+    /// <summary>The most recent sessions kept - older ones are dropped on append.</summary>
     public const int Max = 50;
 }
 
@@ -57,7 +57,7 @@ public sealed class InMemorySessionHistoryStore : ISessionHistoryStore
 /// <summary>
 /// File store: one JSON file per the portable layout (history/sessions.json next to the executable,
 /// docs/04 section 7). The file wraps the records with a schema and an "unstable" marker while the shape
-/// is not frozen; history is local-only, so its shape is not an exchange contract (docs/04 row 27).
+/// is not frozen - history is local-only, so its shape is not an exchange contract (docs/04 row 27).
 /// </summary>
 public sealed class FileSessionHistoryStore : ISessionHistoryStore
 {
@@ -133,7 +133,7 @@ public sealed class FileSessionHistoryStore : ISessionHistoryStore
         {
             // A corrupt OR unreadable history must not crash the app or be deleted - start empty and leave
             // the file be (the interface contract, rule 6). IOException covers a file locked by a second
-            // portable instance; UnauthorizedAccessException a read-denied location.
+            // portable instance - UnauthorizedAccessException a read-denied location.
             return [];
         }
     }
@@ -203,7 +203,7 @@ public sealed class FileSessionHistoryStore : ISessionHistoryStore
     /// <summary>Replace the history file, retrying briefly while the destination is momentarily locked.
     /// A unique scratch name is not enough on its own: the replace itself contends, and Windows answers a
     /// simultaneous move onto the same destination with a sharing violation. History is written once at the
-    /// end of a session, so a few short retries cover the overlap; if it still will not go, the error is
+    /// end of a session, so a few short retries cover the overlap - if it still will not go, the error is
     /// reported rather than swallowed.</summary>
     private static void MoveWithRetry(string temp, string destination)
     {

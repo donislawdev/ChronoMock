@@ -27,7 +27,7 @@
           <ColumnDefinition Width="320" />
         </Grid.ColumnDefinitions>
 
-        <!-- LEFT: tester presets from the shared catalogue (7.3). Filterable; each row shows the localized
+        <!-- LEFT: tester presets from the shared catalogue (7.3). Filterable - each row shows the localized
              name and what the date tests. Clicking a row to fill the builder is wired in slice G4-1b. -->
         <Border Grid.Column="0" Margin="{StaticResource SpaceSm}" Padding="{StaticResource SpaceLg}"
                 Background="{DynamicResource BrushBgSurface}" CornerRadius="{StaticResource RadiusMd}">
@@ -147,7 +147,7 @@
                         </ComboBox>
                       </StackPanel>
 
-                      <!-- Nearest editor: roll to the nearest business day in a direction (needs a calendar;
+                      <!-- Nearest editor: roll to the nearest business day in a direction (needs a calendar -
                            without one the engine returns an honest calendar error, surfaced as the result error). -->
                       <StackPanel Orientation="Horizontal"
                                   Visibility="{Binding IsNearest, Converter={StaticResource BoolToVis}}">

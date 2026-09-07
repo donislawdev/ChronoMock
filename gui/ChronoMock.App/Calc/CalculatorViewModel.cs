@@ -40,7 +40,7 @@ public sealed record SnapTargetOption(string Token, string LabelKey);
 
 /// <summary>A nearest-target option: the CLI token (<c>nbd</c>/<c>pbd</c>/<c>next-leap-day</c>) plus its
 /// translation key (mirrors <c>parse_nearest</c>). The business-day targets need a calendar (without one the
-/// engine returns a calendar error); the leap-day target is pure arithmetic and needs none.</summary>
+/// engine returns a calendar error) - the leap-day target is pure arithmetic and needs none.</summary>
 public sealed record NearestTargetOption(string Token, string LabelKey);
 
 /// <summary>A calendar option: the id passed to <c>--calendar</c> (null = omit it) plus its translation key.</summary>
@@ -51,7 +51,7 @@ public sealed record CalendarOption(string? Id, string LabelKey);
 public sealed record FormatRow(string Label, string Value);
 
 /// <summary>
-/// One step in the builder. A step carries a kind (shift / snap / ...) and the fields that kind needs;
+/// One step in the builder. A step carries a kind (shift / snap / ...) and the fields that kind needs -
 /// only the selected kind's editor is visible, and <see cref="ToArgs"/> emits that kind's calc flag. Editing
 /// any field raises PropertyChanged, which the parent turns into a live recompute ("result after each step",
 /// 7.3). One unified view model (not a class per kind) keeps the hand-rolled INPC style and lets the kind
@@ -162,7 +162,7 @@ public sealed class PresetItemViewModel(PresetInfo info, string culture)
 }
 
 /// <summary>One preset-parameter input in the active-preset panel (7.3, docs/04 4.2). A <c>date</c>
-/// parameter is a text box (a bare date is midnight); a <c>duration</c> is an amount plus a unit, seeded
+/// parameter is a text box (a bare date is midnight) - a <c>duration</c> is an amount plus a unit, seeded
 /// from the file default. The label is the parameter id as a technical name (like the format labels) - the
 /// preset schema carries no localized label. Editing raises PropertyChanged so the parent re-resolves.</summary>
 public sealed record VariantOption(string Token, string LabelKey);
@@ -269,7 +269,7 @@ public sealed class ReadingRow
         ReadingLabelKey = $"calc.reading.{reading.Reading}";
         var t = reading.Iso.IndexOf('T', StringComparison.Ordinal);
         Date = t >= 0 ? reading.Iso[..t] : reading.Iso;
-        // The engine sends the weekday name in English; map it to a key so the view renders it in the
+        // The engine sends the weekday name in English - map it to a key so the view renders it in the
         // current language (rule 15), rather than baking an English literal into a bound string. Kept as a
         // key (not resolved here) so this row stays language-neutral and unit-testable without a WPF host.
         WeekdayKey = CalculatorViewModel.WeekdayKey(reading.Metadata.Weekday);
@@ -290,7 +290,7 @@ public sealed class ReadingRow
 /// <summary>
 /// The date-calculator screen's live state (Stage 4, GUI slice G3b/G3c/G4). Holds the builder inputs (base,
 /// steps, calendar) and the result of evaluating them through <see cref="CalcClient"/> - the same engine
-/// the CLI and substitution core use (ADR-6). Any input change recomputes; overlapping computes cancel the
+/// the CLI and substitution core use (ADR-6). Any input change recomputes - overlapping computes cancel the
 /// previous one. Manual INPC, no MVVM package (gui-and-cli-constraints), like the session panel.
 /// </summary>
 public sealed class CalculatorViewModel : ObservableObject
@@ -339,7 +339,7 @@ public sealed class CalculatorViewModel : ObservableObject
     /// <summary>How long the builder stays quiet before a keystroke turns into a calc process. Every edit
     /// used to spawn one immediately - typing a date meant about ten process launches, and unpacking a
     /// preset about nine - which is visible jank on a machine with an AV scanner in the loop (the typical
-    /// QA box). The engine call is unchanged; only its cadence is.</summary>
+    /// QA box). The engine call is unchanged - only its cadence is.</summary>
     private static readonly TimeSpan EditDebounce = TimeSpan.FromMilliseconds(250);
 
     public CalculatorViewModel(CalcClient client, string? presetsDir = null)
@@ -497,7 +497,7 @@ public sealed class CalculatorViewModel : ObservableObject
     public bool ShowBaseError => IsSpecificBase && Base.HasError;
 
     /// <summary>The Specific-date base as a MomentField, edited through the shared MomentInput control (an
-    /// ISO date box plus a calendar popup, locale-safe, rule 2). Used only when the base kind is Specific;
+    /// ISO date box plus a calendar popup, locale-safe, rule 2). Used only when the base kind is Specific -
     /// Today/Now need no text. Editing it recomputes and drops any active preset framing (via Changed).</summary>
     public ChronoMock.App.MomentField Base { get; } = new();
 
@@ -612,7 +612,7 @@ public sealed class CalculatorViewModel : ObservableObject
         return RecomputeAsync();
     }
 
-    /// <summary>Build the calc arguments for reverse analysis (pure; unit-tested).</summary>
+    /// <summary>Build the calc arguments for reverse analysis (pure - unit-tested).</summary>
     public static IReadOnlyList<string> BuildAnalyzeArgs(string text) => ["--analyze", text.Trim()];
 
     private void TriggerAnalyze()
@@ -873,7 +873,7 @@ public sealed class CalculatorViewModel : ObservableObject
         {
             // A shape the builder cannot represent, OR a malformed preset moment (missing base/steps, an
             // empty step, a shift without an amount, a non-string where a token is expected) - PresetUnpack
-            // throws NotSupportedException for all of those now (R2-S8); the other three stay as defence for
+            // throws NotSupportedException for all of those now (R2-S8) - the other three stay as defence for
             // the builder-filling half. Be honest with the "needs parameters" note rather than crash the
             // dispatcher (M-8, rule 6).
             ShowActivePreset(preset, culture, needsParameters: true);
@@ -953,7 +953,7 @@ public sealed class CalculatorViewModel : ObservableObject
         ClearParamInputsOnly();
     }
 
-    /// <summary>Build the calc arguments for the current builder state (pure; unit-tested). Each step
+    /// <summary>Build the calc arguments for the current builder state (pure - unit-tested). Each step
     /// contributes its own flag pair, so the grammar is not shift-specific.</summary>
     public static IReadOnlyList<string> BuildCalcArgs(
         BaseKind baseKind,
@@ -1062,7 +1062,7 @@ public sealed class CalculatorViewModel : ObservableObject
         var t = moment.Iso.IndexOf('T', StringComparison.Ordinal);
         ResultDate = t >= 0 ? moment.Iso[..t] : moment.Iso;
         ResultTime = t >= 0 ? moment.Iso[(t + 1)..] : string.Empty;
-        // The engine sends the weekday in English; render it in the current language (rule 15). Resolved
+        // The engine sends the weekday in English - render it in the current language (rule 15). Resolved
         // here (not exposed as a key) because it is one part of the result column the view binds as text.
         ResultWeekday = Tr(WeekdayKey(moment.Metadata.Weekday));
         ResultZone = OffsetLabel(moment.ZoneBiasMin);
@@ -1077,7 +1077,7 @@ public sealed class CalculatorViewModel : ObservableObject
 
         Formats.Clear();
         var f = moment.Formats;
-        // Format labels are translated (rule 15); the values are data. Format NAMES (US, PL, FILETIME,
+        // Format labels are translated (rule 15) - the values are data. Format NAMES (US, PL, FILETIME,
         // RFC 1123) are proper nouns, so their PL text keeps them as-is.
         Formats.Add(new FormatRow(Tr("calc.fmt.iso_date"), f.IsoDate));
         Formats.Add(new FormatRow(Tr("calc.fmt.iso_datetime"), f.IsoDatetime));
@@ -1125,7 +1125,7 @@ public sealed class CalculatorViewModel : ObservableObject
 
     private static string BuildMetadataLine(CalcMetadata m)
     {
-        // Labels are translated (rule 15); ISO and Q are universal notation, and the numbers and holiday
+        // Labels are translated (rule 15) - ISO and Q are universal notation, and the numbers and holiday
         // name are data. The weekday comes from the engine in English, mapped to a key and resolved.
         var parts = new List<string>
         {

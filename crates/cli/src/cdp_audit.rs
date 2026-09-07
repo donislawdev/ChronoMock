@@ -30,7 +30,7 @@ pub(crate) fn covered_channels(counts: BTreeMap<(u32, String), u64>) -> Vec<(u32
 ///
 /// `shimmed` counts every context the session EVER covered, not the ones still attached. Chromium
 /// destroys its targets while shutting down, so a healthy session with full coverage could reach the
-/// end with an empty live list; counting those, it reported `fails` with exit code 11 and emitted no
+/// end with an empty live list - counting those, it reported `fails` with exit code 11 and emitted no
 /// coverage at all. Measured on Pomotroid: closing the window mid-session turned a `works` run with
 /// four covered APIs into `DID NOT TAKE EFFECT (contexts: 0)`, exit 11. What a session covered does
 /// not stop being true when the app closes.

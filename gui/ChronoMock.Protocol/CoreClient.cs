@@ -12,7 +12,7 @@ namespace ChronoMock.Protocol;
 /// <para>
 /// The core emits <c>ready</c> FIRST and only then reads the <c>start</c> line, so this client gates on
 /// <c>ready</c> before sending - see <see cref="Connect"/>. This paragraph used to claim the opposite and
-/// call docs/08 a drift; the doc was right and the comment was stale, which is worse than no comment at
+/// call docs/08 a drift - the doc was right and the comment was stale, which is worse than no comment at
 /// all because a reader trusts it over the code (R2-N1).
 /// </para>
 /// The GUI is a client of this protocol, not FFI, so it stays AnyCPU and lets the core match the target's bitness.
@@ -135,7 +135,7 @@ public sealed class CoreClient : IAsyncDisposable
         lock (_stdinLock)
         {
             var writer = _process.StandardInput;
-            // Explicit '\n' (not Environment.NewLine); the core trims line endings on its side either way.
+            // Explicit '\n' (not Environment.NewLine) - the core trims line endings on its side either way.
             writer.Write(line);
             writer.Write('\n');
             writer.Flush();

@@ -2,7 +2,7 @@ namespace ChronoMock.App;
 
 /// <summary>
 /// The session's lifecycle state, as the panel shows it. The meaning is carried by the translated status
-/// LABEL (zasady/13 section 9 - never colour alone); this enum lets the view guard against a late heartbeat
+/// LABEL (zasady/13 section 9 - never colour alone) - this enum lets the view guard against a late heartbeat
 /// resurrecting a finished session, and could later drive a status glyph or colour without changing the VM.
 /// </summary>
 public enum SessionStatusKind

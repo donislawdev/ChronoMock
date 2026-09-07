@@ -6,7 +6,7 @@ namespace ChronoMock.App;
 /// <summary>Limit on the diagnostics logs kept beside the app - a support aid, not an archive.</summary>
 public static class DiagnosticsLogLimits
 {
-    /// <summary>The most recent diagnostics files kept; older ones are pruned on write.</summary>
+    /// <summary>The most recent diagnostics files kept - older ones are pruned on write.</summary>
     public const int Max = 50;
 }
 
@@ -14,7 +14,7 @@ public static class DiagnosticsLogLimits
 /// Persists a diagnostics block when a session ends in anything other than a clean success (RELEASE-012),
 /// so a QA report has a file to attach when an injection is blocked (Defender/AV), a hook is missing, or a
 /// target vanishes. Injected into <see cref="SessionViewModel"/> so unit tests use a no-op and touch no
-/// files. The block is composed by the view model (BuildDiagnosticsBlock); this only writes it.
+/// files. The block is composed by the view model (BuildDiagnosticsBlock) - this only writes it.
 /// </summary>
 public interface IDiagnosticsLog
 {
@@ -82,7 +82,7 @@ public sealed class FileDiagnosticsLog : IDiagnosticsLog
         try
         {
             Directory.CreateDirectory(_directory);
-            // Sortable, filename-safe timestamp (no ':'); milliseconds keep two fast failures from colliding.
+            // Sortable, filename-safe timestamp (no ':') - milliseconds keep two fast failures from colliding.
             var stamp = DateTime.UtcNow.ToString("yyyyMMddTHHmmssfffZ", CultureInfo.InvariantCulture);
             var path = Path.Combine(_directory, $"diagnostics-{stamp}.log");
             File.WriteAllText(path, content);

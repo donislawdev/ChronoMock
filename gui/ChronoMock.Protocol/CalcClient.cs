@@ -60,7 +60,7 @@ public sealed class CalcClient
 
     /// <summary>
     /// Evaluate a calc invocation. <paramref name="calcArgs"/> are the flags after <c>calc</c> (e.g.
-    /// <c>--base</c>, <c>--shift</c>, <c>--calendar</c>, <c>--analyze</c>); <c>calc</c> and <c>--json</c>
+    /// <c>--base</c>, <c>--shift</c>, <c>--calendar</c>, <c>--analyze</c>) - <c>calc</c> and <c>--json</c>
     /// are added here. Throws <see cref="CalcException"/> on a non-zero exit (stderr as the message).
     /// </summary>
     public async Task<CalcResult> EvaluateAsync(IReadOnlyList<string> calcArgs, CancellationToken ct = default)

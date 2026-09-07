@@ -5,7 +5,7 @@ namespace ChronoMock.Protocol;
 
 /// <summary>
 /// Base for events the core sends on its stdout (mirrors <c>chrono_proto::Event</c>). The core emits
-/// stable translation KEYS and structured data, never translated prose (untouchable rules 15/16); the
+/// stable translation KEYS and structured data, never translated prose (untouchable rules 15/16) - the
 /// consumer renders keys in the user's language.
 /// </summary>
 public abstract record ChronoEvent
@@ -101,7 +101,7 @@ public sealed record ErrorEvent : ChronoEvent
 /// <summary>
 /// Parses one NDJSON line into a typed event. Mirrors the core's flat wire shape: a <c>type</c>
 /// discriminator with snake_case tags. Malformed JSON throws (the caller records it as a diagnostic and
-/// continues); a valid line with an unknown <c>type</c> returns null and is ignored (forward
+/// continues) - a valid line with an unknown <c>type</c> returns null and is ignored (forward
 /// compatibility, docs/08 section 2 - the same rule the core applies to unknown commands/fields).
 /// </summary>
 public static class EventParser

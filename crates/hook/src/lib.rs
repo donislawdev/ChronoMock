@@ -35,7 +35,7 @@
 //! `timeSetEvent` (winmm, ADR-7 class C) is OBSERVED, not scaled - counted with its own audit warning
 //! but left real, because scaling it would shift audio/MIDI timing (the winmm cost ADR-2 avoids). The
 //! thread-pool timers `SetThreadpoolTimer` / `SetThreadpoolTimerEx` (kernel32, ADR-7 class C) scale
-//! like `SetWaitableTimer` (FILETIME due + msPeriod + msWindowLength by M); their detour is stateless,
+//! like `SetWaitableTimer` (FILETIME due + msPeriod + msWindowLength by M) - their detour is stateless,
 //! which keeps it correct under the thread pool's own worker threads and callback re-arms.
 //!
 //! ABSOLUTE, not delta: a detour computes the fake instant from the anchor and never
@@ -115,7 +115,7 @@ type SleepExFn = unsafe extern "system" fn(u32, i32) -> u32;
 // negative = relative delay (scaled), positive = absolute deadline (passed through).
 type NtDelayFn = unsafe extern "system" fn(u8, *const i64) -> i32;
 // NtQuerySystemInformation(SystemInformationClass, SystemInformation, SystemInformationLength,
-// ReturnLength) -> NTSTATUS. A multiplexer; we only touch class SystemTimeOfDayInformation.
+// ReturnLength) -> NTSTATUS. A multiplexer - we only touch class SystemTimeOfDayInformation.
 type NtQsiFn = unsafe extern "system" fn(i32, *mut c_void, u32, *mut u32) -> i32;
 // WaitForSingleObject(HANDLE, DWORD dwMilliseconds) -> DWORD. Object wait (ADR-7 class B):
 // counted but never scaled, so the signature is only used to forward the call untouched. The
@@ -131,7 +131,7 @@ type SoawFn = unsafe extern "system" fn(HANDLE, HANDLE, u32, i32) -> u32;
 type MwfmoFn = unsafe extern "system" fn(u32, *const HANDLE, i32, u32, u32) -> u32;
 type MwfmoexFn = unsafe extern "system" fn(u32, *const HANDLE, u32, u32, u32) -> u32;
 // SetWaitableTimer(hTimer, *lpDueTime, lPeriod, pfnCompletionRoutine, lpArg, fResume) -> BOOL. The
-// due time is a 100 ns LARGE_INTEGER (positive = absolute FILETIME instant, negative = relative);
+// due time is a 100 ns LARGE_INTEGER (positive = absolute FILETIME instant, negative = relative) -
 // lPeriod is milliseconds (0 = one-shot). SetWaitableTimerEx drops fResume and adds a REASON_CONTEXT
 // and a ULONG TolerableDelay (MS Learn, synchapi.h). We forward the callback/arg/context opaquely
 // (never read them), so c_void pointers are enough. ADR-7 class C: due-time + period scaled.
@@ -139,7 +139,7 @@ type SwtFn = unsafe extern "system" fn(HANDLE, *const i64, i32, *const c_void, *
 type SwtexFn =
     unsafe extern "system" fn(HANDLE, *const i64, i32, *const c_void, *const c_void, *const c_void, u32) -> i32;
 // SetTimer(hWnd, nIDEvent, uElapse, lpTimerFunc) -> UINT_PTR (user32). uElapse is a relative interval
-// in ms (no absolute form, no INFINITE); the HWND, timer id, and TIMERPROC are forwarded opaquely.
+// in ms (no absolute form, no INFINITE) - the HWND, timer id, and TIMERPROC are forwarded opaquely.
 // ADR-7 class C: uElapse scaled by M so WM_TIMER arrives in step with the fake clock.
 type SetTimerFn = unsafe extern "system" fn(*mut c_void, usize, u32, *const c_void) -> usize;
 // timeSetEvent(uDelay, uResolution, lpTimeProc, dwUser, fuEvent) -> MMRESULT (winmm). ADR-7 class C,
@@ -160,7 +160,7 @@ type SetTpTimerExFn = unsafe extern "system" fn(*mut c_void, *const FILETIME, u3
 // NtCreateUserProcess (ntdll, ADR-3): the funnel under CreateProcessInternalW. Undocumented - the
 // 11-param signature is the stable RE community layout (phnt), an assessment not a source (zasady/03
 // section 4). We only OBSERVE it (count a direct call, forward every arg untouched), so a wrong field
-// never matters - only the arg count and ABI do. ACCESS_MASK/ULONG are 32-bit on x86 and x64; the rest
+// never matters - only the arg count and ABI do. ACCESS_MASK/ULONG are 32-bit on x86 and x64 - the rest
 // are opaque pointers we never dereference.
 type NtcupFn = unsafe extern "system" fn(
     *mut c_void,
@@ -297,7 +297,7 @@ const STILL_ACTIVE_CODE: u32 = 259;
 const CHILD_INJECT_TIMEOUT_MS: u32 = 10_000;
 
 // --- Self-detach: revert to real time when the core vanishes --------------------
-// The core writes its PID into the control block; we open a SYNCHRONIZE handle to it.
+// The core writes its PID into the control block - we open a SYNCHRONIZE handle to it.
 // On the first time call we spawn a watcher that blocks on that handle. When the core
 // dies (clean end, crash, or kill -9) the OS signals it, we flip DETACHED, and every
 // detour falls through to the original - the target's clock returns to real time.
@@ -409,7 +409,7 @@ fn compute_fake() -> Option<i64> {
 /// that `set_multiplier` can land BETWEEN the two reads, and then an absolute timer due date is
 /// scaled by a rate that does not belong to the `fake_now` it was measured against - the two halves
 /// of one answer taken from two different clocks. `read_dur` and `read_qpc` exist precisely so a
-/// multiplier and its base cannot drift apart on the duration and QPC axes; the class-C timers were
+/// multiplier and its base cannot drift apart on the duration and QPC axes - the class-C timers were
 /// the one place left where they still could.
 ///
 /// The multiplier comes back as the DURATION multiplier (never below 1, untouchable rule 3), which is
@@ -543,7 +543,7 @@ unsafe extern "system" fn h_glt(lp: *mut SYSTEMTIME) { unsafe {
         // Checked, not bare: this crate has overflow-checks off, and a plain subtraction wrapped for
         // every zone east of UTC once the fake clock sat on the clamp - the conversion then failed and
         // this channel fell back to the REAL clock while the UTC channels stayed fake (R2-X7). The
-        // clamp now keeps a zone bias of headroom, so this cannot trigger for our own clock; it stays
+        // clamp now keeps a zone bias of headroom, so this cannot trigger for our own clock - it stays
         // explicit because a caller-set bias is data, and silent wrapping is how it hurt the first time.
         Some(t) if !lp.is_null() => match t.checked_sub(cur_tz_bias() as i64 * 60 * 10_000_000) {
             Some(local) => write_systemtime(lp, local),
@@ -597,7 +597,7 @@ unsafe extern "system" fn h_ntqsi(class: i32, info: *mut c_void, len: u32, retle
         // Count only time-of-day queries - NtQuerySystemInformation is a multiplexer, so bumping on
         // every class would inflate the audit's notion of how often the app reads time (rule 4).
         bump(IDX_NTQSI);
-        // NT_SUCCESS(status) == status >= 0; the length guard keeps the [8, 16) write in bounds when a
+        // NT_SUCCESS(status) == status >= 0 - the length guard keeps the [8, 16) write in bounds when a
         // caller passes a truncated buffer (honest partial: leave it, never write past its end).
         if status >= 0 && !info.is_null() && len as usize >= TOD_CURRENTTIME_OFFSET + 8
             && let Some(fake) = compute_fake() {
@@ -853,7 +853,7 @@ unsafe extern "system" fn h_tick() -> u64 { unsafe {
 // GetTickCount (32-bit): the low 32 bits of the SAME scaled millisecond count as
 // GetTickCount64 (shares the dur_tick_c0 base), so a target comparing the two sees them
 // agree. Wraps at 2^32 ms like the real one - and sooner under acceleration - which is the
-// honest behavior of a fast 32-bit counter; callers handle the wrap with unsigned deltas.
+// honest behavior of a fast 32-bit counter - callers handle the wrap with unsigned deltas.
 unsafe extern "system" fn h_tick32() -> u32 { unsafe {
     bump(IDX_GTC);
     if detached() {
@@ -963,7 +963,7 @@ impl Drop for WaitGuard {
 
 /// Decide whether this wait call is the top-level app call we should scale. Returns the
 /// duration multiplier and a guard (held across the original call, so an inner cascade sees the
-/// flag set and passes through) when it is; None when this is an internal cascade (pass the
+/// flag set and passes through) when it is - None when this is an internal cascade (pass the
 /// original through, uncounted) or the core has detached (fall through to real time). Bumps
 /// coverage only for a top-level app call, so the audit counts what the app called, not what
 /// Windows re-entered.
@@ -1008,7 +1008,7 @@ unsafe extern "system" fn h_sleepex(ms: u32, alertable: i32) -> u32 { unsafe {
 // NtDelayExecution is the shared funnel Sleep and SleepEx bottom out on, so hooking it makes the
 // re-entrancy guard load-bearing (a scaled Sleep re-enters here and must pass through). It also
 // catches callers that reach ntdll directly. The interval is signed 100 ns: only a negative
-// (relative) delay is scaled; a positive (absolute deadline) or null passes through.
+// (relative) delay is scaled - a positive (absolute deadline) or null passes through.
 unsafe extern "system" fn h_ntdelay(alertable: u8, interval: *const i64) -> i32 { unsafe {
     let o = match O_NTDELAY.get() {
         Some(o) => o,
@@ -1033,7 +1033,7 @@ unsafe extern "system" fn h_ntdelay(alertable: u8, interval: *const i64) -> i32 
 // object-wait export may internally reach another hooked one (WaitForSingleObject -> ...Ex,
 // WaitForMultipleObjects -> ...Ex), so a thread-local guard counts each app-level wait once,
 // attributed to the export the app actually called - an internal cascade passes through uncounted.
-// This guard gates only counting (class B never divides), separate from class A's scaling guard;
+// This guard gates only counting (class B never divides), separate from class A's scaling guard -
 // the two wait families never cross-nest (Sleep/NtDelay do not call WaitForX and vice versa).
 // Measured on Win11 26200 (guard on vs off, psleep): the cascades take an INTERNAL path and do not
 // reach the exported partner (like Sleep -> SleepEx in class A), so the guard is a correct policy
@@ -1179,7 +1179,7 @@ impl Drop for TimerGuard {
 
 /// Decide whether this settable-timer call is the top-level app call we should scale. Returns the
 /// duration multiplier and a guard (held across the original call, so an inner cascade to the Ex
-/// partner sees the flag set and passes through) when it is; None on an internal cascade (pass
+/// partner sees the flag set and passes through) when it is - None on an internal cascade (pass
 /// through, uncounted) or when the core has detached (real time). Mirrors try_enter_wait on its own
 /// flag. Bumps coverage only for a top-level app call (rule 4).
 fn try_enter_timer(idx: usize) -> Option<TimerGuard> {
@@ -1256,7 +1256,7 @@ unsafe extern "system" fn h_swtex(
 // fake clock. A relative interval only (no absolute form, no INFINITE), and no cross-channel cascade
 // (SetTimer bottoms out on the NtUserSetTimer syscall, not another hooked export), so no re-entrancy
 // guard - just count and scale. Detached -> pass the real interval through. The HWND, timer id, and
-// TIMERPROC are forwarded untouched; the scaled interval below USER_TIMER_MINIMUM is Windows' clamp.
+// TIMERPROC are forwarded untouched - the scaled interval below USER_TIMER_MINIMUM is Windows' clamp.
 unsafe extern "system" fn h_settimer(
     hwnd: *mut c_void,
     id: usize,
@@ -1314,7 +1314,7 @@ unsafe extern "system" fn h_connect(s: usize, name: *const c_void, namelen: i32)
 // concurrency: SetThreadpoolTimer may be called from many threads, and a callback (running on a
 // worker thread) may re-arm the timer, but each call just reads the shared anchor (seqlock) and
 // scales. The class-C thread-local guard SCALING_TIMER counts each app-level call once and handles a
-// Set -> ...Ex cascade; being thread-local, a worker-thread re-arm gets its own fresh guard.
+// Set -> ...Ex cascade - being thread-local, a worker-thread re-arm gets its own fresh guard.
 
 /// Scale a thread-pool timer's FILETIME due, msPeriod, and msWindowLength for a top-level app call.
 /// Returns the scaled `(due_ft, period, window)` to forward, or None to forward the originals
@@ -1371,7 +1371,7 @@ unsafe extern "system" fn h_set_tp_timer_ex(
 // NtCreateUserProcess is the funnel under CreateProcessInternalW, so a hooked CreateProcessW/A reaches
 // it. We count only a DIRECT NtCreateUserProcess (a child spawned bypassing CreateProcess*), because
 // the CreateProcess* detours already inherit the session into their child. SPAWNING is a thread-local
-// flag those detours raise around their original call (which funnels here on the same thread); when it
+// flag those detours raise around their original call (which funnels here on the same thread) - when it
 // is set, this detour just forwards, uncounted. A direct call finds it clear, counts, and warns - we
 // deliberately do NOT self-inject (that means manipulating undocumented native structures, a crash
 // risk for near-zero value, since real targets spawn through the covered CreateProcess*).
@@ -1517,7 +1517,7 @@ unsafe fn inject_self(hproc: HANDLE) -> bool { unsafe {
         unsafe extern "system" fn() -> isize,
         unsafe extern "system" fn(*mut c_void) -> u32,
     >(loadlib));
-    // The remote thread's exit code is the low 32 bits of the HMODULE LoadLibraryW returned; 0 means
+    // The remote thread's exit code is the low 32 bits of the HMODULE LoadLibraryW returned - 0 means
     // the DLL did not load - a child of the other bitness being the ordinary reason. Same reading as
     // `mech::inject` (H-2), which is where this check was already made and this one was missing.
     let mut loaded = false;
@@ -1548,7 +1548,7 @@ unsafe fn inject_self(hproc: HANDLE) -> bool { unsafe {
         // wedged in its own loader, against the chance of faulting it. Said out loud rather than done
         // quietly (rule 6) - and this is exactly why the timeout above is generous. Shortening it does
         // not make anything faster in the ordinary case (measured: child injection costs about 68 ms,
-        // and the limit is 10 s); it only makes THIS branch, and the leak, more likely to be reached.
+        // and the limit is 10 s) - it only makes THIS branch, and the leak, more likely to be reached.
         log("[chrono_hook] LoadLibraryW still running in the child - leaving its path buffer allocated");
     }
     if !loaded {
@@ -1574,7 +1574,7 @@ unsafe fn inherit_into_child(r: i32, pi: *mut PROCESS_INFORMATION, want_suspende
                 bump_uninjected_children(c);
             }
         }
-        // Resume regardless. The parent is the application under test and it asked for this child;
+        // Resume regardless. The parent is the application under test and it asked for this child -
         // holding it suspended or killing it would change the behaviour we were asked to observe.
         if !want_suspended {
             let _ = ResumeThread(info.hThread);
@@ -1639,7 +1639,7 @@ unsafe extern "system" fn h_cpa(
     r
 }}
 
-/// Diagnostics only (stderr-equivalent for an injected DLL); never affects coverage.
+/// Diagnostics only (stderr-equivalent for an injected DLL) - never affects coverage.
 fn log(msg: &str) {
     if let Ok(c) = CString::new(msg) {
         unsafe { OutputDebugStringA(PCSTR(c.as_ptr() as *const u8)) }
@@ -1671,7 +1671,7 @@ unsafe fn make_hook<T: Copy>(
     let module = match ch.module {
         ChannelModule::Kernel32 => k32,
         ChannelModule::Ntdll => ntdll,
-        // user32 may be absent in a console/service target; resolve it here rather than force-load it
+        // user32 may be absent in a console/service target - resolve it here rather than force-load it
         // (forcing a DLL the target never needed would change its behavior). Absent -> honest partial.
         ChannelModule::User32 => match GetModuleHandleA(s!("user32.dll")) {
             Ok(h) => h,
@@ -1680,7 +1680,7 @@ unsafe fn make_hook<T: Copy>(
                 return;
             }
         },
-        // winmm may be absent in a console/service target; resolve it here rather than force-load it
+        // winmm may be absent in a console/service target - resolve it here rather than force-load it
         // (forcing a DLL the target never needed would change its behavior). Absent -> honest partial.
         ChannelModule::Winmm => match GetModuleHandleA(s!("winmm.dll")) {
             Ok(h) => h,
@@ -1689,7 +1689,7 @@ unsafe fn make_hook<T: Copy>(
                 return;
             }
         },
-        // ws2_32 may be absent in a target that never touches the network; resolve it here rather than
+        // ws2_32 may be absent in a target that never touches the network - resolve it here rather than
         // force-load it (forcing a DLL the target never needed would change its behavior). Absent -> honest partial.
         ChannelModule::Ws2_32 => match GetModuleHandleA(s!("ws2_32.dll")) {
             Ok(h) => h,
@@ -1866,12 +1866,12 @@ unsafe fn install() -> Result<(), String> { unsafe {
 
     // Direct process creation (ADR-3, observed): hook NtCreateUserProcess ALWAYS - not gated by
     // scale_duration, since process creation is watched regardless. It only counts a direct call and
-    // forwards untouched; the SPAWNING guard keeps the CreateProcess* funnel from counting here.
+    // forwards untouched - the SPAWNING guard keeps the CreateProcess* funnel from counting here.
     make_hook(&mut pending, k32, ntdll, IDX_NTCUP, h_ntcup as *const () as *mut c_void, &O_NTCUP);
 
     // Suspected time source (Etap 2, observed): hook ws2_32 connect ALWAYS - the network is watched
     // regardless of scale_duration. It only counts a connection (a suspected server time source we cannot
-    // cover) and forwards untouched; the audit warns source.network_at_start.
+    // cover) and forwards untouched - the audit warns source.network_at_start.
     make_hook(&mut pending, k32, ntdll, IDX_CONNECT, h_connect as *const () as *mut c_void, &O_CONNECT);
 
     // Child inheritance (ADR-3): hook CreateProcessW and CreateProcessA so the whole

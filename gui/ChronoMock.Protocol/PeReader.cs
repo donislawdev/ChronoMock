@@ -3,7 +3,7 @@ namespace ChronoMock.Protocol;
 /// <summary>
 /// Reads a PE executable's machine type so the client can launch the matching-bitness core
 /// (ADR-6: the core matches the target's bitness, the GUI itself stays AnyCPU). Stage 3.1 handles
-/// the <c>.exe</c> case; resolving <c>.lnk</c>/<c>.bat</c>/<c>.msi</c> to a bitness is a later UI slice (9.6).
+/// the <c>.exe</c> case - resolving <c>.lnk</c>/<c>.bat</c>/<c>.msi</c> to a bitness is a later UI slice (9.6).
 /// </summary>
 public static class PeReader
 {
@@ -111,7 +111,7 @@ public static class PeReader
         int optionalSize = reader.ReadUInt16();
 
         long optional = fileHeader + 20;
-        // 96 bytes is where a PE32 optional header's data directories begin; a shorter one carries none.
+        // 96 bytes is where a PE32 optional header's data directories begin - a shorter one carries none.
         if (optionalSize < 96 || optional + optionalSize > stream.Length)
         {
             return false;

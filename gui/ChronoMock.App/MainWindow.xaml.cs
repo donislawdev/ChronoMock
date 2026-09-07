@@ -18,7 +18,7 @@ public partial class MainWindow : FluentWindow
         FileSessionHistoryStore.ForApp(), FileDiagnosticsLog.ForApp(), AppPaths.CalcClient, AppPaths.PresetsDir);
     private readonly CalculatorViewModel _calculator = CreateCalculator();
 
-    // The calculator is a client of the same engine (ADR-6); it reads the shared preset catalogue and the
+    // The calculator is a client of the same engine (ADR-6) - it reads the shared preset catalogue and the
     // calendars from the portable install beside the exe, or from the cargo outputs in a dev checkout - the
     // layout seam lives in AppPaths, not here.
     private static CalculatorViewModel CreateCalculator()
@@ -30,7 +30,7 @@ public partial class MainWindow : FluentWindow
         DataContext = _session;
         CalculatorContainer.DataContext = _calculator;
 
-        // Bridge: the calculator asks to send its result to substitution; this window fills the panel.
+        // Bridge: the calculator asks to send its result to substitution - this window fills the panel.
         _calculator.UseInSubstitutionRequested += OnUseInSubstitution;
 
         // Dev convenience: pre-select the bundled sample target so the panel is usable at once. The user
@@ -227,12 +227,12 @@ public partial class MainWindow : FluentWindow
     private void OnStopClick(object sender, RoutedEventArgs e) => _session.RequestStop();
 
     // Copy the session summary to the clipboard (chrono-mock 7.2, 8.8). The summary is built in the UI
-    // language; a clipboard held by another process is reported honestly, never swallowed (rule 6).
+    // language - a clipboard held by another process is reported honestly, never swallowed (rule 6).
     private void OnCopySummaryClick(object sender, RoutedEventArgs e)
         => _session.NoteCopy(TrySetClipboard(_session.BuildSummary(Text)));
 
     // Copy the diagnostics block to the clipboard (RELEASE-012): the core's stderr and parse errors, so a QA
-    // report has something to attach when an injection is blocked. Shown only for a non-clean session; same
+    // report has something to attach when an injection is blocked. Shown only for a non-clean session - same
     // clipboard-failure honesty as Copy summary (rule 6).
     private void OnCopyDiagnosticsClick(object sender, RoutedEventArgs e)
         => _session.NoteCopy(TrySetClipboard(_session.DiagnosticsText));
@@ -288,6 +288,6 @@ public partial class MainWindow : FluentWindow
         }
     }
 
-    // Resolve a translation key to text for a native dialog (rule 15); falls back to the raw key if missing.
+    // Resolve a translation key to text for a native dialog (rule 15) - falls back to the raw key if missing.
     private static string Text(string key) => Application.Current?.TryFindResource(key) as string ?? key;
 }

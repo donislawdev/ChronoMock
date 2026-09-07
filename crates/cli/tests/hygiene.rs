@@ -1170,26 +1170,29 @@ fn prose_uses_a_flat_hyphen_and_no_semicolons() {
             let semicolons = outside_code.matches(';').count();
             if semicolons > entities && !outside_code.contains("http") {
                 semicolons_in_prose += 1;
+                offenders.push(format!("{}:{} has a semicolon in prose", rel(path), number + 1));
             }
         }
     }
     assert!(files.len() >= 60, "the punctuation scan read only {} files", files.len());
+
+    // 🔴 One assertion now, because both halves of rule 13 finally hold. The semicolon half used to
+    // be a RATCHET pinned at 282, and the honest reason was that the plan for this guard called H8
+    // green after measuring only dashes in code and semicolons in the two root Markdown files. It
+    // had never looked inside COMMENTS, where 282 lines were carrying one - real prose, not XML
+    // entities, spread across carefully written doc comments. Rewriting them was a large edit to
+    // prose nobody had asked to change, so the count was allowed to fall and not rise while the
+    // owner decided.
+    //
+    // Decided and done on 2026-09-07: all 282 were rewritten, every one of them by replacing the
+    // semicolon with the flat hyphen this project uses everywhere else for the same job. With
+    // nothing left to hold, a ratchet is worse than an assertion - it would quietly permit the
+    // first new one. The offender list is shared with the dash half so a failure names the line
+    // rather than only the count.
     assert!(
         offenders.is_empty(),
-        "untouchable rule 13 - a flat hyphen, never an em or en dash: {offenders:?}"
+        "untouchable rule 13 - a flat hyphen, never an em or en dash, and no semicolons in prose: \
+         {offenders:?}"
     );
-
-    // 🔴 The semicolon half is a RATCHET, not a rule, and the honest reason is that the plan for
-    // this guard called H8 green after measuring only dashes in code and semicolons in the two
-    // root Markdown files. It never measured semicolons in COMMENTS, and there were 282 of them -
-    // real prose, not XML entities, spread across carefully written doc comments in both languages.
-    // Rewriting all of them in a hygiene commit would be a large edit to prose nobody asked to
-    // change, so the count may fall and may not rise while the owner decides. Recorded in
-    // docs/zasady/00-ODSTEPSTWA.md as required by untouchable rule 11.
-    const SEMICOLON_BASELINE: usize = 282;
-    assert!(
-        semicolons_in_prose <= SEMICOLON_BASELINE,
-        "semicolons in prose rose from {SEMICOLON_BASELINE} to {semicolons_in_prose} - rule 13          says none, and this ratchet only ever comes down"
-    );
-    println!("semicolons in prose: {semicolons_in_prose} (baseline {SEMICOLON_BASELINE})");
+    println!("punctuation scan: {} files, {semicolons_in_prose} semicolons in prose", files.len());
 }

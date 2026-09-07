@@ -81,9 +81,9 @@ pub(crate) fn parse_mode(raw: &str) -> Result<(String, Option<i64>), String> {
 }
 
 /// Split an `--args` value into arguments, honouring double-quotes so one argument may contain
-/// spaces (`--args '"a b" c'` -> ["a b", "c"]). Whitespace outside quotes separates arguments; a
+/// spaces (`--args '"a b" c'` -> ["a b", "c"]). Whitespace outside quotes separates arguments - a
 /// quote toggles quoting and is dropped. Plain space-separated values behave exactly as before, so
-/// existing usage is unchanged; `mech`'s quoting re-quotes each token for the target's CRT (P9).
+/// existing usage is unchanged - `mech`'s quoting re-quotes each token for the target's CRT (P9).
 pub(crate) fn split_args(raw: &str) -> Vec<String> {
     let mut out = Vec::new();
     let mut cur = String::new();
@@ -236,7 +236,7 @@ pub(crate) fn parse_run_args(argv: &[String]) -> Result<RunArgs, String> {
                 let mult: i64 = m.parse().map_err(|_| format!("bad multiplier in '{raw}'"))?;
                 // Same invariant as --mode xN (parse_mode): an in-flight multiplier is >= 1. A zero or
                 // negative value would freeze or run the wall clock backward as a silent side effect
-                // of an unvalidated surface (rule 4); freezing in flight is not a feature here.
+                // of an unvalidated surface (rule 4) - freezing in flight is not a feature here.
                 if mult < 1 {
                     return Err(format!("--set-after multiplier must be >= 1, got '{raw}'"));
                 }
@@ -396,7 +396,7 @@ mod tests {
     }
 
     /// `run --preset` supplies the moment and mode, so combining it with a time flag is a usage
-    /// error; alone (with a target) it parses and carries the id.
+    /// error - alone (with a target) it parses and carries the id.
     #[test]
     fn run_preset_flag_is_exclusive_of_time_flags() {
         let ok = parse_run_args(&["--preset".into(), "month-end".into(), "app.exe".into()]).unwrap();

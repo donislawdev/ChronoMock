@@ -89,7 +89,7 @@ pub fn is_shimmable(target_type: &str) -> bool {
     )
 }
 
-/// Whether a CDP target type is a worker (vs a page/frame). Workers get the shim directly; pages also
+/// Whether a CDP target type is a worker (vs a page/frame). Workers get the shim directly - pages also
 /// cascade auto-attach so their own workers are reached.
 pub fn is_worker(target_type: &str) -> bool {
     target_type.contains("worker")

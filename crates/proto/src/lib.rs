@@ -152,7 +152,7 @@ pub enum Event {
         id: u64,
     },
     /// The two clocks side by side, emitted as a ~1 s heartbeat and on `query`.
-    /// Spontaneous heartbeats carry no `id`; coalesceable (newest wins).
+    /// Spontaneous heartbeats carry no `id` - coalesceable (newest wins).
     State {
         v: u32,
         fake: Clock,
@@ -162,7 +162,7 @@ pub enum Event {
         elapsed_real_ms: i64,
     },
     /// The target vanished right after injection - a suspected single-instance app
-    /// (ADR-4). Spontaneous, no id; the tool exits with code 12.
+    /// (ADR-4). Spontaneous, no id - the tool exits with code 12.
     Vanished {
         v: u32,
         pid: u32,
@@ -171,7 +171,7 @@ pub enum Event {
     },
     /// The family-wide session verdict: the honest roll-up of the parent and every child
     /// process, emitted once at session end just before `ended`. The per-process `verdict`
-    /// (parent, at start) gates refuse_start; this aggregates the whole family, so a launcher
+    /// (parent, at start) gates refuse_start - this aggregates the whole family, so a launcher
     /// whose child does the timekeeping is judged by the family, not the parent alone
     /// (untouchable rule 4 at the session level). `process_count` is the family size (parent
     /// plus distinct children). Additive event (docs/08).

@@ -11,8 +11,8 @@ namespace ChronoMock.App;
 /// because they never run both.
 /// </para>
 /// <para>
-/// The rule: a double quote toggles quoting and starts a token (so <c>""</c> is an empty argument);
-/// whitespace outside quotes ends a token; anything else is part of it. Quotes are removed. It is not
+/// The rule: a double quote toggles quoting and starts a token (so <c>""</c> is an empty argument) -
+/// whitespace outside quotes ends a token - anything else is part of it. Quotes are removed. It is not
 /// the full <c>CommandLineToArgvW</c> grammar - backslash escaping is not honoured - and that is the
 /// point: it matches what the core does, not what Windows does. The core re-quotes each argument on
 /// the way out.

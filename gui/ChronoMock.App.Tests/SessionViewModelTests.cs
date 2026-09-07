@@ -49,7 +49,7 @@ public class SessionViewModelTests
     /// <summary>
     /// S-12. The README promises that a "does not work" verdict stops the target instead of handing back
     /// a session whose evidence would be about the real clock. The core now refuses and says so on the
-    /// wire; the panel has to show that as a terminal state, not as a running session - refuse_start was
+    /// wire - the panel has to show that as a terminal state, not as a running session. refuse_start was
     /// declared in the event type but never read by anything.
     /// </summary>
     [Fact]
@@ -1341,7 +1341,7 @@ public class SessionViewModelTests
     [Fact]
     public void A_cleared_selection_does_not_unchoose_the_target()
     {
-        // WPF nulls SelectedItem while the list is re-ordered; that must not read as a user action.
+        // WPF nulls SelectedItem while the list is re-ordered - that must not read as a user action.
         var vm = new SessionViewModel();
         vm.SetTarget(@"C:\apps\Ledger.exe");
 

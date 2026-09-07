@@ -11,7 +11,7 @@
 //! 🔴 SECURITY (docs/04 4.1): a preset describes TIME, never a TARGET. The schema has no path field,
 //! so a shared preset cannot smuggle an executable path - enforced structurally, because there is no
 //! field to put it in, which `preset_ignores_a_path_field` pins. Unknown fields are ignored (additive
-//! evolution, docs/04 section 3); an unknown major schema version is refused (section 3.1).
+//! evolution, docs/04 section 3) - an unknown major schema version is refused (section 3.1).
 
 
 use std::collections::HashMap;
@@ -28,7 +28,7 @@ use crate::zone::parse_zone_to_bias;
 /// `MomentExpr` - because a parametric base/shift needs values (`--param` / `default`) that the file
 /// alone does not carry. `resolve_parameters` + `resolve_moment` turn it into a concrete moment.
 /// A non-parametric preset (slices 16/17) has empty `parameters` and resolves trivially. Also carries
-/// the human framing (calculator) and the time mode (substitution); the calculator ignores time_mode.
+/// the human framing (calculator) and the time mode (substitution) - the calculator ignores time_mode.
 #[derive(Debug)]
 pub(crate) struct Preset {
     pub(crate) id: String,
@@ -49,12 +49,12 @@ pub(crate) struct Parameter {
     kind: ParamKind,
     default: Option<ParamValue>,
     /// Where to propose a value from when neither `--param` nor `default` is given (docs/04 4.2).
-    /// `target_file_creation` needs a target, so it is honoured only in `run` (a later slice); the
+    /// `target_file_creation` needs a target, so it is honoured only in `run` (a later slice) - the
     /// calculator, having no target, reports it as a value the user must supply.
     default_hint: Option<String>,
 }
 
-/// A parameter's type. `date` fills a base; `duration` and `variant` fill a shift (a `variant` by a
+/// A parameter's type. `date` fills a base - `duration` and `variant` fill a shift (a `variant` by a
 /// signed day offset - docs/05 3.6). (`int` is later.)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ParamKind {
@@ -75,7 +75,7 @@ pub(crate) enum ParamValue {
 
 /// A preset's time mode, resolved to the substitution surface's wire shape (the same `mode` /
 /// `multiplier` / `scale_duration` a `run` session carries). The contract carries `multiplier` and
-/// `scale_duration_clock` (docs/04 4.2); `multiplier == 1` is real-time `flow`, `> 1` is `xN`.
+/// `scale_duration_clock` (docs/04 4.2) - `multiplier == 1` is real-time `flow`, `> 1` is `xN`.
 #[derive(Debug, Clone)]
 pub(crate) struct PresetTimeMode {
     /// Wire mode token: "flow" or "multiplier". (Presets do not express "frozen".)
@@ -127,12 +127,12 @@ pub(crate) struct PresetDto {
     explains: PresetTextDto,
     applies_to: String,
     // Typed parameters (docs/04 4.2): each is filled by --param, a file default, or a default_hint.
-    // The moment's parametric base/shift refer to these by id; resolve_parameters + resolve_moment
+    // The moment's parametric base/shift refer to these by id - resolve_parameters + resolve_moment
     // substitute them into a concrete MomentExpr (the core never learns a parameter existed).
     #[serde(default)]
     parameters: Vec<ParameterDto>,
     moment: MomentDto,
-    // Only substitution/both presets carry a time mode; a calculator-only one may omit it (the
+    // Only substitution/both presets carry a time mode - a calculator-only one may omit it (the
     // calculator ignores it either way). Absent = real-time flow (PresetTimeMode::default).
     #[serde(default)]
     time_mode: Option<TimeModeDto>,
@@ -168,7 +168,7 @@ pub(crate) struct DurationDto {
     unit: String,
 }
 
-/// The English text is what the CLI renders (rule 15 - CLI is English only); `pl` rides in the file
+/// The English text is what the CLI renders (rule 15 - CLI is English only) - `pl` rides in the file
 /// for the GUI but this reader does not need it, so it is not a field here (unknown fields ignored).
 #[derive(Deserialize)]
 pub(crate) struct PresetTextDto {
@@ -301,7 +301,7 @@ pub(crate) fn shift_from(s: ShiftDto, values: &HashMap<String, ParamValue>) -> R
     Ok(Step::Shift { sign, amount, unit })
 }
 
-/// Parse a shift step's `sign` field (`+`/`-`). Required for a literal or `duration`-parametric shift;
+/// Parse a shift step's `sign` field (`+`/`-`). Required for a literal or `duration`-parametric shift -
 /// a `variant`-parametric shift omits it (the variant carries its own direction), so this runs only
 /// where a sign is actually needed.
 pub(crate) fn parse_shift_sign(sign: &Option<String>) -> Result<Sign, PresetError> {
@@ -314,7 +314,7 @@ pub(crate) fn parse_shift_sign(sign: &Option<String>) -> Result<Sign, PresetErro
 }
 
 /// Parse a preset from JSON WITHOUT resolving its moment (pure - no I/O, no parameter values). The
-/// moment stays raw because a parametric base/shift needs values `resolve_parameters` supplies later;
+/// moment stays raw because a parametric base/shift needs values `resolve_parameters` supplies later -
 /// a non-parametric preset resolves trivially (empty values). Unknown major schema is refused.
 pub(crate) fn parse_preset(text: &str) -> Result<Preset, PresetError> {
     let dto: PresetDto =
@@ -450,7 +450,7 @@ pub(crate) fn resolve_moment(moment: MomentDto, values: &HashMap<String, ParamVa
     Ok(MomentExpr { base, steps })
 }
 
-/// Parse a `--param` value string against the parameter's type. `date` accepts a bare date; a
+/// Parse a `--param` value string against the parameter's type. `date` accepts a bare date - a
 /// `duration` is a magnitude and a unit with no sign (the shift carries the sign).
 pub(crate) fn parse_param_value(id: &str, kind: ParamKind, raw: &str) -> Result<ParamValue, PresetError> {
     match kind {
@@ -490,7 +490,7 @@ pub(crate) fn duration_value(id: &str, amount: i64, unit_str: &str) -> Result<Pa
     Ok(ParamValue::Duration { amount, unit })
 }
 
-/// Parse a date or date-time; a bare date gets midnight so `--param start_date=2026-01-01` works.
+/// Parse a date or date-time - a bare date gets midnight so `--param start_date=2026-01-01` works.
 pub(crate) fn parse_param_date(s: &str) -> Result<chrono_core::calc::CivilDateTime, String> {
     let normalized =
         if s.contains('T') || s.contains(' ') { s.to_string() } else { format!("{s}T00:00:00") };
@@ -498,7 +498,7 @@ pub(crate) fn parse_param_date(s: &str) -> Result<chrono_core::calc::CivilDateTi
 }
 
 /// Map a preset's `time_mode` to the substitution wire shape. `multiplier == 1` (or absent) is
-/// real-time `flow`; `> 1` is `xN`; `< 1` is rejected. Presets do not express `frozen`.
+/// real-time `flow`, `> 1` is `xN`, and `< 1` is rejected. Presets do not express `frozen`.
 pub(crate) fn time_mode_from(dto: Option<TimeModeDto>) -> Result<PresetTimeMode, PresetError> {
     let Some(dto) = dto else { return Ok(PresetTimeMode::default()) };
     let multiplier = dto.multiplier.unwrap_or(1);
@@ -655,7 +655,7 @@ mod tests {
         // payment-due-business-days is calendar-aware: +90 business days from today lands on a different
         // day per market, which is the whole point of a calendar-aware preset. Anchor at 2026-06-01 so the
         // window spans US Labor Day (first Monday of September, a US weekday holiday Poland does not have),
-        // guaranteeing the two markets diverge; if the calendar were ignored they would be identical.
+        // guaranteeing the two markets diverge - if the calendar were ignored they would be identical.
         let now_pay = CivilDateTime { year: 2026, month: 6, day: 1, hour: 12, minute: 0, second: 0 };
         let bank = calendar_from_text(&read_data("calendars/us-banking.json")).unwrap();
         let pl = calendar_from_text(&read_data("calendars/pl.json")).unwrap();
@@ -697,7 +697,7 @@ mod tests {
         assert_eq!(m.steps, vec![Step::Snap(SnapTarget::EndOfMonth)]);
     }
 
-    /// An `{ "absolute": ... }` base resolves to a fixed civil moment; a malformed one is refused at
+    /// An `{ "absolute": ... }` base resolves to a fixed civil moment - a malformed one is refused at
     /// resolve time (the base is not parsed until then), never normalized silently.
     #[test]
     fn preset_absolute_base_parses_and_rejects_bad_date() {
@@ -872,7 +872,7 @@ mod tests {
         );
     }
 
-    /// A parameter with a file `default` (trial_length) may be omitted; the default is used.
+    /// A parameter with a file `default` (trial_length) may be omitted - the default is used.
     #[test]
     fn param_default_used_when_flag_absent() {
         let p = parse_preset(TRIAL_JSON).unwrap();
@@ -929,8 +929,8 @@ mod tests {
         assert!(matches!(resolve_moment(p.moment, &values), Err(PresetError::BadFile(_))));
     }
 
-    /// The target_file_creation hint fills a date parameter from the target's file date (run only);
-    /// without a target it is the honest not-built; a duration slot or an unbuilt hint is refused.
+    /// The target_file_creation hint fills a date parameter from the target's file date (run only) -
+    /// without a target it is the honest not-built - a duration slot or an unbuilt hint is refused.
     #[test]
     fn hint_target_file_creation_resolves_only_with_a_target() {
         let d = civil(2025, 6, 15, 9, 30, 0);

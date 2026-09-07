@@ -16,8 +16,8 @@ pub(crate) fn parse_base(raw: &str) -> Result<Base, String> {
     }
 }
 
-/// Parse a `--shift` value `±N<unit>` into a shift step. The sign is mandatory; the
-/// unit accepts short codes and full names. Minute stays `m`; month is `mo`, never `m`.
+/// Parse a `--shift` value `±N<unit>` into a shift step. The sign is mandatory - the
+/// unit accepts short codes and full names. Minute stays `m` - month is `mo`, never `m`.
 pub(crate) fn parse_shift(raw: &str) -> Result<Step, String> {
     let sign = match raw.as_bytes().first() {
         Some(b'+') => Sign::Plus,

@@ -10,7 +10,7 @@ LICENSE). Third-party notices: THIRD-PARTY-NOTICES.md.
 1. Run `ChronoMock.exe`.
 2. **Choose…** the application you want to test (a `.exe`).
 3. Set the date under **At**, pick a **Zone** and a **Mode** (flowing at real speed, frozen,
-   or a speed-up), then press **Start**. The application launches with its clock shifted;
+   or a speed-up), then press **Start**. The application launches with its clock shifted -
    the panel shows the fake clock and the real clock side by side, each with its zone.
 4. Read the **verdict**: works / partial / does not work. It tells you whether the
    substitution actually took effect - that is the point of the tool, not just that the app

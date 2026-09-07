@@ -7,7 +7,7 @@ namespace ChronoMock.App.Tests;
 /// <summary>
 /// The substitution panel's scenario list (chrono-mock 7.1 pt 2): which presets it offers, which it says
 /// it cannot offer, and how a chosen scenario relates to the date field. Evaluating one spawns the engine,
-/// so that path is proven live rather than here; everything around it is pure and asserted.
+/// so that path is proven live rather than here - everything around it is pure and asserted.
 /// </summary>
 public class ScenarioTests
 {

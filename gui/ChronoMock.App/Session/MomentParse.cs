@@ -19,7 +19,7 @@ internal readonly record struct MomentResult(bool Ok, string Canonical, MomentPa
 /// 24-hour HH:mm[:ss], always read with InvariantCulture - the OS locale (a Polish box, a US VM) must
 /// never change what a typed moment means (rule 2). The calendar picker feeds this the same ISO date
 /// string, so the typed path and the picked path agree. Deep validation (DST gap, range) stays in the
-/// core (docs/08 section 5); this is the well-formed-ness and easy-entry layer only.
+/// core (docs/08 section 5) - this is the well-formed-ness and easy-entry layer only.
 /// </summary>
 internal static partial class MomentParse
 {

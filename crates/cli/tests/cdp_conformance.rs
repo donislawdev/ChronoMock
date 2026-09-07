@@ -56,7 +56,7 @@ fn cdp_shim_fakes_the_page_clock() {
 /// R2-W1 end to end: a session whose window is CLOSED while it runs must still report what it covered.
 ///
 /// This is the shape the unit test on `cdp_verdict` cannot reach. That test pins the rule the function
-/// applies; this one pins what the session hands it. Before the fix the session counted the contexts
+/// applies - this one pins what the session hands it. Before the fix the session counted the contexts
 /// still ATTACHED, and Chromium destroys its targets while shutting down - so a healthy run turned into
 /// "DID NOT TAKE EFFECT (contexts: 0)" with exit code 11 and no coverage at all. Measured on Pomotroid:
 /// a taskkill does NOT reproduce it (the socket dies before the destroy events arrive), only a graceful

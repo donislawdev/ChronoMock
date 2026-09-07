@@ -1,6 +1,6 @@
 //! `chrono calc`: the date calculator, the product's second half.
 //!
-//! Two renderings of one result. The human one is prose meant to be read in a terminal; the machine
+//! Two renderings of one result. The human one is prose meant to be read in a terminal - the machine
 //! one is `chronomock.calc/1`, which the GUI reads over the same boundary the substitution side uses
 //! (ADR-6). Both come from the same evaluation, so they cannot disagree.
 //!
@@ -14,7 +14,7 @@
 //! The calc engine lives in `chrono-core` (serde-free), so the CLI owns serialization: the JSON DTOs
 //! here are populated from the core's typed results, the mirror of the calendar and preset loaders.
 //! The GUI is a thin client of this contract (ADR-6), consuming the same engine output the human
-//! render shows. Contract keys are public names (rule 17); a breaking change needs a schema bump.
+//! render shows. Contract keys are public names (rule 17) - a breaking change needs a schema bump.
 //! An error still goes to stderr with a non-zero exit - stdout carries a result only on success.
 
 
@@ -97,7 +97,7 @@ pub(crate) fn calc_run(argv: &[String]) -> i32 {
     };
 
     // Reverse analysis (7.3): with --analyze, interpret a pasted date instead of building a moment.
-    // The build flags (--base/--shift/...) do not apply; --calendar and --zone still do.
+    // The build flags (--base/--shift/...) do not apply. --calendar and --zone still do.
     if let Some(input) = &ca.analyze {
         return match chrono_core::calc::analyze_date(input) {
             Ok(analysis) => {
@@ -115,7 +115,7 @@ pub(crate) fn calc_run(argv: &[String]) -> i32 {
         };
     }
 
-    // A named preset (docs/04 4.3) supplies the moment in place of the step flags; otherwise the
+    // A named preset (docs/04 4.3) supplies the moment in place of the step flags - otherwise the
     // moment is built from the flags. The preset also carries a human header (name + "explains").
     let preset_id = ca.preset.clone();
     let (expr, preset_header, preset_meta) = match preset_id {
@@ -206,14 +206,14 @@ pub(crate) struct CalcJson {
 pub(crate) struct MomentJson {
     /// The result moment as ISO wall-clock in `zone_bias_min`.
     iso: String,
-    /// Result-zone bias in minutes (UTC = local + bias); a `zone` step may move it off the session zone.
+    /// Result-zone bias in minutes (UTC = local + bias) - a `zone` step may move it off the session zone.
     zone_bias_min: i32,
     base: String,
     /// The intermediate result after each step, in order.
     steps: Vec<String>,
     formats: FormatsJson,
     metadata: MetadataJson,
-    /// Stable significance tokens (Significance::key); empty when the date hits no landmark.
+    /// Stable significance tokens (Significance::key) - empty when the date hits no landmark.
     significance: Vec<&'static str>,
     #[serde(skip_serializing_if = "Option::is_none")]
     custom_format: Option<String>,
@@ -244,7 +244,7 @@ pub(crate) struct MetadataJson {
     quarter: u32,
     is_leap_year: bool,
     days_from_today: i64,
-    /// null when no calendar was supplied; otherwise whether the date is a business day.
+    /// null when no calendar was supplied - otherwise whether the date is a business day.
     business_day: Option<bool>,
     /// The holiday's English name, or null (no calendar, or not a holiday - business_day disambiguates).
     holiday: Option<String>,
@@ -463,7 +463,7 @@ pub(crate) fn parse_calc_args(argv: &[String]) -> Result<CalcArgs, String> {
         i += 1;
     }
 
-    // A preset supplies its own moment (base + steps); combining it with step flags would mean two
+    // A preset supplies its own moment (base + steps) - combining it with step flags would mean two
     // sources for one moment. Reject it rather than pick one silently. `--analyze` is a different
     // mode entirely (it reads a date, builds nothing), so it cannot ride with `--preset` either.
     if preset.is_some() && saw_step_flag {
@@ -717,7 +717,7 @@ mod tests {
 
     #[test]
     fn calc_exit_codes_split_bad_input_from_needs_data() {
-        // Not built / needs data -> code 5; bad input -> usage 1.
+        // Not built / needs data -> code 5 - bad input -> usage 1.
         assert_eq!(calc_error_exit_code(&EvalError::StepUnsupported { kind: "zone", index: 0 }), 5);
         assert_eq!(calc_error_exit_code(&EvalError::NeedsCalendar { index: 0 }), 5);
         // R2-S10: a degenerate calendar is BAD INPUT (exit 1), not an unbuilt operation (exit 5).
@@ -1006,7 +1006,7 @@ mod tests {
     }
 
     /// `--preset` supplies its own moment, so combining it with a step flag (or --analyze) is a
-    /// usage error; alone it parses.
+    /// usage error - alone it parses.
     #[test]
     fn preset_flag_is_exclusive_of_step_flags() {
         assert!(parse_calc_args(&["--preset".into(), "month-end".into()]).is_ok());

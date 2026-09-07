@@ -2,7 +2,7 @@ namespace ChronoMock.App;
 
 /// <summary>
 /// The verifier's verdict, as the panel shows it (chrono-mock 7.1). The core sends the verdict as a string
-/// on the wire; this enum drives the indicator's glyph and colour, while the label and reason stay as
+/// on the wire - this enum drives the indicator's glyph and colour, while the label and reason stay as
 /// translation keys (untouchable rules 15/16).
 /// </summary>
 public enum VerdictKind

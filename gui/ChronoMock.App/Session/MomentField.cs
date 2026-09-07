@@ -99,7 +99,7 @@ public sealed class MomentField : ObservableObject
     public void SetToday(int biasMinutes) => SetToday(biasMinutes, DateTime.UtcNow);
 
     /// <summary>Fill the field with the current wall time in the SESSION zone (rule 2). The bias comes from
-    /// the panel's selected zone; the OS locale never enters, so a Polish box and a US VM produce the same text.</summary>
+    /// the panel's selected zone - the OS locale never enters, so a Polish box and a US VM produce the same text.</summary>
     public void SetNow(int biasMinutes) => SetNow(biasMinutes, DateTime.UtcNow);
 
     // Testable cores: "now in the session zone" is UTC shifted by the zone offset (UTC = local + bias, so

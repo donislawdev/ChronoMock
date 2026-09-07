@@ -31,7 +31,7 @@ public sealed class CoreLocator
     /// Both are named by their explicit target triple, because <c>target/release/</c> is written only by a
     /// build with NO <c>--target</c> - and the working rule is to build both triples explicitly, so that
     /// directory holds whatever binary someone last built without the flag. The run-targets harness read
-    /// x64 from there and spent a session testing a day-old core (R2-X3); this is the same trap in the
+    /// x64 from there and spent a session testing a day-old core (R2-X3) - this is the same trap in the
     /// GUI's own path.</summary>
     public static CoreLocator ForRepo(string repoRoot) => new(machine => machine switch
     {

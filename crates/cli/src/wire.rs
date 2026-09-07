@@ -17,7 +17,7 @@ use crate::events::emit;
 /// `MAX_HEADERS`, `MAX_HEADER_LINE`, `MAX_QUEUED_EVENTS`, the seqlock read budget, the
 /// business-day walk - and the protocol line was the one that was not: a writer that never sent a
 /// newline grew the reader's buffer for as long as it liked. Both ends are processes this tool
-/// started, so this is depth rather than a hole; the failure it actually guards is our own, a core
+/// started, so this is depth rather than a hole - the failure it actually guards is our own, a core
 /// stuck mid-line taking the driver's memory with it.
 ///
 /// A megabyte is a deliberate 680x over the largest line MEASURED on 2026-09-05: a native session at
