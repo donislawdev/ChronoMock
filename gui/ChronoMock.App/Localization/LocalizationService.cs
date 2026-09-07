@@ -27,6 +27,9 @@ public static class LocalizationService
     private const string FileSuffix = ".json";
     private const string MarkerKey = "__chrono_strings_culture";
 
+    /// <summary>The window title, which is a format string until the version is filled into it.</summary>
+    private const string TitleKey = "app.title";
+
     private static string FolderPath => Path.Combine(AppContext.BaseDirectory, FolderName);
 
     /// <summary>The culture whose strings are currently applied (read from the marker), or the default
@@ -173,9 +176,26 @@ public static class LocalizationService
         ArgumentNullException.ThrowIfNull(app);
 
         var dictionary = Load(culture);
+        FillProductVersion(dictionary);
         RemovePrevious(app.Resources.MergedDictionaries);
         dictionary[MarkerKey] = culture;
         app.Resources.MergedDictionaries.Add(dictionary);
+    }
+
+    /// <summary>
+    /// Resolve the title format into the finished title, so the window shows which build it is.
+    /// </summary>
+    /// <remarks>
+    /// Here rather than in the window, because this is the one path both the application and the
+    /// test host take. A title formatted at the window instead would be right at runtime and absent
+    /// in every test that builds a window directly.
+    /// </remarks>
+    private static void FillProductVersion(ResourceDictionary dictionary)
+    {
+        if (dictionary[TitleKey] is string format)
+        {
+            dictionary[TitleKey] = AppVersion.FormatTitle(format, AppVersion.Current);
+        }
     }
 
     /// <summary>

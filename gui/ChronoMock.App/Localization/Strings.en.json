@@ -5,7 +5,10 @@
 // and therefore ran as code - a loose file next to the exe must never be able to do that.
 {
 
-  "app.title": "Chrono Mock",
+  // The window title and the title bar. {0} is the product version, filled in at startup from the
+  // running build - the number is never written here, so there is nothing extra to bump. A
+  // translation that drops {0} gets a title without a version rather than an error.
+  "app.title": "Chrono Mock {0}",
 
   // Clock roles.
   "clock.fake": "Fake clock",

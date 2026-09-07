@@ -4,6 +4,22 @@ Notable changes to Chrono Mock, newest first. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project aims to follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **`chrono version`**, also spelled `--version` and `-V`. Prints the build, which of the two
+  cores that executable is, and the wire protocol it speaks, on stdout so a script can capture
+  it. Until now the tool could not answer the first question any bug report asks.
+- **The version in the window title and title bar**, so a screenshot says which build it came
+  from without anyone having to ask.
+
+### Fixed
+
+- Two holiday entries in the United States calendars cited a source document that is not part of
+  this repository, which no reader could follow. They now state plainly that the first observance
+  year is unconfirmed.
+
 ## [0.1.0] - 2026-09-04
 
 First public release. There is no previous version to compare it against, so rather than

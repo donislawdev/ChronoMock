@@ -21,7 +21,11 @@ public class WindowBuildTests
     public void MainWindow_resolves_its_localized_title_from_the_merged_strings()
     {
         var title = WpfTestHost.InvokeSettled(() => new MainWindow().Title);
-        Assert.Equal("Chrono Mock", title);
+
+        // Built from AppVersion rather than written out, so bumping the version does not redden a
+        // test about the title. What is asserted is that the format was resolved at all.
+        Assert.Equal($"Chrono Mock {AppVersion.Current}", title);
+        Assert.DoesNotContain("{0}", title, StringComparison.Ordinal);
     }
 
     [Fact]
