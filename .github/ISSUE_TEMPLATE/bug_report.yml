@@ -1,0 +1,126 @@
+name: Bug report
+description: Something in Chrono Mock does not work as expected
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report this. The version, the mode you ran
+        in, and the audit the tool printed are the three most useful things you
+        can give us.
+
+        **A verdict is not a bug.** Chrono Mock exits 10 for "works partially",
+        11 for "does not work" and 4 for "undetermined", and each of those is the
+        tool doing its job: reporting honestly that your application reads time
+        through a channel it did not cover. Report it if you believe the verdict
+        itself is wrong - that the substitution demonstrably worked and the audit
+        says otherwise, or the reverse.
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: >-
+        There is no `chrono version` command yet, so take it from the file. In
+        PowerShell, next to the unzipped build:
+        `(Get-Item .\ChronoMock.exe).VersionInfo.ProductVersion` - or
+        `.\chrono.exe` for the command-line package. The release tag you
+        downloaded works too.
+      placeholder: "0.1.0"
+    validations:
+      required: true
+  - type: dropdown
+    id: surface
+    attributes:
+      label: How were you running it?
+      description: The engine is shared, so a bug in one surface is often a bug in both. Which one you saw it in narrows it down.
+      options:
+        - Window (ChronoMock.exe)
+        - Command line (chrono.exe)
+        - Both
+    validations:
+      required: true
+  - type: dropdown
+    id: mode
+    attributes:
+      label: Which mode?
+      description: >-
+        These are two entirely different mechanisms rather than two settings.
+        Native injection loads a library into the target. Chromium mode injects
+        nothing and drives the browser over its debug port instead. A report is
+        rarely about both.
+      options:
+        - Native injection (an ordinary Windows application)
+        - Chromium or Electron mode (debug port)
+        - Date calculator only (no session)
+        - Not sure
+    validations:
+      required: true
+  - type: dropdown
+    id: arch
+    attributes:
+      label: Was the target 32-bit or 64-bit?
+      description: >-
+        Chrono Mock ships two cores and routes by the target's bitness, so this
+        is the first thing that splits a report in half. Both are released and
+        both are tested.
+      options:
+        - 64-bit target
+        - 32-bit target
+        - Not sure
+  - type: input
+    id: runtime
+    attributes:
+      label: What is the target application?
+      description: >-
+        The runtime matters more than the name: native, .NET, Java, Python or
+        Electron. Everything except native is marked experimental in the support
+        matrix. If the application is not something you can name publicly, say
+        what it is built with and leave the name out.
+      placeholder: "A .NET 8 desktop application, 64-bit"
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: The command, or the steps
+      description: >-
+        The smallest thing that triggers it. A single `chrono run` command line
+        is ideal, because the window and the command line drive the same engine.
+        Paste it rather than describing it.
+      render: shell
+    validations:
+      required: true
+  - type: input
+    id: exit
+    attributes:
+      label: Exit code
+      description: >-
+        What `echo %ERRORLEVEL%` printed after the command, or `$LASTEXITCODE` in
+        PowerShell. The codes are a frozen part of this tool's contract, so a
+        wrong one is a bug on its own even when the session looked right.
+      placeholder: "2"
+  - type: textarea
+    id: audit
+    attributes:
+      label: The audit, if there was a session
+      description: >-
+        The verdict and the covered and missed channels, from the panel or from
+        `--report`. This is the most valuable thing in the whole report, because
+        it says what the tool believed it did.
+
+        Before pasting: a report records the full path to the application under
+        test, and on most machines that path contains your user name. This issue
+        is public, so read it first and remove anything you would rather not
+        publish.
+      render: shell
+  - type: input
+    id: windows
+    attributes:
+      label: Windows version
+      description: Output of `winver`, or just "Windows 11 24H2".
+      placeholder: "Windows 11 24H2"

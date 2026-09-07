@@ -1,0 +1,43 @@
+name: Feature request
+description: Suggest an improvement or a new capability
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem would this solve?
+      description: The testing situation that is awkward today.
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: Proposed solution
+      description: What you would like the tool to do.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives you have considered
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: Scope
+      description: >-
+        Three things this project has decided and will not revisit without a new
+        argument. Saying so here saves you writing a proposal that was never
+        going to be accepted.
+      options:
+        - label: This does not require changing the system clock. Shifting time for one process while the rest of the machine keeps the real time is the entire promise of this tool, and there is no mode in which it moves the machine's clock.
+          required: true
+        - label: This is not about defeating, extending or bypassing licence protection in software somebody else wrote. Chrono Mock is for testing software you are responsible for, and no example or preset will ever demonstrate otherwise.
+          required: true
+        - label: This is for Windows. The substitution works by hooking Windows time APIs, and libfaketime already covers Linux well.
+          required: true
+  - type: checkboxes
+    id: surfaces
+    attributes:
+      label: Both surfaces
+      options:
+        - label: I understand that a capability lives in the engine and appears in both the window and the command line, rather than in one of them.

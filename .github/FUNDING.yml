@@ -1,0 +1,8 @@
+# The sponsor button GitHub shows on the repository.
+#
+# One custom address rather than a platform, because the page behind it is ours
+# and can say what the money is for.
+#
+# The quoting is not decoration. A YAML value holding a colon has to be quoted or
+# the parser reads it as a mapping, and every https address holds one.
+custom: ["https://donislawdev.com/support/"]

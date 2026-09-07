@@ -1,0 +1,38 @@
+# Who owns this repository, and who GitHub asks to review a change to it.
+#
+# One owner, one line. Finer-grained rules would be fiction here: every path
+# below has the same owner, and a list that pretends otherwise ages into a claim
+# nobody checks.
+#
+# What this file DOES do
+# ----------------------
+# A pull request opened by anyone else automatically requests a review from the
+# owner. That is the whole reason it exists: an outside contribution should not
+# sit unnoticed because nobody was asked. This project accepts holiday calendars
+# and interface translations from contributors, so that path is real rather than
+# hypothetical - see CONTRIBUTING.md.
+#
+# What it does NOT do
+# -------------------
+# GitHub never requests a review from the person who opened the pull request, and
+# nobody can approve their own. So on a change written by the owner this file is
+# silent by design - and a branch rule that demands a code-owner approval would,
+# on such a change, demand one from somebody who does not exist. That combination
+# freezes the repository: no pull request can ever be merged. If a protection rule
+# is ever added here, `require_code_owner_review` is the one setting to leave off.
+#
+# What actually guards the code today
+# -----------------------------------
+# Measured on 2026-09-07: the default branch carries no ruleset and no branch
+# protection. Nothing mechanically blocks a merge. What does run is the CI
+# workflow, on every push to `main` and on every pull request against it, and it
+# is the same set of gates the owner runs by hand before committing - formatting,
+# both metric ceilings, clippy, the Rust and C# suites, the website build, both
+# release targets and the dependency check. The result is visible on the pull
+# request before anyone merges it. That is a weaker guarantee than an enforced
+# rule and it is stated plainly rather than dressed up.
+#
+# Syntax note: gitignore-style patterns, with three exceptions - a pattern may not
+# start with `#`, `!` does not negate, and `[ ]` character ranges do not work.
+
+*       @donislawdev

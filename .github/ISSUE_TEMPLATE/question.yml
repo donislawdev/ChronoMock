@@ -1,0 +1,48 @@
+name: Question or problem
+description: Ask about using the tool, or report something that does not fit the other two
+labels: ["question"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Questions belong here rather than in private mail, because the next person
+        to hit the same thing can find the answer.
+
+        If it turns out to be a defect we will relabel it - you do not have to
+        decide that first. The same goes the other way: "the audit says my
+        application is only partially covered, is that expected?" is a fair
+        question, and the answer is often yes with a reason.
+  - type: textarea
+    id: question
+    attributes:
+      label: What are you trying to do?
+      description: The testing situation, and what you have tried so far.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: >-
+        If the tool is already installed:
+        `(Get-Item .\ChronoMock.exe).VersionInfo.ProductVersion` in PowerShell,
+        or the release tag you downloaded.
+      placeholder: "0.1.0"
+  - type: dropdown
+    id: mode
+    attributes:
+      label: Which mode, if a session is involved
+      options:
+        - Native injection (an ordinary Windows application)
+        - Chromium or Electron mode (debug port)
+        - Date calculator only (no session)
+        - Not relevant
+  - type: textarea
+    id: extra
+    attributes:
+      label: The command or the audit, if there is one
+      description: >-
+        Paste it rather than describing it. Anything you paste is public, and a
+        session report carries the full path to the application under test, so
+        check it for your user name before it goes in.
+      render: shell

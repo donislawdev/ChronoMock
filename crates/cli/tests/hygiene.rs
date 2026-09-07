@@ -37,6 +37,9 @@ const TRACKED_TREES: &[&str] = &[
 const ROOT_FILES: &[&str] = &[
     "README.md",
     "CHANGELOG.md",
+    "CONTRIBUTING.md",
+    "SECURITY.md",
+    "CODE_OF_CONDUCT.md",
     "THIRD-PARTY-NOTICES.md",
     "Cargo.toml",
     "clippy.toml",
