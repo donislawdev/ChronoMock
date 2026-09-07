@@ -9,15 +9,17 @@ namespace ChronoMock.App;
 ///
 /// <para>
 /// Its own view model rather than four more properties on <see cref="SessionViewModel"/>, for the same
-/// reason CoreSession and ScenarioMoment were split off it: that class sits exactly on its coupling ceiling
-/// (CA1506, gui/CodeMetricsConfig.txt), so a feature that drags four more types into it does not fit. Here
-/// the types stay behind one seam, and the panel gains a single property.
+/// reason CoreSession and ScenarioMoment were split off it: four properties inline measured CA1506 = 86
+/// against a ceiling of 81. Behind this seam the panel gains a single type, which is the one the owner
+/// raised the ceiling by (gui/CodeMetricsConfig.txt, 2026-09-07) so the panel's state could live on the
+/// panel's view model instead of on the window.
 /// </para>
 /// </summary>
 public sealed class RelativeMomentViewModel : ObservableObject
 {
     private readonly MomentField _target;
     private readonly CalcClient? _engine;
+    private readonly Func<int> _zoneBias;
 
     // "+ 1 day" - the commonest relative start, and the same default a fresh calculator shift step opens
     // on, so the two surfaces do not disagree about what a new delta looks like.
@@ -28,10 +30,14 @@ public sealed class RelativeMomentViewModel : ObservableObject
 
     /// <param name="target">The moment field this line fills - the same one the At row edits.</param>
     /// <param name="engine">The calculator engine, or null when it could not be resolved.</param>
-    public RelativeMomentViewModel(MomentField target, CalcClient? engine)
+    /// <param name="zoneBias">The session zone's bias, read at the moment of use rather than captured as a
+    /// value, so changing the zone changes what "now plus one day" means with no wiring between the two.
+    /// </param>
+    public RelativeMomentViewModel(MomentField target, CalcClient? engine, Func<int> zoneBias)
     {
         _target = target ?? throw new ArgumentNullException(nameof(target));
         _engine = engine;
+        _zoneBias = zoneBias ?? throw new ArgumentNullException(nameof(zoneBias));
     }
 
     /// <summary>The signs offered - the same pair the calculator's shift step uses.</summary>
@@ -65,10 +71,10 @@ public sealed class RelativeMomentViewModel : ObservableObject
     /// the controls become a question. <see cref="ApplyAsync"/> sends exactly this, so a test reading it
     /// reads what the panel asks, not a rebuild of it: a test over
     /// <see cref="RelativeMoment.BuildArgs"/> alone would pass over controls bound to nothing.</summary>
-    internal IReadOnlyList<string>? CurrentArgs(int zoneBiasMinutes)
+    internal IReadOnlyList<string>? CurrentArgs()
     {
         var token = RelativeMoment.ShiftToken(_sign, _amount, _unit.Token);
-        return token is null ? null : RelativeMoment.BuildArgs(token, zoneBiasMinutes);
+        return token is null ? null : RelativeMoment.BuildArgs(token, _zoneBias());
     }
 
     /// <summary>
@@ -76,13 +82,11 @@ public sealed class RelativeMomentViewModel : ObservableObject
     /// quarters and years fold onto the civil date), and the session zone travels with the question, because
     /// "now plus one day" is a different civil date read from another zone (untouchable rule 2).
     /// </summary>
-    /// <param name="zoneBiasMinutes">The session zone, passed in at the moment of use rather than captured
-    /// at construction - the tester can change the zone between opening the panel and pressing this.</param>
-    public async Task ApplyAsync(int zoneBiasMinutes)
+    public async Task ApplyAsync()
     {
         ErrorKey = string.Empty;
 
-        var args = CurrentArgs(zoneBiasMinutes);
+        var args = CurrentArgs();
         if (args is null)
         {
             ErrorKey = "moment.relative_bad_amount";

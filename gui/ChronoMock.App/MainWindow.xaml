@@ -247,10 +247,10 @@
                Business days are absent from the unit list on purpose: a session has no calendar, so the
                engine could only refuse them.
 
-               Its DataContext is set in code-behind to a RelativeMomentViewModel, the same way this window
-               already bridges the calculator into the session's moment. The panel's own view model sits on
-               its coupling ceiling (CA1506), and raising a pinned ceiling is the owner's call, not a side
-               effect of adding a row. IsEnabled therefore reaches back to the window's DataContext for
+               Its DataContext is the panel's own RelativeMomentViewModel, pointed at in code-behind rather
+               than bound here: a Binding on DataContext itself is not evaluated until the tree is measured,
+               so a test reading it off a constructed window sees null and cannot tell a broken wiring from
+               an unrun layout pass. IsEnabled therefore reaches back to the window's DataContext for
                CanEditTime, exactly as the At row's moment input does. -->
           <StackPanel x:Name="RelativeMomentRow"
                       IsEnabled="{Binding DataContext.CanEditTime, RelativeSource={RelativeSource AncestorType={x:Type ui:FluentWindow}}}">

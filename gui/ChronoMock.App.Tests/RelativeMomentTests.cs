@@ -67,16 +67,16 @@ public class RelativeMomentTests
         Assert.Equal("+", vm.Sign);
         Assert.Equal("1", vm.Amount);
         Assert.Equal("d", vm.Unit.Token);
-        Assert.Equal(new[] { "--base", "now", "--shift", "+1d", "--zone", "+02:00" }, vm.CurrentArgs(-120));
+        Assert.Equal(new[] { "--base", "now", "--shift", "+1d", "--zone", "+02:00" }, vm.CurrentArgs());
 
         vm.Sign = "-";
         vm.Amount = "6";
         vm.Unit = vm.Units.First(u => u.Token == "mo");
-        Assert.Equal(new[] { "--base", "now", "--shift", "-6mo", "--zone", "+00:00" }, vm.CurrentArgs(0));
+        Assert.Equal(new[] { "--base", "now", "--shift", "-6mo", "--zone", "+02:00" }, vm.CurrentArgs());
 
         // An amount the engine could not use produces no question at all, rather than a malformed one.
         vm.Amount = "0";
-        Assert.Null(vm.CurrentArgs(0));
+        Assert.Null(vm.CurrentArgs());
     }
 
     /// <summary>A bad amount is answered by the row itself - no process is started, and the moment field is
@@ -87,9 +87,9 @@ public class RelativeMomentTests
     {
         var field = new MomentField();
         field.LoadCanonical("2038-01-19T03:14:07");
-        var vm = new RelativeMomentViewModel(field, null) { Amount = "not a number" };
+        var vm = new RelativeMomentViewModel(field, null, () => -120) { Amount = "not a number" };
 
-        await vm.ApplyAsync(-120);
+        await vm.ApplyAsync();
 
         Assert.True(vm.HasError);
         Assert.Equal("moment.relative_bad_amount", vm.ErrorKey);
@@ -103,9 +103,9 @@ public class RelativeMomentTests
     {
         var field = new MomentField();
         field.LoadCanonical("2038-01-19T03:14:07");
-        var vm = new RelativeMomentViewModel(field, null);
+        var vm = new RelativeMomentViewModel(field, null, () => -120);
 
-        await vm.ApplyAsync(-120);
+        await vm.ApplyAsync();
 
         Assert.Equal("scenario.engine_missing", vm.ErrorKey);
         Assert.Equal("2038-01-19T03:14:07", field.Canonical);
@@ -121,5 +121,5 @@ public class RelativeMomentTests
         Assert.IsType<RelativeMomentViewModel>(context);
     }
 
-    private static RelativeMomentViewModel NewViewModel() => new(new MomentField(), null);
+    private static RelativeMomentViewModel NewViewModel() => new(new MomentField(), null, () => -120);
 }

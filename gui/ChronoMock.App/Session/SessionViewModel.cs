@@ -98,6 +98,10 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
         _selectedZone = TimeInputs.Zones.First(z => z.BiasMinutes == -120); // UTC+02:00
         _selectedMode = TimeInputs.Modes.First(m => m.Multiplier == 60);    // x60
 
+        // The relative line fills the same field the At row edits, and reads the zone at the moment of use,
+        // so changing the zone changes what "now plus one day" means without any wiring between the two.
+        Relative = new RelativeMomentViewModel(Moment, calcClient, () => SelectedZone.BiasMinutes);
+
         // Ship with the same default moment the panel had before these inputs existed.
         Moment.LoadCanonical("2038-01-19T03:14:07");
         Moment.Changed += (_, _) =>
@@ -604,6 +608,11 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
             _applyingScenario = false;
         }
     }
+
+    /// <summary>The "relative to now" line under the moment field - the panel's <c>--at +30d</c>. A view
+    /// model of its own so this class carries one type for it rather than four (see
+    /// RelativeMomentViewModel and gui/CodeMetricsConfig.txt).</summary>
+    public RelativeMomentViewModel Relative { get; }
 
     /// <summary>Drop the scenario selection without re-computing anything - the moment no longer came from
     /// it. Writes the field directly, because the property's setter is the "apply this scenario" path.</summary>

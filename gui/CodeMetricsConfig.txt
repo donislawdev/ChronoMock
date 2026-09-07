@@ -29,7 +29,15 @@
 # `CoreSession` (97 to 91) and turning a scenario into a moment moved to `ScenarioMoment`, taking
 # the calculator's own types with it (91 to 81). Down is the routine door, and this is what walking
 # through it looks like - the number comes down in the same change as the code, never after it.
-CA1506: 81
+#
+# 81 to 82 on 2026-09-07, and this is the up door, opened once by the owner. The relative-moment line
+# under the At row needs ONE type here: its state is a view model of its own (RelativeMomentViewModel),
+# which is already the carve-out this file asks for - four properties inline measured 86. At 81 the class
+# had no room left at all, so the row first shipped owned by the window, with its DataContext set in
+# code-behind. That worked and read badly: the panel's own state sat outside the panel's view model, and
+# only because of a number. The owner chose the honest shape over the pinned figure. What is NOT being
+# granted is headroom - 82 is the measurement again, and the tightened copy at 81 still has to fail.
+CA1506: 82
 
 # `PresetCatalog.ReadParameters`, a JSON reader that validates each field as it goes. Next are
 # `SessionViewModel.Apply` at 15 and `SessionViewModel`'s event router at 13. The analyzer's default

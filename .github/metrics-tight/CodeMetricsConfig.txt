@@ -13,5 +13,5 @@
 # 🔴 Keep in step with gui/CodeMetricsConfig.txt. `MetricsCeilingTests` compares the two files rule
 # by rule and fails unless every value here is exactly one below its counterpart.
 
-CA1506: 80
+CA1506: 81
 CA1502: 17
