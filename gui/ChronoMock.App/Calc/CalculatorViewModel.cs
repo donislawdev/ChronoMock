@@ -326,7 +326,6 @@ public sealed class CalculatorViewModel : ObservableObject
     private int _resultZoneBias;
     private bool _computedOnce;
     private CancellationTokenSource? _cts;
-    private CancellationTokenSource? _recomputeDebounce;
 
     private string _analyzeText = "04/08/2008";
     private bool _hasAnalysis;
@@ -334,13 +333,15 @@ public sealed class CalculatorViewModel : ObservableObject
     private bool _analyzeHasError;
     private string _analyzeError = string.Empty;
     private CancellationTokenSource? _analyzeCts;
-    private CancellationTokenSource? _analyzeDebounce;
 
     /// <summary>How long the builder stays quiet before a keystroke turns into a calc process. Every edit
     /// used to spawn one immediately - typing a date meant about ten process launches, and unpacking a
     /// preset about nine - which is visible jank on a machine with an AV scanner in the loop (the typical
     /// QA box). The engine call is unchanged - only its cadence is.</summary>
     private static readonly TimeSpan EditDebounce = TimeSpan.FromMilliseconds(250);
+
+    private readonly Debounce _recomputeDebounce = new(EditDebounce);
+    private readonly Debounce _analyzeDebounce = new(EditDebounce);
 
     public CalculatorViewModel(CalcClient client, string? presetsDir = null)
     {
@@ -619,7 +620,7 @@ public sealed class CalculatorViewModel : ObservableObject
     {
         if (_computedOnce)
         {
-            _ = RunDebouncedAsync(SupersedeDebounce(ref _analyzeDebounce), AnalyzeAsync);
+            _ = _analyzeDebounce.RunAsync(AnalyzeAsync);
         }
     }
 
@@ -752,38 +753,7 @@ public sealed class CalculatorViewModel : ObservableObject
         }
 
         ClearActivePreset();
-        _ = RunDebouncedAsync(SupersedeDebounce(ref _recomputeDebounce), RecomputeAsync);
-    }
-
-    /// <summary>Install a fresh debounce source in <paramref name="slot"/> and cancel the one it replaces,
-    /// so a pending edit never spawns anything once a newer edit arrives. Not disposed here - the task
-    /// holding it disposes it on the way out, which is the only point where nothing can still read it.</summary>
-    private static CancellationTokenSource SupersedeDebounce(ref CancellationTokenSource? slot)
-    {
-        var cts = new CancellationTokenSource();
-        Interlocked.Exchange(ref slot, cts)?.Cancel();
-        return cts;
-    }
-
-    /// <summary>Wait out the quiet period, then run <paramref name="action"/> - unless a newer edit
-    /// superseded this one first, in which case it is cancelled before it ever spawns a process. The
-    /// source is always disposed: they were previously only cancelled, so one leaked per keystroke,
-    /// each still holding the callbacks its token had registered.</summary>
-    private static async Task RunDebouncedAsync(CancellationTokenSource cts, Func<Task> action)
-    {
-        try
-        {
-            await Task.Delay(EditDebounce, cts.Token);
-            await action();
-        }
-        catch (OperationCanceledException)
-        {
-            // Superseded by a newer edit - the newer one owns the result.
-        }
-        finally
-        {
-            cts.Dispose();
-        }
+        _ = _recomputeDebounce.RunAsync(RecomputeAsync);
     }
 
     /// <summary>Apply a preset by filling the builder from its moment, so the result recomputes through the

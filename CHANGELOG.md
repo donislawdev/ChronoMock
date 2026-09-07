@@ -16,6 +16,16 @@ Notable changes to Chrono Mock, newest first. The format follows
 
 ### Fixed
 
+- **Adding or removing a step in the date calculator left the date unchanged**, and the window
+  reported "The CancellationTokenSource has been disposed." Those were one fault seen from two
+  sides. The calculator waits out a quarter of a second before turning an edit into a
+  calculation, so a burst of typing costs one run instead of one per keystroke - and a run that
+  finished normally released its cancellation source while the calculator was still holding a
+  reference to it. The next edit then cancelled a released source and threw, before any
+  recalculation had been queued: the step appeared in the list, the date stayed as it was, and
+  the error box reported the throw. Typing into the reverse-analysis field, pausing, and typing
+  again went the same way.
+
 - **Five United States holidays answered with today's rule for every year in history.** Both
   calendars now carry the changes that actually happened, so a date before 1986 - or before 1971 -
   comes back correct:
