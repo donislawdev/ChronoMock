@@ -25,20 +25,25 @@ internal static class RepoPaths
             $"could not find the repo root (a parent with Cargo.toml) from '{AppContext.BaseDirectory}'");
     }
 
-    /// <summary>The x64 core executable, named by its explicit target triple like the x86 one - reading it
-    /// from <c>target/release/</c> tests whatever was last built WITHOUT <c>--target</c>, which is how the
-    /// harness spent a session on a day-old binary (R2-X3). Requires
-    /// <c>cargo build --release --target x86_64-pc-windows-msvc</c>.</summary>
-    public static string X64Core(string repoRoot)
+    /// <summary>
+    /// Any release artifact of one target triple, named by the triple rather than read from
+    /// <c>target/release/</c> - that directory holds whatever was last built WITHOUT <c>--target</c>,
+    /// which is how the harness spent a session on a day-old binary (R2-X3). The two core accessors
+    /// below go through here, and so does the import-table guard, which needs the hook and the site
+    /// generator as well.
+    /// </summary>
+    public static string ReleaseBinary(string repoRoot, string triple, string fileName)
         => RequireFile(
-            Path.Combine(repoRoot, "target", "x86_64-pc-windows-msvc", "release", "chrono.exe"),
-            "run `cargo build --release --target x86_64-pc-windows-msvc` first");
+            Path.Combine(repoRoot, "target", triple, "release", fileName),
+            $"run `cargo build --release --target {triple}` first");
+
+    /// <summary>The x64 core executable. Requires <c>cargo build --release --target x86_64-pc-windows-msvc</c>.</summary>
+    public static string X64Core(string repoRoot)
+        => ReleaseBinary(repoRoot, "x86_64-pc-windows-msvc", "chrono.exe");
 
     /// <summary>The x86 core executable. Requires <c>cargo build --release --target i686-pc-windows-msvc</c>.</summary>
     public static string X86Core(string repoRoot)
-        => RequireFile(
-            Path.Combine(repoRoot, "target", "i686-pc-windows-msvc", "release", "chrono.exe"),
-            "run `cargo build --release --target i686-pc-windows-msvc` first");
+        => ReleaseBinary(repoRoot, "i686-pc-windows-msvc", "chrono.exe");
 
     /// <summary>The built .NET test target executable, matching the test's own build configuration.</summary>
     public static string TestTargetExe(string repoRoot)

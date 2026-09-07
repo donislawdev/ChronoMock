@@ -42,6 +42,15 @@ Notable changes to Chrono Mock, newest first. The format follows
   registered by file with a reason, refuses a dependency that could speak to a network, and
   refuses a networking feature of the `windows` crate. What it cannot prove is written in its
   own header, and `SECURITY.md` says the same in the section on what this tool does.
+- **A second layer that reads the built binaries rather than the source.** Every Windows
+  executable carries an import table - the DLLs the loader resolves before the program runs,
+  written by the linker from what the code actually calls. A test now pins that list for all six
+  binaries this workspace builds, on both bitnesses, with a reason for every entry, so a
+  dependency that reached the network would fail the build even if nothing in our source
+  spelled it. The core links Winsock and nothing else that touches a network, for the loopback
+  debug port Chromium mode uses. The library injected into the target links no networking DLL at
+  all, `ws2_32` included, although intercepting `connect` is one of its jobs - it resolves that
+  module only when the target has already loaded it.
 
 ## [0.1.0] - 2026-09-04
 

@@ -66,9 +66,24 @@ C# source in the workspace for network APIs, and the only ones it permits are li
 by file with the reason, so a new way out fails the build until somebody writes down
 why it is there. The same test refuses a dependency that could speak to a network -
 the tree is 51 packages and none of them can - and refuses a networking feature of
-the `windows` crate. It reads source rather than the built binaries, and it says so
-in its own header along with the rest of what it cannot prove. There is one loopback
-exception and it is deliberate:
+the `windows` crate.
+
+A second test reads the built binaries themselves. Every Windows executable carries
+an import table: the list of DLLs the loader resolves before the program runs, written
+by the linker from what the code actually calls rather than from what anyone claims
+about it. That test pins every module all six of our binaries link - five to seven
+each - so a new one fails the build until somebody writes down why it is there. Two of
+those entries are the point. The core links Winsock and nothing else that touches a
+network, for the loopback debug port described below. The injected library links no
+networking DLL at all, `ws2_32` included, even though intercepting `connect` is one of
+its jobs: it looks that module up only when the target has already loaded it, so the
+library that ends up inside somebody else's process has nothing to reach the network
+with.
+
+Neither layer is a proof of silence, and both say so in their own headers. A module
+resolved by name while the program runs is invisible to the second, which is why the
+first exists, and the managed GUI is invisible to it too, which is why the first scans
+C# as well. There is one loopback exception and it is deliberate:
 Chromium mode does not inject at all, and instead launches the browser with
 `--remote-debugging-port=0` - Chromium picks a free port - reads the chosen port
 from the profile that the tool created for the session, and drives the browser over

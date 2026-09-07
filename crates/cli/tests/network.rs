@@ -19,11 +19,17 @@
 //!
 //! # What this canNOT prove, said plainly
 //!
-//! * **It reads source, not binaries.** A dependency that links WinHTTP would not appear here. The
-//!   dependency register below is the answer to that, and it is a different kind of answer: it
-//!   holds because the tree is 51 packages of serde, toml, tracing, minhook and `windows`, with
-//!   the `windows` features enumerated one by one in the root manifest. Reading the import table of
-//!   the built binaries would be a genuine second layer and does not exist yet.
+//! * **It reads source, not binaries.** A dependency that links WinHTTP would not appear here, and
+//!   two other things answer that rather than this scan. The dependency register below holds
+//!   because the tree is 51 packages of serde, toml, tracing, minhook and `windows`, with the
+//!   `windows` features enumerated one by one in the root manifest. The second layer is
+//!   `gui/ChronoMock.Protocol.Tests/BinaryImportsTests.cs`, which reads the import table of the
+//!   built binaries - the list of DLLs the loader resolves before a binary runs, written by the
+//!   linker from what the code actually calls - and pins every module each of the six links, with
+//!   the reason. That is where a networking dependency shows up whether or not our source spells
+//!   it. It lives on the C# side because only there are those binaries certainly the ones the same
+//!   run just built: `cargo test` goes BEFORE the two release builds in CI and in
+//!   `tools/gates.ps1`, and `dotnet test` after them.
 //! * **It reads what is written, not what runs.** A name assembled at runtime defeats it. There is
 //!   no equivalent of a Python audit hook here, so the static half stands alone.
 //! * **Data can leave a machine without a socket** - a file written into a synced folder, a report
@@ -31,7 +37,9 @@
 //! * **The hooked `connect` is somebody else's traffic, not ours.** `chrono-hook` resolves
 //!   `ws2_32.dll` and intercepts `connect` so the audit can report that the target application
 //!   asked the network for something, which is a suspected server time source. Counting a call is
-//!   the opposite of making one, and the register says so where it grants that.
+//!   the opposite of making one, and the register says so where it grants that. The binary layer
+//!   says the half this one cannot: `chrono_hook.dll` LINKS no networking DLL at all, `ws2_32`
+//!   included, because it looks that module up only when the target has already loaded it.
 //!
 //! So this is not a proof of silence. It is a lock on the surface: nobody adds a way out by
 //! accident, and adding one on purpose means editing a register here and writing down why.
@@ -140,6 +148,14 @@ const ALLOWED: &[(&str, &str, &str)] = &[
         "the injected library resolves ws2_32 to INTERCEPT the target's own connect and count it. \
          Counting somebody else's call is the opposite of making one, and the audit reports it as \
          a suspected server time source",
+    ),
+    (
+        "gui/ChronoMock.Protocol.Tests/BinaryImportsTests.cs",
+        "winsock",
+        "the binary layer of this same guard, which names the module in order to REFUSE it. It reads \
+         the import table of every release binary and asserts that ws2_32 is linked by chrono.exe \
+         and by nothing else - least of all by chrono_hook.dll, which hooks connect without linking \
+         it. Naming a module in a register is the opposite of opening one",
     ),
     (
         "gui/ChronoMock.Protocol/CoreClient.cs",
