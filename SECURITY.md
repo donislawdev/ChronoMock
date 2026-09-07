@@ -51,7 +51,8 @@ Three properties are worth stating because a report may depend on them:
 
 **It never changes the system clock.** Not in any mode, not temporarily, not as a
 fallback. The whole point is that the rest of the machine keeps the real time.
-A guard in the test suite refuses any code in this repository that sets the clock.
+A guard in the test suite refuses any code in this repository that sets the clock,
+and every guard here is pointed at code it must reject before it is trusted.
 
 **It needs no administrator rights**, and asks for none. A Chrono Mock that
 required elevation, or acquired it, would be a different and much more dangerous
@@ -60,7 +61,14 @@ processes, because Windows lets a process of equal integrity do that. That is th
 operating system's model rather than a hole in this tool.
 
 **It makes no connections off the machine.** No telemetry, no update check, nothing
-downloaded while it runs. There is one loopback exception and it is deliberate:
+downloaded while it runs. Guarded rather than promised: a test scans every Rust and
+C# source in the workspace for network APIs, and the only ones it permits are listed
+by file with the reason, so a new way out fails the build until somebody writes down
+why it is there. The same test refuses a dependency that could speak to a network -
+the tree is 51 packages and none of them can - and refuses a networking feature of
+the `windows` crate. It reads source rather than the built binaries, and it says so
+in its own header along with the rest of what it cannot prove. There is one loopback
+exception and it is deliberate:
 Chromium mode does not inject at all, and instead launches the browser with
 `--remote-debugging-port=0` - Chromium picks a free port - reads the chosen port
 from the profile that the tool created for the session, and drives the browser over

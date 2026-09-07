@@ -166,6 +166,10 @@ before anyone reviews it:
 - **A flat hyphen, never an em or en dash**, and no semicolons in prose.
 - **User-visible text in the window is a translation key**, never a literal.
 - **Nothing in the repository sets the system clock.**
+- **Nothing reaches the network.** Every network API in the workspace is registered
+  by file with the reason it is there, and the register is short: a local socket for
+  the Chromium debug port, and launching the process under test. A use anywhere else
+  fails, and so does a dependency that could speak to a network.
 - **The crate dependency direction is fixed** and checked, so a new dependency
   edge fails the suite until it is declared.
 
