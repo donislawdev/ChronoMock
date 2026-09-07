@@ -98,6 +98,7 @@
                          FontSize="{StaticResource FontSizeBody}" Foreground="{DynamicResource BrushTextSecondary}" />
               <ComboBox x:Name="BaseZoneBox" ItemsSource="{Binding BaseZones}" SelectedItem="{Binding SelectedBaseZone}"
                         ToolTip="{DynamicResource tip.base_zone}"
+                        ItemContainerStyle="{StaticResource ZoneComboItem}"
                         Margin="{StaticResource SpaceXs}" VerticalAlignment="Center">
                 <ComboBox.ItemTemplate>
                   <DataTemplate>

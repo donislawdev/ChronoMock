@@ -222,6 +222,7 @@
                        FontSize="{StaticResource FontSizeBody}" Foreground="{DynamicResource BrushTextSecondary}" />
             <ComboBox ItemsSource="{Binding Zones}" SelectedItem="{Binding SelectedZone}"
                       IsEnabled="{Binding IsIdle}" ToolTip="{DynamicResource tip.zone}"
+                      ItemContainerStyle="{StaticResource ZoneComboItem}"
                       Margin="{StaticResource SpaceXs}" VerticalAlignment="Center">
               <ComboBox.ItemTemplate>
                 <DataTemplate>

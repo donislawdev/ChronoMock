@@ -38,6 +38,23 @@
         <Setter Property="AutomationProperties.Name" Value="{Binding LabelKey, Converter={StaticResource KeyToText}}" />
       </Style>
 
+      <!-- Zone items: the offset and the market it belongs to, in that order, because the offset is the
+           fact and the market is the gloss - a bare "US Pacific" would not say what the session will run
+           on. Two bindings rather than a LabelKey, since a zone option carries a computed Label (the
+           offset) beside its translation key, so LabelKeyComboItem cannot name it. Without this the peer
+           reads the record's ToString(), which is how both zone dropdowns came to announce
+           "ZoneOption { BiasMinutes = -120, Label = ... }" to assistive tech (rules 15/16). -->
+      <Style x:Key="ZoneComboItem" TargetType="ComboBoxItem" BasedOn="{StaticResource {x:Type ComboBoxItem}}">
+        <Setter Property="AutomationProperties.Name">
+          <Setter.Value>
+            <MultiBinding StringFormat="{}{0}, {1}">
+              <Binding Path="Label" />
+              <Binding Path="HintKey" Converter="{StaticResource KeyToText}" />
+            </MultiBinding>
+          </Setter.Value>
+        </Setter>
+      </Style>
+
       <!-- Recent-target items: the accessible name is the FULL path, because the file name alone does not
            identify a build (an x64 and an x86 output are both app.exe) and assistive tech would otherwise
            hear the record's ToString(). Same reason the row shows the directory beside the name. -->
