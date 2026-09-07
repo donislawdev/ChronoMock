@@ -1,8 +1,9 @@
-// English interface strings. Keys are stable and English; values are the display text.
-// A new language is a copy of this file named Strings.<culture>.json with the values
-// translated - no recompile (untouchable rule 15). JSON with // comments: this file is
-// DATA, read as data. It used to be XAML parsed by XamlReader, which instantiates types
-// and therefore ran as code - a loose file next to the exe must never be able to do that.
+// Polish interface strings. Keys are stable and English, values are the display text.
+// This file is Strings.en.json with the values translated, and a new language is made the
+// same way: copy that file, name it Strings.<culture>.json, translate the values, no
+// recompile (untouchable rule 15). JSON with // comments: this file is DATA, read as data.
+// It used to be XAML parsed by XamlReader, which instantiates types and therefore ran as
+// code - a loose file next to the exe must never be able to do that.
 {
 
   // The window title and the title bar. {0} is the product version, filled in at startup from the

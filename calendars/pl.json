@@ -25,7 +25,7 @@
       "rule": { "type": "fixed", "month": 1, "day": 6 },
       "valid_from": 2011,
       "valid_to": null,
-      "source": "Non-working Days Act of 18 January 1951; restored as a non-working day effective 2011 (2010 amendment)"
+      "source": "Non-working Days Act of 18 January 1951, restored as a non-working day effective 2011 (2010 amendment)"
     },
     {
       "id": "easter_sunday",
@@ -65,7 +65,7 @@
       "rule": { "type": "easter_offset", "offset": 49 },
       "valid_from": null,
       "valid_to": null,
-      "source": "Non-working Days Act of 18 January 1951 (Poland); 49 days (7 weeks) after Easter Sunday"
+      "source": "Non-working Days Act of 18 January 1951 (Poland) - 49 days (7 weeks) after Easter Sunday"
     },
     {
       "id": "corpus_christi",
@@ -73,7 +73,7 @@
       "rule": { "type": "easter_offset", "offset": 60 },
       "valid_from": null,
       "valid_to": null,
-      "source": "Non-working Days Act of 18 January 1951 (Poland); Thursday after Trinity Sunday, 60 days after Easter Sunday"
+      "source": "Non-working Days Act of 18 January 1951 (Poland) - Thursday after Trinity Sunday, 60 days after Easter Sunday"
     },
     {
       "id": "assumption_day",
@@ -105,7 +105,7 @@
       "rule": { "type": "fixed", "month": 12, "day": 24 },
       "valid_from": 2025,
       "valid_to": null,
-      "source": "Act of 6 December 2024 amending the Non-working Days Act (in force 1 February 2025; first non-working Christmas Eve 2025-12-24)"
+      "source": "Act of 6 December 2024 amending the Non-working Days Act (in force 1 February 2025, first non-working Christmas Eve 2025-12-24)"
     },
     {
       "id": "christmas_day",

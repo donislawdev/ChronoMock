@@ -23,9 +23,9 @@
       "id": "mlk_day",
       "name": { "en": "Birthday of Martin Luther King, Jr.", "local": "Birthday of Martin Luther King, Jr." },
       "rule": { "type": "nth_weekday", "month": 1, "weekday": "monday", "order": 3 },
-      "valid_from": null,
+      "valid_from": 1986,
       "valid_to": null,
-      "source": "5 U.S.C. 6103 (first observance year unconfirmed, so no valid_from is claimed)"
+      "source": "5 U.S.C. 6103, added by Public Law 98-144 of 1983-11-02, effective the first 1 January falling after a two-year period, so first observed on 1986-01-20"
     },
     {
       "id": "washingtons_birthday",

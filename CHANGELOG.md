@@ -16,9 +16,14 @@ Notable changes to Chrono Mock, newest first. The format follows
 
 ### Fixed
 
-- Two holiday entries in the United States calendars cited a source document that is not part of
-  this repository, which no reader could follow. They now state plainly that the first observance
-  year is unconfirmed.
+- **Martin Luther King Jr. Day was treated as a holiday in every year**, in both United States
+  calendars, so any date calculation reaching back before 1986 was wrong. The holiday was created
+  by Public Law 98-144, which took effect on the first 1 January after a two-year period, so it
+  now carries `valid_from: 1986` and the third Monday of January 1985 is an ordinary business day
+  again. The entry previously cited a source document that is not part of this repository, which
+  no reader could follow.
+- Four Polish holiday sources used a semicolon in prose, and the Polish strings file described
+  itself as the English one.
 
 ## [0.1.0] - 2026-09-04
 

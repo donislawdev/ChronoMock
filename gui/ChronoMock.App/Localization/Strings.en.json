@@ -1,4 +1,4 @@
-// English interface strings. Keys are stable and English; values are the display text.
+// English interface strings. Keys are stable and English, values are the display text.
 // A new language is a copy of this file named Strings.<culture>.json with the values
 // translated - no recompile (untouchable rule 15). JSON with // comments: this file is
 // DATA, read as data. It used to be XAML parsed by XamlReader, which instantiates types

@@ -428,6 +428,15 @@ mod tests {
         assert!(holiday_on(&d(2020, 6, 19), &fed).is_none());
         // MLK Day 2026 = the third Monday of January = 2026-01-19: an nth_weekday rule.
         assert_eq!(holiday_on(&d(2026, 1, 19), &fed).map(|h| h.id.as_str()), Some("mlk_day"));
+        // And it is a holiday from 1986 (valid_from:1986). Public Law 98-144 was signed in 1983 with
+        // effect from the first 1 January falling after a two-year period, so the third Monday of
+        // January 1986 (the 20th) is the first observance and the third Monday of January 1985 (the
+        // 21st) is an ordinary working day. Both calendars carry it, so both are asserted - the
+        // entry read "always" until 2026-09-07, which made every date back to year 1 wrong.
+        assert_eq!(holiday_on(&d(1986, 1, 20), &fed).map(|h| h.id.as_str()), Some("mlk_day"));
+        assert!(holiday_on(&d(1985, 1, 21), &fed).is_none());
+        assert_eq!(holiday_on(&d(1986, 1, 20), &bank).map(|h| h.id.as_str()), Some("mlk_day"));
+        assert!(holiday_on(&d(1985, 1, 21), &bank).is_none());
         // Banking observes a Sunday holiday on the Monday: New Year 2023-01-01 (Sun) -> Mon 2023-01-02.
         assert!(!is_business_day(&d(2023, 1, 2), &bank));
     }
