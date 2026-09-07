@@ -140,11 +140,11 @@ pub(crate) fn describe_warning(key: &str) -> String {
             "object waits are hooked but left real - an I/O or hardware timeout is not shortened"
         }
         "timer.multimedia_not_scaled" => "the multimedia timer (timeSetEvent) is observed but not scaled",
-        // Named the way the failure actually reaches a tester: the session looked like it worked and
-        // the target ignored it. The count in the observed list below says how hard the target leaned
-        // on this clock, which is what separates "read it twice at startup" from "paces itself on it".
-        "clock.timegettime_not_scaled" => {
-            "the target read the winmm clock timeGetTime, which is left real (ADR-2) - a target that paces itself from it keeps running at real speed no matter how fast the session is, and native game engines commonly do"
+        // The coverage has a cost, so it is named - the same shape as the QPC opt-in's warning. winmm is
+        // also the audio path, and the scheduler timeSetEvent stays untouched, so this is about a clock
+        // being read, never about when sound is queued.
+        "clock.timegettime_scaled_audio_may_shift" => {
+            "the winmm clock timeGetTime is being scaled with the rest of the duration axis, so a target that paces itself from it follows the session - but a media application that positions audio from that clock may drift"
         }
         "inheritance.ntcreateuserprocess_child_maybe_uncovered" => {
             "a child spawned directly via NtCreateUserProcess may not be covered"

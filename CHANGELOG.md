@@ -27,13 +27,15 @@ Notable changes to Chrono Mock, newest first. The format follows
   start point now carries a zone picker, offering this machine's zone first and the same closed list the
   substitution panel uses. The default is this machine, which is what the panel always did, so no existing
   calculation changes - it just says out loud which zone it was using.
-- **The audit now reports `timeGetTime`**, the winmm millisecond clock. Chrono Mock deliberately
-  leaves that clock running at real speed, because scaling it shifts audio and render timing. Until
-  now it left it silently: the channel was not watched at all, so a native target that paces itself
-  from `timeGetTime` ran at real speed under a fast session, was told the substitution worked, and
-  got no hint which clock had kept it there. Game engines commonly read this clock. A session now
-  counts every call to it and names it in the report. The clock itself is unchanged - still real,
-  still never scaled.
+- **`timeGetTime` now follows the session clock.** That winmm clock answers "milliseconds since the
+  system started" - the same question `GetTickCount` answers, and Chrono Mock has always scaled that one
+  under "scale duration too". Leaving the winmm one alone meant an application could see its own elapsed
+  time disagree with itself by the whole multiplier. Seven runtimes were measured before this changed:
+  it is never an application's main clock, but two game engines read it about 150 times a second, which
+  is once or twice per frame. It is scaled only when you ask for a scaled duration, and the report says
+  when a session leaned on it, because winmm is also the audio path and a media application that
+  positions sound from that clock can drift. The multimedia timer itself is untouched - reading a clock
+  schedules nothing.
 
 ### Fixed
 

@@ -14,10 +14,10 @@
 //! scaled by the multiplier only when scale_duration is set, and never below real speed - so the
 //! monotonic clock keeps advancing even when the wall clock is frozen (untouchable
 //! rule 3). `QueryPerformanceCounter` and `timeGetTime` are deliberately left real
-//! (ADR-2) - QPC scales only under its own opt-in, and `timeGetTime` is hooked to be
-//! COUNTED, never scaled, so the audit can name it instead of staying silent about a clock
-//! the target paced itself from. Once QUIT is hooked, the anchor math reads it through the
-//! trampoline so the scaled output never feeds back.
+//! (ADR-2) only as far as QPC goes, and QPC scales under its own opt-in. `timeGetTime` LEFT
+//! that exception on 2026-09-07: it returns the same milliseconds-since-boot as `GetTickCount`,
+//! so it rides the duration axis with it. Once QUIT is hooked, the anchor math reads it through
+//! the trampoline so the scaled output never feeds back.
 //!
 //! Under the SAME scale_duration flag the wait axis is scaled too (ADR-7): a wait's
 //! timeout is divided by the multiplier (real wait = requested / M), so a thread that
@@ -150,9 +150,10 @@ type SetTimerFn = unsafe extern "system" fn(*mut c_void, usize, u32, *const c_vo
 // All args are opaque to us (lpTimeProc is a callback or an event handle depending on fuEvent).
 type TimeSetEventFn = unsafe extern "system" fn(u32, u32, *const c_void, usize, u32) -> u32;
 // timeGetTime() -> DWORD (winmm): milliseconds since Windows started, the coarse clock a media stack or
-// a game engine reads after raising the timer resolution with timeBeginPeriod. ClockObserved: ADR-2
-// leaves the winmm family real, so the detour only COUNTS and returns the trampoline's value untouched.
-// Takes no argument, which is what makes counting it free of any judgement about what to scale.
+// a game engine reads after raising the timer resolution with timeBeginPeriod. Scaled on the duration
+// axis since 2026-09-07 - it is the same quantity as GetTickCount, and leaving it real made an
+// application's own duration axis disagree with itself by the multiplier. Takes no argument, so the
+// detour is a pure substitution with nothing to translate.
 type TimeGetTimeFn = unsafe extern "system" fn() -> u32;
 // connect(SOCKET s, const sockaddr *name, int namelen) -> int (ws2_32). SourceObserved: we only COUNT a
 // network connection (a suspected server time source) and forward every arg untouched. SOCKET is a
@@ -1302,22 +1303,32 @@ unsafe extern "system" fn h_timesetevent(
     o(delay, resolution, time_proc, user, event)
 }}
 
-// timeGetTime (winmm, ClockObserved): count the winmm millisecond clock and return the REAL value.
-// ADR-2 keeps the winmm family unscaled, so nothing here touches the number - the point is that the
-// audit can now say the target read it, which it could not while the channel was outside CHANNELS.
-// No guard (it cannot cascade onto another hooked export, it takes no argument) and no detached check
-// (we never modify the value, so detached state changes nothing), exactly like h_timesetevent.
+// timeGetTime (winmm, duration axis, partial ADR-2 reversal of 2026-09-07): the SAME scaled millisecond
+// count as GetTickCount, sharing its dur_tick_c0 base on purpose. Both exports answer "milliseconds since
+// the system started", so a target reading one against the other has to see them agree - they differ by
+// less than one tick in reality, and inventing that difference would need a second anchor for no gain.
+// Wraps at 2^32 ms like the real one, and sooner under acceleration, which is the honest behaviour of a
+// fast 32-bit counter.
 //
-// The None arm is unreachable - make_hook fills the slot from create_hook before any hook is enabled -
-// but a clock has no error value to return, so it hands back 0 rather than inventing a reading. A
-// target that somehow reached it would see the boot instant, not a plausible wrong time.
+// Detached or without a control block it returns the REAL value through the trampoline, so a target
+// reverts cleanly when the core goes away - the same shape as h_tick32. The None arm is unreachable
+// (make_hook fills the slot before any hook is enabled) and returns the real value too rather than
+// inventing a reading.
 unsafe extern "system" fn h_timegettime() -> u32 { unsafe {
-    let o = match O_TIMEGETTIME.get() {
-        Some(o) => o,
-        None => return 0,
-    };
+    let real = || O_TIMEGETTIME.get().map(|o| o()).unwrap_or(0);
     bump(IDX_TIMEGETTIME);
-    o()
+    if detached() {
+        return real();
+    }
+    match ctl_ptr() {
+        Some(p) => {
+            let (dur_tick_c0, _quit_c0, dur_q0, m) = read_dur(p as *const Ctl);
+            let fake = dur_tick_at(dur_tick_c0, dur_q0, m, real_quit()) as u32;
+            // Ownership checked after the read (R2-S6), exactly as the tick detours do.
+            if still_ours(p as *const Ctl) { fake } else { real() }
+        }
+        None => real(),
+    }
 }}
 
 // connect (ws2_32, SourceObserved): a network connection is a suspected SERVER time source, which no
@@ -1858,8 +1869,8 @@ unsafe fn install() -> Result<(), String> { unsafe {
     // Duration axis (opt-in). The anchor lives in the shared Ctl now: the core initialized it in
     // prepare (from the real GetTickCount64 / QUIT, before the target ran) and rebases it on every
     // set_multiplier, so a speed change never rewinds the axis (H-1). No per-process capture here - the
-    // detours read it under the same seqlock as the wall multiplier. QPC and timeGetTime stay real
-    // (ADR-2) - timeGetTime is hooked here only to be counted, so the audit can name it.
+    // detours read it under the same seqlock as the wall multiplier. QPC stays real unless its own
+    // opt-in asks otherwise (ADR-2) - timeGetTime rides this axis, sharing GetTickCount's base.
     if read_scale_dur(ctl as *const Ctl) {
         make_hook(&mut pending, k32, ntdll, IDX_GTC64, h_tick as *const () as *mut c_void, &O_TICK);
         make_hook(&mut pending, k32, ntdll, IDX_GTC, h_tick32 as *const () as *mut c_void, &O_TICK32);

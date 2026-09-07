@@ -212,7 +212,8 @@ pub const CH_NTCUP: u64 = 1 << 33;
 pub const CH_CONNECT: u64 = 1 << 34;
 /// Coverage bit: `QueryPerformanceCounter` is hooked (QPC axis, opt-in `scale_qpc`, ADR-2 reversal).
 pub const CH_QPC: u64 = 1 << 35;
-/// Coverage bit: `timeGetTime` is hooked (winmm millisecond clock, observed not scaled, ADR-2).
+/// Coverage bit: `timeGetTime` is hooked and SCALED on the duration axis (winmm millisecond clock,
+/// opt-in `scale_duration`, partial ADR-2 reversal of 2026-09-07).
 pub const CH_TIMEGETTIME: u64 = 1 << 36;
 
 /// Index of each channel into the `calls` array (== its position in `CHANNELS`).
@@ -294,16 +295,6 @@ pub enum ChannelCategory {
     /// timeGetTime), so it is left real. A separate category only so the audit can name the right
     /// reason (multimedia timer, not an object wait).
     TimerObserved,
-    /// Hooked and counted, but deliberately never scaled (ADR-2, observed): `timeGetTime` (winmm), the
-    /// millisecond clock a game engine or media stack reads to pace itself. ADR-2 leaves it real for the
-    /// same reason it leaves the rest of winmm real - scaling it shifts audio and render timing - and
-    /// that part does not change here. What changes is that leaving it real used to be SILENT: the
-    /// channel was outside this table, so a target could read it thousands of times a second and the
-    /// audit had no way to say so. The tester then read `works` beside a target that never sped up, with
-    /// nothing in the report pointing at the clock that kept it at real speed (untouchable rule 4, and
-    /// the same gap R2-S3 closed for QPC). Its own category rather than `TimerObserved`, because the
-    /// audit must name the right reason: a clock the target READ, not a timer it armed.
-    ClockObserved,
     /// Hooked and counted, but deliberately never injected into (ADR-3, observed): a DIRECT
     /// NtCreateUserProcess (a child spawned bypassing CreateProcessW/A). Self-injecting there means
     /// manipulating undocumented native structures, a crash risk for near-zero real value (real QA
@@ -390,11 +381,16 @@ pub struct ChannelDef {
 // count and warn honestly. The multimedia timer timeSetEvent (winmm, ADR-7 class C) joins the same
 // observed bucket under its own warning (timer.multimedia_not_scaled): scaling its uDelay would shift
 // audio/MIDI timing - the winmm cost ADR-2 avoids - so it is hooked, counted, and left real, never
-// scaled. The winmm CLOCK timeGetTime joins them on the same terms (ClockObserved, its own warning
-// clock.timegettime_not_scaled): ADR-2 still leaves it real, but no longer silently. A native target
-// that paces itself from timeGetTime - a game engine calling timeBeginPeriod and then reading
-// milliseconds is the ordinary case - used to run at real speed under a fast session with nothing in
-// the report naming the clock responsible, which is the shape of gap R2-S3 closed for QPC. A DIRECT NtCreateUserProcess (ntdll, ADR-3) - a child spawned bypassing
+// scaled. The winmm CLOCK timeGetTime does NOT stay with it: since 2026-09-07 it is SCALED on the
+// duration axis under `scale_duration`, a partial reversal of ADR-2 decided on measurement. It returns
+// milliseconds since boot, which is exactly what GetTickCount returns and what that flag already scales,
+// so leaving it real made one application see its own duration axis disagree with itself by the
+// multiplier - measured at x60: GetTickCount64 +12017 ms and timeGetTime +200 ms across one 200 ms
+// window. Seven runtimes were surveyed first (see CHANGELOG-DEV): it is never the dominant clock, but
+// two game engines read it about 150 times a second, which is per-frame, and a clock a target reads
+// every frame is one this tool covers. The winmm cost ADR-2 avoided is real but belongs mostly to
+// timeSetEvent, the audio SCHEDULER, which stays observed and untouched - reading a clock schedules
+// nothing. The residual risk is named by clock.timegettime_scaled_audio_may_shift. A DIRECT NtCreateUserProcess (ntdll, ADR-3) - a child spawned bypassing
 // CreateProcessW/A - joins the observed bucket under inheritance.ntcreateuserprocess_child_maybe_uncovered:
 // self-injecting there means manipulating undocumented native structures, a crash risk for near-zero
 // value (real targets spawn through CreateProcess*, which we do inject), so we count the direct call
@@ -444,7 +440,7 @@ pub const CHANNELS: [ChannelDef; CHANNEL_COUNT] = [
     ChannelDef { bit: CH_NTCUP, name: "NtCreateUserProcess", module: ChannelModule::Ntdll, category: ChannelCategory::SpawnObserved },
     ChannelDef { bit: CH_CONNECT, name: "connect", module: ChannelModule::Ws2_32, category: ChannelCategory::SourceObserved },
     ChannelDef { bit: CH_QPC, name: "QueryPerformanceCounter", module: ChannelModule::Kernel32, category: ChannelCategory::Qpc },
-    ChannelDef { bit: CH_TIMEGETTIME, name: "timeGetTime", module: ChannelModule::Winmm, category: ChannelCategory::ClockObserved },
+    ChannelDef { bit: CH_TIMEGETTIME, name: "timeGetTime", module: ChannelModule::Winmm, category: ChannelCategory::Duration },
 ];
 
 /// Marks the control block as one WE built. The section name is fixed and lives in a namespace any
