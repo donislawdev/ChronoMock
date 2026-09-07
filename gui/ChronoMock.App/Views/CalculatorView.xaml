@@ -369,8 +369,16 @@
             <TextBlock Text="{DynamicResource calc.custom_format}" Margin="{StaticResource SpaceXs}"
                        FontSize="{StaticResource FontSizeCaption}" FontWeight="SemiBold"
                        Foreground="{DynamicResource BrushTextSecondary}" />
+            <!-- PropertyChanged, unlike every other text field here, and the reason is this field's
+                 position: it is the last control in the result column, so there is nothing to move on
+                 to, and on LostFocus the mask reached the view model only if the tester happened to
+                 click elsewhere. Measured on the running window: the mask sat in the box and the result
+                 row stayed absent until focus left. A partly typed mask is always a valid mask (an
+                 unknown token run is emitted literally, it never fails), so every intermediate state is
+                 a meaningful preview rather than an error flash, and the 250 ms quiet period in the
+                 setter still costs one evaluation per pause, not one per keystroke. -->
             <ui:TextBox x:Name="CustomFormatBox" Margin="{StaticResource SpaceXs}" FontFamily="{StaticResource FontFamilyMono}"
-                        Text="{Binding CustomFormatMask, UpdateSourceTrigger=LostFocus}"
+                        Text="{Binding CustomFormatMask, UpdateSourceTrigger=PropertyChanged}"
                         PlaceholderText="{DynamicResource calc.custom_format_hint}"
                         ToolTip="{DynamicResource tip.custom_format}"
                         AutomationProperties.Name="{DynamicResource calc.custom_format}" />
