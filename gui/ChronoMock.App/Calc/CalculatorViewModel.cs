@@ -334,6 +334,7 @@ public sealed class CalculatorViewModel : ObservableObject
     private string _metadataLine = string.Empty;
     private string _error = string.Empty;
     private bool _hasError;
+    private bool _calendarMissing;
     private bool _hasResult;
     private bool _hasSignificance;
     private bool _canUseInSubstitution;
@@ -581,6 +582,12 @@ public sealed class CalculatorViewModel : ObservableObject
     public string MetadataLine { get => _metadataLine; private set => Set(ref _metadataLine, value); }
     public string Error { get => _error; private set => Set(ref _error, value); }
     public bool HasError { get => _hasError; private set => Set(ref _hasError, value); }
+
+    /// <summary>Whether the last evaluation failed for the one reason a control on this screen can fix:
+    /// a step counts business days and no calendar is picked. It marks the calendar picker, so the
+    /// sentence in the result column is not the only place the tester has to connect the two.</summary>
+    public bool CalendarMissing { get => _calendarMissing; private set => Set(ref _calendarMissing, value); }
+
     public bool HasResult { get => _hasResult; private set => Set(ref _hasResult, value); }
     public bool HasSignificance { get => _hasSignificance; private set => Set(ref _hasSignificance, value); }
 
@@ -1065,8 +1072,9 @@ public sealed class CalculatorViewModel : ObservableObject
         {
             if (!cts.IsCancellationRequested)
             {
-                Error = e.Message;
+                Error = DescribeCalcError(e.Message);
                 HasError = true;
+                CalendarMissing = IsNeedsCalendar(e.Message);
                 CanUseInSubstitution = false;
             }
         }
@@ -1078,10 +1086,36 @@ public sealed class CalculatorViewModel : ObservableObject
             {
                 Error = e.Message;
                 HasError = true;
+                CalendarMissing = false;
                 CanUseInSubstitution = false;
             }
         }
     }
+
+    /// <summary>The engine's stable key for "this step counts business days and you gave me no calendar".
+    /// It travels inside the stderr sentence rather than as a field of its own, which is what the calc
+    /// surface has always done (docs/08 section 10 says so in as many words), and a test in
+    /// <c>crates/cli/src/calc.rs</c> holds the engine to carrying it.</summary>
+    internal const string NeedsCalendarKey = "calc.needs_calendar";
+
+    /// <summary>Whether an engine failure is the missing-calendar one. Keyed on the stable key alone, never
+    /// on the prose around it, so rewording the engine's sentence cannot quietly unmark the picker.</summary>
+    internal static bool IsNeedsCalendar(string message)
+        => message.Contains(NeedsCalendarKey, StringComparison.Ordinal);
+
+    /// <summary>What the tester reads when the engine refuses. The engine writes for the command line, so
+    /// its sentence names a flag ("pass --calendar") that this screen has no way to pass - here the same
+    /// condition is stated as the control that fixes it. Any other failure is passed through verbatim
+    /// rather than smoothed into a generic apology: an untranslated sentence is worse than jargon only
+    /// when it hides something, and this one still says what happened (rule 6).
+    /// <para>
+    /// One key, not a table, and deliberately so. The rest of the calc errors carry DATA in their text
+    /// (which step, which year range) that no key alone can reproduce, so translating them properly is a
+    /// structured-error change to the calc surface, not a lookup. This one needs no data: whichever step
+    /// asked for business days, the answer is the same picker.
+    /// </para></summary>
+    internal static string DescribeCalcError(string message)
+        => IsNeedsCalendar(message) ? Tr("calc.err.needs_calendar") : message;
 
     private void ApplyResult(CalcResult result)
     {
@@ -1092,12 +1126,14 @@ public sealed class CalculatorViewModel : ObservableObject
         {
             Error = "calc returned an incomplete moment";
             HasError = true;
+            CalendarMissing = false;
             CanUseInSubstitution = false;
             return;
         }
 
         HasError = false;
         Error = string.Empty;
+        CalendarMissing = false;
 
         var t = moment.Iso.IndexOf('T', StringComparison.Ordinal);
         ResultDate = t >= 0 ? moment.Iso[..t] : moment.Iso;
@@ -1149,6 +1185,7 @@ public sealed class CalculatorViewModel : ObservableObject
     {
         HasError = false;
         Error = string.Empty;
+        CalendarMissing = false;
         HasResult = false;
         CanUseInSubstitution = false;
         ResultWeekday = string.Empty;

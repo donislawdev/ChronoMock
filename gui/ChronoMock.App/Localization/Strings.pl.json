@@ -305,6 +305,11 @@
   "calc.cal.us_federal": "USA federalny",
   "calc.cal.pl": "Polska",
 
+  // The engine writes its refusals for the command line, so its own sentence here names a flag
+  // ("pass --calendar") that this screen cannot pass. Said instead as the control that fixes it, and
+  // the field named in words rather than only marked, because a colour alone is not a message.
+  "calc.err.needs_calendar": "Któryś krok liczy dni robocze, a to wymaga kalendarza świąt - wybierz go w polu Kalendarz.",
+
   // Snap-step targets (G3c-1): the period boundary the step jumps to. Tokens mirror the snap flag.
   "calc.snap.som": "Początek miesiąca",
   "calc.snap.eom": "Koniec miesiąca",

@@ -218,15 +218,35 @@
               <TextBlock Text="{DynamicResource calc.field_calendar}" VerticalAlignment="Center"
                          FontSize="{StaticResource FontSizeCaption}"
                          Foreground="{DynamicResource BrushTextSecondary}" />
-              <ComboBox x:Name="CalendarBox" ItemsSource="{Binding Calendars}" SelectedItem="{Binding SelectedCalendar}"
-                        ItemContainerStyle="{StaticResource LabelKeyComboItem}" ToolTip="{DynamicResource tip.calc_calendar}"
-                        Margin="{StaticResource SpaceSm}" VerticalAlignment="Center" MinWidth="140">
-                <ComboBox.ItemTemplate>
-                  <DataTemplate>
-                    <TextBlock Text="{Binding LabelKey, Converter={StaticResource KeyToText}}" />
-                  </DataTemplate>
-                </ComboBox.ItemTemplate>
-              </ComboBox>
+              <!-- The mark that goes with the sentence in the result column. The engine refuses a
+                   business-day step when no calendar is picked, and the picker is in this column while
+                   the refusal is read in the other one, so the field says so itself. The halo is always
+                   in the tree and only changes colour, so turning it on never moves the row. -->
+              <Border x:Name="CalendarMark" Margin="{StaticResource SpaceSm}" Padding="{StaticResource SpaceXs}"
+                      CornerRadius="{StaticResource RadiusMd}"
+                      BorderThickness="{StaticResource StrokeThinEdge}">
+                <Border.Style>
+                  <Style TargetType="Border">
+                    <!-- Not a colour decision: the absence of one, so there is no token to name. -->
+                    <Setter Property="BorderBrush" Value="Transparent" />
+                    <Style.Triggers>
+                      <DataTrigger Binding="{Binding CalendarMissing}" Value="True">
+                        <Setter Property="BorderBrush" Value="{DynamicResource BrushStatusFails}" />
+                      </DataTrigger>
+                    </Style.Triggers>
+                  </Style>
+                </Border.Style>
+                <ComboBox x:Name="CalendarBox" ItemsSource="{Binding Calendars}" SelectedItem="{Binding SelectedCalendar}"
+                          ItemContainerStyle="{StaticResource LabelKeyComboItem}" ToolTip="{DynamicResource tip.calc_calendar}"
+                          VerticalAlignment="Center" MinWidth="140"
+                          AutomationProperties.Name="{DynamicResource calc.field_calendar}">
+                  <ComboBox.ItemTemplate>
+                    <DataTemplate>
+                      <TextBlock Text="{Binding LabelKey, Converter={StaticResource KeyToText}}" />
+                    </DataTemplate>
+                  </ComboBox.ItemTemplate>
+                </ComboBox>
+              </Border>
             </StackPanel>
           </StackPanel>
         </Border>

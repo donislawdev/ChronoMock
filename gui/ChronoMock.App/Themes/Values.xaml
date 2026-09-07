@@ -32,6 +32,9 @@
   <CornerRadius x:Key="RadiusSm">4</CornerRadius>
   <CornerRadius x:Key="RadiusMd">8</CornerRadius>
   <sys:Double x:Key="StrokeThin">1</sys:Double>
+  <!-- The same one-pixel edge as a Thickness, for a BorderThickness. WPF does not convert a Double to a
+       Thickness through a resource reference, so the two spellings of one decision both have to exist. -->
+  <Thickness x:Key="StrokeThinEdge">1</Thickness>
 
   <!-- Layout cap: the coverage audit list scrolls inside this height instead of pushing the in-flight
        controls off-screen. A named cap, not free geometry (zasady/13 2.1); the whole panel also scrolls,

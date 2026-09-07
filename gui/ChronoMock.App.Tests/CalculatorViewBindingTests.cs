@@ -70,6 +70,43 @@ public class CalculatorViewBindingTests
         Assert.Equal(string.Empty, cleared);
     }
 
+    [Fact]
+    public void The_calendar_picker_is_marked_when_the_engine_refuses_for_want_of_a_calendar()
+    {
+        // The other half of the missing-calendar fix. CalculatorErrorTests proves the sentence, this
+        // proves the mark, and the two are bound to the same name below so neither can drift alone.
+        var (quiet, marked, fails) = WpfTestHost.InvokeSettled(() =>
+        {
+            var view = new CalculatorView { DataContext = new CalendarMissingStub { CalendarMissing = false } };
+            Layout(view);
+            var quietBrush = ((Border)view.FindName("CalendarMark")).BorderBrush;
+
+            view.DataContext = new CalendarMissingStub { CalendarMissing = true };
+            Layout(view);
+            var markedBrush = ((Border)view.FindName("CalendarMark")).BorderBrush;
+
+            return (quietBrush, markedBrush, view.TryFindResource("BrushStatusFails"));
+        });
+
+        Assert.NotNull(fails);
+        Assert.Same(fails, marked);
+        Assert.NotSame(fails, quiet);
+    }
+
+    /// <summary>Stands in for the view model so the trigger can be driven without running the engine. The
+    /// property name is tied to the real one by <c>nameof</c> in the assertion below, so renaming the view
+    /// model's flag breaks the build here rather than leaving a green test over a dead trigger.</summary>
+    private sealed class CalendarMissingStub
+    {
+        public bool CalendarMissing { get; init; }
+    }
+
+    [Fact]
+    public void The_mark_is_driven_by_the_view_models_own_property_name()
+    {
+        Assert.Equal(nameof(CalculatorViewModel.CalendarMissing), nameof(CalendarMissingStub.CalendarMissing));
+    }
+
     /// <summary>A calculator screen wired to a view model that can never start a process: the path callback
     /// hands out a name that does not exist, and nothing here opens the first-reveal gate that would make
     /// the mask setter schedule a recompute.</summary>
@@ -78,13 +115,17 @@ public class CalculatorViewBindingTests
         var client = new CalcClient(() => Path.Combine(Path.GetTempPath(), "chrono-does-not-exist-here.exe"));
         var vm = new CalculatorViewModel(client);
         var view = new CalculatorView { DataContext = vm };
+        Layout(view);
+        return (view, vm);
+    }
 
-        // Lay the control out so its template is applied and every binding is attached. An unmeasured
-        // control can leave bindings unattached, which would make the assertion above pass or fail for
-        // the wrong reason (the same trap TargetBoxTests documents for an unshown Window).
+    /// <summary>Lay the control out so its template is applied and every binding is attached. An unmeasured
+    /// control can leave bindings unattached, which would make an assertion pass or fail for the wrong
+    /// reason (the same trap TargetBoxTests documents for an unshown Window).</summary>
+    private static void Layout(FrameworkElement view)
+    {
         view.Measure(new Size(1600, 1400));
         view.Arrange(new Rect(0, 0, 1600, 1400));
         view.UpdateLayout();
-        return (view, vm);
     }
 }
