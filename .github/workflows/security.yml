@@ -1,0 +1,100 @@
+# Two gates that block a merge, and neither of them needs a cargo output.
+#
+# That is why they live here rather than in ci.yml. The header of that file already names this as
+# the split worth making: a second job running only the checks that need nothing built, in
+# parallel. Both of these run on Linux, where the scanner is at home and where a Windows runner
+# would buy nothing - they read source and metadata, never a binary.
+#
+# 🔴 THE VERDICT IS NOT THE TOOL'S EXIT CODE, in either job. Both scripts read the machine-readable
+# report and decide, and both treat a report they cannot read as a failure. The reasons are written
+# at the top of each script, and they are not stylistic - measured on 2026-09-08 with semgrep
+# 1.175.0, `semgrep scan` pointed at a config that does not exist exits ZERO and writes a JSON file
+# saying nothing was found. Every signal a caller would normally trust says the code is clean.
+name: Security
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: security-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  semgrep:
+    name: Semgrep
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+
+      # Pinned to the version the numbers in semgrep_gate.py were measured with. A scanner that
+      # updates itself changes the verdict without anybody changing the code, which is the one
+      # thing a merge gate must not do. Bumping this is a deliberate act, and it means measuring
+      # again - `p/default` against this tree, and against the release workflows as they were
+      # before commit 3b94c4e, where it must still report six.
+      - name: Install the scanner
+        run: pip install semgrep==1.175.0
+
+      - name: Scan
+        run: |
+          set +e
+          semgrep scan --config p/default --metrics=off --json --output semgrep.json
+          code=$?
+          set -e
+          echo "semgrep exit code: $code"
+          # Measured: this is zero whatever the scan finds, and zero for a config that does not
+          # exist. So it decides nothing and the verdict belongs to the script below. A code above
+          # one is still treated as a hard failure, in case a later version starts using it.
+          if [ "$code" -gt 1 ]; then exit "$code"; fi
+
+      # Blocks on ERROR, HIGH and CRITICAL, on a scan error, and on a report that read no files.
+      - name: Verdict
+        run: python .github/scripts/semgrep_gate.py semgrep.json
+
+  dependency-review:
+    name: Dependency review
+    # The data behind both steps is a comparison of two commits of a pull request, so there is
+    # nothing to ask on a push to the branch itself.
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # The vulnerability half, which this action does well. `comment-summary-in-pr: never` is
+      # also its default today, and it is written out anyway: a default is somebody else's
+      # decision, and this one is ours. Nothing this job learns is posted onto the pull request -
+      # it is in the log, and a red check is the message.
+      - name: Dependencies with a known vulnerability
+        uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
+        with:
+          comment-summary-in-pr: never
+          fail-on-severity: low
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+
+      # The licence half, which the action documents that it will not do: it reports a licence it
+      # could not determine and passes anyway. For a GPL-3.0 project that ships a binary, "we could
+      # not tell" is the one answer nobody can act on, so it blocks here. The allowed list is read
+      # out of deny.toml rather than repeated, so this gate and `cargo deny check licenses` cannot
+      # come to disagree.
+      - name: Licences of what this pull request adds
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          gh api "repos/$REPO/dependency-graph/compare/$BASE...$HEAD" > deps.json
+          python .github/scripts/dependency_gate.py deps.json
