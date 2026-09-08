@@ -72,7 +72,8 @@ use chrono_ctl::{
     IDX_GTZI, IDX_NTDELAY, IDX_NTQSI, IDX_NTQST, IDX_QUIT, IDX_SLEEP, IDX_SLEEPEX, IDX_STSL,
     IDX_STSLEX, IDX_FTLFT, IDX_LFTFT, IDX_TLTST, IDX_TLTSTEX, IDX_WFSO, IDX_WFSOEX, IDX_WFMO,
     IDX_WFMOEX, IDX_SOAW, IDX_MWFMO, IDX_MWFMOEX, IDX_SWT, IDX_SWTEX, IDX_SETTIMER, IDX_TIMESETEVENT,
-    IDX_TPTIMER, IDX_TPTIMEREX, IDX_NTCUP, IDX_CONNECT, IDX_QPC, IDX_TIMEGETTIME,
+    IDX_TPTIMER, IDX_TPTIMEREX, IDX_NTCUP, IDX_CONNECT, IDX_QPC, IDX_TIMEGETTIME, IDX_SCVSRW,
+    IDX_SCVCS, IDX_WOA, IDX_WSAWFME,
 };
 use minhook::MinHook;
 use windows::core::{s, PCSTR, PCWSTR};
@@ -133,6 +134,19 @@ type SoawFn = unsafe extern "system" fn(HANDLE, HANDLE, u32, i32) -> u32;
 // fWaitAll, args reordered (MS Learn, winuser.h). Both user32, counted but never scaled.
 type MwfmoFn = unsafe extern "system" fn(u32, *const HANDLE, i32, u32, u32) -> u32;
 type MwfmoexFn = unsafe extern "system" fn(u32, *const HANDLE, u32, u32, u32) -> u32;
+// The four waits that were neither scaled nor counted until 2026-09-08 - a target that blocks on any
+// of them was simply invisible to the audit, which is the silent non-coverage the product rules out.
+// Signatures from MS Learn (synchapi.h, winsock2.h), argument shapes forwarded untouched:
+//   SleepConditionVariableSRW(PCONDITION_VARIABLE, PSRWLOCK, DWORD dwMilliseconds, ULONG Flags) -> BOOL
+//   SleepConditionVariableCS(PCONDITION_VARIABLE, PCRITICAL_SECTION, DWORD dwMilliseconds) -> BOOL
+//   WaitOnAddress(volatile VOID*, PVOID, SIZE_T, DWORD dwMilliseconds) -> BOOL
+//   WSAWaitForMultipleEvents(DWORD, const WSAEVENT*, BOOL, DWORD dwTimeout, BOOL fAlertable) -> DWORD
+// The three pointer parameters are opaque here and never dereferenced. `SIZE_T` is pointer-wide, so
+// it is `usize` and differs between the two targets - which is why both are built.
+type ScvsrwFn = unsafe extern "system" fn(*mut c_void, *mut c_void, u32, u32) -> i32;
+type ScvcsFn = unsafe extern "system" fn(*mut c_void, *mut c_void, u32) -> i32;
+type WoaFn = unsafe extern "system" fn(*const c_void, *const c_void, usize, u32) -> i32;
+type WsawfmeFn = unsafe extern "system" fn(u32, *const HANDLE, i32, u32, i32) -> u32;
 // SetWaitableTimer(hTimer, *lpDueTime, lPeriod, pfnCompletionRoutine, lpArg, fResume) -> BOOL. The
 // due time is a 100 ns LARGE_INTEGER (positive = absolute FILETIME instant, negative = relative) -
 // lPeriod is milliseconds (0 = one-shot). SetWaitableTimerEx drops fResume and adds a REASON_CONTEXT
@@ -242,6 +256,10 @@ static O_WFMOEX: OnceLock<WfmoexFn> = OnceLock::new();
 static O_SOAW: OnceLock<SoawFn> = OnceLock::new();
 static O_MWFMO: OnceLock<MwfmoFn> = OnceLock::new();
 static O_MWFMOEX: OnceLock<MwfmoexFn> = OnceLock::new();
+static O_SCVSRW: OnceLock<ScvsrwFn> = OnceLock::new();
+static O_SCVCS: OnceLock<ScvcsFn> = OnceLock::new();
+static O_WOA: OnceLock<WoaFn> = OnceLock::new();
+static O_WSAWFME: OnceLock<WsawfmeFn> = OnceLock::new();
 static O_SWT: OnceLock<SwtFn> = OnceLock::new();
 static O_SWTEX: OnceLock<SwtexFn> = OnceLock::new();
 static O_SETTIMER: OnceLock<SetTimerFn> = OnceLock::new();
@@ -432,7 +450,14 @@ static INSTALL_DONE: AtomicBool = AtomicBool::new(false);
 const USER32_LATE: u64 =
     CHANNELS[IDX_MWFMO].bit | CHANNELS[IDX_MWFMOEX].bit | CHANNELS[IDX_SETTIMER].bit;
 const WINMM_LATE: u64 = CHANNELS[IDX_TIMESETEVENT].bit | CHANNELS[IDX_TIMEGETTIME].bit;
-const WS2_32_LATE: u64 = CHANNELS[IDX_CONNECT].bit;
+/// ws2_32's two late channels sit behind DIFFERENT gates, which is why they are named apart. `connect`
+/// is watched in every session (the network is a suspected time source regardless of the duration
+/// axis), while the socket wait rides the wait family's `scale_duration` opt-in like every other wait.
+/// Folding them into one constant would make a session that never asked for the duration axis install
+/// a wait channel anyway, the exact thing the `wanted_late` gate exists to prevent.
+const WS2_32_CONNECT_LATE: u64 = CHANNELS[IDX_CONNECT].bit;
+const WS2_32_WAIT_LATE: u64 = CHANNELS[IDX_WSAWFME].bit;
+const WS2_32_LATE: u64 = WS2_32_CONNECT_LATE | WS2_32_WAIT_LATE;
 
 /// Every channel that lives in a module which may show up after `DllMain`.
 const LATE_CHANNELS: u64 = USER32_LATE | WINMM_LATE | WS2_32_LATE;
@@ -541,7 +566,14 @@ unsafe fn late_scan() { unsafe {
     if todo & WS2_32_LATE != 0
         && let Some(m) = pin_module(s!("ws2_32.dll"))
     {
-        late_one(&mut newly, m, IDX_CONNECT, h_connect as *const () as *mut c_void, &O_CONNECT);
+        // Per bit here, unlike the two blocks above, because these two channels answer to different
+        // opt-ins - so "the module arrived" is not on its own a reason to install both.
+        if todo & WS2_32_CONNECT_LATE != 0 {
+            late_one(&mut newly, m, IDX_CONNECT, h_connect as *const () as *mut c_void, &O_CONNECT);
+        }
+        if todo & WS2_32_WAIT_LATE != 0 {
+            late_one(&mut newly, m, IDX_WSAWFME, h_wsawfme as *const () as *mut c_void, &O_WSAWFME);
+        }
     }
     if newly == 0 {
         return;
@@ -1403,6 +1435,64 @@ unsafe extern "system" fn h_mwfmoex(
     o(count, handles, ms, wake_mask, flags)
 }}
 
+// The four waits added on 2026-09-08. Same shape as the family above and for the same reason: a
+// timeout on a condition variable, an address or a socket event can be a real one, so the value is
+// forwarded untouched and only the fact of the call is recorded. What changes is that a target which
+// blocks on one of these is no longer invisible to the audit.
+//
+// `enter_observed_wait` matters more here than anywhere else in this family, because these DO cascade
+// into it: the documentation says WSAWaitForMultipleEvents is implemented on WaitForMultipleObjectsEx,
+// and the condition-variable waits reach the address wait underneath. Without the thread-local guard
+// one blocked thread would be counted two or three times over.
+
+unsafe extern "system" fn h_scvsrw(cv: *mut c_void, lock: *mut c_void, ms: u32, flags: u32) -> i32 { unsafe {
+    let o = match O_SCVSRW.get() {
+        Some(o) => o,
+        None => return 0, // no trampoline: report the failure, never claim the sleep succeeded
+    };
+    let _g = enter_observed_wait(IDX_SCVSRW);
+    o(cv, lock, ms, flags)
+}}
+
+unsafe extern "system" fn h_scvcs(cv: *mut c_void, cs: *mut c_void, ms: u32) -> i32 { unsafe {
+    let o = match O_SCVCS.get() {
+        Some(o) => o,
+        None => return 0, // no trampoline: report the failure, never claim the sleep succeeded
+    };
+    let _g = enter_observed_wait(IDX_SCVCS);
+    o(cv, cs, ms)
+}}
+
+unsafe extern "system" fn h_woa(
+    address: *const c_void,
+    compare: *const c_void,
+    size: usize,
+    ms: u32,
+) -> i32 { unsafe {
+    let o = match O_WOA.get() {
+        Some(o) => o,
+        None => return 0, // no trampoline: report the failure, never claim the wait succeeded
+    };
+    let _g = enter_observed_wait(IDX_WOA);
+    o(address, compare, size, ms)
+}}
+
+unsafe extern "system" fn h_wsawfme(
+    count: u32,
+    events: *const HANDLE,
+    wait_all: i32,
+    ms: u32,
+    alertable: i32,
+) -> u32 { unsafe {
+    let o = match O_WSAWFME.get() {
+        Some(o) => o,
+        // WSA_WAIT_FAILED is WAIT_FAILED (0xFFFFFFFF) - fail the wait, never claim it was signalled.
+        None => return WAIT_FAILED.0,
+    };
+    let _g = enter_observed_wait(IDX_WSAWFME);
+    o(count, events, wait_all, ms, alertable)
+}}
+
 // --- Settable timers (ADR-7 class C) -------------------------------------------
 // SetWaitableTimer(Ex) ask the kernel to signal a timer after a delay or at an instant. Unlike the
 // object waits (class B, left real), a timer is pure time-keeping, so under scale_duration we SCALE
@@ -1981,6 +2071,17 @@ unsafe fn make_hook<T: Copy>(
                 return;
             }
         },
+        // kernelbase is present in every Win32 process (kernel32 is built on it), so this lookup is
+        // not the lazy "maybe absent" case the three above are - it is where the exports actually
+        // live. A failure here is a real gap, and the audit reports it as one rather than dropping
+        // the channel, because the target certainly CAN call these.
+        ChannelModule::KernelBase => match GetModuleHandleA(s!("kernelbase.dll")) {
+            Ok(h) => h,
+            Err(_) => {
+                log(&format!("[chrono_hook] kernelbase not loaded, skipping: {}", ch.name));
+                return;
+            }
+        },
     };
     let cname = match CString::new(ch.name) {
         Ok(c) => c,
@@ -2131,6 +2232,15 @@ unsafe fn install() -> Result<(), String> { unsafe {
         make_hook(&mut pending, k32, ntdll, IDX_SOAW, h_soaw as *const () as *mut c_void, &O_SOAW);
         make_hook(&mut pending, k32, ntdll, IDX_MWFMO, h_mwfmo as *const () as *mut c_void, &O_MWFMO);
         make_hook(&mut pending, k32, ntdll, IDX_MWFMOEX, h_mwfmoex as *const () as *mut c_void, &O_MWFMOEX);
+        // The four waits that used to be neither scaled nor observed. They ride the same opt-in as the
+        // rest of the wait family: a session that did not ask for the duration axis is not watching
+        // waits at all. Three resolve in kernelbase and the socket one in ws2_32, which is optional and
+        // therefore also in the late scan below (ADR-10) - without that entry this would repeat exactly
+        // the gap ADR-10 was written to close.
+        make_hook(&mut pending, k32, ntdll, IDX_SCVSRW, h_scvsrw as *const () as *mut c_void, &O_SCVSRW);
+        make_hook(&mut pending, k32, ntdll, IDX_SCVCS, h_scvcs as *const () as *mut c_void, &O_SCVCS);
+        make_hook(&mut pending, k32, ntdll, IDX_WOA, h_woa as *const () as *mut c_void, &O_WOA);
+        make_hook(&mut pending, k32, ntdll, IDX_WSAWFME, h_wsawfme as *const () as *mut c_void, &O_WSAWFME);
         make_hook(&mut pending, k32, ntdll, IDX_SWT, h_swt as *const () as *mut c_void, &O_SWT);
         make_hook(&mut pending, k32, ntdll, IDX_SWTEX, h_swtex as *const () as *mut c_void, &O_SWTEX);
         make_hook(&mut pending, k32, ntdll, IDX_SETTIMER, h_settimer as *const () as *mut c_void, &O_SETTIMER);
@@ -2214,7 +2324,8 @@ unsafe fn install() -> Result<(), String> { unsafe {
     // `INSTALL_DONE` is released LAST, after the mask store above, and that ordering is the whole
     // point of the flag (R1): until it is set the watcher will not touch the Cov, so a late bit
     // cannot be ORed in and then wiped by our own store.
-    let wanted_late = if read_scale_dur(ctl as *const Ctl) { LATE_CHANNELS } else { WS2_32_LATE };
+    let wanted_late =
+        if read_scale_dur(ctl as *const Ctl) { LATE_CHANNELS } else { WS2_32_CONNECT_LATE };
     LATE_TODO.store(wanted_late & !pending, Ordering::Relaxed);
     INSTALL_DONE.store(true, Ordering::Release);
 

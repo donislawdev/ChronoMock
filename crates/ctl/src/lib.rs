@@ -215,6 +215,14 @@ pub const CH_QPC: u64 = 1 << 35;
 /// Coverage bit: `timeGetTime` is hooked and SCALED on the duration axis (winmm millisecond clock,
 /// opt-in `scale_duration`, partial ADR-2 reversal of 2026-09-07).
 pub const CH_TIMEGETTIME: u64 = 1 << 36;
+/// Coverage bit: `SleepConditionVariableSRW` is hooked (condition-variable wait, observed not scaled).
+pub const CH_SCVSRW: u64 = 1 << 37;
+/// Coverage bit: `SleepConditionVariableCS` is hooked (condition-variable wait, observed not scaled).
+pub const CH_SCVCS: u64 = 1 << 38;
+/// Coverage bit: `WaitOnAddress` is hooked (address wait, observed not scaled).
+pub const CH_WOA: u64 = 1 << 39;
+/// Coverage bit: `WSAWaitForMultipleEvents` is hooked (socket event wait, observed not scaled).
+pub const CH_WSAWFME: u64 = 1 << 40;
 
 /// Index of each channel into the `calls` array (== its position in `CHANNELS`).
 pub const IDX_GSTAFT: usize = 0;
@@ -254,11 +262,15 @@ pub const IDX_NTCUP: usize = 33;
 pub const IDX_CONNECT: usize = 34;
 pub const IDX_QPC: usize = 35;
 pub const IDX_TIMEGETTIME: usize = 36;
+pub const IDX_SCVSRW: usize = 37;
+pub const IDX_SCVCS: usize = 38;
+pub const IDX_WOA: usize = 39;
+pub const IDX_WSAWFME: usize = 40;
 
-/// Number of channels tracked (wall-clock, session zone, duration axis, object/message waits,
-/// settable timers, multimedia timer, thread-pool timers, direct process creation, network connect,
-/// the QPC axis, the winmm millisecond clock).
-pub const CHANNEL_COUNT: usize = 37;
+/// Number of channels tracked (wall-clock, session zone, duration axis, object/message/condition/
+/// address/socket waits, settable timers, multimedia timer, thread-pool timers, direct process
+/// creation, network connect, the QPC axis, the winmm millisecond clock).
+pub const CHANNEL_COUNT: usize = 41;
 
 /// Which system module exports a channel (the hook resolves it there).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -271,9 +283,19 @@ pub enum ChannelModule {
     /// winmm.dll - the multimedia timer timeSetEvent. Often absent (a console/service target rarely
     /// loads winmm) - resolved lazily like User32, honest partial if absent, never force-loaded.
     Winmm,
-    /// ws2_32.dll - the sockets `connect`. Often absent (a target that never touches the network never
-    /// loads it) - resolved lazily like Winmm, honest partial if absent, never force-loaded.
+    /// ws2_32.dll - the sockets `connect` and `WSAWaitForMultipleEvents`. Often absent (a target that
+    /// never touches the network never loads it) - resolved lazily like Winmm, honest partial if
+    /// absent, never force-loaded.
     Ws2_32,
+    /// kernelbase.dll - the synchronisation waits that kernel32 does not export itself.
+    ///
+    /// Not an optional module in the sense the three above are: every Win32 process has it, because
+    /// kernel32 is built on it. It is a separate entry because of where the EXPORTS are, measured with
+    /// `dumpbin` on this machine rather than taken from the documentation, which lists both DLLs for
+    /// all three: kernel32 forwards `SleepConditionVariableSRW` and `SleepConditionVariableCS` to the
+    /// api-set and does not export `WaitOnAddress` at all, while kernelbase exports all three for real.
+    /// Hooking where the code actually lives also catches a caller that resolved the api-set directly.
+    KernelBase,
 }
 
 /// What kind of time a channel carries. The duration axis and the object-wait observation
@@ -441,6 +463,10 @@ pub const CHANNELS: [ChannelDef; CHANNEL_COUNT] = [
     ChannelDef { bit: CH_CONNECT, name: "connect", module: ChannelModule::Ws2_32, category: ChannelCategory::SourceObserved },
     ChannelDef { bit: CH_QPC, name: "QueryPerformanceCounter", module: ChannelModule::Kernel32, category: ChannelCategory::Qpc },
     ChannelDef { bit: CH_TIMEGETTIME, name: "timeGetTime", module: ChannelModule::Winmm, category: ChannelCategory::Duration },
+    ChannelDef { bit: CH_SCVSRW, name: "SleepConditionVariableSRW", module: ChannelModule::KernelBase, category: ChannelCategory::WaitObserved },
+    ChannelDef { bit: CH_SCVCS, name: "SleepConditionVariableCS", module: ChannelModule::KernelBase, category: ChannelCategory::WaitObserved },
+    ChannelDef { bit: CH_WOA, name: "WaitOnAddress", module: ChannelModule::KernelBase, category: ChannelCategory::WaitObserved },
+    ChannelDef { bit: CH_WSAWFME, name: "WSAWaitForMultipleEvents", module: ChannelModule::Ws2_32, category: ChannelCategory::WaitObserved },
 ];
 
 /// Marks the control block as one WE built. The section name is fixed and lives in a namespace any
@@ -461,7 +487,11 @@ pub const CTL_MAGIC: u64 = 0x4348_524F_4E4F_4354; // "CHRONOCT"
 ///
 /// 3: `Cov` gained `late_installed`, which widens it by 8 bytes and moves every slot after the first
 /// for the same reason.
-pub const CTL_LAYOUT_VERSION: u32 = 3;
+///
+/// 4: `CHANNEL_COUNT` grew from 37 to 41 for the four waits that were neither scaled nor counted
+/// (the condition-variable pair, `WaitOnAddress`, `WSAWaitForMultipleEvents`), which widens `calls`
+/// and so moves the slots again.
+pub const CTL_LAYOUT_VERSION: u32 = 4;
 
 /// Session-wide control block in `Local\ChronoCtl`. `#[repr(C)]` so both processes
 /// agree on the layout. Coverage lives here too, one `Cov` per registry slot, so a

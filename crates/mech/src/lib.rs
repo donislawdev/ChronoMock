@@ -610,7 +610,10 @@ unsafe fn gather_coverage(
             // the common case, are already loaded in our DllMain - only a target that loads the module
             // dynamically after startup and then uses the channel would slip past here (documented).
             match ch.module {
-                ChannelModule::Kernel32 | ChannelModule::Ntdll => {
+                // kernelbase sits with kernel32 and ntdll rather than with the optional three: every
+                // Win32 process has it, so a channel of its that did not install is a real gap and has
+                // to be reported as one.
+                ChannelModule::Kernel32 | ChannelModule::Ntdll | ChannelModule::KernelBase => {
                     out.uncovered.push(ch.name.to_string())
                 }
                 ChannelModule::User32 | ChannelModule::Winmm | ChannelModule::Ws2_32 => {}
