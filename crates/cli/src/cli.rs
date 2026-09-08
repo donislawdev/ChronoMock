@@ -35,6 +35,14 @@ const BUNDLED: [(&str, &str); 2] = [
 /// with the files at the package root (`packaging/build-dist.ps1`).
 const LICENSE_SEARCH_DEPTH: usize = 3;
 
+/// The register of everything shipped that somebody else wrote, compiled INTO the binary.
+///
+/// The same file the release SBOM is generated from and the same one `THIRD-PARTY-NOTICES.md` is
+/// checked against, so the three cannot describe different builds. Embedded rather than read from
+/// disk for the reason the whole product exists offline: a user with no internet, and a copy of
+/// `chrono.exe` taken out of its folder, can still ask what is inside it.
+const COMPONENT_REGISTER: &str = include_str!("../../../packaging/components.json");
+
 /// The single line `chrono version` prints.
 ///
 /// Built as a value rather than printed directly, so a test can assert on it without capturing
@@ -129,12 +137,87 @@ pub(crate) fn license_text(files: &LicenseFiles) -> String {
     out
 }
 
+/// Every component the register declares, as the lines `chrono license --components` prints.
+///
+/// Grouped by which package carries it, because the two packages differ and a reader has exactly one
+/// of them in front of them. Two lines per component rather than one: the longest name and version
+/// together run past fifty characters, and a table that wraps is a table nobody reads.
+pub(crate) fn component_lines(register: &str) -> Vec<String> {
+    let Ok(doc) = serde_json::from_str::<serde_json::Value>(register) else {
+        // Compiled in from a file a test parses on every run, so this cannot happen from a checkout.
+        // Said rather than swallowed, because the alternative is an empty list that reads as "nothing
+        // third-party in here" - the one answer this command must never give by accident.
+        return vec!["the component register could not be read - see THIRD-PARTY-NOTICES.md".into()];
+    };
+    let components = doc["components"].as_array().map(Vec::as_slice).unwrap_or_default();
+
+    let mut out = Vec::new();
+    for (group, title) in [
+        ("cli", "In both packages, compiled into the native tool:"),
+        ("gui", "Only in the window package:"),
+    ] {
+        let mut first = true;
+        for component in components {
+            let in_cli = names_package(component, "cli");
+            let wanted = if group == "cli" { in_cli } else { !in_cli && names_package(component, "gui") };
+            if !wanted {
+                continue;
+            }
+            if first {
+                if !out.is_empty() {
+                    out.push(String::new());
+                }
+                out.push(title.to_string());
+                first = false;
+            }
+            let name = component["name"].as_str().unwrap_or("?");
+            let version = component["version"].as_str().unwrap_or("");
+            let version = if version == "NOASSERTION" { "(no version of its own)" } else { version };
+            out.push(format!("  {name} {version}"));
+            out.push(format!(
+                "      {}, {}",
+                component["license_concluded"].as_str().unwrap_or("?"),
+                component["supplier"].as_str().unwrap_or("?")
+            ));
+        }
+    }
+    out
+}
+
+fn names_package(component: &serde_json::Value, package: &str) -> bool {
+    component["in"]
+        .as_array()
+        .is_some_and(|list| list.iter().any(|p| p.as_str() == Some(package)))
+}
+
 /// `chrono license`, and the `--license` spelling of the same question.
 ///
 /// On stdout and exit 0, for the same reason `chrono version` is: asking a question is a success, and
-/// the answer has to survive a pipe.
-pub(crate) fn print_license() {
+/// the answer has to survive a pipe. `--components` adds the full register, which is the offline half
+/// of the SBOM published beside a release.
+pub(crate) fn print_license(argv: &[String]) -> i32 {
+    let mut components = false;
+    for arg in argv {
+        match arg.as_str() {
+            "--components" => components = true,
+            other => {
+                eprintln!("chrono: unknown argument '{other}' for license");
+                eprintln!("usage: chrono license [--components]");
+                return 1;
+            }
+        }
+    }
+
     print!("{}", license_text(&find_license_files()));
+    if components {
+        println!();
+        for line in component_lines(COMPONENT_REGISTER) {
+            println!("{line}");
+        }
+    } else {
+        println!("\nRun `chrono license --components` for every component with its version and licence.");
+    }
+    0
 }
 
 pub(crate) fn print_usage() {
@@ -148,7 +231,7 @@ pub(crate) fn print_usage() {
     eprintln!("       (--preset supplies the moment and mode from presets/<id>.json, exclusive of --at/--mode/--scale-duration; --param fills its parameters, a trial start_date defaults to the target's file date)");
     print_calc_usage();
     eprintln!("usage: chrono version   (also --version, -V)   the build, which core it is, and the protocol it speaks");
-    eprintln!("usage: chrono license   (also --license)       the licence, the warranty disclaimer, and the bundled components");
+    eprintln!("usage: chrono license [--components]   (also --license)   the licence, the warranty disclaimer, and every bundled component with its version");
 }
 
 pub(crate) fn print_calc_usage() {
@@ -260,6 +343,49 @@ mod tests {
         }
         // The product's own licence, which the notices file states before any component's.
         assert!(notices.contains("GPL-3.0"), "the notices file no longer names the product licence");
+    }
+
+    /// The offline half of the SBOM. A user with no internet, holding a copy of the tool, can ask what
+    /// is inside it and get the same set of components the published SPDX document carries - because
+    /// both are rendered from the one register, which `tests/components.rs` checks against Cargo.lock.
+    #[test]
+    fn the_component_list_names_every_component_the_register_declares() {
+        let lines = component_lines(COMPONENT_REGISTER);
+        let text = lines.join("\n");
+
+        assert!(text.contains("In both packages"), "the native components need their group: {text}");
+        assert!(text.contains("Only in the window package"), "the managed components need theirs: {text}");
+
+        // One component from each kind, each with the licence the register concluded. Named
+        // individually rather than counted, so a register that lost a whole family still fails.
+        for (component, licence) in [
+            ("serde ", "MIT"),
+            ("MinHook ", "BSD-2-Clause"),
+            ("WPF-UI ", "MIT"),
+            ("Microsoft.Windows.SDK.NET.Ref ", "LicenseRef-Microsoft-Windows-SDK"),
+        ] {
+            assert!(text.contains(component), "'{component}' is missing from the list");
+            assert!(text.contains(licence), "licence '{licence}' is missing from the list");
+        }
+
+        // The one component with no version of its own says so rather than printing an empty gap.
+        assert!(text.contains("(no version of its own)"), "{text}");
+
+        // A literal floor: the register held 28 components when this was written, and a list that
+        // quietly shrank to nothing would otherwise pass every assertion above that it still matched.
+        let named = lines.iter().filter(|l| l.starts_with("  ") && !l.starts_with("      ")).count();
+        assert!(named >= 28, "only {named} components listed - the register or the grouping lost some");
+    }
+
+    /// The failure that must never be silent. An unreadable register would otherwise print an empty
+    /// list, which a reader takes as "there is nothing third-party in here" - the one wrong answer
+    /// this command can give (untouchable rule 6).
+    #[test]
+    fn an_unreadable_register_says_so_instead_of_listing_nothing() {
+        let lines = component_lines("{ this is not json");
+        assert_eq!(lines.len(), 1);
+        assert!(lines[0].contains("could not be read"), "{lines:?}");
+        assert!(lines[0].contains("THIRD-PARTY-NOTICES.md"), "it must point somewhere: {lines:?}");
     }
 
     /// One product, two halves, one copyright line. The GUI states it in its build properties and the

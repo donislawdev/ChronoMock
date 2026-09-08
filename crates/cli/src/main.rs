@@ -72,10 +72,7 @@ fn main() {
             print_version();
             0
         }
-        Some("license") | Some("--license") => {
-            print_license();
-            0
-        }
+        Some("license") | Some("--license") => print_license(&args[2..]),
         Some("--help") | Some("-h") | None => {
             print_usage();
             0

@@ -62,6 +62,11 @@ $cliZip = Join-Path $dist 'chrono-cli-win.zip'
 # What the publish itself says it bundled. The only place the runtime pack versions are knowable, since
 # global.json pins the test runner and not the SDK.
 $depsJson = Join-Path $stage 'ChronoMock.deps.json'
+# The three files that go into a release beside the two zips: a bill of materials for each package, and
+# the hashes of all four.
+$guiSbom = Join-Path $dist 'ChronoMock-win-x64.spdx.json'
+$cliSbom = Join-Path $dist 'chrono-cli-win.spdx.json'
+$sums = Join-Path $dist 'SHA256SUMS'
 
 function Assert-Exists([string] $path, [string] $why) {
     if (-not (Test-Path -LiteralPath $path)) {
@@ -278,6 +283,25 @@ Copy-Item -LiteralPath (Join-Path $root 'THIRD-PARTY-NOTICES.md') -Destination $
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'cli-readme.md') -Destination (Join-Path $cliStage 'README.md')
 Write-Host '== zip cli =='
 Compress-Archive -Path $cliStage -DestinationPath $cliZip -Force
+
+# --- 4c. The bill of materials for each package, and the hashes of everything a release publishes.
+#
+#     Order matters and is not arbitrary. Each SBOM carries the sha256 of the zip it describes, so it
+#     is written AFTER the zip - which is also why an SBOM sits beside a package in the release rather
+#     than inside it, since a file cannot contain its own hash. SHA256SUMS then covers both, so a
+#     reader can check the document as well as the thing it describes.
+Write-Host '== sbom =='
+& (Join-Path $PSScriptRoot 'sbom.ps1') -PackageId 'gui' -ZipPath $zip -OutPath $guiSbom
+& (Join-Path $PSScriptRoot 'sbom.ps1') -PackageId 'cli' -ZipPath $cliZip -OutPath $cliSbom
+
+# SHA256SUMS in the format `sha256sum -c` reads: the hash, two spaces, the file name. Names only, no
+# directories, because the file sits next to what it describes in the release.
+$published = @($zip, $cliZip, $guiSbom, $cliSbom) | ForEach-Object { Get-Item -LiteralPath $_ }
+$lines = $published | ForEach-Object {
+    "{0}  {1}" -f (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant(), $_.Name
+}
+[System.IO.File]::WriteAllText($sums, ($lines -join "`n") + "`n", (New-Object System.Text.UTF8Encoding($false)))
+Write-Host ("== sha256sums == {0} files" -f $published.Count)
 
 # --- 5. Summary. --------------------------------------------------------------------------------
 $folderBytes = (Get-ChildItem -LiteralPath $stage -Recurse -File | Measure-Object -Property Length -Sum).Sum
