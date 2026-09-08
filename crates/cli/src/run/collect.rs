@@ -98,9 +98,15 @@ impl Collector {
         }
     }
 
-    /// The finished report. `cdp` is the caller's, not ours: whether the target is a Chromium build
-    /// is a fact about the path, and this side only knows what the core said.
-    pub(super) fn into_report(self, target: String, cdp: bool) -> SessionReport {
+    /// The finished report. `cdp` and `stopped_early` are the caller's, not ours: whether the target
+    /// is a Chromium build is a fact about the path, and whether the run was cut short is a fact about
+    /// the driver's own loop. This side only knows what the core said.
+    pub(super) fn into_report(
+        self,
+        target: String,
+        cdp: bool,
+        stopped_early: Option<&'static str>,
+    ) -> SessionReport {
         // Flatten the per-process snapshots into report rows, parent first (first-seen order).
         let mut uncovered: Vec<(u32, String)> = Vec::new(); // (pid, channel) - the honest gaps
         let mut covered: Vec<(u32, String, u64)> = Vec::new(); // (pid, channel, calls) - what took effect
@@ -133,6 +139,7 @@ impl Collector {
             target_exit: self.target_exit,
             residue: self.residue,
             cdp,
+            stopped_early,
         }
     }
 }
@@ -162,7 +169,7 @@ mod tests {
         c.record(coverage(100, 1, Vec::new()));
         c.record(coverage(100, 4242, Vec::new()));
 
-        let report = c.into_report("app.exe".into(), false);
+        let report = c.into_report("app.exe".into(), false, None);
         assert_eq!(report.covered.len(), 1, "one row per channel per process, not one per event");
         assert_eq!(report.covered[0], (100, "GetSystemTimeAsFileTime".to_string(), 4242));
     }
@@ -176,7 +183,7 @@ mod tests {
         c.record(coverage(100, 7, Vec::new()));
         c.record(coverage(200, 5, Vec::new()));
 
-        let report = c.into_report("app.exe".into(), false);
+        let report = c.into_report("app.exe".into(), false, None);
         assert_eq!(report.covered.len(), 2, "two processes, two rows");
         assert_eq!(report.covered[0].0, 100, "first seen still leads the report");
         assert_eq!(report.covered[1].0, 200);
@@ -199,7 +206,7 @@ mod tests {
             warning_keys: vec!["runtime.qpc_elapsed".into(), "session.pid_registry_full".into()],
         });
 
-        let report = c.into_report("app.exe".into(), false);
+        let report = c.into_report("app.exe".into(), false, None);
         assert_eq!(report.warnings, vec!["runtime.qpc_elapsed", "session.pid_registry_full"]);
     }
 
@@ -231,7 +238,7 @@ mod tests {
             fake_end_wall: Some("2038-01-19T03:15:07".into()),
         }));
 
-        let report = c.into_report("app.exe".into(), false);
+        let report = c.into_report("app.exe".into(), false, None);
         assert_eq!(report.target_exit, Some(3));
         assert_eq!(report.residue, vec!["cdp.profile_locked"]);
         assert_eq!(report.timing, Some(("2038-01-19T03:15:07".to_string(), 1_000, 60_000)));

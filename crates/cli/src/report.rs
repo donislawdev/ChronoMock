@@ -58,6 +58,14 @@ pub(crate) struct SessionReport {
     /// What teardown could not remove, from `ended.residue_keys`. Empty on a native session (its
     /// hooks unhook themselves) - today the only key is a Chromium temp profile that stayed locked.
     pub(crate) residue: Vec<String>,
+    /// Set when the driver stopped the core instead of the session ending: `"timeout"` for the
+    /// `--timeout` ceiling, `"idle"` for a core that went quiet. Everything else in this report is
+    /// then the LAST SNAPSHOT the core managed to send, not a final account, and the difference is
+    /// not small - a real run cut at 30 s reported `QueryPerformanceCounter (634)` for a target that
+    /// went on to make more than a million calls. Counts read as totals unless something says
+    /// otherwise, so this makes the report say it rather than leaving it to be inferred from an exit
+    /// code (untouchable rules 4 and 6).
+    pub(crate) stopped_early: Option<&'static str>,
     /// Whether this was a Chromium (CDP) session: its coverage unit is a JS context, not an OS
     /// process, so the report says "context" instead of "pid".
     pub(crate) cdp: bool,
@@ -377,6 +385,26 @@ pub(crate) fn calls_label(n: u64) -> String {
 
 /// Render the session outcome as a human report (English). Failure and non-effect are the
 /// point: the Stage 2 gate is recognising when substitution did NOT take effect.
+/// The caveat that has to stand above a cut-short run's numbers, or nothing at all. Its own function
+/// because `render_report` is pinned at the shape ceiling and the next branch in it needs a decision
+/// rather than a line - which is what the ceiling is for.
+fn render_cut_short(stopped_early: Option<&'static str>) -> String {
+    let Some(which) = stopped_early else {
+        return String::new();
+    };
+    let why = if which == "timeout" {
+        "the --timeout ceiling was reached"
+    } else {
+        "the core went quiet and was stopped"
+    };
+    format!(
+        "  stopped:  CUT SHORT - {why}\n\
+         \x20           everything below is the last snapshot the core sent before that, so the\n\
+         \x20           call counts are a FLOOR, not a total, and channels the target had not\n\
+         \x20           reached yet are missing rather than absent\n"
+    )
+}
+
 pub(crate) fn render_report(r: &SessionReport) -> String {
     let mut out = String::from("Chrono Mock - session report\n");
     out.push_str(&format!("  target:   {}\n", r.target));
@@ -384,6 +412,10 @@ pub(crate) fn render_report(r: &SessionReport) -> String {
     // across units either way).
     let unit = if r.cdp { "context" } else { "pid" };
     let units = if r.cdp { "contexts" } else { "processes" };
+
+    // Before the verdict, not after the channel lists: a caveat that arrives once the reader has
+    // already read the numbers as totals has arrived too late.
+    out.push_str(&render_cut_short(r.stopped_early));
 
     // Headline priority: a vanish is an honest non-effect, then the family verdict, then the
     // parent verdict as a fallback for an older core, then nothing.
@@ -511,6 +543,12 @@ pub(crate) struct EvidenceParams {
 /// A clean WORKS session (no vanish, no partial/fails). Anything else must carry the unreliable
 /// banner in an evidence export - evidence that hides doubt is worse than none (8.8).
 pub(crate) fn session_is_reliable(r: &SessionReport) -> bool {
+    // A run the driver cut short is not evidence of anything, whatever verdict happened to arrive
+    // before the knife. The core emits the parent's verdict early, so a timed-out session CAN carry a
+    // WORKS line - and without this the evidence file would have printed it with no banner at all.
+    if r.stopped_early.is_some() {
+        return false;
+    }
     if r.vanished.is_some() {
         return false;
     }
@@ -570,6 +608,7 @@ mod tests {
             target_exit: None,
             residue: vec![],
             cdp: false,
+            stopped_early: None,
         }
     }
 
@@ -781,6 +820,43 @@ mod tests {
         };
         let out = render_evidence(&r, &p);
         assert!(out.contains("the target closed itself with code 2"), "got:\n{out}");
+    }
+
+    #[test]
+    fn a_run_cut_short_says_so_above_its_numbers_and_is_never_cited_as_proof() {
+        // The failure this closes, measured on a real target: a 30 s --timeout printed
+        // `QueryPerformanceCounter (634)` for an application that went on to make more than a million
+        // calls, and the report gave the reader nothing to distinguish that from a total. Worse, the
+        // core emits the parent's verdict EARLY, so the cut run can carry a WORKS line - which is why
+        // this fixture has one. Without the caveat the evidence file would have printed a clean WORKS
+        // report over a sample from the session's first blink.
+        let r = SessionReport {
+            session_verdict: Some(("works".into(), "session.family_covered".into(), 1)),
+            covered: vec![(1, "QueryPerformanceCounter".into(), 634)],
+            stopped_early: Some("timeout"),
+            ..empty_report()
+        };
+
+        let text = render_report(&r);
+        assert!(text.contains("CUT SHORT"), "got:\n{text}");
+        assert!(text.contains("FLOOR"), "the counts must be named as a floor, got:\n{text}");
+        // Ahead of the numbers, not after them: a caveat read once the reader has taken the counts for
+        // totals has arrived too late.
+        let caveat = text.find("CUT SHORT").expect("caveat");
+        let count = text.find("QueryPerformanceCounter").expect("count");
+        assert!(caveat < count, "the caveat must come before the counts, got:\n{text}");
+
+        let p = EvidenceParams {
+            moment: "2038-01-19T03:14:07".into(),
+            zone: "+00:00".into(),
+            mode: "x60".into(),
+        };
+        let out = render_evidence(&r, &p);
+        assert!(
+            out.starts_with("!! UNRELIABLE EVIDENCE"),
+            "a cut run is not proof of anything, whatever verdict arrived first, got:\n{out}"
+        );
+        assert!(!session_is_reliable(&r));
     }
 
     #[test]

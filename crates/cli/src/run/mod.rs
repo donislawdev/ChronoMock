@@ -273,6 +273,10 @@ pub(crate) fn driver_run(argv: &[String]) -> i32 {
         // The core auto-detects a Chromium target and runs it over CDP - label the report's coverage
         // unit accordingly. Same pure function, same path string the core sees, so the two never drift.
         cdp::is_chromium_target(&ra.target),
+        // Whether the loop above cut the run short. It has to travel INTO the report rather than be
+        // printed beside it, because the report is also written to the evidence file, and that file is
+        // the one a tester cites (untouchable rule 4).
+        timed_out,
     );
     if let Some(path) = &ra.report {
         let params = EvidenceParams {
@@ -307,6 +311,16 @@ pub(crate) fn driver_run(argv: &[String]) -> i32 {
                 "chrono: the core sent nothing for {DRIVER_IDLE_TIMEOUT_SECS}s and was stopped - this run has no verdict"
             ),
         }
+        // The target is NOT killed with the core, and that is the normal arrangement rather than an
+        // oversight: a session ordinarily stays attached until the application exits, because detaching
+        // early would hand it back the real clock. Stopping the core does not change that, so the app
+        // carries on with the session's hooks still installed and nothing tells the tester - measured on
+        // a real run, where the application had to be closed by hand afterwards. Killing someone else's
+        // application over a diagnostic ceiling is a bigger decision than this line, so this says it
+        // instead of doing it (rule 6).
+        eprintln!(
+            "chrono: the target was started by the core and does not exit with it - it may still be running on the session clock, so close it yourself"
+        );
         return 6;
     }
 
