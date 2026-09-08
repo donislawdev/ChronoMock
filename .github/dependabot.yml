@@ -20,6 +20,16 @@ updates:
     schedule:
       interval: "weekly"
       day: "monday"
+    # A week between a version being published and this bot proposing it. A compromised release
+    # is usually found by somebody else within days, and this project has one maintainer, so the
+    # cheapest defence available is to let other people meet the version first.
+    #
+    # Seven rather than nothing, and seven rather than the three days Dependabot has applied by
+    # default since 2026-07-14. It costs nothing here: nothing in this workspace is waited on.
+    # It does NOT delay a fix for a known vulnerability - security updates ignore the cooldown,
+    # and `cargo deny check advisories` in audit.yml asks that question weekly on its own.
+    cooldown:
+      default-days: 7
     open-pull-requests-limit: 5
     commit-message:
       prefix: "chore(deps)"
@@ -41,6 +51,9 @@ updates:
     schedule:
       interval: "weekly"
       day: "monday"
+    # The same week, for the same reason as the cargo entry above.
+    cooldown:
+      default-days: 7
     open-pull-requests-limit: 5
     commit-message:
       prefix: "chore(deps)"
@@ -60,6 +73,12 @@ updates:
     schedule:
       interval: "weekly"
       day: "monday"
+    # The same week again, and here it is the point rather than a precaution: a pinned SHA is
+    # exactly what an attacker wants moved, and this is the one entry whose whole job is to move
+    # SHAs. Only `default-days` - the options reference marks GitHub Actions as supporting that
+    # and not the per-SemVer-bump ones, which an action tag does not carry anyway.
+    cooldown:
+      default-days: 7
     open-pull-requests-limit: 3
     commit-message:
       prefix: "chore(ci)"
