@@ -228,6 +228,13 @@ pub struct EvalOutcome {
     pub base: CivilDateTime,
     pub after_each: Vec<CivilDateTime>,
     pub result_bias: i32,
+    /// Steps whose day was CLAMPED to the end of a shorter month, as (step index, the day asked
+    /// for). `31 January + 1 month` is 28 or 29 February, and `29 February + 1 year` is 28 February.
+    /// Every one of those is correct and documented, and every one is invisible in the result, which
+    /// is the problem: a reader who sees only "29 became 28" cannot tell a rule from a defect, on a
+    /// date they are about to act on. Reported by the engine rather than inferred by each caller from
+    /// the day changing, so the two halves of the product cannot disagree about one shift.
+    pub clamped: Vec<(usize, u32)>,
 }
 
 impl EvalOutcome {
@@ -317,6 +324,7 @@ pub fn eval(expr: &MomentExpr, ctx: &EvalContext) -> Result<EvalOutcome, EvalErr
     let mut cur = base;
     let mut cur_bias = ctx.zone_bias_min;
     let mut after_each = Vec::with_capacity(expr.steps.len());
+    let mut clamped: Vec<(usize, u32)> = Vec::new();
     for (i, step) in expr.steps.iter().enumerate() {
         // A `zone` step re-expresses the running moment in another fixed-offset zone (same
         // instant, new wall-clock and bias). It is the only step that changes the zone, so it is
@@ -327,7 +335,11 @@ pub fn eval(expr: &MomentExpr, ctx: &EvalContext) -> Result<EvalOutcome, EvalErr
             cur = convert_zone(cur, cur_bias, *target_bias, i)?;
             cur_bias = *target_bias;
         } else {
-            cur = apply_step(cur, step, i, ctx.calendar)?;
+            let (next, clamped_day) = apply_step(cur, step, i, ctx.calendar)?;
+            if let Some(day) = clamped_day {
+                clamped.push((i, day));
+            }
+            cur = next;
         }
         // Checked after EVERY step, not only after the ones that obviously move years. A snap keeps
         // the year, a business-day walk can cross one, a zone step can cross one at the boundary,
@@ -338,30 +350,32 @@ pub fn eval(expr: &MomentExpr, ctx: &EvalContext) -> Result<EvalOutcome, EvalErr
         }
         after_each.push(cur);
     }
-    Ok(EvalOutcome { base, after_each, result_bias: cur_bias })
+    Ok(EvalOutcome { base, after_each, result_bias: cur_bias, clamped })
 }
 
+/// Returns the stepped moment and, for a month-folding shift that hit a shorter month, the day that
+/// was asked for. Only `Shift` can report one - every other step either keeps the day or picks it.
 fn apply_step(
     cur: CivilDateTime,
     step: &Step,
     index: usize,
     calendar: Option<&crate::calendar::Calendar>,
-) -> Result<CivilDateTime, EvalError> {
+) -> Result<(CivilDateTime, Option<u32>), EvalError> {
     match step {
         Step::Shift { sign, amount, unit } => apply_shift(cur, *sign, *amount, *unit, index, calendar),
         Step::SetTime { hour, minute, second } => {
             if *hour > 23 || *minute > 59 || *second > 59 {
                 return Err(EvalError::BadSetTime { index });
             }
-            Ok(CivilDateTime { hour: *hour, minute: *minute, second: *second, ..cur })
+            Ok((CivilDateTime { hour: *hour, minute: *minute, second: *second, ..cur }, None))
         }
-        Step::Snap(target) => Ok(apply_snap(cur, *target)),
+        Step::Snap(target) => Ok((apply_snap(cur, *target), None)),
         Step::Nearest(target) => match target {
             // The leap day is pure arithmetic (the next Feb 29), so it needs no holiday calendar -
             // unlike the business-day targets, which do.
-            NearestTarget::NextLeapDay => Ok(apply_nearest_leap_day(cur)),
+            NearestTarget::NextLeapDay => Ok((apply_nearest_leap_day(cur), None)),
             NearestTarget::NextBusinessDay | NearestTarget::PrevBusinessDay => match calendar {
-                Some(cal) => apply_nearest(cur, *target, cal, index),
+                Some(cal) => apply_nearest(cur, *target, cal, index).map(|c| (c, None)),
                 None => Err(EvalError::NeedsCalendar { index }),
             },
         },
@@ -463,6 +477,8 @@ fn apply_snap(cur: CivilDateTime, target: SnapTarget) -> CivilDateTime {
     }
 }
 
+/// Returns the shifted moment and, when a month-length clamp moved the day, the day that was asked
+/// for. Only the calendar-folding units can clamp - a fixed-length shift never does.
 fn apply_shift(
     cur: CivilDateTime,
     sign: Sign,
@@ -470,7 +486,7 @@ fn apply_shift(
     unit: Unit,
     index: usize,
     calendar: Option<&crate::calendar::Calendar>,
-) -> Result<CivilDateTime, EvalError> {
+) -> Result<(CivilDateTime, Option<u32>), EvalError> {
     // The amount is a non-negative magnitude - apply the sign here.
     let signed = match sign {
         Sign::Plus => amount,
@@ -478,7 +494,7 @@ fn apply_shift(
     };
     match unit {
         Unit::Seconds | Unit::Minutes | Unit::Hours | Unit::Days | Unit::Weeks => {
-            shift_fixed(cur, signed, unit, index)
+            shift_fixed(cur, signed, unit, index).map(|c| (c, None))
         }
         Unit::Months => shift_months(cur, signed, index),
         // A quarter is three months, a year is twelve - one calendar-fold path with
@@ -492,16 +508,16 @@ fn apply_shift(
         // Business days need a calendar (weekends plus holidays). With one, walk the calendar -
         // without one (the substitution paths), stay honestly unsupported.
         Unit::BusinessDays => match calendar {
-            Some(cal) => {
-                crate::calendar::add_business_days(&cur, signed, cal).map_err(|limit| match limit {
+            Some(cal) => crate::calendar::add_business_days(&cur, signed, cal)
+                .map(|c| (c, None))
+                .map_err(|limit| match limit {
                     // The request is out of range - the calendar is fine.
                     crate::calendar::BusinessDayLimit::TooManyDays => EvalError::Overflow { index },
                     // The calendar is the problem, and the message has to say so.
                     crate::calendar::BusinessDayLimit::DegenerateCalendar => {
                         EvalError::DegenerateCalendar { index }
                     }
-                })
-            }
+                }),
             None => Err(EvalError::NeedsCalendar { index }),
         },
     }
@@ -549,7 +565,7 @@ fn shift_fixed(
 /// Shift by a whole number of months, clamping the day to the last valid day of the
 /// resulting month. This is the anchor-dependent case the tick model cannot express:
 /// Jan 31 + 1 month = Feb 28/29, and Feb 29 + 12 months = Feb 28. Time of day is kept.
-fn shift_months(cur: CivilDateTime, months: i64, index: usize) -> Result<CivilDateTime, EvalError> {
+fn shift_months(cur: CivilDateTime, months: i64, index: usize) -> Result<(CivilDateTime, Option<u32>), EvalError> {
     let ovf = || EvalError::Overflow { index };
     // Absolute month index since year 0, month 0 (January).
     let total = cur
@@ -561,14 +577,19 @@ fn shift_months(cur: CivilDateTime, months: i64, index: usize) -> Result<CivilDa
     let new_year = total.div_euclid(12);
     let new_month = total.rem_euclid(12) + 1; // 1..=12
     let last = last_day_of_month(new_year, new_month);
-    Ok(CivilDateTime {
-        year: new_year,
-        month: new_month as u32,
-        day: cur.day.min(last),
-        hour: cur.hour,
-        minute: cur.minute,
-        second: cur.second,
-    })
+    // The one place a day is clamped, so it is also the one place that can report it honestly.
+    let clamped = (cur.day > last).then_some(cur.day);
+    Ok((
+        CivilDateTime {
+            year: new_year,
+            month: new_month as u32,
+            day: cur.day.min(last),
+            hour: cur.hour,
+            minute: cur.minute,
+            second: cur.second,
+        },
+        clamped,
+    ))
 }
 
 // --- Bridge to the substitution tick world (the relative `jump` path) ---------------
@@ -637,8 +658,10 @@ pub fn fixed_shift_ticks(step: &Step) -> Result<Option<i64>, EvalError> {
 /// resulting instant is reported.
 fn shift_filetime(ft_utc: i64, tz_bias_min: i32, step: &Step) -> Result<i64, EvalError> {
     let civil = filetime_to_civil(ft_utc, tz_bias_min);
-    // No calendar on the jump path, so a business-day step stays unsupported here.
-    let shifted = apply_step(civil, step, 0, None)?;
+    // No calendar on the jump path, so a business-day step stays unsupported here. The clamp report
+    // is dropped deliberately: a jump's result travels as an instant with no place to carry it, and
+    // the jump path builds only `Shift` by a fixed unit today, which never clamps.
+    let (shifted, _clamped) = apply_step(civil, step, 0, None)?;
     // The same two things `eval` does for the calculator, for the same two reasons: the step
     // computed this year arithmetically (so the parser never saw it), and going back out through a
     // string would make formatting a failure mode of a jump. The instant check below then rejects
@@ -1367,6 +1390,60 @@ mod tests {
             steps: vec![shift(Sign::Plus, 1, Unit::Years)],
         };
         assert_eq!(eval_at(&expr, dt(2000, 1, 1, 0, 0, 0)).unwrap().result(), dt(2025, 2, 28, 0, 0, 0));
+    }
+
+    /// R2-C2. A clamp is correct, documented, and invisible in the result - which is how a reader ends
+    /// up unable to tell it from a defect. The engine reports it so both surfaces can say WHICH step
+    /// clamped and from what, instead of each inferring it from a day that changed.
+    #[test]
+    fn a_clamped_day_is_reported_with_its_step_and_the_day_asked_for() {
+        let at = |expr: &MomentExpr| eval_at(expr, dt(2000, 1, 1, 0, 0, 0)).unwrap();
+
+        // The fiscal-year shape: +1 year off the leap day clamps, the following -1 day does not.
+        let fiscal = MomentExpr {
+            base: abs(dt(2024, 2, 29, 0, 0, 0)),
+            steps: vec![shift(Sign::Plus, 1, Unit::Years), shift(Sign::Minus, 1, Unit::Days)],
+        };
+        assert_eq!(at(&fiscal).clamped, vec![(0, 29)], "step 0 asked for day 29");
+
+        // A shift that lands in a month long enough reports nothing - the list is not "every month
+        // shift", it is the ones that lost a day.
+        let no_clamp = MomentExpr {
+            base: abs(dt(2026, 3, 15, 0, 0, 0)),
+            steps: vec![shift(Sign::Plus, 1, Unit::Months)],
+        };
+        assert!(at(&no_clamp).clamped.is_empty());
+
+        // Fixed-length units never clamp, whatever they cross.
+        let days = MomentExpr {
+            base: abs(dt(2024, 2, 29, 0, 0, 0)),
+            steps: vec![shift(Sign::Plus, 400, Unit::Days)],
+        };
+        assert!(at(&days).clamped.is_empty());
+
+        // Two clamps in one expression are both reported, each against its own step index - a single
+        // flag would hide the second, and a reader checking one number would miss the other.
+        let twice = MomentExpr {
+            base: abs(dt(2026, 1, 31, 0, 0, 0)),
+            steps: vec![
+                shift(Sign::Plus, 1, Unit::Months),  // 31 Jan -> 28 Feb, clamped from 31
+                shift(Sign::Plus, 1, Unit::Days),    // 28 Feb -> 1 Mar, no clamp
+                shift(Sign::Plus, 1, Unit::Months),  // 1 Mar -> 1 Apr, no clamp
+            ],
+        };
+        assert_eq!(at(&twice).clamped, vec![(0, 31)]);
+
+        // Quarters and years fold through the same month arithmetic, so they report the same way.
+        let quarters = MomentExpr {
+            base: abs(dt(2026, 5, 31, 0, 0, 0)),
+            steps: vec![shift(Sign::Plus, 1, Unit::Quarters)], // 31 May -> 31 Aug, no clamp
+        };
+        assert!(at(&quarters).clamped.is_empty());
+        let quarters_short = MomentExpr {
+            base: abs(dt(2026, 3, 31, 0, 0, 0)),
+            steps: vec![shift(Sign::Plus, 1, Unit::Quarters)], // 31 Mar -> 30 Jun, clamped
+        };
+        assert_eq!(at(&quarters_short).clamped, vec![(0, 31)]);
     }
 
     #[test]

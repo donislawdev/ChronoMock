@@ -410,6 +410,15 @@
               </StackPanel>
             </Border>
 
+            <!-- Why a day in the result is not the day that was typed: a month-folding shift landed in
+                 a shorter month (31 January + 1 month = 28 February). Correct and documented, and
+                 otherwise invisible here, since this window shows no intermediate steps - the reader
+                 would see a changed day with no reason and could not tell the rule from a defect. -->
+            <TextBlock Text="{Binding ClampNotice}" TextWrapping="Wrap"
+                       Visibility="{Binding HasClampNotice, Converter={StaticResource BoolToVis}}"
+                       Margin="{StaticResource SpaceXs}"
+                       FontSize="{StaticResource FontSizeCaption}" Foreground="{DynamicResource BrushStatusPartial}" />
+
             <TextBlock Text="{DynamicResource calc.all_formats}" Margin="{StaticResource SpaceXs}"
                        FontSize="{StaticResource FontSizeCaption}" FontWeight="SemiBold"
                        Foreground="{DynamicResource BrushTextSecondary}" />

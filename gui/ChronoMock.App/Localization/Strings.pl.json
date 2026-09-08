@@ -361,6 +361,7 @@
   "calc.fmt.filetime": "FILETIME",
   "calc.fmt.rfc1123": "RFC 1123",
   "calc.fmt.unknown_tokens": "To nie są tokeny formatu, pokazane jako tekst: {0}. Tekst dosłowny ujmij w apostrofy, jak 'ten'.",
+  "calc.clamped_step": "Krok {0}: dzień {1} nie istnieje w tym miesiącu, więc został przycięty do {2}.",
   "calc.out_of_range": "(poza zakresem)",
   "calc.md.us_week": "tydzień US",
   "calc.md.day": "dzień",

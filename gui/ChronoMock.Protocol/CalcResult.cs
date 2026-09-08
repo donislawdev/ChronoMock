@@ -28,7 +28,17 @@ public sealed record CalcMoment(
     /// the whole mask. Shown to the reader, because the rendered text carries those letters verbatim
     /// and otherwise looks like a formatted date rather than a mask that was not understood.</summary>
     [property: JsonPropertyName("custom_format_unknown")] IReadOnlyList<string>? CustomFormatUnknown,
+    /// <summary>Steps whose day was clamped to a shorter month. Absent when none was. This window shows
+    /// no intermediate steps, so without it a clamp is invisible here - the reader sees a day that
+    /// changed and nothing saying why, and cannot tell the documented rule from a defect.</summary>
+    [property: JsonPropertyName("clamped_steps")] IReadOnlyList<CalcClampedStep>? ClampedSteps,
     [property: JsonPropertyName("preset")] CalcPreset? Preset);
+
+/// <summary>One month-length clamp: the 1-based step, the day asked for, and the day it became.</summary>
+public sealed record CalcClampedStep(
+    [property: JsonPropertyName("step")] int Step,
+    [property: JsonPropertyName("requested_day")] int RequestedDay,
+    [property: JsonPropertyName("clamped_to")] int ClampedTo);
 
 /// <summary>Every fixed output format at once (docs/02 section 8). Instant-based fields are null outside
 /// the representable FILETIME range - never a wrong number.</summary>

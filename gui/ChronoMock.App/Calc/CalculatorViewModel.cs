@@ -349,6 +349,8 @@ public sealed class CalculatorViewModel : ObservableObject
     private bool _hasCustomFormat;
     private string _customFormatWarning = string.Empty;
     private bool _hasCustomFormatWarning;
+    private string _clampNotice = string.Empty;
+    private bool _hasClampNotice;
     private string _resultMomentLocal = string.Empty;
     private int _resultZoneBias;
     private bool _computedOnce;
@@ -637,6 +639,15 @@ public sealed class CalculatorViewModel : ObservableObject
 
     /// <summary>Whether to show <see cref="CustomFormatWarning"/> beneath the custom-format row.</summary>
     public bool HasCustomFormatWarning { get => _hasCustomFormatWarning; private set => Set(ref _hasCustomFormatWarning, value); }
+
+    /// <summary>Why a step's day is not the one that was typed: a month-folding shift landed in a
+    /// shorter month, so 31 January + 1 month is 28 February. Correct and documented, and invisible in
+    /// a result that shows no intermediate steps - which leaves the reader unable to tell the rule
+    /// from a defect on a date they are about to act on.</summary>
+    public string ClampNotice { get => _clampNotice; private set => Set(ref _clampNotice, value); }
+
+    /// <summary>Whether to show <see cref="ClampNotice"/> beneath the result.</summary>
+    public bool HasClampNotice { get => _hasClampNotice; private set => Set(ref _hasClampNotice, value); }
 
     /// <summary>Whether the current result can go to the substitution panel: a valid moment whose zone the
     /// substitution offers, so it transfers with its zone and never as a bare local date (rule 2).</summary>
@@ -1203,6 +1214,20 @@ public sealed class CalculatorViewModel : ObservableObject
                 System.Globalization.CultureInfo.InvariantCulture,
                 Tr("calc.fmt.unknown_tokens"),
                 string.Join(", ", unknown!))
+            : string.Empty;
+
+        // One line per clamped step, so a two-clamp expression does not hide the second one.
+        var clamps = moment.ClampedSteps;
+        HasClampNotice = clamps is { Count: > 0 };
+        ClampNotice = HasClampNotice
+            ? string.Join(
+                Environment.NewLine,
+                clamps!.Select(c => string.Format(
+                    System.Globalization.CultureInfo.InvariantCulture,
+                    Tr("calc.clamped_step"),
+                    c.Step,
+                    c.RequestedDay,
+                    c.ClampedTo)))
             : string.Empty;
 
         MetadataLine = BuildMetadataLine(moment.Metadata);

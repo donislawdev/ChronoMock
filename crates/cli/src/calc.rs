@@ -209,6 +209,15 @@ pub(crate) struct CalcJson {
     analysis: Option<AnalysisJson>,
 }
 
+/// One step whose day was clamped to a shorter month, with both days so a client can word it itself.
+/// `step` is 1-based, matching the human render and every other step reference in this contract.
+#[derive(serde::Serialize)]
+pub(crate) struct ClampedStepJson {
+    step: usize,
+    requested_day: u32,
+    clamped_to: u32,
+}
+
 #[derive(serde::Serialize)]
 pub(crate) struct MomentJson {
     /// The result moment as ISO wall-clock in `zone_bias_min`.
@@ -229,6 +238,11 @@ pub(crate) struct MomentJson {
     /// which keeps the common result unchanged (an added field does not bump the schema, docs/04 3).
     #[serde(skip_serializing_if = "Option::is_none")]
     custom_format_unknown: Option<Vec<String>>,
+    /// Steps where a month-folding shift clamped the day to a shorter month. Omitted when none did.
+    /// The GUI shows no intermediate steps, so without this a clamp is invisible there: the reader
+    /// sees a day that changed and no reason for it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    clamped_steps: Option<Vec<ClampedStepJson>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     preset: Option<PresetJson>,
 }
@@ -357,6 +371,17 @@ pub(crate) fn calc_moment_json(
             .as_ref()
             .filter(|r| !r.unknown.is_empty())
             .map(|r| r.unknown.clone()),
+        clamped_steps: (!outcome.clamped.is_empty()).then(|| {
+            outcome
+                .clamped
+                .iter()
+                .map(|(i, asked)| ClampedStepJson {
+                    step: i + 1,
+                    requested_day: *asked,
+                    clamped_to: outcome.after_each[*i].day,
+                })
+                .collect()
+        }),
         preset,
     };
     let doc = CalcJson { schema: CALC_SCHEMA, moment: Some(moment), analysis: None };
@@ -637,6 +662,16 @@ pub(crate) fn render_calc(
     }
     for (i, step) in expr.steps.iter().enumerate() {
         out.push_str(&format!("  step {}:  {}  -> {}\n", i + 1, describe_step(step), outcome.after_each[i].to_iso()));
+        // A clamped day is correct and surprising at the same time: `31 January + 1 month` is
+        // 28 February, and `29 February + 1 year` is 28 February. The step line alone shows a day
+        // that changed for no visible reason, and a reader deciding whether a fiscal year really
+        // ends where the tool says cannot tell the rule from a defect. Say which it was.
+        if let Some((_, asked)) = outcome.clamped.iter().find(|(idx, _)| *idx == i) {
+            out.push_str(&format!(
+                "           ^ day clamped from {asked} to {} - that month is shorter\n",
+                outcome.after_each[i].day
+            ));
+        }
     }
     out.push_str(&format!("  result:  {}\n", outcome.result().to_iso()));
     // Formats and significance follow the RESULT's zone, which a `zone` step may have moved away
