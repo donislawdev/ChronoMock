@@ -425,6 +425,49 @@ mod tests {
         }
     }
 
+    /// `OffDays::rebuild` deliberately scans the year asked about AND its two neighbours, because an
+    /// observance can cross a year boundary in both directions. Nothing pinned that: the cache test
+    /// above compares a reused instance with a fresh one, and both would carry the same missing year.
+    /// This is the only place where the answer for one year depends on another year's data.
+    #[test]
+    fn an_observance_that_crosses_a_year_boundary_is_still_found() {
+        // Backwards: 1 January 2022 is a Saturday, so under sat->fri it is observed on Friday
+        // 31 December 2021 - a day off that belongs to the PREVIOUS year's answer.
+        let cal = Calendar {
+            id: "t".into(),
+            country: "XX".into(),
+            weekend: vec![0, 6],
+            observed: Observed::SatToFriSunToMon,
+            holidays: vec![h("new_year", HolidayRule::Fixed { month: 1, day: 1 }, None)],
+        };
+        assert!(
+            !is_business_day(&dt(2021, 12, 31), &cal),
+            "31 December 2021 is the observed New Year's Day of 2022"
+        );
+        // The day before it is ordinary, so the whole end of December did not simply go dark.
+        assert!(is_business_day(&dt(2021, 12, 30), &cal));
+
+        // Forwards: a 31 December holiday falling on Sunday observes on 1 January of the NEXT year.
+        // 31 December 2023 is a Sunday, so 1 January 2024 (a Monday) is the day off.
+        let nye = Calendar {
+            observed: Observed::SunToMon,
+            holidays: vec![h("nye", HolidayRule::Fixed { month: 12, day: 31 }, None)],
+            ..cal
+        };
+        assert!(
+            !is_business_day(&dt(2024, 1, 1), &nye),
+            "1 January 2024 is the observed 31 December 2023"
+        );
+        assert!(is_business_day(&dt(2024, 1, 2), &nye));
+
+        // Asked in the other order, a reused cache must give the same answers - walking backwards
+        // across the boundary is what a negative business-day shift does.
+        let mut off = OffDays::new(&nye);
+        assert!(!off.is_business_day(days(2024, 1, 1)));
+        assert!(off.is_business_day(days(2023, 12, 29)));
+        assert!(!off.is_business_day(days(2024, 1, 1)), "the answer must not change on re-ask");
+    }
+
     #[test]
     fn nth_weekday_computes_known_dates() {
         // Thanksgiving 2026 = 4th Thursday of November = 2026-11-26.

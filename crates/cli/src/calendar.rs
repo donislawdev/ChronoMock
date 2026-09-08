@@ -560,6 +560,18 @@ mod tests {
             assert_eq!(id_on(d(1975, 10, 27)), "veterans_day_october_monday", "{which}");
             assert_eq!(id_on(d(1978, 11, 11)), "veterans_day", "{which}");
             assert_eq!(id_on(d(2026, 11, 11)), "veterans_day", "{which}");
+
+            // Both of its boundaries, on the exact years. The assertions above sit years away from
+            // the switch, so a window off by one would pass every one of them - and this holiday has
+            // TWO switches, which is twice the chance of that. 1970 is the last November before the
+            // Act and 1971 the first October Monday under it, then 1977 is the last October Monday
+            // and 1978 the return to 11 November.
+            assert_eq!(id_on(d(1970, 11, 11)), "veterans_day_pre_1971", "{which}");
+            assert_eq!(id_on(d(1971, 11, 11)), "", "{which}");
+            assert_eq!(id_on(d(1971, 10, 25)), "veterans_day_october_monday", "{which}");
+            assert_eq!(id_on(d(1977, 10, 24)), "veterans_day_october_monday", "{which}");
+            assert_eq!(id_on(d(1977, 11, 11)), "", "{which}");
+            assert_eq!(id_on(d(1978, 10, 23)), "", "{which}");
         }
     }
 
