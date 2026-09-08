@@ -47,6 +47,14 @@ jobs:
       artifact-metadata: write
     env:
       GH_TOKEN: ${{ github.token }}
+      # The tag name reaches the scripts through the environment rather than through `${{ }}`
+      # inside a `run:` block. Template expansion happens BEFORE the shell sees the script, so a
+      # tag is pasted into the source of the script and the quotes around it in this file protect
+      # nothing. Git allows a quote, a backtick and a semicolon in a ref name, so a tag can close
+      # the string it was pasted into and continue as code - in a job that holds `id-token: write`
+      # and `attestations: write`. An environment variable is passed by the runner as a value and
+      # is never parsed as part of the script. Same shape as verify-release.yml.
+      TAG: ${{ github.ref_name }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -58,8 +66,8 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v')
         shell: pwsh
         run: |
-          $sha = '${{ github.sha }}'
-          $runs = gh api "repos/${{ github.repository }}/actions/workflows/ci.yml/runs?head_sha=$sha&per_page=20" --jq '.workflow_runs[] | "\(.conclusion)|\(.status)|\(.html_url)"'
+          $sha = $env:GITHUB_SHA
+          $runs = gh api "repos/$env:GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?head_sha=$sha&per_page=20" --jq '.workflow_runs[] | "\(.conclusion)|\(.status)|\(.html_url)"'
           if ($LASTEXITCODE -ne 0) { throw "cannot read the CI runs for $sha" }
           $lines = @($runs -split "`n" | Where-Object { $_ })
           if ($lines.Count -eq 0) {
@@ -78,7 +86,7 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v')
         shell: pwsh
         run: |
-          $tag = '${{ github.ref_name }}'
+          $tag = $env:TAG
           $cargo = Select-String -Path Cargo.toml -Pattern '^version\s*=\s*"([^"]+)"' | Select-Object -First 1
           $props = Select-String -Path gui/Directory.Build.props -Pattern '<Version>([^<]+)</Version>' | Select-Object -First 1
           if (-not $cargo -or -not $props) { throw 'cannot read the version from Cargo.toml or gui/Directory.Build.props' }
@@ -98,7 +106,7 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v')
         shell: pwsh
         run: |
-          $version = '${{ github.ref_name }}'.TrimStart('v')
+          $version = $env:TAG.TrimStart('v')
           $lines = Get-Content CHANGELOG.md
           $headings = @()
           for ($i = 0; $i -lt $lines.Count; $i++) { if ($lines[$i] -match '^## \[') { $headings += $i } }
@@ -172,7 +180,7 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v')
         shell: pwsh
         run: |
-          $tag = '${{ github.ref_name }}'
+          $tag = $env:TAG
           gh release view $tag 2>$null
           if ($LASTEXITCODE -ne 0) {
             gh release create $tag --draft --title "Chrono Mock $($tag.TrimStart('v'))" --notes "Draft. Built by the Release workflow, signed on the card, assets attached by phase B - see CHANGELOG.md."

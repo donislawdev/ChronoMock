@@ -43,6 +43,15 @@ jobs:
       artifact-metadata: write
     env:
       GH_TOKEN: ${{ github.token }}
+      # The dispatch inputs reach the scripts through the environment rather than through `${{ }}`
+      # inside a `run:` block. Template expansion happens BEFORE the shell sees the script, so an
+      # input is pasted into the source of the script and the quotes around it in this file protect
+      # nothing - a value carrying a quote closes the string it landed in and the rest of it runs as
+      # code, in a job that holds `id-token: write` and `attestations: write`. An environment
+      # variable is passed by the runner as a value and is never parsed as part of the script.
+      TAG: ${{ inputs.tag }}
+      DIGESTS: ${{ inputs.digests }}
+      REPO: ${{ github.repository }}
     steps:
       # 🔴 The archives come FROM THE RELEASE, not from the caller. Attesting a digest somebody handed
       # us would attest a number rather than a file, and the number and the file are the same thing
@@ -51,14 +60,14 @@ jobs:
       - name: Download what the release actually carries
         run: |
           mkdir -p assets
-          gh release download "${{ inputs.tag }}" --repo "${{ github.repository }}" \
+          gh release download "$TAG" --repo "$REPO" \
             --pattern '*.zip' --pattern '*.spdx.json' --dir assets
           ls -l assets
 
       - name: The bytes on the release must be the bytes phase B signed
         run: |
           fail=0
-          for pair in $(echo '${{ inputs.digests }}' | tr ',' ' '); do
+          for pair in $(echo "$DIGESTS" | tr ',' ' '); do
             name="${pair%%=*}"
             expected="${pair#*=}"
             if [ ! -f "assets/$name" ]; then
@@ -96,10 +105,13 @@ jobs:
       # attestation can be checked offline with `--bundle` by someone who would rather not call the
       # API - and so a security scanner looking over the release page finds it at all.
       - name: Attach the attestation bundles to the release
+        env:
+          GUI_BUNDLE: ${{ steps.gui.outputs.bundle-path }}
+          CLI_BUNDLE: ${{ steps.cli.outputs.bundle-path }}
         run: |
-          cp "${{ steps.gui.outputs.bundle-path }}" ChronoMock-win-x64.zip.sigstore.json
-          cp "${{ steps.cli.outputs.bundle-path }}" chrono-cli-win.zip.sigstore.json
-          gh release upload "${{ inputs.tag }}" \
+          cp "$GUI_BUNDLE" ChronoMock-win-x64.zip.sigstore.json
+          cp "$CLI_BUNDLE" chrono-cli-win.zip.sigstore.json
+          gh release upload "$TAG" \
             ChronoMock-win-x64.zip.sigstore.json \
             chrono-cli-win.zip.sigstore.json \
-            --repo "${{ github.repository }}" --clobber
+            --repo "$REPO" --clobber
