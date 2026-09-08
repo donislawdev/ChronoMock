@@ -22,6 +22,20 @@ fn command_interpreter() -> String {
     format!(r"{root}\System32\cmd.exe")
 }
 
+/// The library this tool injects, where the binary under test looks for it: beside itself.
+///
+/// `cargo test` never produces it. A test build compiles `chrono-hook` as a test harness, so the
+/// cdylib is not uplifted into `target/debug`, and the session below refuses before it starts
+/// anything. On a machine where somebody has run `cargo build` the file is there from that, which
+/// is why the probe below passed by hand and failed on every clean runner from the day it was
+/// written. `is_file` rather than `exists`, to ask exactly what `core::hook_dll_in` asks.
+fn injected_library() -> PathBuf {
+    PathBuf::from(env!("CARGO_BIN_EXE_chrono"))
+        .parent()
+        .expect("the binary under test lives in a directory")
+        .join("chrono_hook.dll")
+}
+
 /// A scratch directory for one run of this test, removed afterwards.
 fn scratch(name: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!("chrono-dry-run-{name}-{}", std::process::id()));
@@ -74,6 +88,18 @@ fn a_dry_run_starts_no_target() {
 /// This one drives a real session on `cmd.exe`, which is what the tool does for a living.
 #[test]
 fn the_same_command_line_without_the_flag_does_start_the_target() {
+    // Asked before the session rather than read out of its report afterwards. Without it the
+    // failure arrives as the product's own message about an incomplete installation - the right
+    // words for a user holding half a package, and the wrong ones for whoever is running the
+    // tests, who has a complete checkout and a missing build step.
+    let library = injected_library();
+    assert!(
+        library.is_file(),
+        "this probe drives a real session and needs {}, which `cargo test` does not build. \
+         Run `cargo build --workspace` first - CI and tools/gates.ps1 both do that now.",
+        library.display()
+    );
+
     let dir = scratch("starts-something");
     let marker = dir.join("the-target-ran");
 
@@ -100,6 +126,42 @@ fn the_same_command_line_without_the_flag_does_start_the_target() {
     );
 
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// The probe above needs an artifact `cargo test` does not build, so CI has to build it first. That
+/// ordering is a precondition living in another file, and nothing else would notice it leaving:
+/// `tools/gates.ps1` builds too, so the local gates would stay green while every push went red.
+/// This is how that was found in the first place.
+///
+/// The needle is the `run:` line rather than the two words, because a bare `cargo build` is also in
+/// the comment that explains the step and in two release-build steps below it. An assertion that
+/// prose about itself can satisfy is not an assertion.
+#[test]
+fn ci_still_builds_the_debug_artifacts_before_it_runs_the_tests() {
+    let workflow = std::fs::read_to_string(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join("..")
+            .join(".github")
+            .join("workflows")
+            .join("ci.yml"),
+    )
+    .expect("the CI workflow is readable");
+
+    let build = workflow.find("run: cargo build --workspace");
+    let test = workflow.find("run: cargo test --workspace");
+
+    assert!(
+        build.is_some(),
+        "no CI step builds the debug artifacts any more, so the probe that drives a real session \
+         will fail on a clean runner with the product's message about an incomplete installation"
+    );
+    assert!(test.is_some(), "no CI step runs the Rust tests any more");
+    assert!(
+        build < test,
+        "CI builds the debug artifacts AFTER running the tests, which is the same as not building \
+         them: the session probe reads the directory as it is when it runs"
+    );
 }
 
 /// A path with a directory component that holds no file is a fact the plan can establish without
