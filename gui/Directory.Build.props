@@ -17,6 +17,15 @@
          be downloaded when cross-targeting, so a build on Windows is unaffected - and the
          same doc asks that releases be built on Windows, which is where ours are built. -->
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <!-- Record the exact bytes of every NuGet package these projects restore, in a packages.lock.json
+         beside each csproj. Until 2026-09-08 the managed half had no integrity record at all: Cargo.lock
+         carries a checksum for all 44 third-party crates, while `WPF-UI 4.3.0` was fetched fresh on every
+         restore with nothing written down about what arrived. The lock file is NuGet's own answer and a
+         stronger one than a hash copied into a test by hand, because it covers the transitive set too.
+         Enforced where it matters: on a runner, restore refuses a lock file that no longer matches the
+         manifests instead of quietly rewriting it, so a dependency cannot change under a release build. -->
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+    <RestoreLockedMode Condition="'$(CI)' == 'true'">true</RestoreLockedMode>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>

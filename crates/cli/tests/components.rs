@@ -217,6 +217,59 @@ fn every_component_in_the_register_is_named_in_the_shipped_notices() {
     assert!(missing.is_empty(), "the register and the notices file disagree: {missing:?}");
 }
 
+/// Direction four: the bytes of every managed package we ship are written down.
+///
+/// Cargo.lock has carried a checksum for every third-party crate since the day there were crates. The
+/// managed half had nothing at all until 2026-09-08: `WPF-UI 4.3.0` was fetched fresh on every restore
+/// with no record of what arrived. `RestorePackagesWithLockFile` fixes that, and this makes sure the
+/// record keeps existing - a lock file is the kind of thing that gets deleted to make a build go green.
+///
+/// The runtime packs are deliberately not here. They come from the SDK rather than from a
+/// PackageReference, so no lock file can carry them, and the packaging script checks them against the
+/// deps.json instead.
+#[test]
+fn every_nuget_component_the_register_declares_has_its_bytes_pinned() {
+    let path = repo_root().join("gui").join("ChronoMock.App").join("packages.lock.json");
+    let text = std::fs::read_to_string(&path).unwrap_or_else(|e| {
+        panic!(
+            "the NuGet lock file must exist at {} - without it nothing records which bytes a restore \
+             pulled down: {e}",
+            path.display()
+        )
+    });
+    let lock: serde_json::Value =
+        serde_json::from_str(&text).unwrap_or_else(|e| panic!("the lock file must be valid JSON: {e}"));
+
+    // One target framework in this project, and the lock file nests every package under it.
+    let frameworks = lock["dependencies"].as_object().expect("the lock file must list dependencies");
+    let mut checked = 0usize;
+    let mut missing: Vec<String> = Vec::new();
+    for (name, version, kind) in components(&register()) {
+        if kind != "nuget" {
+            continue;
+        }
+        checked += 1;
+        let entry = frameworks.values().find_map(|packages| packages.get(&name));
+        match entry {
+            None => missing.push(format!("{name} is declared and the lock file does not carry it")),
+            Some(entry) => {
+                if entry["resolved"].as_str() != Some(version.as_str()) {
+                    missing.push(format!(
+                        "{name}: register says {version}, the lock file resolved {}",
+                        entry["resolved"].as_str().unwrap_or("nothing")
+                    ));
+                }
+                if entry["contentHash"].as_str().unwrap_or("").is_empty() {
+                    missing.push(format!("{name} has no contentHash, so its bytes are not pinned"));
+                }
+            }
+        }
+    }
+
+    assert!(checked >= 2, "only {checked} nuget components checked - the register lost entries");
+    assert!(missing.is_empty(), "the register and the NuGet lock file disagree: {missing:?}");
+}
+
 /// The register's own shape, so a truncated or half-edited file fails here rather than three steps
 /// later inside the SBOM generator, where the message would be about JSON.
 #[test]

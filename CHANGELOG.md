@@ -8,6 +8,21 @@ Notable changes to Chrono Mock, newest first. The format follows
 
 ### Added
 
+- **A bill of materials, hashes and build provenance for every release.** Each release from now on
+  carries `SHA256SUMS`, an SPDX 2.3 document per package listing every third-party component with its
+  version and licence, and a build-provenance attestation over both archives and every binary inside
+  them - including `chrono_hook.dll`, the library the tool injects into other processes. Verify it
+  with `gh attestation verify <file> --repo donislawdev/ChronoMock`, which answers what a checksum
+  cannot: which workflow, in which repository, at which commit, produced those exact bytes. The
+  release is now built by that workflow rather than on a developer machine, because provenance for
+  bytes nobody downloads is worth nothing. The archives are still not Authenticode-signed.
+- **`chrono license --components`**, which prints every third-party component in the tool with its
+  version, licence and copyright holder, from a register compiled into the binary - so a copy taken
+  out of its folder, on a machine with no internet, still answers the question.
+- **The .NET runtime inside the window package is now declared.** That package ships around two
+  hundred Microsoft assemblies, and until now `THIRD-PARTY-NOTICES.md` did not mention them. Two of the
+  three runtime packs are MIT, and Microsoft's own `LICENSE.TXT` and `THIRD-PARTY-NOTICES.TXT` now
+  ship alongside them under `dotnet/`. One of the three is not MIT and is recorded as such.
 - **`chrono run --dry-run`**, which works the session out and starts nothing. The tool's ordinary
   act is to launch your application and inject a library into it, and until now there was no way to
   see what a session would be without performing it. The plan names the resolved moment and the zone
