@@ -376,7 +376,7 @@
   "tip.today": "Fill in today's date (session zone), at midnight.",
   "tip.now": "Fill in the current date and time (session zone).",
   "tip.zone": "The session time zone - a fixed offset with no daylight saving. The moment is read in it.",
-  "tip.relative_moment": "Fill the moment above with now, shifted by this much - the command line spells it --at +30d. Months, quarters and years land on the calendar date, not on a fixed number of hours.",
+  "tip.relative_moment": "Fill the moment above with now, shifted by this much - the command line spells it --at +30d. Months, quarters and years land on the calendar date, not on a fixed number of hours. This row makes one shift and no more, which is why it offers fewer choices than the calculator: business days are absent because a session carries no holiday calendar, and ready-made moments such as a month end are in the Scenario list above.",
   "tip.mode": "How fast the fake clock runs: flowing at real speed, frozen, or N times faster.",
   "tip.scale_duration": "Also speed up timers, sleeps and countdowns inside the app - not just the wall clock.",
   "tip.scale_qpc": "Also speed up QPC-based clocks (Python monotonic, .NET Stopwatch, Java nanoTime). May distort an app that times its rendering off QPC.",

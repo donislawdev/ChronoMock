@@ -375,7 +375,7 @@
   "tip.today": "Wstaw dzisiejszą datę (strefa sesji), o północy.",
   "tip.now": "Wstaw bieżącą datę i godzinę (strefa sesji).",
   "tip.zone": "Strefa czasowa sesji - stały offset bez zmiany czasu. Moment jest w niej liczony.",
-  "tip.relative_moment": "Wypełnia moment powyżej czasem teraz, przesuniętym o tę wartość - w wierszu poleceń to --at +30d. Miesiące, kwartały i lata trafiają na datę kalendarzową, nie na stałą liczbę godzin.",
+  "tip.relative_moment": "Wypełnia moment powyżej czasem teraz, przesuniętym o tę wartość - w wierszu poleceń to --at +30d. Miesiące, kwartały i lata trafiają na datę kalendarzową, nie na stałą liczbę godzin. Ten wiersz robi jedno przesunięcie i nic więcej, dlatego ma mniej opcji niż kalkulator: dni roboczych nie ma, bo sesja nie niesie kalendarza świąt, a gotowe momenty w rodzaju końca miesiąca stoją na liście scenariuszy powyżej.",
   "tip.mode": "Jak szybko idzie podmieniony zegar: płynnie, zamrożony, albo N razy szybciej.",
   "tip.scale_duration": "Przyśpiesz też liczniki, uśpienia i odliczania w aplikacji - nie tylko zegar ścienny.",
   "tip.scale_qpc": "Przyśpiesz też zegary na QPC (Python monotonic, .NET Stopwatch, Java nanoTime). Może zniekształcić aplikację liczącą render z QPC.",
