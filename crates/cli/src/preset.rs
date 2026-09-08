@@ -412,6 +412,61 @@ pub(crate) fn resolve_parameters(
     Ok(out)
 }
 
+/// What a preset was actually filled with: every declared parameter, the value it resolved to, and
+/// where that value came from, as `(id, value, source)`.
+///
+/// Lives here, beside [`resolve_parameters`], and asks the source question in the same order that
+/// function takes its answers - the two cannot be read apart, and a plan naming a source for a
+/// resolution that did not happen would be worse than a plan naming none.
+///
+/// A parameter missing from `values` is skipped rather than guessed at. That cannot happen after a
+/// successful resolution, which fills every declared parameter or fails.
+pub(crate) fn parameter_provenance(
+    params: &[Parameter],
+    cli: &HashMap<String, String>,
+    values: &HashMap<String, ParamValue>,
+) -> Vec<(String, String, String)> {
+    params
+        .iter()
+        .filter_map(|p| {
+            let value = values.get(&p.id)?;
+            Some((p.id.clone(), param_value_text(value), parameter_source(p, cli)))
+        })
+        .collect()
+}
+
+/// Where a resolved parameter's value came from. The final arm cannot be reached after a successful
+/// resolution - a parameter with no source at all is the error `resolve_parameters` raises first.
+fn parameter_source(p: &Parameter, cli: &HashMap<String, String>) -> String {
+    if cli.contains_key(&p.id) {
+        "--param".to_string()
+    } else if p.default.is_some() {
+        "the preset's default".to_string()
+    } else if let Some(hint) = &p.default_hint {
+        match hint.as_str() {
+            "target_file_creation" => "the target's file date".to_string(),
+            // A hint built later names itself rather than being described as something it is not.
+            other => format!("default_hint {other}"),
+        }
+    } else {
+        "no source".to_string()
+    }
+}
+
+/// A resolved parameter value as one short phrase, for a report that shows what a preset was filled
+/// with. Not a wire format and not parsed back - the machine surface carries the resolved moment.
+fn param_value_text(v: &ParamValue) -> String {
+    match v {
+        ParamValue::Date(d) => format!("{:04}-{:02}-{:02}", d.year, d.month, d.day),
+        ParamValue::Duration { amount, unit } => format!("{amount} {}", unit.name()),
+        // The three boundary variants, by the signed day offset each resolves to (docs/05 3.6).
+        ParamValue::Variant(-1) => "day_before".to_string(),
+        ParamValue::Variant(0) => "on_day".to_string(),
+        ParamValue::Variant(1) => "day_after".to_string(),
+        ParamValue::Variant(days) => format!("{days:+} days"),
+    }
+}
+
 /// Resolve a parameter's `default_hint` to a value. Only `target_file_creation` is built (docs/04
 /// 4.2): it fills a `date` parameter from the target's file date, available only in `run`. Without a
 /// target it is an honest "not built" asking for `--param`, not a guess.

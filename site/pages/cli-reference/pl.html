@@ -142,6 +142,16 @@
               Ta flaga rozstrzyga wyłącznie, czy cel biegnie dalej.</td>
           </tr>
           <tr>
+            <td><code>--dry-run</code></td>
+            <td>Wypisuje, czym byłaby sesja, i nie uruchamia niczego: rozwiązany moment i strefę
+              wraz z ich pochodzeniem, wartości, którymi preset wypełnił swoje parametry, argumenty
+              po podziale oraz to, który z dwóch mechanizmów objąłby cel. Nie powstaje żaden proces
+              ani żaden plik, także ten wskazany przez <code>--report</code>. Kończy 0 dla planu,
+              który da się wykonać, i 2 dla celu, którego nie ma - tym samym kodem, który za ten sam
+              fakt daje prawdziwy przebieg. Plan nie niesie werdyktu i mówi to wprost, bo werdykt ma
+              wyłącznie prawdziwa sesja.</td>
+          </tr>
+          <tr>
             <td><code>--report &lt;plik&gt;</code></td>
             <td>Zapisuje czytelny raport do pliku. Werdykt inny niż <em>works</em> prowadzi taki
               plik banerem o nierzetelnym dowodzie, bo dowód, który przemilcza własną wątpliwość,

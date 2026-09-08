@@ -42,6 +42,9 @@ pub(crate) struct RunArgs {
     /// Preset parameter values from `--param id=value` (docs/04 4.2). Only meaningful with --preset.
     /// In run, a `target_file_creation` hint also resolves from the target's file date.
     pub(super) params: HashMap<String, String>,
+    /// Resolve everything and start nothing (`--dry-run`). The session is described rather than run:
+    /// no core process, no target, no evidence file, and no verdict to report.
+    pub(super) dry_run: bool,
     /// Give up after this many seconds of wall time, whatever the session is doing (`--timeout`).
     /// None = no ceiling, which stays the default because the normal way to bound a run is
     /// `--ticks`, and a session driving a real app has no business being cut off by surprise.
@@ -135,6 +138,7 @@ pub(crate) fn parse_run_args(argv: &[String]) -> Result<RunArgs, String> {
     let mut scale_duration = false;
     let mut scale_qpc = false;
     let mut force = false;
+    let mut dry_run = false;
     let mut ticks: u64 = 0;
     let mut timeout_secs: Option<u64> = None;
     let mut set_after: Option<(u64, i64)> = None;
@@ -205,6 +209,9 @@ pub(crate) fn parse_run_args(argv: &[String]) -> Result<RunArgs, String> {
             }
             "--force" => {
                 force = true;
+            }
+            "--dry-run" => {
+                dry_run = true;
             }
             "--scale-qpc" => {
                 // ADR-2 reversal, opt-in. NOT a preset-exclusive time flag: a preset carries its own
@@ -298,6 +305,7 @@ pub(crate) fn parse_run_args(argv: &[String]) -> Result<RunArgs, String> {
         scale_duration,
         scale_qpc,
         force,
+        dry_run,
         ticks,
         timeout_secs,
         set_after,

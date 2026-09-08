@@ -14,6 +14,8 @@ mod args;
 mod collect;
 /// Deciding what time the session runs with, before anything is spawned.
 mod moment;
+/// `--dry-run`: describing the session instead of running it.
+mod plan;
 
 use std::io::{BufReader, Write};
 use std::process::{Command as PCommand, Stdio};
@@ -89,10 +91,17 @@ pub(crate) fn driver_run(argv: &[String]) -> i32 {
     // The moment AND the time mode come either from a named preset (docs/04 4.3) or from the flags,
     // and both arms end in the one `TimeSpec` that goes on the wire. Reading the report's own
     // description off that same value is what stops it drifting from what was sent.
-    let spec = match resolve_time_spec(&ra, now_bias) {
-        Ok(spec) => spec,
+    let resolved = match resolve_time_spec(&ra, now_bias) {
+        Ok(resolved) => resolved,
         Err(code) => return code,
     };
+    let spec = resolved.spec;
+
+    // Everything above this line decided what the session WOULD be, and nothing has been started or
+    // written yet. A dry run stops exactly here and says so (docs/08 section 9d).
+    if ra.dry_run {
+        return plan::dry_run(&ra, &spec, &resolved.origin, now_bias);
+    }
 
 
     // A Chromium/Electron target is auto-detected by `__core` itself (ADR-9): the core takes the CDP
@@ -302,26 +311,7 @@ pub(crate) fn driver_run(argv: &[String]) -> i32 {
     // A session that timed out has no verdict to report, and must not borrow one: the core was
     // killed mid-flight, so its exit code says how it died, not what it found (untouchable rule 4).
     if let Some(which) = timed_out {
-        match which {
-            "timeout" => eprintln!(
-                "chrono: gave up after the --timeout of {}s - the core was stopped, so this run has no verdict",
-                ra.timeout_secs.unwrap_or(0)
-            ),
-            _ => eprintln!(
-                "chrono: the core sent nothing for {DRIVER_IDLE_TIMEOUT_SECS}s and was stopped - this run has no verdict"
-            ),
-        }
-        // The target is NOT killed with the core, and that is the normal arrangement rather than an
-        // oversight: a session ordinarily stays attached until the application exits, because detaching
-        // early would hand it back the real clock. Stopping the core does not change that, so the app
-        // carries on with the session's hooks still installed and nothing tells the tester - measured on
-        // a real run, where the application had to be closed by hand afterwards. Killing someone else's
-        // application over a diagnostic ceiling is a bigger decision than this line, so this says it
-        // instead of doing it (rule 6).
-        eprintln!(
-            "chrono: the target was started by the core and does not exit with it - it may still be running on the session clock, so close it yourself"
-        );
-        return 6;
+        return report_cut_short(which, ra.timeout_secs);
     }
 
     // The tool's exit code is the session verdict, carried by the core's exit code
@@ -331,6 +321,34 @@ pub(crate) fn driver_run(argv: &[String]) -> i32 {
         eprintln!("chrono: the core ended without a verdict - this run proves nothing about the target");
     }
     code
+}
+
+/// What the driver says when it cut the run short, and the code it exits with.
+///
+/// Which limit ran out decides only the first sentence - both mean the same thing, that there is no
+/// verdict to report. Lifted out of `driver_run` so the pinned complexity ceiling stays where it is
+/// (clippy.toml), which is the ceiling working rather than a nuisance.
+fn report_cut_short(which: &str, timeout_secs: Option<u64>) -> i32 {
+    match which {
+        "timeout" => eprintln!(
+            "chrono: gave up after the --timeout of {}s - the core was stopped, so this run has no verdict",
+            timeout_secs.unwrap_or(0)
+        ),
+        _ => eprintln!(
+            "chrono: the core sent nothing for {DRIVER_IDLE_TIMEOUT_SECS}s and was stopped - this run has no verdict"
+        ),
+    }
+    // The target is NOT killed with the core, and that is the normal arrangement rather than an
+    // oversight: a session ordinarily stays attached until the application exits, because detaching
+    // early would hand it back the real clock. Stopping the core does not change that, so the app
+    // carries on with the session's hooks still installed and nothing tells the tester - measured on
+    // a real run, where the application had to be closed by hand afterwards. Killing someone else's
+    // application over a diagnostic ceiling is a bigger decision than this line, so this says it
+    // instead of doing it (rule 6).
+    eprintln!(
+        "chrono: the target was started by the core and does not exit with it - it may still be running on the session clock, so close it yourself"
+    );
+    6
 }
 
 /// Map the core's exit code to the tool's.

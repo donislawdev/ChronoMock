@@ -142,6 +142,16 @@
               neither does the exit code. This only decides whether the target keeps running.</td>
           </tr>
           <tr>
+            <td><code>--dry-run</code></td>
+            <td>Print what the session would be and start nothing: the resolved moment and zone and
+              where they came from, what a preset filled each parameter with, the arguments after
+              splitting, and which of the two mechanisms the target would take. No process is
+              started and no file is written, including the one <code>--report</code> names. It
+              exits 0 for a workable plan and 2 for a target that is not there, which is the code a
+              real run gives for the same fact. A plan carries no verdict and says so - only a real
+              session has one.</td>
+          </tr>
+          <tr>
             <td><code>--report &lt;path&gt;</code></td>
             <td>Write the human report to a file. A verdict other than <em>works</em> leads that
               file with an unreliable-evidence banner, because evidence that hides its own doubt

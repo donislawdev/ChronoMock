@@ -8,6 +8,16 @@ Notable changes to Chrono Mock, newest first. The format follows
 
 ### Added
 
+- **`chrono run --dry-run`**, which works the session out and starts nothing. The tool's ordinary
+  act is to launch your application and inject a library into it, and until now there was no way to
+  see what a session would be without performing it. The plan names the resolved moment and the zone
+  it is read in, where both came from, the arguments after they are split, the working directory, and
+  which of the two mechanisms the target would take. For a preset it also names what each parameter
+  was filled with and from where - which is the only way to learn the date a trial preset lands on,
+  since it counts from the target's own file date. No process is started and no file is written,
+  including the one `--report` names. It exits 0 for a workable plan and 2 for a target that is not
+  there, the same code a real run gives for the same fact. A plan carries no verdict and says so.
+  With `--json` it is one `chronomock.plan/1` record.
 - **`chrono version`**, also spelled `--version` and `-V`. Prints the build, which of the two
   cores that executable is, and the wire protocol it speaks, on stdout so a script can capture
   it. Until now the tool could not answer the first question any bug report asks.

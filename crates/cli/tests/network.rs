@@ -143,6 +143,13 @@ const ALLOWED: &[(&str, &str, &str)] = &[
          because a test can reach the network in CI as easily as the product can on a desktop",
     ),
     (
+        "crates/cli/tests/dry_run.rs",
+        "spawn",
+        "the dry-run guard runs the built binary twice over: once with --dry-run, which must start \
+         nothing, and once without it, which must start the target - the second is what proves the \
+         first can fail. Neither reaches past this machine",
+    ),
+    (
         "crates/hook/src/lib.rs",
         "winsock",
         "the injected library resolves ws2_32 to INTERCEPT the target's own connect and count it. \
