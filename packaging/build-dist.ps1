@@ -59,6 +59,9 @@ $publish = Join-Path $root 'target/publish-gui'
 $zip = Join-Path $dist 'ChronoMock-win-x64.zip'
 $cliStage = Join-Path $dist 'chrono-cli'
 $cliZip = Join-Path $dist 'chrono-cli-win.zip'
+# What the publish itself says it bundled. The only place the runtime pack versions are knowable, since
+# global.json pins the test runner and not the SDK.
+$depsJson = Join-Path $stage 'ChronoMock.deps.json'
 
 function Assert-Exists([string] $path, [string] $why) {
     if (-not (Test-Path -LiteralPath $path)) {
@@ -178,6 +181,74 @@ Copy-Item -LiteralPath (Join-Path $root 'THIRD-PARTY-NOTICES.md') -Destination $
 # The package ships its own getting-started, not the marketing README (which is written for the public
 # repo and would tell a teammate who just unzipped this "nothing to download yet"). Mirrors cli-readme.md.
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'gui-readme.md') -Destination (Join-Path $stage 'README.md')
+
+# 3e. The .NET runtime this self-contained publish carries, checked against the curated register and
+#     given its own notices.
+#
+#     Two obligations, and neither can be met from a checkout alone. The versions are decided by
+#     whichever SDK ran the publish (global.json pins the test runner, not the SDK), so the only place
+#     they are knowable is the deps.json that publish just wrote - which is why this check lives here
+#     rather than in a Rust test beside the other register guards. And the base runtime pack is MIT,
+#     which asks its notice to travel with every copy: until 2026-09-08 the package carried around two
+#     hundred Microsoft assemblies and not one line about them.
+Assert-Exists $depsJson 'the publish must produce a deps.json naming the runtime packs it bundled'
+$deps = Get-Content -Raw -LiteralPath $depsJson | ConvertFrom-Json
+$register = Get-Content -Raw -LiteralPath (Join-Path $PSScriptRoot 'components.json') | ConvertFrom-Json
+
+# deps.json names each bundled library "<kind>.<name>/<version>" - runtimepack.* for the runtime, plain
+# names for NuGet packages. Turn both into a name -> version map the register can be compared against.
+$built = @{}
+foreach ($library in $deps.libraries.PSObject.Properties) {
+    $parts = $library.Name -split '/', 2
+    if ($parts.Count -ne 2) { continue }
+    $name = $parts[0] -replace '^runtimepack\.', ''
+    $built[$name] = $parts[1]
+}
+
+$declaredManaged = $register.components | Where-Object { $_.kind -in @('nuget', 'dotnet-runtime-pack') }
+foreach ($component in $declaredManaged) {
+    $actual = $built[$component.name]
+    if (-not $actual) {
+        throw (("components.json declares '{0}' {1} and this publish did not bundle it. Either the " +
+            "dependency is gone (drop the entry) or its name changed (fix the entry) - the SBOM must " +
+            "describe the zip, not a wish.") -f $component.name, $component.version)
+    }
+    if ($actual -ne $component.version) {
+        throw (("components.json declares {0} {1} and the publish bundled {2}. Update that line in " +
+            "packaging/components.json AND the table in THIRD-PARTY-NOTICES.md - an SBOM that names a " +
+            "version other than the shipped one is worse than none.") -f $component.name, $component.version, $actual)
+    }
+}
+# And the other direction: a managed dependency nobody declared must not reach a user's disk.
+foreach ($name in $built.Keys) {
+    if ($name -eq 'ChronoMock' -or $name -eq 'ChronoMock.Protocol') { continue }
+    if ($declaredManaged.name -notcontains $name) {
+        throw (("the publish bundled '{0}' {1}, which packaging/components.json does not declare. Add it " +
+            "there and to THIRD-PARTY-NOTICES.md before shipping it.") -f $name, $built[$name])
+    }
+}
+
+# Microsoft's own notices for the base runtime pack, from the NuGet cache the publish restored it into.
+$runtimePack = 'microsoft.netcore.app.runtime.win-x64'
+$packVersion = $built['Microsoft.NETCore.App.Runtime.win-x64']
+$nugetRoots = @($env:NUGET_PACKAGES, (Join-Path $HOME '.nuget/packages'), (Join-Path $env:USERPROFILE '.nuget/packages')) |
+    Where-Object { $_ } | Select-Object -Unique
+$packDir = $nugetRoots |
+    ForEach-Object { Join-Path $_ "$runtimePack/$packVersion" } |
+    Where-Object { Test-Path -LiteralPath $_ } |
+    Select-Object -First 1
+if (-not $packDir) {
+    throw ("cannot find the .NET runtime pack $runtimePack/$packVersion in any of: " +
+        ($nugetRoots -join ', ') + " - its MIT notice has to ship with the package, so this is a hard stop")
+}
+$dotnetNotices = Join-Path $stage 'dotnet'
+New-Item -ItemType Directory -Path $dotnetNotices -Force | Out-Null
+foreach ($file in @('LICENSE.TXT', 'THIRD-PARTY-NOTICES.TXT')) {
+    $from = Join-Path $packDir $file
+    Assert-Exists $from "the runtime pack must carry $file - THIRD-PARTY-NOTICES.md promises the package ships it"
+    Copy-Item -LiteralPath $from -Destination $dotnetNotices
+}
+Write-Host ("== dotnet notices == {0} {1}, from {2}" -f $runtimePack, $packVersion, $packDir)
 
 # --- 4. Zip the portable folder (a teammate unzips one ChronoMock/ folder). ---------------------
 Write-Host '== zip =='

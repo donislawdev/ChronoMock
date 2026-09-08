@@ -11,7 +11,8 @@ This file is also the dependency register required by the rule-8 licence sieve
 
 ## WPF-UI (`Wpf.Ui.dll`, `Wpf.Ui.Abstractions.dll`)
 
-- Package: `WPF-UI` 4.3.0 (https://www.nuget.org/packages/WPF-UI), project lepoco/wpfui
+- Packages: `WPF-UI` 4.3.0 and `WPF-UI.Abstractions` 4.3.0
+  (https://www.nuget.org/packages/WPF-UI), project lepoco/wpfui
 - Licence: **MIT** - compatible with GPL-3.0 (a legal assessment, not a lawyer's ruling)
 - Used by: the C# GUI (`gui/ChronoMock.App`)
 - Font redistribution check (verified on 4.3.0 by inspecting the embedded resources of
@@ -47,6 +48,46 @@ SOFTWARE.
 
 ---
 
+## The .NET runtime the window package carries
+
+`ChronoMock-win-x64.zip` is a self-contained publish, so it ships the .NET runtime itself -
+around two hundred assemblies that are not ours. They arrive as three runtime packs, and
+until 2026-09-08 this file did not mention them at all. That was a real gap rather than a
+formality: two of the three are MIT, and MIT asks that its notice travel with every copy.
+
+| Pack | Version | Licence | Copyright |
+|---|---|---|---|
+| `Microsoft.NETCore.App.Runtime.win-x64` | 10.0.11 | MIT | Copyright (c) .NET Foundation and Contributors |
+| `Microsoft.WindowsDesktop.App.Runtime.win-x64` | 10.0.11 | MIT | Copyright (c) .NET Foundation and Contributors |
+| `Microsoft.Windows.SDK.NET.Ref` | 10.0.17763.57 | Windows SDK licence terms, see below | © Microsoft Corporation. All rights reserved. |
+
+The licences are read from each pack's own `.nuspec` rather than assumed. The MIT text is the
+one reproduced below for the Rust crates. Two names appear for the same holder and both are
+copied rather than reconciled: the nuspec says `© Microsoft Corporation. All rights reserved.`
+while the MIT notice inside the pack says `Copyright (c) .NET Foundation and Contributors`.
+The MIT notice is the one the licence asks to travel with the copy, so it is the one tabled.
+
+🔴 **The third pack is not MIT and has no SPDX identifier.** Its nuspec carries no
+`<license type="expression">` at all, only a `licenseUrl` pointing at the Windows SDK licence
+terms (<https://aka.ms/WinSDKLicenseURL>). It ships as `Microsoft.Windows.SDK.NET.dll` and
+`WinRT.Runtime.dll`, the Windows projections the desktop runtime pack pulls in. The machine
+register records it as `LicenseRef-Microsoft-Windows-SDK`, which is what SPDX has for a
+licence with no identifier. An earlier draft of that register wrote MIT from memory and was
+wrong, which is why the register is now read from the package.
+
+The version numbers above are decided by the .NET SDK on whichever machine publishes, and
+`global.json` does not pin the SDK. `packaging/build-dist.ps1` therefore compares them with
+the `deps.json` the publish produced and stops the packaging run if they differ, so this table
+cannot quietly describe a runtime other than the one in the zip.
+
+Microsoft's own `LICENSE.TXT` and `THIRD-PARTY-NOTICES.TXT` for the base runtime pack ship
+inside the window package, under `dotnet/`. The second one is 78 KB of notices for the
+components inside the runtime, which are Microsoft's to declare rather than ours to restate.
+The packaging script copies both and stops the run if it cannot find them, because a notice
+that promises a file the package does not carry is worse than no notice.
+
+---
+
 ## Native (Rust) shipped dependencies
 
 The native cores (`chrono.exe` and the injected `chrono_hook.dll`, both x64 and x86)
@@ -70,7 +111,7 @@ copyright line, so their attribution below is taken from the crate's declared au
 | `serde_core` | 1.0.229 | Erick Tryzelaar, David Tolnay |
 | `serde_json` | 1.0.151 | Erick Tryzelaar, David Tolnay |
 | `zmij` | 1.0.23 | David Tolnay |
-| `log` | 0.4.33 | Copyright (c) 2014 The Rust Project Developers |
+| `log` | 0.4.34 | Copyright (c) 2014 The Rust Project Developers |
 | `minhook` | 0.9.0 | Copyright (c) 2025 Jakobzs (Rust wrapper - MinHook C notice below) |
 | `once_cell` | 1.21.4 | Aleksey Kladov |
 | `pin-project-lite` | 0.2.17 | the pin-project-lite authors |
@@ -110,10 +151,15 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### MinHook (vendored C library, compiled into `chrono_hook.dll`)
+### MinHook 1.3.4 (vendored C library, compiled into `chrono_hook.dll`)
 
 The `minhook` crate compiles the MinHook C library, which carries its own BSD-2-Clause
-licence, including the bundled Hacker Disassembler Engine portions:
+licence, including the bundled Hacker Disassembler Engine portions.
+
+The version is stated here because the vendored source disagrees with itself: its
+`CMakeLists.txt` still sets 1.3.3, while its own README version history has v1.3.4
+(28 Mar 2025) at the top. The snapshot is 1.3.4 and the build file was not bumped upstream.
+Checked in the crate source on 2026-09-08.
 
 ```
 MinHook - The Minimalistic API Hooking Library for x64/x86
