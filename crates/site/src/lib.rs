@@ -17,6 +17,21 @@
 //! * **Internal links.** Every `/...` link must resolve to something actually
 //!   emitted. GitHub Pages cannot redirect, so a dead internal link is permanent
 //!   until someone notices it by hand.
+//!
+//! # Why the path-traversal rule is suppressed in this crate
+//!
+//! A web-framework rule reads every path built here as reachable by an attacker. This
+//! crate is not reachable at all: it ships with nothing, no other crate depends on it,
+//! and it is not in either distribution package. It runs twice, from `cargo run -p
+//! chrono-site` in CI and on a maintainer's machine, and every path it opens is either
+//! a directory named on its own command line or a name read out of `site/` in this
+//! repository. There is no request, no upload and no visitor - the output is static
+//! files a web server hands out afterwards, and that server is not this program.
+//!
+//! One place does delete, and it carries a guard the rule would not have asked for:
+//! `prepare_out` refuses to empty a directory that does not already hold the
+//! `.chrono-site` marker, so pointing `--out` at the wrong place stops rather than
+//! wipes. The suppressions are per rule id, so a different rule still reports here.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
@@ -251,6 +266,7 @@ impl Report {
 // ------------------------------------------------------------------------- input --
 
 pub fn read_to_string(path: &Path) -> Result<String> {
+    // nosemgrep: rust.actix.path-traversal.tainted-path.tainted-path
     fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))
 }
 
@@ -293,6 +309,7 @@ pub fn load_i18n(site_dir: &Path, languages: &[String]) -> Result<BTreeMap<Strin
 /// property of the data rather than of the filesystem.
 pub fn load_pages(site_dir: &Path) -> Result<Vec<Page>> {
     let dir = site_dir.join("pages");
+    // nosemgrep: rust.actix.path-traversal.tainted-path.tainted-path
     let entries = fs::read_dir(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
 
     let mut pages = Vec::new();
@@ -319,6 +336,7 @@ pub fn load_pages(site_dir: &Path) -> Result<Vec<Page>> {
 /// Count the catalogue files that ship with the program. Used for the tokens, so a
 /// preset added to the repository shows up on the site without anyone editing prose.
 pub fn count_json_files(dir: &Path) -> Result<usize> {
+    // nosemgrep: rust.actix.path-traversal.tainted-path.tainted-path
     let entries = fs::read_dir(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
     let mut n = 0;
     for entry in entries {

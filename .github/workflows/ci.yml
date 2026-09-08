@@ -124,6 +124,16 @@ jobs:
           Write-Host "The failures above are the point: each shape ceiling is a real measurement."
           exit 0
 
+      # 🔴 BEFORE the tests, and not as a convenience. `cargo test` never emits the library this
+      # tool injects: a test build compiles `chrono-hook` as a test harness, so `chrono_hook.dll`
+      # is never uplifted beside `chrono.exe`, and the one test that drives a real session refuses
+      # before it starts anything. On a developer machine that file is present from an earlier
+      # `cargo build`, which is why that test passed by hand and failed on every clean runner from
+      # the day it was written. Measured on a warm tree: 3,4 s, because this step compiles the
+      # dependencies the test step would have compiled anyway and the extra work is one cdylib link.
+      - name: Debug artifacts the tests drive
+        run: cargo build --workspace
+
       - name: Rust tests
         run: cargo test --workspace
 

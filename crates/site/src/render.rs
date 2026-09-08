@@ -212,6 +212,9 @@ fn prepare_out(out: &Path) -> Result<()> {
                 out.display()
             ));
         }
+        // The one path in this crate that deletes, which is why the marker above stands where it
+        // does. See the note at the top of lib.rs for why the rule does not reach this crate.
+        // nosemgrep: rust.actix.path-traversal.tainted-path.tainted-path
         let entries = fs::read_dir(out).map_err(|e| format!("{}: {e}", out.display()))?;
         for entry in entries {
             let entry = entry.map_err(|e| format!("{}: {e}", out.display()))?;
@@ -559,6 +562,7 @@ fn copy_assets(root: &Path, site_dir: &Path, out: &Path) -> Result<()> {
     let dst = out.join("assets");
     fs::create_dir_all(&dst).map_err(|e| format!("{}: {e}", dst.display()))?;
 
+    // nosemgrep: rust.actix.path-traversal.tainted-path.tainted-path
     let entries = fs::read_dir(&src).map_err(|e| format!("{}: {e}", src.display()))?;
     for entry in entries {
         let entry = entry.map_err(|e| format!("{}: {e}", src.display()))?;
@@ -572,6 +576,7 @@ fn copy_assets(root: &Path, site_dir: &Path, out: &Path) -> Result<()> {
     // The wordmark uses the product's own icon rather than a second drawing of it, so
     // that changing the program's icon changes the site.
     let bean = root.join("assets").join("chrono-bean.svg");
+    // nosemgrep: rust.actix.path-traversal.tainted-path.tainted-path
     fs::copy(&bean, dst.join("bean.svg")).map_err(|e| format!("{}: {e}", bean.display()))?;
     Ok(())
 }

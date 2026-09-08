@@ -80,9 +80,11 @@ build provenance by default, and a released archive deliberately has none - it w
 on a machine with a hardware key, not built by a workflow. Without the flag one spelling reports "no
 attestation found" and another returns 404, and both look like a broken release when nothing is wrong.
 
-The binaries inside carry an Authenticode signature with an RFC 3161 timestamp - Windows will name
-the publisher rather than warn about an unknown one. [SECURITY.md](SECURITY.md#verifying-a-download)
-says what is signed, what is not, and why.
+From that release onward the binaries inside also carry an Authenticode signature with an RFC 3161
+timestamp, so Windows names the publisher instead of warning about an unknown one. **The v0.1.0
+archives on the page today do not** - they predate all of this, and neither a signature nor an
+attestation can be granted after the fact. [SECURITY.md](SECURITY.md#verifying-a-download) says what
+is signed, what is not, and why.
 
 > **Early release.** The substitution core is implemented and covered by an automated suite that runs
 > on every commit, plus an end-to-end harness exercised against real applications on both 32-bit and

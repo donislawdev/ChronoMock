@@ -201,6 +201,16 @@ fn tie_lifetime_to_ours(child: &Child) -> Option<KillOnCloseJob> {
 /// against, and the working directory in particular is a single call that nothing else would notice
 /// going missing.
 fn chromium_command(target: &str, user_data_dir: &Path, args: &[String], cwd: Option<&str>) -> Command {
+    // A web-framework rule reads the target as untrusted input reaching a command. Its taint source
+    // is a request from a stranger, and there is none here: this is a desktop tool whose entire
+    // function is to start the program its user named, on that user's own machine, under that
+    // user's own token. Naming the program is the feature, not a way into the process.
+    //
+    // Nor is there a shell to inject into. `std::process::Command` documents that arguments are
+    // given literally to the program and that shell syntax has no effect, so the metacharacters
+    // the rule is looking for are ordinary characters in a file name here. `args` is passed the
+    // same way, as separate values rather than a line for something else to re-parse.
+    // nosemgrep: rust.actix.command-injection.rust-actix-command-injection.rust-actix-command-injection
     let mut cmd = Command::new(target);
     cmd.arg(format!("--user-data-dir={}", user_data_dir.display()))
         .arg("--remote-debugging-port=0")
