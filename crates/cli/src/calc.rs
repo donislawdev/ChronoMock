@@ -372,6 +372,21 @@ pub(crate) fn calc_analysis_json(
     serde_json::to_string(&doc).unwrap_or_else(|e| format!(r#"{{"error":"serialize: {e}"}}"#))
 }
 
+/// Refuse a second base flag. `--base` and `--base-utc` read the same text in different zones, so
+/// letting the later one win would move the moment by the zone offset with nothing said - the exact
+/// failure this pair of flags exists to prevent. Names both flags, including the repeat of one.
+fn reject_second_base(seen: &mut Option<&'static str>, flag: &'static str) -> Result<(), String> {
+    match seen {
+        Some(first) => Err(format!(
+            "{first} and {flag} both set the base - pass one (--base reads the session zone, --base-utc reads UTC)"
+        )),
+        None => {
+            *seen = Some(flag);
+            Ok(())
+        }
+    }
+}
+
 pub(crate) fn parse_calc_args(argv: &[String]) -> Result<CalcArgs, String> {
     let mut base = Base::Today;
     let mut steps: Vec<Step> = Vec::new();
@@ -385,13 +400,30 @@ pub(crate) fn parse_calc_args(argv: &[String]) -> Result<CalcArgs, String> {
     // Whether any moment-building flag appeared, so `--preset` (which supplies its own moment)
     // can reject being combined with them instead of silently ignoring one source.
     let mut saw_step_flag = false;
+    // Which base flag was seen, so a second one is refused rather than quietly overwriting the
+    // first. The two read the same text in DIFFERENT zones, so "last one wins" would move the
+    // moment by the zone offset without saying anything.
+    let mut saw_base: Option<&str> = None;
 
     let mut i = 0;
     while i < argv.len() {
         match argv[i].as_str() {
             "--base" => {
                 i += 1;
+                reject_second_base(&mut saw_base, "--base")?;
                 base = parse_base(argv.get(i).ok_or("--base needs a value")?)?;
+                saw_step_flag = true;
+            }
+            // The instant form of --base: the value is read in UTC, not in the session zone. For a
+            // moment whose meaning is an instant (epoch 0, the 32-bit limit) rather than a local
+            // wall-clock reading. Keeps the conversion in the core, so a caller that needs it - the
+            // GUI unpacking such a preset - asks for it instead of computing its own.
+            "--base-utc" => {
+                i += 1;
+                reject_second_base(&mut saw_base, "--base-utc")?;
+                let raw = argv.get(i).ok_or("--base-utc needs a value")?;
+                let trimmed = raw.strip_suffix('Z').unwrap_or(raw);
+                base = Base::AbsoluteUtc(chrono_core::calc::parse_civil_datetime(trimmed)?);
                 saw_step_flag = true;
             }
             "--param" => {
@@ -501,6 +533,7 @@ pub(crate) fn calc_error_exit_code(e: &EvalError) -> i32 {
         // Out of the year band is bad INPUT, not an unbuilt operation: the step is built, the year
         // is one this build will not compute a calendar on. Exit 1, next to the other usage errors.
         | EvalError::BaseYearOutOfRange
+        | EvalError::BaseOverflow
         | EvalError::YearOutOfRange { .. } => 1,
     }
 }
@@ -531,6 +564,11 @@ pub(crate) fn describe_calc_error(e: &EvalError) -> String {
             chrono_core::CIVIL_YEAR_MIN,
             chrono_core::CIVIL_YEAR_MAX
         ),
+        // Names the base, never a step number: this base converts before step 1 runs, and an
+        // expression with no steps can still reach here.
+        EvalError::BaseOverflow => {
+            "chrono calc: the UTC base names an instant outside the representable range (calc.base_overflow)".into()
+        }
         // Deliberately not phrased as an overflow: nothing overflowed. The step produced an exact
         // year that this build does not compute calendars on, and naming it that way is the whole
         // reason it is a separate variant.
@@ -571,6 +609,14 @@ pub(crate) fn render_calc(
         Base::Today => out.push_str(&format!("  base:    {}  (today, session zone {zone})\n", outcome.base.to_iso())),
         Base::Now => out.push_str(&format!("  base:    {}  (now, session zone {zone})\n", outcome.base.to_iso())),
         Base::Absolute(_) => out.push_str(&format!("  base:    {}\n", outcome.base.to_iso())),
+        // Shows BOTH the UTC instant the preset names and where it lands in the session zone. The
+        // second line without the first would look like an ordinary local base that happens to sit
+        // at an odd time, and the reader would have no way to tell the moment is anchored.
+        Base::AbsoluteUtc(utc) => out.push_str(&format!(
+            "  base:    {}  ({}Z in UTC, shown in session zone {zone})\n",
+            outcome.base.to_iso(),
+            utc.to_iso()
+        )),
     }
     for (i, step) in expr.steps.iter().enumerate() {
         out.push_str(&format!("  step {}:  {}  -> {}\n", i + 1, describe_step(step), outcome.after_each[i].to_iso()));
@@ -735,6 +781,47 @@ mod tests {
         assert!(msg.contains("calc.needs_calendar"), "stable key, got: {msg}");
         let msg = describe_calc_error(&EvalError::StepUnsupported { kind: "zone", index: 2 });
         assert!(msg.contains("step 3") && msg.contains("calc.step_unsupported"), "got: {msg}");
+    }
+
+    /// `--base-utc` reads its value as an instant, and the resulting moment must be the SAME instant
+    /// in every session zone - the whole reason the flag exists. Asserted as epoch seconds, because
+    /// the wall-clock reading legitimately differs per zone while the instant may not.
+    #[test]
+    fn base_utc_names_one_instant_whatever_the_session_zone_is() {
+        for bias in [0, -120, 300, -345] {
+            let ca = parse_calc_args(&["--base-utc".into(), "1970-01-01T00:00:00Z".into()]).unwrap();
+            let expr = MomentExpr { base: ca.base, steps: ca.steps };
+            let now = chrono_core::calc::CivilDateTime { year: 2026, month: 1, day: 1, hour: 0, minute: 0, second: 0 };
+            let out = chrono_core::calc::eval(&expr, &EvalContext { now, zone_bias_min: bias, calendar: None }).unwrap();
+            assert_eq!(
+                chrono_core::calc::formats(&out.result(), bias).epoch_seconds,
+                Some(0),
+                "bias {bias} must still name epoch 0"
+            );
+        }
+
+        // The plain --base is unchanged: it reads the session zone, so the same text is a DIFFERENT
+        // instant per zone. Without this the two flags could quietly become one.
+        let plain = parse_calc_args(&["--base".into(), "1970-01-01T00:00:00".into()]).unwrap();
+        let expr = MomentExpr { base: plain.base, steps: plain.steps };
+        let now = chrono_core::calc::CivilDateTime { year: 2026, month: 1, day: 1, hour: 0, minute: 0, second: 0 };
+        let out = chrono_core::calc::eval(&expr, &EvalContext { now, zone_bias_min: -120, calendar: None }).unwrap();
+        assert_eq!(chrono_core::calc::formats(&out.result(), -120).epoch_seconds, Some(-7200));
+    }
+
+    /// Two base flags are a contradiction, not a preference order - "last one wins" would move the
+    /// moment by the zone offset in silence.
+    #[test]
+    fn two_base_flags_are_refused_naming_both() {
+        for argv in [
+            vec!["--base".to_string(), "2026-01-01T00:00:00".into(), "--base-utc".into(), "2026-01-01T00:00:00".into()],
+            vec!["--base-utc".to_string(), "2026-01-01T00:00:00".into(), "--base".into(), "2026-01-01T00:00:00".into()],
+            // A repeat of the same flag is the same mistake, and the same silence.
+            vec!["--base".to_string(), "2026-01-01T00:00:00".into(), "--base".into(), "2027-01-01T00:00:00".into()],
+        ] {
+            let err = parse_calc_args(&argv).err().expect("a second base must be refused");
+            assert!(err.contains("--base"), "the message must name the flags: {err}");
+        }
     }
 
     #[test]

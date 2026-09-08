@@ -185,8 +185,14 @@ pub enum Base {
     Today,
     /// The current instant in the session zone (resolved from the context's `now`).
     Now,
-    /// An explicit civil date and time.
+    /// An explicit civil date and time, read in the SESSION zone (rule 2).
     Absolute(CivilDateTime),
+    /// An explicit instant, written as a civil date and time in UTC and re-expressed in the session
+    /// zone before any step runs. For a moment whose whole meaning is an instant - the Unix epoch,
+    /// the signed 32-bit `time_t` limit - and which therefore must not move with the tester's zone.
+    /// `Absolute` is the right base for everything else: "9 AM on the 3rd" means 9 AM where the
+    /// tester is, and expressing THAT as UTC would be the same bug in the other direction.
+    AbsoluteUtc(CivilDateTime),
 }
 
 /// A moment expression: a base plus an ordered list of steps. The canonical
@@ -258,6 +264,11 @@ pub enum EvalError {
     /// through the CLI has been through `parse_civil` and cannot hit this - `eval` is public API, so
     /// it checks rather than trusting its caller with a value that would panic the civil math.
     BaseYearOutOfRange,
+    /// A UTC base could not be re-expressed in the session zone: the instant it names is outside
+    /// the representable range. Its own variant rather than `Overflow { index: 0 }`, which would
+    /// name step 1 - a step the expression may not even have, sending the reader to look at the
+    /// wrong thing. Only `AbsoluteUtc` can produce it, because it is the only base that converts.
+    BaseOverflow,
     /// A step COMPUTED a year outside that band. Its own variant, and not folded into `Overflow`,
     /// because nothing overflowed: `+300000y` from 2026 is an exact, representable number that this
     /// build simply will not compute a calendar on, and saying "overflow" would point at the wrong
@@ -289,6 +300,16 @@ pub fn eval(expr: &MomentExpr, ctx: &EvalContext) -> Result<EvalOutcome, EvalErr
         Base::Today => ctx.now.at_midnight(),
         Base::Now => ctx.now,
         Base::Absolute(c) => *c,
+        // Read in UTC, handed on in the session zone, so every step and every rendered format
+        // downstream works on the session zone exactly as it does for every other base - the whole
+        // expression stays in one zone, and only the ENTRY point differs. The same instant
+        // arithmetic a `zone` step uses, so a UTC base introduces no second way to cross zones.
+        Base::AbsoluteUtc(c) => {
+            if !crate::civil_year_in_band(c.year) {
+                return Err(EvalError::BaseYearOutOfRange);
+            }
+            convert_zone(*c, 0, ctx.zone_bias_min, 0).map_err(|_| EvalError::BaseOverflow)?
+        }
     };
     if !crate::civil_year_in_band(base.year) {
         return Err(EvalError::BaseYearOutOfRange);

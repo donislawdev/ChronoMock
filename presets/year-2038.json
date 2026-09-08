@@ -10,7 +10,7 @@
   "applies_to": "both",
   "market": null,
   "moment": {
-    "base": { "absolute": "2038-01-19T03:14:07" },
+    "base": { "absolute_utc": "2038-01-19T03:14:07Z" },
     "steps": []
   },
   "time_mode": { "multiplier": 1, "scale_duration_clock": false }

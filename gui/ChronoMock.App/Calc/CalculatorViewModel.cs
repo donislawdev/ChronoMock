@@ -11,6 +11,12 @@ public enum BaseKind
     Today,
     Now,
     Specific,
+
+    /// <summary>A specific moment read in UTC rather than in the session zone. For a base whose
+    /// meaning is an instant - Unix epoch zero, the 32-bit time_t limit - which must not move with
+    /// the tester's zone. The conversion belongs to the core, so this kind travels to it as
+    /// <c>--base-utc</c> rather than being converted here (one arithmetic, one place).</summary>
+    SpecificUtc,
 }
 
 /// <summary>Which kind of step a builder row is (mirrors calc's five typed steps): shift, snap, nearest,
@@ -372,6 +378,7 @@ public sealed class CalculatorViewModel : ObservableObject
             new BaseKindOption(BaseKind.Today, "calc.base.today"),
             new BaseKindOption(BaseKind.Now, "calc.base.now"),
             new BaseKindOption(BaseKind.Specific, "calc.base.specific"),
+            new BaseKindOption(BaseKind.SpecificUtc, "calc.base.specific_utc"),
         ];
         _baseKind = BaseKinds[0];
 
@@ -504,8 +511,10 @@ public sealed class CalculatorViewModel : ObservableObject
         }
     }
 
-    /// <summary>Whether the "specific date" text box applies (the base is an explicit date).</summary>
-    public bool IsSpecificBase => _baseKind.Kind == BaseKind.Specific;
+    /// <summary>Whether the "specific date" text box applies (the base is an explicit moment). Both
+    /// explicit kinds use it - they differ in the ZONE the typed moment is read in, not in whether
+    /// one is typed.</summary>
+    public bool IsSpecificBase => _baseKind.Kind is BaseKind.Specific or BaseKind.SpecificUtc;
 
     /// <summary>Whether to show the base's validation message: only for a Specific base that is malformed.
     /// Shown BELOW the start-point row so it never shifts the row (mirrors the substitution At row).</summary>
@@ -876,7 +885,7 @@ public sealed class CalculatorViewModel : ObservableObject
                 }
 
                 SelectedBase = BaseKinds.First(b => b.Kind == unpacked.Base);
-                if (unpacked.Base == BaseKind.Specific)
+                if (unpacked.Base is BaseKind.Specific or BaseKind.SpecificUtc)
                 {
                     Base.LoadCanonical(unpacked.BaseText);
                 }
@@ -1002,12 +1011,16 @@ public sealed class CalculatorViewModel : ObservableObject
         string? customFormatMask = null,
         string? zoneOffset = null)
     {
-        var args = new List<string> { "--base", baseKind switch
-        {
-            BaseKind.Today => "today",
-            BaseKind.Now => "now",
-            _ => baseText.Trim(),
-        } };
+        // A UTC base travels as its own flag, so the core does the conversion. Doing it here would put
+        // instant arithmetic in the GUI, and the two halves could then disagree about one moment.
+        var args = baseKind == BaseKind.SpecificUtc
+            ? new List<string> { "--base-utc", baseText.Trim() }
+            : new List<string> { "--base", baseKind switch
+            {
+                BaseKind.Today => "today",
+                BaseKind.Now => "now",
+                _ => baseText.Trim(),
+            } };
         foreach (var stepArgs in stepArgLists)
         {
             args.AddRange(stepArgs);
@@ -1045,7 +1058,7 @@ public sealed class CalculatorViewModel : ObservableObject
         // A Specific base that is not a well-formed moment yet must not spawn a broken --base: the MomentInput
         // shows the precise inline reason, and the result is cleared rather than left stale (rule 6). Today
         // and Now carry no base text, so they always compute.
-        if (_baseKind.Kind == BaseKind.Specific && !Base.IsValid)
+        if (IsSpecificBase && !Base.IsValid)
         {
             ClearResult();
             return;

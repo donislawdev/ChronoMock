@@ -293,6 +293,7 @@
   "calc.base.today": "Dziś",
   "calc.base.now": "Teraz",
   "calc.base.specific": "Konkretna data",
+  "calc.base.specific_utc": "Konkretny moment (UTC)",
   "calc.field_calendar": "Kalendarz:",
   "calc.remove_step": "Usuń krok",
   "calc.unit.seconds": "sekundy",

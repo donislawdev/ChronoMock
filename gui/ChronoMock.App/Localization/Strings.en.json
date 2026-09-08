@@ -294,6 +294,7 @@
   "calc.base.today": "Today",
   "calc.base.now": "Now",
   "calc.base.specific": "Specific date",
+  "calc.base.specific_utc": "Specific instant (UTC)",
   "calc.field_calendar": "Calendar:",
   "calc.remove_step": "Remove step",
   "calc.unit.seconds": "seconds",

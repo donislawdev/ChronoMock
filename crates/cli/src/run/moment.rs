@@ -236,7 +236,7 @@ pub(crate) fn describe_at_error(e: EvalError) -> String {
         EvalError::NeedsCalendar { .. } => {
             "relative --at uses business days, which need a calendar (not available here)".to_string()
         }
-        EvalError::Overflow { .. } => "relative --at is too large".to_string(),
+        EvalError::Overflow { .. } | EvalError::BaseOverflow => "relative --at is too large".to_string(),
         EvalError::StepUnsupported { kind, .. } => format!("relative --at step '{kind}' is not supported"),
         EvalError::DegenerateCalendar { .. } => "relative --at found no matching date".to_string(),
         EvalError::BadSetTime { .. } => "relative --at has an invalid time".to_string(),

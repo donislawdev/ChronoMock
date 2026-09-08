@@ -26,22 +26,42 @@ public class PresetUnpackTests
     }
 
     [Fact]
-    public void An_absolute_base_preset_unpacks_to_a_specific_date_with_no_steps()
+    public void An_absolute_utc_base_preset_unpacks_to_a_utc_instant_with_no_steps()
     {
         var moment = PresetUnpack.UnpackMoment(Preset("epoch-zero").Moment);
 
-        Assert.Equal(BaseKind.Specific, moment.Base);
+        // Epoch zero is an INSTANT, so the preset carries absolute_utc and this must not degrade to
+        // Specific: a session-zone reading of the same text lands an offset away from epoch 0, which
+        // is precisely the bug this base kind exists to remove.
+        Assert.Equal(BaseKind.SpecificUtc, moment.Base);
+        // The trailing Z is consumed here - the base kind already says UTC, and the moment field the
+        // text feeds is a plain civil moment.
         Assert.Equal("1970-01-01T00:00:00", moment.BaseText);
         Assert.Empty(moment.Steps);
     }
 
     [Fact]
-    public void The_2038_preset_carries_its_absolute_moment()
+    public void The_2038_preset_carries_its_absolute_moment_as_a_utc_instant()
     {
         var moment = PresetUnpack.UnpackMoment(Preset("year-2038").Moment);
 
-        Assert.Equal(BaseKind.Specific, moment.Base);
+        Assert.Equal(BaseKind.SpecificUtc, moment.Base);
         Assert.Equal("2038-01-19T03:14:07", moment.BaseText);
+    }
+
+    /// <summary>A session-zone absolute base stays a session-zone one - the two kinds must not
+    /// collapse into each other. Without this, "everything is UTC now" would pass the two tests
+    /// above while breaking every preset whose moment really is a local wall-clock reading.</summary>
+    [Fact]
+    public void A_plain_absolute_base_stays_a_session_zone_moment()
+    {
+        const string json = """
+            { "base": { "absolute": "2026-03-07T09:05:03" }, "steps": [] }
+            """;
+        var moment = PresetUnpack.UnpackMoment(JsonDocument.Parse(json).RootElement);
+
+        Assert.Equal(BaseKind.Specific, moment.Base);
+        Assert.Equal("2026-03-07T09:05:03", moment.BaseText);
     }
 
     [Fact]
