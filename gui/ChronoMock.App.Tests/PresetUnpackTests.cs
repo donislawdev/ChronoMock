@@ -159,13 +159,22 @@ public class PresetUnpackTests
 
         Assert.Equal(BaseKind.Specific, moment.Base);
         Assert.Equal("2026-01-01T00:00:00", moment.BaseText); // a bare date becomes midnight
-        Assert.Equal(2, moment.Steps.Count);
+        Assert.Equal(3, moment.Steps.Count);
         Assert.Equal(StepKind.Shift, moment.Steps[0].Kind);
         Assert.Equal("+", moment.Steps[0].Sign);
         Assert.Equal("30", moment.Steps[0].Amount);
         Assert.Equal("d", moment.Steps[0].UnitToken);
-        Assert.Equal(StepKind.SetTime, moment.Steps[1].Kind);
-        Assert.Equal("23:59:59", moment.Steps[1].SetTime);
+
+        // The install day is day one (docs/05 3.3), so the trial's last day is start + length - 1.
+        // The builder has to carry that step through, or the GUI would compute a different boundary
+        // than the CLI does from the same preset file (inventory I5).
+        Assert.Equal(StepKind.Shift, moment.Steps[1].Kind);
+        Assert.Equal("-", moment.Steps[1].Sign);
+        Assert.Equal("1", moment.Steps[1].Amount);
+        Assert.Equal("d", moment.Steps[1].UnitToken);
+
+        Assert.Equal(StepKind.SetTime, moment.Steps[2].Kind);
+        Assert.Equal("23:59:59", moment.Steps[2].SetTime);
     }
 
     /// <summary>

@@ -653,10 +653,13 @@ mod tests {
     use crate::calendar::calendar_from_text;
     use crate::testutil::read_data;
 
-    /// The canonical trial preset (docs/04 4.2): a `date` parameter fills the base, a `duration`
-    /// parameter fills a shift. With both values the moment substitutes to a concrete expression.
+    /// A trial-SHAPED preset (docs/04 4.2): a `date` parameter fills the base, a `duration` parameter
+    /// fills a shift, and a literal shift sits beside the parametric one. Deliberately NOT a copy of
+    /// a shipped file - it exercises the substitution machinery, and pinning it to a real preset's
+    /// steps would make every business-rule change to that file look like a parser regression. The
+    /// shipped presets have their own tests, against the real files.
     const TRIAL_JSON: &str = r#"{
-        "schema": "chronomock.preset/1", "id": "trial-first-day-after",
+        "schema": "chronomock.preset/1", "id": "trial-shaped-fixture",
         "name": { "en": "n" }, "explains": { "en": "e" }, "applies_to": "both",
         "parameters": [
             { "id": "trial_length", "type": "duration", "default": { "amount": 30, "unit": "days" } },
@@ -795,6 +798,52 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// The trial pair's business rule, pinned against the REAL files: the install day is day one, so a
+    /// 30-day trial started on 1 January still works through 30 January and is over on the 31st
+    /// (docs/05 3.3). Decided by the owner on 2026-09-08 - before that both presets counted from the
+    /// day AFTER install, which put `trial-last-day` past the boundary it exists to sit inside, for
+    /// both usual implementations (calendar days, and 30x24h from midnight).
+    ///
+    /// The two are asserted TOGETHER because their whole value is the pair straddling one boundary:
+    /// moving one without the other leaves a gap or an overlap, and either would be read as an app
+    /// bug by the tester who ran them back to back.
+    #[test]
+    fn the_trial_pair_counts_the_install_day_as_day_one() {
+        use chrono_core::calc::{CivilDateTime, EvalContext};
+        let now = CivilDateTime { year: 2026, month: 2, day: 15, hour: 12, minute: 0, second: 0 };
+        let ctx = EvalContext { now, zone_bias_min: 0, calendar: None };
+
+        let at = |id: &str| {
+            let p = parse_preset(&read_data(&format!("presets/{id}.json"))).unwrap();
+            let values =
+                resolve_parameters(&p.parameters, &param_map(&[("start_date", "2026-01-01")]), None).unwrap();
+            let expr = resolve_moment(p.moment, &values).unwrap();
+            chrono_core::calc::eval(&expr, &ctx).unwrap().result().to_iso()
+        };
+
+        assert_eq!(at("trial-last-day"), "2026-01-30T23:59:59");
+        assert_eq!(at("trial-first-day-after"), "2026-01-31T00:00:01");
+
+        // A different length moves both by the same amount - the rule is "length - 1 day", not a
+        // constant nudged into place for 30.
+        let at_len = |id: &str, len: &str| {
+            let p = parse_preset(&read_data(&format!("presets/{id}.json"))).unwrap();
+            let values = resolve_parameters(
+                &p.parameters,
+                &param_map(&[("start_date", "2026-01-01"), ("trial_length", len)]),
+                None,
+            )
+            .unwrap();
+            let expr = resolve_moment(p.moment, &values).unwrap();
+            chrono_core::calc::eval(&expr, &ctx).unwrap().result().to_iso()
+        };
+        assert_eq!(at_len("trial-last-day", "7days"), "2026-01-07T23:59:59");
+        assert_eq!(at_len("trial-first-day-after", "7days"), "2026-01-08T00:00:01");
+        // A one-day trial is the sharpest case: it begins and ends on the install day itself.
+        assert_eq!(at_len("trial-last-day", "1days"), "2026-01-01T23:59:59");
+        assert_eq!(at_len("trial-first-day-after", "1days"), "2026-01-02T00:00:01");
     }
 
     /// Resolve a non-parametric preset's moment (empty parameter values) - the slice 16/17 path,

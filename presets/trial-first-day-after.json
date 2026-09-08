@@ -4,8 +4,8 @@
   "id": "trial-first-day-after",
   "name": { "en": "First day after trial expiry", "pl": "Pierwszy dzień po wygaśnięciu triala" },
   "explains": {
-    "en": "Does the app refuse access the moment the trial ends, and how - a sensible message or a blank window?",
-    "pl": "Czy aplikacja odmawia dostępu w chwili końca okresu próbnego i jak - sensowny komunikat czy puste okno?"
+    "en": "Does the app refuse access the moment the trial ends, and how - a sensible message or a blank window? Counts the install day as day 1, so a 30-day trial started on 1 January is over on 31 January.",
+    "pl": "Czy aplikacja odmawia dostępu w chwili końca okresu próbnego i jak - sensowny komunikat czy puste okno? Dzień instalacji liczy się jako pierwszy, więc 30-dniowy trial zaczęty 1 stycznia jest skończony 31 stycznia."
   },
   "applies_to": "both",
   "market": null,
@@ -17,7 +17,6 @@
     "base": { "parameter": "start_date" },
     "steps": [
       { "shift": { "sign": "+", "parameter": "trial_length" } },
-      { "shift": { "sign": "+", "amount": 1, "unit": "days" } },
       { "set_time": "00:00:01" }
     ]
   },

@@ -4,8 +4,8 @@
   "id": "trial-last-day",
   "name": { "en": "Last day of trial", "pl": "Ostatni dzień triala" },
   "explains": {
-    "en": "Does the app still work in the very last moment of the trial - the boundary from the 'should still work' side?",
-    "pl": "Czy aplikacja jeszcze działa w ostatniej chwili okresu próbnego - granica od strony „ma działać”?"
+    "en": "Does the app still work in the very last moment of the trial - the boundary from the 'should still work' side? Counts the install day as day 1, so a 30-day trial started on 1 January ends on 30 January at 23:59:59.",
+    "pl": "Czy aplikacja jeszcze działa w ostatniej chwili okresu próbnego - granica od strony „ma działać”? Dzień instalacji liczy się jako pierwszy, więc 30-dniowy trial zaczęty 1 stycznia kończy się 30 stycznia o 23:59:59."
   },
   "applies_to": "both",
   "market": null,
@@ -17,6 +17,7 @@
     "base": { "parameter": "start_date" },
     "steps": [
       { "shift": { "sign": "+", "parameter": "trial_length" } },
+      { "shift": { "sign": "-", "amount": 1, "unit": "days" } },
       { "set_time": "23:59:59" }
     ]
   },
