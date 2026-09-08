@@ -271,6 +271,17 @@ fn last_day_of_month(year: i64, month: i64) -> u32 {
     }
 }
 
+/// The longest a month (1..=12) is in ANY year: 31/30/29, and 0 for a month outside 1..=12.
+/// February answers 29, because a rule naming the leap day is legitimate - it simply does not
+/// happen every year. Derived from `last_day_of_month` in a leap year rather than restating the
+/// month lengths, so the calendar knowledge stays in one place (rule 6). Public because the
+/// calendar loader needs it to tell a day that is impossible in SOME years (Feb 29) from one
+/// impossible in EVERY year (April 31), and that loader lives in another crate.
+pub fn max_day_in_month(month: u32) -> u32 {
+    // 2024 is a leap year, so February answers 29 - the check is "possible in any year at all".
+    last_day_of_month(2024, month as i64)
+}
+
 /// Parse "YYYY-MM-DDTHH:MM:SS" (a space may replace the `T`). Strict on shape and
 /// on field ranges - deeper calendar validation comes later.
 fn parse_civil(local: &str) -> Result<(i64, i64, i64, i64, i64, i64), String> {

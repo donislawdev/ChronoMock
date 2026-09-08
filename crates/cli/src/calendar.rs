@@ -84,10 +84,18 @@ pub(crate) fn rule_from(id: &str, dto: RuleDto) -> Result<chrono_core::calendar:
     Ok(match dto {
         RuleDto::Fixed { month, day } => {
             check_month(id, month)?;
-            // 1..=31 for the day, not the month's real length: a rule may legitimately name Feb 29,
-            // and the engine resolves an impossible date per year. Beyond 31 is a typo in any month.
-            if !(1..=31).contains(&day) {
-                return Err(format!("holiday '{id}': day {day} out of range (1..=31)"));
+            // The month's longest length in ANY year, not a flat 1..=31. Two different things look
+            // alike here and only one of them is legal. February 29 is a rule a calendar may
+            // legitimately name - the engine answers "not this year" in a common year (R2-N7) - so
+            // the bound has to let it through. April 31 is a day that exists in no year at all, so
+            // it is a typo, and the engine would answer "not this year" for EVERY year: a holiday
+            // silently absent forever. Refused here, naming the month's real length, because a
+            // calendar is a data file from outside the build.
+            let longest = chrono_core::max_day_in_month(month);
+            if !(1..=longest).contains(&day) {
+                return Err(format!(
+                    "holiday '{id}': day {day} out of range for month {month} (1..={longest})"
+                ));
             }
 
             HolidayRule::Fixed { month, day }
@@ -229,6 +237,26 @@ pub(crate) fn calendar_from_text(text: &str) -> Result<chrono_core::calendar::Ca
             "calendar 'weekend' lists all seven days - no business day would ever exist".to_string()
         );
     }
+    // `observed` and `weekend` have to describe the SAME weekend. The engine's observance rules match
+    // Saturday and Sunday by name - their variant names say so (`sun_to_mon`) - while `weekend` is a
+    // free list of days. A file combining a Friday-Saturday weekend with a shift rule therefore
+    // loaded cleanly and then did two wrong things quietly: a Friday holiday stayed put (the rule
+    // never saw it) and a Sunday holiday moved to Monday although Sunday is a working day there. Both
+    // come out as a wrong payment date with no message anywhere (R2-N8).
+    //
+    // Refused here rather than generalised in the engine. Generalising means new variant names - the
+    // existing ones are ABOUT Saturday and Sunday, and reusing `weekend_to_mon` for a weekend that
+    // ends on Saturday would produce a Sunday while the name promises Monday, which misleads worse
+    // than the missing feature does. That wants a real market to define it, not a guess. A calendar
+    // with a different weekend can still ship today with `"observed": "none"`.
+    let observed = observed_from(&dto.observed)?;
+    if observed != chrono_core::calendar::Observed::None && weekend != [0, 6] {
+        return Err(format!(
+            "calendar 'observed' is '{}', which is defined for a Saturday-Sunday weekend, but 'weekend' is {:?} - use \"observed\": \"none\" until an observance rule exists for that weekend",
+            dto.observed, dto.weekend
+        ));
+    }
+
     let mut seen_ids: Vec<String> = Vec::new();
     let holidays = dto
         .holidays
@@ -267,7 +295,7 @@ pub(crate) fn calendar_from_text(text: &str) -> Result<chrono_core::calendar::Ca
         id: dto.id,
         country: dto.country,
         weekend,
-        observed: observed_from(&dto.observed)?,
+        observed,
         holidays,
     })
 }
@@ -281,6 +309,36 @@ mod tests {
     /// that makes "next business day" unanswerable has to be refused where its author can see it -
     /// not walked into by the engine. Duplicated weekend days are folded first, so the check counts
     /// distinct days and a repeated "saturday" is not mistaken for a full week.
+    /// R2-N8: `weekend` and `observed` must describe the same weekend. A Friday-Saturday weekend with
+    /// a shift rule used to load and then be wrong twice over, silently - which is the one thing a
+    /// calendar file must never do, since calendars are written by people outside this build.
+    #[test]
+    fn an_observance_rule_with_a_foreign_weekend_is_refused() {
+        let cal = |weekend: &str, observed: &str| {
+            format!(
+                r#"{{"schema":"chronomock.calendar/1","id":"x","country":"XX","weekend":{weekend},
+                "observed":"{observed}","holidays":[]}}"#
+            )
+        };
+
+        for observed in ["sat_to_fri_sun_to_mon", "sun_to_mon", "weekend_to_mon"] {
+            let err = calendar_from_text(&cal(r#"["friday","saturday"]"#, observed))
+                .expect_err("a foreign weekend with an observance rule must be refused");
+            assert!(err.contains("observed"), "the message must name the field: {err}");
+            assert!(err.contains(observed), "the message must name the rule: {err}");
+            assert!(err.contains("none"), "the message must say what to do instead: {err}");
+        }
+
+        // The same weekend with no observance rule is fine - this refuses a COMBINATION, and does not
+        // ban weekends the project has not shipped a calendar for.
+        calendar_from_text(&cal(r#"["friday","saturday"]"#, "none")).expect("a foreign weekend alone loads");
+        // And the Saturday-Sunday weekend keeps every rule, in any listed order.
+        for observed in ["sat_to_fri_sun_to_mon", "sun_to_mon", "weekend_to_mon", "none"] {
+            calendar_from_text(&cal(r#"["sunday","saturday"]"#, observed))
+                .unwrap_or_else(|e| panic!("{observed} on a Sat-Sun weekend must load: {e}"));
+        }
+    }
+
     #[test]
     fn calendar_with_every_day_as_weekend_is_refused() {
         let all_week = r#"{"schema":"chronomock.calendar/1","id":"x","country":"XX",
@@ -314,6 +372,11 @@ mod tests {
         for (rule, needle) in [
             (r#"{"type":"fixed","month":13,"day":1}"#, "month 13"),
             (r#"{"type":"fixed","month":1,"day":40}"#, "day 40"),
+            // A day that exists in NO year is a typo, not a leap-year rule (R2-N7). The engine would
+            // answer "not this year" for every year, so the holiday would be silently absent forever -
+            // refused here instead, and the message names the month's real length.
+            (r#"{"type":"fixed","month":4,"day":31}"#, "day 31"),
+            (r#"{"type":"fixed","month":2,"day":30}"#, "day 30"),
             (r#"{"type":"nth_weekday","month":1,"weekday":"monday","order":9}"#, "order 9"),
             (r#"{"type":"nth_weekday","month":0,"weekday":"monday","order":1}"#, "month 0"),
             (r#"{"type":"easter_offset","offset":5000}"#, "5000"),
@@ -323,9 +386,13 @@ mod tests {
             assert!(err.contains(needle), "the message must name the value: {err}");
         }
 
-        // The legitimate neighbours of those bounds still parse.
+        // The legitimate neighbours of those bounds still parse. February 29 is the one that matters:
+        // it is impossible in most years and legal in the schema, so the bound is the month's longest
+        // length in any year, never the length of some particular year.
         for rule in [
             r#"{"type":"fixed","month":2,"day":29}"#,
+            r#"{"type":"fixed","month":4,"day":30}"#,
+            r#"{"type":"fixed","month":1,"day":31}"#,
             r#"{"type":"nth_weekday","month":12,"weekday":"monday","order":-1}"#,
             r#"{"type":"nth_weekday","month":5,"weekday":"monday","order":5}"#,
             r#"{"type":"easter_offset","offset":60}"#,
@@ -493,6 +560,18 @@ mod tests {
             assert_eq!(id_on(d(1975, 10, 27)), "veterans_day_october_monday", "{which}");
             assert_eq!(id_on(d(1978, 11, 11)), "veterans_day", "{which}");
             assert_eq!(id_on(d(2026, 11, 11)), "veterans_day", "{which}");
+
+            // Both of its boundaries, on the exact years. The assertions above sit years away from
+            // the switch, so a window off by one would pass every one of them - and this holiday has
+            // TWO switches, which is twice the chance of that. 1970 is the last November before the
+            // Act and 1971 the first October Monday under it, then 1977 is the last October Monday
+            // and 1978 the return to 11 November.
+            assert_eq!(id_on(d(1970, 11, 11)), "veterans_day_pre_1971", "{which}");
+            assert_eq!(id_on(d(1971, 11, 11)), "", "{which}");
+            assert_eq!(id_on(d(1971, 10, 25)), "veterans_day_october_monday", "{which}");
+            assert_eq!(id_on(d(1977, 10, 24)), "veterans_day_october_monday", "{which}");
+            assert_eq!(id_on(d(1977, 11, 11)), "", "{which}");
+            assert_eq!(id_on(d(1978, 10, 23)), "", "{which}");
         }
     }
 

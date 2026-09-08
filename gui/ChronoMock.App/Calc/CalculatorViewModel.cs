@@ -11,6 +11,12 @@ public enum BaseKind
     Today,
     Now,
     Specific,
+
+    /// <summary>A specific moment read in UTC rather than in the session zone. For a base whose
+    /// meaning is an instant - Unix epoch zero, the 32-bit time_t limit - which must not move with
+    /// the tester's zone. The conversion belongs to the core, so this kind travels to it as
+    /// <c>--base-utc</c> rather than being converted here (one arithmetic, one place).</summary>
+    SpecificUtc,
 }
 
 /// <summary>Which kind of step a builder row is (mirrors calc's five typed steps): shift, snap, nearest,
@@ -341,6 +347,10 @@ public sealed class CalculatorViewModel : ObservableObject
     private string _customFormatMask = string.Empty;
     private string _customFormatResult = string.Empty;
     private bool _hasCustomFormat;
+    private string _customFormatWarning = string.Empty;
+    private bool _hasCustomFormatWarning;
+    private string _clampNotice = string.Empty;
+    private bool _hasClampNotice;
     private string _resultMomentLocal = string.Empty;
     private int _resultZoneBias;
     private bool _computedOnce;
@@ -372,6 +382,7 @@ public sealed class CalculatorViewModel : ObservableObject
             new BaseKindOption(BaseKind.Today, "calc.base.today"),
             new BaseKindOption(BaseKind.Now, "calc.base.now"),
             new BaseKindOption(BaseKind.Specific, "calc.base.specific"),
+            new BaseKindOption(BaseKind.SpecificUtc, "calc.base.specific_utc"),
         ];
         _baseKind = BaseKinds[0];
 
@@ -504,8 +515,10 @@ public sealed class CalculatorViewModel : ObservableObject
         }
     }
 
-    /// <summary>Whether the "specific date" text box applies (the base is an explicit date).</summary>
-    public bool IsSpecificBase => _baseKind.Kind == BaseKind.Specific;
+    /// <summary>Whether the "specific date" text box applies (the base is an explicit moment). Both
+    /// explicit kinds use it - they differ in the ZONE the typed moment is read in, not in whether
+    /// one is typed.</summary>
+    public bool IsSpecificBase => _baseKind.Kind is BaseKind.Specific or BaseKind.SpecificUtc;
 
     /// <summary>Whether to show the base's validation message: only for a Specific base that is malformed.
     /// Shown BELOW the start-point row so it never shifts the row (mirrors the substitution At row).</summary>
@@ -617,6 +630,24 @@ public sealed class CalculatorViewModel : ObservableObject
 
     /// <summary>Whether a custom-format result is present (a non-empty mask produced a value), gating its row.</summary>
     public bool HasCustomFormat { get => _hasCustomFormat; private set => Set(ref _hasCustomFormat, value); }
+
+    /// <summary>Why the custom-format line may not be what the reader expects: the letter runs the engine
+    /// did not recognise, which it passed through as text. Empty when the mask was fully understood.
+    /// Without this the row shows raw mask letters inside something shaped like a date, and the reader's
+    /// first guess is their own typo rather than an unbuilt token (rule 6).</summary>
+    public string CustomFormatWarning { get => _customFormatWarning; private set => Set(ref _customFormatWarning, value); }
+
+    /// <summary>Whether to show <see cref="CustomFormatWarning"/> beneath the custom-format row.</summary>
+    public bool HasCustomFormatWarning { get => _hasCustomFormatWarning; private set => Set(ref _hasCustomFormatWarning, value); }
+
+    /// <summary>Why a step's day is not the one that was typed: a month-folding shift landed in a
+    /// shorter month, so 31 January + 1 month is 28 February. Correct and documented, and invisible in
+    /// a result that shows no intermediate steps - which leaves the reader unable to tell the rule
+    /// from a defect on a date they are about to act on.</summary>
+    public string ClampNotice { get => _clampNotice; private set => Set(ref _clampNotice, value); }
+
+    /// <summary>Whether to show <see cref="ClampNotice"/> beneath the result.</summary>
+    public bool HasClampNotice { get => _hasClampNotice; private set => Set(ref _hasClampNotice, value); }
 
     /// <summary>Whether the current result can go to the substitution panel: a valid moment whose zone the
     /// substitution offers, so it transfers with its zone and never as a bare local date (rule 2).</summary>
@@ -876,7 +907,7 @@ public sealed class CalculatorViewModel : ObservableObject
                 }
 
                 SelectedBase = BaseKinds.First(b => b.Kind == unpacked.Base);
-                if (unpacked.Base == BaseKind.Specific)
+                if (unpacked.Base is BaseKind.Specific or BaseKind.SpecificUtc)
                 {
                     Base.LoadCanonical(unpacked.BaseText);
                 }
@@ -1002,12 +1033,16 @@ public sealed class CalculatorViewModel : ObservableObject
         string? customFormatMask = null,
         string? zoneOffset = null)
     {
-        var args = new List<string> { "--base", baseKind switch
-        {
-            BaseKind.Today => "today",
-            BaseKind.Now => "now",
-            _ => baseText.Trim(),
-        } };
+        // A UTC base travels as its own flag, so the core does the conversion. Doing it here would put
+        // instant arithmetic in the GUI, and the two halves could then disagree about one moment.
+        var args = baseKind == BaseKind.SpecificUtc
+            ? new List<string> { "--base-utc", baseText.Trim() }
+            : new List<string> { "--base", baseKind switch
+            {
+                BaseKind.Today => "today",
+                BaseKind.Now => "now",
+                _ => baseText.Trim(),
+            } };
         foreach (var stepArgs in stepArgLists)
         {
             args.AddRange(stepArgs);
@@ -1045,7 +1080,7 @@ public sealed class CalculatorViewModel : ObservableObject
         // A Specific base that is not a well-formed moment yet must not spawn a broken --base: the MomentInput
         // shows the precise inline reason, and the result is cleared rather than left stale (rule 6). Today
         // and Now carry no base text, so they always compute.
-        if (_baseKind.Kind == BaseKind.Specific && !Base.IsValid)
+        if (IsSpecificBase && !Base.IsValid)
         {
             ClearResult();
             return;
@@ -1169,6 +1204,31 @@ public sealed class CalculatorViewModel : ObservableObject
         var custom = moment.CustomFormat ?? string.Empty;
         CustomFormatResult = custom;
         HasCustomFormat = custom.Length > 0;
+
+        // The engine names the letter runs it did not recognise. They ARE in the line above, verbatim,
+        // so the row without this warning reads as a rendered date that happens to contain letters.
+        var unknown = moment.CustomFormatUnknown;
+        HasCustomFormatWarning = HasCustomFormat && unknown is { Count: > 0 };
+        CustomFormatWarning = HasCustomFormatWarning
+            ? string.Format(
+                System.Globalization.CultureInfo.InvariantCulture,
+                Tr("calc.fmt.unknown_tokens"),
+                string.Join(", ", unknown!))
+            : string.Empty;
+
+        // One line per clamped step, so a two-clamp expression does not hide the second one.
+        var clamps = moment.ClampedSteps;
+        HasClampNotice = clamps is { Count: > 0 };
+        ClampNotice = HasClampNotice
+            ? string.Join(
+                Environment.NewLine,
+                clamps!.Select(c => string.Format(
+                    System.Globalization.CultureInfo.InvariantCulture,
+                    Tr("calc.clamped_step"),
+                    c.Step,
+                    c.RequestedDay,
+                    c.ClampedTo)))
+            : string.Empty;
 
         MetadataLine = BuildMetadataLine(moment.Metadata);
         HasResult = true;

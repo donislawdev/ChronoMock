@@ -182,8 +182,14 @@ pub(crate) struct MomentDto {
     steps: Vec<StepDto>,
 }
 
-/// A preset base: the keyword `today`/`now`, an `{ "absolute": "ISO" }` object, or a
-/// `{ "parameter": "name" }` object (docs/04 4.2) resolved from a `date` parameter.
+/// A preset base: the keyword `today`/`now`, an `{ "absolute": "ISO" }` object, an
+/// `{ "absolute_utc": "ISO" }` object, or a `{ "parameter": "name" }` object (docs/04 4.2)
+/// resolved from a `date` parameter.
+///
+/// `absolute` and `absolute_utc` differ in the one way that matters: `absolute` is wall-clock in
+/// the SESSION zone (rule 2), `absolute_utc` is an instant. A preset whose meaning is "9 AM local"
+/// wants the first, a preset whose meaning is "epoch second 0" wants the second - and using the
+/// first for the second is how these presets came to miss their target by exactly the zone offset.
 #[derive(Debug, Deserialize)]
 #[serde(untagged)]
 pub(crate) enum BaseDto {
@@ -191,6 +197,8 @@ pub(crate) enum BaseDto {
     Object {
         #[serde(default)]
         absolute: Option<String>,
+        #[serde(default)]
+        absolute_utc: Option<String>,
         #[serde(default)]
         parameter: Option<String>,
     },
@@ -237,7 +245,7 @@ pub(crate) fn base_from(dto: BaseDto, values: &HashMap<String, ParamValue>) -> R
             "today" => Ok(Base::Today),
             "now" => Ok(Base::Now),
             other => Err(PresetError::BadFile(format!(
-                "unknown preset base '{other}' (use today, now, or an absolute/parameter object)"
+                "unknown preset base '{other}' (use today, now, or an absolute/absolute_utc/parameter object)"
             ))),
         },
         // A parametric base takes its date from a `date` parameter (docs/04 4.2).
@@ -251,12 +259,37 @@ pub(crate) fn base_from(dto: BaseDto, values: &HashMap<String, ParamValue>) -> R
             }
             None => Err(PresetError::BadFile(format!("base parameter '{id}' has no value"))),
         },
-        BaseDto::Object { absolute: Some(s), parameter: None } => {
+        // Both at once is a contradiction, not a preference order: the file says the moment is both
+        // local wall-clock and a fixed instant, and picking one silently would make the preset land
+        // somewhere the author did not write.
+        BaseDto::Object { absolute: Some(_), absolute_utc: Some(_), parameter: None } => {
+            Err(PresetError::BadFile(
+                "preset base has both 'absolute' and 'absolute_utc' - a moment is either session-zone wall-clock or a UTC instant, not both".into(),
+            ))
+        }
+        BaseDto::Object { absolute: Some(s), absolute_utc: None, parameter: None } => {
             let civil = chrono_core::calc::parse_civil_datetime(&s).map_err(PresetError::BadFile)?;
             Ok(Base::Absolute(civil))
         }
-        BaseDto::Object { absolute: None, parameter: None } => Err(PresetError::BadFile(
-            "preset base object needs 'absolute' or 'parameter'".into(),
+        // A trailing `Z` is accepted and required to BE UTC: the field already says so, and writing
+        // an offset here (`+02:00`) would be a second, contradicting answer - refused rather than
+        // ignored, because ignoring it moves the moment without saying so.
+        BaseDto::Object { absolute: None, absolute_utc: Some(s), parameter: None } => {
+            let trimmed = s.strip_suffix('Z').unwrap_or(&s);
+            // Look for the offset in the TIME part only. A negative year is a legal civil date here
+            // (the core computes on a band far wider than the epoch), and its leading `-` must not
+            // read as an offset sign.
+            let time_part = trimmed.split_once(['T', ' ']).map_or("", |(_, t)| t);
+            if time_part.contains('+') || time_part.contains('-') {
+                return Err(PresetError::BadFile(format!(
+                    "preset base 'absolute_utc' carries an offset ('{s}') - it is already UTC, so write it without one (a trailing 'Z' is allowed)"
+                )));
+            }
+            let civil = chrono_core::calc::parse_civil_datetime(trimmed).map_err(PresetError::BadFile)?;
+            Ok(Base::AbsoluteUtc(civil))
+        }
+        BaseDto::Object { absolute: None, absolute_utc: None, parameter: None } => Err(PresetError::BadFile(
+            "preset base object needs 'absolute', 'absolute_utc' or 'parameter'".into(),
         )),
     }
 }
@@ -620,10 +653,13 @@ mod tests {
     use crate::calendar::calendar_from_text;
     use crate::testutil::read_data;
 
-    /// The canonical trial preset (docs/04 4.2): a `date` parameter fills the base, a `duration`
-    /// parameter fills a shift. With both values the moment substitutes to a concrete expression.
+    /// A trial-SHAPED preset (docs/04 4.2): a `date` parameter fills the base, a `duration` parameter
+    /// fills a shift, and a literal shift sits beside the parametric one. Deliberately NOT a copy of
+    /// a shipped file - it exercises the substitution machinery, and pinning it to a real preset's
+    /// steps would make every business-rule change to that file look like a parser regression. The
+    /// shipped presets have their own tests, against the real files.
     const TRIAL_JSON: &str = r#"{
-        "schema": "chronomock.preset/1", "id": "trial-first-day-after",
+        "schema": "chronomock.preset/1", "id": "trial-shaped-fixture",
         "name": { "en": "n" }, "explains": { "en": "e" }, "applies_to": "both",
         "parameters": [
             { "id": "trial_length", "type": "duration", "default": { "amount": 30, "unit": "days" } },
@@ -717,6 +753,97 @@ mod tests {
         let due_us = eval_preset("payment-due-business-days", &EvalContext { now: now_pay, zone_bias_min: 0, calendar: Some(&bank) });
         let due_pl = eval_preset("payment-due-business-days", &EvalContext { now: now_pay, zone_bias_min: 0, calendar: Some(&pl) });
         assert_ne!(due_us.to_iso(), due_pl.to_iso(), "US and PL must diverge over 90 business days");
+    }
+
+    /// A preset whose entire purpose is ONE INSTANT - the Unix epoch, the signed 32-bit `time_t`
+    /// limit - has to reach that instant in the zone the tester actually runs in. The zone list is
+    /// the point of this guard: every golden-date assertion above runs at `zone_bias_min: 0`, and in
+    /// UTC these presets pass while missing their target everywhere else (R2-P1).
+    ///
+    /// It asserts the EPOCH SECOND, not just the marker, because `year_2038_boundary` means "at or
+    /// past the limit": in a zone west of UTC a wrong moment lands PAST the limit and lights the
+    /// marker anyway, so a marker-only assertion would pass for the wrong reason. The marker is
+    /// checked too - it is what a tester reads - but the number is what pins the instant.
+    #[test]
+    fn instant_targeted_presets_hit_their_instant_in_every_zone() {
+        use chrono_core::calc::{CivilDateTime, EvalContext, Significance, formats, significance};
+        let now = CivilDateTime { year: 2026, month: 2, day: 15, hour: 12, minute: 0, second: 0 };
+
+        // id, the epoch second the preset's own description promises, and the marker that says so.
+        let targets = [
+            ("epoch-zero", 0_i64, Significance::UnixEpoch),
+            ("year-2038", 2_147_483_647_i64, Significance::Year2038Boundary),
+        ];
+        // UTC, then east and west of it, including a zone whose offset is not a whole hour. A bias is
+        // UTC minus local, so -120 is UTC+02:00 and +300 is UTC-05:00.
+        for zone_bias_min in [0, -120, 300, -345, 720] {
+            for (id, want_epoch, marker) in targets {
+                let ctx = EvalContext { now, zone_bias_min, calendar: None };
+                let p = parse_preset(&read_data(&format!("presets/{id}.json"))).unwrap();
+                let values = resolve_parameters(&p.parameters, &HashMap::new(), None).unwrap();
+                let expr = resolve_moment(p.moment, &values).unwrap();
+                let result = chrono_core::calc::eval(&expr, &ctx).unwrap().result();
+
+                let got = formats(&result, zone_bias_min).epoch_seconds;
+                assert_eq!(
+                    got,
+                    Some(want_epoch),
+                    "preset '{id}' must land on epoch {want_epoch} at bias {zone_bias_min}, not {got:?}"
+                );
+                let sig = significance(&result, zone_bias_min, None);
+                assert!(
+                    sig.contains(&marker),
+                    "preset '{id}' must carry {:?} at bias {zone_bias_min}, got {sig:?}",
+                    marker
+                );
+            }
+        }
+    }
+
+    /// The trial pair's business rule, pinned against the REAL files: the install day is day one, so a
+    /// 30-day trial started on 1 January still works through 30 January and is over on the 31st
+    /// (docs/05 3.3). Decided by the owner on 2026-09-08 - before that both presets counted from the
+    /// day AFTER install, which put `trial-last-day` past the boundary it exists to sit inside, for
+    /// both usual implementations (calendar days, and 30x24h from midnight).
+    ///
+    /// The two are asserted TOGETHER because their whole value is the pair straddling one boundary:
+    /// moving one without the other leaves a gap or an overlap, and either would be read as an app
+    /// bug by the tester who ran them back to back.
+    #[test]
+    fn the_trial_pair_counts_the_install_day_as_day_one() {
+        use chrono_core::calc::{CivilDateTime, EvalContext};
+        let now = CivilDateTime { year: 2026, month: 2, day: 15, hour: 12, minute: 0, second: 0 };
+        let ctx = EvalContext { now, zone_bias_min: 0, calendar: None };
+
+        let at = |id: &str| {
+            let p = parse_preset(&read_data(&format!("presets/{id}.json"))).unwrap();
+            let values =
+                resolve_parameters(&p.parameters, &param_map(&[("start_date", "2026-01-01")]), None).unwrap();
+            let expr = resolve_moment(p.moment, &values).unwrap();
+            chrono_core::calc::eval(&expr, &ctx).unwrap().result().to_iso()
+        };
+
+        assert_eq!(at("trial-last-day"), "2026-01-30T23:59:59");
+        assert_eq!(at("trial-first-day-after"), "2026-01-31T00:00:01");
+
+        // A different length moves both by the same amount - the rule is "length - 1 day", not a
+        // constant nudged into place for 30.
+        let at_len = |id: &str, len: &str| {
+            let p = parse_preset(&read_data(&format!("presets/{id}.json"))).unwrap();
+            let values = resolve_parameters(
+                &p.parameters,
+                &param_map(&[("start_date", "2026-01-01"), ("trial_length", len)]),
+                None,
+            )
+            .unwrap();
+            let expr = resolve_moment(p.moment, &values).unwrap();
+            chrono_core::calc::eval(&expr, &ctx).unwrap().result().to_iso()
+        };
+        assert_eq!(at_len("trial-last-day", "7days"), "2026-01-07T23:59:59");
+        assert_eq!(at_len("trial-first-day-after", "7days"), "2026-01-08T00:00:01");
+        // A one-day trial is the sharpest case: it begins and ends on the install day itself.
+        assert_eq!(at_len("trial-last-day", "1days"), "2026-01-01T23:59:59");
+        assert_eq!(at_len("trial-first-day-after", "1days"), "2026-01-02T00:00:01");
     }
 
     /// Resolve a non-parametric preset's moment (empty parameter values) - the slice 16/17 path,

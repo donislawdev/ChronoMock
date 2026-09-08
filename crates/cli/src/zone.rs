@@ -47,14 +47,23 @@ pub(crate) fn parse_zone_to_bias(raw: &str) -> Result<i32, String> {
         .split_once(':')
         .ok_or_else(|| format!("zone must look like +HH:MM, got '{raw}'"))?;
     // Parse as u32 so an INNER sign (e.g. `+-5:00` or `+05:-30`) is rejected, not silently taken as a
-    // negative component (M-4). Range-check hours 0..=14 (the max real offset is +14:00) and minutes
-    // 0..=59, which also keeps `hours * 60 + mins` well inside i32: the old i32 parse overflowed on a
-    // huge value and, in a release build (no overflow-checks), WRAPPED to a wrong bias - a silently
-    // wrong session time, exactly the "off by N hours" error untouchable rule 2 guards against.
+    // negative component (M-4). Range-check hours 0..=14 and minutes 0..=59, which also keeps
+    // `hours * 60 + mins` well inside i32: the old i32 parse overflowed on a huge value and, in a
+    // release build (no overflow-checks), WRAPPED to a wrong bias - a silently wrong session time,
+    // exactly the "off by N hours" error untouchable rule 2 guards against.
+    //
+    // The bound is 14 on BOTH sides, though the real map runs -12:00..=+14:00, so -13:00 and -14:00
+    // are offsets no place on earth uses. Deliberate, and left as it is after review (R2-C4): this is
+    // a tool for putting an app in a time it will not otherwise see, and refusing an offset merely
+    // because no country uses it would drop coverage to buy nothing (untouchable rule 27). The
+    // session stays internally consistent at any offset in the band. What was wrong was the MESSAGE,
+    // which said "0..=14" as if that were the map - it now says which part is real.
     let hours: u32 = h.parse().map_err(|_| format!("bad zone hours in '{raw}' (digits only)"))?;
     let mins: u32 = m.parse().map_err(|_| format!("bad zone minutes in '{raw}' (digits only)"))?;
     if hours > 14 {
-        return Err(format!("zone hours out of range in '{raw}' (0..=14)"));
+        return Err(format!(
+            "zone hours out of range in '{raw}' (0..=14; real zones run -12:00..=+14:00, and this tool allows the wider band on purpose)"
+        ));
     }
     if mins > 59 {
         return Err(format!("zone minutes out of range in '{raw}' (0..=59)"));

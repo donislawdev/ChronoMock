@@ -112,6 +112,15 @@ public static class PresetUnpack
                 return (BaseKind.Specific, abs.GetString()!);
             }
 
+            // A UTC base: the moment is an instant, not a local wall-clock reading. Carried through as
+            // written (minus the optional trailing Z, which the field already states) so the core reads
+            // it in UTC - unpacking it into a session-zone moment here would be a second conversion.
+            if (baseEl.TryGetProperty("absolute_utc", out var absUtc) && absUtc.ValueKind == JsonValueKind.String)
+            {
+                var text = absUtc.GetString()!;
+                return (BaseKind.SpecificUtc, text.EndsWith('Z') ? text[..^1] : text);
+            }
+
             if (baseEl.TryGetProperty("parameter", out var pn))
             {
                 var id = RequireString(pn, "a base parameter name");

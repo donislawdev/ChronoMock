@@ -61,6 +61,35 @@ public class MomentParseTests
         Assert.Equal("moment.date_invalid", r.ErrorKey);
     }
 
+    /// <summary>R2-C6. A year the engine computes on but this window cannot hold gets its OWN message.
+    /// The calculator's band is -262143..=262143 and DateTime stops at 1..=9999, so a result like
+    /// -0974-01-01 comes back through Split perfectly well-formed and unusable here. It used to be
+    /// reported as a format error, which sends the reader to fix a shape that is already correct.</summary>
+    [Theory]
+    [InlineData("-0974-01-01")]   // a real calculator result: 2026 minus 3000 years
+    [InlineData("-000001-01-01")]
+    [InlineData("10000-01-01")]
+    [InlineData("262143-12-31")]
+    public void A_year_outside_this_windows_range_says_so(string wideYear)
+    {
+        var r = MomentParse.Compose(wideYear, string.Empty);
+        Assert.False(r.Ok);
+        Assert.Equal(MomentPart.Date, r.ErrorPart);
+        Assert.Equal("moment.date_year_range", r.ErrorKey);
+    }
+
+    /// <summary>The neighbours keep their own messages - the range case must not swallow them.</summary>
+    [Fact]
+    public void The_year_range_message_does_not_swallow_the_other_two()
+    {
+        // Right shape, impossible day.
+        Assert.Equal("moment.date_invalid", MomentParse.Compose("2025-04-31", string.Empty).ErrorKey);
+        // Wrong shape entirely.
+        Assert.Equal("moment.date_format", MomentParse.Compose("28.02.2025", string.Empty).ErrorKey);
+        // A four-digit year in range still parses.
+        Assert.True(MomentParse.Compose("0999-01-01", string.Empty).Ok);
+    }
+
     [Fact]
     public void Out_of_range_time_is_flagged_on_the_time_part()
     {

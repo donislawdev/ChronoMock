@@ -185,8 +185,14 @@ pub enum Base {
     Today,
     /// The current instant in the session zone (resolved from the context's `now`).
     Now,
-    /// An explicit civil date and time.
+    /// An explicit civil date and time, read in the SESSION zone (rule 2).
     Absolute(CivilDateTime),
+    /// An explicit instant, written as a civil date and time in UTC and re-expressed in the session
+    /// zone before any step runs. For a moment whose whole meaning is an instant - the Unix epoch,
+    /// the signed 32-bit `time_t` limit - and which therefore must not move with the tester's zone.
+    /// `Absolute` is the right base for everything else: "9 AM on the 3rd" means 9 AM where the
+    /// tester is, and expressing THAT as UTC would be the same bug in the other direction.
+    AbsoluteUtc(CivilDateTime),
 }
 
 /// A moment expression: a base plus an ordered list of steps. The canonical
@@ -222,6 +228,13 @@ pub struct EvalOutcome {
     pub base: CivilDateTime,
     pub after_each: Vec<CivilDateTime>,
     pub result_bias: i32,
+    /// Steps whose day was CLAMPED to the end of a shorter month, as (step index, the day asked
+    /// for). `31 January + 1 month` is 28 or 29 February, and `29 February + 1 year` is 28 February.
+    /// Every one of those is correct and documented, and every one is invisible in the result, which
+    /// is the problem: a reader who sees only "29 became 28" cannot tell a rule from a defect, on a
+    /// date they are about to act on. Reported by the engine rather than inferred by each caller from
+    /// the day changing, so the two halves of the product cannot disagree about one shift.
+    pub clamped: Vec<(usize, u32)>,
 }
 
 impl EvalOutcome {
@@ -258,6 +271,11 @@ pub enum EvalError {
     /// through the CLI has been through `parse_civil` and cannot hit this - `eval` is public API, so
     /// it checks rather than trusting its caller with a value that would panic the civil math.
     BaseYearOutOfRange,
+    /// A UTC base could not be re-expressed in the session zone: the instant it names is outside
+    /// the representable range. Its own variant rather than `Overflow { index: 0 }`, which would
+    /// name step 1 - a step the expression may not even have, sending the reader to look at the
+    /// wrong thing. Only `AbsoluteUtc` can produce it, because it is the only base that converts.
+    BaseOverflow,
     /// A step COMPUTED a year outside that band. Its own variant, and not folded into `Overflow`,
     /// because nothing overflowed: `+300000y` from 2026 is an exact, representable number that this
     /// build simply will not compute a calendar on, and saying "overflow" would point at the wrong
@@ -289,6 +307,16 @@ pub fn eval(expr: &MomentExpr, ctx: &EvalContext) -> Result<EvalOutcome, EvalErr
         Base::Today => ctx.now.at_midnight(),
         Base::Now => ctx.now,
         Base::Absolute(c) => *c,
+        // Read in UTC, handed on in the session zone, so every step and every rendered format
+        // downstream works on the session zone exactly as it does for every other base - the whole
+        // expression stays in one zone, and only the ENTRY point differs. The same instant
+        // arithmetic a `zone` step uses, so a UTC base introduces no second way to cross zones.
+        Base::AbsoluteUtc(c) => {
+            if !crate::civil_year_in_band(c.year) {
+                return Err(EvalError::BaseYearOutOfRange);
+            }
+            convert_zone(*c, 0, ctx.zone_bias_min, 0).map_err(|_| EvalError::BaseOverflow)?
+        }
     };
     if !crate::civil_year_in_band(base.year) {
         return Err(EvalError::BaseYearOutOfRange);
@@ -296,6 +324,7 @@ pub fn eval(expr: &MomentExpr, ctx: &EvalContext) -> Result<EvalOutcome, EvalErr
     let mut cur = base;
     let mut cur_bias = ctx.zone_bias_min;
     let mut after_each = Vec::with_capacity(expr.steps.len());
+    let mut clamped: Vec<(usize, u32)> = Vec::new();
     for (i, step) in expr.steps.iter().enumerate() {
         // A `zone` step re-expresses the running moment in another fixed-offset zone (same
         // instant, new wall-clock and bias). It is the only step that changes the zone, so it is
@@ -306,7 +335,11 @@ pub fn eval(expr: &MomentExpr, ctx: &EvalContext) -> Result<EvalOutcome, EvalErr
             cur = convert_zone(cur, cur_bias, *target_bias, i)?;
             cur_bias = *target_bias;
         } else {
-            cur = apply_step(cur, step, i, ctx.calendar)?;
+            let (next, clamped_day) = apply_step(cur, step, i, ctx.calendar)?;
+            if let Some(day) = clamped_day {
+                clamped.push((i, day));
+            }
+            cur = next;
         }
         // Checked after EVERY step, not only after the ones that obviously move years. A snap keeps
         // the year, a business-day walk can cross one, a zone step can cross one at the boundary,
@@ -317,30 +350,32 @@ pub fn eval(expr: &MomentExpr, ctx: &EvalContext) -> Result<EvalOutcome, EvalErr
         }
         after_each.push(cur);
     }
-    Ok(EvalOutcome { base, after_each, result_bias: cur_bias })
+    Ok(EvalOutcome { base, after_each, result_bias: cur_bias, clamped })
 }
 
+/// Returns the stepped moment and, for a month-folding shift that hit a shorter month, the day that
+/// was asked for. Only `Shift` can report one - every other step either keeps the day or picks it.
 fn apply_step(
     cur: CivilDateTime,
     step: &Step,
     index: usize,
     calendar: Option<&crate::calendar::Calendar>,
-) -> Result<CivilDateTime, EvalError> {
+) -> Result<(CivilDateTime, Option<u32>), EvalError> {
     match step {
         Step::Shift { sign, amount, unit } => apply_shift(cur, *sign, *amount, *unit, index, calendar),
         Step::SetTime { hour, minute, second } => {
             if *hour > 23 || *minute > 59 || *second > 59 {
                 return Err(EvalError::BadSetTime { index });
             }
-            Ok(CivilDateTime { hour: *hour, minute: *minute, second: *second, ..cur })
+            Ok((CivilDateTime { hour: *hour, minute: *minute, second: *second, ..cur }, None))
         }
-        Step::Snap(target) => Ok(apply_snap(cur, *target)),
+        Step::Snap(target) => Ok((apply_snap(cur, *target), None)),
         Step::Nearest(target) => match target {
             // The leap day is pure arithmetic (the next Feb 29), so it needs no holiday calendar -
             // unlike the business-day targets, which do.
-            NearestTarget::NextLeapDay => Ok(apply_nearest_leap_day(cur)),
+            NearestTarget::NextLeapDay => Ok((apply_nearest_leap_day(cur), None)),
             NearestTarget::NextBusinessDay | NearestTarget::PrevBusinessDay => match calendar {
-                Some(cal) => apply_nearest(cur, *target, cal, index),
+                Some(cal) => apply_nearest(cur, *target, cal, index).map(|c| (c, None)),
                 None => Err(EvalError::NeedsCalendar { index }),
             },
         },
@@ -442,6 +477,8 @@ fn apply_snap(cur: CivilDateTime, target: SnapTarget) -> CivilDateTime {
     }
 }
 
+/// Returns the shifted moment and, when a month-length clamp moved the day, the day that was asked
+/// for. Only the calendar-folding units can clamp - a fixed-length shift never does.
 fn apply_shift(
     cur: CivilDateTime,
     sign: Sign,
@@ -449,7 +486,7 @@ fn apply_shift(
     unit: Unit,
     index: usize,
     calendar: Option<&crate::calendar::Calendar>,
-) -> Result<CivilDateTime, EvalError> {
+) -> Result<(CivilDateTime, Option<u32>), EvalError> {
     // The amount is a non-negative magnitude - apply the sign here.
     let signed = match sign {
         Sign::Plus => amount,
@@ -457,7 +494,7 @@ fn apply_shift(
     };
     match unit {
         Unit::Seconds | Unit::Minutes | Unit::Hours | Unit::Days | Unit::Weeks => {
-            shift_fixed(cur, signed, unit, index)
+            shift_fixed(cur, signed, unit, index).map(|c| (c, None))
         }
         Unit::Months => shift_months(cur, signed, index),
         // A quarter is three months, a year is twelve - one calendar-fold path with
@@ -471,16 +508,16 @@ fn apply_shift(
         // Business days need a calendar (weekends plus holidays). With one, walk the calendar -
         // without one (the substitution paths), stay honestly unsupported.
         Unit::BusinessDays => match calendar {
-            Some(cal) => {
-                crate::calendar::add_business_days(&cur, signed, cal).map_err(|limit| match limit {
+            Some(cal) => crate::calendar::add_business_days(&cur, signed, cal)
+                .map(|c| (c, None))
+                .map_err(|limit| match limit {
                     // The request is out of range - the calendar is fine.
                     crate::calendar::BusinessDayLimit::TooManyDays => EvalError::Overflow { index },
                     // The calendar is the problem, and the message has to say so.
                     crate::calendar::BusinessDayLimit::DegenerateCalendar => {
                         EvalError::DegenerateCalendar { index }
                     }
-                })
-            }
+                }),
             None => Err(EvalError::NeedsCalendar { index }),
         },
     }
@@ -528,7 +565,7 @@ fn shift_fixed(
 /// Shift by a whole number of months, clamping the day to the last valid day of the
 /// resulting month. This is the anchor-dependent case the tick model cannot express:
 /// Jan 31 + 1 month = Feb 28/29, and Feb 29 + 12 months = Feb 28. Time of day is kept.
-fn shift_months(cur: CivilDateTime, months: i64, index: usize) -> Result<CivilDateTime, EvalError> {
+fn shift_months(cur: CivilDateTime, months: i64, index: usize) -> Result<(CivilDateTime, Option<u32>), EvalError> {
     let ovf = || EvalError::Overflow { index };
     // Absolute month index since year 0, month 0 (January).
     let total = cur
@@ -540,14 +577,19 @@ fn shift_months(cur: CivilDateTime, months: i64, index: usize) -> Result<CivilDa
     let new_year = total.div_euclid(12);
     let new_month = total.rem_euclid(12) + 1; // 1..=12
     let last = last_day_of_month(new_year, new_month);
-    Ok(CivilDateTime {
-        year: new_year,
-        month: new_month as u32,
-        day: cur.day.min(last),
-        hour: cur.hour,
-        minute: cur.minute,
-        second: cur.second,
-    })
+    // The one place a day is clamped, so it is also the one place that can report it honestly.
+    let clamped = (cur.day > last).then_some(cur.day);
+    Ok((
+        CivilDateTime {
+            year: new_year,
+            month: new_month as u32,
+            day: cur.day.min(last),
+            hour: cur.hour,
+            minute: cur.minute,
+            second: cur.second,
+        },
+        clamped,
+    ))
 }
 
 // --- Bridge to the substitution tick world (the relative `jump` path) ---------------
@@ -616,8 +658,10 @@ pub fn fixed_shift_ticks(step: &Step) -> Result<Option<i64>, EvalError> {
 /// resulting instant is reported.
 fn shift_filetime(ft_utc: i64, tz_bias_min: i32, step: &Step) -> Result<i64, EvalError> {
     let civil = filetime_to_civil(ft_utc, tz_bias_min);
-    // No calendar on the jump path, so a business-day step stays unsupported here.
-    let shifted = apply_step(civil, step, 0, None)?;
+    // No calendar on the jump path, so a business-day step stays unsupported here. The clamp report
+    // is dropped deliberately: a jump's result travels as an instant with no place to carry it, and
+    // the jump path builds only `Shift` by a fixed unit today, which never clamps.
+    let (shifted, _clamped) = apply_step(civil, step, 0, None)?;
     // The same two things `eval` does for the calculator, for the same two reasons: the step
     // computed this year arithmetically (so the parser never saw it), and going back out through a
     // string would make formatting a failure mode of a jump. The instant check below then rejects
@@ -762,34 +806,110 @@ pub fn formats(civil: &CivilDateTime, tz_bias_min: i32) -> Formats {
 
 // --- Custom format mask (7.3, docs/02 section 8 point 9 - hit the target app's exact format) ---
 
+/// What a mask rendered to, and what the vocabulary did not recognise in it.
+///
+/// The second half exists because the first one alone can mislead. A run of letters that is not a
+/// token used to be emitted verbatim, so `h:mm tt` produced `h:05 tt` - a string that LOOKS like a
+/// formatted time and carries raw mask letters. Silent, and the reader's first guess is their own
+/// typo. The caller shows `unknown` so the answer says what it could not do (rule 6).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MaskRender {
+    pub text: String,
+    /// Letter runs the vocabulary does not know, first appearance first, without repeats. Empty when
+    /// every letter in the mask was either a token or explicitly quoted.
+    pub unknown: Vec<String>,
+}
+
 /// Render `civil` in a user-supplied .NET/Java-style mask so the output can match the exact format
-/// the target app uses. Case-sensitive: `M` is month, `m` is minute. A token is a maximal run of
-/// one letter (`yyyy`, `MM`, `dd`, `HH`, `mm`, `ss`, plus `MMM`/`MMMM` month names and `ddd`/`dddd`
-/// weekday names) - anything else, and any run whose length is not a known token (e.g. `yyy`), is
-/// emitted literally - never guessed. Escaping a literal that happens to be a token letter, a zone
-/// token, and single `y` are not built yet.
-pub fn format_with_mask(civil: &CivilDateTime, mask: &str) -> String {
+/// the target app uses. Case-sensitive: `M` is month, `m` is minute, `H` is 24-hour and `h` is
+/// 12-hour. A token is a maximal run of one letter (`yyyy`, `MM`, `dd`, `HH`, `hh`, `mm`, `ss`, `tt`,
+/// plus `MMM`/`MMMM` month names and `ddd`/`dddd` weekday names).
+///
+/// Literal text goes in single quotes, as in Java's `SimpleDateFormat`: `'at' HH:mm` renders `at`
+/// verbatim, and `''` inside a quoted run is one apostrophe. Without quotes a letter run that is not
+/// a token still passes through, but it is REPORTED in [`MaskRender::unknown`] - passing through was
+/// never a promise, only what happened to work, and `date=` would have lost its `d` to the day token.
+/// Anything that is not a letter (`/`, `.`, `:`, spaces) is literal and needs no quoting.
+///
+/// A zone token and single `y` are not built.
+pub fn format_with_mask(civil: &CivilDateTime, mask: &str) -> MaskRender {
     let chars: Vec<char> = mask.chars().collect();
-    let mut out = String::new();
+    let mut text = String::new();
+    let mut unknown: Vec<String> = Vec::new();
     let mut i = 0;
     while i < chars.len() {
         let c = chars[i];
+        if c == '\'' {
+            i = push_quoted(&chars, i, &mut text, &mut unknown);
+            continue;
+        }
         // Consume the maximal run of the same character.
         let mut n = 1;
         while i + n < chars.len() && chars[i + n] == c {
             n += 1;
         }
         match mask_token(civil, c, n) {
-            Some(field) => out.push_str(&field),
-            None => (0..n).for_each(|_| out.push(c)),
+            Some(field) => text.push_str(&field),
+            None => {
+                (0..n).for_each(|_| text.push(c));
+                // Only LETTERS are reported. A run of `/` or `:` is punctuation the mask is made of,
+                // and calling it unrecognised would bury the real finding in noise.
+                if c.is_alphabetic() {
+                    let run: String = std::iter::repeat_n(c, n).collect();
+                    if !unknown.contains(&run) {
+                        unknown.push(run);
+                    }
+                }
+            }
         }
         i += n;
     }
-    out
+    MaskRender { text, unknown }
+}
+
+/// Copy a quoted literal run into `text`, returning the index just past its closing quote. `''` is
+/// one apostrophe. An unterminated quote takes the rest of the mask and is reported, because the
+/// alternative - ending it silently at the end of input - is a mask that renders and is not what was
+/// written.
+fn push_quoted(chars: &[char], start: usize, text: &mut String, unknown: &mut Vec<String>) -> usize {
+    // `''` is an apostrophe wherever it appears, including outside a quoted run - Java's rule, and
+    // the one this vocabulary follows. Reading it as an empty quoted run instead would make a lone
+    // apostrophe unwritable, which is the character an English mask most often needs ("o'clock").
+    if chars.get(start + 1) == Some(&'\'') {
+        text.push('\'');
+        return start + 2;
+    }
+    let mut i = start + 1;
+    while i < chars.len() {
+        if chars[i] == '\'' {
+            if chars.get(i + 1) == Some(&'\'') {
+                text.push('\'');
+                i += 2;
+                continue;
+            }
+            return i + 1;
+        }
+        text.push(chars[i]);
+        i += 1;
+    }
+    let unterminated = "'".to_string();
+    if !unknown.contains(&unterminated) {
+        unknown.push(unterminated);
+    }
+    i
+}
+
+/// The hour on a 12-hour clock: 0 and 12 both read as 12, the rest unchanged.
+fn hour_12(hour: u32) -> u32 {
+    match hour % 12 {
+        0 => 12,
+        h => h,
+    }
 }
 
 /// The field for a mask token: character `c` repeated `n` times, or None when `(c, n)` is not a
-/// recognised token (then the caller emits the run literally). The .NET / Java token vocabulary.
+/// recognised token (then the caller emits the run literally and reports it). The .NET / Java token
+/// vocabulary.
 fn mask_token(civil: &CivilDateTime, c: char, n: usize) -> Option<String> {
     let month = (civil.month - 1) as usize;
     let dow = day_of_week(civil);
@@ -806,6 +926,15 @@ fn mask_token(civil: &CivilDateTime, c: char, n: usize) -> Option<String> {
         ('d', 1) => civil.day.to_string(),
         ('H', 2) => format!("{:02}", civil.hour),
         ('H', 1) => civil.hour.to_string(),
+        // The 12-hour clock, which is how the US market writes time (docs/02 section 7) and one of
+        // the two MVP markets. Midnight and noon are 12, not 0 - the same rule .NET and Java state.
+        ('h', 2) => format!("{:02}", hour_12(civil.hour)),
+        ('h', 1) => hour_12(civil.hour).to_string(),
+        // `tt` is the full designator, `t` its first letter - both as .NET defines them. Invariant
+        // English, like the month and weekday names above: this mask matches the TARGET APP's
+        // output, and the data locale is not the interface language (rule 15).
+        ('t', 2) => (if civil.hour < 12 { "AM" } else { "PM" }).to_string(),
+        ('t', 1) => (if civil.hour < 12 { "A" } else { "P" }).to_string(),
         ('m', 2) => format!("{:02}", civil.minute),
         ('m', 1) => civil.minute.to_string(),
         ('s', 2) => format!("{:02}", civil.second),
@@ -1076,6 +1205,12 @@ pub enum DateReading {
     UsMonthDay,
     /// The Polish / European reading of a numeric date: day first (DD/MM/YYYY).
     PlDayMonth,
+    /// A bare number read as Unix epoch SECONDS.
+    EpochSeconds,
+    /// A bare number read as Unix epoch MILLISECONDS. A bare number is genuinely ambiguous between
+    /// the two - `1740607200` is a plausible instant in seconds and another in milliseconds - so both
+    /// are offered, the same way an ambiguous month/day order is (docs/02 8.1).
+    EpochMillis,
 }
 
 impl DateReading {
@@ -1085,6 +1220,8 @@ impl DateReading {
             DateReading::Iso => "iso",
             DateReading::UsMonthDay => "us_month_day",
             DateReading::PlDayMonth => "pl_day_month",
+            DateReading::EpochSeconds => "epoch_seconds",
+            DateReading::EpochMillis => "epoch_millis",
         }
     }
 
@@ -1094,6 +1231,8 @@ impl DateReading {
             DateReading::Iso => "ISO 8601",
             DateReading::UsMonthDay => "US MM/DD/YYYY",
             DateReading::PlDayMonth => "PL DD/MM/YYYY",
+            DateReading::EpochSeconds => "Unix epoch seconds",
+            DateReading::EpochMillis => "Unix epoch milliseconds",
         }
     }
 }
@@ -1113,6 +1252,36 @@ impl DateAnalysis {
     }
 }
 
+/// Read a bare number as an epoch, in seconds and in milliseconds, returning every reading whose
+/// year this build computes on. `None` when the input is not a bare number at all, which is what
+/// lets the caller fall through to the dated formats.
+///
+/// Both units are offered rather than one guessed from magnitude. A magnitude rule reads well until
+/// it does not: `1000000000` is September 2001 in seconds and January 1970 in milliseconds, and both
+/// are instants a tester might paste from a log. Choosing by size would silently pick one, which is
+/// the thing this analyser refuses to do for month/day order too. A reading whose year falls outside
+/// the computable band is dropped rather than shown wrong - if that leaves nothing, the input is not
+/// a usable epoch and the caller reports it unrecognised.
+fn epoch_readings(s: &str, zone_bias_min: i32) -> Option<Vec<(DateReading, CivilDateTime)>> {
+    let digits = s.strip_prefix('-').unwrap_or(s);
+    if digits.is_empty() || !digits.chars().all(|c| c.is_ascii_digit()) {
+        return None;
+    }
+    let n: i64 = s.parse().ok()?;
+    let mut readings = Vec::with_capacity(2);
+    for (reading, secs) in [
+        (DateReading::EpochSeconds, Some(n)),
+        (DateReading::EpochMillis, Some(n.div_euclid(1_000))),
+    ] {
+        let Some(secs) = secs else { continue };
+        let civil = epoch_secs_to_civil(secs, zone_bias_min);
+        if crate::civil_year_in_band(civil.year) {
+            readings.push((reading, civil));
+        }
+    }
+    (!readings.is_empty()).then_some(readings)
+}
+
 /// A civil date at midnight, or None if the month or day cannot exist - the validity gate that
 /// turns a candidate month/day order into a real date (month 13 and Feb 30 are rejected).
 fn civil_date(year: i64, month: i64, day: i64) -> Option<CivilDateTime> {
@@ -1125,12 +1294,23 @@ fn civil_date(year: i64, month: i64, day: i64) -> Option<CivilDateTime> {
 /// Recognise a pasted date and return its reading(s). ISO (dash-separated, optional time) is
 /// unambiguous - a slash- or dot-separated `N/N/YYYY` yields the US and PL readings, keeping only
 /// the ones that form a real date (so 29/02 is PL-only, 02/29 US-only, 02/30 an error, 05/05 one).
-/// Formats beyond these - epoch, FILETIME, RFC 1123, year-first numeric - are honestly not
-/// recognised yet (an error, never a guess).
-pub fn analyze_date(input: &str) -> Result<DateAnalysis, String> {
+/// A bare number is a Unix epoch, read in `zone_bias_min`, in seconds and in milliseconds - both,
+/// because a number carries no unit and choosing one would be a guess (docs/02 8.1).
+/// FILETIME, RFC 1123 and year-first numeric are honestly not recognised yet (an error, never a
+/// guess).
+///
+/// `zone_bias_min` is the session zone: only the epoch readings depend on it, because only they
+/// start from an instant rather than from civil fields someone already wrote down (rule 2).
+pub fn analyze_date(input: &str, zone_bias_min: i32) -> Result<DateAnalysis, String> {
     let s = input.trim();
     if s.is_empty() {
         return Err("empty input".into());
+    }
+    // A bare number: epoch. Checked BEFORE the separator dispatch, and it cannot collide with the
+    // dated forms - those all carry a separator, and this one may carry nothing but digits and a
+    // leading minus (pre-1970 instants are real and this tool exists to reach them).
+    if let Some(readings) = epoch_readings(s, zone_bias_min) {
+        return Ok(DateAnalysis { readings });
     }
     // ISO: dash-separated, with or without a time (midnight if the time is absent).
     if s.contains('-') {
@@ -1145,7 +1325,13 @@ pub fn analyze_date(input: &str) -> Result<DateAnalysis, String> {
         _ => return Err(format!("unrecognised date format '{input}'")),
     };
     let parts: Vec<&str> = s.split(sep).collect();
-    if parts.len() != 3 || parts[2].len() != 4 {
+    // Four DIGITS, not four characters. Length alone let `-999` through - four characters that parse
+    // as a year and produce a perfectly real date in 999 BC, from input the error message promised to
+    // reject. The check has to mean what it says (R2-C3).
+    if parts.len() != 3
+        || parts[2].len() != 4
+        || !parts[2].chars().all(|c| c.is_ascii_digit())
+    {
         return Err(format!("expected N{sep}N{sep}YYYY, got '{input}'"));
     }
     let num = |p: &str| p.parse::<i64>().map_err(|_| format!("bad number in '{input}'"));
@@ -1173,6 +1359,12 @@ mod tests {
 
     fn dt(y: i64, mo: u32, d: u32, h: u32, mi: u32, s: u32) -> CivilDateTime {
         CivilDateTime { year: y, month: mo, day: d, hour: h, minute: mi, second: s }
+    }
+
+    /// Just the rendered text, for the assertions that are about formatting. The unknown-token half
+    /// has its own tests - reading both out of one assertion would hide which one failed.
+    fn mask_text(civil: &CivilDateTime, mask: &str) -> String {
+        format_with_mask(civil, mask).text
     }
 
     fn abs(c: CivilDateTime) -> Base {
@@ -1255,6 +1447,60 @@ mod tests {
             steps: vec![shift(Sign::Plus, 1, Unit::Years)],
         };
         assert_eq!(eval_at(&expr, dt(2000, 1, 1, 0, 0, 0)).unwrap().result(), dt(2025, 2, 28, 0, 0, 0));
+    }
+
+    /// R2-C2. A clamp is correct, documented, and invisible in the result - which is how a reader ends
+    /// up unable to tell it from a defect. The engine reports it so both surfaces can say WHICH step
+    /// clamped and from what, instead of each inferring it from a day that changed.
+    #[test]
+    fn a_clamped_day_is_reported_with_its_step_and_the_day_asked_for() {
+        let at = |expr: &MomentExpr| eval_at(expr, dt(2000, 1, 1, 0, 0, 0)).unwrap();
+
+        // The fiscal-year shape: +1 year off the leap day clamps, the following -1 day does not.
+        let fiscal = MomentExpr {
+            base: abs(dt(2024, 2, 29, 0, 0, 0)),
+            steps: vec![shift(Sign::Plus, 1, Unit::Years), shift(Sign::Minus, 1, Unit::Days)],
+        };
+        assert_eq!(at(&fiscal).clamped, vec![(0, 29)], "step 0 asked for day 29");
+
+        // A shift that lands in a month long enough reports nothing - the list is not "every month
+        // shift", it is the ones that lost a day.
+        let no_clamp = MomentExpr {
+            base: abs(dt(2026, 3, 15, 0, 0, 0)),
+            steps: vec![shift(Sign::Plus, 1, Unit::Months)],
+        };
+        assert!(at(&no_clamp).clamped.is_empty());
+
+        // Fixed-length units never clamp, whatever they cross.
+        let days = MomentExpr {
+            base: abs(dt(2024, 2, 29, 0, 0, 0)),
+            steps: vec![shift(Sign::Plus, 400, Unit::Days)],
+        };
+        assert!(at(&days).clamped.is_empty());
+
+        // Two clamps in one expression are both reported, each against its own step index - a single
+        // flag would hide the second, and a reader checking one number would miss the other.
+        let twice = MomentExpr {
+            base: abs(dt(2026, 1, 31, 0, 0, 0)),
+            steps: vec![
+                shift(Sign::Plus, 1, Unit::Months),  // 31 Jan -> 28 Feb, clamped from 31
+                shift(Sign::Plus, 1, Unit::Days),    // 28 Feb -> 1 Mar, no clamp
+                shift(Sign::Plus, 1, Unit::Months),  // 1 Mar -> 1 Apr, no clamp
+            ],
+        };
+        assert_eq!(at(&twice).clamped, vec![(0, 31)]);
+
+        // Quarters and years fold through the same month arithmetic, so they report the same way.
+        let quarters = MomentExpr {
+            base: abs(dt(2026, 5, 31, 0, 0, 0)),
+            steps: vec![shift(Sign::Plus, 1, Unit::Quarters)], // 31 May -> 31 Aug, no clamp
+        };
+        assert!(at(&quarters).clamped.is_empty());
+        let quarters_short = MomentExpr {
+            base: abs(dt(2026, 3, 31, 0, 0, 0)),
+            steps: vec![shift(Sign::Plus, 1, Unit::Quarters)], // 31 Mar -> 30 Jun, clamped
+        };
+        assert_eq!(at(&quarters_short).clamped, vec![(0, 31)]);
     }
 
     #[test]
@@ -1950,17 +2196,17 @@ mod tests {
 
     #[test]
     fn analyze_iso_is_a_single_reading() {
-        let a = analyze_date("2008-08-04").unwrap();
+        let a = analyze_date("2008-08-04", 0).unwrap();
         assert!(!a.is_ambiguous());
         assert_eq!(a.readings, vec![(DateReading::Iso, dt(2008, 8, 4, 0, 0, 0))]);
         // A time component is kept.
-        assert_eq!(analyze_date("1990-08-03T23:59:59").unwrap().readings[0].1, dt(1990, 8, 3, 23, 59, 59));
+        assert_eq!(analyze_date("1990-08-03T23:59:59", 0).unwrap().readings[0].1, dt(1990, 8, 3, 23, 59, 59));
     }
 
     #[test]
     fn analyze_ambiguous_numeric_shows_both_us_and_pl() {
         // 04/08/2008: April 8 (US) and August 4 (PL) - both valid, both shown, US first.
-        let a = analyze_date("04/08/2008").unwrap();
+        let a = analyze_date("04/08/2008", 0).unwrap();
         assert!(a.is_ambiguous());
         assert_eq!(
             a.readings,
@@ -1970,24 +2216,78 @@ mod tests {
             ]
         );
         // Dots read the same way.
-        assert!(analyze_date("04.08.2008").unwrap().is_ambiguous());
+        assert!(analyze_date("04.08.2008", 0).unwrap().is_ambiguous());
+    }
+
+    /// R2-C3. The year check counted CHARACTERS, not digits, so a four-character run that merely
+    /// PARSES as a number was taken for a year: `12/25/+999` produced a date in 999, from input the
+    /// error message beside it promises to reject as not `N/N/YYYY`.
+    ///
+    /// 🔴 The case that proves it is `+999`, not `-999`. A minus makes the string contain a dash, so
+    /// it is dispatched to the ISO branch long before this check and refused there for a different
+    /// reason - a test written on the minus passes with the bug still in place. Checked by reverting.
+    #[test]
+    fn a_numeric_date_needs_four_year_digits_not_four_characters() {
+        for bad in ["12/25/+999", "12.25.+999", "12/25/+009"] {
+            assert!(
+                analyze_date(bad, 0).is_err(),
+                "'{bad}' has no four-digit year and must be refused"
+            );
+        }
+        // The neighbours still work, so this narrowed nothing it should not have.
+        assert!(analyze_date("12/25/0999", 0).is_ok());
+        assert!(analyze_date("12/25/2026", 0).is_ok());
+    }
+
+    /// R2-C5. docs/02 8.1 lists epoch among the formats the analyser recognises, and it did not -
+    /// pasting a number out of a log, the commonest thing a tester has in hand, was an error. A bare
+    /// number carries no unit, so both readings are offered rather than one picked by magnitude.
+    #[test]
+    fn a_bare_number_reads_as_epoch_in_both_units() {
+        let a = analyze_date("1740607200", 0).unwrap();
+        assert!(a.is_ambiguous(), "seconds and milliseconds are both plausible readings");
+        assert_eq!(
+            a.readings,
+            vec![
+                (DateReading::EpochSeconds, dt(2025, 2, 26, 22, 0, 0)),
+                (DateReading::EpochMillis, dt(1970, 1, 21, 3, 30, 7)),
+            ]
+        );
+
+        // Epoch is an INSTANT, so the reading follows the session zone - the same rule every other
+        // instant in this product obeys (untouchable rule 2).
+        let east = analyze_date("1740607200", -120).unwrap();
+        assert_eq!(east.readings[0].1, dt(2025, 2, 27, 0, 0, 0));
+
+        // Zero and negative numbers are real instants this tool exists to reach.
+        assert_eq!(analyze_date("0", 0).unwrap().readings[0].1, dt(1970, 1, 1, 0, 0, 0));
+        assert_eq!(analyze_date("-7200", 0).unwrap().readings[0].1, dt(1969, 12, 31, 22, 0, 0));
+
+        // A number is only an epoch when it is ONLY a number - a dated form still parses as a date.
+        assert_eq!(analyze_date("2008-08-04", 0).unwrap().readings[0].0, DateReading::Iso);
+        assert!(analyze_date("12/25/2026", 0).unwrap().readings.iter().all(|(r, _)| *r
+            != DateReading::EpochSeconds));
+
+        // Still honest about what it cannot read, rather than reaching for a number inside it.
+        assert!(analyze_date("Wed, 26 Feb 2025 22:00:00 GMT", 0).is_err());
+        assert!(analyze_date("133850880000000000x", 0).is_err());
     }
 
     #[test]
     fn analyze_resolves_when_only_one_order_is_valid() {
         // 29/02/2024: "month 29" is impossible, so only the PL reading (Feb 29, a leap day).
         assert_eq!(
-            analyze_date("29/02/2024").unwrap().readings,
+            analyze_date("29/02/2024", 0).unwrap().readings,
             vec![(DateReading::PlDayMonth, dt(2024, 2, 29, 0, 0, 0))]
         );
         // 02/29/2024: the mirror - US only.
         assert_eq!(
-            analyze_date("02/29/2024").unwrap().readings,
+            analyze_date("02/29/2024", 0).unwrap().readings,
             vec![(DateReading::UsMonthDay, dt(2024, 2, 29, 0, 0, 0))]
         );
         // 25/12/2008: "month 25" impossible - PL only.
         assert_eq!(
-            analyze_date("25/12/2008").unwrap().readings,
+            analyze_date("25/12/2008", 0).unwrap().readings,
             vec![(DateReading::PlDayMonth, dt(2008, 12, 25, 0, 0, 0))]
         );
     }
@@ -1995,19 +2295,19 @@ mod tests {
     #[test]
     fn analyze_same_date_both_orders_is_not_ambiguous() {
         // 05/05/2008 reads the same either way - one reading, not two.
-        let a = analyze_date("05/05/2008").unwrap();
+        let a = analyze_date("05/05/2008", 0).unwrap();
         assert!(!a.is_ambiguous());
         assert_eq!(a.readings, vec![(DateReading::UsMonthDay, dt(2008, 5, 5, 0, 0, 0))]);
     }
 
     #[test]
     fn analyze_rejects_the_unrepresentable_and_unrecognised() {
-        assert!(analyze_date("02/30/2008").is_err()); // Feb 30 in neither order
-        assert!(analyze_date("13/13/2008").is_err()); // month 13 in neither order
-        assert!(analyze_date("").is_err());
-        assert!(analyze_date("hello").is_err());
-        assert!(analyze_date("04/08/08").is_err()); // year not four digits
-        assert!(analyze_date("2008/08/04").is_err()); // year-first numeric not recognised yet
+        assert!(analyze_date("02/30/2008", 0).is_err()); // Feb 30 in neither order
+        assert!(analyze_date("13/13/2008", 0).is_err()); // month 13 in neither order
+        assert!(analyze_date("", 0).is_err());
+        assert!(analyze_date("hello", 0).is_err());
+        assert!(analyze_date("04/08/08", 0).is_err()); // year not four digits
+        assert!(analyze_date("2008/08/04", 0).is_err()); // year-first numeric not recognised yet
     }
 
     // --- custom format mask --------------------------------------------------
@@ -2015,42 +2315,110 @@ mod tests {
     #[test]
     fn format_mask_common_patterns() {
         let d = dt(2008, 8, 4, 23, 59, 9);
-        assert_eq!(format_with_mask(&d, "yyyy-MM-dd HH:mm:ss"), "2008-08-04 23:59:09");
-        assert_eq!(format_with_mask(&d, "MM/dd/yyyy"), "08/04/2008");
-        assert_eq!(format_with_mask(&d, "dd.MM.yyyy"), "04.08.2008");
-        assert_eq!(format_with_mask(&d, "yy"), "08");
+        assert_eq!(mask_text(&d, "yyyy-MM-dd HH:mm:ss"), "2008-08-04 23:59:09");
+        assert_eq!(mask_text(&d, "MM/dd/yyyy"), "08/04/2008");
+        assert_eq!(mask_text(&d, "dd.MM.yyyy"), "04.08.2008");
+        assert_eq!(mask_text(&d, "yy"), "08");
     }
 
     #[test]
     fn format_mask_is_case_sensitive_month_vs_minute() {
         // M is month, m is minute - the classic gotcha.
         let d = dt(2008, 3, 4, 12, 7, 0);
-        assert_eq!(format_with_mask(&d, "M m"), "3 7"); // month 3, minute 7 (no pad)
-        assert_eq!(format_with_mask(&d, "MM mm"), "03 07");
+        assert_eq!(mask_text(&d, "M m"), "3 7"); // month 3, minute 7 (no pad)
+        assert_eq!(mask_text(&d, "MM mm"), "03 07");
     }
 
     #[test]
     fn format_mask_names_and_no_pad() {
         let d = dt(2008, 8, 4, 5, 6, 7); // 2008-08-04 was a Monday
-        assert_eq!(format_with_mask(&d, "ddd, dd MMM yyyy"), "Mon, 04 Aug 2008");
-        assert_eq!(format_with_mask(&d, "dddd MMMM"), "Monday August");
-        assert_eq!(format_with_mask(&d, "d/M/yyyy H:m:s"), "4/8/2008 5:6:7"); // single = no pad
+        assert_eq!(mask_text(&d, "ddd, dd MMM yyyy"), "Mon, 04 Aug 2008");
+        assert_eq!(mask_text(&d, "dddd MMMM"), "Monday August");
+        assert_eq!(mask_text(&d, "d/M/yyyy H:m:s"), "4/8/2008 5:6:7"); // single = no pad
     }
 
     #[test]
     fn format_mask_literals_and_unknown_runs_pass_through() {
         let d = dt(2008, 8, 4, 0, 0, 0);
         // A single 'y' and non-token characters are literal - a 3-run 'yyy' is not a token, so verbatim.
-        assert_eq!(format_with_mask(&d, "year=yyyy"), "year=2008");
-        assert_eq!(format_with_mask(&d, "yyy"), "yyy");
-        assert_eq!(format_with_mask(&d, "yyyy//MM"), "2008//08");
-        assert_eq!(format_with_mask(&d, ""), "");
+        assert_eq!(mask_text(&d, "year=yyyy"), "year=2008");
+        assert_eq!(mask_text(&d, "yyy"), "yyy");
+        assert_eq!(mask_text(&d, "yyyy//MM"), "2008//08");
+        assert_eq!(mask_text(&d, ""), "");
     }
 
     #[test]
     fn format_mask_single_token_letters_are_still_tokens() {
-        // A documented limitation: a lone token letter is a token even inside a would-be word, so a
-        // literal 's' (seconds) cannot appear without escaping (not built). Deliberate, not a bug.
-        assert_eq!(format_with_mask(&dt(2008, 8, 4, 0, 0, 30), "s"), "30");
+        // A lone token letter is a token even inside a would-be word, so a literal 's' (seconds)
+        // needs quoting. Deliberate, not a bug - and quoting now exists to say so.
+        assert_eq!(mask_text(&dt(2008, 8, 4, 0, 0, 30), "s"), "30");
+    }
+
+    /// R2-C1. The 12-hour clock with a designator is how the US market writes time (docs/02 section
+    /// 7) - one of the two MVP markets - and the mask exists to match the target app's exact output.
+    /// `h:mm tt` used to render `h:05 tt`: raw mask letters in a string shaped like a formatted time.
+    #[test]
+    fn format_mask_has_a_twelve_hour_clock_and_a_designator() {
+        // The measured case from the audit, now rendering as .NET would.
+        let morning = dt(2026, 3, 7, 9, 5, 3);
+        assert_eq!(mask_text(&morning, "M/d/yyyy h:mm tt"), "3/7/2026 9:05 AM");
+
+        // Midnight and noon are 12, not 0 - the rule most home-made conversions get wrong.
+        assert_eq!(mask_text(&dt(2026, 3, 7, 0, 30, 0), "h:mm tt"), "12:30 AM");
+        assert_eq!(mask_text(&dt(2026, 3, 7, 12, 30, 0), "h:mm tt"), "12:30 PM");
+        assert_eq!(mask_text(&dt(2026, 3, 7, 23, 0, 0), "hh:mm tt"), "11:00 PM");
+        assert_eq!(mask_text(&dt(2026, 3, 7, 1, 0, 0), "hh:mm t"), "01:00 A");
+
+        // `H` stays the 24-hour clock beside it - the case difference is the whole point.
+        assert_eq!(mask_text(&dt(2026, 3, 7, 23, 0, 0), "H h"), "23 11");
+    }
+
+    /// A mask the vocabulary does not fully understand must SAY so. Passing letters through silently
+    /// produces a string that looks like a result, and the reader blames their own typo (rule 6).
+    #[test]
+    fn format_mask_reports_letter_runs_it_does_not_know() {
+        let d = dt(2008, 8, 4, 13, 5, 0);
+
+        // Punctuation is never reported - a mask is made of it, and naming it would bury the finding.
+        assert!(format_with_mask(&d, "yyyy-MM-dd HH:mm:ss").unknown.is_empty());
+        assert!(format_with_mask(&d, "yyyy//MM").unknown.is_empty());
+
+        // Letters that are not tokens are reported once each, in the order they first appear.
+        let r = format_with_mask(&d, "year=yyyy");
+        assert_eq!(r.text, "year=2008", "the text still renders - this is a warning, not a refusal");
+        assert_eq!(r.unknown, vec!["y".to_string(), "e".into(), "a".into(), "r".into()]);
+
+        // A repeat is listed once, not once per occurrence.
+        assert_eq!(format_with_mask(&d, "zz-zz").unknown, vec!["zz".to_string()]);
+
+        // A run of a token letter at an unknown LENGTH is unknown too: `yyy` is not a year.
+        assert_eq!(format_with_mask(&d, "yyy").unknown, vec!["yyy".to_string()]);
+    }
+
+    /// Quoting is the answer the warning above points at, so it has to exist and work.
+    #[test]
+    fn format_mask_quotes_literal_text() {
+        let d = dt(2008, 8, 4, 13, 5, 0);
+
+        // The letters inside quotes are text, and nothing is reported.
+        let r = format_with_mask(&d, "'year=' yyyy");
+        assert_eq!(r.text, "year= 2008");
+        assert!(r.unknown.is_empty(), "quoted text is not an unknown token: {:?}", r.unknown);
+
+        // Without quotes the same word is eaten by tokens - `d` becomes the day and `t` the PM
+        // designator, so "date=" renders "4aPe=". This is exactly why quoting had to come with the
+        // new `t` token: adding a token silently changes what every unquoted mask means.
+        assert_eq!(mask_text(&d, "date=yyyy"), "4aPe=2008");
+        assert_eq!(mask_text(&d, "'date='yyyy"), "date=2008");
+
+        // Doubled quotes are one apostrophe.
+        assert_eq!(mask_text(&d, "''"), "'");
+        assert_eq!(mask_text(&d, "'o''clock'"), "o'clock");
+
+        // An unterminated quote takes the rest and is REPORTED - rendering it silently would produce
+        // something other than what was written, with no way to notice.
+        let open = format_with_mask(&d, "yyyy 'text");
+        assert_eq!(open.text, "2008 text");
+        assert_eq!(open.unknown, vec!["'".to_string()]);
     }
 }
