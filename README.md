@@ -60,6 +60,19 @@ Grab the latest build from the **[Releases page](https://github.com/donislawdev/
 Unzip anywhere and run `ChronoMock.exe` (or `chrono.exe` for the CLI). There is no installer, nothing
 is written to the registry, and no administrator rights are needed.
 
+**Checking what you downloaded.** From the release after v0.1.0, each one also carries `SHA256SUMS`,
+a bill of materials per package (`*.spdx.json`, SPDX 2.3), and a build-provenance attestation you can
+verify without trusting this page:
+
+```
+gh attestation verify ChronoMock-win-x64.zip --repo donislawdev/ChronoMock
+```
+
+That answers a question a checksum cannot: which workflow, in which repository, at which commit,
+produced those exact bytes. It works on the archive and on any binary inside it, including
+`chrono_hook.dll`. The archives are not Authenticode-signed yet, so Windows still shows an
+unknown-publisher warning - [SECURITY.md](SECURITY.md#verifying-a-download) says where that stands.
+
 > **Early release.** The substitution core is implemented and covered by an automated suite that runs
 > on every commit, plus an end-to-end harness exercised against real applications on both 32-bit and
 > 64-bit builds before a release. Native Windows applications are the well-tested case. .NET, Java,

@@ -130,18 +130,40 @@ into its own data, and no tool can undo that - the README says so before you sta
   licensing and legal question rather than a vulnerability in this code, and it is
   addressed directly in the README.
 
-## Downloads are not signed yet
+## Verifying a download
 
-**The released archives carry no Authenticode signature and no published
-checksums.** Windows will show an unknown-publisher warning, and there is at
-present no first-party file you can verify a download against. This is a known gap
-rather than an oversight, code signing is planned, and this section will be
+**Downloads still carry no Authenticode signature.** Windows will show an
+unknown-publisher warning. Code signing is planned and this paragraph will be
 rewritten when it lands rather than quietly deleted.
 
-Until then the honest verification path is to build from source. The project is
-GPL-3.0, the injected library is `chrono_hook.dll` built from the code in this
-repository, and the CI workflow builds both the 64-bit and 32-bit targets on every
-push.
+What a release does carry, from the next one onward:
+
+- **`SHA256SUMS`** - the hash of every published file, so you can check that what
+  you downloaded is what was published.
+- **A bill of materials per package** (`*.spdx.json`, SPDX 2.3) listing every
+  third-party component in that package with its version and licence.
+- **A build-provenance attestation** over both archives and every binary inside
+  them, including `chrono_hook.dll` - the library this tool injects into other
+  processes, and so the file worth checking most.
+
+The attestation is the one that says something a hash cannot. A checksum published
+next to a file by the same person proves only that the two agree. The attestation
+is signed by GitHub's own infrastructure and states which workflow, in which
+repository, at which commit, produced those exact bytes:
+
+```
+gh attestation verify ChronoMock-win-x64.zip --repo donislawdev/ChronoMock
+```
+
+That works on the zip and on any binary you extract from it, because verification
+matches on the file's digest rather than its name.
+
+🔴 **The v0.1.0 archives have none of this.** They were built on a developer machine
+and uploaded by hand, before the release moved into a workflow, and an attestation
+cannot be granted after the fact - that is precisely what makes it worth having. For
+v0.1.0 the honest verification path remains building from source: the project is
+GPL-3.0, `chrono_hook.dll` is built from the code in this repository, and CI builds
+both the 64-bit and 32-bit targets on every push.
 
 ## Secrets and permissions in this repository
 

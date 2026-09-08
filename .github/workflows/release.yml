@@ -1,0 +1,169 @@
+# Build a release here, prove it was built here, and publish it as a draft.
+#
+# This exists because an attestation only says one thing: "this workflow, in this repository, at this
+# commit, produced these exact bytes". That statement is worth nothing if the bytes a user downloads
+# were built on somebody's laptop and uploaded by hand, which is how v0.1.0 was published. So the
+# release build moved here, and the zips a user gets are the zips this run made.
+#
+# What the run produces, in an order that is not arbitrary:
+#   1. the two portable packages (packaging/build-dist.ps1 runs its own gates and stops on any of them)
+#   2. one SPDX 2.3 document per package, each carrying the sha256 of the zip it describes
+#   3. SHA256SUMS over all four files
+#   4. a build-provenance attestation over the zips and every binary inside them
+#   5. an SBOM attestation tying each document to the package it describes
+#   6. a DRAFT release with all of it attached
+#
+# The release is a DRAFT on purpose. A mistaken tag then publishes nothing, and the last act stays a
+# person's - the same reason the assistant does not bump versions in this project.
+#
+# 🔴 WHERE AUTHENTICODE SIGNING GOES, when it arrives: inside packaging/build-dist.ps1, after the
+# staging directories are assembled and BEFORE the zips are written. Signing changes the bytes, and
+# every number downstream - the zip hash, the hash inside each SBOM, SHA256SUMS, and the attestation
+# subjects - is taken after that point. Signing anywhere later would attest bytes nobody ships, which
+# is worse than not signing at all. The staged files to sign are dist/ChronoMock/**/*.exe and *.dll
+# that we built, plus dist/chrono-cli/**.
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Build, attest and publish
+    runs-on: windows-latest
+    permissions:
+      # Writing the release and its assets.
+      contents: write
+      # The three the attestation actions need: an OIDC token to get a Sigstore certificate, the
+      # attestation store, and the artifact metadata record.
+      id-token: write
+      attestations: write
+      artifact-metadata: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Add the 32-bit target
+        run: rustup target add i686-pc-windows-msvc
+
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+
+      - name: Put cargo-deny on PATH
+        shell: pwsh
+        run: ./.github/scripts/cargo-deny.ps1 -InstallOnly
+
+      # The version lives in two files and bumping one of them alone is a landmine this project has
+      # already stepped on. A tag is the moment it costs the most, because the SBOM writes a download
+      # URL from the manifest version while the release lives at the tag - so they are checked against
+      # each other before anything is built.
+      - name: The tag and both version files must agree
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        run: |
+          $tag = '${{ github.ref_name }}'
+          $cargo = Select-String -Path Cargo.toml -Pattern '^version\s*=\s*"([^"]+)"' | Select-Object -First 1
+          $props = Select-String -Path gui/Directory.Build.props -Pattern '<Version>([^<]+)</Version>' | Select-Object -First 1
+          if (-not $cargo -or -not $props) { throw 'cannot read the version from Cargo.toml or gui/Directory.Build.props' }
+          $cargoVersion = $cargo.Matches[0].Groups[1].Value
+          $propsVersion = $props.Matches[0].Groups[1].Value
+          if ($cargoVersion -ne $propsVersion) {
+            throw "Cargo.toml says $cargoVersion and gui/Directory.Build.props says $propsVersion - the two halves of one product disagree"
+          }
+          if ($tag -ne "v$cargoVersion") {
+            throw "the tag is $tag and the product version is $cargoVersion - one of them was not bumped"
+          }
+          Write-Host "tag $tag matches both version files"
+
+      # Runs the full gate set itself (deny, clippy, both test suites, format) and treats every missing
+      # piece as a hard stop. It also writes the SBOMs and SHA256SUMS.
+      - name: Build the packages, the SBOMs and the hashes
+        shell: pwsh
+        run: ./packaging/build-dist.ps1
+
+      # Provenance over what a user downloads AND over the binaries inside, so someone who has
+      # unzipped the package can still verify a single file - which matters most for chrono_hook.dll,
+      # the library this tool injects into other processes. Verification matches on the digest, so the
+      # same bytes appearing under two names in the two packages need attesting only once.
+      - name: Attest how these bytes were built
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: |
+            dist/ChronoMock-win-x64.zip
+            dist/chrono-cli-win.zip
+            dist/ChronoMock/ChronoMock.exe
+            dist/ChronoMock/core/x64/chrono.exe
+            dist/ChronoMock/core/x64/chrono_hook.dll
+            dist/ChronoMock/core/x86/chrono.exe
+            dist/ChronoMock/core/x86/chrono_hook.dll
+
+      - name: Attest the bill of materials for the window package
+        uses: actions/attest-sbom@c604332985a26aa8cf1bdc465b92731239ec6b9e # v4.1.0
+        with:
+          subject-path: dist/ChronoMock-win-x64.zip
+          sbom-path: dist/ChronoMock-win-x64.spdx.json
+
+      - name: Attest the bill of materials for the command line package
+        uses: actions/attest-sbom@c604332985a26aa8cf1bdc465b92731239ec6b9e # v4.1.0
+        with:
+          subject-path: dist/chrono-cli-win.zip
+          sbom-path: dist/chrono-cli-win.spdx.json
+
+      # The attestation is checked from this run rather than assumed to have worked. A release whose
+      # attestation cannot be verified is a release that promises something it does not deliver, and
+      # finding that out here costs a re-run rather than a user's trust.
+      - name: Verify the attestation the way a user would
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          foreach ($file in @('dist/ChronoMock-win-x64.zip', 'dist/chrono-cli-win.zip')) {
+            gh attestation verify $file --repo ${{ github.repository }}
+            if ($LASTEXITCODE -ne 0) { throw "the attestation for $file does not verify" }
+          }
+
+      - name: Publish a draft release with the packages, the SBOMs and the hashes
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = '${{ github.ref_name }}'
+          $assets = @(
+            'dist/ChronoMock-win-x64.zip',
+            'dist/chrono-cli-win.zip',
+            'dist/ChronoMock-win-x64.spdx.json',
+            'dist/chrono-cli-win.spdx.json',
+            'dist/SHA256SUMS'
+          )
+          gh release view $tag 2>$null
+          if ($LASTEXITCODE -ne 0) {
+            gh release create $tag --draft --title "Chrono Mock $($tag.TrimStart('v'))" --notes "Draft. Assets built and attested by the Release workflow - see CHANGELOG.md."
+            if ($LASTEXITCODE -ne 0) { throw 'could not create the draft release' }
+          }
+          gh release upload $tag @assets --clobber
+          if ($LASTEXITCODE -ne 0) { throw 'could not upload the release assets' }
+
+      # Also kept on the run itself, so a workflow_dispatch build (no tag, no release) still hands
+      # back something to look at.
+      - name: Keep the packages on the run
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: chrono-mock-release
+          path: |
+            dist/*.zip
+            dist/*.spdx.json
+            dist/SHA256SUMS
+          if-no-files-found: error
+          retention-days: 14
