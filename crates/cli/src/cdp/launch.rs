@@ -268,7 +268,7 @@ pub fn launch_chromium(
         ));
     }
 
-    sweep_orphan_profiles();
+    sweep_orphan_profiles(&std::env::temp_dir());
     let user_data_dir = unique_temp_dir();
     create_profile_dir(&user_data_dir)?;
 
@@ -337,6 +337,12 @@ fn read_active_port(port_file: &Path) -> Option<u16> {
 
 /// Best-effort sweep of profile directories a force-killed driver left behind (P3, pre-release audit).
 ///
+/// `temp` is the directory to walk, which in production is always `std::env::temp_dir()` - the same
+/// one [`unique_temp_dir`] puts profiles in, and the call site keeps the two on adjacent lines. It
+/// is a parameter rather than a lookup inside so that the test can point the sweep at a directory of
+/// its own: a sweep aimed at the shared `%TEMP%` removes whatever it finds there, which made the
+/// test both flaky and destructive against a real session's leftovers.
+///
 /// Only profiles whose OWNING DRIVER is gone are removed. The earlier version sweeps every
 /// `chrono-cdp-*` directory and relied on "a live profile is locked, so removal fails" - which is
 /// only half true: `remove_dir_all` walks a Windows directory file by file and stops at the first
@@ -350,8 +356,8 @@ fn read_active_port(port_file: &Path) -> Option<u16> {
 /// The directory name carries the driver's pid (`chrono-cdp-<pid>-<nanos>`), so ownership is
 /// readable. A recycled pid reads as alive and the directory is left alone - stale bytes on disk
 /// beat destroying a live session's profile. A name that does not parse is left alone too.
-fn sweep_orphan_profiles() {
-    let Ok(entries) = std::fs::read_dir(std::env::temp_dir()) else {
+fn sweep_orphan_profiles(temp: &Path) {
+    let Ok(entries) = std::fs::read_dir(temp) else {
         return;
     };
     for entry in entries.flatten() {
@@ -659,20 +665,34 @@ mod tests {
     /// walk into, which gutted a parallel live session's profile file by file.
     #[test]
     fn the_sweep_spares_a_live_drivers_profile_and_removes_a_dead_ones() {
+        // A directory of our own, NOT `%TEMP%` itself. The dead profile's name has to carry a dead
+        // pid and can carry nothing else, so it is the same name in every run - and `%TEMP%` is
+        // shared, so two runs at once fought over that one name. Measured on this branch before the
+        // fix, with a second process writing to `%TEMP%\chrono-cdp-0-sweeptest`: 26 failures in 40
+        // runs, against 0 in 20 sequential ones. Aiming the sweep at a shared directory also made
+        // the test destructive - one run deleted two unrelated `chrono-cdp-*` directories it had
+        // never created, which in the field would be a real session's leftovers, evidence a tester
+        // may still need.
+        //
+        // Deliberately NOT the `chrono-cdp-<pid>-<nanos>` shape: a fixture must not look like a
+        // session profile to a real sweep running beside us, or to a human reading %TEMP%.
+        let root = crate::testutil::unique_temp_dir(&format!("chrono-sweeptest-{}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+        // Removes the fixture even when an assertion below fails.
+        let _guard = TempDirGuard(root.clone());
+
         // This process is alive by definition, so a directory named after it stands for a parallel
         // session. Pid 0 is never a live user process, so it stands for a dead driver's leftovers.
-        let live = std::env::temp_dir().join(format!("chrono-cdp-{}-sweeptest", std::process::id()));
-        let dead = std::env::temp_dir().join("chrono-cdp-0-sweeptest");
+        let live = root.join(format!("chrono-cdp-{}-profile", std::process::id()));
+        let dead = root.join("chrono-cdp-0-profile");
         for d in [&live, &dead] {
             std::fs::create_dir_all(d).unwrap();
             std::fs::write(d.join("Preferences"), b"{}").unwrap();
         }
-        sweep_orphan_profiles();
-        let live_kept = live.exists();
-        let dead_gone = !dead.exists();
-        std::fs::remove_dir_all(&live).ok();
-        std::fs::remove_dir_all(&dead).ok();
-        assert!(live_kept, "a live driver's profile must survive the sweep");
-        assert!(dead_gone, "a dead driver's profile is what the sweep is for");
+
+        sweep_orphan_profiles(&root);
+
+        assert!(live.exists(), "a live driver's profile must survive the sweep");
+        assert!(!dead.exists(), "a dead driver's profile is what the sweep is for");
     }
 }
