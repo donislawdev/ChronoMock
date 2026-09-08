@@ -123,9 +123,23 @@ fn easter_sunday(year: i64) -> (u32, u32) {
 /// The calendar date (day count since 1970-01-01) of a holiday in `year`. Every rule type is
 /// built - a rule this build did not know would have been rejected by the loader, and adding a
 /// `HolidayRule` variant without handling it here is a compile error (the match is exhaustive).
+///
+/// `None` means "this holiday does not fall in this year at all" - the answer for every rule whose
+/// date does not exist in the year asked about. Two rules can say that, and both used to answer with
+/// a date in the NEXT month instead.
 fn holiday_days(rule: &HolidayRule, year: i64) -> Option<i64> {
     match rule {
-        HolidayRule::Fixed { month, day } => Some(days(year, *month, *day)),
+        // `None` when this year's month is too short: February 29 is a legitimate rule (the loader
+        // accepts it, and a holiday observed only in leap years is a real thing), but in a common
+        // year it does not happen - it does not become March 1. `days_from_civil` is Hinnant's
+        // algorithm and does not validate, so without this check the day rolls into the next month
+        // and the report NAMES a holiday on a date that has none - the silent-wrong-date class this
+        // project calls inadmissible, and worse than the `nth_weekday` case because it also attaches
+        // a name (R2-N7).
+        HolidayRule::Fixed { month, day } => {
+            (*day <= crate::last_day_of_month(year, *month as i64))
+                .then(|| days(year, *month, *day))
+        }
         // `None` when the month has no such occurrence: the holiday does not fall in this year at all
         // (R2-N4), rather than falling on an invented date in the next month.
         HolidayRule::NthWeekday { month, weekday, order } => {
@@ -571,6 +585,38 @@ mod tests {
             ..cal
         };
         assert!(holiday_on(&dt(2026, 3, 30), &cal5).is_some(), "a real fifth Monday still fires");
+    }
+
+    /// R2-N7, the `Fixed` half of the same class. February 29 is a rule a calendar may legitimately
+    /// name - a holiday observed only in leap years is a real thing, and the loader accepts it. In a
+    /// common year it must simply not happen. It used to roll into March 1 through `days_from_civil`,
+    /// which does not validate, and the report then NAMED that day as the holiday: worse than the
+    /// `nth_weekday` case, because a wrong day off is one error and a wrong day off carrying a
+    /// holiday's name is two.
+    #[test]
+    fn a_fixed_day_the_month_does_not_have_is_absent_not_rolled_into_the_next() {
+        let cal = Calendar {
+            id: "t".into(),
+            country: "XX".into(),
+            weekend: vec![0, 6],
+            observed: Observed::None,
+            holidays: vec![h("leap_day", HolidayRule::Fixed { month: 2, day: 29 }, None)],
+        };
+
+        // 2025 is a common year. March 1 is not the leap-day holiday under any name, and stays a
+        // day the calendar can be asked about like any other (it is a Saturday, hence the weekend).
+        assert!(holiday_on(&dt(2025, 3, 1), &cal).is_none(), "March 1 is not February 29");
+        assert!(holiday_on(&dt(2025, 2, 28), &cal).is_none(), "and it did not move to February 28");
+        assert_eq!(holiday_days(&HolidayRule::Fixed { month: 2, day: 29 }, 2025), None);
+
+        // In a leap year it fires on its own date - this is a capability, not a banned value.
+        assert!(holiday_on(&dt(2024, 2, 29), &cal).is_some(), "the leap day itself still fires");
+        assert!(!is_business_day(&dt(2024, 2, 29), &cal), "and it is still a day off");
+
+        // A common year's March 1 on a WEEKDAY is the sharpest form: nothing else can explain a day
+        // off there, so a business-day answer proves the holiday is gone rather than merely unnamed.
+        // 2027-03-01 is a Monday.
+        assert!(is_business_day(&dt(2027, 3, 1), &cal), "a weekday March 1 is a working day");
     }
 
     #[test]

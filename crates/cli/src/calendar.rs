@@ -84,10 +84,18 @@ pub(crate) fn rule_from(id: &str, dto: RuleDto) -> Result<chrono_core::calendar:
     Ok(match dto {
         RuleDto::Fixed { month, day } => {
             check_month(id, month)?;
-            // 1..=31 for the day, not the month's real length: a rule may legitimately name Feb 29,
-            // and the engine resolves an impossible date per year. Beyond 31 is a typo in any month.
-            if !(1..=31).contains(&day) {
-                return Err(format!("holiday '{id}': day {day} out of range (1..=31)"));
+            // The month's longest length in ANY year, not a flat 1..=31. Two different things look
+            // alike here and only one of them is legal. February 29 is a rule a calendar may
+            // legitimately name - the engine answers "not this year" in a common year (R2-N7) - so
+            // the bound has to let it through. April 31 is a day that exists in no year at all, so
+            // it is a typo, and the engine would answer "not this year" for EVERY year: a holiday
+            // silently absent forever. Refused here, naming the month's real length, because a
+            // calendar is a data file from outside the build.
+            let longest = chrono_core::max_day_in_month(month);
+            if !(1..=longest).contains(&day) {
+                return Err(format!(
+                    "holiday '{id}': day {day} out of range for month {month} (1..={longest})"
+                ));
             }
 
             HolidayRule::Fixed { month, day }
@@ -314,6 +322,11 @@ mod tests {
         for (rule, needle) in [
             (r#"{"type":"fixed","month":13,"day":1}"#, "month 13"),
             (r#"{"type":"fixed","month":1,"day":40}"#, "day 40"),
+            // A day that exists in NO year is a typo, not a leap-year rule (R2-N7). The engine would
+            // answer "not this year" for every year, so the holiday would be silently absent forever -
+            // refused here instead, and the message names the month's real length.
+            (r#"{"type":"fixed","month":4,"day":31}"#, "day 31"),
+            (r#"{"type":"fixed","month":2,"day":30}"#, "day 30"),
             (r#"{"type":"nth_weekday","month":1,"weekday":"monday","order":9}"#, "order 9"),
             (r#"{"type":"nth_weekday","month":0,"weekday":"monday","order":1}"#, "month 0"),
             (r#"{"type":"easter_offset","offset":5000}"#, "5000"),
@@ -323,9 +336,13 @@ mod tests {
             assert!(err.contains(needle), "the message must name the value: {err}");
         }
 
-        // The legitimate neighbours of those bounds still parse.
+        // The legitimate neighbours of those bounds still parse. February 29 is the one that matters:
+        // it is impossible in most years and legal in the schema, so the bound is the month's longest
+        // length in any year, never the length of some particular year.
         for rule in [
             r#"{"type":"fixed","month":2,"day":29}"#,
+            r#"{"type":"fixed","month":4,"day":30}"#,
+            r#"{"type":"fixed","month":1,"day":31}"#,
             r#"{"type":"nth_weekday","month":12,"weekday":"monday","order":-1}"#,
             r#"{"type":"nth_weekday","month":5,"weekday":"monday","order":5}"#,
             r#"{"type":"easter_offset","offset":60}"#,
