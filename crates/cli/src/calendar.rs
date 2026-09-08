@@ -237,6 +237,26 @@ pub(crate) fn calendar_from_text(text: &str) -> Result<chrono_core::calendar::Ca
             "calendar 'weekend' lists all seven days - no business day would ever exist".to_string()
         );
     }
+    // `observed` and `weekend` have to describe the SAME weekend. The engine's observance rules match
+    // Saturday and Sunday by name - their variant names say so (`sun_to_mon`) - while `weekend` is a
+    // free list of days. A file combining a Friday-Saturday weekend with a shift rule therefore
+    // loaded cleanly and then did two wrong things quietly: a Friday holiday stayed put (the rule
+    // never saw it) and a Sunday holiday moved to Monday although Sunday is a working day there. Both
+    // come out as a wrong payment date with no message anywhere (R2-N8).
+    //
+    // Refused here rather than generalised in the engine. Generalising means new variant names - the
+    // existing ones are ABOUT Saturday and Sunday, and reusing `weekend_to_mon` for a weekend that
+    // ends on Saturday would produce a Sunday while the name promises Monday, which misleads worse
+    // than the missing feature does. That wants a real market to define it, not a guess. A calendar
+    // with a different weekend can still ship today with `"observed": "none"`.
+    let observed = observed_from(&dto.observed)?;
+    if observed != chrono_core::calendar::Observed::None && weekend != [0, 6] {
+        return Err(format!(
+            "calendar 'observed' is '{}', which is defined for a Saturday-Sunday weekend, but 'weekend' is {:?} - use \"observed\": \"none\" until an observance rule exists for that weekend",
+            dto.observed, dto.weekend
+        ));
+    }
+
     let mut seen_ids: Vec<String> = Vec::new();
     let holidays = dto
         .holidays
@@ -275,7 +295,7 @@ pub(crate) fn calendar_from_text(text: &str) -> Result<chrono_core::calendar::Ca
         id: dto.id,
         country: dto.country,
         weekend,
-        observed: observed_from(&dto.observed)?,
+        observed,
         holidays,
     })
 }
@@ -289,6 +309,36 @@ mod tests {
     /// that makes "next business day" unanswerable has to be refused where its author can see it -
     /// not walked into by the engine. Duplicated weekend days are folded first, so the check counts
     /// distinct days and a repeated "saturday" is not mistaken for a full week.
+    /// R2-N8: `weekend` and `observed` must describe the same weekend. A Friday-Saturday weekend with
+    /// a shift rule used to load and then be wrong twice over, silently - which is the one thing a
+    /// calendar file must never do, since calendars are written by people outside this build.
+    #[test]
+    fn an_observance_rule_with_a_foreign_weekend_is_refused() {
+        let cal = |weekend: &str, observed: &str| {
+            format!(
+                r#"{{"schema":"chronomock.calendar/1","id":"x","country":"XX","weekend":{weekend},
+                "observed":"{observed}","holidays":[]}}"#
+            )
+        };
+
+        for observed in ["sat_to_fri_sun_to_mon", "sun_to_mon", "weekend_to_mon"] {
+            let err = calendar_from_text(&cal(r#"["friday","saturday"]"#, observed))
+                .expect_err("a foreign weekend with an observance rule must be refused");
+            assert!(err.contains("observed"), "the message must name the field: {err}");
+            assert!(err.contains(observed), "the message must name the rule: {err}");
+            assert!(err.contains("none"), "the message must say what to do instead: {err}");
+        }
+
+        // The same weekend with no observance rule is fine - this refuses a COMBINATION, and does not
+        // ban weekends the project has not shipped a calendar for.
+        calendar_from_text(&cal(r#"["friday","saturday"]"#, "none")).expect("a foreign weekend alone loads");
+        // And the Saturday-Sunday weekend keeps every rule, in any listed order.
+        for observed in ["sat_to_fri_sun_to_mon", "sun_to_mon", "weekend_to_mon", "none"] {
+            calendar_from_text(&cal(r#"["sunday","saturday"]"#, observed))
+                .unwrap_or_else(|e| panic!("{observed} on a Sat-Sun weekend must load: {e}"));
+        }
+    }
+
     #[test]
     fn calendar_with_every_day_as_weekend_is_refused() {
         let all_week = r#"{"schema":"chronomock.calendar/1","id":"x","country":"XX",

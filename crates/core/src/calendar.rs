@@ -166,6 +166,13 @@ fn in_force(h: &Holiday, year: i64) -> bool {
 
 /// The weekday a holiday whose calendar date is `d` (day count) is OBSERVED on, per the modifier.
 /// A weekday holiday observes on its own day - a weekend one shifts (or not) by the rule.
+///
+/// 🔴 Matches Saturday and Sunday by NAME, not `Calendar::weekend`, because that is what these rules
+/// are: the variant names say `sun_to_mon`. For a calendar whose weekend is not Saturday-Sunday the
+/// answer would be wrong in both directions at once (a Friday holiday never shifts, a working Sunday
+/// shifts anyway), so the CLI loader refuses that combination instead of letting it through - the
+/// guard is in `crate::calendar::calendar_from_text`, not merely in this comment (rule 12).
+/// Generalising wants new variant names and a real market to define them, not a guess here.
 fn observed_days(d: i64, observed: Observed) -> i64 {
     match (weekday(d), observed) {
         // Saturday.
