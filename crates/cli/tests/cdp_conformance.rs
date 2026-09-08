@@ -2,8 +2,8 @@
 //!
 //! No portable CDP target ships with the repo. The `is_chromium_target` detection keys off an
 //! Electron/Chromium app's runtime files (`icudtl.dat` + a V8 snapshot) sitting BESIDE the exe, which an
-//! installed browser does not satisfy - Chrome and Edge keep those in a versioned subfolder, not next to
-//! the launcher - and some hardened Electron apps (e.g. Discord) refuse the remote-debugging port. So there
+//! installed browser does not satisfy - browsers keep those in a versioned subfolder, not next to the
+//! launcher - and some hardened Electron apps refuse the remote-debugging port outright. So there
 //! is no fixed target a CI job could rely on. This test is therefore PARAMETERISED: point it at a permissive
 //! Chromium/Electron target and it drives the shipped `chrono` binary end to end (launch -> attach -> shim
 //! -> the page's own JS `Date`), asserting the page reads the faked clock rather than the real one.
@@ -15,9 +15,9 @@
 //!   set CHRONO_CDP_TARGET=C:\path\to\electron-app.exe
 //!   cargo test -p chrono-cli --test cdp_conformance -- --ignored
 //!
-//! The full chain was verified manually against Pomotroid (Electron) during the CDP bring-up - see the
-//! README support matrix, "Electron / Chromium ... measured (Pomotroid, x64)". This harness makes that
-//! repeatable against any permissive target.
+//! The full chain was verified by hand against a real Electron application during the CDP bring-up - see
+//! the README support matrix, "Electron / Chromium ... measured by hand on an Electron app (x64)". This
+//! harness makes that repeatable against any permissive target.
 
 use std::process::Command;
 
@@ -58,9 +58,9 @@ fn cdp_shim_fakes_the_page_clock() {
 /// This is the shape the unit test on `cdp_verdict` cannot reach. That test pins the rule the function
 /// applies - this one pins what the session hands it. Before the fix the session counted the contexts
 /// still ATTACHED, and Chromium destroys its targets while shutting down - so a healthy run turned into
-/// "DID NOT TAKE EFFECT (contexts: 0)" with exit code 11 and no coverage at all. Measured on Pomotroid:
-/// a taskkill does NOT reproduce it (the socket dies before the destroy events arrive), only a graceful
-/// window close does.
+/// "DID NOT TAKE EFFECT (contexts: 0)" with exit code 11 and no coverage at all. Measured on a real
+/// Electron application: a taskkill does NOT reproduce it (the socket dies before the destroy events
+/// arrive), only a graceful window close does.
 #[test]
 #[ignore = "opt-in: set CHRONO_CDP_TARGET to a permissive Chromium/Electron exe; it launches and closes that app"]
 fn a_closed_window_does_not_erase_what_the_session_covered() {

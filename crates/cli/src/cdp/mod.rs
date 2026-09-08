@@ -263,9 +263,9 @@ const LOOPBACK_HOSTS: [&str; 4] = ["127.0.0.1", "localhost", "::1", "[::1]"];
 /// The port must match EXACTLY the one we discovered, because "go somewhere else" is the whole of
 /// the attack and a different port is already somewhere else. The host is checked against the
 /// loopback list rather than compared, because the name a browser uses for itself is cosmetic and
-/// not worth a regression: measured 2026-09-05 on two engines six years apart - Chrome 83 (in
-/// Pomotroid) and Edge 152 - both answer with the exact host and port we asked on (`127.0.0.1`),
-/// but a build that said `localhost` would be equally legitimate and equally harmless.
+/// not worth a regression: measured 2026-09-05 on two Chromium engines six years apart, major 83 and
+/// major 152 - both answer with the exact host and port we asked on (`127.0.0.1`), but a build that
+/// said `localhost` would be equally legitimate and equally harmless.
 fn ws_endpoint_is_ours(ws_host: &str, ws_port: u16, our_port: u16) -> bool {
     ws_port == our_port && LOOPBACK_HOSTS.iter().any(|h| h.eq_ignore_ascii_case(ws_host))
 }
@@ -411,7 +411,7 @@ mod tests {
         assert!(!ws_endpoint_is_ours("localhost", 80, 9333));
     }
 
-    /// What Chrome 83 and Edge 152 actually answer (measured), plus the loopback spellings a
+    /// What Chromium majors 83 and 152 actually answer (measured), plus the loopback spellings a
     /// different build could legitimately use. Refusing these would be a regression, not a fix.
     #[test]
     fn the_endpoint_we_opened_is_accepted_however_it_spells_loopback() {

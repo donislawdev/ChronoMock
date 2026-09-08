@@ -31,7 +31,7 @@ pub(crate) fn covered_channels(counts: BTreeMap<(u32, String), u64>) -> Vec<(u32
 /// `shimmed` counts every context the session EVER covered, not the ones still attached. Chromium
 /// destroys its targets while shutting down, so a healthy session with full coverage could reach the
 /// end with an empty live list - counting those, it reported `fails` with exit code 11 and emitted no
-/// coverage at all. Measured on Pomotroid: closing the window mid-session turned a `works` run with
+/// coverage at all. Measured on a real Electron app: closing the window mid-session turned a `works` run with
 /// four covered APIs into `DID NOT TAKE EFFECT (contexts: 0)`, exit 11. What a session covered does
 /// not stop being true when the app closes.
 pub(crate) fn cdp_verdict(shimmed: usize, any_covered: bool, failed: usize) -> Verdict {
@@ -188,7 +188,7 @@ mod tests {
         // R2-W1, the case that needed a real browser to reproduce: Chromium destroys its targets while
         // shutting down, so a healthy session could reach the verdict with an empty LIVE context list.
         // Counting survivors called it `fails` with exit code 11 and dropped the coverage entirely -
-        // measured on Pomotroid, a closing window turned a four-channel `works` into
+        // measured on a real Electron app, a closing window turned a four-channel `works` into
         // "DID NOT TAKE EFFECT (contexts: 0)". Two contexts shimmed and covered stays `works` however
         // many of them are still attached, because the argument is what the session covered.
         assert_eq!(cdp_verdict(2, true, 0), Verdict::Works);

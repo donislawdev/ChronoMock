@@ -118,7 +118,7 @@ impl LaunchedChromium {
 ///
 /// What it does NOT cover, so nobody reads more into it than it gives: a force-killed core. No
 /// destructor runs on `TerminateProcess`, and that path is real - measured by killing the core
-/// mid-session, after which the launched Pomotroid was still running with its debug port open, and
+/// mid-session, after which the launched Electron app was still running with its debug port open, and
 /// its profile survived until the NEXT session's orphan sweep removed it. That case is covered by
 /// [`KillOnCloseJob`] instead, which lives in the kernel precisely because no code of ours runs to
 /// be given the chance. This drop still owns the profile directory, which the job knows nothing
@@ -134,7 +134,7 @@ impl Drop for LaunchedChromium {
 ///
 /// This is what covers the case [`Drop`] on `LaunchedChromium` explicitly does not - a force-killed
 /// core. `TerminateProcess` runs no destructor, no `atexit`, nothing: measured by killing the core
-/// mid-session, after which the launched Pomotroid was still running with its debug port open.
+/// mid-session, after which the launched Electron app was still running with its debug port open.
 /// Handles, however, are closed by the kernel whatever way a process dies, so the tie has to live
 /// where a dying process cannot skip it. A longer grace period in the client cannot reach this case
 /// at all, since nothing in our code runs to be given the extra time.
@@ -522,8 +522,8 @@ mod tests {
     /// Dropping the job handle without touching the child stands in for exactly that - when a
     /// process is terminated, the kernel closes its handles whatever the process was doing, and
     /// kill-on-close is what turns that into the browser going away. Before this existed, killing
-    /// the core mid-session left the launched browser running with its debug port open (measured on
-    /// Pomotroid) - the placeholder child here plays that browser.
+    /// the core mid-session left the launched browser running with its debug port open (measured on a
+    /// real Electron app) - the placeholder child here plays that browser.
     #[test]
     fn closing_the_job_ends_the_browser_with_no_destructor_involved() {
         let mut child = spawn_placeholder_child();

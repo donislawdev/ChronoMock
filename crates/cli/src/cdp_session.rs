@@ -109,7 +109,7 @@ pub(crate) fn cdp_session(target: TargetSpec, time: TimeSpec, reader: BufReader<
     // The heartbeat starts here, not after the attach. Everything between accepting `start` and the
     // first `state` used to be silence, bounded by the port wait (15 s) - and the client's idle
     // watchdog is 15 s, so a slow Electron and a dead core looked the same to it. Measured on
-    // Pomotroid the gap is about 1.6 s, so this is about the tail, not the common case (R3-3).
+    // the measured Electron app the gap is about 1.6 s, so this is about the tail, not the common case (R3-3).
     let mut last_beat = std::time::Instant::now();
     let mut launched = match cdp::launch_chromium(&target.path, &target.args, target.cwd.as_deref(), || {
         if last_beat.elapsed() >= std::time::Duration::from_secs(1) {

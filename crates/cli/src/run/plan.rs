@@ -541,8 +541,8 @@ mod tests {
         // The one exception, and the reason the third state survives: the Chromium launcher goes
         // through Rust's Command, which does search PATH for a bare name. A path is still a path
         // there, so only the bare name is left unjudged.
-        assert_eq!(inspect_target("chrome.exe", true), TargetPath::Unchecked);
-        assert_eq!(inspect_target(r"C:\nowhere\chrome.exe", true), TargetPath::Missing);
+        assert_eq!(inspect_target("some-electron-app.exe", true), TargetPath::Unchecked);
+        assert_eq!(inspect_target(r"C:\nowhere\some-electron-app.exe", true), TargetPath::Missing);
 
         let exe = std::env::current_exe().expect("this test has an executable");
         let found = inspect_target(&exe.display().to_string(), false);

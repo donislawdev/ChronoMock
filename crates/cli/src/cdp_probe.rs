@@ -106,9 +106,13 @@ pub(crate) fn cdp_launch_probe(argv: &[String]) -> i32 {
 }
 
 /// Hidden probe (CDP slice C3 verification): launch a Chromium target, auto-attach to every context,
-/// inject the time shim through the production path, then (Pomotroid-specific) drive its worker timer
-/// and measure whether the app's own countdown accelerates by the multiplier. Proves the shim reaches
-/// the sandboxed worker and speeds it up - the whole point of Chromium mode.
+/// inject the time shim through the production path, then drive the target's worker timer and measure
+/// whether the app's own countdown accelerates by the multiplier. Proves the shim reaches the sandboxed
+/// worker and speeds it up - the whole point of Chromium mode.
+///
+/// The stimulus below is shaped for a target whose countdown lives in a Web Worker that speaks a
+/// create/start/tick message protocol. That is a shape, not an application: any Electron app whose
+/// worker answers those messages drives this probe, and one that does not says so and stops.
 pub(crate) fn cdp_shim_probe(argv: &[String]) -> i32 {
     let Some(target) = argv.first() else {
         eprintln!("usage: chrono __cdp-shim <target-exe> [multiplier]");
@@ -186,12 +190,12 @@ pub(crate) fn cdp_shim_probe(argv: &[String]) -> i32 {
     }
 
     let Some(sid) = worker_sid else {
-        println!("no timer worker found (this proof needs Pomotroid); shim still installed on contexts above");
+        println!("no timer worker found (this proof needs a target whose timer runs in a Web Worker); shim still installed on contexts above");
         launched.shutdown();
         return 1;
     };
 
-    // Measurement stimulus (Pomotroid-specific): capture the worker's own elapsed via its postMessage,
+    // Measurement stimulus, shaped for a create/start/tick worker: capture its own elapsed via postMessage,
     // then drive create+start. The shim already scaled setInterval, so elapsed should climb by x{mult}.
     let cap = "if(!globalThis.__cap){var _pm=self.postMessage;self.postMessage=function(m){try{if(m&&m.event==='tick'){globalThis.__last=m.elapsed;}}catch(e){}return _pm.call(self,m);};globalThis.__cap=true;globalThis.__last=0;} 'cap'";
     let trigger = "self.onmessage({data:{event:'create',min:25}});self.onmessage({data:{event:'start'}});'go'";

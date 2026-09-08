@@ -1,7 +1,7 @@
 //! The JS time shim and its injection into every context of a Chromium target (slice C3). The shim
 //! is the CDP mechanism's equivalent of the native hook: it overrides the JS time APIs so the
 //! target's own timers run on the session clock. Injection uses auto-attach so it reaches the page
-//! AND its Web Workers (where an Electron app's timer often lives - Pomotroid's does).
+//! AND its Web Workers, where an Electron app's timer often turns out to live.
 //!
 //! Scope of the shim in this slice: `setInterval`/`setTimeout` scaling (the acceleration) and
 //! `Date.now`/`performance.now` on the session clock, with the fake start defaulting to real "now"
