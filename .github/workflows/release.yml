@@ -1,27 +1,24 @@
-# Build a release here, prove it was built here, and publish it as a draft.
+# Phase A of the release ritual: build here, prove it was built here, open an empty draft.
 #
-# This exists because an attestation only says one thing: "this workflow, in this repository, at this
-# commit, produced these exact bytes". That statement is worth nothing if the bytes a user downloads
-# were built on somebody's laptop and uploaded by hand, which is how v0.1.0 was published. So the
-# release build moved here, and the zips a user gets are the zips this run made.
+# The signing key lives on a cryptographic card in a USB reader and CANNOT be exported - that is the
+# whole value of it, so no GitHub-hosted runner will ever reach it. A self-hosted runner could, and
+# this is a PUBLIC repository, where a self-hosted runner is a machine strangers can aim a pull
+# request at. So the build happens where builds belong and the signature happens where the card is.
 #
-# What the run produces, in an order that is not arbitrary:
-#   1. the two portable packages (packaging/build-dist.ps1 runs its own gates and stops on any of them)
-#   2. one SPDX 2.3 document per package, each carrying the sha256 of the zip it describes
-#   3. SHA256SUMS over all four files
-#   4. a build-provenance attestation over the zips and every binary inside them
-#   5. an SBOM attestation tying each document to the package it describes
-#   6. a DRAFT release with all of it attached
+# 🔴 THIS PHASE PUBLISHES NOTHING. No archive, no checksums, no bill of materials. Those are not the
+# bytes a user will download, and an unsigned executable on a public release page - even for a
+# quarter of an hour - is a file somebody downloads. The draft it opens is empty on purpose.
 #
-# The release is a DRAFT on purpose. A mistaken tag then publishes nothing, and the last act stays a
-# person's - the same reason the assistant does not bump versions in this project.
+# The four phases, and who runs each:
+#   A  this file, on a `v*` tag        build, attest the UNSIGNED build, open a draft, hand the
+#                                      build back as a workflow artifact
+#   B  packaging/sign-release.ps1      on the machine with the card: verify A's attestation, sign,
+#                                      repack, write the SBOMs and the checksums, upload, wait
+#   C  .github/workflows/attest-signed.yml   attest the SBOM of the SIGNED bytes (never provenance -
+#                                      a person signed those on their own machine)
+#   D  .github/workflows/verify-release.yml  on publish: check the release page the way a user does
 #
-# 🔴 WHERE AUTHENTICODE SIGNING GOES, when it arrives: inside packaging/build-dist.ps1, after the
-# staging directories are assembled and BEFORE the zips are written. Signing changes the bytes, and
-# every number downstream - the zip hash, the hash inside each SBOM, SHA256SUMS, and the attestation
-# subjects - is taken after that point. Signing anywhere later would attest bytes nobody ships, which
-# is worse than not signing at all. The staged files to sign are dist/ChronoMock/**/*.exe and *.dll
-# that we built, plus dist/chrono-cli/**.
+# The release stays a draft until a person reads it and presses the button.
 name: Release
 
 on:
@@ -37,37 +34,46 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  release:
-    name: Build, attest and publish
+  build:
+    name: Build and attest the unsigned build
     runs-on: windows-latest
     permissions:
-      # Writing the release and its assets.
+      # Opening the draft. It gets no assets here.
       contents: write
-      # The three the attestation actions need: an OIDC token to get a Sigstore certificate, the
+      # The three the attestation action needs: an OIDC token for a Sigstore certificate, the
       # attestation store, and the artifact metadata record.
       id-token: write
       attestations: write
       artifact-metadata: write
+    env:
+      GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
-        with:
-          dotnet-version: '10.0.x'
-
-      - name: Add the 32-bit target
-        run: rustup target add i686-pc-windows-msvc
-
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-
-      - name: Put cargo-deny on PATH
+      # 🔴 This workflow builds and publishes, and it does not test. Without this step the only thing
+      # standing between a red commit and a release is somebody's memory of having looked. Asked by
+      # WORKFLOW NAME rather than "are all the checks green": a repository accumulates checks, some
+      # advisory, and "all green" quietly becomes "none of them said no yet".
+      - name: CI must have been green on this exact commit
+        if: startsWith(github.ref, 'refs/tags/v')
         shell: pwsh
-        run: ./.github/scripts/cargo-deny.ps1 -InstallOnly
+        run: |
+          $sha = '${{ github.sha }}'
+          $runs = gh api "repos/${{ github.repository }}/actions/workflows/ci.yml/runs?head_sha=$sha&per_page=20" --jq '.workflow_runs[] | "\(.conclusion)|\(.status)|\(.html_url)"'
+          if ($LASTEXITCODE -ne 0) { throw "cannot read the CI runs for $sha" }
+          $lines = @($runs -split "`n" | Where-Object { $_ })
+          if ($lines.Count -eq 0) {
+            throw "the CI workflow never ran on $sha. A tag on a commit CI has not seen is a release nothing checked - push the commit to a branch first."
+          }
+          $green = $lines | Where-Object { $_.StartsWith('success|') }
+          if (-not $green) {
+            throw "CI on $sha did not conclude successfully:`n$($lines -join "`n")"
+          }
+          Write-Host "CI was green on $sha"
 
-      # The version lives in two files and bumping one of them alone is a landmine this project has
-      # already stepped on. A tag is the moment it costs the most, because the SBOM writes a download
-      # URL from the manifest version while the release lives at the tag - so they are checked against
-      # each other before anything is built.
+      # The version lives in two files and bumping one alone is a landmine this project has already
+      # stepped on. A tag is where it costs the most, because everything downstream writes URLs and
+      # document names from the manifest version while the release lives at the tag.
       - name: The tag and both version files must agree
         if: startsWith(github.ref, 'refs/tags/v')
         shell: pwsh
@@ -86,84 +92,105 @@ jobs:
           }
           Write-Host "tag $tag matches both version files"
 
-      # Runs the full gate set itself (deny, clippy, both test suites, format) and treats every missing
-      # piece as a hard stop. It also writes the SBOMs and SHA256SUMS.
-      - name: Build the packages, the SBOMs and the hashes
+      # A changelog with everything still under [Unreleased] is a changelog nobody closed, and the
+      # release notes are the one part of a release that cannot be regenerated afterwards.
+      - name: The changelog must be closed for this version
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        run: |
+          $version = '${{ github.ref_name }}'.TrimStart('v')
+          $lines = Get-Content CHANGELOG.md
+          $headings = @()
+          for ($i = 0; $i -lt $lines.Count; $i++) { if ($lines[$i] -match '^## \[') { $headings += $i } }
+          $unreleased = $headings | Where-Object { $lines[$_] -match '^## \[Unreleased\]' } | Select-Object -First 1
+          if ($null -eq $unreleased) { throw 'CHANGELOG.md has no [Unreleased] section' }
+          $next = $headings | Where-Object { $_ -gt $unreleased } | Select-Object -First 1
+          if ($null -eq $next) { $next = $lines.Count }
+          $body = $lines[($unreleased + 1)..($next - 1)] | Where-Object { $_.Trim() -match '^[-*]' }
+          if ($body) {
+            throw "CHANGELOG.md still has $($body.Count) entries under [Unreleased] - move them under `## [$version] - <date>` before tagging"
+          }
+          if (-not (Select-String -Path CHANGELOG.md -Pattern "^## \[$([regex]::Escape($version))\] - \d{4}-\d{2}-\d{2}" -Quiet)) {
+            throw "CHANGELOG.md has no dated section for $version"
+          }
+          Write-Host "changelog closed for $version"
+
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Add the 32-bit target
+        run: rustup target add i686-pc-windows-msvc
+
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+
+      - name: Put cargo-deny on PATH
+        shell: pwsh
+        run: ./.github/scripts/cargo-deny.ps1 -InstallOnly
+
+      # Runs the full gate set itself (deny, clippy, both test suites, format) and treats every
+      # missing piece as a hard stop.
+      - name: Build the packages
         shell: pwsh
         run: ./packaging/build-dist.ps1
 
-      # Provenance over what a user downloads AND over the binaries inside, so someone who has
-      # unzipped the package can still verify a single file - which matters most for chrono_hook.dll,
-      # the library this tool injects into other processes. Verification matches on the digest, so the
-      # same bytes appearing under two names in the two packages need attesting only once.
-      - name: Attest how these bytes were built
+      # A package that was never started is a package nobody has run. These are the SHIPPED bytes,
+      # both bitnesses, out of both archives - not the build tree they came from.
+      - name: Run what was just built
+        shell: pwsh
+        run: |
+          $version = (Select-String -Path Cargo.toml -Pattern '^version\s*=\s*"([^"]+)"' | Select-Object -First 1).Matches[0].Groups[1].Value
+          foreach ($exe in @('dist/chrono-cli/chrono.exe', 'dist/chrono-cli/x86/chrono.exe',
+                             'dist/ChronoMock/core/x64/chrono.exe', 'dist/ChronoMock/core/x86/chrono.exe')) {
+            $line = & $exe version
+            if ($LASTEXITCODE -ne 0) { throw "$exe could not run" }
+            if ($line -notmatch [regex]::Escape($version)) { throw "$exe reports '$line', which does not carry $version" }
+            Write-Host "  $exe -> $line"
+          }
+          # The licence notice has to find its files inside the package, which is the layout it was
+          # written for and the one no test on a checkout exercises.
+          $notice = & dist/chrono-cli/chrono.exe license
+          if ($LASTEXITCODE -ne 0) { throw 'chrono license failed in the package' }
+          if ($notice -match 'not next to this executable') { throw "the package is missing a licence file:`n$notice" }
+          # And a session resolved end to end against a real target, without starting anything.
+          & dist/chrono-cli/chrono.exe run dist/ChronoMock/ChronoMock.exe --at 2038-01-19T03:14:07 --mode x60 --dry-run
+          if ($LASTEXITCODE -ne 0) { throw 'the shipped tool could not resolve a session against the shipped launcher' }
+
+      # Provenance over the UNSIGNED build, which is what phase B verifies before it touches anything.
+      # The archives change when the binaries inside them are signed, so this attestation describes
+      # the artifact handed to the card machine and NOT what a user downloads. Phase C attests the
+      # signed bytes, and deliberately attests only their bill of materials - a person signed those.
+      - name: Attest how the unsigned build was made
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: |
             dist/ChronoMock-win-x64.zip
             dist/chrono-cli-win.zip
-            dist/ChronoMock/ChronoMock.exe
-            dist/ChronoMock/core/x64/chrono.exe
-            dist/ChronoMock/core/x64/chrono_hook.dll
-            dist/ChronoMock/core/x86/chrono.exe
-            dist/ChronoMock/core/x86/chrono_hook.dll
 
-      - name: Attest the bill of materials for the window package
-        uses: actions/attest-sbom@c604332985a26aa8cf1bdc465b92731239ec6b9e # v4.1.0
-        with:
-          subject-path: dist/ChronoMock-win-x64.zip
-          sbom-path: dist/ChronoMock-win-x64.spdx.json
-
-      - name: Attest the bill of materials for the command line package
-        uses: actions/attest-sbom@c604332985a26aa8cf1bdc465b92731239ec6b9e # v4.1.0
-        with:
-          subject-path: dist/chrono-cli-win.zip
-          sbom-path: dist/chrono-cli-win.spdx.json
-
-      # The attestation is checked from this run rather than assumed to have worked. A release whose
-      # attestation cannot be verified is a release that promises something it does not deliver, and
-      # finding that out here costs a re-run rather than a user's trust.
-      - name: Verify the attestation the way a user would
-        shell: pwsh
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          foreach ($file in @('dist/ChronoMock-win-x64.zip', 'dist/chrono-cli-win.zip')) {
-            gh attestation verify $file --repo ${{ github.repository }}
-            if ($LASTEXITCODE -ne 0) { throw "the attestation for $file does not verify" }
-          }
-
-      - name: Publish a draft release with the packages, the SBOMs and the hashes
+      # Empty on purpose. The assets arrive in phase B, signed.
+      - name: Open the draft release
         if: startsWith(github.ref, 'refs/tags/v')
         shell: pwsh
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
           $tag = '${{ github.ref_name }}'
-          $assets = @(
-            'dist/ChronoMock-win-x64.zip',
-            'dist/chrono-cli-win.zip',
-            'dist/ChronoMock-win-x64.spdx.json',
-            'dist/chrono-cli-win.spdx.json',
-            'dist/SHA256SUMS'
-          )
           gh release view $tag 2>$null
           if ($LASTEXITCODE -ne 0) {
-            gh release create $tag --draft --title "Chrono Mock $($tag.TrimStart('v'))" --notes "Draft. Assets built and attested by the Release workflow - see CHANGELOG.md."
+            gh release create $tag --draft --title "Chrono Mock $($tag.TrimStart('v'))" --notes "Draft. Built by the Release workflow, signed on the card, assets attached by phase B - see CHANGELOG.md."
             if ($LASTEXITCODE -ne 0) { throw 'could not create the draft release' }
+            Write-Host "opened draft $tag with no assets"
+          } else {
+            Write-Host "draft $tag already exists"
           }
-          gh release upload $tag @assets --clobber
-          if ($LASTEXITCODE -ne 0) { throw 'could not upload the release assets' }
 
-      # Also kept on the run itself, so a workflow_dispatch build (no tag, no release) still hands
-      # back something to look at.
-      - name: Keep the packages on the run
+      # The seam between the build and the card. Only the archives: the checksums and the bills of
+      # materials that build-dist.ps1 wrote describe UNSIGNED bytes, and a file that describes bytes
+      # nobody will ship has no business travelling any further.
+      - name: Hand the build to the signing step
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: chrono-mock-release
+          name: unsigned-build-${{ github.ref_name }}
           path: |
-            dist/*.zip
-            dist/*.spdx.json
-            dist/SHA256SUMS
+            dist/ChronoMock-win-x64.zip
+            dist/chrono-cli-win.zip
           if-no-files-found: error
           retention-days: 14

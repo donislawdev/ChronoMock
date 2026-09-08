@@ -1,0 +1,151 @@
+# Phase D: check the published release page the way a user does.
+#
+# The three phases before this one check an artifact, a draft, and a digest handed between workflows.
+# 🔴 None of them touches the release PAGE, which is the only thing a user ever sees - and that gap is
+# how a broken verification command can sit in a README for two releases without anyone noticing.
+#
+# So this downloads the published assets and asks, of the release itself:
+#   * is every file there (a missing one means some phase did not finish),
+#   * do the checksums agree,
+#   * do the commands in README.md still work - run VERBATIM, not as equivalents, because if the
+#     command a reader will type has stopped working then IT is the thing that should turn red,
+#   * is every binary we build signed by the pinned certificate, and timestamped,
+#   * and, for a full release, does "latest" point here, since that is where the download button aims.
+#
+# 🔴 Read-only permissions. A verifier that can publish is not a verifier any more.
+#
+# It also runs on demand with a tag, because "does that old release still verify" is a question worth
+# being able to ask without cutting a new one.
+name: Verify the published release
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: The release tag to re-check, e.g. v0.2.0
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Check the release page
+    # Windows, because the Authenticode checks below are the point and they need it.
+    runs-on: windows-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAG: ${{ inputs.tag || github.event.release.tag_name }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Download everything the release publishes
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path published -Force | Out-Null
+          gh release download $env:TAG --repo ${{ github.repository }} --dir published
+          if ($LASTEXITCODE -ne 0) { throw "cannot download the assets of $env:TAG" }
+          Get-ChildItem published | ForEach-Object { "  {0,12:N0}  {1}" -f $_.Length, $_.Name }
+
+      - name: Every expected asset must be there
+        shell: pwsh
+        run: |
+          $expected = @(
+            'ChronoMock-win-x64.zip', 'chrono-cli-win.zip',
+            'ChronoMock-win-x64.spdx.json', 'chrono-cli-win.spdx.json',
+            'ChronoMock-win-x64.zip.sigstore.json', 'chrono-cli-win.zip.sigstore.json',
+            'SHA256SUMS'
+          )
+          $present = (Get-ChildItem published -File).Name
+          $missing = @($expected | Where-Object { $present -notcontains $_ })
+          if ($missing) {
+            throw "the release is missing $($missing -join ', ') - some phase of the release ritual did not finish"
+          }
+          Write-Host "all $($expected.Count) assets present"
+
+      - name: The checksums must agree
+        shell: pwsh
+        run: |
+          $bad = @()
+          foreach ($line in (Get-Content published/SHA256SUMS)) {
+            if (-not $line.Trim()) { continue }
+            $parts = $line -split '\s+', 2
+            $expected = $parts[0]
+            $name = $parts[1].Trim().TrimStart('*')
+            $path = "published/$name"
+            if (-not (Test-Path -LiteralPath $path)) { $bad += "$name is in SHA256SUMS and not on the release"; continue }
+            $actual = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ($actual -ne $expected.ToLowerInvariant()) { $bad += "$name : published $expected, actual $actual" }
+            else { Write-Host "  ok  $name" }
+          }
+          if ($bad) { throw "checksums disagree: $($bad -join '; ')" }
+
+      # 🔴 Extracted from README.md and run as written. Not equivalents: the point is that the command
+      # a reader will actually type still works, so if it stops working the README is what turns red.
+      - name: The verification commands in the README must work as written
+        shell: pwsh
+        working-directory: published
+        run: |
+          $readme = Get-Content -Raw ../README.md
+          $block = [regex]::Match($readme, '(?s)<!-- verify-commands -->\s*```(.*?)```\s*<!-- /verify-commands -->')
+          if (-not $block.Success) { throw 'README.md has no <!-- verify-commands --> block to run' }
+          $commands = @($block.Groups[1].Value -split "`n" | ForEach-Object { $_.Trim() } | Where-Object { $_ -and -not $_.StartsWith('#') })
+          if ($commands.Count -lt 2) { throw "expected at least two verification commands in the README, found $($commands.Count)" }
+          foreach ($command in $commands) {
+            Write-Host "`n  $command"
+            Invoke-Expression $command
+            if ($LASTEXITCODE -ne 0) { throw "the README's own command failed: $command" }
+          }
+
+      - name: Every binary we build must be signed by the pinned certificate, and timestamped
+        shell: pwsh
+        run: |
+          $pin = (Get-Content -Raw packaging/codesign.json | ConvertFrom-Json).certificate_sha256
+          if ($pin -notmatch '^[0-9a-f]{64}$') { throw 'packaging/codesign.json carries no usable certificate_sha256' }
+          $ours = @{
+            'ChronoMock-win-x64.zip' = @(
+              'ChronoMock/ChronoMock.exe', 'ChronoMock/ChronoMock.dll', 'ChronoMock/ChronoMock.Protocol.dll',
+              'ChronoMock/core/x64/chrono.exe', 'ChronoMock/core/x64/chrono_hook.dll',
+              'ChronoMock/core/x86/chrono.exe', 'ChronoMock/core/x86/chrono_hook.dll')
+            'chrono-cli-win.zip'     = @(
+              'chrono-cli/chrono.exe', 'chrono-cli/chrono_hook.dll',
+              'chrono-cli/x86/chrono.exe', 'chrono-cli/x86/chrono_hook.dll')
+          }
+          $bad = @()
+          foreach ($archive in $ours.Keys) {
+            $where = "extracted/$([System.IO.Path]::GetFileNameWithoutExtension($archive))"
+            Expand-Archive -LiteralPath "published/$archive" -DestinationPath $where -Force
+            foreach ($relative in $ours[$archive]) {
+              $file = Join-Path $where $relative
+              if (-not (Test-Path -LiteralPath $file)) { $bad += "$archive : $relative is not in the archive"; continue }
+              $signature = Get-AuthenticodeSignature -LiteralPath $file
+              if ($signature.Status -ne 'Valid') { $bad += "$relative : signature status $($signature.Status)"; continue }
+              $sha = (([System.Security.Cryptography.SHA256]::Create().ComputeHash($signature.SignerCertificate.RawData) |
+                    ForEach-Object { $_.ToString('x2') }) -join '')
+              if ($sha -ne $pin) { $bad += "$relative : signed by $sha, and the repository pins $pin" }
+              # Without a timestamp the signature dies with the certificate, which is a year away.
+              elseif (-not $signature.TimeStamperCertificate) { $bad += "$relative : signed but NOT timestamped" }
+              else { Write-Host "  ok  $relative" }
+            }
+          }
+          if ($bad) { throw "signature check failed: $($bad -join '; ')" }
+
+      # The download button aims at "latest", so for a full release that is the claim worth checking.
+      # A pre-release is not supposed to be latest, and this says so rather than failing.
+      - name: For a full release, latest must point here
+        shell: pwsh
+        run: |
+          $release = gh release view $env:TAG --repo ${{ github.repository }} --json isPrerelease, isDraft | ConvertFrom-Json
+          if ($release.isDraft) { throw "$env:TAG is still a draft, so it publishes nothing" }
+          if ($release.isPrerelease) {
+            Write-Host "$env:TAG is a pre-release, so latest is not expected to point at it"
+            exit 0
+          }
+          $latest = gh release view --repo ${{ github.repository }} --json tagName | ConvertFrom-Json
+          if ($latest.tagName -ne $env:TAG) {
+            throw "latest points at $($latest.tagName) and this release is $env:TAG - the download button offers the other one"
+          }
+          Write-Host "latest points at $env:TAG"

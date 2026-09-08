@@ -62,8 +62,11 @@ $cliZip = Join-Path $dist 'chrono-cli-win.zip'
 # What the publish itself says it bundled. The only place the runtime pack versions are knowable, since
 # global.json pins the test runner and not the SDK.
 $depsJson = Join-Path $stage 'ChronoMock.deps.json'
-# The three files that go into a release beside the two zips: a bill of materials for each package, and
-# the hashes of all four.
+# A bill of materials for each package and the hashes of all four, over the UNSIGNED build this script
+# makes. These are not the files a release publishes: the binaries are signed afterwards, on the machine
+# with the card, and repacking changes every hash - so packaging/sign-release.ps1 regenerates both over
+# the signed bytes and those are what get uploaded. Written here anyway, because a local build deserves
+# its own manifest and because generating them on every packaging run is what keeps the generator honest.
 $guiSbom = Join-Path $dist 'ChronoMock-win-x64.spdx.json'
 $cliSbom = Join-Path $dist 'chrono-cli-win.spdx.json'
 $sums = Join-Path $dist 'SHA256SUMS'

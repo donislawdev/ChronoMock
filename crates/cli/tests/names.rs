@@ -1,4 +1,10 @@
-//! Untouchable rule 26: no application we measure Chrono Mock on is ever named in the repository.
+//! Strings that must never appear in the repository, whatever a session is in the middle of writing.
+//!
+//! Two kinds, one mechanism. Untouchable rule 26: no application we measure Chrono Mock on is ever
+//! named here. And the personal data in the code-signing certificate's subject: a certificate issued
+//! to an individual carries their name, town and province, every signed file carries it with them,
+//! and that exposure is the certificate's to make rather than the repository's - only the fingerprint
+//! belongs in `packaging/codesign.json`.
 //!
 //! The rule was written down and nothing checked it, which is how it came to be broken in seventeen
 //! places across ten committed files - including the public README and both language versions of a
@@ -57,6 +63,13 @@ const FORBIDDEN: &[(u64, &str)] = &[
     // The canary. A word no source would contain by accident, so the scanner can be caught working
     // on synthetic text without any real name being written down here.
     (0xd760_33fd_22c7_ed49, "the canary token, which exists so this scan can be seen to work"),
+    // Personal data out of the code-signing certificate's subject. A certificate issued to an
+    // individual carries their name, their town and their province, and every signed file carries it
+    // with them - that exposure is the certificate's to make, not the repository's. Only the
+    // fingerprint belongs here (packaging/codesign.json), never the subject, so pasting the subject
+    // into a comment or a document fails this scan.
+    (0x15a9_1a89_7eee_d3bc, "personal data from the code-signing certificate subject - the repository keeps the fingerprint and nothing else"),
+    (0x8225_5530_32a3_d679, "personal data from the code-signing certificate subject - the repository keeps the fingerprint and nothing else"),
 ];
 
 /// FNV-1a, 64-bit. Fifteen lines rather than a dependency: this is a lookup key, not a digest.
@@ -226,7 +239,7 @@ fn ordinary_prose_and_the_names_that_are_allowed_raise_nothing() {
 /// shrank to nothing, would leave the scan above green over a repository it no longer protects.
 #[test]
 fn the_forbidden_list_is_present_and_well_formed() {
-    assert!(FORBIDDEN.len() >= 5, "the list lost entries: {}", FORBIDDEN.len());
+    assert!(FORBIDDEN.len() >= 7, "the list lost entries: {}", FORBIDDEN.len());
     assert!(FORBIDDEN.iter().all(|(hash, _)| *hash != 0), "a zero hash matches nothing");
     assert!(FORBIDDEN.iter().all(|(_, hint)| hint.len() > 20), "a hint has to be actionable");
 

@@ -61,17 +61,28 @@ Unzip anywhere and run `ChronoMock.exe` (or `chrono.exe` for the CLI). There is 
 is written to the registry, and no administrator rights are needed.
 
 **Checking what you downloaded.** From the release after v0.1.0, each one also carries `SHA256SUMS`,
-a bill of materials per package (`*.spdx.json`, SPDX 2.3), and a build-provenance attestation you can
-verify without trusting this page:
+a bill of materials per package (`*.spdx.json`, SPDX 2.3), and an attestation of that bill of
+materials, signed by GitHub's infrastructure. Two ways to check it, both of which work on either
+archive:
 
+<!-- verify-commands -->
 ```
-gh attestation verify ChronoMock-win-x64.zip --repo donislawdev/ChronoMock
+gh attestation verify ChronoMock-win-x64.zip --repo donislawdev/ChronoMock --predicate-type https://spdx.dev/Document/v2.3
+gh attestation verify ChronoMock-win-x64.zip --repo donislawdev/ChronoMock --predicate-type https://spdx.dev/Document/v2.3 --bundle ChronoMock-win-x64.zip.sigstore.json
 ```
+<!-- /verify-commands -->
 
-That answers a question a checksum cannot: which workflow, in which repository, at which commit,
-produced those exact bytes. It works on the archive and on any binary inside it, including
-`chrono_hook.dll`. The archives are not Authenticode-signed yet, so Windows still shows an
-unknown-publisher warning - [SECURITY.md](SECURITY.md#verifying-a-download) says where that stands.
+The first asks GitHub. The second asks nothing and nobody: it checks the `.sigstore.json` published
+beside the archive, so it works with no network and no account.
+
+**Both need `--predicate-type`, and leaving it off is the mistake worth naming.** The tool asks for
+build provenance by default, and a released archive deliberately has none - it was signed by a person
+on a machine with a hardware key, not built by a workflow. Without the flag one spelling reports "no
+attestation found" and another returns 404, and both look like a broken release when nothing is wrong.
+
+The binaries inside carry an Authenticode signature with an RFC 3161 timestamp - Windows will name
+the publisher rather than warn about an unknown one. [SECURITY.md](SECURITY.md#verifying-a-download)
+says what is signed, what is not, and why.
 
 > **Early release.** The substitution core is implemented and covered by an automated suite that runs
 > on every commit, plus an end-to-end harness exercised against real applications on both 32-bit and

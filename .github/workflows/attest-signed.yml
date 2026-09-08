@@ -1,0 +1,105 @@
+# Phase C: attest the bill of materials of the SIGNED bytes.
+#
+# Dispatched by packaging/sign-release.ps1 once the card has signed the binaries and the repacked
+# archives are on the draft release.
+#
+# 🔴 IT DOES NOT ATTEST PROVENANCE, and that is a statement rather than an omission. Build provenance
+# says "this workflow produced these bytes". A person produced these bytes, on their own machine, with
+# a card in a reader - claiming otherwise would be the one lie an attestation must never carry. What
+# CAN be said about the signed archive is what is inside it, so that is what is attested here. The
+# unsigned build phase A made has provenance, and phase B verified it before touching anything.
+#
+# 🔴 A CONSEQUENCE FOR WHOEVER VERIFIES: the tools default to asking for build provenance, and the
+# signed archive deliberately has none. Without `--predicate-type https://spdx.dev/Document/v2.3` one
+# spelling says "no attestation found" and another returns 404, and both look like a broken release.
+# The commands in README.md carry that flag, and phase D runs those commands verbatim.
+name: Attest the signed release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: The release tag whose signed assets to attest, e.g. v0.2.0
+        required: true
+        type: string
+      digests:
+        description: Comma-separated <archive>=<sha256> of what phase B signed, as a cross-check
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  attest:
+    name: Attest the signed archives
+    # Nothing here needs Windows: it downloads, hashes and attests.
+    runs-on: ubuntu-latest
+    permissions:
+      # Attaching the attestation bundles to the release as assets.
+      contents: write
+      id-token: write
+      attestations: write
+      artifact-metadata: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      # 🔴 The archives come FROM THE RELEASE, not from the caller. Attesting a digest somebody handed
+      # us would attest a number rather than a file, and the number and the file are the same thing
+      # only if nothing went wrong - which is precisely what is being checked. The digests that were
+      # passed in stay as a cross-check below.
+      - name: Download what the release actually carries
+        run: |
+          mkdir -p assets
+          gh release download "${{ inputs.tag }}" --repo "${{ github.repository }}" \
+            --pattern '*.zip' --pattern '*.spdx.json' --dir assets
+          ls -l assets
+
+      - name: The bytes on the release must be the bytes phase B signed
+        run: |
+          fail=0
+          for pair in $(echo '${{ inputs.digests }}' | tr ',' ' '); do
+            name="${pair%%=*}"
+            expected="${pair#*=}"
+            if [ ! -f "assets/$name" ]; then
+              echo "::error::the release carries no $name"
+              fail=1
+              continue
+            fi
+            actual=$(sha256sum "assets/$name" | cut -d' ' -f1)
+            if [ "$actual" != "$expected" ]; then
+              echo "::error::$name on the release is not what phase B signed"
+              echo "  signed:   $expected"
+              echo "  released: $actual"
+              fail=1
+            else
+              echo "$name matches the digest phase B signed"
+            fi
+          done
+          [ "$fail" -eq 0 ] || exit 1
+
+      - name: Attest the bill of materials for the window package
+        id: gui
+        uses: actions/attest-sbom@c604332985a26aa8cf1bdc465b92731239ec6b9e # v4.1.0
+        with:
+          subject-path: assets/ChronoMock-win-x64.zip
+          sbom-path: assets/ChronoMock-win-x64.spdx.json
+
+      - name: Attest the bill of materials for the command line package
+        id: cli
+        uses: actions/attest-sbom@c604332985a26aa8cf1bdc465b92731239ec6b9e # v4.1.0
+        with:
+          subject-path: assets/chrono-cli-win.zip
+          sbom-path: assets/chrono-cli-win.spdx.json
+
+      # Published as assets, with the extension the tooling and the scanners recognise, so the
+      # attestation can be checked offline with `--bundle` by someone who would rather not call the
+      # API - and so a security scanner looking over the release page finds it at all.
+      - name: Attach the attestation bundles to the release
+        run: |
+          cp "${{ steps.gui.outputs.bundle-path }}" ChronoMock-win-x64.zip.sigstore.json
+          cp "${{ steps.cli.outputs.bundle-path }}" chrono-cli-win.zip.sigstore.json
+          gh release upload "${{ inputs.tag }}" \
+            ChronoMock-win-x64.zip.sigstore.json \
+            chrono-cli-win.zip.sigstore.json \
+            --repo "${{ github.repository }}" --clobber

@@ -270,6 +270,49 @@ fn every_nuget_component_the_register_declares_has_its_bytes_pinned() {
     assert!(missing.is_empty(), "the register and the NuGet lock file disagree: {missing:?}");
 }
 
+/// The code-signing pin, which is the other half of "what exactly are we shipping".
+///
+/// The register says what is in the package. This says who signed it, and it is pinned by fingerprint
+/// because a second code-signing certificate on the signing machine - a renewal, a test one, one from
+/// another project - would sign just as willingly and the release page would look identical. The
+/// signing script reads the certificate back OUT of each signed file and compares it to this value.
+///
+/// What must NOT be here is the certificate's subject: one issued to an individual carries their name,
+/// town and province, and that exposure is the certificate's to make rather than the repository's.
+/// `tests/names.rs` scans for it. This checks the shape of what IS here.
+#[test]
+fn the_code_signing_certificate_is_pinned_by_fingerprint_and_nothing_more() {
+    let path = repo_root().join("packaging").join("codesign.json");
+    let text = std::fs::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("the signing pin must exist at {}: {e}", path.display()));
+    let pin: serde_json::Value =
+        serde_json::from_str(&text).unwrap_or_else(|e| panic!("the pin must be valid JSON: {e}"));
+
+    assert_eq!(pin["schema"], "chronomock.codesign/1");
+
+    let fingerprint = pin["certificate_sha256"].as_str().unwrap_or_default();
+    assert_eq!(fingerprint.len(), 64, "a SHA-256 fingerprint is 64 characters, got {fingerprint:?}");
+    assert!(
+        fingerprint.chars().all(|c| c.is_ascii_digit() || ('a'..='f').contains(&c)),
+        "the fingerprint must be lowercase hex, got {fingerprint:?}"
+    );
+
+    // 🔴 A timestamp is not optional. Without one the signature dies when the certificate expires, and
+    // this certificate is valid for a year - so every release older than that would stop verifying.
+    let timestamp = pin["timestamp_url"].as_str().unwrap_or_default();
+    assert!(
+        timestamp.starts_with("http://") || timestamp.starts_with("https://"),
+        "the pin must name an RFC 3161 timestamp authority, got {timestamp:?}"
+    );
+
+    // The subject would be the natural thing to write next to a fingerprint, and it is the one thing
+    // that must not be. Checked here as well as in the scan, because this is the file where somebody
+    // would put it.
+    for field in ["subject", "certificate_subject", "holder", "name"] {
+        assert!(pin[field].is_null(), "the pin carries '{field}' - only the fingerprint belongs in it");
+    }
+}
+
 /// The register's own shape, so a truncated or half-edited file fails here rather than three steps
 /// later inside the SBOM generator, where the message would be about JSON.
 #[test]

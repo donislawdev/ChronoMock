@@ -132,38 +132,59 @@ into its own data, and no tool can undo that - the README says so before you sta
 
 ## Verifying a download
 
-**Downloads still carry no Authenticode signature.** Windows will show an
-unknown-publisher warning. Code signing is planned and this paragraph will be
-rewritten when it lands rather than quietly deleted.
+From the release after v0.1.0, each one carries four things beside the archives:
 
-What a release does carry, from the next one onward:
-
-- **`SHA256SUMS`** - the hash of every published file, so you can check that what
-  you downloaded is what was published.
+- **`SHA256SUMS`** - the hash of every published file.
 - **A bill of materials per package** (`*.spdx.json`, SPDX 2.3) listing every
   third-party component in that package with its version and licence.
-- **A build-provenance attestation** over both archives and every binary inside
-  them, including `chrono_hook.dll` - the library this tool injects into other
-  processes, and so the file worth checking most.
+- **An attestation of that bill of materials** (`*.sigstore.json`), signed by
+  GitHub's infrastructure.
+- **An Authenticode signature with an RFC 3161 timestamp** on every binary this
+  project builds, including `chrono_hook.dll` - the library the tool injects into
+  other processes, and so the file worth checking most.
 
-The attestation is the one that says something a hash cannot. A checksum published
-next to a file by the same person proves only that the two agree. The attestation
-is signed by GitHub's own infrastructure and states which workflow, in which
-repository, at which commit, produced those exact bytes:
+The two verification commands are in [the README](README.md#download-and-run), and
+they are run verbatim by a workflow every time a release is published, so a command
+that stops working turns red here rather than in your terminal.
 
-```
-gh attestation verify ChronoMock-win-x64.zip --repo donislawdev/ChronoMock
-```
+### What is signed and what is not
 
-That works on the zip and on any binary you extract from it, because verification
-matches on the file's digest rather than its name.
+The window package ships around 240 assemblies that Microsoft already signed, and
+they are left exactly as they arrived - re-signing somebody else's binary would both
+destroy their signature and assert that we produced it. Two files in it
+(`Wpf.Ui.dll`, `Wpf.Ui.Abstractions.dll`) are third-party and unsigned by their own
+publisher, and they stay that way for the same reason. The bill of materials
+declares all of them.
+
+### What the attestation does and does not claim
+
+It says what is inside the archive. It does **not** claim a workflow built it,
+because none did: the archive is signed by a person on a machine holding a hardware
+key that cannot be exported, which is the whole point of that key. The unsigned
+build the workflow produced does carry build provenance, and the signing step
+verifies it before touching anything - but those are different bytes, and saying
+otherwise would be the one lie an attestation must never carry.
+
+🔴 **This is why both commands pass `--predicate-type` explicitly.** The tooling asks
+for build provenance by default. Without the flag, one spelling reports "no
+attestation found" and another returns 404, and both look like a broken release when
+nothing is wrong.
 
 🔴 **The v0.1.0 archives have none of this.** They were built on a developer machine
-and uploaded by hand, before the release moved into a workflow, and an attestation
-cannot be granted after the fact - that is precisely what makes it worth having. For
-v0.1.0 the honest verification path remains building from source: the project is
-GPL-3.0, `chrono_hook.dll` is built from the code in this repository, and CI builds
-both the 64-bit and 32-bit targets on every push.
+and uploaded by hand, before the release moved into a workflow, and neither a
+signature nor an attestation can be granted after the fact - which is precisely what
+makes them worth having. For v0.1.0 the honest verification path remains building
+from source: the project is GPL-3.0, `chrono_hook.dll` is built from the code in
+this repository, and CI builds both the 64-bit and 32-bit targets on every push.
+
+### If a release turns out to be broken
+
+Releases are not edited in place. An asset that is already published has been
+downloaded, and replacing it would break verification for everyone who has it while
+taking the file off nobody's disk. So a bad release is **marked as a pre-release** -
+which drops it from "latest", so the download button stops offering it - a line is
+added at the top of its notes, and the fix ships as a new release through the same
+ritual. The tag and the assets stay where they are.
 
 ## Secrets and permissions in this repository
 

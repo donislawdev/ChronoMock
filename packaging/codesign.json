@@ -1,0 +1,16 @@
+{
+  "//": "The code-signing certificate this project's releases are signed with, pinned by fingerprint. Read by packaging/sign-release.ps1 to pick the certificate out of the Windows store, and again after signing to check that the file was signed by THAT certificate and not by another one that happened to be on the machine.",
+
+  "//what-is-not-here": "The certificate's subject. A certificate issued to an individual carries the holder's name, town and province, and every signed file carries it with them - that exposure is the certificate's to make and not the repository's. Only the fingerprint belongs here. `crates/cli/tests/names.rs` fails if the subject is pasted into any committed file.",
+
+  "//why-two-digests": "signtool selects a certificate by SHA-1 because that is the only selector it takes, and this file pins SHA-256 because that is the digest worth pinning. The script resolves one to the other at signing time, so the two can never drift apart in a config file.",
+
+  "//renewal": "🔴 A renewal is a DIFFERENT certificate, not the same one with a later date. When the card's certificate is renewed, this fingerprint has to move with it or the next release refuses to sign - the script says so out loud from 90 days before expiry, so the refusal is never a surprise in the middle of a release.",
+
+  "schema": "chronomock.codesign/1",
+
+  "certificate_sha256": "47b79ad3cfa53ef846cad03a59148f8c981d0b1196891e48b8c8d7982b10c148",
+
+  "//timestamp_url": "An RFC 3161 timestamp is not optional. Without it the signature dies with the certificate, and this one is valid for a year. The authority is the issuing CA's own.",
+  "timestamp_url": "http://time.certum.pl/"
+}
