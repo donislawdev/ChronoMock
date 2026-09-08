@@ -24,6 +24,10 @@ public sealed record CalcMoment(
     [property: JsonPropertyName("metadata")] CalcMetadata Metadata,
     [property: JsonPropertyName("significance")] IReadOnlyList<string> Significance,
     [property: JsonPropertyName("custom_format")] string? CustomFormat,
+    /// <summary>Letter runs in the mask that are not format tokens. Absent when the engine understood
+    /// the whole mask. Shown to the reader, because the rendered text carries those letters verbatim
+    /// and otherwise looks like a formatted date rather than a mask that was not understood.</summary>
+    [property: JsonPropertyName("custom_format_unknown")] IReadOnlyList<string>? CustomFormatUnknown,
     [property: JsonPropertyName("preset")] CalcPreset? Preset);
 
 /// <summary>Every fixed output format at once (docs/02 section 8). Instant-based fields are null outside

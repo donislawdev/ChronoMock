@@ -361,6 +361,7 @@
   "calc.fmt.epoch_ms": "epoch (ms)",
   "calc.fmt.filetime": "FILETIME",
   "calc.fmt.rfc1123": "RFC 1123",
+  "calc.fmt.unknown_tokens": "Not format tokens, shown as text: {0}. Put literal text in quotes, like 'this'.",
   "calc.out_of_range": "(out of range)",
   "calc.md.us_week": "US week",
   "calc.md.day": "day",

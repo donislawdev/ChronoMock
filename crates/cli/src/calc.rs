@@ -176,10 +176,17 @@ pub(crate) fn calc_run(argv: &[String]) -> i32 {
                 render_calc(&expr, &outcome, Some(zone_bias), zone_from_host, &now, calendar.as_ref(), preset_header.as_deref());
             // A custom mask (7.3) adds one more line in the target app's exact format.
             if let Some(mask) = &ca.format {
-                text.push_str(&format!(
-                    "  custom format:  {}\n",
-                    chrono_core::calc::format_with_mask(&outcome.result(), mask)
-                ));
+                let rendered = chrono_core::calc::format_with_mask(&outcome.result(), mask);
+                text.push_str(&format!("  custom format:  {}\n", rendered.text));
+                // Named right under the line they affect. Without this the output carries raw mask
+                // letters and still looks like a formatted date, so the reader's first guess is their
+                // own typo rather than a token this build does not know (rule 6).
+                if !rendered.unknown.is_empty() {
+                    text.push_str(&format!(
+                        "                  ^ not format tokens, passed through as text: {} - quote literal text as 'like this'\n",
+                        rendered.unknown.join(", ")
+                    ));
+                }
             }
             print!("{text}");
             0
@@ -217,6 +224,11 @@ pub(crate) struct MomentJson {
     significance: Vec<&'static str>,
     #[serde(skip_serializing_if = "Option::is_none")]
     custom_format: Option<String>,
+    /// Letter runs in the mask that are not format tokens, so a client can say so instead of showing
+    /// raw mask letters as if they were a rendered date. Omitted when the mask was fully understood,
+    /// which keeps the common result unchanged (an added field does not bump the schema, docs/04 3).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    custom_format_unknown: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     preset: Option<PresetJson>,
 }
@@ -331,6 +343,7 @@ pub(crate) fn calc_moment_json(
 ) -> String {
     let result = outcome.result();
     let bias = outcome.result_bias;
+    let rendered_mask = format_mask.map(|m| chrono_core::calc::format_with_mask(&result, m));
     let moment = MomentJson {
         iso: result.to_iso(),
         zone_bias_min: bias,
@@ -339,7 +352,11 @@ pub(crate) fn calc_moment_json(
         formats: formats_json(&result, bias),
         metadata: metadata_json(&result, now, calendar),
         significance: significance_keys(&result, bias, calendar),
-        custom_format: format_mask.map(|m| chrono_core::calc::format_with_mask(&result, m)),
+        custom_format: rendered_mask.as_ref().map(|r| r.text.clone()),
+        custom_format_unknown: rendered_mask
+            .as_ref()
+            .filter(|r| !r.unknown.is_empty())
+            .map(|r| r.unknown.clone()),
         preset,
     };
     let doc = CalcJson { schema: CALC_SCHEMA, moment: Some(moment), analysis: None };

@@ -783,34 +783,110 @@ pub fn formats(civil: &CivilDateTime, tz_bias_min: i32) -> Formats {
 
 // --- Custom format mask (7.3, docs/02 section 8 point 9 - hit the target app's exact format) ---
 
+/// What a mask rendered to, and what the vocabulary did not recognise in it.
+///
+/// The second half exists because the first one alone can mislead. A run of letters that is not a
+/// token used to be emitted verbatim, so `h:mm tt` produced `h:05 tt` - a string that LOOKS like a
+/// formatted time and carries raw mask letters. Silent, and the reader's first guess is their own
+/// typo. The caller shows `unknown` so the answer says what it could not do (rule 6).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MaskRender {
+    pub text: String,
+    /// Letter runs the vocabulary does not know, first appearance first, without repeats. Empty when
+    /// every letter in the mask was either a token or explicitly quoted.
+    pub unknown: Vec<String>,
+}
+
 /// Render `civil` in a user-supplied .NET/Java-style mask so the output can match the exact format
-/// the target app uses. Case-sensitive: `M` is month, `m` is minute. A token is a maximal run of
-/// one letter (`yyyy`, `MM`, `dd`, `HH`, `mm`, `ss`, plus `MMM`/`MMMM` month names and `ddd`/`dddd`
-/// weekday names) - anything else, and any run whose length is not a known token (e.g. `yyy`), is
-/// emitted literally - never guessed. Escaping a literal that happens to be a token letter, a zone
-/// token, and single `y` are not built yet.
-pub fn format_with_mask(civil: &CivilDateTime, mask: &str) -> String {
+/// the target app uses. Case-sensitive: `M` is month, `m` is minute, `H` is 24-hour and `h` is
+/// 12-hour. A token is a maximal run of one letter (`yyyy`, `MM`, `dd`, `HH`, `hh`, `mm`, `ss`, `tt`,
+/// plus `MMM`/`MMMM` month names and `ddd`/`dddd` weekday names).
+///
+/// Literal text goes in single quotes, as in Java's `SimpleDateFormat`: `'at' HH:mm` renders `at`
+/// verbatim, and `''` inside a quoted run is one apostrophe. Without quotes a letter run that is not
+/// a token still passes through, but it is REPORTED in [`MaskRender::unknown`] - passing through was
+/// never a promise, only what happened to work, and `date=` would have lost its `d` to the day token.
+/// Anything that is not a letter (`/`, `.`, `:`, spaces) is literal and needs no quoting.
+///
+/// A zone token and single `y` are not built.
+pub fn format_with_mask(civil: &CivilDateTime, mask: &str) -> MaskRender {
     let chars: Vec<char> = mask.chars().collect();
-    let mut out = String::new();
+    let mut text = String::new();
+    let mut unknown: Vec<String> = Vec::new();
     let mut i = 0;
     while i < chars.len() {
         let c = chars[i];
+        if c == '\'' {
+            i = push_quoted(&chars, i, &mut text, &mut unknown);
+            continue;
+        }
         // Consume the maximal run of the same character.
         let mut n = 1;
         while i + n < chars.len() && chars[i + n] == c {
             n += 1;
         }
         match mask_token(civil, c, n) {
-            Some(field) => out.push_str(&field),
-            None => (0..n).for_each(|_| out.push(c)),
+            Some(field) => text.push_str(&field),
+            None => {
+                (0..n).for_each(|_| text.push(c));
+                // Only LETTERS are reported. A run of `/` or `:` is punctuation the mask is made of,
+                // and calling it unrecognised would bury the real finding in noise.
+                if c.is_alphabetic() {
+                    let run: String = std::iter::repeat_n(c, n).collect();
+                    if !unknown.contains(&run) {
+                        unknown.push(run);
+                    }
+                }
+            }
         }
         i += n;
     }
-    out
+    MaskRender { text, unknown }
+}
+
+/// Copy a quoted literal run into `text`, returning the index just past its closing quote. `''` is
+/// one apostrophe. An unterminated quote takes the rest of the mask and is reported, because the
+/// alternative - ending it silently at the end of input - is a mask that renders and is not what was
+/// written.
+fn push_quoted(chars: &[char], start: usize, text: &mut String, unknown: &mut Vec<String>) -> usize {
+    // `''` is an apostrophe wherever it appears, including outside a quoted run - Java's rule, and
+    // the one this vocabulary follows. Reading it as an empty quoted run instead would make a lone
+    // apostrophe unwritable, which is the character an English mask most often needs ("o'clock").
+    if chars.get(start + 1) == Some(&'\'') {
+        text.push('\'');
+        return start + 2;
+    }
+    let mut i = start + 1;
+    while i < chars.len() {
+        if chars[i] == '\'' {
+            if chars.get(i + 1) == Some(&'\'') {
+                text.push('\'');
+                i += 2;
+                continue;
+            }
+            return i + 1;
+        }
+        text.push(chars[i]);
+        i += 1;
+    }
+    let unterminated = "'".to_string();
+    if !unknown.contains(&unterminated) {
+        unknown.push(unterminated);
+    }
+    i
+}
+
+/// The hour on a 12-hour clock: 0 and 12 both read as 12, the rest unchanged.
+fn hour_12(hour: u32) -> u32 {
+    match hour % 12 {
+        0 => 12,
+        h => h,
+    }
 }
 
 /// The field for a mask token: character `c` repeated `n` times, or None when `(c, n)` is not a
-/// recognised token (then the caller emits the run literally). The .NET / Java token vocabulary.
+/// recognised token (then the caller emits the run literally and reports it). The .NET / Java token
+/// vocabulary.
 fn mask_token(civil: &CivilDateTime, c: char, n: usize) -> Option<String> {
     let month = (civil.month - 1) as usize;
     let dow = day_of_week(civil);
@@ -827,6 +903,15 @@ fn mask_token(civil: &CivilDateTime, c: char, n: usize) -> Option<String> {
         ('d', 1) => civil.day.to_string(),
         ('H', 2) => format!("{:02}", civil.hour),
         ('H', 1) => civil.hour.to_string(),
+        // The 12-hour clock, which is how the US market writes time (docs/02 section 7) and one of
+        // the two MVP markets. Midnight and noon are 12, not 0 - the same rule .NET and Java state.
+        ('h', 2) => format!("{:02}", hour_12(civil.hour)),
+        ('h', 1) => hour_12(civil.hour).to_string(),
+        // `tt` is the full designator, `t` its first letter - both as .NET defines them. Invariant
+        // English, like the month and weekday names above: this mask matches the TARGET APP's
+        // output, and the data locale is not the interface language (rule 15).
+        ('t', 2) => (if civil.hour < 12 { "AM" } else { "PM" }).to_string(),
+        ('t', 1) => (if civil.hour < 12 { "A" } else { "P" }).to_string(),
         ('m', 2) => format!("{:02}", civil.minute),
         ('m', 1) => civil.minute.to_string(),
         ('s', 2) => format!("{:02}", civil.second),
@@ -1194,6 +1279,12 @@ mod tests {
 
     fn dt(y: i64, mo: u32, d: u32, h: u32, mi: u32, s: u32) -> CivilDateTime {
         CivilDateTime { year: y, month: mo, day: d, hour: h, minute: mi, second: s }
+    }
+
+    /// Just the rendered text, for the assertions that are about formatting. The unknown-token half
+    /// has its own tests - reading both out of one assertion would hide which one failed.
+    fn mask_text(civil: &CivilDateTime, mask: &str) -> String {
+        format_with_mask(civil, mask).text
     }
 
     fn abs(c: CivilDateTime) -> Base {
@@ -2036,42 +2127,110 @@ mod tests {
     #[test]
     fn format_mask_common_patterns() {
         let d = dt(2008, 8, 4, 23, 59, 9);
-        assert_eq!(format_with_mask(&d, "yyyy-MM-dd HH:mm:ss"), "2008-08-04 23:59:09");
-        assert_eq!(format_with_mask(&d, "MM/dd/yyyy"), "08/04/2008");
-        assert_eq!(format_with_mask(&d, "dd.MM.yyyy"), "04.08.2008");
-        assert_eq!(format_with_mask(&d, "yy"), "08");
+        assert_eq!(mask_text(&d, "yyyy-MM-dd HH:mm:ss"), "2008-08-04 23:59:09");
+        assert_eq!(mask_text(&d, "MM/dd/yyyy"), "08/04/2008");
+        assert_eq!(mask_text(&d, "dd.MM.yyyy"), "04.08.2008");
+        assert_eq!(mask_text(&d, "yy"), "08");
     }
 
     #[test]
     fn format_mask_is_case_sensitive_month_vs_minute() {
         // M is month, m is minute - the classic gotcha.
         let d = dt(2008, 3, 4, 12, 7, 0);
-        assert_eq!(format_with_mask(&d, "M m"), "3 7"); // month 3, minute 7 (no pad)
-        assert_eq!(format_with_mask(&d, "MM mm"), "03 07");
+        assert_eq!(mask_text(&d, "M m"), "3 7"); // month 3, minute 7 (no pad)
+        assert_eq!(mask_text(&d, "MM mm"), "03 07");
     }
 
     #[test]
     fn format_mask_names_and_no_pad() {
         let d = dt(2008, 8, 4, 5, 6, 7); // 2008-08-04 was a Monday
-        assert_eq!(format_with_mask(&d, "ddd, dd MMM yyyy"), "Mon, 04 Aug 2008");
-        assert_eq!(format_with_mask(&d, "dddd MMMM"), "Monday August");
-        assert_eq!(format_with_mask(&d, "d/M/yyyy H:m:s"), "4/8/2008 5:6:7"); // single = no pad
+        assert_eq!(mask_text(&d, "ddd, dd MMM yyyy"), "Mon, 04 Aug 2008");
+        assert_eq!(mask_text(&d, "dddd MMMM"), "Monday August");
+        assert_eq!(mask_text(&d, "d/M/yyyy H:m:s"), "4/8/2008 5:6:7"); // single = no pad
     }
 
     #[test]
     fn format_mask_literals_and_unknown_runs_pass_through() {
         let d = dt(2008, 8, 4, 0, 0, 0);
         // A single 'y' and non-token characters are literal - a 3-run 'yyy' is not a token, so verbatim.
-        assert_eq!(format_with_mask(&d, "year=yyyy"), "year=2008");
-        assert_eq!(format_with_mask(&d, "yyy"), "yyy");
-        assert_eq!(format_with_mask(&d, "yyyy//MM"), "2008//08");
-        assert_eq!(format_with_mask(&d, ""), "");
+        assert_eq!(mask_text(&d, "year=yyyy"), "year=2008");
+        assert_eq!(mask_text(&d, "yyy"), "yyy");
+        assert_eq!(mask_text(&d, "yyyy//MM"), "2008//08");
+        assert_eq!(mask_text(&d, ""), "");
     }
 
     #[test]
     fn format_mask_single_token_letters_are_still_tokens() {
-        // A documented limitation: a lone token letter is a token even inside a would-be word, so a
-        // literal 's' (seconds) cannot appear without escaping (not built). Deliberate, not a bug.
-        assert_eq!(format_with_mask(&dt(2008, 8, 4, 0, 0, 30), "s"), "30");
+        // A lone token letter is a token even inside a would-be word, so a literal 's' (seconds)
+        // needs quoting. Deliberate, not a bug - and quoting now exists to say so.
+        assert_eq!(mask_text(&dt(2008, 8, 4, 0, 0, 30), "s"), "30");
+    }
+
+    /// R2-C1. The 12-hour clock with a designator is how the US market writes time (docs/02 section
+    /// 7) - one of the two MVP markets - and the mask exists to match the target app's exact output.
+    /// `h:mm tt` used to render `h:05 tt`: raw mask letters in a string shaped like a formatted time.
+    #[test]
+    fn format_mask_has_a_twelve_hour_clock_and_a_designator() {
+        // The measured case from the audit, now rendering as .NET would.
+        let morning = dt(2026, 3, 7, 9, 5, 3);
+        assert_eq!(mask_text(&morning, "M/d/yyyy h:mm tt"), "3/7/2026 9:05 AM");
+
+        // Midnight and noon are 12, not 0 - the rule most home-made conversions get wrong.
+        assert_eq!(mask_text(&dt(2026, 3, 7, 0, 30, 0), "h:mm tt"), "12:30 AM");
+        assert_eq!(mask_text(&dt(2026, 3, 7, 12, 30, 0), "h:mm tt"), "12:30 PM");
+        assert_eq!(mask_text(&dt(2026, 3, 7, 23, 0, 0), "hh:mm tt"), "11:00 PM");
+        assert_eq!(mask_text(&dt(2026, 3, 7, 1, 0, 0), "hh:mm t"), "01:00 A");
+
+        // `H` stays the 24-hour clock beside it - the case difference is the whole point.
+        assert_eq!(mask_text(&dt(2026, 3, 7, 23, 0, 0), "H h"), "23 11");
+    }
+
+    /// A mask the vocabulary does not fully understand must SAY so. Passing letters through silently
+    /// produces a string that looks like a result, and the reader blames their own typo (rule 6).
+    #[test]
+    fn format_mask_reports_letter_runs_it_does_not_know() {
+        let d = dt(2008, 8, 4, 13, 5, 0);
+
+        // Punctuation is never reported - a mask is made of it, and naming it would bury the finding.
+        assert!(format_with_mask(&d, "yyyy-MM-dd HH:mm:ss").unknown.is_empty());
+        assert!(format_with_mask(&d, "yyyy//MM").unknown.is_empty());
+
+        // Letters that are not tokens are reported once each, in the order they first appear.
+        let r = format_with_mask(&d, "year=yyyy");
+        assert_eq!(r.text, "year=2008", "the text still renders - this is a warning, not a refusal");
+        assert_eq!(r.unknown, vec!["y".to_string(), "e".into(), "a".into(), "r".into()]);
+
+        // A repeat is listed once, not once per occurrence.
+        assert_eq!(format_with_mask(&d, "zz-zz").unknown, vec!["zz".to_string()]);
+
+        // A run of a token letter at an unknown LENGTH is unknown too: `yyy` is not a year.
+        assert_eq!(format_with_mask(&d, "yyy").unknown, vec!["yyy".to_string()]);
+    }
+
+    /// Quoting is the answer the warning above points at, so it has to exist and work.
+    #[test]
+    fn format_mask_quotes_literal_text() {
+        let d = dt(2008, 8, 4, 13, 5, 0);
+
+        // The letters inside quotes are text, and nothing is reported.
+        let r = format_with_mask(&d, "'year=' yyyy");
+        assert_eq!(r.text, "year= 2008");
+        assert!(r.unknown.is_empty(), "quoted text is not an unknown token: {:?}", r.unknown);
+
+        // Without quotes the same word is eaten by tokens - `d` becomes the day and `t` the PM
+        // designator, so "date=" renders "4aPe=". This is exactly why quoting had to come with the
+        // new `t` token: adding a token silently changes what every unquoted mask means.
+        assert_eq!(mask_text(&d, "date=yyyy"), "4aPe=2008");
+        assert_eq!(mask_text(&d, "'date='yyyy"), "date=2008");
+
+        // Doubled quotes are one apostrophe.
+        assert_eq!(mask_text(&d, "''"), "'");
+        assert_eq!(mask_text(&d, "'o''clock'"), "o'clock");
+
+        // An unterminated quote takes the rest and is REPORTED - rendering it silently would produce
+        // something other than what was written, with no way to notice.
+        let open = format_with_mask(&d, "yyyy 'text");
+        assert_eq!(open.text, "2008 text");
+        assert_eq!(open.unknown, vec!["'".to_string()]);
     }
 }

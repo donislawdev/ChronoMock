@@ -347,6 +347,8 @@ public sealed class CalculatorViewModel : ObservableObject
     private string _customFormatMask = string.Empty;
     private string _customFormatResult = string.Empty;
     private bool _hasCustomFormat;
+    private string _customFormatWarning = string.Empty;
+    private bool _hasCustomFormatWarning;
     private string _resultMomentLocal = string.Empty;
     private int _resultZoneBias;
     private bool _computedOnce;
@@ -626,6 +628,15 @@ public sealed class CalculatorViewModel : ObservableObject
 
     /// <summary>Whether a custom-format result is present (a non-empty mask produced a value), gating its row.</summary>
     public bool HasCustomFormat { get => _hasCustomFormat; private set => Set(ref _hasCustomFormat, value); }
+
+    /// <summary>Why the custom-format line may not be what the reader expects: the letter runs the engine
+    /// did not recognise, which it passed through as text. Empty when the mask was fully understood.
+    /// Without this the row shows raw mask letters inside something shaped like a date, and the reader's
+    /// first guess is their own typo rather than an unbuilt token (rule 6).</summary>
+    public string CustomFormatWarning { get => _customFormatWarning; private set => Set(ref _customFormatWarning, value); }
+
+    /// <summary>Whether to show <see cref="CustomFormatWarning"/> beneath the custom-format row.</summary>
+    public bool HasCustomFormatWarning { get => _hasCustomFormatWarning; private set => Set(ref _hasCustomFormatWarning, value); }
 
     /// <summary>Whether the current result can go to the substitution panel: a valid moment whose zone the
     /// substitution offers, so it transfers with its zone and never as a bare local date (rule 2).</summary>
@@ -1182,6 +1193,17 @@ public sealed class CalculatorViewModel : ObservableObject
         var custom = moment.CustomFormat ?? string.Empty;
         CustomFormatResult = custom;
         HasCustomFormat = custom.Length > 0;
+
+        // The engine names the letter runs it did not recognise. They ARE in the line above, verbatim,
+        // so the row without this warning reads as a rendered date that happens to contain letters.
+        var unknown = moment.CustomFormatUnknown;
+        HasCustomFormatWarning = HasCustomFormat && unknown is { Count: > 0 };
+        CustomFormatWarning = HasCustomFormatWarning
+            ? string.Format(
+                System.Globalization.CultureInfo.InvariantCulture,
+                Tr("calc.fmt.unknown_tokens"),
+                string.Join(", ", unknown!))
+            : string.Empty;
 
         MetadataLine = BuildMetadataLine(moment.Metadata);
         HasResult = true;

@@ -33,6 +33,32 @@ public class CalcClientTests
         Assert.Equal(1790812799L, r.Moment.Formats.EpochSeconds!.Value);
         Assert.True(r.Moment.Metadata.BusinessDay is true);
         Assert.Contains("end_of_quarter", r.Moment.Significance);
+        // Absent when the engine understood the whole mask - the common case must stay clean, so the
+        // client shows no warning rather than an empty one.
+        Assert.Null(r.Moment.CustomFormatUnknown);
+    }
+
+    /// <summary>A mask the engine only partly understands renders anyway, with the letters it did not
+    /// know passed through as text. The client has to receive that list, because the rendered string
+    /// alone looks like a formatted date and gives the reader nothing to notice.</summary>
+    [Fact]
+    public void Parses_the_unknown_mask_tokens_beside_the_custom_format()
+    {
+        const string json = """
+        {"schema":"chronomock.calc/1","moment":{"iso":"2026-03-07T09:05:03","zone_bias_min":0,
+         "base":"2026-03-07T09:05:03","steps":[],
+         "formats":{"iso_date":"2026-03-07","iso_datetime":"2026-03-07T09:05:03+00:00","us":"03/07/2026",
+                    "pl":"07.03.2026","epoch_seconds":1772874303,"epoch_millis":1772874303000,
+                    "filetime":133857194030000000,"rfc1123":"Sat, 07 Mar 2026 09:05:03 GMT"},
+         "metadata":{"weekday":"Saturday","iso_week_year":2026,"iso_week":10,"us_week":10,
+                     "day_of_year":66,"quarter":1,"is_leap_year":false,"days_from_today":0,
+                     "business_day":null,"holiday":null},
+         "significance":[],
+         "custom_format":"year=2026","custom_format_unknown":["y","e","a","r"]}}
+        """;
+        var r = JsonSerializer.Deserialize<CalcResult>(json, ProtocolJson.Options)!;
+        Assert.Equal("year=2026", r.Moment!.CustomFormat);
+        Assert.Equal(new[] { "y", "e", "a", "r" }, r.Moment.CustomFormatUnknown);
     }
 
     [Fact]

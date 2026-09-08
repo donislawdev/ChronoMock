@@ -445,7 +445,7 @@
                  to, and on LostFocus the mask reached the view model only if the tester happened to
                  click elsewhere. Measured on the running window: the mask sat in the box and the result
                  row stayed absent until focus left. A partly typed mask is always a valid mask (an
-                 unknown token run is emitted literally, it never fails), so every intermediate state is
+                 unknown token run is passed through as text and reported, never a failure), so every intermediate state is
                  a meaningful preview rather than an error flash, and the 250 ms quiet period in the
                  setter still costs one evaluation per pause, not one per keystroke. -->
             <ui:TextBox x:Name="CustomFormatBox" Margin="{StaticResource SpaceXs}" FontFamily="{StaticResource FontFamilyMono}"
@@ -465,6 +465,13 @@
               <Button Grid.Column="1" Content="{DynamicResource calc.copy}" Click="OnCopyFormatClick"
                       Tag="{Binding CustomFormatResult}" FontSize="{StaticResource FontSizeCaption}" />
             </Grid>
+            <!-- Why the line above may not be what the reader expects: letter runs the engine does not
+                 know are passed through as text, so the result LOOKS formatted while carrying raw mask
+                 letters. Below the row, mirroring the base validation message, so it never shifts it. -->
+            <TextBlock Text="{Binding CustomFormatWarning}"
+                       Visibility="{Binding HasCustomFormatWarning, Converter={StaticResource BoolToVis}}"
+                       Margin="{StaticResource SpaceXs}" TextWrapping="Wrap"
+                       FontSize="{StaticResource FontSizeCaption}" Foreground="{DynamicResource BrushStatusPartial}" />
 
             <TextBlock Text="{DynamicResource calc.metadata}" Margin="{StaticResource SpaceXs}"
                        FontSize="{StaticResource FontSizeCaption}" FontWeight="SemiBold"
