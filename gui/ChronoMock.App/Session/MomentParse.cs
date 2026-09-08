@@ -40,9 +40,15 @@ internal static partial class MomentParse
 
         if (!DateTime.TryParseExact(d, DatePattern, CultureInfo.InvariantCulture, DateTimeStyles.None, out var date))
         {
-            // A well-shaped but impossible date (2025-04-31) gets a different message than a wrong shape
-            // (a Polish 28.02.2025 or a US 02/28/2025), which is rejected rather than silently reinterpreted.
-            var key = IsoDateShape().IsMatch(d) ? "moment.date_invalid" : "moment.date_format";
+            // Three different reasons, three different messages. A well-shaped but impossible date
+            // (2025-04-31) is not the same problem as a wrong shape (a Polish 28.02.2025 or a US
+            // 02/28/2025), and neither is a year this window cannot hold: the engine computes on
+            // -262143..=262143 while DateTime stops at 1..=9999, so a calculator result like
+            // -0974-01-01 arrives here perfectly well-formed and simply out of range. Telling that
+            // reader to "use the form YYYY-MM-DD" sends them to fix a shape that is already right.
+            var key = IsoDateShape().IsMatch(d) ? "moment.date_invalid"
+                : WideYearIsoShape().IsMatch(d) ? "moment.date_year_range"
+                : "moment.date_format";
             return new MomentResult(false, string.Empty, MomentPart.Date, key);
         }
 
@@ -85,4 +91,10 @@ internal static partial class MomentParse
 
     [GeneratedRegex(@"^\d{4}-\d{2}-\d{2}$")]
     private static partial Regex IsoDateShape();
+
+    /// <summary>An ISO date whose YEAR is outside what <see cref="DateTime"/> holds: negative, or more
+    /// than four digits. The engine's band is far wider, so its own output can land here - the shape is
+    /// right and only the year is unreachable, which is a different message.</summary>
+    [GeneratedRegex(@"^(-\d{1,6}|\d{5,6})-\d{2}-\d{2}$")]
+    private static partial Regex WideYearIsoShape();
 }

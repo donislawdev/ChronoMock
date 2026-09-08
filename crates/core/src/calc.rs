@@ -1205,6 +1205,12 @@ pub enum DateReading {
     UsMonthDay,
     /// The Polish / European reading of a numeric date: day first (DD/MM/YYYY).
     PlDayMonth,
+    /// A bare number read as Unix epoch SECONDS.
+    EpochSeconds,
+    /// A bare number read as Unix epoch MILLISECONDS. A bare number is genuinely ambiguous between
+    /// the two - `1740607200` is a plausible instant in seconds and another in milliseconds - so both
+    /// are offered, the same way an ambiguous month/day order is (docs/02 8.1).
+    EpochMillis,
 }
 
 impl DateReading {
@@ -1214,6 +1220,8 @@ impl DateReading {
             DateReading::Iso => "iso",
             DateReading::UsMonthDay => "us_month_day",
             DateReading::PlDayMonth => "pl_day_month",
+            DateReading::EpochSeconds => "epoch_seconds",
+            DateReading::EpochMillis => "epoch_millis",
         }
     }
 
@@ -1223,6 +1231,8 @@ impl DateReading {
             DateReading::Iso => "ISO 8601",
             DateReading::UsMonthDay => "US MM/DD/YYYY",
             DateReading::PlDayMonth => "PL DD/MM/YYYY",
+            DateReading::EpochSeconds => "Unix epoch seconds",
+            DateReading::EpochMillis => "Unix epoch milliseconds",
         }
     }
 }
@@ -1242,6 +1252,36 @@ impl DateAnalysis {
     }
 }
 
+/// Read a bare number as an epoch, in seconds and in milliseconds, returning every reading whose
+/// year this build computes on. `None` when the input is not a bare number at all, which is what
+/// lets the caller fall through to the dated formats.
+///
+/// Both units are offered rather than one guessed from magnitude. A magnitude rule reads well until
+/// it does not: `1000000000` is September 2001 in seconds and January 1970 in milliseconds, and both
+/// are instants a tester might paste from a log. Choosing by size would silently pick one, which is
+/// the thing this analyser refuses to do for month/day order too. A reading whose year falls outside
+/// the computable band is dropped rather than shown wrong - if that leaves nothing, the input is not
+/// a usable epoch and the caller reports it unrecognised.
+fn epoch_readings(s: &str, zone_bias_min: i32) -> Option<Vec<(DateReading, CivilDateTime)>> {
+    let digits = s.strip_prefix('-').unwrap_or(s);
+    if digits.is_empty() || !digits.chars().all(|c| c.is_ascii_digit()) {
+        return None;
+    }
+    let n: i64 = s.parse().ok()?;
+    let mut readings = Vec::with_capacity(2);
+    for (reading, secs) in [
+        (DateReading::EpochSeconds, Some(n)),
+        (DateReading::EpochMillis, Some(n.div_euclid(1_000))),
+    ] {
+        let Some(secs) = secs else { continue };
+        let civil = epoch_secs_to_civil(secs, zone_bias_min);
+        if crate::civil_year_in_band(civil.year) {
+            readings.push((reading, civil));
+        }
+    }
+    (!readings.is_empty()).then_some(readings)
+}
+
 /// A civil date at midnight, or None if the month or day cannot exist - the validity gate that
 /// turns a candidate month/day order into a real date (month 13 and Feb 30 are rejected).
 fn civil_date(year: i64, month: i64, day: i64) -> Option<CivilDateTime> {
@@ -1254,12 +1294,23 @@ fn civil_date(year: i64, month: i64, day: i64) -> Option<CivilDateTime> {
 /// Recognise a pasted date and return its reading(s). ISO (dash-separated, optional time) is
 /// unambiguous - a slash- or dot-separated `N/N/YYYY` yields the US and PL readings, keeping only
 /// the ones that form a real date (so 29/02 is PL-only, 02/29 US-only, 02/30 an error, 05/05 one).
-/// Formats beyond these - epoch, FILETIME, RFC 1123, year-first numeric - are honestly not
-/// recognised yet (an error, never a guess).
-pub fn analyze_date(input: &str) -> Result<DateAnalysis, String> {
+/// A bare number is a Unix epoch, read in `zone_bias_min`, in seconds and in milliseconds - both,
+/// because a number carries no unit and choosing one would be a guess (docs/02 8.1).
+/// FILETIME, RFC 1123 and year-first numeric are honestly not recognised yet (an error, never a
+/// guess).
+///
+/// `zone_bias_min` is the session zone: only the epoch readings depend on it, because only they
+/// start from an instant rather than from civil fields someone already wrote down (rule 2).
+pub fn analyze_date(input: &str, zone_bias_min: i32) -> Result<DateAnalysis, String> {
     let s = input.trim();
     if s.is_empty() {
         return Err("empty input".into());
+    }
+    // A bare number: epoch. Checked BEFORE the separator dispatch, and it cannot collide with the
+    // dated forms - those all carry a separator, and this one may carry nothing but digits and a
+    // leading minus (pre-1970 instants are real and this tool exists to reach them).
+    if let Some(readings) = epoch_readings(s, zone_bias_min) {
+        return Ok(DateAnalysis { readings });
     }
     // ISO: dash-separated, with or without a time (midnight if the time is absent).
     if s.contains('-') {
@@ -1274,7 +1325,13 @@ pub fn analyze_date(input: &str) -> Result<DateAnalysis, String> {
         _ => return Err(format!("unrecognised date format '{input}'")),
     };
     let parts: Vec<&str> = s.split(sep).collect();
-    if parts.len() != 3 || parts[2].len() != 4 {
+    // Four DIGITS, not four characters. Length alone let `-999` through - four characters that parse
+    // as a year and produce a perfectly real date in 999 BC, from input the error message promised to
+    // reject. The check has to mean what it says (R2-C3).
+    if parts.len() != 3
+        || parts[2].len() != 4
+        || !parts[2].chars().all(|c| c.is_ascii_digit())
+    {
         return Err(format!("expected N{sep}N{sep}YYYY, got '{input}'"));
     }
     let num = |p: &str| p.parse::<i64>().map_err(|_| format!("bad number in '{input}'"));
@@ -2139,17 +2196,17 @@ mod tests {
 
     #[test]
     fn analyze_iso_is_a_single_reading() {
-        let a = analyze_date("2008-08-04").unwrap();
+        let a = analyze_date("2008-08-04", 0).unwrap();
         assert!(!a.is_ambiguous());
         assert_eq!(a.readings, vec![(DateReading::Iso, dt(2008, 8, 4, 0, 0, 0))]);
         // A time component is kept.
-        assert_eq!(analyze_date("1990-08-03T23:59:59").unwrap().readings[0].1, dt(1990, 8, 3, 23, 59, 59));
+        assert_eq!(analyze_date("1990-08-03T23:59:59", 0).unwrap().readings[0].1, dt(1990, 8, 3, 23, 59, 59));
     }
 
     #[test]
     fn analyze_ambiguous_numeric_shows_both_us_and_pl() {
         // 04/08/2008: April 8 (US) and August 4 (PL) - both valid, both shown, US first.
-        let a = analyze_date("04/08/2008").unwrap();
+        let a = analyze_date("04/08/2008", 0).unwrap();
         assert!(a.is_ambiguous());
         assert_eq!(
             a.readings,
@@ -2159,24 +2216,78 @@ mod tests {
             ]
         );
         // Dots read the same way.
-        assert!(analyze_date("04.08.2008").unwrap().is_ambiguous());
+        assert!(analyze_date("04.08.2008", 0).unwrap().is_ambiguous());
+    }
+
+    /// R2-C3. The year check counted CHARACTERS, not digits, so a four-character run that merely
+    /// PARSES as a number was taken for a year: `12/25/+999` produced a date in 999, from input the
+    /// error message beside it promises to reject as not `N/N/YYYY`.
+    ///
+    /// 🔴 The case that proves it is `+999`, not `-999`. A minus makes the string contain a dash, so
+    /// it is dispatched to the ISO branch long before this check and refused there for a different
+    /// reason - a test written on the minus passes with the bug still in place. Checked by reverting.
+    #[test]
+    fn a_numeric_date_needs_four_year_digits_not_four_characters() {
+        for bad in ["12/25/+999", "12.25.+999", "12/25/+009"] {
+            assert!(
+                analyze_date(bad, 0).is_err(),
+                "'{bad}' has no four-digit year and must be refused"
+            );
+        }
+        // The neighbours still work, so this narrowed nothing it should not have.
+        assert!(analyze_date("12/25/0999", 0).is_ok());
+        assert!(analyze_date("12/25/2026", 0).is_ok());
+    }
+
+    /// R2-C5. docs/02 8.1 lists epoch among the formats the analyser recognises, and it did not -
+    /// pasting a number out of a log, the commonest thing a tester has in hand, was an error. A bare
+    /// number carries no unit, so both readings are offered rather than one picked by magnitude.
+    #[test]
+    fn a_bare_number_reads_as_epoch_in_both_units() {
+        let a = analyze_date("1740607200", 0).unwrap();
+        assert!(a.is_ambiguous(), "seconds and milliseconds are both plausible readings");
+        assert_eq!(
+            a.readings,
+            vec![
+                (DateReading::EpochSeconds, dt(2025, 2, 26, 22, 0, 0)),
+                (DateReading::EpochMillis, dt(1970, 1, 21, 3, 30, 7)),
+            ]
+        );
+
+        // Epoch is an INSTANT, so the reading follows the session zone - the same rule every other
+        // instant in this product obeys (untouchable rule 2).
+        let east = analyze_date("1740607200", -120).unwrap();
+        assert_eq!(east.readings[0].1, dt(2025, 2, 27, 0, 0, 0));
+
+        // Zero and negative numbers are real instants this tool exists to reach.
+        assert_eq!(analyze_date("0", 0).unwrap().readings[0].1, dt(1970, 1, 1, 0, 0, 0));
+        assert_eq!(analyze_date("-7200", 0).unwrap().readings[0].1, dt(1969, 12, 31, 22, 0, 0));
+
+        // A number is only an epoch when it is ONLY a number - a dated form still parses as a date.
+        assert_eq!(analyze_date("2008-08-04", 0).unwrap().readings[0].0, DateReading::Iso);
+        assert!(analyze_date("12/25/2026", 0).unwrap().readings.iter().all(|(r, _)| *r
+            != DateReading::EpochSeconds));
+
+        // Still honest about what it cannot read, rather than reaching for a number inside it.
+        assert!(analyze_date("Wed, 26 Feb 2025 22:00:00 GMT", 0).is_err());
+        assert!(analyze_date("133850880000000000x", 0).is_err());
     }
 
     #[test]
     fn analyze_resolves_when_only_one_order_is_valid() {
         // 29/02/2024: "month 29" is impossible, so only the PL reading (Feb 29, a leap day).
         assert_eq!(
-            analyze_date("29/02/2024").unwrap().readings,
+            analyze_date("29/02/2024", 0).unwrap().readings,
             vec![(DateReading::PlDayMonth, dt(2024, 2, 29, 0, 0, 0))]
         );
         // 02/29/2024: the mirror - US only.
         assert_eq!(
-            analyze_date("02/29/2024").unwrap().readings,
+            analyze_date("02/29/2024", 0).unwrap().readings,
             vec![(DateReading::UsMonthDay, dt(2024, 2, 29, 0, 0, 0))]
         );
         // 25/12/2008: "month 25" impossible - PL only.
         assert_eq!(
-            analyze_date("25/12/2008").unwrap().readings,
+            analyze_date("25/12/2008", 0).unwrap().readings,
             vec![(DateReading::PlDayMonth, dt(2008, 12, 25, 0, 0, 0))]
         );
     }
@@ -2184,19 +2295,19 @@ mod tests {
     #[test]
     fn analyze_same_date_both_orders_is_not_ambiguous() {
         // 05/05/2008 reads the same either way - one reading, not two.
-        let a = analyze_date("05/05/2008").unwrap();
+        let a = analyze_date("05/05/2008", 0).unwrap();
         assert!(!a.is_ambiguous());
         assert_eq!(a.readings, vec![(DateReading::UsMonthDay, dt(2008, 5, 5, 0, 0, 0))]);
     }
 
     #[test]
     fn analyze_rejects_the_unrepresentable_and_unrecognised() {
-        assert!(analyze_date("02/30/2008").is_err()); // Feb 30 in neither order
-        assert!(analyze_date("13/13/2008").is_err()); // month 13 in neither order
-        assert!(analyze_date("").is_err());
-        assert!(analyze_date("hello").is_err());
-        assert!(analyze_date("04/08/08").is_err()); // year not four digits
-        assert!(analyze_date("2008/08/04").is_err()); // year-first numeric not recognised yet
+        assert!(analyze_date("02/30/2008", 0).is_err()); // Feb 30 in neither order
+        assert!(analyze_date("13/13/2008", 0).is_err()); // month 13 in neither order
+        assert!(analyze_date("", 0).is_err());
+        assert!(analyze_date("hello", 0).is_err());
+        assert!(analyze_date("04/08/08", 0).is_err()); // year not four digits
+        assert!(analyze_date("2008/08/04", 0).is_err()); // year-first numeric not recognised yet
     }
 
     // --- custom format mask --------------------------------------------------

@@ -99,7 +99,7 @@ pub(crate) fn calc_run(argv: &[String]) -> i32 {
     // Reverse analysis (7.3): with --analyze, interpret a pasted date instead of building a moment.
     // The build flags (--base/--shift/...) do not apply. --calendar and --zone still do.
     if let Some(input) = &ca.analyze {
-        return match chrono_core::calc::analyze_date(input) {
+        return match chrono_core::calc::analyze_date(input, zone_bias) {
             Ok(analysis) => {
                 if ca.json {
                     println!("{}", calc_analysis_json(&analysis, input, &now, Some(zone_bias), calendar.as_ref()));
@@ -717,7 +717,21 @@ pub(crate) fn render_analysis(
 ) -> String {
     let mut out = String::from("Chrono Mock - date analysis\n");
     if analysis.is_ambiguous() {
-        out.push_str(&format!("  input:   {input}  (ambiguous - month/day order differs by locale)\n"));
+        // Name the RIGHT ambiguity. Two readings mean either a month/day order that differs by
+        // locale, or a bare number that carries no unit - and telling a reader their epoch is a
+        // locale problem sends them to change a setting that has nothing to do with it.
+        let reason = if analysis.readings.iter().any(|(r, _)| {
+            matches!(
+                r,
+                chrono_core::calc::DateReading::EpochSeconds
+                    | chrono_core::calc::DateReading::EpochMillis
+            )
+        }) {
+            "a bare number carries no unit"
+        } else {
+            "month/day order differs by locale"
+        };
+        out.push_str(&format!("  input:   {input}  (ambiguous - {reason})\n"));
     } else {
         out.push_str(&format!("  input:   {input}\n"));
     }
@@ -1077,7 +1091,7 @@ mod tests {
 
     #[test]
     fn render_analysis_shows_both_readings_for_an_ambiguous_date() {
-        let analysis = chrono_core::calc::analyze_date("04/08/2008").unwrap();
+        let analysis = chrono_core::calc::analyze_date("04/08/2008", 0).unwrap();
         let now = chrono_core::calc::CivilDateTime { year: 2026, month: 8, day: 25, hour: 0, minute: 0, second: 0 };
         let text = render_analysis(&analysis, "04/08/2008", &now, Some(0), None);
         assert!(text.contains("ambiguous"), "got:\n{text}");
@@ -1112,7 +1126,7 @@ mod tests {
 
     #[test]
     fn calc_analysis_json_shows_both_readings_with_stable_keys() {
-        let analysis = chrono_core::calc::analyze_date("04/08/2008").unwrap();
+        let analysis = chrono_core::calc::analyze_date("04/08/2008", 0).unwrap();
         let now = chrono_core::calc::CivilDateTime { year: 2026, month: 8, day: 26, hour: 0, minute: 0, second: 0 };
         let json = calc_analysis_json(&analysis, "04/08/2008", &now, Some(0), None);
         let v: serde_json::Value = serde_json::from_str(&json).unwrap();
@@ -1130,7 +1144,7 @@ mod tests {
     #[test]
     fn render_analysis_names_a_holiday_with_a_calendar() {
         // 07/04/2026: the US reading is Independence Day (a Saturday), named only with a calendar.
-        let analysis = chrono_core::calc::analyze_date("07/04/2026").unwrap();
+        let analysis = chrono_core::calc::analyze_date("07/04/2026", 0).unwrap();
         let now = chrono_core::calc::CivilDateTime { year: 2026, month: 1, day: 1, hour: 0, minute: 0, second: 0 };
         let cal = test_calendar();
         let text = render_analysis(&analysis, "07/04/2026", &now, Some(0), Some(&cal));

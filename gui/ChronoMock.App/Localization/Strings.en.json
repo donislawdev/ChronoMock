@@ -48,6 +48,7 @@
   "moment.date_empty": "Enter a date.",
   "moment.date_format": "Use the form YYYY-MM-DD.",
   "moment.date_invalid": "That date does not exist.",
+  "moment.date_year_range": "That year is outside the range this window handles (1-9999). The calculator computes on a wider band.",
   "moment.time_format": "Use HH:MM (24-hour).",
   // Reads the typed moment back in plain language (chrono-mock 7.1 pt 3). Only a lead-in: the date itself is formatted in the interface culture, so no sentence has to be assembled from fragments.
   "moment.preview_label": "The application will see",
