@@ -27,11 +27,18 @@
         którym z dwóch rdzeni jest ten plik i jaką wersję protokołu mówi. Jedna linia na
         standardowym wyjściu, więc skrypt może ją przechwycić.
       </p>
+      <p>
+        <code>chrono license</code> odpowiada na czwarte: na jakiej licencji jest ta wersja, jaka
+        jest klauzula braku gwarancji i jakie komponenty obce są w niej wkompilowane. Mówi też,
+        gdzie na dysku leży pełny tekst licencji i noty komponentów obcych, a gdy uruchomiona
+        kopia ich obok siebie nie ma, przyznaje to wprost.
+      </p>
     </div>
 
     <pre class="term"><span class="p">chrono</span> run &lt;target&gt; [options]
 <span class="p">chrono</span> calc [options]
 <span class="p">chrono</span> version        <span class="c"># chrono {{version}} (x64, protocol 1)</span>
+<span class="p">chrono</span> license        <span class="c"># GPL-3.0-only, and what is bundled</span>
 <span class="p">chrono</span> --help          <span class="c"># usage for all of them</span></pre>
   </section>
 

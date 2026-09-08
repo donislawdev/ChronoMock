@@ -11,6 +11,14 @@ Notable changes to Chrono Mock, newest first. The format follows
 - **`chrono version`**, also spelled `--version` and `-V`. Prints the build, which of the two
   cores that executable is, and the wire protocol it speaks, on stdout so a script can capture
   it. Until now the tool could not answer the first question any bug report asks.
+- **`chrono license`**, also spelled `--license`. Prints the licence this build is distributed
+  under, the copyright line, the warranty disclaimer the GNU GPL asks a program to state, and the
+  third-party components linked into that binary. It also names where the full licence text and
+  the third-party notices are on disk, looking beside the executable and in the directories above
+  it, since the two packages place them differently. A copy taken out of its package has neither
+  file, and the notice says so and points at the licence text online rather than printing a path
+  that leads nowhere. The licence itself is read from the build metadata, so what the program says
+  and what the dependency audit checks cannot drift apart.
 - **The version in the window title and title bar**, so a screenshot says which build it came
   from without anyone having to ask.
 - **A start moment relative to now, in the window.** The command line has always taken

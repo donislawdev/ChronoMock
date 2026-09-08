@@ -28,11 +28,18 @@
         is, which of the two cores the executable is, and the protocol version it speaks. One
         line on stdout, so a script can capture it.
       </p>
+      <p>
+        <code>chrono license</code> answers the fourth: the licence this build is distributed
+        under, the warranty disclaimer, and the third-party components linked into it. It also
+        says where the full licence text and the third-party notices are on disk, or admits it
+        when the copy you are running does not have them beside it.
+      </p>
     </div>
 
     <pre class="term"><span class="p">chrono</span> run &lt;target&gt; [options]
 <span class="p">chrono</span> calc [options]
 <span class="p">chrono</span> version        <span class="c"># chrono {{version}} (x64, protocol 1)</span>
+<span class="p">chrono</span> license        <span class="c"># GPL-3.0-only, and what is bundled</span>
 <span class="p">chrono</span> --help          <span class="c"># usage for all of them</span></pre>
   </section>
 

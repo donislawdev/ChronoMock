@@ -1,11 +1,39 @@
-//! Command surface: the product version, the target bitness, and the two usage texts.
+//! Command surface: the product version, the licence notice, the target bitness, and the usage texts.
 //!
 //! Split out of `main.rs` so the crate root is a dispatcher and nothing else. The usage strings are
 //! CLI text, which is English-only by rule 15 - they are not translation keys and never will be.
 
+use std::path::{Path, PathBuf};
+
 use chrono_proto::PROTOCOL_VERSION;
 
 pub(crate) const CORE_VERSION: &str = env!("CARGO_PKG_VERSION");
+
+/// The licence this build is distributed under, read from the manifest instead of retyped here.
+/// Cargo resolves the workspace's `license` field before it sets this, so the answer `chrono license`
+/// gives and the metadata `cargo deny check licenses` reads cannot drift apart.
+pub(crate) const LICENSE_SPDX: &str = env!("CARGO_PKG_LICENSE");
+
+/// The copyright holder. The GUI half states the same line in `gui/Directory.Build.props`, and a test
+/// below reads that file, so the two halves of one product cannot end up claiming different years.
+const COPYRIGHT: &str = "Copyright (C) 2026 DonislawDev";
+
+/// Where the full text of the GNU GPL lives when the shipped copy is not on disk.
+const GPL_URL: &str = "https://www.gnu.org/licenses/gpl-3.0.html";
+
+/// Third-party components linked into THIS binary, and the licence each is taken under. Deliberately
+/// not the whole notices file: the GUI bundles WPF-UI as well, and a CLI that named a component it
+/// does not contain would be describing someone else's binary.
+const BUNDLED: [(&str, &str); 2] = [
+    ("Rust crates, statically linked", "MIT"),
+    ("MinHook, a vendored C library inside chrono_hook.dll", "BSD-2-Clause"),
+];
+
+/// How far up from the executable the licence files are looked for. Three, because the shipped
+/// layouts differ and all three are real: the CLI package puts both files beside `chrono.exe`, its
+/// x86 core one level below that, and the GUI package keeps the cores in `core/x64` and `core/x86`
+/// with the files at the package root (`packaging/build-dist.ps1`).
+const LICENSE_SEARCH_DEPTH: usize = 3;
 
 /// The single line `chrono version` prints.
 ///
@@ -25,6 +53,90 @@ pub(crate) fn print_version() {
     println!("{}", version_line());
 }
 
+/// Where a distribution's two licence files actually are, or `None` when they are not on disk near
+/// this executable.
+///
+/// Looked up rather than assumed. Copying `chrono.exe` out of the package on its own is an ordinary
+/// thing to do, and a notice pointing at a `LICENSE` that is not there would be the tool making a
+/// promise the copy does not keep - the same honesty the rest of the reporting is held to.
+pub(crate) struct LicenseFiles {
+    license: Option<PathBuf>,
+    notices: Option<PathBuf>,
+}
+
+/// Look for the licence files beside the running executable and in the directories above it.
+pub(crate) fn find_license_files() -> LicenseFiles {
+    let mut dirs: Vec<PathBuf> = Vec::new();
+    if let Ok(exe) = std::env::current_exe() {
+        let mut next = exe.parent().map(Path::to_path_buf);
+        while dirs.len() < LICENSE_SEARCH_DEPTH {
+            let Some(dir) = next else { break };
+            next = dir.parent().map(Path::to_path_buf);
+            dirs.push(dir);
+        }
+    }
+    LicenseFiles {
+        license: first_file(&dirs, "LICENSE"),
+        notices: first_file(&dirs, "THIRD-PARTY-NOTICES.md"),
+    }
+}
+
+fn first_file(dirs: &[PathBuf], name: &str) -> Option<PathBuf> {
+    dirs.iter().map(|dir| dir.join(name)).find(|path| path.is_file())
+}
+
+/// One line naming a file the distribution should carry, or saying honestly that this copy does not
+/// have it. `missing` names where to get it, since a reader who sees the line is exactly the reader
+/// who cannot open the file.
+fn file_line(label: &str, found: Option<&PathBuf>, missing: &str) -> String {
+    match found {
+        Some(path) => format!("{label}: {}\n", path.display()),
+        None => format!("{label}: not next to this executable - {missing}\n"),
+    }
+}
+
+/// The notice `chrono license` prints.
+///
+/// Built as a value, and taking the file locations as data rather than reading the disk itself, so a
+/// test can see both halves of it: the copy that ships with its files, and the lone executable that
+/// does not.
+pub(crate) fn license_text(files: &LicenseFiles) -> String {
+    let mut out = format!(
+        "Chrono Mock {CORE_VERSION} ({})\n{COPYRIGHT}\nLicense {LICENSE_SPDX} <{GPL_URL}>\n\n",
+        this_bitness()
+    );
+    out.push_str(
+        "This program comes with ABSOLUTELY NO WARRANTY, to the extent permitted by law. It is free\n\
+         software, and you are welcome to redistribute it under the conditions of the GNU General\n\
+         Public License version 3.\n\n",
+    );
+    out.push_str(&file_line("Full licence text", files.license.as_ref(), &format!("read it at {GPL_URL}")));
+    out.push_str(&file_line(
+        "Third-party notices",
+        files.notices.as_ref(),
+        "THIRD-PARTY-NOTICES.md ships with every release",
+    ));
+    out.push_str("\nThird-party components linked into this build:\n");
+    for (component, licence) in BUNDLED {
+        // Licence first and padded, because the question a reader brings to this list is which
+        // licences are in the binary, not which components are.
+        out.push_str(&format!("  {licence:<14}{component}\n"));
+    }
+    out.push_str(
+        "The notices file above carries each component's own notice, and for the Rust crates every\n\
+         version and copyright line.\n",
+    );
+    out
+}
+
+/// `chrono license`, and the `--license` spelling of the same question.
+///
+/// On stdout and exit 0, for the same reason `chrono version` is: asking a question is a success, and
+/// the answer has to survive a pipe.
+pub(crate) fn print_license() {
+    print!("{}", license_text(&find_license_files()));
+}
+
 pub(crate) fn print_usage() {
     eprintln!("usage: chrono run <target> [--at <local-moment>] [--preset <id>] [--param id=value]... [--zone <+HH:MM>] [--mode <flow|frozen|xN>] [--scale-duration] [--scale-qpc] [--ticks N] [--timeout <s>] [--set-after T:M] [--jump-after T:moment] [--args \"...\"] [--cwd <dir>] [--report <path>] [--force] [--json]");
     eprintln!("       without --at (or --preset) the session clock starts at the real current time, so `--mode xN` alone just runs the target faster");
@@ -35,6 +147,7 @@ pub(crate) fn print_usage() {
     eprintln!("       (--preset supplies the moment and mode from presets/<id>.json, exclusive of --at/--mode/--scale-duration; --param fills its parameters, a trial start_date defaults to the target's file date)");
     print_calc_usage();
     eprintln!("usage: chrono version   (also --version, -V)   the build, which core it is, and the protocol it speaks");
+    eprintln!("usage: chrono license   (also --license)       the licence, the warranty disclaimer, and the bundled components");
 }
 
 pub(crate) fn print_calc_usage() {
@@ -75,5 +188,91 @@ mod tests {
         // One line, because `chrono version` in a script is read with a single capture and a second
         // line would silently become part of it.
         assert!(!line.contains('\n'), "the version answer must be one line: {line}");
+    }
+
+    fn repo_root() -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..").join("..")
+    }
+
+    /// The licence expression is taken from the manifest, so this is the canary that says the value
+    /// arrived at all AND that it is still the one the project ships under. A literal on purpose: an
+    /// assertion written against the constant itself would pass over an empty string, which is
+    /// exactly what a workspace field that failed to inherit would produce.
+    #[test]
+    fn the_notice_states_the_licence_the_warranty_and_the_bundled_components() {
+        assert_eq!(LICENSE_SPDX, "GPL-3.0-only", "the shipped licence changed, or the manifest field did not reach the binary");
+
+        let text = license_text(&LicenseFiles { license: None, notices: None });
+        assert!(text.contains("Chrono Mock"), "the notice must name the product: {text}");
+        assert!(text.contains(CORE_VERSION), "the notice must name the build: {text}");
+        assert!(text.contains(LICENSE_SPDX), "the notice must name the licence: {text}");
+        assert!(text.contains(COPYRIGHT), "the notice must carry the copyright line: {text}");
+        // The GPL asks a program to say this out loud, and it is the one sentence a user of a QA tool
+        // that injects code into their applications has a right to read without opening a file.
+        assert!(text.contains("ABSOLUTELY NO WARRANTY"), "the warranty disclaimer is missing: {text}");
+        for (component, licence) in BUNDLED {
+            assert!(text.contains(component), "component '{component}' missing from the notice");
+            assert!(text.contains(licence), "licence '{licence}' missing from the notice");
+        }
+    }
+
+    /// A `chrono.exe` copied out of its package has neither file beside it. The notice then says so
+    /// and says where to get them, rather than printing a path that leads nowhere - the same rule the
+    /// session report is held to, applied to the one text whose whole job is to be citable.
+    #[test]
+    fn a_copy_without_its_files_says_so_instead_of_naming_a_path() {
+        let lonely = license_text(&LicenseFiles { license: None, notices: None });
+        assert!(lonely.contains("not next to this executable"), "a missing file must be admitted: {lonely}");
+        assert!(lonely.contains(GPL_URL), "a missing licence text must say where to read it: {lonely}");
+
+        let packaged = license_text(&LicenseFiles {
+            license: Some(PathBuf::from(r"C:\pkg\LICENSE")),
+            notices: Some(PathBuf::from(r"C:\pkg\THIRD-PARTY-NOTICES.md")),
+        });
+        assert!(packaged.contains(r"C:\pkg\LICENSE"), "a present file must be named by path: {packaged}");
+        assert!(
+            !packaged.contains("not next to this executable"),
+            "a copy that has its files must not claim otherwise: {packaged}"
+        );
+    }
+
+    /// The notice names components in prose, the notices file carries their legal text, and nothing
+    /// links the two - so this does. A component swapped out in one place and left in the other is
+    /// the drift this catches, and it is the kind that only shows up in a licence audit.
+    ///
+    /// What it does NOT prove: the match is a substring over the whole file, and the file legitimately
+    /// mentions licences no component here is taken under (it says several crates are dual MIT OR
+    /// Apache-2.0). So a licence name that already appears somewhere would pass. Which licences may
+    /// enter the build at all is `cargo deny check licenses`, not this.
+    #[test]
+    fn every_component_the_notice_names_is_in_the_shipped_notices_file() {
+        let path = repo_root().join("THIRD-PARTY-NOTICES.md");
+        let notices = std::fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("the register the notice points at must exist at {}: {e}", path.display()));
+
+        assert!(notices.contains("MinHook"), "the notices file no longer carries the MinHook notice");
+        for (_, licence) in BUNDLED {
+            assert!(
+                notices.contains(licence),
+                "the notice claims '{licence}' for a bundled component, and the notices file does not mention it"
+            );
+        }
+        // The product's own licence, which the notices file states before any component's.
+        assert!(notices.contains("GPL-3.0"), "the notices file no longer names the product licence");
+    }
+
+    /// One product, two halves, one copyright line. The GUI states it in its build properties and the
+    /// CLI in the constant above, and nothing but this test stops the year in one of them from moving
+    /// alone - the same two-places problem the version number already has.
+    #[test]
+    fn the_copyright_line_matches_the_one_the_gui_ships() {
+        let path = repo_root().join("gui").join("Directory.Build.props");
+        let props = std::fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("the GUI build properties must be readable at {}: {e}", path.display()));
+        assert!(
+            props.contains(COPYRIGHT),
+            "the CLI says '{COPYRIGHT}' and {} does not - one of the two halves moved alone",
+            path.display()
+        );
     }
 }
