@@ -64,9 +64,49 @@
 
       <!-- Scenario chips: the accessible name is the scenario's own name, which the template shows - without
            this the peer would read the record's ToString(), as it would for any templated item. -->
+      <!-- 🔴 A REAL CHIP, not text that happens to be clickable. Under the stock item template these read
+           as eight loose phrases with wide gaps and no edges, so nothing said they could be pressed and
+           nothing showed which one was chosen - the selected state only appeared on hover. A drawn border
+           plus a filled selected state is the cheapest thing that turns a list of words into a control.
+           Selection is carried by the border and the text weight as well as by colour (zasady/13 9), so it
+           survives a monochrome screenshot and a colour-blind reader. -->
       <Style x:Key="ScenarioListItem" TargetType="ListBoxItem" BasedOn="{StaticResource {x:Type ListBoxItem}}">
         <Setter Property="AutomationProperties.Name" Value="{Binding DisplayName}" />
         <Setter Property="Margin" Value="{StaticResource SpaceXs}" />
+        <Setter Property="Padding" Value="10,6" />
+        <Setter Property="Foreground" Value="{DynamicResource BrushTextPrimary}" />
+        <Setter Property="Template">
+          <Setter.Value>
+            <ControlTemplate TargetType="ListBoxItem">
+              <Border x:Name="Chip"
+                      Background="{DynamicResource BrushBgSurfaceAlt}"
+                      BorderBrush="{DynamicResource BrushStroke}"
+                      BorderThickness="{StaticResource StrokeThinEdge}"
+                      CornerRadius="{StaticResource RadiusSm}"
+                      Padding="{TemplateBinding Padding}"
+                      SnapsToDevicePixels="True">
+                <ContentPresenter VerticalAlignment="Center" />
+              </Border>
+              <ControlTemplate.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                  <Setter TargetName="Chip" Property="BorderBrush" Value="{DynamicResource BrushAccent}" />
+                </Trigger>
+                <Trigger Property="IsSelected" Value="True">
+                  <Setter TargetName="Chip" Property="Background" Value="{DynamicResource BrushAccent}" />
+                  <Setter TargetName="Chip" Property="BorderBrush" Value="{DynamicResource BrushAccent}" />
+                  <Setter Property="Foreground" Value="{DynamicResource BrushBgBase}" />
+                  <Setter Property="FontWeight" Value="SemiBold" />
+                </Trigger>
+                <Trigger Property="IsKeyboardFocused" Value="True">
+                  <Setter TargetName="Chip" Property="BorderBrush" Value="{DynamicResource BrushFocusRing}" />
+                </Trigger>
+                <Trigger Property="IsEnabled" Value="False">
+                  <Setter Property="Foreground" Value="{DynamicResource BrushTextSecondary}" />
+                </Trigger>
+              </ControlTemplate.Triggers>
+            </ControlTemplate>
+          </Setter.Value>
+        </Setter>
       </Style>
     </ResourceDictionary>
   </Application.Resources>
