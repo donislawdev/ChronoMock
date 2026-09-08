@@ -202,6 +202,7 @@
   "runtime.python_perfcounter_qpc": "perf_counter tej aplikacji Python używa QueryPerformanceCounter, który zostaje realny, więc licznik na perf_counter nie skaluje - w Pythonie 3.13+ monotonic też używa QPC (time.time i zegar ścienny skalują).",
   "runtime.dotnet_stopwatch_qpc": "Stopwatch tej aplikacji .NET używa QueryPerformanceCounter, który zostaje realny, więc licznik na Stopwatch nie skaluje (DateTime i Environment.TickCount tak).",
   "runtime.java_nanotime_qpc": "System.nanoTime tej aplikacji Java używa QueryPerformanceCounter, który zostaje realny, więc licznik na nanoTime nie skaluje (System.currentTimeMillis tak).",
+  "runtime.unity_delta_time_capped": "Gra na silniku Unity: silnik ogranicza, o ile posuwa symulację w jednej klatce (Time.maximumDeltaTime), więc rozgrywka trafia we własny sufit i przestaje nadążać za tempem sesji dużo poniżej niego. Zegar ścienny, daty i znaczniki czasu nadal idą w tempie sesji, a żadne pokrycie zegarów tego sufitu nie podnosi.",
 
   // Shown when QPC scaling is ON (the scale-qpc option, ADR-2 reversal): the monotonic/elapsed clock now scales, but a target that times rendering off QPC may look distorted. Replaces the runtime QPC warnings.
   "qpc.scaled_render_may_distort": "QueryPerformanceCounter jest skalowany, więc zegar monotoniczny/elapsed oparty na QPC przyspiesza - ale cel liczący render lub animację z QPC może wyglądać na zniekształcony.",

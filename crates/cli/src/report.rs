@@ -195,6 +195,12 @@ pub(crate) fn describe_warning(key: &str) -> String {
         "qpc.scaled_render_may_distort" => {
             "QueryPerformanceCounter is being scaled (--scale-qpc), so a QPC-timed monotonic/elapsed clock accelerates - but a target that times its rendering or animation off QPC may look distorted"
         }
+        // The one limit in this list that no coverage can lift, which is exactly why it has to be said.
+        // Every other warning here is about a clock we did or did not reach - this one is about what the
+        // target does with a clock it DID see: it refuses to take a step that large.
+        "runtime.unity_delta_time_capped" => {
+            "a Unity game: the engine caps how far it advances the simulation in a single frame (Time.maximumDeltaTime), so the gameplay hits a ceiling of its own and stops following the session speed well below it - the wall clock, dates and timestamps still move at the session rate, and no amount of clock coverage raises that ceiling"
+        }
         _ => "",
     };
     if text.is_empty() {
@@ -233,21 +239,52 @@ pub(crate) fn exit_code_label(code: i32) -> String {
     }
 }
 
-/// Statically detect the target's language runtime and warn that its monotonic/elapsed clocks stand on
-/// QueryPerformanceCounter, which is left real (ADR-2) and so does not scale - the failure the user hit
-/// when a Python/.NET/Java timer stayed still under a fast clock. This reads only file NAMES beside the
+/// Statically detect what the target is built on and warn about the limits that follow from it. Two
+/// families today: a language runtime whose monotonic/elapsed clocks stand on QueryPerformanceCounter,
+/// which is left real by default (ADR-2) and so does not scale, and a game engine that caps its own
+/// simulation step, which no amount of clock coverage can lift. This reads only file NAMES beside the
 /// target (and its PyInstaller `_internal/` folder): no QPC hook (ADR-2 holds), no process inspection.
-/// Best-effort: a runtime unpacked at runtime (PyInstaller onefile) or launched as `java -jar` is not
-/// caught here, and a false positive only adds a "may not scale" note, never a false verdict (rules 4, 6).
+/// Best-effort: a runtime unpacked at runtime (PyInstaller onefile), a `java -jar` launch, or a launcher
+/// that starts the real binary from another folder is not caught here, and a false positive only adds a
+/// "may not scale" note, never a false verdict (rules 4, 6).
 pub(crate) fn detect_runtime_warnings(target_path: &std::path::Path, scale_qpc: bool) -> Vec<String> {
-    // Under --scale-qpc the QPC axis IS scaled (A1), so a "monotonic/elapsed does not scale" warning would
-    // be WRONG (B1 suppressed - it would contradict the feature). Instead warn once that scaling QPC can
-    // distort a target that times its rendering off QPC (games, animation) - the render risk ADR-2 guarded
-    // against. This holds for any target, so it does not depend on the runtime fingerprint below.
+    let mut keys = fingerprint_target(target_path);
+
     if scale_qpc {
-        return vec!["qpc.scaled_render_may_distort".to_string()];
+        // Under --scale-qpc the QPC axis IS scaled (A1), so a "monotonic/elapsed does not scale" warning
+        // would be WRONG (B1 suppressed - it would contradict the feature). The render caution takes its
+        // place: scaling QPC can distort a target that times its rendering off it, which is the risk ADR-2
+        // guarded against, and it holds for any target rather than for a fingerprint.
+        //
+        // Dropping that FAMILY is not the same as dropping the fingerprint, and until now it was: this
+        // function returned early, so everything else it had learned about the target went with it. The
+        // target most likely to be run with --scale-qpc is a game, and a game is exactly the one the
+        // engine warning below is for, so the warning reached the target that needs it least often.
+        keys.retain(|k| !is_qpc_axis_warning(k));
+        keys.insert(0, "qpc.scaled_render_may_distort".to_string());
     }
 
+    keys
+}
+
+/// Whether a key belongs to the "this runtime reads elapsed time from QPC, which is left real" family -
+/// the one `--scale-qpc` makes untrue. Spelled out rather than pattern-matched on the key text, because a
+/// prefix rule would quietly swallow the next warning that happens to be named like these.
+fn is_qpc_axis_warning(key: &str) -> bool {
+    matches!(
+        key,
+        "runtime.python_monotonic_qpc"
+            | "runtime.python_perfcounter_qpc"
+            | "runtime.dotnet_stopwatch_qpc"
+            | "runtime.java_nanotime_qpc"
+    )
+}
+
+/// Everything the file names around the target say about it, independent of the session's flags. One walk
+/// of each directory, never one per family: `read_dir` on Windows does not stat its entries (`FindNextFile`
+/// hands back the name with the attributes), which is why this costs 0,2 ms on a real target folder and is
+/// worth keeping to a single pass.
+fn fingerprint_target(target_path: &std::path::Path) -> Vec<String> {
     fn add(keys: &mut Vec<String>, key: &str) {
         if !keys.iter().any(|k| k == key) {
             keys.push(key.to_string());
@@ -298,6 +335,13 @@ pub(crate) fn detect_runtime_warnings(target_path: &std::path::Path, scale_qpc: 
                 add(&mut keys, "runtime.dotnet_stopwatch_qpc");
             } else if name == "jvm.dll" {
                 add(&mut keys, "runtime.java_nanotime_qpc");
+            } else if name == "unityplayer.dll" {
+                // The engine ships as this one file beside the player executable, in both scripting
+                // backends, and it is the marker our own import scan already leaned on. The ENGINE is named
+                // here for the same reason .NET and Java are two branches up: the warning is about that
+                // runtime's own clock behaviour, and a warning that will not say which runtime cannot be
+                // acted on. No tested application is ever named (untouchable rules 5 and 26).
+                add(&mut keys, "runtime.unity_delta_time_capped");
             }
         }
     }
@@ -886,5 +930,53 @@ mod tests {
 
         std::fs::remove_dir_all(&dir).ok();
         std::fs::remove_dir_all(&native).ok();
+    }
+
+    #[test]
+    fn detect_flags_the_engine_ceiling_a_session_cannot_lift() {
+        // A game is the one target where covering every clock still does not deliver the speed asked for:
+        // the engine clamps the step it advances the simulation by (Time.maximumDeltaTime, Unity's own
+        // scripting reference), so the gameplay tops out on its own. Saying nothing would be the silent
+        // non-coverage the product rules out - the report would read Works over an application that
+        // visibly ignored the rate.
+        let dir = unique_temp_dir("chrono-rt-engine");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("UnityPlayer.dll"), b"").unwrap();
+        let target = dir.join("Game.exe");
+        std::fs::write(&target, b"").unwrap();
+
+        assert!(
+            detect_runtime_warnings(&target, false)
+                .iter()
+                .any(|k| k == "runtime.unity_delta_time_capped")
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn scale_qpc_drops_the_qpc_family_and_keeps_everything_else() {
+        // The failure this pairing exists for. Suppressing the "does not scale" family under --scale-qpc is
+        // right, and it used to be done with an early return - which threw the whole fingerprint away. A
+        // game is the target most likely to be run with --scale-qpc AND the one that needs the engine
+        // ceiling warning, so that warning reached it least often of all.
+        let dir = unique_temp_dir("chrono-rt-engine-qpc");
+        std::fs::create_dir_all(dir.join("_internal")).unwrap();
+        std::fs::write(dir.join("_internal").join("python314.dll"), b"").unwrap();
+        std::fs::write(dir.join("UnityPlayer.dll"), b"").unwrap();
+        let target = dir.join("Game.exe");
+        std::fs::write(&target, b"").unwrap();
+
+        let keys = detect_runtime_warnings(&target, true);
+
+        // The QPC family goes, because under the flag it would be untrue.
+        assert!(
+            !keys.iter().any(|k| k == "runtime.python_monotonic_qpc"),
+            "the QPC family must not survive --scale-qpc, got: {keys:?}"
+        );
+        // The render caution and the engine ceiling both stay - one is about the flag, the other about
+        // the target, and neither answers for the other.
+        assert!(keys.iter().any(|k| k == "qpc.scaled_render_may_distort"), "got: {keys:?}");
+        assert!(keys.iter().any(|k| k == "runtime.unity_delta_time_capped"), "got: {keys:?}");
+        std::fs::remove_dir_all(&dir).ok();
     }
 }

@@ -58,6 +58,9 @@ public class LocalizationTests
         "runtime.dotnet_stopwatch_qpc", "runtime.java_nanotime_qpc",
         // QPC scaling render caution (A2), shown when --scale-qpc replaces the runtime.*_qpc warnings.
         "qpc.scaled_render_may_distort",
+        // Engine ceiling: a limit inside the target that no clock coverage lifts, so it survives
+        // --scale-qpc alongside the caution above rather than being replaced by it.
+        "runtime.unity_delta_time_capped",
         // Cleanup residue (EndedEvent residue_keys) - a teardown that could not finish (CDP temp profile).
         "cleanup.chromium_profile_left",
         // Vanish reason (VanishedEvent reason_key, shown inside report.vanish_detail).
