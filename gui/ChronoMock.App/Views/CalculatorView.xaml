@@ -19,18 +19,42 @@
       <RowDefinition Height="Auto" />
     </Grid.RowDefinitions>
 
-    <ScrollViewer Grid.Row="0" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto">
-      <Grid Margin="{StaticResource SpaceMd}" MinWidth="820">
-        <Grid.ColumnDefinitions>
-          <ColumnDefinition Width="250" />
-          <ColumnDefinition Width="*" MinWidth="300" />
-          <ColumnDefinition Width="320" />
-        </Grid.ColumnDefinitions>
+    <!--
+      🔴 EACH COLUMN SCROLLS ON ITS OWN, and the outer viewer no longer scrolls vertically. One
+      shared scroller for three columns of very different heights meant the tallest one decided for
+      everybody: measured at 1560 x 1200, the preset list ran 938 px below the bottom of the window,
+      so reaching the last preset pushed the result and the builder off the screen even though both
+      fit. What the user saw was the top of everything and the bottom of nothing.
 
-        <!-- LEFT: tester presets from the shared catalogue (7.3). Filterable - each row shows the localized
-             name and what the date tests. Clicking a row to fill the builder is wired in slice G4-1b. -->
-        <Border Grid.Column="0" Margin="{StaticResource SpaceSm}" Padding="{StaticResource SpaceLg}"
-                Background="{DynamicResource BrushBgSurface}" CornerRadius="{StaticResource RadiusMd}">
+      The widths are proportions with a floor rather than fixed numbers. Two of the three columns
+      used to be pinned (250 and 320), so every extra pixel of a wide window went to the middle one -
+      the emptiest - while the result column stayed at 320 whatever the window did, which is why a
+      FILETIME broke in the middle of its digits. Now all three grow.
+
+      🔴 THERE IS NO SCROLLER AROUND THESE COLUMNS, and that is the point rather than an omission.
+      A ScrollViewer that offers horizontal scrolling measures its child at INFINITE width, and a
+      star column measured against infinity has no share to take, so it degenerates to its content
+      width. Measured while building this: with the old outer scroller kept, the presets column grew
+      to about 1250 px and the result column left the window entirely. Binding the grid to the
+      viewport instead still left it 12 px too wide, which clipped the copy buttons. A grid sitting
+      directly in the row has a real width to divide and none of that happens.
+
+      What that costs is a floor: three columns do not fit in a narrow window, so the window carries
+      a MinWidth that matches these three. That is an honest constraint rather than a scrollbar
+      apologising for a layout that cannot fit.
+    -->
+    <Grid Grid.Row="0" Margin="{StaticResource SpaceMd}">
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="1*" MinWidth="240" />
+        <ColumnDefinition Width="1.15*" MinWidth="380" />
+        <ColumnDefinition Width="1.1*" MinWidth="340" />
+      </Grid.ColumnDefinitions>
+
+      <!-- LEFT: tester presets from the shared catalogue (7.3). Filterable - each row shows the localized
+           name and what the date tests. Clicking a row to fill the builder is wired in slice G4-1b. -->
+      <Border Grid.Column="0" Margin="{StaticResource SpaceSm}" Padding="{StaticResource SpaceLg}"
+              Background="{DynamicResource BrushBgSurface}" CornerRadius="{StaticResource RadiusMd}">
+        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
           <StackPanel>
             <TextBlock Text="{DynamicResource calc.presets_header}"
                        FontSize="{StaticResource FontSizeCaption}" FontWeight="SemiBold"
@@ -59,11 +83,13 @@
                        Margin="{StaticResource SpaceXs}"
                        FontSize="{StaticResource FontSizeCaption}" Foreground="{DynamicResource BrushTextSecondary}" />
           </StackPanel>
-        </Border>
+        </ScrollViewer>
+      </Border>
 
-        <!-- MIDDLE: the live expression builder (base, shift steps, calendar). -->
-        <Border Grid.Column="1" Margin="{StaticResource SpaceSm}" Padding="{StaticResource SpaceLg}"
-                Background="{DynamicResource BrushBgSurface}" CornerRadius="{StaticResource RadiusMd}">
+      <!-- MIDDLE: the live expression builder (base, shift steps, calendar). -->
+      <Border Grid.Column="1" Margin="{StaticResource SpaceSm}" Padding="{StaticResource SpaceLg}"
+              Background="{DynamicResource BrushBgSurface}" CornerRadius="{StaticResource RadiusMd}">
+        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
           <StackPanel>
             <TextBlock Text="{DynamicResource calc.build_header}"
                        FontSize="{StaticResource FontSizeCaption}" FontWeight="SemiBold"
@@ -71,8 +97,21 @@
 
             <TextBlock Text="{DynamicResource calc.start_point}" Margin="{StaticResource SpaceXs}"
                        FontSize="{StaticResource FontSizeCaption}" Foreground="{DynamicResource BrushTextSecondary}" />
-            <StackPanel Orientation="Horizontal" Margin="{StaticResource SpaceXs}">
-              <ComboBox x:Name="BaseKindBox" ItemsSource="{Binding BaseKinds}" SelectedItem="{Binding SelectedBase}"
+            <!-- A grid rather than a horizontal stack: a stack hands every child its full desired
+                 width and clips whatever does not fit, which is how the zone list used to end mid
+                 word. The zone sits on its own row because sharing one with the start point left it
+                 about 180 px, and "UTC+02:00 - this machine" needs more than that to be readable -
+                 a control that shows "UTC+02:00 - t" is not a control anybody can trust. -->
+            <Grid Margin="{StaticResource SpaceXs}">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" MinWidth="150" />
+              </Grid.ColumnDefinitions>
+              <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+              </Grid.RowDefinitions>
+              <ComboBox Grid.Row="0" Grid.Column="0" x:Name="BaseKindBox" ItemsSource="{Binding BaseKinds}" SelectedItem="{Binding SelectedBase}"
                         ItemContainerStyle="{StaticResource LabelKeyComboItem}" MinWidth="140" VerticalAlignment="Center"
                         ToolTip="{DynamicResource tip.base_kind}">
                 <ComboBox.ItemTemplate>
@@ -84,7 +123,7 @@
               <!-- Specific date: the shared moment input (ISO box plus a calendar popup, locale-safe, rule 2),
                    the same control the substitution panel uses. Its DataContext is the base MomentField, so
                    Visibility binds to the view model through the CalculatorView, not the field. -->
-              <controls:MomentInput x:Name="BaseMoment" DataContext="{Binding Base}"
+              <controls:MomentInput Grid.Row="0" Grid.Column="1" x:Name="BaseMoment" DataContext="{Binding Base}"
                                     Margin="{StaticResource SpaceSm}" VerticalAlignment="Center"
                                     Visibility="{Binding DataContext.IsSpecificBase, RelativeSource={RelativeSource AncestorType={x:Type UserControl}}, Converter={StaticResource BoolToVis}}" />
               <!-- The SESSION zone the start point is read in (engine flag: zone). Worded "in zone" rather
@@ -93,20 +132,30 @@
                    same item template as the substitution panel, so one idea has one idiom. The first entry
                    is the host, which sends no flag at all: that is what this panel always did, so the
                    default changes no result, it only says out loud which zone it was (rule 2). -->
-              <TextBlock Text="{DynamicResource calc.base_zone}" Margin="{StaticResource SpaceSm}"
-                         VerticalAlignment="Center"
-                         FontSize="{StaticResource FontSizeBody}" Foreground="{DynamicResource BrushTextSecondary}" />
-              <ComboBox x:Name="BaseZoneBox" ItemsSource="{Binding BaseZones}" SelectedItem="{Binding SelectedBaseZone}"
+              <!-- The label and the zone share a row of their own. Left in the outer grid, the label
+                   would inherit the width of the start-point box above it and push the zone another
+                   140 px to the right, which is what left it reading "UTC+02:00 - this m". -->
+              <Grid Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2">
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="Auto" />
+                  <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <TextBlock Grid.Column="0" Text="{DynamicResource calc.base_zone}" Margin="{StaticResource SpaceSm}"
+                           VerticalAlignment="Center"
+                           FontSize="{StaticResource FontSizeBody}" Foreground="{DynamicResource BrushTextSecondary}" />
+                <ComboBox Grid.Column="1" x:Name="BaseZoneBox" ItemsSource="{Binding BaseZones}" SelectedItem="{Binding SelectedBaseZone}"
                         ToolTip="{DynamicResource tip.base_zone}"
                         ItemContainerStyle="{StaticResource ZoneComboItem}"
-                        Margin="{StaticResource SpaceXs}" VerticalAlignment="Center">
-                <ComboBox.ItemTemplate>
-                  <DataTemplate>
-                    <TextBlock><Run Text="{Binding Label, Mode=OneWay}" /><Run Text="  ·  " /><Run Text="{Binding HintKey, Converter={StaticResource KeyToText}, Mode=OneWay}" /></TextBlock>
-                  </DataTemplate>
-                </ComboBox.ItemTemplate>
-              </ComboBox>
-            </StackPanel>
+                          Margin="{StaticResource SpaceXs}" VerticalAlignment="Center"
+                          HorizontalAlignment="Stretch">
+                  <ComboBox.ItemTemplate>
+                    <DataTemplate>
+                      <TextBlock><Run Text="{Binding Label, Mode=OneWay}" /><Run Text="  ·  " /><Run Text="{Binding HintKey, Converter={StaticResource KeyToText}, Mode=OneWay}" /></TextBlock>
+                    </DataTemplate>
+                  </ComboBox.ItemTemplate>
+                </ComboBox>
+              </Grid>
+            </Grid>
             <!-- Validation message BELOW the start-point row (only for a malformed Specific base), so it never
                  shifts the row - mirrors the substitution At row. -->
             <TextBlock Text="{Binding Base.ActiveErrorKey, Converter={StaticResource KeyToText}}"
@@ -249,11 +298,13 @@
               </Border>
             </StackPanel>
           </StackPanel>
-        </Border>
+        </ScrollViewer>
+      </Border>
 
-        <!-- RIGHT: the live result of evaluating the builder. -->
-        <Border Grid.Column="2" Margin="{StaticResource SpaceSm}" Padding="{StaticResource SpaceLg}"
-                Background="{DynamicResource BrushBgSurface}" CornerRadius="{StaticResource RadiusMd}">
+      <!-- RIGHT: the live result of evaluating the builder. -->
+      <Border Grid.Column="2" Margin="{StaticResource SpaceSm}" Padding="{StaticResource SpaceLg}"
+              Background="{DynamicResource BrushBgSurface}" CornerRadius="{StaticResource RadiusMd}">
+        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
           <StackPanel>
             <TextBlock Text="{DynamicResource calc.result_header}"
                        FontSize="{StaticResource FontSizeCaption}" FontWeight="SemiBold"
@@ -427,9 +478,9 @@
                     ToolTipService.ShowOnDisabled="True"
                     IsEnabled="{Binding CanUseInSubstitution}" />
           </StackPanel>
-        </Border>
-      </Grid>
-    </ScrollViewer>
+        </ScrollViewer>
+      </Border>
+    </Grid>
 
     <!-- BOTTOM: reverse analysis (7.3) - paste a date, see how it reads, both interpretations when the
          numeric order is ambiguous (04/08 is April 8 in the US, August 4 in Poland). -->

@@ -7,7 +7,7 @@
                  Title="{DynamicResource app.title}"
                  Width="1040"
                  Height="800"
-                 MinWidth="640"
+                 MinWidth="1000"
                  MinHeight="360"
                  Background="{DynamicResource BrushBgBase}"
                  ExtendsContentIntoTitleBar="True"
