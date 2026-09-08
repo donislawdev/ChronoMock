@@ -593,6 +593,21 @@ unsafe fn gather_coverage(
                     }
                 }
                 out.observed.push(ChannelCoverage { channel: ch.name.to_string(), calls });
+            } else if matches!(
+                ch.module,
+                ChannelModule::Kernel32 | ChannelModule::Ntdll | ChannelModule::KernelBase
+            ) {
+                // The module is in every process, so "wanted and not installed" can only mean the
+                // hook failed. That used to produce no line at all: not covered, not uncovered,
+                // absent - so a watch the session promised was quietly not running while the report
+                // read as complete. It goes in its own bucket rather than `uncovered`, which is a
+                // verdict input and would turn a failed observer into a Partial session.
+                //
+                // An OPTIONAL module stays silent here, and that is a different, still-open case:
+                // absent means the target cannot call the channel at all, and this side cannot yet
+                // tell that from "the module arrived and the hook failed" - the hook would have to
+                // say so, which is a field it does not have.
+                out.unobserved.push(ch.name.to_string());
             }
             continue;
         }

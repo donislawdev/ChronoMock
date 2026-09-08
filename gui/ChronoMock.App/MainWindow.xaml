@@ -451,6 +451,25 @@
               </ItemsControl>
             </StackPanel>
 
+            <!-- A watch that never started. Its own block rather than a row in Uncovered above,
+                 because the two say different things: uncovered is time the target asked for and did
+                 not get, this is something we said we would watch and are not. -->
+            <StackPanel Margin="{StaticResource SpaceXs}"
+                        Visibility="{Binding HasUnobserved, Converter={StaticResource BoolToVis}}">
+              <TextBlock FontSize="{StaticResource FontSizeCaption}" Foreground="{DynamicResource BrushStatusPartial}">
+                <Run Text="{DynamicResource coverage.unobserved}" /><Run Text="{Binding Unobserved.Count, StringFormat=' ({0})', Mode=OneWay}" />
+              </TextBlock>
+              <ItemsControl ItemsSource="{Binding Unobserved}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate>
+                    <TextBlock Text="{Binding}"
+                               FontSize="{StaticResource FontSizeBody}"
+                               Foreground="{DynamicResource BrushTextPrimary}" />
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </StackPanel>
+
             <StackPanel Margin="{StaticResource SpaceXs}"
                         Visibility="{Binding HasWarnings, Converter={StaticResource BoolToVis}}">
               <TextBlock FontSize="{StaticResource FontSizeCaption}" Foreground="{DynamicResource BrushStatusPartial}">

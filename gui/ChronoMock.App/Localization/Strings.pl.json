@@ -177,6 +177,9 @@
   "coverage.covered": "Objęte kanały",
   "coverage.observed": "Obserwowane (podpięte, pozostawione realne)",
   "coverage.uncovered": "Nieobjęte kanały",
+  // Not the same thing as uncovered, and the wording has to keep them apart: an uncovered channel is
+  // time the target asked for and did not get, this one is a watch we promised and did not start.
+  "coverage.unobserved": "Mieliśmy obserwować, nie udało się podpiąć",
   "coverage.warnings": "Ostrzeżenia",
   "coverage.family_note": "Sesja rodziny - liczniki wywołań z procesu rodzica, ostrzeżenia i nieobjęte kanały ze wszystkich procesów.",
   "coverage.contexts_note": "Sesja Chromium - pokazano każdy kontekst JS (stronę i workery), nigdy sumowane.",

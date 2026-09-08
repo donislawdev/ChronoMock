@@ -151,6 +151,7 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     private IReadOnlyList<string> _covered = [];
     private IReadOnlyList<string> _observed = [];
     private IReadOnlyList<string> _uncovered = [];
+    private IReadOnlyList<string> _unobserved = [];
     private IReadOnlyList<string> _warnings = [];
 
     private bool _hasTiming;
@@ -849,6 +850,15 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
         private set { if (Set(ref _uncovered, value)) { RaisePropertyChanged(nameof(HasUncovered)); } }
     }
 
+    /// <summary>Channels the session meant to watch and could not hook, unioned over the family. Its own
+    /// list rather than part of <see cref="Uncovered"/>, because it is not the partial verdict's evidence
+    /// - it is the panel admitting that a watch it promised is not running.</summary>
+    public IReadOnlyList<string> Unobserved
+    {
+        get => _unobserved;
+        private set { if (Set(ref _unobserved, value)) { RaisePropertyChanged(nameof(HasUnobserved)); } }
+    }
+
     /// <summary>Warning translation keys the core raised (rendered in the current language), unioned over
     /// every process of the family and the session aggregate (R2-W5, R2-S9).</summary>
     public IReadOnlyList<string> Warnings
@@ -906,6 +916,8 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     public bool HasObserved => _observed.Count > 0;
 
     public bool HasUncovered => _uncovered.Count > 0;
+
+    public bool HasUnobserved => _unobserved.Count > 0;
 
     public bool HasWarnings => _warnings.Count > 0;
 
@@ -1001,6 +1013,7 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
                 Covered = [.. _covered, .. c.Covered.Select(FormatChannel)];
                 Observed = [.. _observed, .. c.Observed.Select(FormatChannel)];
                 Uncovered = [.. _uncovered, .. c.Uncovered.Where(u => !_uncovered.Contains(u))];
+                Unobserved = [.. _unobserved, .. c.Unobserved.Where(u => !_unobserved.Contains(u))];
                 Warnings = [.. _warnings, .. c.WarningKeys.Where(w => !_warnings.Contains(w))];
                 CoverageKnown = true;
                 break;
@@ -1028,6 +1041,7 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
                 // and uncovered in a child at once - that is the honest reading, and it is precisely why
                 // the family verdict is partial (Verdict::combine).
                 Uncovered = [.. _uncovered, .. c.Uncovered.Where(u => !_uncovered.Contains(u))];
+                Unobserved = [.. _unobserved, .. c.Unobserved.Where(u => !_unobserved.Contains(u))];
                 Warnings = [.. _warnings, .. c.WarningKeys.Where(w => !_warnings.Contains(w))];
                 CoverageKnown = true;
                 break;

@@ -30,6 +30,11 @@ public sealed record CoverageEvent : ChronoEvent
     [JsonPropertyName("covered")] public IReadOnlyList<CoveredChannel> Covered { get; init; } = [];
     [JsonPropertyName("observed")] public IReadOnlyList<CoveredChannel> Observed { get; init; } = [];
     [JsonPropertyName("uncovered")] public IReadOnlyList<string> Uncovered { get; init; } = [];
+
+    /// <summary>Channels the session meant to WATCH and could not hook. Not the same thing as an
+    /// uncovered channel and not a verdict input: a watch that never started says nothing about whether
+    /// the substitution took effect. It exists because the alternative was no line at all.</summary>
+    [JsonPropertyName("unobserved")] public IReadOnlyList<string> Unobserved { get; init; } = [];
     [JsonPropertyName("warning_keys")] public IReadOnlyList<string> WarningKeys { get; init; } = [];
 }
 

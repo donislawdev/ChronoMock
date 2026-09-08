@@ -57,12 +57,21 @@ impl Collector {
             Event::Error { key, origin, .. } => {
                 self.errors.push((key, origin));
             }
-            Event::Coverage { pid, covered: cov, observed: obs, uncovered: unc, warning_keys, .. } => {
+            Event::Coverage {
+                pid,
+                covered: cov,
+                observed: obs,
+                uncovered: unc,
+                unobserved: unobs,
+                warning_keys,
+                ..
+            } => {
                 self.warn(warning_keys);
                 if !self.cov_by_pid.contains_key(&pid) {
                     self.pid_order.push(pid);
                 }
-                self.cov_by_pid.insert(pid, ProcessCoverage { covered: cov, observed: obs, uncovered: unc });
+                self.cov_by_pid
+                    .insert(pid, ProcessCoverage { covered: cov, observed: obs, uncovered: unc, unobserved: unobs });
             }
             Event::Ended {
                 elapsed_real_ms,
@@ -109,6 +118,7 @@ impl Collector {
     ) -> SessionReport {
         // Flatten the per-process snapshots into report rows, parent first (first-seen order).
         let mut uncovered: Vec<(u32, String)> = Vec::new(); // (pid, channel) - the honest gaps
+        let mut unobserved: Vec<(u32, String)> = Vec::new(); // (pid, channel) - watches that never started
         let mut covered: Vec<(u32, String, u64)> = Vec::new(); // (pid, channel, calls) - what took effect
         let mut observed: Vec<(u32, String, u64)> = Vec::new(); // (pid, channel, calls) - hooked, left real
         for pid in &self.pid_order {
@@ -122,6 +132,9 @@ impl Collector {
                 for ch in &pc.uncovered {
                     uncovered.push((*pid, ch.clone()));
                 }
+                for ch in &pc.unobserved {
+                    unobserved.push((*pid, ch.clone()));
+                }
             }
         }
 
@@ -133,6 +146,7 @@ impl Collector {
             errors: self.errors,
             warnings: self.warnings,
             uncovered,
+            unobserved,
             covered,
             observed,
             timing: self.timing,
@@ -156,6 +170,7 @@ mod tests {
             covered: vec![CoveredChannel { channel: "GetSystemTimeAsFileTime".into(), calls }],
             observed: Vec::new(),
             uncovered: Vec::new(),
+            unobserved: Vec::new(),
             warning_keys,
         }
     }

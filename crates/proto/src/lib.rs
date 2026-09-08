@@ -136,6 +136,10 @@ pub enum Event {
         #[serde(default)]
         observed: Vec<CoveredChannel>,
         uncovered: Vec<String>,
+        /// Channels the session meant to watch and could not hook - see `chrono_core::Coverage`.
+        /// Additive like `observed`: a message from before this field existed still parses.
+        #[serde(default)]
+        unobserved: Vec<String>,
         warning_keys: Vec<String>,
     },
     Verdict {
@@ -320,23 +324,30 @@ mod tests {
             covered: vec![CoveredChannel { channel: "GetSystemTime".into(), calls: 3 }],
             observed: vec![CoveredChannel { channel: "WaitForSingleObject".into(), calls: 5 }],
             uncovered: vec![],
+            unobserved: vec!["WaitOnAddress".into()],
             warning_keys: vec!["wait.object_waits_not_scaled".into()],
         };
         let line = ev.to_ndjson();
         assert!(line.contains(r#""observed""#), "observed must serialize, got {line}");
+        assert!(line.contains(r#""unobserved""#), "unobserved must serialize, got {line}");
         match parse_event(&line).unwrap() {
-            Event::Coverage { observed, warning_keys, .. } => {
+            Event::Coverage { observed, unobserved, warning_keys, .. } => {
                 assert_eq!(observed.len(), 1);
                 assert_eq!(observed[0].channel, "WaitForSingleObject");
                 assert_eq!(observed[0].calls, 5);
+                assert_eq!(unobserved, vec!["WaitOnAddress".to_string()]);
                 assert_eq!(warning_keys, vec!["wait.object_waits_not_scaled".to_string()]);
             }
             _ => panic!("wrong event variant"),
         }
-        // A coverage message from before `observed` existed still parses (serde default).
+        // A coverage message from before `observed` and `unobserved` existed still parses (serde
+        // default on both), which is what makes each of them an additive change rather than a break.
         let old = r#"{"type":"coverage","v":1,"pid":42,"covered":[],"uncovered":[],"warning_keys":[]}"#;
         match parse_event(old).unwrap() {
-            Event::Coverage { observed, .. } => assert!(observed.is_empty()),
+            Event::Coverage { observed, unobserved, .. } => {
+                assert!(observed.is_empty());
+                assert!(unobserved.is_empty());
+            }
             _ => panic!("wrong event variant"),
         }
     }

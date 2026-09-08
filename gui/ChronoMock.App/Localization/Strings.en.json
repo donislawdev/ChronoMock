@@ -178,6 +178,9 @@
   "coverage.covered": "Covered channels",
   "coverage.observed": "Observed (hooked, left real)",
   "coverage.uncovered": "Uncovered channels",
+  // Not the same thing as uncovered, and the wording has to keep them apart: an uncovered channel is
+  // time the target asked for and did not get, this one is a watch we promised and did not start.
+  "coverage.unobserved": "Meant to watch, could not hook",
   "coverage.warnings": "Warnings",
   "coverage.family_note": "Family session - call counts are the parent process, warnings and uncovered channels cover every process.",
   "coverage.contexts_note": "Chromium session - showing every JS context (page and workers), never summed.",

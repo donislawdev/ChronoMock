@@ -172,6 +172,17 @@ pub struct Coverage {
     pub covered: Vec<ChannelCoverage>,
     pub observed: Vec<ChannelCoverage>,
     pub uncovered: Vec<String>,
+    /// Channels this session meant to WATCH and could not hook. Its own bucket rather than
+    /// `uncovered`, because the two answer different questions and only one of them is a verdict:
+    /// an uncovered channel means the target asked for time we did not substitute, while one of
+    /// these means we are not watching something we said we would. Folding them together would
+    /// turn a failed observer into a `Partial` session, which would be a wrong answer to
+    /// "did the substitution take effect".
+    ///
+    /// It exists because the alternative was silence. An observed channel that failed to install
+    /// used to produce NO line at all - not covered, not uncovered, absent - so the report looked
+    /// complete while a watch it promised was simply not running (untouchable rules 4 and 6).
+    pub unobserved: Vec<String>,
     pub warning_keys: Vec<String>,
 }
 

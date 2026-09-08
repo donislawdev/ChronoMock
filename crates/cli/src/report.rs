@@ -15,6 +15,7 @@ pub(crate) struct ProcessCoverage {
     pub(crate) covered: Vec<chrono_proto::CoveredChannel>,
     pub(crate) observed: Vec<chrono_proto::CoveredChannel>,
     pub(crate) uncovered: Vec<String>,
+    pub(crate) unobserved: Vec<String>,
 }
 
 /// The captured outcome of a `chrono run` session, rendered as a human report in the
@@ -40,6 +41,10 @@ pub(crate) struct SessionReport {
     /// Channels queried but not covered, tagged with the pid that queried them (never summed
     /// across processes - untouchable rule 4).
     pub(crate) uncovered: Vec<(u32, String)>,
+    /// Channels this session meant to WATCH and could not hook, tagged with the pid. Separate from
+    /// `uncovered` because it is not a verdict input: a watch that did not start says nothing about
+    /// whether the substitution took effect. It is here because the alternative was no line at all.
+    pub(crate) unobserved: Vec<(u32, String)>,
     /// Channels covered (substituted), tagged with the pid and the call count. Per-pid, never
     /// summed across processes (untouchable rule 4).
     pub(crate) covered: Vec<(u32, String, u64)>,
@@ -405,6 +410,20 @@ fn render_cut_short(stopped_early: Option<&'static str>) -> String {
     )
 }
 
+/// One heading plus its pid-tagged channel names, or nothing when the list is empty. Shared by the
+/// two name-only buckets so `render_report` stays under its pinned complexity ceiling - the ceiling
+/// asked for this, and lifting a repeated shape out is the cheaper of its two answers.
+fn render_channel_names(heading: &str, rows: &[(u32, String)], unit: &str) -> String {
+    if rows.is_empty() {
+        return String::new();
+    }
+    let mut out = format!("{heading}\n");
+    for (pid, ch) in rows {
+        out.push_str(&format!("            - {unit} {pid}: {ch}\n"));
+    }
+    out
+}
+
 pub(crate) fn render_report(r: &SessionReport) -> String {
     let mut out = String::from("Chrono Mock - session report\n");
     out.push_str(&format!("  target:   {}\n", r.target));
@@ -507,12 +526,19 @@ pub(crate) fn render_report(r: &SessionReport) -> String {
         }
     }
 
-    if !r.uncovered.is_empty() {
-        out.push_str("  uncovered channels (queried but not covered):\n");
-        for (pid, ch) in &r.uncovered {
-            out.push_str(&format!("            - {unit} {pid}: {ch}\n"));
-        }
-    }
+    out.push_str(&render_channel_names(
+        "  uncovered channels (queried but not covered):",
+        &r.uncovered,
+        unit,
+    ));
+    // Its own heading, and the wording is the point: this is not a gap in the substitution, it is a
+    // watch that did not start. Reading it as an uncovered channel would suggest the session missed
+    // time the target asked for, which it did not.
+    out.push_str(&render_channel_names(
+        "  channels we meant to watch and could not hook:",
+        &r.unobserved,
+        unit,
+    ));
 
     if !r.warnings.is_empty() {
         out.push_str("  warnings:\n");
@@ -602,6 +628,7 @@ mod tests {
             errors: vec![],
             warnings: vec![],
             uncovered: vec![],
+            unobserved: vec![],
             covered: vec![],
             observed: vec![],
             timing: None,
@@ -820,6 +847,35 @@ mod tests {
         };
         let out = render_evidence(&r, &p);
         assert!(out.contains("the target closed itself with code 2"), "got:\n{out}");
+    }
+
+    #[test]
+    fn a_watch_that_never_started_gets_its_own_line_and_leaves_the_verdict_alone() {
+        // What this closes: an observed channel whose hook failed used to produce NO line at all -
+        // not covered, not uncovered, absent - so the report read as complete while a watch it had
+        // promised was simply not running. Proved by taking the install out and watching the channel
+        // vanish from the report rather than appear as a gap.
+        //
+        // It must NOT land in `uncovered`, which is a verdict input: a watch that did not start says
+        // nothing about whether the substitution took effect, and folding the two together would turn
+        // a failed observer into a PARTIAL session. Hence the separate bucket and this fixture's WORKS
+        // verdict, which has to survive.
+        let r = SessionReport {
+            session_verdict: Some(("works".into(), "session.family_covered".into(), 1)),
+            covered: vec![(7, "GetSystemTime".into(), 4)],
+            unobserved: vec![(7, "WaitOnAddress".into())],
+            ..empty_report()
+        };
+
+        let text = render_report(&r);
+        assert!(text.contains("WaitOnAddress"), "the channel must be named, got:\n{text}");
+        assert!(text.contains("meant to watch"), "and named as a watch, not a gap, got:\n{text}");
+        assert!(
+            !text.contains("uncovered channels"),
+            "it must not be reported as an uncovered channel, got:\n{text}"
+        );
+        assert!(text.contains("WORKS"), "the verdict is untouched by it, got:\n{text}");
+        assert!(session_is_reliable(&r), "a failed watch is not an unreliable session");
     }
 
     #[test]
