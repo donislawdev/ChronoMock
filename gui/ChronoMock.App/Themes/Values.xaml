@@ -47,6 +47,11 @@
 
   <!-- The target box caps here so a deeply nested path cannot stretch the centred setup row across the
        window; the name is what identifies the target, and the full path is in the tooltip. -->
+  <!-- The primary action is wider than the buttons around it, because size is half of what makes an
+       action look primary - the accent fill alone reads as decoration on a control the same size as its
+       neighbours. Named here rather than written into the view, like every other design value. -->
+  <sys:Double x:Key="PrimaryActionMinWidth">220</sys:Double>
+
   <sys:Double x:Key="TargetBoxMaxWidth">320</sys:Double>
 
   <!-- The scenario chips wrap inside this width. A cap is what MAKES them wrap: a WrapPanel measured with

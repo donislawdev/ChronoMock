@@ -194,12 +194,26 @@
             </TextBlock>
           </StackPanel>
 
-          <!-- One centred line: At label, the date/calendar/time input, the Today/Now quick fills, the
-               in-flight Jump, and the zone. The validation message is a SEPARATE line below (not inside the
-               date control), so it never changes this row's height or knocks the inputs out of alignment. -->
-          <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="{StaticResource SpaceXs}">
-            <TextBlock Text="{DynamicResource moment.label}" VerticalAlignment="Center"
+          <!-- 🔴 A GRID ON TWO ROWS, not one horizontal line. It used to be a single centred stack of nine
+               controls, which has two faults a form should not have: the labels do not line up under one
+               another, and a stack wider than what holds it overflows on BOTH sides rather than shrinking -
+               measured while trying a wider layout, where the At label and the date fell off the left edge
+               while the zone was cut off on the right. A label column plus a value column fixes both, and
+               the zone gets a row of its own because it is the widest control here.
+               The validation message stays a SEPARATE line below, so its appearance never moves a control. -->
+          <Grid HorizontalAlignment="Center" Margin="{StaticResource SpaceXs}">
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="Auto" />
+              <ColumnDefinition Width="*" MinWidth="320" />
+            </Grid.ColumnDefinitions>
+            <Grid.RowDefinitions>
+              <RowDefinition Height="Auto" />
+              <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+            <TextBlock Grid.Row="0" Grid.Column="0" Text="{DynamicResource moment.label}" VerticalAlignment="Center"
+                       Margin="{StaticResource SpaceXs}"
                        FontSize="{StaticResource FontSizeBody}" Foreground="{DynamicResource BrushTextSecondary}" />
+            <WrapPanel Grid.Row="0" Grid.Column="1" Orientation="Horizontal">
             <controls:MomentInput DataContext="{Binding Moment}"
                                   IsEnabled="{Binding DataContext.CanEditTime, RelativeSource={RelativeSource AncestorType={x:Type ui:FluentWindow}}}"
                                   Margin="{StaticResource SpaceXs}" VerticalAlignment="Center" />
@@ -218,11 +232,14 @@
                     ToolTip="{DynamicResource tip.jump_to}"
                     IsEnabled="{Binding Moment.IsValid}" VerticalAlignment="Center" Margin="{StaticResource SpaceXs}"
                     Visibility="{Binding IsRunning, Converter={StaticResource BoolToVis}}" />
-            <TextBlock Text="{DynamicResource zone.label}" Margin="{StaticResource SpaceSm}" VerticalAlignment="Center"
+            </WrapPanel>
+            <TextBlock Grid.Row="1" Grid.Column="0" Text="{DynamicResource zone.label}" VerticalAlignment="Center"
+                       Margin="{StaticResource SpaceXs}"
                        FontSize="{StaticResource FontSizeBody}" Foreground="{DynamicResource BrushTextSecondary}" />
-            <ComboBox ItemsSource="{Binding Zones}" SelectedItem="{Binding SelectedZone}"
+            <ComboBox Grid.Row="1" Grid.Column="1" ItemsSource="{Binding Zones}" SelectedItem="{Binding SelectedZone}"
                       IsEnabled="{Binding IsIdle}" ToolTip="{DynamicResource tip.zone}"
                       ItemContainerStyle="{StaticResource ZoneComboItem}"
+                      HorizontalAlignment="Stretch"
                       Margin="{StaticResource SpaceXs}" VerticalAlignment="Center">
               <ComboBox.ItemTemplate>
                 <DataTemplate>
@@ -230,7 +247,7 @@
                 </DataTemplate>
               </ComboBox.ItemTemplate>
             </ComboBox>
-          </StackPanel>
+          </Grid>
           <!-- Validation message BELOW the whole At row: centred, in the partial-status colour, meaning in
                the text. Kept out of the input control so its appearance never shifts the row (rule: steady
                layout). -->
@@ -343,7 +360,15 @@
 
         </StackPanel>
 
+        <!-- 🔴 The one action this screen exists for, and it used to look like every other button on it:
+             same size, same grey, sitting in a row of secondary controls. A primary action has to be
+             findable without reading, so it carries the accent fill and a size nothing else here has.
+             Meaning is still in the label, never in the colour alone (zasady/13 9) - the fill only makes
+             it the obvious thing to press. -->
         <Button Grid.Row="1" Margin="{StaticResource SpaceSm}" HorizontalAlignment="Center"
+                MinWidth="{StaticResource PrimaryActionMinWidth}" Padding="{StaticResource SpaceMd}"
+                Background="{DynamicResource BrushAccent}" Foreground="{DynamicResource BrushBgBase}"
+                FontSize="{StaticResource FontSizeBody}" FontWeight="SemiBold"
                 Content="{DynamicResource action.start}" IsEnabled="{Binding CanStart}" Click="OnStartClick"
                 ToolTip="{DynamicResource tip.start}" ToolTipService.ShowOnDisabled="True" />
 
