@@ -29,6 +29,12 @@
     Nothing here publishes. The release stays a draft until a person reads it and presses the
     button, and pressing it runs phase D, which re-checks the published page the way a user would.
 
+    🔴 BE AT THE MACHINE. signtool reaches the card and then waits for its PIN, so this script
+    cannot run unattended - measured, by watching it block on exactly that. Whether the card asks
+    once or once per file depends on the card middleware's own PIN caching, and there are eleven
+    files, so watch the first run before assuming. Each signature prints its file, so a run that
+    has stopped is easy to tell from one that is working.
+
 .PARAMETER Tag
     The release tag, e.g. v0.2.0.
 

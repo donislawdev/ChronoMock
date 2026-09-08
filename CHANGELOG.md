@@ -8,6 +8,14 @@ Notable changes to Chrono Mock, newest first. The format follows
 
 ### Added
 
+- **The binaries this project builds are now Authenticode-signed**, with an RFC 3161 timestamp so
+  the signature outlives the certificate. Windows names the publisher instead of warning about an
+  unknown one. The signing key is on a hardware card that cannot be exported, so no workflow can
+  reach it: the build happens in CI, the signature happens on a machine with the card, and each step
+  refuses to continue on something it has not checked - the signing step verifies the build's
+  attestation before touching it, and reads the certificate back out of every file it signs. The
+  around 240 Microsoft assemblies inside the window package are left exactly as they arrived, because
+  re-signing somebody else's binary would destroy their signature and claim we made it.
 - **A bill of materials, hashes and build provenance for every release.** Each release from now on
   carries `SHA256SUMS`, an SPDX 2.3 document per package listing every third-party component with its
   version and licence, and a build-provenance attestation over both archives and every binary inside
