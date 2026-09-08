@@ -230,11 +230,20 @@ impl CdpClient {
     }
 }
 
+// A scanner rule for insecure WebSocket endpoints matches the unencrypted scheme wherever it is
+// written, including in prose about it, which is why this paragraph does not spell it out. There is
+// no `wss://` to move to: the DevTools Protocol speaks the plain scheme on the loopback port we
+// asked it to open and offers no transport security there at all. The risk the rule gestures at is
+// real and is answered a few lines down instead, by `ws_endpoint_is_ours`, which pins the endpoint
+// to the exact port we opened and to a loopback name.
+// nosemgrep: javascript.lang.security.detect-insecure-websocket.detect-insecure-websocket
 /// Split a `ws://host:port/path` URL into its parts. CDP only ever hands us plain `ws://` loopback
 /// URLs, so `wss://` and userinfo are out of scope.
 fn parse_ws_url(url: &str) -> io::Result<(String, u16, String)> {
     let rest = url
+        // nosemgrep: javascript.lang.security.detect-insecure-websocket.detect-insecure-websocket
         .strip_prefix("ws://")
+        // nosemgrep: javascript.lang.security.detect-insecure-websocket.detect-insecure-websocket
         .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, format!("not a ws:// url: {}", sanitise_target_text(url))))?;
     let slash = rest.find('/').unwrap_or(rest.len());
     let authority = &rest[..slash];
