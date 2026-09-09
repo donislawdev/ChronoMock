@@ -138,6 +138,10 @@ pub struct SessionState {
     pub tz_bias: i32,
     pub elapsed_fake_ms: i64,
     pub elapsed_real_ms: i64,
+    /// Whether the duration axes are standing at the end of their range - see
+    /// [`SessionState::duration_at_range_end`]. Carried on the snapshot rather than recomputed by the
+    /// reader, because it depends on the same `now_real` the rest of this snapshot was taken at.
+    duration_saturated: bool,
 }
 
 /// The fake wall instant at `now_real`, from the anchor and the rate.
@@ -159,6 +163,17 @@ impl SessionState {
     /// (untouchable rule 6, R2-X2).
     pub fn clock_at_range_end(&self) -> bool {
         self.fake_ft >= chrono_ctl::FAKE_WALL_MAX
+    }
+
+    /// Whether the monotonic DURATION axes have reached the end of their range and are standing.
+    ///
+    /// The wall clock has had `clock_at_range_end` since R2-X2. The three duration axes - the ones
+    /// untouchable rule 3 is actually about - had nothing: they wrapped, which sent a clock the rule
+    /// says never rewinds backwards by centuries in a single step, invisibly. They saturate now, and
+    /// this is what makes the standing detectable, so the session can say it rather than let a reader
+    /// discover a frozen elapsed counter on their own (rule 6).
+    pub fn duration_at_range_end(&self) -> bool {
+        self.duration_saturated
     }
 }
 
@@ -185,6 +200,9 @@ impl Session {
         let (a_fake, a_real, m) = unsafe { read_anchor(self.ctl()) };
         let now_real = quit_now();
         let fake_ft = project_fake_ft(a_fake, a_real, now_real, m);
+        // Read from the SAME anchor snapshot and the same `now_real` as the projection above, so the
+        // flag describes the numbers beside it rather than a moment slightly later.
+        let (_tick_c0, _quit_c0, dur_q0, dur_m) = unsafe { chrono_ctl::read_dur(self.ctl()) };
         SessionState {
             fake_ft,
             real_ft: real_system_filetime(),
@@ -192,6 +210,7 @@ impl Session {
             tz_bias: self.tz_bias,
             elapsed_fake_ms: self.fake_elapsed_ticks(now_real, m) / 10_000,
             elapsed_real_ms: now_real.wrapping_sub(self.start_real) / 10_000,
+            duration_saturated: chrono_ctl::dur_axis_at_range_end(dur_q0, dur_m, now_real),
         }
     }
 

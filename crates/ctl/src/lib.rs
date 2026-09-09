@@ -866,8 +866,17 @@ pub fn shift_ticks_by_bias(ticks: i64, bias_min: i32, add: bool) -> Option<i64> 
 /// monotonicity is unit-tested without injection.
 pub fn dur_tick_at(dur_tick_c0: u64, dur_q0: i64, m: i64, real_now: i64) -> u64 {
     let dm = m.max(1);
-    let dq = real_now.wrapping_sub(dur_q0);
-    dur_tick_c0.wrapping_add((dq.wrapping_mul(dm) / 10_000) as u64)
+    let dq = real_now.saturating_sub(dur_q0);
+    // Saturating, not wrapping, and the difference is untouchable rule 3. `dq * M` overflows i64
+    // roughly 10.6 days into a session at the maximum multiplier, and WRAPPING there sent the axis
+    // BACKWARDS by centuries in one step - a monotonic clock that is not monotonic. Saturating holds
+    // it instead, which the rule still does not love (it says "never stops" too), but a stopped clock
+    // is a class less harmful than one that rewinds, and unlike a wrap it can be DETECTED and
+    // reported - see `dur_axis_at_range_end`.
+    //
+    // The wall axis has had a clamp and a warning since R2-X2. The three duration axes, which are the
+    // ones rule 3 is actually about, had neither.
+    dur_tick_c0.saturating_add((dq.saturating_mul(dm) / 10_000) as u64)
 }
 
 /// Project the fake `QueryUnbiasedInterruptTime` (100 ns) at real time `real_now` from the anchor:
@@ -875,8 +884,28 @@ pub fn dur_tick_at(dur_tick_c0: u64, dur_q0: i64, m: i64, real_now: i64) -> u64 
 /// resolution). `m` clamped to >= 1 (rule 3, like `dur_tick_at`).
 pub fn dur_quit_at(dur_quit_c0: i64, dur_q0: i64, m: i64, real_now: i64) -> i64 {
     let dm = m.max(1);
-    let dq = real_now.wrapping_sub(dur_q0);
-    dur_quit_c0.wrapping_add(dq.wrapping_mul(dm))
+    let dq = real_now.saturating_sub(dur_q0);
+    // Saturating for the reason `dur_tick_at` gives: a wrap here rewinds a clock rule 3 says never
+    // rewinds, and it cannot be seen from outside. This holds instead, and is detectable.
+    dur_quit_c0.saturating_add(dq.saturating_mul(dm))
+}
+
+/// Whether a duration axis has reached the end of what an i64 can hold and is therefore STANDING
+/// rather than advancing.
+///
+/// The elapsed term is what saturates first, long before the base does, so this asks about that term
+/// alone - the same product the three projections compute. Answering from the projected VALUE instead
+/// would be wrong in both directions: a base near the top saturates on the first tick, and a base near
+/// the bottom hides a saturated elapsed under a value that still looks ordinary.
+///
+/// At the maximum multiplier this arrives about 10.6 days into a session, and at the largest speed
+/// anyone has documented using (x1440, a day a minute) about 20 years - so the ordinary session never
+/// meets it. It is reported rather than assumed away because the alternative is a clock that quietly
+/// stops while the session goes on counting, which is the shape of R2-X2 on the wall axis.
+pub fn dur_axis_at_range_end(dur_q0: i64, m: i64, real_now: i64) -> bool {
+    let dm = m.max(1);
+    let dq = real_now.saturating_sub(dur_q0);
+    dq.checked_mul(dm).is_none()
 }
 
 /// Freeze the duration axis at real time `now` under the OLD multiplier, returning the new
@@ -928,8 +957,10 @@ pub unsafe fn read_qpc(p: *const Ctl) -> (i64, i64, i64) { unsafe {
 /// monotonicity is unit-tested without injection.
 pub fn dur_qpc_at(dur_qpc_c0: i64, dur_qpc_q0: i64, m: i64, real_now: i64) -> i64 {
     let dm = m.max(1);
-    let dq = real_now.wrapping_sub(dur_qpc_q0);
-    dur_qpc_c0.wrapping_add(dq.wrapping_mul(dm))
+    let dq = real_now.saturating_sub(dur_qpc_q0);
+    // Saturating, like the other two axes. QPC is the one a target is most likely to read as elapsed
+    // time (Stopwatch, nanoTime, perf_counter), so a rewind here is the most visible of the three.
+    dur_qpc_c0.saturating_add(dq.saturating_mul(dm))
 }
 
 /// Freeze the QPC axis at real QPC `now` under the OLD multiplier, returning the new `dur_qpc_c0` to
@@ -1778,6 +1809,60 @@ mod tests {
         // Frozen (0) and slow motion clamp to real length (>= 1) - rule 3.
         assert_eq!(scale_wait(6000, 0), 6000);
         assert_eq!(scale_wait(6000, -5), 6000);
+    }
+
+    /// 🔴 Untouchable rule 3 says the duration clock never goes backwards. It did.
+    ///
+    /// The three axes multiplied elapsed real time by M with WRAPPING arithmetic, so at the maximum
+    /// multiplier - about 10.6 days into a session - the product overflowed i64 and the axis jumped
+    /// BACKWARDS by centuries in a single step. A monotonic clock that is not monotonic, on the axis
+    /// .NET Stopwatch, Java nanoTime and Python perf_counter all read. The wall clock had had a clamp
+    /// and a warning for this since R2-X2 - these three, which are the ones the rule is about, had
+    /// neither.
+    ///
+    /// Saturating does not make the rule whole (a standing clock still is not advancing), and that is
+    /// why the session WARNS. What it does is turn an invisible rewind into a visible stop.
+    #[test]
+    fn a_duration_axis_holds_at_the_end_of_its_range_instead_of_rewinding() {
+        let m = 1_000_000; // MULTIPLIER_MAX
+        // Far past the point where dq * M overflows an i64.
+        let huge = i64::MAX / 2;
+
+        let quit = dur_quit_at(0, 0, m, huge);
+        assert_eq!(quit, i64::MAX, "held, not wrapped");
+        // Non-decreasing, not increasing - which is what "held" means. Two readings taken while the
+        // axis stands are EQUAL, and that is the honest shape: it is the wrap that has to be gone,
+        // not the standing, which is why the session warns about the standing separately.
+        assert!(quit >= dur_quit_at(0, 0, m, huge - 1_000_000), "never below an earlier reading");
+
+        let qpc = dur_qpc_at(0, 0, m, huge);
+        assert_eq!(qpc, i64::MAX);
+
+        // The tick axis divides by 10_000 after the multiply, so its saturation shows up as the
+        // largest millisecond count the same product can express - still held, still never backwards.
+        let tick = dur_tick_at(0, 0, m, huge);
+        assert!(tick >= dur_tick_at(0, 0, m, huge - 1_000_000));
+
+        // Monotonic across the boundary itself: sample either side of the overflow point and the
+        // later reading is never the smaller one.
+        let boundary = i64::MAX / m;
+        let before = dur_quit_at(0, 0, m, boundary - 1);
+        let after = dur_quit_at(0, 0, m, boundary + 1);
+        assert!(after >= before, "before={before} after={after}");
+    }
+
+    /// The standing has to be REPORTABLE, or saturating just replaces a loud wrong answer with a
+    /// quiet one. This is the predicate the session warns on.
+    #[test]
+    fn a_standing_duration_axis_can_be_detected() {
+        let m = 1_000_000;
+        assert!(dur_axis_at_range_end(0, m, i64::MAX / 2));
+        assert!(!dur_axis_at_range_end(0, m, 10_000_000), "one second in, nowhere near it");
+        // At the largest speed anyone has documented using, a session would have to run for decades.
+        assert!(!dur_axis_at_range_end(0, 1440, 10_000_000 * 86_400 * 365));
+        // Frozen clamps the multiplier to 1, so the axis advances at real speed and never saturates
+        // within any session length that can exist.
+        assert!(!dur_axis_at_range_end(0, 0, i64::MAX / 4));
     }
 
     /// 🔴 A sub-M timeout used to come out as 0, and this test asserted that as "honest coarseness".

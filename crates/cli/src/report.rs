@@ -175,6 +175,12 @@ pub(crate) fn describe_warning(key: &str) -> String {
         "time.fake_clock_clamped" => {
             "the fake clock reached the last date this build can represent (year 30828) and stood there for the rest of the session, so late readings are not the moments the rate would have produced"
         }
+        // A separate line from the one above, because it is a separate axis reaching a separate limit.
+        // The wall stops at the end of the FILETIME range - the monotonic axes stop when their elapsed
+        // term fills an i64, which at the maximum speed is about ten days in.
+        "time.duration_axis_clamped" => {
+            "the monotonic counters (tick count, unbiased interrupt time, and QPC when scaled) reached the end of their range and stood there, so elapsed time inside the target stopped advancing even though the session went on"
+        }
         "inheritance.child_not_injected" => {
             "a child process could not be covered and ran on the REAL clock - usually a child of the other bitness; the process count below is short by that many"
         }
