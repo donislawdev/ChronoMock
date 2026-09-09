@@ -361,6 +361,22 @@
   // ("pass --calendar") that this screen cannot pass. Said instead as the control that fixes it, and
   // the field named in words rather than only marked, because a colour alone is not a message.
   "calc.err.needs_calendar": "Któryś krok liczy dni robocze, a to wymaga kalendarza świąt - wybierz go w polu Kalendarz.",
+  // The rest of what the engine can refuse, by its own stable key. Said WITHOUT the step number the engine
+  // carries: the steps are on this screen and there are rarely more than a few, so a number that has to be
+  // parsed back out of an English sentence buys nothing and breaks the moment the sentence is reworded.
+  "calc.err.step_unsupported": "Któryś z kroków nie jest jeszcze zbudowany w tej wersji, więc nie ma czego pokazać.",
+  "calc.err.degenerate_calendar": "Wybrany kalendarz oznacza (prawie) każdy dzień jako wolny, więc krok liczący dni robocze nie ma gdzie wylądować - sprawdź w nim weekend i święta.",
+  "calc.err.overflow": "Wynik wychodzi poza zakres, jaki ta wersja potrafi policzyć - użyj mniejszego przesunięcia.",
+  "calc.err.bad_set_time": "Krok ustawienia godziny ma godzinę, minutę albo sekundę poza zakresem.",
+  "calc.err.year_out_of_range": "Wynik wypada w roku spoza zakresu, na którym ta wersja liczy (od -262143 do 262143).",
+  "calc.err.base_overflow": "Punkt startowy w UTC wskazuje moment spoza zakresu, jaki ta wersja potrafi wyrazić.",
+  "calc.err.analyze_unrecognized": "To nie jest format daty, który analiza rozpoznaje. Czyta ISO (2026-01-31), daty liczbowe z czterocyfrowym rokiem (31.01.2026) oraz samą liczbę jako znacznik czasu uniksowego.",
+  "calc.err.preset_not_for_calculator": "Ten preset opisuje sesję podmiany czasu, a nie datę do policzenia.",
+  // Two failures that are not the engine's: its answer arrived and was not usable. Rare, and worth saying
+  // plainly rather than showing the reader a blank result they cannot explain.
+  "calc.err.no_readings": "Analiza nie zwróciła żadnego odczytu dla tego wejścia.",
+  "calc.err.incomplete_result": "Rdzeń zwrócił niekompletny wynik, więc nie ma czego wiarygodnie pokazać.",
+  "calc.err.timeout": "Obliczenie nie skończyło się w wyznaczonym czasie i zostało zatrzymane. Potrafi to zrobić plik kalendarza z bardzo dużą liczbą świąt.",
 
   // Snap-step targets (G3c-1): the period boundary the step jumps to. Tokens mirror the snap flag.
   "calc.snap.som": "Początek miesiąca",

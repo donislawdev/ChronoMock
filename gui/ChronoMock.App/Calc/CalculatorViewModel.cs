@@ -339,6 +339,7 @@ public sealed class CalculatorViewModel : ObservableObject
     private string _resultZone = string.Empty;
     private string _metadataLine = string.Empty;
     private string _error = string.Empty;
+    private string _errorDetail = string.Empty;
     private bool _hasError;
     private bool _calendarMissing;
     private bool _hasResult;
@@ -597,6 +598,17 @@ public sealed class CalculatorViewModel : ObservableObject
     public string Error { get => _error; private set => Set(ref _error, value); }
     public bool HasError { get => _hasError; private set => Set(ref _hasError, value); }
 
+    /// <summary>The engine's own sentence beneath the translated message - the step number and the year
+    /// range it names are detail no key reproduces. Empty when it would only repeat the line above it.</summary>
+    public string ErrorDetail
+    {
+        get => _errorDetail;
+        private set { if (Set(ref _errorDetail, value)) { RaisePropertyChanged(nameof(HasErrorDetail)); } }
+    }
+
+    /// <summary>True when there is a technical line worth showing under the message.</summary>
+    public bool HasErrorDetail => _errorDetail.Length > 0;
+
     /// <summary>Whether the last evaluation failed for the one reason a control on this screen can fix:
     /// a step counts business days and no calendar is picked. It marks the calendar picker, so the
     /// sentence in the result column is not the only place the tester has to connect the two.</summary>
@@ -764,7 +776,7 @@ public sealed class CalculatorViewModel : ObservableObject
         {
             if (!cts.IsCancellationRequested)
             {
-                AnalyzeError = e.Message;
+                AnalyzeError = DescribeCalcError(e.Message);
                 AnalyzeHasError = true;
                 HasAnalysis = false;
                 AnalyzeAmbiguous = false;
@@ -774,7 +786,8 @@ public sealed class CalculatorViewModel : ObservableObject
         catch (Exception e)
         {
             // Any other failure (an incomplete reading dereferenced in ApplyAnalysis / ReadingRow) is
-            // surfaced honestly rather than swallowed by this fire-and-forget task (M-11, rule 6).
+            // surfaced honestly rather than swallowed by this fire-and-forget task (M-11, rule 6). Not a
+            // translated key: this is a .NET fault with no key to map, and the message is all there is.
             if (!cts.IsCancellationRequested)
             {
                 AnalyzeError = e.Message;
@@ -790,7 +803,7 @@ public sealed class CalculatorViewModel : ObservableObject
     {
         if (result.Analysis is not { } analysis)
         {
-            AnalyzeError = "analyze returned no readings";
+            AnalyzeError = Tr("calc.err.no_readings");
             AnalyzeHasError = true;
             HasAnalysis = false;
             return;
@@ -1136,6 +1149,7 @@ public sealed class CalculatorViewModel : ObservableObject
             if (!cts.IsCancellationRequested)
             {
                 Error = DescribeCalcError(e.Message);
+                ErrorDetail = DetailForCalcError(e.Message);
                 HasError = true;
                 CalendarMissing = IsNeedsCalendar(e.Message);
                 CanUseInSubstitution = false;
@@ -1148,6 +1162,7 @@ public sealed class CalculatorViewModel : ObservableObject
             if (!cts.IsCancellationRequested)
             {
                 Error = e.Message;
+                ErrorDetail = string.Empty; // a .NET fault, not an engine refusal: no second line to add
                 HasError = true;
                 CalendarMissing = false;
                 CanUseInSubstitution = false;
@@ -1177,8 +1192,30 @@ public sealed class CalculatorViewModel : ObservableObject
     /// structured-error change to the calc surface, not a lookup. This one needs no data: whichever step
     /// asked for business days, the answer is the same picker.
     /// </para></summary>
-    internal static string DescribeCalcError(string message)
-        => IsNeedsCalendar(message) ? Tr("calc.err.needs_calendar") : message;
+    /// <summary>
+    /// The interface text for an engine failure. Every stable key the engine names is translated, not just
+    /// the missing-calendar one: this used to hand the panel the engine's own English sentence, complete
+    /// with the <c>chrono calc:</c> process prefix and the raw key in brackets, for eight cases out of nine.
+    /// The mapping itself lives in <see cref="CalcErrorText"/>, which is pure and has its own tests.
+    /// </summary>
+    internal static string DescribeCalcError(string message) => CalcErrorText.Describe(message, Tr);
+
+    /// <summary>
+    /// The engine's own sentence, to show UNDER the translated message - or empty when the translation
+    /// already is that sentence, because one line printed twice is noise rather than detail.
+    /// <para>
+    /// Most engine refusals name a step number or a year range that no key alone reproduces. Parsing those
+    /// back out of English prose is exactly what keying on the key avoids, so the sentence is kept whole
+    /// and shown as what it is: a technical line beneath a message the reader can act on.
+    /// </para>
+    /// </summary>
+    internal static string DetailForCalcError(string message)
+    {
+        var detail = CalcErrorText.Detail(message);
+        return string.Equals(detail, DescribeCalcError(message), StringComparison.Ordinal)
+            ? string.Empty
+            : detail;
+    }
 
     private void ApplyResult(CalcResult result)
     {
@@ -1187,7 +1224,8 @@ public sealed class CalculatorViewModel : ObservableObject
         // Metadata null and NRE below (moment.Formats.IsoDate, moment.Metadata.Weekday). Honest error instead.
         if (result.Moment is not { } moment || moment.Formats is null || moment.Metadata is null)
         {
-            Error = "calc returned an incomplete moment";
+            Error = Tr("calc.err.incomplete_result");
+            ErrorDetail = string.Empty;
             HasError = true;
             CalendarMissing = false;
             CanUseInSubstitution = false;
@@ -1196,6 +1234,7 @@ public sealed class CalculatorViewModel : ObservableObject
 
         HasError = false;
         Error = string.Empty;
+        ErrorDetail = string.Empty;
         CalendarMissing = false;
 
         var t = moment.Iso.IndexOf('T', StringComparison.Ordinal);
@@ -1274,6 +1313,7 @@ public sealed class CalculatorViewModel : ObservableObject
     {
         HasError = false;
         Error = string.Empty;
+        ErrorDetail = string.Empty;
         CalendarMissing = false;
         HasResult = false;
         CanUseInSubstitution = false;

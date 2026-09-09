@@ -416,6 +416,13 @@
             <TextBlock Text="{Binding Error}" TextWrapping="Wrap" Margin="{StaticResource SpaceXs}"
                        FontSize="{StaticResource FontSizeCaption}" Foreground="{DynamicResource BrushStatusFails}"
                        Visibility="{Binding HasError, Converter={StaticResource BoolToVis}}" />
+            <!-- The engine's own sentence, UNDER the translated message: it names a step number or a year
+                 range that the key alone does not carry. Quieter than the line above, because it is the
+                 detail, not the answer. -->
+            <TextBlock Text="{Binding ErrorDetail}" TextWrapping="Wrap" Margin="{StaticResource SpaceXs}"
+                       FontSize="{StaticResource FontSizeCaption}"
+                       Foreground="{DynamicResource BrushTextSecondary}"
+                       Visibility="{Binding HasErrorDetail, Converter={StaticResource BoolToVis}}" />
 
             <Border Margin="{StaticResource SpaceMd}" Padding="{StaticResource SpaceMd}"
                     Background="{DynamicResource BrushBgBase}" CornerRadius="{StaticResource RadiusSm}"

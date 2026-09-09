@@ -362,6 +362,22 @@
   // ("pass --calendar") that this screen cannot pass. Said instead as the control that fixes it, and
   // the field named in words rather than only marked, because a colour alone is not a message.
   "calc.err.needs_calendar": "A step counts business days, which needs a holiday calendar - pick one in the Calendar field.",
+  // The rest of what the engine can refuse, by its own stable key. Said WITHOUT the step number the engine
+  // carries: the steps are on this screen and there are rarely more than a few, so a number that has to be
+  // parsed back out of an English sentence buys nothing and breaks the moment the sentence is reworded.
+  "calc.err.step_unsupported": "One of the steps is not built in this version yet, so there is no result to show.",
+  "calc.err.degenerate_calendar": "The chosen calendar marks (almost) every day as a day off, so a business-day step has nowhere to land - check its weekend and holidays.",
+  "calc.err.overflow": "The result runs past the range this version can compute - use a smaller shift.",
+  "calc.err.bad_set_time": "The set-time step has an hour, minute or second outside its range.",
+  "calc.err.year_out_of_range": "The result lands on a year outside the range this version computes on (-262143 to 262143).",
+  "calc.err.base_overflow": "The UTC start point names an instant outside the range this version can represent.",
+  "calc.err.analyze_unrecognized": "This is not a date format the analyser recognises. It reads ISO (2026-01-31), numeric dates with a four-digit year (01/31/2026), and a bare number as a Unix timestamp.",
+  "calc.err.preset_not_for_calculator": "This preset describes a substitution session, not a date to compute.",
+  // Two failures that are not the engine's: its answer arrived and was not usable. Rare, and worth saying
+  // plainly rather than showing the reader a blank result they cannot explain.
+  "calc.err.no_readings": "The analyser returned no readings for this input.",
+  "calc.err.incomplete_result": "The engine returned an incomplete result, so there is nothing reliable to show.",
+  "calc.err.timeout": "The calculation did not finish in time and was stopped. A calendar file with a very large number of holidays can do this.",
 
   // Snap-step targets (G3c-1): the period boundary the step jumps to. Tokens mirror the snap flag.
   "calc.snap.som": "Start of month",
