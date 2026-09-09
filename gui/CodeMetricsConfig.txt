@@ -37,12 +37,22 @@
 # code-behind. That worked and read badly: the panel's own state sat outside the panel's view model, and
 # only because of a number. The owner chose the honest shape over the pinned figure. What is NOT being
 # granted is headroom - 82 is the measurement again, and the tightened copy at 81 still has to fail.
+#
+# Re-measured 2026-09-09 with `tools/margin.ps1`, which builds the solution once against a copy of this
+# file with both thresholds at 1 and reads every type's number out of the warnings: `SessionViewModel`
+# still holds 82, but the field behind it has moved UP. `CalculatorViewModel` is now 72, then
+# `SessionViewModelTests` and `MainWindow` at 71 - so the sentence above about a band rather than one
+# outlier is truer now than when it was written, and the runner-up figures in it were stale.
 CA1506: 82
 
 # `PresetCatalog.ReadParameters`, a JSON reader that validates each field as it goes. Next are
 # `SessionViewModel.Apply` at 15 and `SessionViewModel`'s event router at 13. The analyzer's default
 # here is 25, which nothing in this codebase approaches - left at the default, the rule would never
 # have fired and would have been a gate in name only.
+#
+# Re-measured 2026-09-09: `ReadParameters` still holds 18 and `SessionViewModel.Apply` is still 15, but
+# nothing in `SessionViewModel` reaches 13 any more. The two at 13 are `CalculatorViewModel.ApplyResult`
+# and `ScanViews` in the item-name guard.
 CA1502: 18
 
 # CA1501 (inheritance depth) and CA1505 (maintainability index) are deliberately absent. Measured

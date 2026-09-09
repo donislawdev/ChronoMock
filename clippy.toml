@@ -35,17 +35,32 @@
 
 # `crates/cli/src/cdp_session.rs::cdp_session` at 225. The runner-up is `run::driver_run` at 169,
 # then `run::args::parse_run_args` at 165 and `mech::prepare` at 144.
+#
+# Re-measured 2026-09-09 with `tools/margin.ps1`, which asks this lint for every function at once by
+# running it with the threshold at 1 and reading the counts out of the messages: the ceiling holder is
+# unchanged at 225, but the two behind it have SWAPPED. `run::args::parse_run_args` is now 170 and
+# `run::driver_run` 165, with `mech::prepare` still at 144 and `mech::install` next at 133. Checked by
+# prediction rather than by trusting one run: at a threshold of 165 exactly two functions fire, which
+# is only true if driver_run is at or below 165 and parse_run_args above it.
 too-many-lines-threshold = 225
 
 # A tie at 25: `run::driver_run` and `report::render_report`. This happens to be clippy's own
 # default, which is worth saying out loud rather than leaving to look like a copied number - it
 # means the workspace sits exactly on the line the lint would have drawn anyway, with no headroom
 # at all. The next one down is `site::render::build` at 19.
+#
+# Re-measured 2026-09-09: the tie is GONE. `run::driver_run` holds 25 alone, `report::render_report`
+# has come down to 23, and the gap behind it filled with work added since - `mech::gather_coverage` at
+# 22, a calendar test at 21 and `hygiene`'s `collect_rust` at 20, before `site::render::build` at 19.
 cognitive-complexity-threshold = 25
 
 # Three blocks reach 6 and nothing reaches 7: `cdp_session.rs:294` plus two in `tests/hygiene.rs`.
 # The lint is OFF by default (its default threshold is 0, meaning disabled), so this line is what
 # turns the axis on at all.
+#
+# Re-measured 2026-09-09: FOUR blocks now sit at 6, not three. The fourth is in `tests/names.rs`,
+# which did not exist when the line above was written. This axis can only be asked with a threshold -
+# the lint reports no number - so the way to see it is a run one below the ceiling.
 excessive-nesting-threshold = 6
 
 # `too-many-arguments-threshold` is deliberately NOT set here, and the reason is specific to this
