@@ -16,7 +16,10 @@
 //! model so the surface is complete, and return the product's honest "not built
 //! yet" vocabulary rather than a silent skip or a faked result (zasady/01 section 2).
 
-use super::{civil_from_days, days_from_civil, is_leap, last_day_of_month, parse_civil};
+use super::{
+    civil_from_days, days_from_civil, is_leap, last_day_of_month, parse_civil, CIVIL_YEAR_MAX,
+    CIVIL_YEAR_MIN,
+};
 
 /// A civil date and time - wall-clock fields in the session zone, no UTC, no DST.
 /// This is the running value the evaluator folds steps onto.
@@ -1262,11 +1265,23 @@ impl DateAnalysis {
 /// the thing this analyser refuses to do for month/day order too. A reading whose year falls outside
 /// the computable band is dropped rather than shown wrong - if that leaves nothing, the input is not
 /// a usable epoch and the caller reports it unrecognised.
-fn epoch_readings(s: &str, zone_bias_min: i32) -> Option<Vec<(DateReading, CivilDateTime)>> {
+/// Whether the input is nothing but digits, with an optional leading minus - the shape of an epoch.
+///
+/// Separate from reading it, because the two answer different questions and the caller needs both.
+/// "Is this meant to be a number" decides WHICH refusal an unusable input gets, and "does it resolve
+/// to a date" decides whether there is a refusal at all. Folded together, a 20-digit timestamp came
+/// back as a format complaint about input whose format was never in doubt.
+fn is_bare_number(s: &str) -> bool {
     let digits = s.strip_prefix('-').unwrap_or(s);
-    if digits.is_empty() || !digits.chars().all(|c| c.is_ascii_digit()) {
+    !digits.is_empty() && digits.chars().all(|c| c.is_ascii_digit())
+}
+
+fn epoch_readings(s: &str, zone_bias_min: i32) -> Option<Vec<(DateReading, CivilDateTime)>> {
+    if !is_bare_number(s) {
         return None;
     }
+    // Past i64 there is no instant to reach at all, so this is one of the two ways a number can fail
+    // to be a date - the caller says so in the same sentence as the other one.
     let n: i64 = s.parse().ok()?;
     let mut readings = Vec::with_capacity(2);
     for (reading, secs) in [
@@ -1309,8 +1324,20 @@ pub fn analyze_date(input: &str, zone_bias_min: i32) -> Result<DateAnalysis, Str
     // A bare number: epoch. Checked BEFORE the separator dispatch, and it cannot collide with the
     // dated forms - those all carry a separator, and this one may carry nothing but digits and a
     // leading minus (pre-1970 instants are real and this tool exists to reach them).
-    if let Some(readings) = epoch_readings(s, zone_bias_min) {
-        return Ok(DateAnalysis { readings });
+    //
+    // The SHAPE decides which refusal this input gets, and that is the point. A run of digits fell
+    // through to the bottom of this function and came back "unrecognised date format", which is a
+    // sentence about shape, on input whose shape was read perfectly - what failed was the RANGE.
+    // Someone pasting a microsecond timestamp was sent to look at their formatting.
+    if is_bare_number(s) {
+        return epoch_readings(s, zone_bias_min)
+            .map(|readings| DateAnalysis { readings })
+            .ok_or_else(|| {
+                format!(
+                    "'{input}' reads as a number, but neither seconds nor milliseconds since 1970 \
+                     put it on a date this build computes on ({CIVIL_YEAR_MIN}..={CIVIL_YEAR_MAX})"
+                )
+            });
     }
     // ISO: dash-separated, with or without a time (midnight if the time is absent).
     if s.contains('-') {
@@ -2308,6 +2335,27 @@ mod tests {
         assert!(analyze_date("hello", 0).is_err());
         assert!(analyze_date("04/08/08", 0).is_err()); // year not four digits
         assert!(analyze_date("2008/08/04", 0).is_err()); // year-first numeric not recognised yet
+    }
+
+    /// A number that cannot be a date gets a refusal about its RANGE, not about its format.
+    ///
+    /// It used to fall through every branch and arrive at "unrecognised date format", a sentence
+    /// about shape - on input whose shape was read perfectly. Someone pasting a microsecond timestamp
+    /// (the ordinary way to reach this) was sent to look at their formatting.
+    #[test]
+    fn a_number_that_is_no_date_is_refused_for_its_range_not_its_format() {
+        // Too large for i64 at all: there is no instant behind it to reach.
+        let huge = analyze_date("99999999999999999999", 0).expect_err("not an instant");
+        assert!(huge.contains("reads as a number"), "got: {huge}");
+        assert!(!huge.contains("unrecognised date format"), "the shape was never in doubt: {huge}");
+
+        // Inside i64 and still no date: both readings land outside the computable year band.
+        let far = analyze_date("999999999999999999", 0).expect_err("not a date this build computes on");
+        assert!(far.contains("reads as a number"), "got: {far}");
+
+        // The shape complaint stays for input that really is shapeless.
+        let shapeless = analyze_date("hello", 0).expect_err("not a date");
+        assert!(shapeless.contains("unrecognised date format"), "got: {shapeless}");
     }
 
     // --- custom format mask --------------------------------------------------

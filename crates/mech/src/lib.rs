@@ -519,7 +519,7 @@ unsafe fn read_active_core_pid() -> u32 { unsafe {
 /// Calls the Win32 synchronization APIs.
 unsafe fn take_session_lock() -> Result<SessionLock, PrepareError> { unsafe {
     let h = CreateMutexW(None, false, windows::core::PCWSTR(chrono_ctl::CTL_LOCK_NAME_W.as_ptr()))
-        .map_err(|e| PrepareError::Control(format!("CreateMutexW: {e:?}")))?;
+        .map_err(|e| PrepareError::Control(win32_detail("CreateMutexW", &e)))?;
     let lock = SessionLock(h);
     if lock_is_ours(WaitForSingleObject(h, 0)) {
         Ok(lock)
@@ -779,7 +779,7 @@ pub fn prepare(spec: &SessionSpec, target: &Target, hook_dll: &Path) -> Result<P
             ctl_size() as u32,
             windows::core::PCWSTR(chrono_ctl::CTL_SECTION_NAME_W.as_ptr()),
         )
-        .map_err(|e| PrepareError::Control(format!("CreateFileMappingW: {e:?}")))?;
+        .map_err(|e| PrepareError::Control(win32_detail("CreateFileMappingW", &e)))?;
         // The section name is fixed, so it may survive a prior session. GetLastError right after the
         // create says whether it pre-existed - read it before anything else can reset it.
         let already_existed = GetLastError() == ERROR_ALREADY_EXISTS;
@@ -864,7 +864,7 @@ pub fn prepare(spec: &SessionSpec, target: &Target, hook_dll: &Path) -> Result<P
         if let Err(e) = launched {
             let _ = UnmapViewOfFile(MEMORY_MAPPED_VIEW_ADDRESS { Value: view.Value });
             let _ = CloseHandle(hmap);
-            return Err(PrepareError::Launch(format!("CreateProcessW: {e:?}")));
+            return Err(PrepareError::Launch(win32_detail("CreateProcessW", &e)));
         }
 
         // 2a. Refuse a target this core cannot reach, before trying (R2-S1). The process exists but is
@@ -959,6 +959,38 @@ pub fn prepare(spec: &SessionSpec, target: &Target, hook_dll: &Path) -> Result<P
         };
         Ok(Prepared { coverage, session, vanished_lived_ms, orphan_reclaimed })
     }
+}
+
+/// A Win32 failure as a sentence a person can act on: what was being done, why it failed when we can
+/// say, and the raw code for a bug report.
+///
+/// Written because the alternative was on screen. These failures used to be formatted with `{e:?}`,
+/// which is Rust's DEBUG rendering of `windows::core::Error` - so `chrono run` on a path that does not
+/// exist answered with
+///
+/// ```text
+/// chrono core: CreateProcessW: Error { code: HRESULT(0x80070003), message: "..." }
+/// ```
+///
+/// a struct dump rather than a sentence. Worse for a tool whose CLI is English without exception
+/// (rule 15): the `message` field is filled in by Windows IN THE SYSTEM'S LANGUAGE, so on this
+/// machine an English-only command line printed a Polish sentence. Measured, not supposed.
+///
+/// So the OS text is dropped and the code is kept. The handful of codes a tester actually meets get a
+/// clause of our own - the rest are named by their number, which is what a bug report needs anyway.
+fn win32_detail(operation: &str, e: &windows::core::Error) -> String {
+    let code = e.code().0 as u32;
+    let because = match code {
+        0x8007_0002 => " - the file does not exist",
+        0x8007_0003 => " - the path does not exist",
+        0x8007_0005 => " - access was denied",
+        0x8007_0020 => " - the file is in use by another process",
+        // ERROR_BAD_EXE_FORMAT. Worth naming: it is what a corrupt executable and a 16-bit or
+        // non-native binary both come back as, and neither reads as "bad format" to a tester.
+        0x8007_00C1 => " - the file is not a runnable executable for this machine",
+        _ => "",
+    };
+    format!("{operation} failed{because} (0x{code:08X})")
 }
 
 /// Quote one argument so the target's CRT (CommandLineToArgvW) parses it back verbatim, per the
@@ -1073,11 +1105,11 @@ unsafe fn inject(hproc: HANDLE, dll_wide: &[u16]) -> Result<(), PrepareError> { 
         PrepareError::Inject(msg)
     };
     if let Err(e) = WriteProcessMemory(hproc, remote, dll_wide.as_ptr() as *const c_void, bytes, None) {
-        return Err(fail(format!("WriteProcessMemory: {e:?}")));
+        return Err(fail(win32_detail("WriteProcessMemory", &e)));
     }
     let k32 = match GetModuleHandleA(s!("kernel32.dll")) {
         Ok(h) => h,
-        Err(e) => return Err(fail(format!("GetModuleHandleA: {e:?}"))),
+        Err(e) => return Err(fail(win32_detail("GetModuleHandleA", &e))),
     };
     let loadlib = match GetProcAddress(k32, s!("LoadLibraryW")) {
         Some(f) => f,
@@ -1089,7 +1121,7 @@ unsafe fn inject(hproc: HANDLE, dll_wide: &[u16]) -> Result<(), PrepareError> { 
     >(loadlib));
     let hthread = match CreateRemoteThread(hproc, None, 0, start, Some(remote as *const c_void), 0, None) {
         Ok(h) => h,
-        Err(e) => return Err(fail(format!("CreateRemoteThread: {e:?}"))),
+        Err(e) => return Err(fail(win32_detail("CreateRemoteThread", &e))),
     };
 
     // Bounded wait (M-1): a hung DllMain (loader lock) must not hang prepare forever.
@@ -1223,6 +1255,31 @@ mod tests {
         assert!(gathered.covered.is_empty(), "nothing may be claimed as covered");
         assert!(!gathered.uncovered.is_empty(), "always-present channels are a real gap");
         assert_eq!(chrono_core::verdict_from_coverage(&gathered), chrono_core::Verdict::Fails);
+    }
+
+    /// A Win32 failure has to read as a sentence, not as a struct dump, and it has to stay ENGLISH.
+    ///
+    /// Both halves were broken by the same `{e:?}`: it printed `Error { code: HRESULT(0x80070003),
+    /// message: "..." }`, and the message field is filled in by Windows in the SYSTEM's language - so
+    /// an English-only CLI (rule 15) printed a Polish sentence on this machine.
+    #[test]
+    fn a_win32_failure_reads_as_a_sentence_and_keeps_its_code() {
+        let missing_path = windows::core::Error::from_hresult(windows::core::HRESULT(0x8007_0003u32 as i32));
+        let detail = win32_detail("CreateProcessW", &missing_path);
+
+        assert_eq!(detail, "CreateProcessW failed - the path does not exist (0x80070003)");
+        // No struct dump and no OS sentence: the two things that made this unreadable.
+        assert!(!detail.contains("HRESULT("), "the Debug rendering is what this replaced: {detail}");
+        assert!(!detail.contains("message:"), "the OS message is language-dependent: {detail}");
+    }
+
+    /// A code with no clause of ours still names the operation and the number - which is what a bug
+    /// report needs. Silence about the code would be worse than the struct dump this replaced.
+    #[test]
+    fn an_unnamed_win32_code_still_carries_the_operation_and_the_number() {
+        let odd = windows::core::Error::from_hresult(windows::core::HRESULT(0x8007_1234u32 as i32));
+
+        assert_eq!(win32_detail("CreateRemoteThread", &odd), "CreateRemoteThread failed (0x80071234)");
     }
 
     /// S-3 regression. The session lock decides orphan-versus-live, and an abandoned mutex (the
