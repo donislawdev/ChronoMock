@@ -6,6 +6,12 @@ namespace ChronoMock.App;
 
 public partial class App : Application
 {
+    // 🔴 THE THREE DIALOGS BELOW STAY NATIVE, and that is a decision rather than an oversight. Everything
+    // this app asks or announces in normal operation goes through Views.MessageDialog, which is themed and
+    // speaks the interface language. These three do not, because each of them reports that something the
+    // themed window DEPENDS ON has failed: the strings dictionary, the startup path, or the dispatcher. A
+    // dialog that cannot draw itself is a worse way to report a failure than a plain grey box that always
+    // can, and this is the one place where the ugly thing is the reliable one.
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);

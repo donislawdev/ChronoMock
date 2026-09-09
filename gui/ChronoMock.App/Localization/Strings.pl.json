@@ -34,6 +34,7 @@
 
   // Shown only while no target is chosen: dropping a file on the window is not discoverable on its own, and once there is a target the hint would be noise on every later run (chrono-mock 7.1 pt 1).
   "target.drop_hint": "…albo przeciągnij aplikację na to okno",
+  "target.drop_rejected_title": "Ten plik nie może być celem",
   "target.drop_rejected": "Uruchomić można tylko pliki .exe - tego wymaga i hook, i wykrywanie Chromium.",
 
   // Arguments and working folder (chrono-mock 7.1 pt 1). Collapsed by default: most sessions need neither. The wire and the mechanism have carried both since the protocol was written; only the surfaces did not offer them.
@@ -254,9 +255,15 @@
   "history.delete": "Usuń tę sesję",
   "history.clear": "Wyczyść",
   "history.clear_title": "Wyczyść historię",
-  "history.clear_confirm": "Wyczyścić wszystkie zapisane sesje? Tej operacji nie można cofnąć.",
+  "history.clear_confirm": "Wyczyścić wszystkie zapisane sesje?",
+  "history.clear_undone": "Tej operacji nie można cofnąć. Same sesje już się zakończyły - to usuwa zapisy o nich.",
 
   // Module switch: the two halves of the product (chrono-mock 6.1/7).
+  // Dialog answers. The app labels its own buttons, unlike a native message box, whose Yes and No come
+  // from Windows in the system language whatever language the interface is in (rule 15).
+  "dialog.cancel": "Anuluj",
+  "dialog.close": "Zamknij",
+
   "nav.substitution": "Podmiana",
   "nav.calculator": "Kalkulator",
 

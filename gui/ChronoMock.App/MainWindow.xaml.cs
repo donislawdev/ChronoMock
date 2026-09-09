@@ -169,7 +169,7 @@ public partial class MainWindow : FluentWindow
         // only fail later, and failing at the drop is the honest place for it.
         if (e.Data.GetDataPresent(DataFormats.FileDrop))
         {
-            System.Windows.MessageBox.Show(this, Text("target.drop_rejected"), Text("app.title"));
+            Views.MessageDialog.Tell(this, Text("target.drop_rejected_title"), Text("target.drop_rejected"));
         }
     }
 
@@ -296,15 +296,13 @@ public partial class MainWindow : FluentWindow
         }
     }
 
-    // Clear all history. Destructive, so it confirms first with the effect spelled out (zasady/13 section 11).
+    // Clear all history. Destructive, so it confirms first with the effect spelled out (zasady/13 section 11)
+    // and the affirmative NAMED after what it does, rather than left as a Yes that says nothing about which
+    // question it is answering.
     private void OnHistoryClearClick(object sender, RoutedEventArgs e)
     {
-        // Fully qualified: wpfui also defines a MessageBox type, so the bare names are ambiguous here.
-        var confirmed = System.Windows.MessageBox.Show(
-            Text("history.clear_confirm"), Text("history.clear_title"),
-            System.Windows.MessageBoxButton.YesNo, System.Windows.MessageBoxImage.Warning)
-            == System.Windows.MessageBoxResult.Yes;
-        if (confirmed)
+        if (Views.MessageDialog.Ask(
+                this, Text("history.clear_confirm"), Text("history.clear_undone"), Text("history.clear_title")))
         {
             _session.ClearHistory();
         }
