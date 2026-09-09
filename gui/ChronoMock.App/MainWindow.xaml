@@ -9,14 +9,36 @@
                  Height="800"
                  MinWidth="1000"
                  MinHeight="360"
-                 Background="{DynamicResource BrushBgBase}"
                  ExtendsContentIntoTitleBar="True"
                  WindowBackdropType="None"
                  WindowStartupLocation="CenterScreen"
                  AllowDrop="True"
                  DragOver="OnWindowDragOver"
                  Drop="OnWindowDrop">
-  <Grid>
+  <!--
+    🔴 THE APP'S BACKGROUND GOES HERE, ON THE CONTENT ROOT, NOT ON THE WINDOW. A Background written on
+    a ui:FluentWindow is accepted, looks exactly like a working one, and paints nothing: the window
+    carried Background="{DynamicResource BrushBgBase}" for the whole life of this file and every pixel
+    stayed at the wpfui default. Measured rather than reasoned - the attribute was replaced with a
+    bright literal, the app rebuilt and screenshotted, and the images came back IDENTICAL BYTE FOR BYTE,
+    zero difference across 1 872 000 pixels. Overriding the theme resources the FluentWindow style reads
+    (WindowBackground, ApplicationBackgroundBrush) changed nothing either, by the same measurement.
+
+    That silent nothing is what left the two halves of one app on two different colours: the calculator
+    view looked right only because it carries its own root Grid background, which a Grid does honour, so
+    the substitution panel and the window chrome sat on the wpfui #202020 while the calculator sat on our
+    #1B1B1F. The seam was visible under the module switch.
+
+    #1B1B1F is the palette's own base (Themes/Colours.xaml). It stays ours on purpose: the colour it
+    replaced was a default of the dependency, so a wpfui release could have changed 86 percent of this
+    window without anyone deciding it. The base is also the first rung of a four-surface ladder tuned
+    together - a card separates from it at 1.14 contrast against 1.08 on the old colour, and the whole
+    palette is slightly cool where #202020 is flat grey.
+
+    Guarded by BackgroundGuardTests, which renders this window and asserts the painted colour, because a
+    guard on the presence of the attribute would have passed happily on the dead one.
+  -->
+  <Grid Background="{DynamicResource BrushBgBase}">
     <Grid.RowDefinitions>
       <RowDefinition Height="Auto" />
       <RowDefinition Height="Auto" />

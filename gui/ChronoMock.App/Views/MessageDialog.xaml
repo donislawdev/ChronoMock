@@ -11,7 +11,6 @@
                  ResizeMode="NoResize"
                  ShowInTaskbar="False"
                  WindowStartupLocation="CenterOwner"
-                 Background="{DynamicResource BrushBgBase}"
                  ExtendsContentIntoTitleBar="True"
                  WindowBackdropType="None">
   <!--
@@ -29,8 +28,13 @@
     hunting. The destructive answer carries the failure red of the session Stop control, so "this ends
     something" looks the same wherever it appears - with the wording carrying the meaning either way,
     never the colour alone (zasady/13 9).
+
+    The background sits on the content root below, for the reason written out in MainWindow.xaml: a
+    Background on a ui:FluentWindow paints nothing at all. This dialog carried the same dead attribute,
+    and it showed - measured on the open dialog, 63.68 percent of its surface was the wpfui default
+    rather than our base, while the footer it sits beside was ours all along.
   -->
-  <Grid>
+  <Grid Background="{DynamicResource BrushBgBase}">
     <!-- The message row takes the star so the footer stays against the bottom edge whatever height the
          frame settles on, rather than leaving an unexplained empty strip under the buttons. The height
          itself is settled by the MinHeight of 0 above, and that number was measured rather than guessed:
