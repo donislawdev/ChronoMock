@@ -274,6 +274,12 @@ pub(crate) struct MetadataJson {
     business_day: Option<bool>,
     /// The holiday's English name, or null (no calendar, or not a holiday - business_day disambiguates).
     holiday: Option<String>,
+    /// The calendar id that decided the two fields above, or null when none was supplied. Added because
+    /// they are a JUDGEMENT rather than a fact: a Sunday is not a business day under the calendars we
+    /// ship and is one under a calendar whose weekend is Friday and Saturday. The text output has always
+    /// named it ("business day  no  (us-banking)") and the machine output did not, so a consumer reading
+    /// the JSON could not tell which calendar it was reading. Additive, so no schema version (docs/04 3).
+    calendar: Option<String>,
 }
 
 #[derive(serde::Serialize)]
@@ -337,6 +343,7 @@ pub(crate) fn metadata_json(
         days_from_today: m.days_from_today,
         business_day,
         holiday,
+        calendar: calendar.map(|cal| cal.id.clone()),
     }
 }
 
@@ -684,11 +691,19 @@ pub(crate) fn render_calc(
     out
 }
 
-/// Render the "what this date tests" block (7.3): the test-relevant landmarks the result lands
+/// Render the "what this date lands on" block (7.3): the test-relevant landmarks the result lands
 /// on, one per line, ready to read at a glance. This is the calculator's differentiator over an
 /// online date calculator (6.2). With a calendar it also names the weekend / holiday / observed-
 /// holiday landmarks. Omitted entirely when the date hits nothing notable - the block is a
 /// positive signal, never a "no landmark" line to scan past.
+///
+/// 🔴 IT DOES NOT SAY "what this date TESTS", and the difference is the whole point of the wording.
+/// What a date tests is what the tester came for, and a preset already states it in its own words on
+/// the `explains:` line above. What this block holds is what the ARITHMETIC happened to land on,
+/// which is often incidental to it: the age-of-majority preset run on one particular birth date
+/// answered "weekend - not a business day", under a heading claiming to say what the date tests, two
+/// lines under an `explains:` that said something else entirely. Both were true and the reader had to
+/// pick which one to believe.
 pub(crate) fn render_significance(
     civil: &chrono_core::calc::CivilDateTime,
     tz_bias_min: i32,
@@ -698,15 +713,25 @@ pub(crate) fn render_significance(
     if marks.is_empty() {
         return String::new();
     }
-    let mut out = String::from("  what this date tests:\n");
+    let mut out = String::from("  what this date lands on:\n");
     for m in marks {
         out.push_str(&format!("    {}\n", m.label()));
+    }
+    // Which calendar decided the weekend and holiday marks, named beside them rather than left to be
+    // looked up. It is stated whether or not any of those marks fired, because their ABSENCE is a
+    // judgement of the same calendar: a date with no weekend mark has none according to this file, and
+    // would have one under a calendar whose weekend falls elsewhere in the week.
+    if let Some(cal) = calendar {
+        out.push_str(&format!(
+            "    (weekend and holiday marks follow the {} calendar)\n",
+            cal.id
+        ));
     }
     out
 }
 
 /// Render a reverse-analysis result (7.3): the input, then each reading with its resolved date,
-/// weekday, and the "what this date tests" markers. Two readings mean an ambiguous numeric order
+/// weekday, and the "what this date lands on" markers. Two readings mean an ambiguous numeric order
 /// (04/08 is April 8 in the US, August 4 in Poland) - both are shown rather than one chosen silently.
 pub(crate) fn render_analysis(
     analysis: &chrono_core::calc::DateAnalysis,
@@ -1022,7 +1047,7 @@ mod tests {
         let now = chrono_core::calc::CivilDateTime { year: 2000, month: 1, day: 1, hour: 0, minute: 0, second: 0 };
         let out = chrono_core::calc::eval(&expr, &EvalContext { now, zone_bias_min: 0, calendar: None }).unwrap();
         let text = render_calc(&expr, &out, Some(0), false, &now, None, None);
-        assert!(text.contains("what this date tests:"), "got:\n{text}");
+        assert!(text.contains("what this date lands on:"), "got:\n{text}");
         assert!(text.contains("last day of the year (year-end rollover)"), "got:\n{text}");
     }
 
@@ -1034,7 +1059,7 @@ mod tests {
         let now = chrono_core::calc::CivilDateTime { year: 2000, month: 1, day: 1, hour: 0, minute: 0, second: 0 };
         let out = chrono_core::calc::eval(&expr, &EvalContext { now, zone_bias_min: 0, calendar: None }).unwrap();
         let text = render_calc(&expr, &out, Some(0), false, &now, None, None);
-        assert!(!text.contains("what this date tests:"), "got:\n{text}");
+        assert!(!text.contains("what this date lands on:"), "got:\n{text}");
     }
 
     #[test]
@@ -1046,11 +1071,57 @@ mod tests {
         let out = chrono_core::calc::eval(&expr, &EvalContext { now, zone_bias_min: 0, calendar: None }).unwrap();
         let cal = test_calendar();
         let text = render_calc(&expr, &out, Some(0), false, &now, Some(&cal), None);
-        assert!(text.contains("what this date tests:"), "got:\n{text}");
+        assert!(text.contains("what this date lands on:"), "got:\n{text}");
         assert!(text.contains("weekend - not a business day"), "got:\n{text}");
         assert!(text.contains("public holiday"), "got:\n{text}");
         // Without a calendar the same date names no calendar landmark (and here nothing at all).
-        assert!(!render_calc(&expr, &out, Some(0), false, &now, None, None).contains("what this date tests:"));
+        assert!(!render_calc(&expr, &out, Some(0), false, &now, None, None).contains("what this date lands on:"));
+    }
+
+    #[test]
+    fn the_block_names_the_calendar_that_judged_the_weekend_and_holiday_marks() {
+        // "weekend - not a business day" is a judgement, not a fact: the same Saturday is a business
+        // day under a calendar whose weekend falls elsewhere. So the block says whose judgement it is.
+        let ca = parse_calc_args(&["--base".into(), "2026-07-04T00:00:00".into()]).unwrap();
+        let expr = MomentExpr { base: ca.base, steps: ca.steps };
+        let now = chrono_core::calc::CivilDateTime { year: 2000, month: 1, day: 1, hour: 0, minute: 0, second: 0 };
+        let out = chrono_core::calc::eval(&expr, &EvalContext { now, zone_bias_min: 0, calendar: None }).unwrap();
+        let cal = test_calendar();
+        let text = render_calc(&expr, &out, Some(0), false, &now, Some(&cal), None);
+        assert!(
+            text.contains("(weekend and holiday marks follow the us-test calendar)"),
+            "the block does not say which calendar judged it, got:\n{text}"
+        );
+
+        // A date that hits a landmark of its own but no calendar landmark still gets the note, because
+        // the ABSENCE of a weekend mark is that calendar's judgement too.
+        let ca = parse_calc_args(&["--base".into(), "2026-12-31T00:00:00".into()]).unwrap();
+        let expr = MomentExpr { base: ca.base, steps: ca.steps };
+        let out = chrono_core::calc::eval(&expr, &EvalContext { now, zone_bias_min: 0, calendar: None }).unwrap();
+        let text = render_calc(&expr, &out, Some(0), false, &now, Some(&cal), None);
+        assert!(text.contains("last day of the year"), "got:\n{text}");
+        assert!(text.contains("marks follow the us-test calendar"), "got:\n{text}");
+
+        // With no calendar there is nothing to attribute, so the note is absent rather than vague.
+        let text = render_calc(&expr, &out, Some(0), false, &now, None, None);
+        assert!(!text.contains("marks follow"), "got:\n{text}");
+    }
+
+    #[test]
+    fn the_block_does_not_claim_to_say_what_a_preset_tests() {
+        // The two claims used to share one name. A preset states what its date TESTS in its own words
+        // on the explains line, and this block states what the arithmetic LANDED ON - which is often
+        // incidental to it. Both appear in one render, so they must not both be called the same thing.
+        let ca = parse_calc_args(&["--base".into(), "2026-07-04T00:00:00".into()]).unwrap();
+        let expr = MomentExpr { base: ca.base, steps: ca.steps };
+        let now = chrono_core::calc::CivilDateTime { year: 2000, month: 1, day: 1, hour: 0, minute: 0, second: 0 };
+        let out = chrono_core::calc::eval(&expr, &EvalContext { now, zone_bias_min: 0, calendar: None }).unwrap();
+        let cal = test_calendar();
+        let header = "  preset:   demo - Demo\n  explains: Does the app do the thing?\n";
+        let text = render_calc(&expr, &out, Some(0), false, &now, Some(&cal), Some(header));
+        assert!(text.contains("explains: Does the app do the thing?"), "got:\n{text}");
+        assert!(text.contains("what this date lands on:"), "got:\n{text}");
+        assert!(!text.contains("what this date tests"), "got:\n{text}");
     }
 
     #[test]
@@ -1118,10 +1189,29 @@ mod tests {
         assert_eq!(v["schema"], "chronomock.calc/1");
         assert_eq!(v["moment"]["iso"], "2026-09-30T23:59:59");
         assert_eq!(v["moment"]["formats"]["iso_date"], "2026-09-30");
-        // No calendar supplied, so the calendar-dependent metadata is null (never guessed).
+        // No calendar supplied, so the calendar-dependent metadata is null (never guessed) - including
+        // the calendar name itself, which is null rather than an empty string a reader could mistake
+        // for a calendar with no id.
         assert!(v["moment"]["metadata"]["business_day"].is_null());
+        assert!(v["moment"]["metadata"]["calendar"].is_null());
         let sig = v["moment"]["significance"].as_array().unwrap();
         assert!(sig.iter().any(|s| s == "end_of_quarter"), "got: {sig:?}");
+    }
+
+    #[test]
+    fn calc_moment_json_names_the_calendar_that_decided_the_business_day() {
+        // The text output has always named it beside the verdict, and the machine output did not, so
+        // a GUI reading business_day over the wire could not say whose rule it was showing.
+        let base = chrono_core::calc::CivilDateTime { year: 2026, month: 7, day: 4, hour: 0, minute: 0, second: 0 };
+        let now = chrono_core::calc::CivilDateTime { year: 2026, month: 1, day: 1, hour: 0, minute: 0, second: 0 };
+        let expr = MomentExpr { base: Base::Absolute(base), steps: vec![] };
+        let cal = test_calendar();
+        let outcome =
+            chrono_core::calc::eval(&expr, &EvalContext { now, zone_bias_min: 0, calendar: None }).unwrap();
+        let json = calc_moment_json(&outcome, &now, Some(&cal), None, None);
+        let v: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(v["moment"]["metadata"]["calendar"], "us-test");
+        assert_eq!(v["moment"]["metadata"]["business_day"], false);
     }
 
     #[test]

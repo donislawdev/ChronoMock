@@ -284,7 +284,10 @@
   "calc.kind_settime": "Ustaw godzinę",
   "calc.kind_zone": "Zmień strefę",
   "calc.result_header": "Wynik",
-  "calc.what_tests": "Co ta data testuje",
+  // NOT "what this date tests". A preset says what its date tests in its own words, right above this
+  // block, and this block says what the arithmetic LANDED ON, which is often incidental to it.
+  "calc.what_tests": "Na co ta data trafia",
+  "calc.sig_calendar": "Markery weekendu i świąt pochodzą z kalendarza {0}.",
   "calc.all_formats": "Wszystkie formaty - kopiuj jednym klikiem",
   "calc.copy": "Kopiuj",
   "calc.custom_format": "Format własny",

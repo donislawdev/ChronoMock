@@ -431,6 +431,14 @@
                     </DataTemplate>
                   </ItemsControl.ItemTemplate>
                 </ItemsControl>
+                <!-- Which calendar judged the weekend and holiday marks above. It belongs HERE and not
+                     only beside the picker: the picker is in the middle column and this is read in the
+                     right one, so a line saying "weekend - not a business day" would otherwise be a
+                     calendar-dependent judgement with its calendar nowhere in sight. -->
+                <TextBlock Text="{Binding SignificanceCalendar}" TextWrapping="Wrap"
+                           Visibility="{Binding HasSignificanceCalendar, Converter={StaticResource BoolToVis}}"
+                           Margin="{StaticResource SpaceXs}"
+                           FontSize="{StaticResource FontSizeCaption}" Foreground="{DynamicResource BrushTextSecondary}" />
               </StackPanel>
             </Border>
 

@@ -65,7 +65,11 @@ public sealed record CalcMetadata(
     [property: JsonPropertyName("is_leap_year")] bool IsLeapYear,
     [property: JsonPropertyName("days_from_today")] long DaysFromToday,
     [property: JsonPropertyName("business_day")] bool? BusinessDay,
-    [property: JsonPropertyName("holiday")] string? Holiday);
+    [property: JsonPropertyName("holiday")] string? Holiday,
+    /// <summary>The calendar id that decided the two fields above, null when none was supplied. Read
+    /// from the RESULT rather than from whatever the picker shows now, so a note about which calendar
+    /// judged a date can never describe a different calendar from the one that judged it.</summary>
+    [property: JsonPropertyName("calendar")] string? Calendar = null);
 
 /// <summary>The preset's authored framing when the moment came from one (docs/04 4.2).</summary>
 public sealed record CalcPreset(
