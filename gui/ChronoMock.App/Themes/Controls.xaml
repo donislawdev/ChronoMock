@@ -92,6 +92,59 @@
     </Setter>
   </Style>
 
+  <!-- 🔴 THE PRIMARY ACTION, templated because the stock one CANNOT hold a colour. The panel's main
+       button carried its accent as a local Background, and the wpfui template repaints a NAMED PART of
+       itself on hover - a template part is not the control, so the local value never competed with it.
+       What the user saw was the one findable control on the screen dropping to grey the moment the
+       pointer arrived, which reads as "disabled", not as "hovered".
+
+       The states are painted as a VEIL over whatever fill the usage sets, rather than as a second and a
+       third named colour per button. That is what lets one template serve both an accent Start and a red
+       Stop: lighter on hover, darker while pressed, in either colour, with no palette entry that exists
+       only to be a shade of another one. Dimmed rather than greyed when disabled, like the checkbox and
+       the calendar toggle above, so a disabled primary action still reads as the colour it will be. -->
+  <Style x:Key="PrimaryActionButton" TargetType="Button">
+    <Setter Property="Background" Value="{DynamicResource BrushAccent}" />
+    <Setter Property="Foreground" Value="{DynamicResource BrushBgBase}" />
+    <Setter Property="FontSize" Value="{DynamicResource FontSizeBody}" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+    <Setter Property="MinWidth" Value="{DynamicResource PrimaryActionMinWidth}" />
+    <Setter Property="Padding" Value="{StaticResource SpaceMd}" />
+    <Setter Property="Cursor" Value="Hand" />
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="Button">
+          <Grid>
+            <Border x:Name="Fill" Background="{TemplateBinding Background}"
+                    BorderBrush="Transparent" BorderThickness="{StaticResource StrokeThinEdge}"
+                    CornerRadius="{StaticResource RadiusSm}" SnapsToDevicePixels="True" />
+            <!-- Always in the tree and only ever changing opacity, so a state never moves the button. -->
+            <Border x:Name="Veil" Background="{DynamicResource BrushTextPrimary}" Opacity="0"
+                    CornerRadius="{StaticResource RadiusSm}" IsHitTestVisible="False" />
+            <ContentPresenter Margin="{TemplateBinding Padding}" RecognizesAccessKey="True"
+                              HorizontalAlignment="Center" VerticalAlignment="Center" />
+          </Grid>
+          <ControlTemplate.Triggers>
+            <Trigger Property="IsMouseOver" Value="True">
+              <Setter TargetName="Veil" Property="Opacity" Value="0.14" />
+            </Trigger>
+            <Trigger Property="IsPressed" Value="True">
+              <Setter TargetName="Veil" Property="Background" Value="{DynamicResource BrushBgBase}" />
+              <Setter TargetName="Veil" Property="Opacity" Value="0.24" />
+            </Trigger>
+            <Trigger Property="IsKeyboardFocused" Value="True">
+              <Setter TargetName="Fill" Property="BorderBrush" Value="{DynamicResource BrushFocusRing}" />
+            </Trigger>
+            <Trigger Property="IsEnabled" Value="False">
+              <Setter Property="Opacity" Value="0.5" />
+              <Setter Property="Cursor" Value="Arrow" />
+            </Trigger>
+          </ControlTemplate.Triggers>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+
   <!-- Tooltip: dark surface, readable text, wrapped - the default WPF tooltip is a light-yellow box that
        is jarring and low-contrast on the dark base. Content is a translation key's text (rule 15). -->
   <Style TargetType="ToolTip">

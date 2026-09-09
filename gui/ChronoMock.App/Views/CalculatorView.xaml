@@ -170,11 +170,35 @@
                 <DataTemplate>
                   <Border Margin="{StaticResource SpaceXs}" Padding="{StaticResource SpaceSm}"
                           Background="{DynamicResource BrushBgSurfaceAlt}" CornerRadius="{StaticResource RadiusSm}">
-                    <StackPanel Orientation="Horizontal">
-                      <!-- Kind picker: swaps which editor to its right is visible. -->
-                      <ComboBox ItemsSource="{Binding Kinds}" SelectedItem="{Binding SelectedKind}"
+                    <!-- 🔴 TWO ROWS AND A GRID, not one horizontal stack, and for the reason already written
+                         above the start-point row: a horizontal stack hands every child its full desired
+                         width and lets the overflow run past its container. Measured here before the change,
+                         on the default 1040 window: the row wanted 439 px where the column had 331, so the
+                         unit list ended mid word and the remove button was laid out 108 px past the column,
+                         UNDER the opaque result panel. It was not merely ugly - a step could be added and
+                         then not removed, since the only control that removes one was never painted.
+
+                         A grid alone does not fix that. After the kind picker (120) and the remove button
+                         (51) there are about 160 px left for an editor that needs 277, so one row cannot
+                         hold this whatever the panel. The kind picker heads the step and the editor sits
+                         under it, which fits at the window's own minimum and leaves the editors room to
+                         grow. The remove button spans both rows because it removes the STEP, not the row
+                         it happens to sit on. The editors keep a WrapPanel as the floor: a longer label in
+                         another language then wraps instead of clipping. -->
+                    <Grid>
+                      <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                      </Grid.ColumnDefinitions>
+                      <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                      </Grid.RowDefinitions>
+
+                      <!-- Kind picker: swaps which editor below it is visible. -->
+                      <ComboBox Grid.Row="0" Grid.Column="0" ItemsSource="{Binding Kinds}" SelectedItem="{Binding SelectedKind}"
                                 ItemContainerStyle="{StaticResource LabelKeyComboItem}"
-                                VerticalAlignment="Center" MinWidth="120">
+                                HorizontalAlignment="Left" VerticalAlignment="Center" MinWidth="120">
                         <ComboBox.ItemTemplate>
                           <DataTemplate>
                             <TextBlock Text="{Binding LabelKey, Converter={StaticResource KeyToText}}" />
@@ -182,79 +206,79 @@
                         </ComboBox.ItemTemplate>
                       </ComboBox>
 
-                      <!-- Shift editor: sign, amount, unit. -->
-                      <StackPanel Orientation="Horizontal"
-                                  Visibility="{Binding IsShift, Converter={StaticResource BoolToVis}}">
-                        <ComboBox ItemsSource="{Binding Signs}" SelectedItem="{Binding Sign}"
-                                  Margin="{StaticResource SpaceSm}" VerticalAlignment="Center" MinWidth="48" />
-                        <TextBox Text="{Binding Amount, UpdateSourceTrigger=LostFocus}"
-                                 Width="64" VerticalAlignment="Center"
-                                 FontFamily="{StaticResource FontFamilyMono}" />
-                        <ComboBox ItemsSource="{Binding Units}" SelectedItem="{Binding Unit}"
-                                  ItemContainerStyle="{StaticResource LabelKeyComboItem}"
-                                  Margin="{StaticResource SpaceSm}" VerticalAlignment="Center" MinWidth="120">
-                          <ComboBox.ItemTemplate>
-                            <DataTemplate>
-                              <TextBlock Text="{Binding LabelKey, Converter={StaticResource KeyToText}}" />
-                            </DataTemplate>
-                          </ComboBox.ItemTemplate>
-                        </ComboBox>
-                      </StackPanel>
-
-                      <!-- Snap editor: a period boundary target. -->
-                      <StackPanel Orientation="Horizontal"
-                                  Visibility="{Binding IsSnap, Converter={StaticResource BoolToVis}}">
-                        <ComboBox ItemsSource="{Binding SnapTargets}" SelectedItem="{Binding SnapTarget}"
-                                  ItemContainerStyle="{StaticResource LabelKeyComboItem}"
-                                  Margin="{StaticResource SpaceSm}" VerticalAlignment="Center" MinWidth="180">
-                          <ComboBox.ItemTemplate>
-                            <DataTemplate>
-                              <TextBlock Text="{Binding LabelKey, Converter={StaticResource KeyToText}}" />
-                            </DataTemplate>
-                          </ComboBox.ItemTemplate>
-                        </ComboBox>
-                      </StackPanel>
-
-                      <!-- Nearest editor: roll to the nearest business day in a direction (needs a calendar -
-                           without one the engine returns an honest calendar error, surfaced as the result error). -->
-                      <StackPanel Orientation="Horizontal"
-                                  Visibility="{Binding IsNearest, Converter={StaticResource BoolToVis}}">
-                        <ComboBox ItemsSource="{Binding NearestTargets}" SelectedItem="{Binding NearestTarget}"
-                                  ItemContainerStyle="{StaticResource LabelKeyComboItem}"
-                                  Margin="{StaticResource SpaceSm}" VerticalAlignment="Center" MinWidth="180">
-                          <ComboBox.ItemTemplate>
-                            <DataTemplate>
-                              <TextBlock Text="{Binding LabelKey, Converter={StaticResource KeyToText}}" />
-                            </DataTemplate>
-                          </ComboBox.ItemTemplate>
-                        </ComboBox>
-                      </StackPanel>
-
-                      <!-- Set-time editor: a wall-clock HH:MM:SS. The engine validates the range, so a bad
-                           time surfaces as an honest result error rather than being clamped in the view. -->
-                      <StackPanel Orientation="Horizontal"
-                                  Visibility="{Binding IsSetTime, Converter={StaticResource BoolToVis}}">
-                        <TextBox Text="{Binding SetTimeText, UpdateSourceTrigger=LostFocus}"
-                                 Width="96" Margin="{StaticResource SpaceSm}" VerticalAlignment="Center"
-                                 FontFamily="{StaticResource FontFamilyMono}"
-                                 AutomationProperties.Name="{DynamicResource calc.kind_settime}" />
-                      </StackPanel>
-
-                      <!-- Zone editor: a fixed offset +HH:MM for the to-zone step - the same instant
-                           re-expressed in another zone, NOT the session zone. Engine validates the shape. -->
-                      <StackPanel Orientation="Horizontal"
-                                  Visibility="{Binding IsZone, Converter={StaticResource BoolToVis}}">
-                        <TextBox Text="{Binding ZoneText, UpdateSourceTrigger=LostFocus}"
-                                 Width="80" Margin="{StaticResource SpaceSm}" VerticalAlignment="Center"
-                                 FontFamily="{StaticResource FontFamilyMono}"
-                                 AutomationProperties.Name="{DynamicResource calc.kind_zone}" />
-                      </StackPanel>
-
-                      <Button Content="✕" Click="OnRemoveStepClick" Tag="{Binding}"
+                      <Button Grid.Row="0" Grid.Column="1" Content="✕" Click="OnRemoveStepClick" Tag="{Binding}"
                               Margin="{StaticResource SpaceSm}" VerticalAlignment="Center"
                               AutomationProperties.Name="{DynamicResource calc.remove_step}"
                               FontSize="{StaticResource FontSizeCaption}" />
-                    </StackPanel>
+
+                      <!-- Shift editor: sign, amount, unit. -->
+                      <WrapPanel Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2" Orientation="Horizontal" Margin="{StaticResource SpaceXs}"
+                                 Visibility="{Binding IsShift, Converter={StaticResource BoolToVis}}">
+                        <ComboBox ItemsSource="{Binding Signs}" SelectedItem="{Binding Sign}"
+                                  Margin="{StaticResource SpaceXs}" VerticalAlignment="Center" MinWidth="48" />
+                        <TextBox Text="{Binding Amount, UpdateSourceTrigger=LostFocus}"
+                                 Width="64" Margin="{StaticResource SpaceXs}" VerticalAlignment="Center"
+                                 FontFamily="{StaticResource FontFamilyMono}" />
+                        <ComboBox ItemsSource="{Binding Units}" SelectedItem="{Binding Unit}"
+                                  ItemContainerStyle="{StaticResource LabelKeyComboItem}"
+                                  Margin="{StaticResource SpaceXs}" VerticalAlignment="Center" MinWidth="120">
+                          <ComboBox.ItemTemplate>
+                            <DataTemplate>
+                              <TextBlock Text="{Binding LabelKey, Converter={StaticResource KeyToText}}" />
+                            </DataTemplate>
+                          </ComboBox.ItemTemplate>
+                        </ComboBox>
+                      </WrapPanel>
+
+                      <!-- Snap editor: a period boundary target. -->
+                      <WrapPanel Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2" Orientation="Horizontal" Margin="{StaticResource SpaceXs}"
+                                 Visibility="{Binding IsSnap, Converter={StaticResource BoolToVis}}">
+                        <ComboBox ItemsSource="{Binding SnapTargets}" SelectedItem="{Binding SnapTarget}"
+                                  ItemContainerStyle="{StaticResource LabelKeyComboItem}"
+                                  Margin="{StaticResource SpaceXs}" VerticalAlignment="Center" MinWidth="180">
+                          <ComboBox.ItemTemplate>
+                            <DataTemplate>
+                              <TextBlock Text="{Binding LabelKey, Converter={StaticResource KeyToText}}" />
+                            </DataTemplate>
+                          </ComboBox.ItemTemplate>
+                        </ComboBox>
+                      </WrapPanel>
+
+                      <!-- Nearest editor: roll to the nearest business day in a direction (needs a calendar -
+                           without one the engine returns an honest calendar error, surfaced as the result error). -->
+                      <WrapPanel Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2" Orientation="Horizontal" Margin="{StaticResource SpaceXs}"
+                                 Visibility="{Binding IsNearest, Converter={StaticResource BoolToVis}}">
+                        <ComboBox ItemsSource="{Binding NearestTargets}" SelectedItem="{Binding NearestTarget}"
+                                  ItemContainerStyle="{StaticResource LabelKeyComboItem}"
+                                  Margin="{StaticResource SpaceXs}" VerticalAlignment="Center" MinWidth="180">
+                          <ComboBox.ItemTemplate>
+                            <DataTemplate>
+                              <TextBlock Text="{Binding LabelKey, Converter={StaticResource KeyToText}}" />
+                            </DataTemplate>
+                          </ComboBox.ItemTemplate>
+                        </ComboBox>
+                      </WrapPanel>
+
+                      <!-- Set-time editor: a wall-clock HH:MM:SS. The engine validates the range, so a bad
+                           time surfaces as an honest result error rather than being clamped in the view. -->
+                      <WrapPanel Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2" Orientation="Horizontal" Margin="{StaticResource SpaceXs}"
+                                 Visibility="{Binding IsSetTime, Converter={StaticResource BoolToVis}}">
+                        <TextBox Text="{Binding SetTimeText, UpdateSourceTrigger=LostFocus}"
+                                 Width="96" Margin="{StaticResource SpaceXs}" VerticalAlignment="Center"
+                                 FontFamily="{StaticResource FontFamilyMono}"
+                                 AutomationProperties.Name="{DynamicResource calc.kind_settime}" />
+                      </WrapPanel>
+
+                      <!-- Zone editor: a fixed offset +HH:MM for the to-zone step - the same instant
+                           re-expressed in another zone, NOT the session zone. Engine validates the shape. -->
+                      <WrapPanel Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2" Orientation="Horizontal" Margin="{StaticResource SpaceXs}"
+                                 Visibility="{Binding IsZone, Converter={StaticResource BoolToVis}}">
+                        <TextBox Text="{Binding ZoneText, UpdateSourceTrigger=LostFocus}"
+                                 Width="80" Margin="{StaticResource SpaceXs}" VerticalAlignment="Center"
+                                 FontFamily="{StaticResource FontFamilyMono}"
+                                 AutomationProperties.Name="{DynamicResource calc.kind_zone}" />
+                      </WrapPanel>
+                    </Grid>
                   </Border>
                 </DataTemplate>
               </ItemsControl.ItemTemplate>
@@ -407,6 +431,14 @@
                     </DataTemplate>
                   </ItemsControl.ItemTemplate>
                 </ItemsControl>
+                <!-- Which calendar judged the weekend and holiday marks above. It belongs HERE and not
+                     only beside the picker: the picker is in the middle column and this is read in the
+                     right one, so a line saying "weekend - not a business day" would otherwise be a
+                     calendar-dependent judgement with its calendar nowhere in sight. -->
+                <TextBlock Text="{Binding SignificanceCalendar}" TextWrapping="Wrap"
+                           Visibility="{Binding HasSignificanceCalendar, Converter={StaticResource BoolToVis}}"
+                           Margin="{StaticResource SpaceXs}"
+                           FontSize="{StaticResource FontSizeCaption}" Foreground="{DynamicResource BrushTextSecondary}" />
               </StackPanel>
             </Border>
 

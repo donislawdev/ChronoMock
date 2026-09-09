@@ -52,6 +52,11 @@
        neighbours. Named here rather than written into the view, like every other design value. -->
   <sys:Double x:Key="PrimaryActionMinWidth">220</sys:Double>
 
+  <!-- Dialog answers are the same width as each other whatever they say, so the pair does not shuffle
+       sideways between one dialog and the next, or between English and Polish. Narrower than the panel's
+       primary action, which is sized to be findable on a full screen rather than inside a 440 px box. -->
+  <sys:Double x:Key="DialogButtonMinWidth">120</sys:Double>
+
   <sys:Double x:Key="TargetBoxMaxWidth">320</sys:Double>
 
   <!-- The scenario chips wrap inside this width. A cap is what MAKES them wrap: a WrapPanel measured with

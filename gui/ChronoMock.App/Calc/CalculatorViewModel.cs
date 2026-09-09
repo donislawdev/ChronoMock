@@ -343,6 +343,7 @@ public sealed class CalculatorViewModel : ObservableObject
     private bool _calendarMissing;
     private bool _hasResult;
     private bool _hasSignificance;
+    private string _significanceCalendar = string.Empty;
     private bool _canUseInSubstitution;
     private string _customFormatMask = string.Empty;
     private string _customFormatResult = string.Empty;
@@ -603,6 +604,33 @@ public sealed class CalculatorViewModel : ObservableObject
 
     public bool HasResult { get => _hasResult; private set => Set(ref _hasResult, value); }
     public bool HasSignificance { get => _hasSignificance; private set => Set(ref _hasSignificance, value); }
+
+    /// <summary>Which calendar judged the weekend and holiday marks in the block above, as a sentence, or
+    /// empty when no calendar was applied.
+    ///
+    /// It is there because those marks are a JUDGEMENT and read like a fact: the same Sunday is not a
+    /// business day under the calendars we ship and is one under a calendar whose weekend falls on Friday
+    /// and Saturday. The tester reads the block in the result column while the calendar picker sits in the
+    /// middle one, so without this the rule that decided the line is nowhere near the line.
+    ///
+    /// Stated whether or not any calendar mark actually fired, because their ABSENCE is the same
+    /// calendar's judgement: a date with no weekend mark has none ACCORDING TO THIS FILE.
+    ///
+    /// The calendar is read from the RESULT, not from the picker, so it can never name a different
+    /// calendar from the one that produced the marks being shown.</summary>
+    public string SignificanceCalendar
+    {
+        get => _significanceCalendar;
+        private set
+        {
+            if (Set(ref _significanceCalendar, value))
+            {
+                RaisePropertyChanged(nameof(HasSignificanceCalendar));
+            }
+        }
+    }
+
+    public bool HasSignificanceCalendar => _significanceCalendar.Length > 0;
 
     /// <summary>An optional custom output-format mask (.NET/Java tokens, case-sensitive - M is month, m is
     /// minute), so the tester can hit the exact string the tested app's field expects (7.3). Empty means no
@@ -1185,6 +1213,7 @@ public sealed class CalculatorViewModel : ObservableObject
         }
 
         HasSignificance = Significance.Count > 0;
+        SignificanceCalendar = HasSignificance ? CalendarNote(moment.Metadata.Calendar) : string.Empty;
 
         Formats.Clear();
         var f = moment.Formats;
@@ -1255,9 +1284,28 @@ public sealed class CalculatorViewModel : ObservableObject
         MetadataLine = string.Empty;
         Significance.Clear();
         HasSignificance = false;
+        SignificanceCalendar = string.Empty;
         Formats.Clear();
         CustomFormatResult = string.Empty;
         HasCustomFormat = false;
+    }
+
+    /// <summary>The sentence naming the calendar that judged the weekend and holiday marks, or empty when
+    /// the engine applied none. The id comes back from the engine (e.g. "us-banking") and is shown through
+    /// the picker's own label, so the note names the calendar the way the tester picked it (rule 15). An id
+    /// the picker does not know is shown as itself rather than dropped - an honest raw id beats a sentence
+    /// that quietly omits which calendar it means.</summary>
+    internal string CalendarNote(string? calendarId)
+    {
+        if (calendarId is null)
+        {
+            return string.Empty;
+        }
+
+        var label = Calendars.FirstOrDefault(c => c.Id == calendarId) is { } known
+            ? Tr(known.LabelKey)
+            : calendarId;
+        return string.Format(System.Globalization.CultureInfo.CurrentCulture, Tr("calc.sig_calendar"), label);
     }
 
     private static string BuildMetadataLine(CalcMetadata m)

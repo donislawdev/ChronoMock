@@ -1024,7 +1024,7 @@ pub fn metadata(civil: &CivilDateTime, today: &CivilDateTime) -> Metadata {
     }
 }
 
-// --- Significance ("what this date tests", 7.3 - the calculator's differentiator) ------
+// --- Significance ("what this date lands on", 7.3 - the calculator's differentiator) ------
 //
 // The calculator names the edge case a result date lands on, instead of giving a number and
 // staying silent like an online date calculator (6.2). Calendar-independent landmarks are always
@@ -2066,7 +2066,7 @@ mod tests {
         assert_eq!(metadata(&today, &today).days_from_today, 0);
     }
 
-    // --- significance ("what this date tests") -------------------------------
+    // --- significance ("what this date lands on") ----------------------------
 
     #[test]
     fn significance_february_leap_and_common_year() {
