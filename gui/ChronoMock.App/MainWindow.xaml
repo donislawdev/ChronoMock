@@ -51,24 +51,36 @@
          place a control can be permanently visible without competing with the work. -->
     <ui:TitleBar Grid.Row="0" Title="{DynamicResource app.title}">
       <ui:TitleBar.TrailingContent>
-        <!-- The tooltip says what pressing this does BEFORE it is pressed, and names the address. This
-             application never opens a connection of its own, so handing a page to the browser is the
-             one moment a user could feel that promise was broken - saying so first is what keeps it
-             true rather than merely technically true. -->
-        <Button x:Name="SupportButton"
-                Style="{StaticResource TitleBarActionButton}"
-                Click="OnSupportClick"
-                ToolTip="{DynamicResource support.tip}"
-                AutomationProperties.Name="{DynamicResource support.name}">
-          <StackPanel Orientation="Horizontal">
-            <!-- The heart is decoration beside the word, never the whole message: it is not in the
-                 automation name, and the label alone reads correctly if a font has no glyph for it
-                 (zasady/13 9 - meaning never rests on one symbol). -->
-            <TextBlock Text="&#x2665;" VerticalAlignment="Center" />
-            <TextBlock Text="{DynamicResource support.button}" VerticalAlignment="Center"
-                       Margin="{StaticResource SpaceXs}" />
-          </StackPanel>
-        </Button>
+        <StackPanel Orientation="Horizontal">
+          <!-- The tooltip says what pressing this does BEFORE it is pressed, and names the address. This
+               application never opens a connection of its own, so handing a page to the browser is the
+               one moment a user could feel that promise was broken - saying so first is what keeps it
+               true rather than merely technically true. -->
+          <Button x:Name="SupportButton"
+                  Style="{StaticResource TitleBarActionButton}"
+                  Click="OnSupportClick"
+                  ToolTip="{DynamicResource support.tip}"
+                  AutomationProperties.Name="{DynamicResource support.name}">
+            <StackPanel Orientation="Horizontal">
+              <!-- The heart is decoration beside the word, never the whole message: it is not in the
+                   automation name, and the label alone reads correctly if a font has no glyph for it
+                   (zasady/13 9 - meaning never rests on one symbol). -->
+              <TextBlock Text="&#x2665;" VerticalAlignment="Center" />
+              <TextBlock Text="{DynamicResource support.button}" VerticalAlignment="Center"
+                         Margin="{StaticResource SpaceXs}" />
+            </StackPanel>
+          </Button>
+
+          <!-- The way to the licence, the version and what is inside this build. It is a word rather than
+               an "i" glyph because this strip already asks the eye to tell four small controls apart, and
+               a labelled one is the only kind that survives that without a hover. -->
+          <Button x:Name="AboutButton"
+                  Style="{StaticResource TitleBarActionButton}"
+                  Click="OnAboutClick"
+                  Content="{DynamicResource about.button}"
+                  ToolTip="{DynamicResource about.tip}"
+                  AutomationProperties.Name="{DynamicResource about.name}" />
+        </StackPanel>
       </ui:TitleBar.TrailingContent>
     </ui:TitleBar>
 

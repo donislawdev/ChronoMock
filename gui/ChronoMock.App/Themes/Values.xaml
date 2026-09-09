@@ -45,6 +45,22 @@
        not free geometry (zasady/13 2.1); the whole panel also scrolls. -->
   <sys:Double x:Key="HistoryMaxHeight">160</sys:Double>
 
+  <!-- Vertical-only gaps, for a stack whose items share a left edge. The scale above is uniform on all
+       four sides, which is right for a centred row and wrong here: a uniform margin also indents, so a
+       column of blocks each carrying one ends up with as many left edges as it has spacings. Measured on
+       the first About render, which had three. -->
+  <Thickness x:Key="StackGapSm">0,8,0,0</Thickness>
+  <Thickness x:Key="StackGapLg">0,16,0,0</Thickness>
+
+  <!-- The component register scrolls inside this height once the About window's expander is opened. The
+       cap is what keeps that window a window: the list runs to some forty components, and a dialog that
+       sizes to its content would otherwise grow taller than the screen the moment somebody opened it. -->
+  <sys:Double x:Key="ComponentsMaxHeight">180</sys:Double>
+
+  <!-- The About window is narrower than the main one and wider than a message box: wide enough that the
+       warranty paragraph reads in three lines rather than seven, narrow enough to stay a dialog. -->
+  <sys:Double x:Key="AboutWidth">520</sys:Double>
+
   <!-- The target box caps here so a deeply nested path cannot stretch the centred setup row across the
        window; the name is what identifies the target, and the full path is in the tooltip. -->
   <!-- The primary action is wider than the buttons around it, because size is half of what makes an

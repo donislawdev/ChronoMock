@@ -326,6 +326,13 @@ public partial class MainWindow : FluentWindow
         }
     }
 
+    // The About window, which is where this application states its licence, its version and what somebody
+    // else wrote inside it. The command line has answered that since it existed (`chrono license`), and
+    // until now the window had no answer at all - the asymmetry, not a licence requirement, is the reason
+    // it is here.
+    private void OnAboutClick(object sender, RoutedEventArgs e)
+        => Views.AboutDialog.Show(this, AppPaths.LicenceClient);
+
     // Resolve a translation key to text for a native dialog (rule 15) - falls back to the raw key if missing.
     private static string Text(string key) => Application.Current?.TryFindResource(key) as string ?? key;
 }

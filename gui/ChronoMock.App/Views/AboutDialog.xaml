@@ -1,0 +1,144 @@
+<ui:FluentWindow x:Class="ChronoMock.App.Views.AboutDialog"
+                 xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                 xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                 xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+                 xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+                 xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+                 mc:Ignorable="d"
+                 Title="{DynamicResource about.title}"
+                 Width="{StaticResource AboutWidth}"
+                 SizeToContent="Height"
+                 MinHeight="0"
+                 ResizeMode="NoResize"
+                 ShowInTaskbar="False"
+                 WindowStartupLocation="CenterOwner"
+                 ExtendsContentIntoTitleBar="True"
+                 WindowBackdropType="None">
+  <!--
+    What the window can say about itself: which build this is, whose it is, what licence it comes under,
+    and what somebody else's work is inside it.
+
+    It exists because the two halves of this product answered that question differently. The command line
+    has always had `chrono license`, which prints the copyright, the SPDX identifier, the warranty
+    disclaimer and every bundled component - between them the "Appropriate Legal Notices" GPL-3 section 0
+    describes. The window had none of it, with the version buried in the title bar, and the window is the
+    default way in. That asymmetry is the reason for this file. It is NOT a licence requirement: the
+    package ships LICENSE and THIRD-PARTY-NOTICES.md beside the executable, and section 5(d) exempts an
+    original program that does not display such notices. Nobody is owed this window. A reader is.
+
+    The component list comes from the CORE rather than from a list kept here, because the core carries the
+    register compiled in from the same file that generates the release SBOM. A second copy in C# would
+    drift, and the day it did this window would describe somebody else's build with a straight face.
+
+    The background sits on the content root, never on the ui:FluentWindow: an attribute there is accepted,
+    reads exactly like a working one, and paints nothing. Guarded by WindowBackgroundGuard, and written
+    out at length in MainWindow.xaml.
+  -->
+  <Grid Background="{DynamicResource BrushBgBase}">
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="*" />
+      <RowDefinition Height="Auto" />
+    </Grid.RowDefinitions>
+
+    <!-- Chrome only: nothing here is worth maximising, and close is the only way out this window needs. -->
+    <ui:TitleBar Grid.Row="0" ShowMaximize="False" ShowMinimize="False"
+                 Title="{Binding Title, RelativeSource={RelativeSource AncestorType={x:Type ui:FluentWindow}}}" />
+
+    <StackPanel Grid.Row="1" Margin="{StaticResource SpaceXl}" VerticalAlignment="Top">
+
+      <!-- Identity first, and the version with it. This line is what somebody reads out loud into a bug
+           report, so it is the one thing here set in the title size. -->
+      <TextBlock x:Name="ProductLine"
+                 FontSize="{StaticResource FontSizeTitle}" FontWeight="SemiBold"
+                 Foreground="{DynamicResource BrushTextPrimary}" />
+      <TextBlock x:Name="CopyrightLine" TextWrapping="Wrap"
+                 FontSize="{StaticResource FontSizeCaption}"
+                 Foreground="{DynamicResource BrushTextSecondary}" />
+
+      <!-- The licence block. The identifier is not translated, because "GPL-3.0-only" is a name and a
+           translated licence name would name a licence that does not exist. -->
+      <StackPanel Orientation="Horizontal" Margin="{StaticResource StackGapLg}">
+        <TextBlock Text="{DynamicResource about.licence_label}" VerticalAlignment="Center"
+                   FontSize="{StaticResource FontSizeBody}"
+                   Foreground="{DynamicResource BrushTextSecondary}" />
+        <TextBlock x:Name="SpdxLine" VerticalAlignment="Center" Margin="{StaticResource SpaceSm}"
+                   FontSize="{StaticResource FontSizeBody}" FontWeight="SemiBold"
+                   Foreground="{DynamicResource BrushTextPrimary}" />
+      </StackPanel>
+
+      <!-- The warranty disclaimer and the redistribution grant, which are the two sentences section 0
+           actually asks an interactive interface to carry. Wrapped rather than truncated: this is the
+           part a reader is entitled to read in full. -->
+      <TextBlock Text="{DynamicResource about.warranty}" TextWrapping="Wrap"
+                 FontSize="{StaticResource FontSizeBody}"
+                 Foreground="{DynamicResource BrushTextSecondary}" />
+
+      <!-- Where the two shipped files are. Named when they are on disk and admitted when they are not,
+           rather than printed unconditionally - both ship in the package and neither sits beside the
+           window in a dev checkout, so an unconditional path would point at nothing (rule 4). -->
+      <Grid Margin="{StaticResource StackGapLg}">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="Auto" />
+          <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
+        <Grid.RowDefinitions>
+          <RowDefinition Height="Auto" />
+          <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <TextBlock Grid.Row="0" Grid.Column="0" Text="{DynamicResource about.licence_file}"
+                   FontSize="{StaticResource FontSizeCaption}"
+                   Foreground="{DynamicResource BrushTextSecondary}" />
+        <TextBlock Grid.Row="0" Grid.Column="1" x:Name="LicenceFileLine" TextWrapping="Wrap"
+                   Margin="{StaticResource SpaceXs}"
+                   FontSize="{StaticResource FontSizeCaption}"
+                   Foreground="{DynamicResource BrushTextSecondary}" />
+
+        <TextBlock Grid.Row="1" Grid.Column="0" Text="{DynamicResource about.notices_file}"
+                   FontSize="{StaticResource FontSizeCaption}"
+                   Foreground="{DynamicResource BrushTextSecondary}" />
+        <TextBlock Grid.Row="1" Grid.Column="1" x:Name="NoticesFileLine" TextWrapping="Wrap"
+                   Margin="{StaticResource SpaceXs}"
+                   FontSize="{StaticResource FontSizeCaption}"
+                   Foreground="{DynamicResource BrushTextSecondary}" />
+      </Grid>
+
+      <!-- Read the licence online. A fallback rather than the plan - the file above is the real copy when
+           it is there - and the only control in this window that leads off the machine, which is why it
+           says so in its tooltip exactly as the support button does. -->
+      <Button x:Name="ReadLicenceButton" Click="OnReadLicenceClick"
+              Content="{DynamicResource about.read_licence}"
+              ToolTip="{DynamicResource about.read_licence_tip}"
+              HorizontalAlignment="Left"
+              Margin="{StaticResource StackGapLg}"
+              Padding="{StaticResource SpaceMd}" />
+
+      <!-- Collapsed on open, and the query behind it does not run until it is opened: nobody should pay
+           for a process start to read a copyright line. The list scrolls inside a named cap so opening
+           it cannot grow this window past the screen. -->
+      <Expander x:Name="ComponentsExpander" Expanded="OnComponentsExpanded"
+                Header="{DynamicResource about.components}"
+                Margin="{StaticResource StackGapLg}">
+        <ScrollViewer MaxHeight="{StaticResource ComponentsMaxHeight}"
+                      VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto">
+          <!-- Monospace, because this is a register of names and versions read by column, and the core
+               already aligns it that way. -->
+          <TextBlock x:Name="ComponentsText" TextWrapping="NoWrap"
+                     Margin="{StaticResource SpaceSm}"
+                     FontFamily="{StaticResource FontFamilyMono}"
+                     FontSize="{StaticResource FontSizeCaption}"
+                     Foreground="{DynamicResource BrushTextSecondary}" />
+        </ScrollViewer>
+      </Expander>
+    </StackPanel>
+
+    <Border Grid.Row="2" Background="{DynamicResource BrushBgSurface}" Padding="{StaticResource SpaceLg}">
+      <Button x:Name="CloseButton" Click="OnCloseClick" IsCancel="True"
+              Content="{DynamicResource dialog.close}"
+              HorizontalAlignment="Right"
+              MinWidth="{StaticResource DialogButtonMinWidth}"
+              Padding="{StaticResource SpaceMd}" />
+    </Border>
+  </Grid>
+</ui:FluentWindow>

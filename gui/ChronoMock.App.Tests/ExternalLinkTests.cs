@@ -60,10 +60,10 @@ public class ExternalLinkTests
     public void The_scan_actually_reaches_the_file_it_claims_to_cover()
     {
         // The canary. A walk that reaches no files, or a rename that makes the search term match nothing,
-        // satisfies the assertion above perfectly and looks exactly like a guard that works. Two is the
-        // count the links file actually has - its declaration and the one call to it - so losing the file
-        // or the method is something somebody has to look at rather than inherit.
-        Assert.Equal(2, FindOpenCalls(inLinksFile: true).Count);
+        // satisfies the assertion above perfectly and looks exactly like a guard that works. Three is the
+        // count the links file actually has - its declaration and one call per named destination - so
+        // losing the file or a destination is something somebody has to look at rather than inherit.
+        Assert.Equal(3, FindOpenCalls(inLinksFile: true).Count);
     }
 
     private static IReadOnlyList<(string File, int Line)> FindOpenCalls(bool inLinksFile)

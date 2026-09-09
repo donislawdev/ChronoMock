@@ -181,6 +181,13 @@ const ALLOWED: &[(&str, &str, &str)] = &[
         "the same launch for a one-shot calculator query",
     ),
     (
+        "gui/ChronoMock.Protocol/LicenseClient.cs",
+        "spawn",
+        "the About window asking the core what is inside this build, by running `chrono license \
+         --components`. The same launch the calculator makes, for a register the core carries compiled \
+         in - a second copy of that list in C# would be the thing that drifts",
+    ),
+    (
         "gui/ChronoMock.App/ExternalLinks.cs",
         "spawn",
         "the support link in the title bar, handed to the shell so that the browser the user already \

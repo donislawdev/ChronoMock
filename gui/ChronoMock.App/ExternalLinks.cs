@@ -22,6 +22,21 @@ internal static class ExternalLinks
     /// <summary>Where somebody who wants to support the project is sent.</summary>
     internal const string Support = "https://donislawdev.com/support/";
 
+    /// <summary>
+    /// The full text of the GNU GPL, for a copy of this application that does not carry its own.
+    /// </summary>
+    /// <remarks>
+    /// The same address the core prints for the same reason, and it is a fallback rather than the plan:
+    /// the package ships <c>LICENSE</c> beside the executable, and the About window names that file when
+    /// it is there. This is what a reader gets when it is not, which is a real case (a dev checkout, or
+    /// an executable copied out of its folder) and the one where an offline tool has to admit it cannot
+    /// show the text itself.
+    /// </remarks>
+    internal const string Licence = "https://www.gnu.org/licenses/gpl-3.0.html";
+
+    /// <summary>Hand the licence text to the user's browser, and report whether the shell took it.</summary>
+    internal static bool TryOpenLicence() => TryOpen(Licence);
+
     /// <summary>Hand the support page to the user's browser, and report whether the shell took it.</summary>
     /// <remarks>
     /// A bool rather than an exception, because there is a real machine where this fails - one with no

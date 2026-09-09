@@ -278,6 +278,27 @@
   "support.failed_title": "Nie udało się otworzyć strony",
   "support.failed": "Windows nie otworzył przeglądarki dla tego adresu. Możesz otworzyć go samodzielnie:",
 
+  // The About window. It states what the command line has always stated through `chrono license` - the
+  // build, the copyright, the licence, the warranty disclaimer and every bundled component - because the
+  // window is the default way into this product and had none of it. The warranty sentence is the one GPL-3
+  // section 0 asks an interactive interface to carry, so it is quoted rather than paraphrased.
+  // "GPL-3.0-only" never appears here: it is an identifier, and a translated licence name would name a
+  // licence that does not exist.
+  "about.button": "O programie",
+  "about.name": "O programie Chrono Mock",
+  "about.tip": "Wersja, licencja i to, co jest w środku tej kompilacji.",
+  "about.title": "O programie Chrono Mock",
+  "about.licence_label": "Licencja",
+  "about.warranty": "Ten program nie daje ŻADNEJ GWARANCJI w zakresie dozwolonym przez prawo. Jest wolnym oprogramowaniem i możesz go rozpowszechniać na warunkach Powszechnej Licencji Publicznej GNU w wersji 3.",
+  "about.licence_file": "Pełny tekst licencji",
+  "about.notices_file": "Noty osób trzecich",
+  "about.file_absent": "nie ma go obok tej kompilacji",
+  "about.read_licence": "Przeczytaj licencję w sieci",
+  "about.read_licence_tip": "Otwiera gnu.org w Twojej przeglądarce. Sam Chrono Mock nadal z niczym się nie łączy.",
+  "about.components": "Co jest w środku tej kompilacji",
+  "about.components_asking": "Pytam rdzeń…",
+  "about.components_unavailable": "Nie udało się zapytać rdzenia, więc nic tu nie jest wypisane - lepsze to niż lista, która mogłaby być niepełna. Plik not wymieniony wyżej niesie tę samą informację.",
+
   // Date calculator (chrono-mock 7.3). Slice G1 is the layout shell; more keys arrive with the wiring.
   "calc.presets_header": "Presety",
   "calc.filter_placeholder": "Filtruj scenariusze…",

@@ -68,11 +68,14 @@ public class BackgroundGuardTests
     public void The_scan_actually_reaches_the_views_it_claims_to_cover()
     {
         // The canary for the scan: a path that resolves to nothing makes the test above pass forever.
-        // Both windows of this app are FluentWindow roots, so anything under two means the walk broke.
+        // Every window of this app is a FluentWindow root, so anything under the count means the walk
+        // broke. Raised from two to three when the About window arrived - a floor left below the real
+        // number is a canary that stops noticing the newest window, which is the one most likely to carry
+        // the dead attribute this guard exists for.
         var (views, windows) = WindowBackgroundGuard.Coverage(TestPaths.AppDirectory());
 
         Assert.True(views >= 5, $"the guard walked only {views} view files - the app directory is wrong");
-        Assert.True(windows >= 2, $"the guard found only {windows} FluentWindow roots, expected at least 2");
+        Assert.True(windows >= 3, $"the guard found only {windows} FluentWindow roots, expected at least 3");
     }
 
     [Fact]
