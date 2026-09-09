@@ -245,6 +245,9 @@ pub(crate) fn describe_at_error(e: EvalError) -> String {
             chrono_core::CIVIL_YEAR_MIN,
             chrono_core::CIVIL_YEAR_MAX
         ),
+        // This path builds its base from the real clock, so it cannot produce an impossible date.
+        // Named anyway, because the match stays total - see the note above.
+        EvalError::BaseNotACivilDate => "relative --at has an impossible base date".to_string(),
     }
 }
 

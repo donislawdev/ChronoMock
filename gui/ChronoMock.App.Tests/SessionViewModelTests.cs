@@ -625,6 +625,109 @@ public class SessionViewModelTests
         Assert.Contains("source.network_at_start", summary, StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// The summary is the one artifact that LEAVES this tool and lands in somebody else's ticket, so it has
+    /// to describe the session that RAN, not the form as it stands now. The two are reachable at once: the
+    /// form unlocks the moment a session ends, while the summary stays copyable for every status but Idle
+    /// and Connecting - so a tester lining up the next run and then copying the last one used to get a
+    /// report carrying one session's verdict under another session's target name and zone.
+    /// </summary>
+    [Fact]
+    public async Task The_summary_names_the_target_and_zone_the_session_ran_on_not_a_later_edit()
+    {
+        var vm = new SessionViewModel();
+        var ranOn = Path.Combine(Path.GetTempPath(), $"chrono-ran-{Guid.NewGuid():N}.exe");
+        var startZone = TimeInputs.Zones.First(z => z.BiasMinutes == 0);
+        vm.SetTarget(ranOn);
+        vm.SelectedZone = startZone;
+
+        // The file does not exist, so this ends as an error - but the snapshot is taken before the plan is
+        // built, which is the whole point: even a session that never launched reports what it asked for.
+        await vm.StartAsync();
+        Assert.True(vm.IsIdle, "the form is unlocked again, which is what makes the edit below possible");
+        Assert.True(vm.CanCopySummary, "and the summary is still copyable, which is what makes it a problem");
+
+        var laterZone = TimeInputs.Zones.First(z => z.BiasMinutes != startZone.BiasMinutes);
+        vm.SetTarget(Path.Combine(Path.GetTempPath(), $"chrono-next-{Guid.NewGuid():N}.exe"));
+        vm.SelectedZone = laterZone;
+
+        var summary = vm.BuildSummary(T());
+
+        Assert.Contains(Path.GetFileName(ranOn), summary, StringComparison.Ordinal);
+        Assert.Contains($"zone {startZone.Label}", summary, StringComparison.Ordinal);
+        Assert.DoesNotContain($"zone {laterZone.Label}", summary, StringComparison.Ordinal);
+    }
+
+    /// <summary>The same snapshot, in the diagnostics block and the history record - they are built inside
+    /// the Start finally, before the form unlocks, so reading live is correct there TODAY. Pinning them to
+    /// the snapshot is what stops that from depending on when they happen to be called.</summary>
+    [Fact]
+    public async Task The_diagnostics_block_and_the_history_record_also_carry_the_start_setup()
+    {
+        var vm = new SessionViewModel();
+        var ranOn = Path.Combine(Path.GetTempPath(), $"chrono-ran-{Guid.NewGuid():N}.exe");
+        var startZone = TimeInputs.Zones.First(z => z.BiasMinutes == 0);
+        vm.SetTarget(ranOn);
+        vm.SelectedZone = startZone;
+        await vm.StartAsync();
+
+        vm.SetTarget(Path.Combine(Path.GetTempPath(), $"chrono-next-{Guid.NewGuid():N}.exe"));
+        vm.SelectedZone = TimeInputs.Zones.First(z => z.BiasMinutes != startZone.BiasMinutes);
+
+        var block = vm.BuildDiagnosticsBlock([]);
+        Assert.Contains(ranOn, block, StringComparison.Ordinal);
+        Assert.Contains($"zone {startZone.Label}", block, StringComparison.Ordinal);
+
+        var record = vm.BuildRecord();
+        Assert.Equal(ranOn, record.TargetPath);
+        Assert.Equal(startZone.BiasMinutes, record.TzBiasMin);
+    }
+
+    /// <summary>
+    /// A Chromium channel is named by context TYPE plus API - "page Date.now" - and the core emits one
+    /// coverage event per context. An application with two pages therefore produced two identical rows
+    /// with different counts, and nothing said which was which. A row a reader cannot attribute is a
+    /// result they cannot explain, which is the defect this project treats as a defect.
+    /// </summary>
+    [Fact]
+    public void Cdp_coverage_rows_say_which_context_they_came_from()
+    {
+        var vm = new SessionViewModel { IsCdp = true };
+
+        vm.Apply(new CoverageEvent
+        {
+            V = ProtocolJson.ProtocolVersion,
+            Pid = 0,
+            Covered = [new CoveredChannel { Channel = "page Date.now", Calls = 5 }],
+        });
+        vm.Apply(new CoverageEvent
+        {
+            V = ProtocolJson.ProtocolVersion,
+            Pid = 1,
+            Covered = [new CoveredChannel { Channel = "page Date.now", Calls = 9 }],
+        });
+
+        Assert.Equal(2, vm.Covered.Count);
+        Assert.Contains(vm.Covered, r => r.Contains("context 0", StringComparison.Ordinal)
+                                      && r.Contains("×5", StringComparison.Ordinal));
+        Assert.Contains(vm.Covered, r => r.Contains("context 1", StringComparison.Ordinal)
+                                      && r.Contains("×9", StringComparison.Ordinal));
+        // Still never summed across contexts (rule 4) - two rows, each with its own count.
+        Assert.DoesNotContain(vm.Covered, r => r.Contains("×14", StringComparison.Ordinal));
+    }
+
+    /// <summary>The native branch is unchanged: an OS process is already named by its pid in the panel's
+    /// own layout, and prefixing there would be noise the CDP case needs and this one does not.</summary>
+    [Fact]
+    public void Native_coverage_rows_are_not_tagged_with_a_context()
+    {
+        var vm = new SessionViewModel();
+
+        vm.Apply(Coverage(pid: 4242, "GetSystemTimeAsFileTime", 7));
+
+        Assert.DoesNotContain(vm.Covered, r => r.Contains("context", StringComparison.Ordinal));
+    }
+
     [Fact]
     public void Is_running_follows_the_status()
     {
@@ -742,6 +845,44 @@ public class SessionViewModelTests
 
         Assert.False(fired); // completed normally
         Assert.Equal("2038-01-19T03:14:07", vm.Fake.Wall);
+    }
+
+    /// <summary>
+    /// 🔴 The watchdog must time the gap BETWEEN events, not the gap plus however long the handler took.
+    ///
+    /// It used to arm a timer before each wait and let it run through the handling loop - and the
+    /// handler runs on the UI thread by design, so a stall there cancelled the token while events were
+    /// arriving perfectly well. `CancelAfter` does not un-cancel an already-cancelled source, so the
+    /// next wait threw at once and the session was reported as "core not responding": a statement about
+    /// the CORE, made because of a stall in the interface (rule 4).
+    ///
+    /// Modelled with a handler slower than the window, on a stream that keeps delivering.
+    /// </summary>
+    [Fact]
+    public async Task Watchdog_measures_the_gap_between_events_not_the_time_spent_handling_them()
+    {
+        var channel = Channel.CreateUnbounded<ChronoEvent>();
+        for (var i = 0; i < 3; i++)
+        {
+            await channel.Writer.WriteAsync(
+                State("2038-01-19T03:14:07", "2026-08-26T00:00:00", bias: 0, multiplier: 60),
+                TestContext.Current.CancellationToken);
+        }
+
+        channel.Writer.Complete();
+
+        var handled = 0;
+        var fired = await CoreSession.PumpAsync(
+            channel.Reader,
+            _ =>
+            {
+                handled++;
+                Thread.Sleep(80); // longer than the window below, as a parked UI thread would be
+            },
+            TimeSpan.FromMilliseconds(50));
+
+        Assert.Equal(3, handled);
+        Assert.False(fired, "the stream was delivering the whole time - the handler was simply slow");
     }
 
     [Fact]
@@ -998,6 +1139,29 @@ public class SessionViewModelTests
         Assert.Contains("core stderr: hi", block, StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// A diagnostics block that is only the TAIL of the core's output has to say so, and say how much
+    /// is missing - a reader who takes it for the whole draws conclusions from an absence that was
+    /// never there (rule 6).
+    ///
+    /// 🔴 The old marker was a LINE enqueued once at the first drop. Enqueue appends and the trimming
+    /// dequeues from the front, so after another cap's worth of lines the marker reached the front and
+    /// was dropped itself - and the flag guarding it was already set, so it never came back. The block
+    /// then read as complete again, which is exactly what the marker existed to prevent.
+    /// </summary>
+    [Fact]
+    public void A_truncated_diagnostics_block_says_how_much_was_dropped()
+    {
+        var vm = new SessionViewModel();
+        vm.SetTarget(@"C:\apps\Foo.exe");
+
+        var whole = vm.BuildDiagnosticsBlock(["core stderr: one"], dropped: 0);
+        Assert.DoesNotContain("dropped", whole, StringComparison.Ordinal);
+
+        var tail = vm.BuildDiagnosticsBlock(["core stderr: one"], dropped: 137);
+        Assert.Contains("137 earlier line(s) dropped", tail, StringComparison.Ordinal);
+    }
+
     [Fact]
     public void A_read_only_medium_still_captures_diagnostics_without_a_saved_path()
     {
@@ -1111,6 +1275,102 @@ public class SessionViewModelTests
         Assert.Equal(300, vm.SelectedZone.BiasMinutes);
         Assert.Equal("frozen", vm.SelectedMode.Mode);
         Assert.Equal(SessionStatusKind.Idle, vm.StatusKind); // rule 7: fills the form, never starts a session
+    }
+
+    /// <summary>
+    /// Repeating a session has to repeat the SESSION. Five inputs decide what a run does and none of them
+    /// used to be recorded - the arguments, the working folder and the three switches - so a load filled
+    /// four fields and left the other five holding whatever the form had, producing a third setup that was
+    /// never run and never recorded, silently. Scale-QPC is the expensive one: it decides whether the
+    /// target's elapsed counters move at all.
+    /// </summary>
+    [Fact]
+    public void Load_from_history_restores_every_input_that_changes_what_a_session_does()
+    {
+        var vm = new SessionViewModel();
+        // Leave the form holding the OPPOSITE of the record, so a field that is not restored stands out.
+        vm.TargetArgs = "--from-the-previous-run";
+        vm.WorkingFolder = @"C:\previous";
+        vm.ScaleDuration = false;
+        vm.ScaleQpc = false;
+        vm.ForceStart = false;
+
+        var record = HistoryRecord("Ledger") with
+        {
+            TargetArgs = "--seed 7 --headless",
+            WorkingFolder = @"C:\apps\data",
+            ScaleDuration = true,
+            ScaleQpc = true,
+            Force = true,
+        };
+        vm.LoadFromHistory(record);
+
+        Assert.Equal("--seed 7 --headless", vm.TargetArgs);
+        Assert.Equal(@"C:\apps\data", vm.WorkingFolder);
+        Assert.True(vm.ScaleDuration);
+        Assert.True(vm.ScaleQpc);
+        Assert.True(vm.ForceStart);
+        Assert.False(vm.HasHistoryNote, "everything was on offer, so there is nothing to report");
+    }
+
+    /// <summary>The other half: what BuildRecord writes, or the load above has nothing to restore from.</summary>
+    [Fact]
+    public void Build_record_captures_every_input_that_changes_what_a_session_does()
+    {
+        var vm = new SessionViewModel();
+        vm.SetTarget(@"C:\apps\Ledger.exe");
+        vm.TargetArgs = "--seed 7";
+        vm.WorkingFolder = @"C:\apps\data";
+        vm.ScaleDuration = true;
+        vm.ScaleQpc = true;
+        vm.ForceStart = true;
+
+        var record = vm.BuildRecord();
+
+        Assert.Equal("--seed 7", record.TargetArgs);
+        Assert.Equal(@"C:\apps\data", record.WorkingFolder);
+        Assert.True(record.ScaleDuration);
+        Assert.True(record.ScaleQpc);
+        Assert.True(record.Force);
+    }
+
+    /// <summary>
+    /// A zone or a speed the catalogues no longer offer cannot be filled in, and leaving the CURRENT one
+    /// standing without a word made the form claim to be the recorded session while one of its two decisive
+    /// fields belonged to whatever was there before. Reachable when a record predates a change to either
+    /// closed list.
+    /// </summary>
+    [Fact]
+    public void Load_from_history_says_what_it_could_not_fill_in()
+    {
+        var vm = new SessionViewModel();
+        var keptZone = vm.SelectedZone;
+        var keptMode = vm.SelectedMode;
+
+        // 999 is not a bias any zone option carries, and no mode option is x777.
+        vm.LoadFromHistory(HistoryRecord("Ledger", bias: 999, mode: "multiplier", multiplier: 777));
+
+        Assert.Equal("history.load_zone_and_mode_missing", vm.HistoryNoteKey);
+        Assert.True(vm.HasHistoryNote);
+        Assert.Equal(keptZone, vm.SelectedZone); // unchanged, and now said out loud
+        Assert.Equal(keptMode, vm.SelectedMode);
+        Assert.Equal(@"C:\apps\Ledger.exe", vm.TargetPath); // what DID load stays loaded
+    }
+
+    /// <summary>One missing field names that field alone, so the reader knows which box to set.</summary>
+    [Fact]
+    public void Load_from_history_names_the_one_field_it_could_not_fill()
+    {
+        var vm = new SessionViewModel();
+
+        vm.LoadFromHistory(HistoryRecord("Ledger", bias: 999));
+        Assert.Equal("history.load_zone_missing", vm.HistoryNoteKey);
+
+        vm.LoadFromHistory(HistoryRecord("Ledger", multiplier: 777));
+        Assert.Equal("history.load_mode_missing", vm.HistoryNoteKey);
+
+        vm.LoadFromHistory(HistoryRecord("Ledger"));
+        Assert.Equal(string.Empty, vm.HistoryNoteKey); // a clean load clears the note
     }
 
     [Fact]

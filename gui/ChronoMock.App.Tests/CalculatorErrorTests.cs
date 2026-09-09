@@ -37,18 +37,51 @@ public class CalculatorErrorTests
         Assert.True(CalculatorViewModel.IsNeedsCalendar(EngineNeedsCalendarMessage));
     }
 
+    /// <summary>
+    /// 🔴 This test used to assert the OPPOSITE, and its reason was sound: a refusal names a step number or
+    /// a year range that no key alone reproduces, so swallowing the sentence for a tidier one would cost
+    /// the tester the part that says which step (rule 6). What was wrong was the conclusion drawn from it -
+    /// that the whole English sentence should therefore BE the message. In a Polish window it was the wrong
+    /// language, carried the name of a process the user is not supposed to know runs, and ended in a raw
+    /// contract key.
+    ///
+    /// Both halves are kept now: the translated key is the message, and the engine's sentence is a quieter
+    /// line beneath it. Nothing is parsed out of the prose, which is what the key exists to avoid.
+    /// </summary>
     [Fact]
-    public void Every_other_refusal_is_passed_through_word_for_word()
+    public void Every_refusal_is_translated_and_keeps_the_engine_sentence_as_detail()
     {
-        // The one key with a rewrite is the one whose message carries no data. The rest name a step
-        // number or a year range that no key alone reproduces, so swallowing them for a tidier sentence
-        // would cost the tester the part that says which step (rule 6).
         const string other = "chrono calc: step 3 overflows the representable range (calc.overflow)";
 
         var text = WpfTestHost.Invoke(() => CalculatorViewModel.DescribeCalcError(other));
+        var detail = WpfTestHost.Invoke(() => CalculatorViewModel.DetailForCalcError(other));
 
-        Assert.Equal(other, text);
+        // The message is the window's own words - no argv, no key.
+        Assert.DoesNotContain("chrono calc:", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("calc.overflow", text, StringComparison.Ordinal);
+        Assert.NotEqual(other, text);
+
+        // The detail keeps what the key cannot carry: WHICH step.
+        Assert.Contains("step 3", detail, StringComparison.Ordinal);
+        Assert.DoesNotContain("chrono calc:", detail, StringComparison.Ordinal);
+        Assert.DoesNotContain("calc.overflow", detail, StringComparison.Ordinal);
+
         Assert.False(CalculatorViewModel.IsNeedsCalendar(other));
+    }
+
+    /// <summary>A refusal whose sentence adds nothing beyond the translation shows one line, not the same
+    /// thing twice - the duplicate-line shape rule 24 caught in the About window.</summary>
+    [Fact]
+    public void A_refusal_with_nothing_extra_to_say_shows_no_second_line()
+    {
+        // No key, so the message IS the sentence - a second copy of it underneath would be noise.
+        const string keyless = "chrono calc: calendar 'pl' not found (looked in <exe>/calendars)";
+
+        var text = WpfTestHost.Invoke(() => CalculatorViewModel.DescribeCalcError(keyless));
+        var detail = WpfTestHost.Invoke(() => CalculatorViewModel.DetailForCalcError(keyless));
+
+        Assert.Equal("calendar 'pl' not found (looked in <exe>/calendars)", text);
+        Assert.Equal(string.Empty, detail);
     }
 
     /// <summary>

@@ -283,6 +283,7 @@ pub(crate) fn run_session(
     let mut family_pids: HashSet<u32> = HashSet::new();
     // Did the fake clock ever stand on the last instant this build can represent (R2-X2)?
     let mut clock_clamped = false;
+    let mut duration_clamped = false;
     fold_children(&mut session, &mut family, &mut family_pids);
 
     let heartbeat = Duration::from_secs(1);
@@ -322,6 +323,9 @@ pub(crate) fn run_session(
             // jump moves it back, because the readings taken while it stood there were clamped
             // (R2-X2).
             clock_clamped |= st.clock_at_range_end();
+            // Sticky for the same reason as the wall flag above: readings taken while the axis stood
+            // there were held, and a later re-anchor does not make them untrue.
+            duration_clamped |= st.duration_at_range_end();
             emit(&state_event_from(&st));
             if !session.is_alive() {
                 target_exit = session.exit_code();
@@ -332,7 +336,7 @@ pub(crate) fn run_session(
         }
     }
 
-    close_session(session, family, family_pids, clock_clamped, target_exit)
+    close_session(session, family, family_pids, clock_clamped, duration_clamped, target_exit)
 }
 
 /// Act on one command that arrived mid-session.
@@ -412,13 +416,24 @@ pub(crate) fn apply_command(session: &mut chrono_mech::Session, cmd: Command) {
 /// The clock reaching the end of the representable range and standing there means the session did
 /// less than it promised: the wall stopped while fake time kept being counted, and a still picture
 /// is not an explanation (R2-X2, rule 6).
-pub(crate) fn native_session_warnings(uncovered_processes: u32, clamped: bool) -> Vec<String> {
+pub(crate) fn native_session_warnings(
+    uncovered_processes: u32,
+    clamped: bool,
+    duration_clamped: bool,
+) -> Vec<String> {
     let mut warnings = Vec::new();
     if uncovered_processes > 0 {
         warnings.push("coverage.pid_registry_full".to_string());
     }
     if clamped {
         warnings.push("time.fake_clock_clamped".to_string());
+    }
+    // The monotonic axes standing is a SEPARATE fact from the wall clock standing, and the two do not
+    // arrive together: the wall stops at the end of the FILETIME range, the duration axes when their
+    // elapsed term fills an i64. A session can meet either without the other, and a reader who is
+    // told about one and not the other is told the session did more than it did (rule 6).
+    if duration_clamped {
+        warnings.push("time.duration_axis_clamped".to_string());
     }
     warnings
 }
@@ -430,6 +445,7 @@ pub(crate) fn close_session(
     mut family: Verdict,
     mut family_pids: HashSet<u32>,
     clock_clamped: bool,
+    duration_clamped: bool,
     target_exit: Option<i32>,
 ) -> i32 {
     // Final fold so a child that joined since the last heartbeat still counts in the family.
@@ -458,6 +474,7 @@ pub(crate) fn close_session(
     let session_warnings = native_session_warnings(
         uncovered_processes,
         clock_clamped || final_state.clock_at_range_end(),
+        duration_clamped || final_state.duration_at_range_end(),
     );
     emit(&Event::SessionVerdict {
         v: PROTOCOL_VERSION,
@@ -770,17 +787,36 @@ mod tests {
         assert!(!force);
     }
 
-    /// Each caveat is said only when it happened, and both together keep the order the report prints
-    /// them in. A session that ran cleanly says nothing extra, which is what makes the two that do
-    /// appear worth reading.
+    /// Each caveat is said only when it happened, and all of them together keep the order the report
+    /// prints them in. A session that ran cleanly says nothing extra, which is what makes the ones
+    /// that do appear worth reading.
     #[test]
     fn the_native_session_warnings_say_only_what_happened() {
-        assert!(native_session_warnings(0, false).is_empty());
-        assert_eq!(native_session_warnings(2, false), vec!["coverage.pid_registry_full"]);
-        assert_eq!(native_session_warnings(0, true), vec!["time.fake_clock_clamped"]);
+        assert!(native_session_warnings(0, false, false).is_empty());
+        assert_eq!(native_session_warnings(2, false, false), vec!["coverage.pid_registry_full"]);
+        assert_eq!(native_session_warnings(0, true, false), vec!["time.fake_clock_clamped"]);
         assert_eq!(
-            native_session_warnings(1, true),
+            native_session_warnings(1, true, false),
             vec!["coverage.pid_registry_full", "time.fake_clock_clamped"]
+        );
+    }
+
+    /// The monotonic axes standing is its OWN caveat, separate from the wall clock standing.
+    ///
+    /// The two do not arrive together and neither implies the other: the wall stops at the end of the
+    /// FILETIME range, the duration axes when their elapsed term fills an i64. Reporting one for the
+    /// other would tell the reader the session did something it did not (rule 6).
+    #[test]
+    fn a_standing_duration_axis_is_its_own_caveat() {
+        assert_eq!(
+            native_session_warnings(0, false, true),
+            vec!["time.duration_axis_clamped"],
+            "the duration axes can stand while the wall clock is nowhere near its end"
+        );
+        assert_eq!(
+            native_session_warnings(0, true, true),
+            vec!["time.fake_clock_clamped", "time.duration_axis_clamped"],
+            "and both can be true at once"
         );
     }
 }

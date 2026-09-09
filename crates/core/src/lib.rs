@@ -125,7 +125,7 @@ impl Verdict {
     /// exactly the pair `(has_covered, has_uncovered)` - the family ORs those bits across
     /// processes, so the family `works` only when something is covered and nothing is left
     /// uncovered anywhere (untouchable rule 4 at the session level). This aggregates
-    /// JUDGMENTS, never call counts - per-process reports stay separate (plasterek 11). OR
+    /// JUDGMENTS, never call counts - per-process reports stay separate (slice 11). OR
     /// is commutative and associative, so accumulation order does not matter, and coverage
     /// only grows, so the fold is monotonic.
     pub fn combine(self, other: Verdict) -> Verdict {
@@ -325,6 +325,19 @@ fn parse_civil(local: &str) -> Result<(i64, i64, i64, i64, i64, i64), String> {
     if !(1..=last).contains(&day) {
         return Err(format!("day {day} out of range for month {month} in '{local}'"));
     }
+    // Field by field, left to right, and each refusal NAMES its field.
+    //
+    // The order is what was wrong, not the checks. The leap-second refusal came first, so
+    // `2026-01-01T25:00:60` was answered "second 60 is a leap second" while the hour was 25 - the
+    // reader fixes the second, runs again, and only then learns about the hour. And the catch-all
+    // underneath said "time out of range" without saying WHICH of the three, on input where any of
+    // them could be the one. A result that is right and cannot be explained is a defect here.
+    if !(0..=23).contains(&hour) {
+        return Err(format!("hour {hour} out of range (0..=23) in '{local}'"));
+    }
+    if !(0..=59).contains(&min) {
+        return Err(format!("minute {min} out of range (0..=59) in '{local}'"));
+    }
     // A leap second gets its own refusal, because it used to get silently accepted and then move the
     // DATE. `:60` passed this check as a nod to leap seconds, and `moment_to_filetime_utc` then summed
     // a time-of-day of 86400, which is midnight of the NEXT day - so `2026-06-15T23:59:60` became the
@@ -334,14 +347,15 @@ fn parse_civil(local: &str) -> Result<(i64, i64, i64, i64, i64, i64), String> {
     //
     // Neither this model nor FILETIME has leap seconds, so accepting one is a promise we cannot keep.
     // Refuse it the way every other impossible moment above is refused, and name the reason - a tester
-    // who pasted a timestamp from a leap-second-aware source needs to know which second to use.
+    // who pasted a timestamp from a leap-second-aware source needs to know which second to use. It sits
+    // BELOW the hour and minute checks so it only ever answers for input whose only fault it is.
     if sec == 60 {
         return Err(format!(
             "second 60 in '{local}' is a leap second - this model has none (use :59)"
         ));
     }
-    if !(0..=23).contains(&hour) || !(0..=59).contains(&min) || !(0..=59).contains(&sec) {
-        return Err(format!("time out of range in '{local}'"));
+    if !(0..=59).contains(&sec) {
+        return Err(format!("second {sec} out of range (0..=59) in '{local}'"));
     }
     Ok((year, month, day, hour, min, sec))
 }
@@ -554,6 +568,34 @@ mod tests {
         let ok = moment_to_filetime_utc(&moment("2026-06-15T23:59:59", Some(0))).unwrap();
         let midnight = moment_to_filetime_utc(&moment("2026-06-16T00:00:00", Some(0))).unwrap();
         assert_eq!(midnight - ok, 10_000_000, "one second apart, not one day");
+    }
+
+    /// Each time field is refused BY NAME, and in the order it is written.
+    ///
+    /// The leap-second check used to run first, so `25:00:60` was answered "second 60 is a leap
+    /// second" while the hour was 25 - the reader fixes the second, runs again, and only then hears
+    /// about the hour. Underneath it, one catch-all said "time out of range" without naming which of
+    /// the three was out of it. Both are the same defect: an answer that is correct and cannot be
+    /// acted on.
+    #[test]
+    fn each_time_field_is_refused_by_name_and_in_reading_order() {
+        let refusal = |s: &str| {
+            moment_to_filetime_utc(&moment(s, Some(0))).expect_err("this moment cannot be represented")
+        };
+
+        let hour = refusal("2026-01-01T25:00:60");
+        assert!(hour.contains("hour 25"), "the FIRST fault from the left, named: {hour}");
+        assert!(!hour.contains("leap second"), "not the second, which is also wrong here: {hour}");
+
+        let minute = refusal("2026-01-01T12:75:00");
+        assert!(minute.contains("minute 75"), "got: {minute}");
+
+        let second = refusal("2026-01-01T12:00:99");
+        assert!(second.contains("second 99"), "got: {second}");
+
+        // With hour and minute sound, the leap second still gets its own reason rather than the range.
+        let leap = refusal("2026-01-01T23:59:60");
+        assert!(leap.contains("leap second"), "got: {leap}");
     }
 
     #[test]

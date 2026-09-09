@@ -583,6 +583,7 @@ pub(crate) fn calc_error_exit_code(e: &EvalError) -> i32 {
         // is one this build will not compute a calendar on. Exit 1, next to the other usage errors.
         | EvalError::BaseYearOutOfRange
         | EvalError::BaseOverflow
+        | EvalError::BaseNotACivilDate
         | EvalError::YearOutOfRange { .. } => 1,
     }
 }
@@ -617,6 +618,11 @@ pub(crate) fn describe_calc_error(e: &EvalError) -> String {
         // expression with no steps can still reach here.
         EvalError::BaseOverflow => {
             "chrono calc: the UTC base names an instant outside the representable range (calc.base_overflow)".into()
+        }
+        // Unreachable from any surface here (they all parse the base), and named anyway: this maps a
+        // public API's refusal, and a match arm that does not exist is a compile error the day it is.
+        EvalError::BaseNotACivilDate => {
+            "chrono calc: the base is not a real date - check its month and day (calc.base_not_a_date)".into()
         }
         // Deliberately not phrased as an overflow: nothing overflowed. The step produced an exact
         // year that this build does not compute calendars on, and naming it that way is the whole

@@ -42,14 +42,14 @@ public class LocalizationTests
         "chromium.contexts_covered", "chromium.contexts_partial",
         "chromium.no_time_calls", "chromium.no_contexts",
         // Coverage warning keys (CoverageEvent warning_keys).
-        "source.network_at_start", "wait.object_waits_not_scaled",
+        "source.network_at_start", "wait.object_waits_not_scaled", "wait.timeout_collapsed",
         "timer.multimedia_not_scaled", "clock.timegettime_scaled_audio_may_shift",
         "coverage.channel_installed_late",
         "inheritance.ntcreateuserprocess_child_maybe_uncovered",
         "inheritance.child_not_injected",
         // Session-level warning keys (SessionVerdict warning_keys).
         "coverage.pid_registry_full",
-        "time.fake_clock_clamped",
+        "time.fake_clock_clamped", "time.duration_axis_clamped",
         "chromium.launched_with_debug_port", "chromium.app_closed_before_audit",
         "chromium.rate_change_affects_running_timers",
         // Runtime detection warnings the driver appends to coverage (B1): a Python/.NET/Java target whose
@@ -78,6 +78,8 @@ public class LocalizationTests
         "target.attach_failed", "target.bitness_mismatch", "session.already_active",
         "protocol.no_command", "protocol.bad_command",
         "protocol.bad_command_ignored",
+        // The command stream itself failing, which ENDS the session - unlike one unreadable command.
+        "protocol.line_too_long", "protocol.stream_unreadable",
         "protocol.unsupported_command", "protocol.expected_start",
     ];
 

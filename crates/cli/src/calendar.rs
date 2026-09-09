@@ -208,8 +208,39 @@ pub(crate) fn find_calendar_file(id: &str) -> Result<std::path::PathBuf, String>
 /// Load and validate a calendar by id, mapping the JSON schema to the core engine's types.
 pub(crate) fn load_calendar(id: &str) -> Result<chrono_core::calendar::Calendar, String> {
     let path = find_calendar_file(id)?;
-    let text = std::fs::read_to_string(&path).map_err(|e| format!("cannot read {}: {e}", path.display()))?;
+    let text = read_catalogue_file(&path)?;
     calendar_from_text(&text).map_err(|e| format!("{e} (in {})", path.display()))
+}
+
+/// The largest catalogue file (calendar or preset) this build will read.
+///
+/// Two hundred times the largest shipped one, and a bound rather than a judgement about what a file
+/// should contain: `read_to_string` on a file with no ceiling is the one unbounded input left in this
+/// tool, and calendars are the one catalogue outsiders are invited to write. A generated file, or a
+/// path that turns out to point at something that is not a catalogue at all, should be refused by
+/// name rather than pulled into memory whole.
+pub(crate) const MAX_CATALOGUE_BYTES: u64 = 4 * 1024 * 1024;
+
+/// The largest number of holidays a calendar may declare - see the note where it is enforced. The
+/// shipped calendars hold about fourteen, so this is two orders of magnitude of room.
+pub(crate) const MAX_HOLIDAYS: usize = 2000;
+
+/// Read a catalogue file, refusing one too large to be a catalogue.
+///
+/// The size is checked before the read, not after, which is the whole point - a file that cannot be a
+/// catalogue never has to fit in memory to be rejected.
+pub(crate) fn read_catalogue_file(path: &std::path::Path) -> Result<String, String> {
+    let size = std::fs::metadata(path)
+        .map_err(|e| format!("cannot read {}: {e}", path.display()))?
+        .len();
+    if size > MAX_CATALOGUE_BYTES {
+        return Err(format!(
+            "{} is {size} bytes, past the {MAX_CATALOGUE_BYTES}-byte limit for a catalogue file",
+            path.display()
+        ));
+    }
+
+    std::fs::read_to_string(path).map_err(|e| format!("cannot read {}: {e}", path.display()))
 }
 
 /// Parse and validate a calendar from its JSON text, mapping the `chronomock.calendar/1` schema to the
@@ -229,6 +260,19 @@ pub(crate) fn calendar_from_text(text: &str) -> Result<chrono_core::calendar::Ca
     // they make the count below meaningless - so fold them away before counting.
     weekend.sort_unstable();
     weekend.dedup();
+    // A holiday list has to stay a list of holidays. The cost of deciding "is this a business day" is
+    // the number of holidays in force times three years, and a business-day WALK pays it again every
+    // time it crosses a year - so the two multiply. Measured on this machine: 20 000 holidays and a
+    // +200000bd walk took 4.6 s in release and 1 min 55 s in debug, against 0.47 s for the same walk
+    // on a shipped calendar. The GUI's calc timeout would cut that off with a message, and the CLI has
+    // no such ceiling. A number no real calendar approaches (the shipped ones hold about fourteen) is
+    // cheap to refuse here, where the author can see it.
+    if dto.holidays.len() > MAX_HOLIDAYS {
+        return Err(format!(
+            "calendar lists {} holidays, past the limit of {MAX_HOLIDAYS} this build reads",
+            dto.holidays.len()
+        ));
+    }
     // A week with no working day leaves "+1 business day" with nothing to land on. The engine now
     // bounds its walk instead of hanging (S-1), but a file this broken should never reach it: say
     // which field is wrong, here, where the author can fix it.
@@ -309,6 +353,57 @@ mod tests {
     /// that makes "next business day" unanswerable has to be refused where its author can see it -
     /// not walked into by the engine. Duplicated weekend days are folded first, so the check counts
     /// distinct days and a repeated "saturday" is not mistaken for a full week.
+    /// A holiday list has to stay a list of holidays.
+    ///
+    /// The cost of "is this a business day" is the number of holidays in force times three years, and a
+    /// business-day walk pays it again on every year boundary it crosses - so the two multiply.
+    /// Measured on this machine: 20 000 holidays and `+200000bd` took 4.6 s in release and 1 min 55 s
+    /// in debug, against 0.47 s for the same walk on a shipped calendar. The GUI's calc timeout cuts
+    /// that off with a message and the CLI has no such ceiling, so the refusal belongs here, where the
+    /// file's author can see it. The shipped calendars hold about fourteen.
+    #[test]
+    fn a_calendar_with_an_implausible_number_of_holidays_is_refused() {
+        let holiday = |i: usize| {
+            format!(
+                r#"{{"id":"h{i}","name":{{"en":"H","local":"H"}},"rule":{{"type":"easter_offset","offset":1}},"source":"probe"}}"#
+            )
+        };
+        let with_holidays = |n: usize| {
+            let list: Vec<String> = (0..n).map(holiday).collect();
+            format!(
+                r#"{{"schema":"chronomock.calendar/1","id":"probe","country":"XX","weekend":["saturday","sunday"],"observed":"none","holidays":[{}]}}"#,
+                list.join(",")
+            )
+        };
+
+        let err = calendar_from_text(&with_holidays(MAX_HOLIDAYS + 1))
+            .expect_err("past the limit this build reads");
+        assert!(err.contains("past the limit"), "the message names the limit, got: {err}");
+        assert!(err.contains(&MAX_HOLIDAYS.to_string()), "and the number, got: {err}");
+
+        // At the limit is fine - the bound is a ceiling on the implausible, not on the large.
+        assert!(calendar_from_text(&with_holidays(MAX_HOLIDAYS)).is_ok());
+    }
+
+    /// A catalogue file is outside input, and `read_to_string` on it was the last unbounded read in
+    /// this tool. The size is checked BEFORE the read, so a file that cannot be a catalogue never has
+    /// to fit in memory to be rejected.
+    #[test]
+    fn a_catalogue_file_past_the_size_limit_is_refused_without_being_read() {
+        let dir = std::env::temp_dir().join(format!("chrono-cat-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        let path = dir.join("huge.json");
+        // One byte past the ceiling, written as zeros - never parsed, so the content is immaterial.
+        std::fs::write(&path, vec![b'0'; MAX_CATALOGUE_BYTES as usize + 1]).expect("write");
+
+        let err = read_catalogue_file(&path).expect_err("past the size limit");
+        assert!(err.contains("past the"), "got: {err}");
+
+        std::fs::write(&path, b"{}").expect("write");
+        assert_eq!(read_catalogue_file(&path).expect("within the limit"), "{}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     /// R2-N8: `weekend` and `observed` must describe the same weekend. A Friday-Saturday weekend with
     /// a shift rule used to load and then be wrong twice over, silently - which is the one thing a
     /// calendar file must never do, since calendars are written by people outside this build.

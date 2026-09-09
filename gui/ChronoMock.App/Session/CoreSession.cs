@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.IO; // The WPF SDK trims System.IO from implicit usings (Path collides with Shapes.Path).
 using System.Threading.Channels;
 using ChronoMock.Protocol;
@@ -33,6 +34,10 @@ internal sealed class CoreSession : IAsyncDisposable
     /// <summary>The core's stderr, drained by dispose and captured for support (RELEASE-012).</summary>
     internal IReadOnlyCollection<string> Diagnostics => _client.Diagnostics;
 
+    /// <summary>How many stderr lines were dropped to stay under the client's cap - so a captured block
+    /// can say it is a tail rather than the whole of it (rule 6).</summary>
+    internal int DiagnosticsDropped => _client.DiagnosticsDropped;
+
     /// <summary>
     /// Connect to the core and complete the handshake. The returned session is ALWAYS non-null once the
     /// core process exists, even when the handshake refuses - the caller owns disposal either way, and a
@@ -48,8 +53,11 @@ internal sealed class CoreSession : IAsyncDisposable
         ArgumentNullException.ThrowIfNull(plan);
         var session = new CoreSession(CoreClient.Connect(plan.CorePath));
 
-        var ready = await ReadReadyAsync(session._client, readyTimeout);
-        return new CoreSessionOpen(session, RefusalKeyFor(ready, plan.Machine, plan.IsCdp));
+        var handshake = await ReadReadyAsync(session._client, readyTimeout);
+        // An error the core sent INSTEAD of ready is its own refusal, and a better one than
+        // "no handshake" - it names the actual reason.
+        var refusal = handshake.ErrorKey ?? RefusalKeyFor(handshake.Ready, plan.Machine, plan.IsCdp);
+        return new CoreSessionOpen(session, refusal);
     }
 
     /// <summary>
@@ -137,49 +145,90 @@ internal sealed class CoreSession : IAsyncDisposable
         ArgumentNullException.ThrowIfNull(events);
         ArgumentNullException.ThrowIfNull(onEvent);
 
-        using var idleCts = new CancellationTokenSource();
-        try
+        // 🔴 The window is measured from the last event SEEN, not by a timer armed before each wait.
+        //
+        // The timer version armed itself before the wait and then kept running through the handling
+        // loop below - and `onEvent` runs on the UI thread by design (no ConfigureAwait anywhere here),
+        // so anything that parks that thread for the length of the window cancelled the token while
+        // events were arriving perfectly well. `CancelAfter` on an already-cancelled source does not
+        // un-cancel it, so the next wait threw at once and the session was reported as
+        // `status.core_unresponsive` - a statement about the core, made because of a stall in the
+        // interface. Rule 4: never claim something that was not established.
+        var lastEvent = Stopwatch.StartNew();
+        while (true)
         {
-            while (true)
+            var remaining = idleTimeout - lastEvent.Elapsed;
+            if (remaining <= TimeSpan.Zero)
             {
-                idleCts.CancelAfter(idleTimeout); // (re)arm the idle window before each wait
-                if (!await events.WaitToReadAsync(idleCts.Token))
+                return true; // nothing arrived within the window - the core really has gone quiet
+            }
+
+            using var window = new CancellationTokenSource(remaining);
+            try
+            {
+                if (!await events.WaitToReadAsync(window.Token))
                 {
                     return false; // the stream completed - the core exited or was disposed (e.g. by Stop)
                 }
-
-                while (events.TryRead(out var evt))
-                {
-                    onEvent(evt);
-                }
             }
-        }
-        catch (OperationCanceledException)
-        {
-            return true; // the idle watchdog fired - no event within the window
+            catch (OperationCanceledException)
+            {
+                return true; // the idle watchdog fired - no event within the window
+            }
+
+            while (events.TryRead(out var evt))
+            {
+                onEvent(evt);
+            }
+
+            // Restarted AFTER handling, so the clock measures the gap between events rather than the
+            // gap plus however long this thread spent on them.
+            lastEvent.Restart();
         }
     }
 
-    /// <summary>Read events until the <c>ready</c> handshake, or null on timeout or an early end of stream.</summary>
-    private static async Task<ReadyEvent?> ReadReadyAsync(CoreClient client, TimeSpan timeout)
+    /// <summary>
+    /// Read events until the <c>ready</c> handshake, or null on timeout or an early end of stream.
+    ///
+    /// <para>
+    /// An <c>error</c> arriving BEFORE ready stops the wait rather than being read and dropped. The core
+    /// emits ready first today, so this is depth - but the cost of the old shape was not: an error would
+    /// have been swallowed, the caller would have sat out the whole timeout, and the session would have
+    /// been reported as "no handshake from the core" when the core had in fact said exactly what was
+    /// wrong. A diagnosis pointing away from the answer, for the price of one match arm.
+    /// </para>
+    /// </summary>
+    private static async Task<HandshakeResult> ReadReadyAsync(CoreClient client, TimeSpan timeout)
     {
         using var cts = new CancellationTokenSource(timeout);
         try
         {
             await foreach (var evt in client.Events.ReadAllAsync(cts.Token))
             {
-                if (evt is ReadyEvent ready)
+                switch (evt)
                 {
-                    return ready;
+                    case ReadyEvent ready:
+                        return new HandshakeResult(ready, null);
+                    case ErrorEvent failure:
+                        return new HandshakeResult(null, failure.Key);
+                    default:
+                        break; // anything else before ready is not the handshake - keep waiting
                 }
             }
         }
         catch (OperationCanceledException)
         {
-            return null; // timed out waiting for ready - the caller reports it, never hangs
+            return HandshakeResult.None; // timed out waiting for ready - the caller reports it, never hangs
         }
 
-        return null; // the stream ended before ready arrived
+        return HandshakeResult.None; // the stream ended before ready arrived
+    }
+
+    /// <summary>What the handshake wait came back with: the <c>ready</c> event, or the key of an error the
+    /// core sent instead, or neither (timeout or an early end of stream).</summary>
+    private readonly record struct HandshakeResult(ReadyEvent? Ready, string? ErrorKey)
+    {
+        public static HandshakeResult None => new(null, null);
     }
 
     /// <summary>

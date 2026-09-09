@@ -152,6 +152,13 @@ pub(crate) fn describe_warning(key: &str) -> String {
         "wait.object_waits_not_scaled" => {
             "object waits are hooked but left real - an I/O or hardware timeout is not shortened"
         }
+        // The floor is coverage with a cost, so it is named like the other two opt-in costs above it.
+        // Without this line the key itself reached the report, which is the raw-jargon shape the GUI
+        // side had just been cleaned of.
+        "wait.timeout_collapsed" => {
+            "some waits were too short to divide by the full speed factor and ran at this tool's \
+             shortest step (1 ms) instead - that part of the application did not accelerate"
+        }
         "timer.multimedia_not_scaled" => "the multimedia timer (timeSetEvent) is observed but not scaled",
         // The coverage has a cost, so it is named - the same shape as the QPC opt-in's warning. winmm is
         // also the audio path, and the scheduler timeSetEvent stays untouched, so this is about a clock
@@ -167,6 +174,12 @@ pub(crate) fn describe_warning(key: &str) -> String {
         }
         "time.fake_clock_clamped" => {
             "the fake clock reached the last date this build can represent (year 30828) and stood there for the rest of the session, so late readings are not the moments the rate would have produced"
+        }
+        // A separate line from the one above, because it is a separate axis reaching a separate limit.
+        // The wall stops at the end of the FILETIME range - the monotonic axes stop when their elapsed
+        // term fills an i64, which at the maximum speed is about ten days in.
+        "time.duration_axis_clamped" => {
+            "the monotonic counters (tick count, unbiased interrupt time, and QPC when scaled) reached the end of their range and stood there, so elapsed time inside the target stopped advancing even though the session went on"
         }
         "inheritance.child_not_injected" => {
             "a child process could not be covered and ran on the REAL clock - usually a child of the other bitness; the process count below is short by that many"

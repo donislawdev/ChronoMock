@@ -122,8 +122,12 @@ public sealed class CalcClient
                 throw; // the caller superseded this call - its own concern, not an error
             }
 
+            // Carries a stable key in the engine's own shape, so the interface can translate this the way
+            // it translates the engine's refusals. This library knows nothing about languages and must not
+            // - the key is the seam that keeps it that way (rule 15).
             throw new CalcException(
-                $"calc did not finish within {CalcTimeout.TotalSeconds:0} s and was stopped", -1);
+                $"calc did not finish within {CalcTimeout.TotalSeconds:0} s and was stopped (calc.timeout)",
+                -1);
         }
 
         var stdout = await stdoutTask.ConfigureAwait(false);

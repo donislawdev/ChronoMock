@@ -9,10 +9,19 @@
 //! list and from both translation files. A guard written in prose but absent from code is worse
 //! than none (untouchable rule 12), so this is a real test that fails on a real gap.
 //!
-//! Scope, deliberately narrow: only keys that travel over the wire as an event field. Calculator
-//! errors (`calc.*`, and the moment keys raised by `chrono calc`) travel as plain stderr text -
-//! `CalcClient` surfaces stderr as the exception message - so they are not translation keys and
-//! are not checked here.
+//! Two sets, checked by two tests, because the core names its failures in two different SHAPES.
+//!
+//! The first is keys that travel over the wire as an event field, written as bare string literals.
+//! The second is the calculator's, which the engine writes INSIDE an English sentence on stderr -
+//! `chrono calc: step 1 needs a calendar - pass --calendar (calc.needs_calendar)`. The shape scan
+//! cannot see those: the literal it finds is the whole sentence, which is not key-shaped, so every
+//! `calc.*` key was invisible to this guard.
+//!
+//! That invisibility had a cost. Eight of the nine calculator keys had no translation at all and the
+//! panel showed the engine's raw sentence - wrong language, a process name, and the contract key in
+//! brackets - while this file's own header said calculator errors "are not translation keys". They
+//! are: the GUI maps `calc.X` to `calc.err.X` (CalcErrorText), which is what the second test below
+//! holds it to.
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
@@ -68,7 +77,7 @@ fn is_key_shaped(s: &str) -> bool {
     {
         return false;
     }
-    // File names share the shape. The list is short, jawne and only ever grows when a new kind of
+    // File names share the shape. The list is short, explicit and only ever grows when a new kind of
     // file name shows up in the sources (icudtl.dat, snapshot_blob.bin, v8_context_snapshot.bin).
     const FILE_SUFFIXES: [&str; 7] = [".dat", ".bin", ".exe", ".dll", ".json", ".js", ".now"];
     !FILE_SUFFIXES.iter().any(|suffix| s.ends_with(suffix))
@@ -139,6 +148,34 @@ fn emitted_keys(root: &Path) -> BTreeSet<String> {
     keys
 }
 
+/// The calculator's stable keys, which the engine writes INSIDE its stderr sentences as a trailing
+/// `(calc.something)` rather than as a bare literal.
+///
+/// Anchored on that parenthesis, exactly as the GUI reads it (`CalcErrorText::KeyOf`), so the two
+/// sides agree on what a key is. A `calc.` mentioned mid-prose is not one, and neither is a
+/// parenthesis that holds ordinary English.
+fn calc_keys(root: &Path) -> BTreeSet<String> {
+    let mut keys = BTreeSet::new();
+    for path in rust_sources_under(&root.join("crates/cli/src")) {
+        let text = production_source(&path);
+        let mut rest = text.as_str();
+        while let Some(open) = rest.find("(calc.") {
+            let after = &rest[open + 1..];
+            match after.find(')') {
+                Some(close) => {
+                    let candidate = &after[..close];
+                    if is_key_shaped(candidate) {
+                        keys.insert(candidate.to_string());
+                    }
+                    rest = &after[close..];
+                }
+                None => break,
+            }
+        }
+    }
+    keys
+}
+
 /// Top-level key names present in a translation file. Parsed rather than substring-matched so a
 /// key appearing inside a translated SENTENCE is not mistaken for a defined key.
 fn translation_keys(path: &Path) -> BTreeSet<String> {
@@ -206,5 +243,41 @@ fn the_gui_mirror_lists_every_emitted_key() {
         missing.is_empty(),
         "CoreWireKeys in LocalizationTests.cs does not list: {missing:?}\n\
          That list is what protects the GUI from a key living only in the core."
+    );
+}
+
+/// Every calculator refusal the engine names must have a translation the GUI can show.
+///
+/// The mapping is `calc.X` -> `calc.err.X`, which is what `CalcErrorText.Describe` does. A key with
+/// no `calc.err.` entry falls back to the engine's English sentence, which is the state this test
+/// exists to stop coming back: eight of nine keys were in it, on a panel that had already decided
+/// (rule 15) that user-facing text is a translation key.
+#[test]
+fn every_calculator_key_has_both_translations() {
+    let root = repo_root();
+    let keys = calc_keys(&root);
+    // A literal, not a count derived from the list this checks: a scan that stops finding keys looks
+    // exactly like a codebase with none. Nine were measured on 2026-09-09, and the number only grows.
+    assert!(
+        keys.len() >= 9,
+        "the calculator-key scan found only {} keys ({keys:?}) - the emission shape changed and this \
+         guard went blind",
+        keys.len()
+    );
+
+    let en = translation_keys(&root.join("gui/ChronoMock.App/Localization/Strings.en.json"));
+    let pl = translation_keys(&root.join("gui/ChronoMock.App/Localization/Strings.pl.json"));
+
+    let missing: Vec<String> = keys
+        .iter()
+        .map(|k| format!("calc.err.{}", &k["calc.".len()..]))
+        .filter(|k| !en.contains(k) || !pl.contains(k))
+        .collect();
+
+    assert!(
+        missing.is_empty(),
+        "these calculator refusals have no interface text, so the panel falls back to the engine's \
+         English sentence: {missing:?}\n\
+         Add them to gui/ChronoMock.App/Localization/Strings.{{en,pl}}.json."
     );
 }

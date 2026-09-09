@@ -641,8 +641,9 @@ pub(crate) fn find_preset_file(id: &str) -> Result<std::path::PathBuf, PresetErr
 /// Load and validate a preset by id.
 pub(crate) fn load_preset(id: &str) -> Result<Preset, PresetError> {
     let path = find_preset_file(id)?;
-    let text = std::fs::read_to_string(&path)
-        .map_err(|e| PresetError::BadFile(format!("cannot read {}: {e}", path.display())))?;
+    // Same ceiling as a calendar, for the same reason: a catalogue file is outside input, and this was
+    // an unbounded read.
+    let text = crate::calendar::read_catalogue_file(&path).map_err(PresetError::BadFile)?;
     parse_preset(&text)
 }
 

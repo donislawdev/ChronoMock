@@ -16,7 +16,10 @@
 //! model so the surface is complete, and return the product's honest "not built
 //! yet" vocabulary rather than a silent skip or a faked result (zasady/01 section 2).
 
-use super::{civil_from_days, days_from_civil, is_leap, last_day_of_month, parse_civil};
+use super::{
+    civil_from_days, days_from_civil, is_leap, last_day_of_month, parse_civil, CIVIL_YEAR_MAX,
+    CIVIL_YEAR_MIN,
+};
 
 /// A civil date and time - wall-clock fields in the session zone, no UTC, no DST.
 /// This is the running value the evaluator folds steps onto.
@@ -276,6 +279,16 @@ pub enum EvalError {
     /// name step 1 - a step the expression may not even have, sending the reader to look at the
     /// wrong thing. Only `AbsoluteUtc` can produce it, because it is the only base that converts.
     BaseOverflow,
+    /// The base is not a civil date at all: a month outside 1..=12, or a day that month cannot have.
+    ///
+    /// `CivilDateTime` has public fields and `eval` is public API, so a caller can hand over fields no
+    /// parser ever produced. The year was checked and the rest was not, which left the month running
+    /// through arithmetic written for 1..=12: `(month - 1)` underflows on 0 in `apply_snap`, `metadata`
+    /// and `mask_token`, and `MONTH_ABBR[month - 1]` indexes past its end above 12. Unreachable through
+    /// every surface this build ships - all of them go through `parse_civil` - so this is about the API
+    /// keeping the promise its own doc comment makes, on a horizon where a second consumer is likely
+    /// (rule 28).
+    BaseNotACivilDate,
     /// A step COMPUTED a year outside that band. Its own variant, and not folded into `Overflow`,
     /// because nothing overflowed: `+300000y` from 2026 is an exact, representable number that this
     /// build simply will not compute a calendar on, and saying "overflow" would point at the wrong
@@ -300,6 +313,13 @@ pub fn parse_civil_datetime(s: &str) -> Result<CivilDateTime, String> {
     })
 }
 
+/// Whether these civil fields name a day that exists: a month in 1..=12, and a day within that
+/// month's length in that year. The TIME fields are not checked here - `set_time` has its own
+/// refusal, and every other path builds them from arithmetic that cannot leave the range.
+fn is_a_civil_date(c: &CivilDateTime) -> bool {
+    (1..=12).contains(&c.month) && c.day >= 1 && c.day <= last_day_of_month(c.year, c.month as i64)
+}
+
 /// Evaluate an expression against a context. Folds each step onto the running civil
 /// value left to right, recording the value after each step.
 pub fn eval(expr: &MomentExpr, ctx: &EvalContext) -> Result<EvalOutcome, EvalError> {
@@ -320,6 +340,13 @@ pub fn eval(expr: &MomentExpr, ctx: &EvalContext) -> Result<EvalOutcome, EvalErr
     };
     if !crate::civil_year_in_band(base.year) {
         return Err(EvalError::BaseYearOutOfRange);
+    }
+    // The other two civil fields, for the same reason the year is checked: this is public API over a
+    // struct with public fields, so "the caller already validated it" is an assumption rather than a
+    // fact. Below here the month indexes month-name tables and feeds `(month - 1)` arithmetic that has
+    // no answer for 0.
+    if !is_a_civil_date(&base) {
+        return Err(EvalError::BaseNotACivilDate);
     }
     let mut cur = base;
     let mut cur_bias = ctx.zone_bias_min;
@@ -1262,11 +1289,23 @@ impl DateAnalysis {
 /// the thing this analyser refuses to do for month/day order too. A reading whose year falls outside
 /// the computable band is dropped rather than shown wrong - if that leaves nothing, the input is not
 /// a usable epoch and the caller reports it unrecognised.
-fn epoch_readings(s: &str, zone_bias_min: i32) -> Option<Vec<(DateReading, CivilDateTime)>> {
+/// Whether the input is nothing but digits, with an optional leading minus - the shape of an epoch.
+///
+/// Separate from reading it, because the two answer different questions and the caller needs both.
+/// "Is this meant to be a number" decides WHICH refusal an unusable input gets, and "does it resolve
+/// to a date" decides whether there is a refusal at all. Folded together, a 20-digit timestamp came
+/// back as a format complaint about input whose format was never in doubt.
+fn is_bare_number(s: &str) -> bool {
     let digits = s.strip_prefix('-').unwrap_or(s);
-    if digits.is_empty() || !digits.chars().all(|c| c.is_ascii_digit()) {
+    !digits.is_empty() && digits.chars().all(|c| c.is_ascii_digit())
+}
+
+fn epoch_readings(s: &str, zone_bias_min: i32) -> Option<Vec<(DateReading, CivilDateTime)>> {
+    if !is_bare_number(s) {
         return None;
     }
+    // Past i64 there is no instant to reach at all, so this is one of the two ways a number can fail
+    // to be a date - the caller says so in the same sentence as the other one.
     let n: i64 = s.parse().ok()?;
     let mut readings = Vec::with_capacity(2);
     for (reading, secs) in [
@@ -1309,8 +1348,20 @@ pub fn analyze_date(input: &str, zone_bias_min: i32) -> Result<DateAnalysis, Str
     // A bare number: epoch. Checked BEFORE the separator dispatch, and it cannot collide with the
     // dated forms - those all carry a separator, and this one may carry nothing but digits and a
     // leading minus (pre-1970 instants are real and this tool exists to reach them).
-    if let Some(readings) = epoch_readings(s, zone_bias_min) {
-        return Ok(DateAnalysis { readings });
+    //
+    // The SHAPE decides which refusal this input gets, and that is the point. A run of digits fell
+    // through to the bottom of this function and came back "unrecognised date format", which is a
+    // sentence about shape, on input whose shape was read perfectly - what failed was the RANGE.
+    // Someone pasting a microsecond timestamp was sent to look at their formatting.
+    if is_bare_number(s) {
+        return epoch_readings(s, zone_bias_min)
+            .map(|readings| DateAnalysis { readings })
+            .ok_or_else(|| {
+                format!(
+                    "'{input}' reads as a number, but neither seconds nor milliseconds since 1970 \
+                     put it on a date this build computes on ({CIVIL_YEAR_MIN}..={CIVIL_YEAR_MAX})"
+                )
+            });
     }
     // ISO: dash-separated, with or without a time (midnight if the time is absent).
     if s.contains('-') {
@@ -2308,6 +2359,58 @@ mod tests {
         assert!(analyze_date("hello", 0).is_err());
         assert!(analyze_date("04/08/08", 0).is_err()); // year not four digits
         assert!(analyze_date("2008/08/04", 0).is_err()); // year-first numeric not recognised yet
+    }
+
+    /// `eval` is public API over a struct with public fields, so "the caller validated it" is an
+    /// assumption, not a fact. It checked the year and nothing else - and below that check the month
+    /// indexes month-name tables and feeds `(month - 1)` arithmetic with no answer for 0.
+    ///
+    /// Unreachable through every surface this build ships (all of them parse the base), which is why
+    /// this is a low-priority fix and not a bug report. It is fixed because the doc comment on `eval`
+    /// already promised it, and because a second consumer of this crate is likely on a decade horizon.
+    #[test]
+    fn eval_refuses_a_base_that_is_not_a_real_date() {
+        let with_base = |c: CivilDateTime| {
+            eval(
+                &MomentExpr { base: Base::Absolute(c), steps: vec![Step::Snap(SnapTarget::StartOfQuarter)] },
+                &EvalContext { now: dt(2026, 1, 1, 0, 0, 0), zone_bias_min: 0, calendar: None },
+            )
+        };
+
+        // Month 0: `(month - 1) / 3` in the quarter arithmetic has no answer for it.
+        assert_eq!(with_base(dt(2026, 0, 15, 0, 0, 0)), Err(EvalError::BaseNotACivilDate));
+        // Month 13: indexes past the end of the month-name tables.
+        assert_eq!(with_base(dt(2026, 13, 15, 0, 0, 0)), Err(EvalError::BaseNotACivilDate));
+        // A day that month cannot have, and the leap-year case that makes it a real rule.
+        assert_eq!(with_base(dt(2026, 4, 31, 0, 0, 0)), Err(EvalError::BaseNotACivilDate));
+        assert_eq!(with_base(dt(2026, 2, 29, 0, 0, 0)), Err(EvalError::BaseNotACivilDate));
+        assert_eq!(with_base(dt(2026, 1, 0, 0, 0, 0)), Err(EvalError::BaseNotACivilDate));
+
+        // February 29 in a LEAP year is a real date and still passes - the check is about impossible
+        // dates, not about unusual ones.
+        assert!(with_base(dt(2024, 2, 29, 0, 0, 0)).is_ok());
+        assert!(with_base(dt(2026, 12, 31, 0, 0, 0)).is_ok());
+    }
+
+    /// A number that cannot be a date gets a refusal about its RANGE, not about its format.
+    ///
+    /// It used to fall through every branch and arrive at "unrecognised date format", a sentence
+    /// about shape - on input whose shape was read perfectly. Someone pasting a microsecond timestamp
+    /// (the ordinary way to reach this) was sent to look at their formatting.
+    #[test]
+    fn a_number_that_is_no_date_is_refused_for_its_range_not_its_format() {
+        // Too large for i64 at all: there is no instant behind it to reach.
+        let huge = analyze_date("99999999999999999999", 0).expect_err("not an instant");
+        assert!(huge.contains("reads as a number"), "got: {huge}");
+        assert!(!huge.contains("unrecognised date format"), "the shape was never in doubt: {huge}");
+
+        // Inside i64 and still no date: both readings land outside the computable year band.
+        let far = analyze_date("999999999999999999", 0).expect_err("not a date this build computes on");
+        assert!(far.contains("reads as a number"), "got: {far}");
+
+        // The shape complaint stays for input that really is shapeless.
+        let shapeless = analyze_date("hello", 0).expect_err("not a date");
+        assert!(shapeless.contains("unrecognised date format"), "got: {shapeless}");
     }
 
     // --- custom format mask --------------------------------------------------

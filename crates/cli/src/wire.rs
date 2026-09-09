@@ -47,6 +47,23 @@ pub(crate) fn read_protocol_line<R: BufRead>(reader: &mut R, line: &mut String) 
 }
 
 
+/// Which of the two transport failures ended the stream.
+///
+/// They are separate keys because they are separate mistakes on the client's side and have separate
+/// fixes: one line grew past [`MAX_PROTOCOL_LINE`] with no newline in it, or the bytes were not UTF-8
+/// at all. Folding them into one key would hand the reader a message that fits half the cases.
+///
+/// `InvalidData` is what `read_line` returns for bytes that are not text, and the over-long line is
+/// raised by [`read_protocol_line`] with the same kind - so the two are told apart by the message
+/// this crate itself wrote, not by guessing at the io error.
+fn stream_error_key(e: &std::io::Error) -> &'static str {
+    if e.to_string().contains("protocol line exceeds") {
+        "protocol.line_too_long"
+    } else {
+        "protocol.stream_unreadable"
+    }
+}
+
 /// Turn a reader of protocol lines into a stream of commands, on its own thread.
 ///
 /// Both sessions need exactly this, because the main thread has a heartbeat to beat and a target to
@@ -55,14 +72,29 @@ pub(crate) fn read_protocol_line<R: BufRead>(reader: &mut R, line: &mut String) 
 /// one stdin was bounded and the other was not, from the same loop with the same comment. There is
 /// one now, and the bound cannot go missing from half of it.
 ///
-/// A line past the cap ends the stream exactly as EOF does, rather than resyncing onto the tail of a
-/// line nobody can vouch for. A line that does not PARSE is answered and the stream continues: the
-/// first command (`start`) answered bad input properly and every one after it did not, so a client
-/// waiting on `ack` waited for ever. No id on that answer, because the id lived in the line we could
-/// not read.
+/// A line past the cap ends the stream rather than resyncing onto the tail of a line nobody can
+/// vouch for - but it says so on the way out, which it did not use to. A line that does not PARSE is
+/// answered and the stream continues: the first command (`start`) answered bad input properly and
+/// every one after it did not, so a client waiting on `ack` waited for ever. No id on either answer,
+/// because the id lived in the line we could not read.
 pub(crate) fn spawn_command_reader<R>(reader: R) -> mpsc::Receiver<Command>
 where
     R: BufRead + Send + 'static,
+{
+    spawn_command_reader_with(reader, emit)
+}
+
+/// [`spawn_command_reader`] with the event sink handed in.
+///
+/// The sink exists for one reason: `emit` writes to the process's stdout, and a test cannot read that
+/// back without capturing a global. What has to be tested here is not the FORMATTING of the event -
+/// `chrono-proto` owns that - but that one is emitted AT ALL on the path that used to be silent. A
+/// test asserting only the key mapping would have passed over the version of this loop that mapped
+/// the key correctly and then never sent it.
+pub(crate) fn spawn_command_reader_with<R, E>(reader: R, sink: E) -> mpsc::Receiver<Command>
+where
+    R: BufRead + Send + 'static,
+    E: Fn(&Event) + Send + 'static,
 {
     let (tx, rx) = mpsc::channel::<Command>();
     std::thread::spawn(move || {
@@ -70,15 +102,31 @@ where
         let mut line = String::new();
         loop {
             match read_protocol_line(&mut reader, &mut line) {
-                // EOF, or a line past the cap: dropping tx signals Disconnected to the session loop.
-                Ok(0) | Err(_) => break,
+                // EOF: the client closed its end. That is the ordinary way a session ends, and it
+                // needs no announcement - dropping tx signals Disconnected to the session loop.
+                Ok(0) => break,
+                // A TRANSPORT failure ends the stream too, and used to end it in exactly the same
+                // silence, so a client that sent an over-long line or a byte that is not UTF-8 saw
+                // what looked like an ordinary EOF and was told the core had stopped. Silence is
+                // forbidden (rule 6): say which of the two happened before going, so the reader
+                // looks at what they sent rather than at the core.
+                Err(e) => {
+                    sink(&Event::Error {
+                        v: PROTOCOL_VERSION,
+                        id: None,
+                        code: 1,
+                        key: stream_error_key(&e).into(),
+                        origin: "core".into(),
+                    });
+                    break;
+                }
                 Ok(_) => match parse_command(line.trim_end()) {
                     Ok(cmd) => {
                         if tx.send(cmd).is_err() {
                             break;
                         }
                     }
-                    Err(_) => emit(&Event::Error {
+                    Err(_) => sink(&Event::Error {
                         v: PROTOCOL_VERSION,
                         id: None,
                         code: 1,
@@ -145,6 +193,68 @@ mod tests {
             rx.recv().is_err(),
             "the over-long line ends the stream, so the command after it never arrives"
         );
+    }
+
+    /// Collect the events a reader emits, so a test can assert that one was SENT rather than only
+    /// that its key would have been right.
+    fn events_of(stream: &str) -> (Vec<Command>, Vec<String>) {
+        let (etx, erx) = mpsc::channel::<String>();
+        let rx = spawn_command_reader_with(
+            std::io::BufReader::new(std::io::Cursor::new(stream.as_bytes().to_vec())),
+            move |e: &Event| {
+                if let Event::Error { key, .. } = e {
+                    let _ = etx.send(key.clone());
+                }
+            },
+        );
+        let commands: Vec<Command> = rx.into_iter().collect();
+        let keys: Vec<String> = erx.into_iter().collect();
+        (commands, keys)
+    }
+
+    /// 🔴 A transport failure used to end the stream in exactly the silence of an ordinary EOF, so a
+    /// client that sent an over-long line was told the CORE had stopped - a diagnosis pointing away
+    /// from the mistake. Ending the stream is still right, because a half-read line cannot be resynced
+    /// onto - going without a word was not.
+    #[test]
+    fn an_over_long_line_says_why_the_stream_ended() {
+        let mut stream = String::from("{\"type\":\"query\",\"v\":1,\"id\":7,\"what\":\"state\"}\n");
+        stream.push_str(&"x".repeat(MAX_PROTOCOL_LINE + 10));
+        stream.push('\n');
+
+        let (commands, keys) = events_of(&stream);
+
+        assert_eq!(commands.len(), 1, "the command before the over-long line still arrives");
+        assert_eq!(keys, ["protocol.line_too_long"]);
+    }
+
+    /// EOF is the ordinary end of a session and needs no announcement - a key here would cry wolf on
+    /// every clean shutdown, which is the other half of rule 6.
+    #[test]
+    fn a_clean_end_of_stream_says_nothing() {
+        let (commands, keys) = events_of("{\"type\":\"end\",\"v\":1,\"id\":9}\n");
+
+        assert_eq!(commands.len(), 1);
+        assert!(keys.is_empty(), "a clean EOF is not a failure to report, got {keys:?}");
+    }
+
+    /// The two transport failures are told apart, so the message names what the client actually sent.
+    /// One key for both would fit half the cases and send the reader to look at the wrong thing.
+    #[test]
+    fn the_two_transport_failures_are_named_separately() {
+        let too_long = std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!("protocol line exceeds {MAX_PROTOCOL_LINE} bytes with no newline"),
+        );
+        assert_eq!(stream_error_key(&too_long), "protocol.line_too_long");
+
+        // What `read_line` returns for bytes that are not text - the same error KIND, so the two
+        // cannot be told apart by kind alone, which is why the message is what decides.
+        let not_utf8 = std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "stream did not contain valid UTF-8",
+        );
+        assert_eq!(stream_error_key(&not_utf8), "protocol.stream_unreadable");
     }
 
     /// A line that does not parse is answered and the stream CONTINUES, so one bad line does not end

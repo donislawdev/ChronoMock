@@ -70,10 +70,37 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     private bool _launched;
     private bool _stopRequested;
     private string _historyError = string.Empty;
-    // Snapshot of the start moment/mode, taken at Start, so history and the summary record what was
-    // REQUESTED even after the moment or speed is changed in flight (rule 4 - the record is the start).
+    private string _historyNoteKey = string.Empty;
+    // Snapshot of the start setup, taken at Start, so history and the summary record what was REQUESTED
+    // even after the form is changed (rule 4 - the record is the start).
+    //
+    // 🔴 The target and the zone are in here for a REASON that the moment and the mode do not have. Those
+    // two can change IN FLIGHT (the moment becomes a jump, the mode a set_multiplier), which is the case the
+    // first two fields were written for. The target and the zone cannot - they are start-only, and the drop
+    // handler and every setup control gate on IsIdle. What they CAN do is change AFTER the session ends,
+    // because the form unlocks while the summary is still copyable (CanCopySummary holds for every status
+    // but Idle and Connecting). Reading them live then produced a report that carried one session's verdict
+    // under another session's target name and zone - evidence naming the wrong application, in the one
+    // artifact that leaves this tool and lands in somebody else's ticket.
+    //
+    // Null means "no session has started yet", and every reader falls back to the live value for it, so a
+    // view model that never ran (a unit test, a fresh window) reads exactly as it did before.
     private string _startMomentText = string.Empty;
     private ModeOption? _startMode;
+    private string? _startTargetPath;
+    private ZoneOption? _startZone;
+    // The remaining five inputs, kept as plain values rather than a setup type: this class sits exactly on
+    // its class-coupling ceiling (CA1506 = 82, gui/CodeMetricsConfig.txt), so a new type here would redden
+    // the metrics gate. Strings and bools cost nothing there.
+    // True once Start has taken the snapshot. An explicit flag rather than a null check on one of the
+    // fields: three of them are bools with no null to test, and inferring "was a snapshot taken" from a
+    // sibling field is the kind of coupling that stops holding the moment one of them changes type.
+    private bool _startCaptured;
+    private string _startTargetArgs = string.Empty;
+    private string _startWorkingFolder = string.Empty;
+    private bool _startScaleDuration;
+    private bool _startScaleQpc;
+    private bool _startForce;
     private string _inFlightErrorKey = string.Empty;
     private bool _applyingMultiplier; // guard: syncing the Mode dropdown from a state event must not re-send
 
@@ -242,6 +269,18 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
 
     /// <summary>True when a history write failed - the panel shows the reason (rule 6).</summary>
     public bool HasHistoryError => _historyError.Length > 0;
+
+    /// <summary>Translation key for what a history LOAD could not fill in, empty when it filled everything.
+    /// Separate from <see cref="HistoryError"/>, which is about a failed write and is rendered after a
+    /// "could not save" lead-in that would be wrong here.</summary>
+    public string HistoryNoteKey
+    {
+        get => _historyNoteKey;
+        private set { if (Set(ref _historyNoteKey, value)) { RaisePropertyChanged(nameof(HasHistoryNote)); } }
+    }
+
+    /// <summary>True when the last history load left a field it could not fill.</summary>
+    public bool HasHistoryNote => _historyNoteKey.Length > 0;
 
     /// <summary>Path to the target executable to run, chosen by the user (or a bundled default in dev).</summary>
     public string? TargetPath
@@ -806,10 +845,14 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     /// <summary>True when this session is driven over CDP (a Chromium/Electron target, ADR-9). The coverage
     /// unit is then a JS context, not an OS process, so the audit accumulates every context and the note
     /// reflects that. Set once at start from the plan.</summary>
+    /// <remarks>The setter is internal rather than private so a test can drive the CDP coverage branch
+    /// without a Chromium target and a live debug port. Production still sets it in exactly one place
+    /// (from the session plan) - the widening buys a test for how contexts are told apart, which is a
+    /// thing the panel gets wrong silently when it is wrong.</remarks>
     public bool IsCdp
     {
         get => _isCdp;
-        private set
+        internal set
         {
             if (Set(ref _isCdp, value))
             {
@@ -1008,10 +1051,12 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
             case CoverageEvent c when _isCdp:
                 // CDP emits one coverage per JS context - accumulate them all (each context's counts stay
                 // its own, never summed across contexts, rule 4) - union the warnings and uncovered lists.
-                // The channel strings already carry the context type ("page setInterval"), so the reader
-                // can tell contexts apart without a per-context breakdown.
-                Covered = [.. _covered, .. c.Covered.Select(FormatChannel)];
-                Observed = [.. _observed, .. c.Observed.Select(FormatChannel)];
+                // 🔴 Each row carries its CONTEXT, because the channel name carries only the context TYPE:
+                // two pages both produce "page Date.now", and two identical rows with different counts
+                // cannot be explained by the reader. The comment here used to say the name told them
+                // apart, which was true of the kind and not of the context.
+                Covered = [.. _covered, .. c.Covered.Select(ch => FormatCdpChannel(c.Pid, ch))];
+                Observed = [.. _observed, .. c.Observed.Select(ch => FormatCdpChannel(c.Pid, ch))];
                 Uncovered = [.. _uncovered, .. c.Uncovered.Where(u => !_uncovered.Contains(u))];
                 Unobserved = [.. _unobserved, .. c.Unobserved.Where(u => !_unobserved.Contains(u))];
                 Warnings = [.. _warnings, .. c.WarningKeys.Where(w => !_warnings.Contains(w))];
@@ -1073,10 +1118,19 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
         CoreSession? session = null;
         try
         {
-            // Snapshot the start moment and mode NOW, before they can be changed in flight, so history and
-            // the summary always report what was REQUESTED (rule 4), not the last in-flight change.
+            // Snapshot the start setup NOW, so history, the summary and the diagnostics block always report
+            // what was REQUESTED (rule 4) - neither a later in-flight change nor an edit made after the
+            // session ended, while the form is unlocked and the summary is still copyable.
             _startMomentText = Moment.Canonical;
             _startMode = SelectedMode;
+            _startTargetPath = TargetPath;
+            _startZone = SelectedZone;
+            _startTargetArgs = _targetArgs;
+            _startWorkingFolder = _workingFolder;
+            _startScaleDuration = _scaleDuration;
+            _startScaleQpc = _scaleQpc;
+            _startForce = _forceStart;
+            _startCaptured = true;
 
             // Build the plan by reading the target's PE header. Classify a TARGET problem here (RELEASE-007)
             // so it is not reported as a broken core install: a non-PE file yields InvalidOperationException
@@ -1184,7 +1238,7 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
                 // session was anything but a clean success (RELEASE-012). A clean works session captures
                 // nothing. (On a Stop the core was already disposed off-thread, so this is best-effort -
                 // but a stopped healthy session has no error stderr to lose.)
-                CaptureDiagnostics(session.Diagnostics);
+                CaptureDiagnostics(session.Diagnostics, session.DiagnosticsDropped);
 
                 if (ReferenceEquals(_session, session))
                 {
@@ -1267,9 +1321,30 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
         DiagnosticsSavedPath = string.Empty;
         CopyFeedbackKey = string.Empty;
         InFlightErrorKey = string.Empty;
+        // A note about what the last LOAD could not fill belongs to the form the user is about to run, not
+        // to the run itself - once they start, they have accepted the form as it stands.
+        HistoryNoteKey = string.Empty;
     }
 
     private static string FormatChannel(CoveredChannel channel) => $"{channel.Channel}  ×{channel.Calls}";
+
+    /// <summary>
+    /// A CDP channel, tagged with the context it belongs to.
+    ///
+    /// <para>
+    /// The core names a Chromium channel by context TYPE plus API - "page Date.now" - and emits one
+    /// coverage event per context. An application with two pages therefore produced two identical rows
+    /// with different counts, and nothing on the panel said which was which. A comment here claimed the
+    /// name told them apart, which was true of the KIND of context and not of the context.
+    /// </para>
+    /// <para>
+    /// Tagged on every row rather than only when there are several, because the list is built as the
+    /// events arrive - the second context is not known when the first is rendered. The CLI does the
+    /// same with pids, for the same reason.
+    /// </para>
+    /// </summary>
+    private static string FormatCdpChannel(uint context, CoveredChannel channel)
+        => $"context {context.ToString(CultureInfo.InvariantCulture)}: {FormatChannel(channel)}";
 
     /// <summary>Build the wire time from the inputs. The moment is the local time in the session zone
     /// (rule 2, chrono-mock 9.5) - the core turns it into UTC and validates it (docs/08 section 5).</summary>
@@ -1285,6 +1360,22 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
             ScaleQpc = _scaleQpc,
         };
     }
+
+    /// <summary>The target the session STARTED on - the snapshot, falling back to the live path when no
+    /// session has started (a fresh window, a unit test). Every report reads this rather than
+    /// <see cref="TargetPath"/>, so none of them can name a target chosen after the run.</summary>
+    private string RequestedTargetPath => _startTargetPath ?? _targetPath ?? string.Empty;
+
+    /// <summary>The zone the session STARTED in, with the same fallback as
+    /// <see cref="RequestedTargetPath"/>.</summary>
+    private ZoneOption RequestedZone => _startZone ?? SelectedZone;
+
+    /// <summary>The moment the session STARTED at, with the same fallback. Canonical either way - the live
+    /// value comes from <see cref="MomentField"/>, which only ever holds a canonical string or nothing.</summary>
+    private string RequestedMoment => _startMomentText.Length > 0 ? _startMomentText : Moment.Canonical;
+
+    /// <summary>The mode the session STARTED in, with the same fallback.</summary>
+    private ModeOption RequestedMode => _startMode ?? SelectedMode;
 
     /// <summary>
     /// Compose the paste-into-ticket session summary (chrono-mock 7.2, 8.8) in the interface language. It
@@ -1304,7 +1395,9 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
         }
 
         sb.Append(translate("report.title")).Append('\n');
-        sb.Append("  ").Append(translate("report.target")).Append(": ").Append(TargetName).Append('\n');
+        // The target the session RAN ON, not the one now in the form - see the snapshot fields.
+        sb.Append("  ").Append(translate("report.target")).Append(": ")
+          .Append(Path.GetFileName(RequestedTargetPath)).Append('\n');
 
         // Verdict headline: a vanish is an honest non-effect first, then the family/parent verdict, else none.
         if (_statusKind == SessionStatusKind.DidNotTakeEffect)
@@ -1369,11 +1462,13 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
         // Cleanup residue the core could not remove (ended.residue_keys) - reported, never hidden (rule 6).
         AppendList(sb, translate, "report.cleanup", _residueKeys, translateItems: true);
 
-        // The "requested" line is the START request (snapshot), even if the moment or speed changed live.
-        var reqMoment = _startMomentText.Length > 0 ? _startMomentText : Moment.Canonical;
-        var reqMode = _startMode ?? SelectedMode;
+        // The "requested" line is the START request (snapshot) throughout - moment, zone and mode alike.
         sb.Append("  ")
-          .Append(Fmt(translate("report.requested"), reqMoment, SelectedZone.Label, translate(reqMode.LabelKey)))
+          .Append(Fmt(
+              translate("report.requested"),
+              RequestedMoment,
+              RequestedZone.Label,
+              translate(RequestedMode.LabelKey)))
           .Append('\n');
 
         return sb.ToString();
@@ -1386,14 +1481,14 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     /// the StartAsync finally AFTER the client is disposed, so the core's stderr has been fully drained.
     /// Internal so a unit test can drive it with a fake line list and a fake log (no core process).
     /// </summary>
-    internal void CaptureDiagnostics(IEnumerable<string> lines)
+    internal void CaptureDiagnostics(IEnumerable<string> lines, int dropped = 0)
     {
         if (IsReliable)
         {
             return; // a clean works session needs no diagnostics - keep the button and the log out of it
         }
 
-        var block = BuildDiagnosticsBlock(lines);
+        var block = BuildDiagnosticsBlock(lines, dropped);
         DiagnosticsText = block;
         // Best-effort file: a read-only medium returns null, and the in-memory copy behind the button stands.
         var path = _diagnosticsLog.Save(block);
@@ -1407,10 +1502,9 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     /// the core's stderr and parse-error lines verbatim. English and stable, like the core's own stderr and
     /// the CLI report - it is a technical artifact for a bug report, not interface text (rule 15 governs the
     /// UI - this is data). Pure over the view state, so it is unit tested with a fake line list.</summary>
-    internal string BuildDiagnosticsBlock(IEnumerable<string> lines)
+    internal string BuildDiagnosticsBlock(IEnumerable<string> lines, int dropped = 0)
     {
-        var mode = _startMode ?? SelectedMode;
-        var moment = _startMomentText.Length > 0 ? _startMomentText : Moment.Canonical;
+        var mode = RequestedMode;
         var modeToken = mode.Mode switch { "frozen" => "frozen", "flow" => "flow", _ => $"x{mode.Multiplier ?? 1}" };
 
         var sb = new StringBuilder();
@@ -1418,9 +1512,10 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
         sb.Append("  when:      ")
           .Append(DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture)).Append('\n');
         sb.Append("  status:    ").Append(_statusKind).Append(" (").Append(_statusKey).Append(")\n");
-        sb.Append("  target:    ").Append(_targetPath ?? "(none)").Append('\n');
-        sb.Append("  requested: ").Append(moment)
-          .Append(" (zone ").Append(SelectedZone.Label).Append(", mode ").Append(modeToken).Append(")\n");
+        var target = RequestedTargetPath;
+        sb.Append("  target:    ").Append(target.Length > 0 ? target : "(none)").Append('\n');
+        sb.Append("  requested: ").Append(RequestedMoment)
+          .Append(" (zone ").Append(RequestedZone.Label).Append(", mode ").Append(modeToken).Append(")\n");
 
         sb.Append("  core output:\n");
         var any = false;
@@ -1433,6 +1528,16 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
         if (!any)
         {
             sb.Append("    (no diagnostic output)\n");
+        }
+
+        // A block that is a TAIL has to say so, and say how much is missing. The line count is capped
+        // so a chatty target cannot grow it without bound, and a reader who takes the tail for the
+        // whole of it draws conclusions from an absence that was never there (rule 6).
+        if (dropped > 0)
+        {
+            sb.Append("    [")
+              .Append(dropped.ToString(CultureInfo.InvariantCulture))
+              .Append(" earlier line(s) dropped - this is the tail of the core's output]\n");
         }
 
         return sb.ToString();
@@ -1483,19 +1588,26 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     /// target is faked), so DateTime.UtcNow is the true end time.</summary>
     internal SessionRecord BuildRecord()
     {
-        // Record the START moment and mode (snapshot), not any in-flight change (rule 4). The zone is
-        // start-only (never changed in flight), so the live SelectedZone is the start zone. The snapshot
-        // is already canonical - the fallback (no session started, e.g. a unit test) canonicalizes too.
-        var mode = _startMode ?? SelectedMode;
-        var moment = _startMomentText.Length > 0 ? _startMomentText : Moment.Canonical;
+        // Record the START setup (snapshot), never an in-flight change and never a later edit (rule 4).
+        // This one is written from the Start finally, BEFORE the form unlocks, so reading live would have
+        // been correct here today - it reads the snapshot anyway, so the record does not depend on WHEN it
+        // happens to be built. The fallback (no session started, e.g. a unit test) is the live value.
+        var mode = RequestedMode;
 
         return new SessionRecord
         {
-            TargetPath = _targetPath ?? string.Empty,
-            MomentLocal = moment,
-            TzBiasMin = SelectedZone.BiasMinutes,
+            TargetPath = RequestedTargetPath,
+            MomentLocal = RequestedMoment,
+            TzBiasMin = RequestedZone.BiasMinutes,
             Mode = mode.Mode,
             Multiplier = mode.Multiplier,
+            // Everything else that decides what the session DID, so repeating it repeats the session
+            // rather than a partial copy of it. Same snapshot-with-live-fallback rule as the four above.
+            TargetArgs = _startCaptured ? _startTargetArgs : _targetArgs,
+            WorkingFolder = _startCaptured ? _startWorkingFolder : _workingFolder,
+            ScaleDuration = _startCaptured ? _startScaleDuration : _scaleDuration,
+            ScaleQpc = _startCaptured ? _startScaleQpc : _scaleQpc,
+            Force = _startCaptured ? _startForce : _forceStart,
             Verdict = RecordedVerdict(),
             EndedAtUtc = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture),
         };
@@ -1604,9 +1716,33 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
 
         SetTarget(record.TargetPath);
         Moment.LoadCanonical(record.MomentLocal);
-        SelectedZone = TimeInputs.Zones.FirstOrDefault(z => z.BiasMinutes == record.TzBiasMin) ?? SelectedZone;
-        SelectedMode = TimeInputs.Modes.FirstOrDefault(
-            m => m.Mode == record.Mode && m.Multiplier == record.Multiplier) ?? SelectedMode;
+        TargetArgs = record.TargetArgs;
+        WorkingFolder = record.WorkingFolder;
+        ScaleDuration = record.ScaleDuration;
+        ScaleQpc = record.ScaleQpc;
+        ForceStart = record.Force;
+
+        // A zone or a mode the catalogues no longer offer cannot be filled in, and the old code left the
+        // CURRENT one standing without a word - so the form claimed to be the recorded session while one of
+        // its two decisive fields belonged to whatever was there before. Reachable when a record predates a
+        // change to either closed list. Say it instead (rule 6): the fields that DID load stay loaded, and
+        // the note names the one that did not, so the reader knows which one to set by hand.
+        var zone = TimeInputs.Zones.FirstOrDefault(z => z.BiasMinutes == record.TzBiasMin);
+        var mode = TimeInputs.Modes.FirstOrDefault(
+            m => m.Mode == record.Mode && m.Multiplier == record.Multiplier);
+        SelectedZone = zone ?? SelectedZone;
+        SelectedMode = mode ?? SelectedMode;
+        // Written as nested ifs rather than a switch on `(zone, mode)`, and that is not style: a tuple
+        // pattern introduces ValueTuple as a coupled type, and this class sits exactly on its CA1506
+        // ceiling of 82 (gui/CodeMetricsConfig.txt), so the tidier form reddens the metrics gate.
+        if (zone is null)
+        {
+            HistoryNoteKey = mode is null ? "history.load_zone_and_mode_missing" : "history.load_zone_missing";
+        }
+        else
+        {
+            HistoryNoteKey = mode is null ? "history.load_mode_missing" : string.Empty;
+        }
     }
 
 
