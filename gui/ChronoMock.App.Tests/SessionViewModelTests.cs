@@ -1171,6 +1171,102 @@ public class SessionViewModelTests
         Assert.Equal(SessionStatusKind.Idle, vm.StatusKind); // rule 7: fills the form, never starts a session
     }
 
+    /// <summary>
+    /// Repeating a session has to repeat the SESSION. Five inputs decide what a run does and none of them
+    /// used to be recorded - the arguments, the working folder and the three switches - so a load filled
+    /// four fields and left the other five holding whatever the form had, producing a third setup that was
+    /// never run and never recorded, silently. Scale-QPC is the expensive one: it decides whether the
+    /// target's elapsed counters move at all.
+    /// </summary>
+    [Fact]
+    public void Load_from_history_restores_every_input_that_changes_what_a_session_does()
+    {
+        var vm = new SessionViewModel();
+        // Leave the form holding the OPPOSITE of the record, so a field that is not restored stands out.
+        vm.TargetArgs = "--from-the-previous-run";
+        vm.WorkingFolder = @"C:\previous";
+        vm.ScaleDuration = false;
+        vm.ScaleQpc = false;
+        vm.ForceStart = false;
+
+        var record = HistoryRecord("Ledger") with
+        {
+            TargetArgs = "--seed 7 --headless",
+            WorkingFolder = @"C:\apps\data",
+            ScaleDuration = true,
+            ScaleQpc = true,
+            Force = true,
+        };
+        vm.LoadFromHistory(record);
+
+        Assert.Equal("--seed 7 --headless", vm.TargetArgs);
+        Assert.Equal(@"C:\apps\data", vm.WorkingFolder);
+        Assert.True(vm.ScaleDuration);
+        Assert.True(vm.ScaleQpc);
+        Assert.True(vm.ForceStart);
+        Assert.False(vm.HasHistoryNote, "everything was on offer, so there is nothing to report");
+    }
+
+    /// <summary>The other half: what BuildRecord writes, or the load above has nothing to restore from.</summary>
+    [Fact]
+    public void Build_record_captures_every_input_that_changes_what_a_session_does()
+    {
+        var vm = new SessionViewModel();
+        vm.SetTarget(@"C:\apps\Ledger.exe");
+        vm.TargetArgs = "--seed 7";
+        vm.WorkingFolder = @"C:\apps\data";
+        vm.ScaleDuration = true;
+        vm.ScaleQpc = true;
+        vm.ForceStart = true;
+
+        var record = vm.BuildRecord();
+
+        Assert.Equal("--seed 7", record.TargetArgs);
+        Assert.Equal(@"C:\apps\data", record.WorkingFolder);
+        Assert.True(record.ScaleDuration);
+        Assert.True(record.ScaleQpc);
+        Assert.True(record.Force);
+    }
+
+    /// <summary>
+    /// A zone or a speed the catalogues no longer offer cannot be filled in, and leaving the CURRENT one
+    /// standing without a word made the form claim to be the recorded session while one of its two decisive
+    /// fields belonged to whatever was there before. Reachable when a record predates a change to either
+    /// closed list.
+    /// </summary>
+    [Fact]
+    public void Load_from_history_says_what_it_could_not_fill_in()
+    {
+        var vm = new SessionViewModel();
+        var keptZone = vm.SelectedZone;
+        var keptMode = vm.SelectedMode;
+
+        // 999 is not a bias any zone option carries, and no mode option is x777.
+        vm.LoadFromHistory(HistoryRecord("Ledger", bias: 999, mode: "multiplier", multiplier: 777));
+
+        Assert.Equal("history.load_zone_and_mode_missing", vm.HistoryNoteKey);
+        Assert.True(vm.HasHistoryNote);
+        Assert.Equal(keptZone, vm.SelectedZone); // unchanged, and now said out loud
+        Assert.Equal(keptMode, vm.SelectedMode);
+        Assert.Equal(@"C:\apps\Ledger.exe", vm.TargetPath); // what DID load stays loaded
+    }
+
+    /// <summary>One missing field names that field alone, so the reader knows which box to set.</summary>
+    [Fact]
+    public void Load_from_history_names_the_one_field_it_could_not_fill()
+    {
+        var vm = new SessionViewModel();
+
+        vm.LoadFromHistory(HistoryRecord("Ledger", bias: 999));
+        Assert.Equal("history.load_zone_missing", vm.HistoryNoteKey);
+
+        vm.LoadFromHistory(HistoryRecord("Ledger", multiplier: 777));
+        Assert.Equal("history.load_mode_missing", vm.HistoryNoteKey);
+
+        vm.LoadFromHistory(HistoryRecord("Ledger"));
+        Assert.Equal(string.Empty, vm.HistoryNoteKey); // a clean load clears the note
+    }
+
     [Fact]
     public void Load_from_history_is_ignored_while_a_session_runs()
     {

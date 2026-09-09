@@ -70,6 +70,7 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     private bool _launched;
     private bool _stopRequested;
     private string _historyError = string.Empty;
+    private string _historyNoteKey = string.Empty;
     // Snapshot of the start setup, taken at Start, so history and the summary record what was REQUESTED
     // even after the form is changed (rule 4 - the record is the start).
     //
@@ -88,6 +89,18 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     private ModeOption? _startMode;
     private string? _startTargetPath;
     private ZoneOption? _startZone;
+    // The remaining five inputs, kept as plain values rather than a setup type: this class sits exactly on
+    // its class-coupling ceiling (CA1506 = 82, gui/CodeMetricsConfig.txt), so a new type here would redden
+    // the metrics gate. Strings and bools cost nothing there.
+    // True once Start has taken the snapshot. An explicit flag rather than a null check on one of the
+    // fields: three of them are bools with no null to test, and inferring "was a snapshot taken" from a
+    // sibling field is the kind of coupling that stops holding the moment one of them changes type.
+    private bool _startCaptured;
+    private string _startTargetArgs = string.Empty;
+    private string _startWorkingFolder = string.Empty;
+    private bool _startScaleDuration;
+    private bool _startScaleQpc;
+    private bool _startForce;
     private string _inFlightErrorKey = string.Empty;
     private bool _applyingMultiplier; // guard: syncing the Mode dropdown from a state event must not re-send
 
@@ -256,6 +269,18 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
 
     /// <summary>True when a history write failed - the panel shows the reason (rule 6).</summary>
     public bool HasHistoryError => _historyError.Length > 0;
+
+    /// <summary>Translation key for what a history LOAD could not fill in, empty when it filled everything.
+    /// Separate from <see cref="HistoryError"/>, which is about a failed write and is rendered after a
+    /// "could not save" lead-in that would be wrong here.</summary>
+    public string HistoryNoteKey
+    {
+        get => _historyNoteKey;
+        private set { if (Set(ref _historyNoteKey, value)) { RaisePropertyChanged(nameof(HasHistoryNote)); } }
+    }
+
+    /// <summary>True when the last history load left a field it could not fill.</summary>
+    public bool HasHistoryNote => _historyNoteKey.Length > 0;
 
     /// <summary>Path to the target executable to run, chosen by the user (or a bundled default in dev).</summary>
     public string? TargetPath
@@ -1094,6 +1119,12 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
             _startMode = SelectedMode;
             _startTargetPath = TargetPath;
             _startZone = SelectedZone;
+            _startTargetArgs = _targetArgs;
+            _startWorkingFolder = _workingFolder;
+            _startScaleDuration = _scaleDuration;
+            _startScaleQpc = _scaleQpc;
+            _startForce = _forceStart;
+            _startCaptured = true;
 
             // Build the plan by reading the target's PE header. Classify a TARGET problem here (RELEASE-007)
             // so it is not reported as a broken core install: a non-PE file yields InvalidOperationException
@@ -1284,6 +1315,9 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
         DiagnosticsSavedPath = string.Empty;
         CopyFeedbackKey = string.Empty;
         InFlightErrorKey = string.Empty;
+        // A note about what the last LOAD could not fill belongs to the form the user is about to run, not
+        // to the run itself - once they start, they have accepted the form as it stands.
+        HistoryNoteKey = string.Empty;
     }
 
     private static string FormatChannel(CoveredChannel channel) => $"{channel.Channel}  ×{channel.Calls}";
@@ -1533,6 +1567,13 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
             TzBiasMin = RequestedZone.BiasMinutes,
             Mode = mode.Mode,
             Multiplier = mode.Multiplier,
+            // Everything else that decides what the session DID, so repeating it repeats the session
+            // rather than a partial copy of it. Same snapshot-with-live-fallback rule as the four above.
+            TargetArgs = _startCaptured ? _startTargetArgs : _targetArgs,
+            WorkingFolder = _startCaptured ? _startWorkingFolder : _workingFolder,
+            ScaleDuration = _startCaptured ? _startScaleDuration : _scaleDuration,
+            ScaleQpc = _startCaptured ? _startScaleQpc : _scaleQpc,
+            Force = _startCaptured ? _startForce : _forceStart,
             Verdict = RecordedVerdict(),
             EndedAtUtc = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture),
         };
@@ -1641,9 +1682,33 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
 
         SetTarget(record.TargetPath);
         Moment.LoadCanonical(record.MomentLocal);
-        SelectedZone = TimeInputs.Zones.FirstOrDefault(z => z.BiasMinutes == record.TzBiasMin) ?? SelectedZone;
-        SelectedMode = TimeInputs.Modes.FirstOrDefault(
-            m => m.Mode == record.Mode && m.Multiplier == record.Multiplier) ?? SelectedMode;
+        TargetArgs = record.TargetArgs;
+        WorkingFolder = record.WorkingFolder;
+        ScaleDuration = record.ScaleDuration;
+        ScaleQpc = record.ScaleQpc;
+        ForceStart = record.Force;
+
+        // A zone or a mode the catalogues no longer offer cannot be filled in, and the old code left the
+        // CURRENT one standing without a word - so the form claimed to be the recorded session while one of
+        // its two decisive fields belonged to whatever was there before. Reachable when a record predates a
+        // change to either closed list. Say it instead (rule 6): the fields that DID load stay loaded, and
+        // the note names the one that did not, so the reader knows which one to set by hand.
+        var zone = TimeInputs.Zones.FirstOrDefault(z => z.BiasMinutes == record.TzBiasMin);
+        var mode = TimeInputs.Modes.FirstOrDefault(
+            m => m.Mode == record.Mode && m.Multiplier == record.Multiplier);
+        SelectedZone = zone ?? SelectedZone;
+        SelectedMode = mode ?? SelectedMode;
+        // Written as nested ifs rather than a switch on `(zone, mode)`, and that is not style: a tuple
+        // pattern introduces ValueTuple as a coupled type, and this class sits exactly on its CA1506
+        // ceiling of 82 (gui/CodeMetricsConfig.txt), so the tidier form reddens the metrics gate.
+        if (zone is null)
+        {
+            HistoryNoteKey = mode is null ? "history.load_zone_and_mode_missing" : "history.load_zone_missing";
+        }
+        else
+        {
+            HistoryNoteKey = mode is null ? "history.load_mode_missing" : string.Empty;
+        }
     }
 
 

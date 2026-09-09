@@ -727,6 +727,14 @@
                        Visibility="{Binding HasHistoryError, Converter={StaticResource BoolToVis}}">
               <Run Text="{DynamicResource history.save_failed}" /><Run Text="{Binding HistoryError, Mode=OneWay}" />
             </TextBlock>
+            <!-- What a LOAD could not fill in. Its own line rather than the one above, which leads with
+                 "could not save" - a wrong lead-in on a message about reading. -->
+            <TextBlock Margin="{StaticResource SpaceXs}"
+                       TextWrapping="Wrap"
+                       FontSize="{StaticResource FontSizeCaption}"
+                       Foreground="{DynamicResource BrushStatusPartial}"
+                       Text="{Binding HistoryNoteKey, Converter={StaticResource KeyToText}}"
+                       Visibility="{Binding HasHistoryNote, Converter={StaticResource BoolToVis}}" />
             <ScrollViewer MaxHeight="{StaticResource HistoryMaxHeight}" VerticalScrollBarVisibility="Auto">
               <ItemsControl ItemsSource="{Binding History}">
                 <ItemsControl.ItemTemplate>

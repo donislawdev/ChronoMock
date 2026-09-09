@@ -258,6 +258,10 @@
   "history.clear_title": "Clear history",
   "history.clear_confirm": "Clear all recorded sessions?",
   "history.clear_undone": "This cannot be undone. The sessions themselves already ended - this removes the records of them.",
+  // Shown when repeating a session could not fill a field, because the recorded value is no longer on offer. The fields that did load stay loaded - this names the one that did not, so it can be set by hand.
+  "history.load_zone_missing": "This session used a zone this version no longer offers, so the zone box still holds your previous choice - set it before starting.",
+  "history.load_mode_missing": "This session used a speed this version no longer offers, so the speed box still holds your previous choice - set it before starting.",
+  "history.load_zone_and_mode_missing": "This session used a zone and a speed this version no longer offers, so both boxes still hold your previous choices - set them before starting.",
 
   // Module switch: the two halves of the product (chrono-mock 6.1/7).
   // Dialog answers. The app labels its own buttons, unlike a native message box, whose Yes and No come

@@ -257,6 +257,10 @@
   "history.clear_title": "Wyczyść historię",
   "history.clear_confirm": "Wyczyścić wszystkie zapisane sesje?",
   "history.clear_undone": "Tej operacji nie można cofnąć. Same sesje już się zakończyły - to usuwa zapisy o nich.",
+  // Shown when repeating a session could not fill a field, because the recorded value is no longer on offer. The fields that did load stay loaded - this names the one that did not, so it can be set by hand.
+  "history.load_zone_missing": "Ta sesja użyła strefy, której ta wersja już nie oferuje, więc pole strefy trzyma Twój poprzedni wybór - ustaw je przed startem.",
+  "history.load_mode_missing": "Ta sesja użyła prędkości, której ta wersja już nie oferuje, więc pole prędkości trzyma Twój poprzedni wybór - ustaw je przed startem.",
+  "history.load_zone_and_mode_missing": "Ta sesja użyła strefy i prędkości, których ta wersja już nie oferuje, więc oba pola trzymają Twoje poprzednie wybory - ustaw je przed startem.",
 
   // Module switch: the two halves of the product (chrono-mock 6.1/7).
   // Dialog answers. The app labels its own buttons, unlike a native message box, whose Yes and No come
