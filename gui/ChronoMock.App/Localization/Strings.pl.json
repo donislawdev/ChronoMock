@@ -193,6 +193,7 @@
   // Coverage warning keys the core raises (CoverageEvent warning_keys), and the vanish reason (VanishedEvent reason_key, shown inside report.vanish_detail). Wording mirrors the CLI report (describe_warning). The Chromium (CDP) warnings live in the section below. RELEASE-002.
   "source.network_at_start": "Cel otworzył połączenie sieciowe - może czytać czas z serwera, którego żaden lokalny hak nie obejmie.",
   "wait.object_waits_not_scaled": "Oczekiwania na obiekty są podpięte, ale pozostawione realne - limit czasu I/O lub sprzętu nie jest skracany.",
+  "wait.timeout_collapsed": "Część oczekiwań tej aplikacji była za krótka, żeby podzielić je przez pełny mnożnik, więc przebiegły w najkrótszym kroku, jakiego to narzędzie używa (1 ms). Ta część aplikacji nie przyspieszyła - mniejsza prędkość sprawi, że będzie dokładnie.",
   "timer.multimedia_not_scaled": "Timer multimedialny (timeSetEvent) jest obserwowany, ale nie skalowany.",
   "clock.timegettime_scaled_audio_may_shift": "Zegar winmm timeGetTime jest skalowany razem z resztą osi trwania, więc cel odmierzający z niego własne tempo podąża za sesją - ale aplikacja multimedialna pozycjonująca dźwięk z tego zegara może dryfować.",
   "coverage.channel_installed_late": "Kanał czasu został podpięty dopiero po załadowaniu jego modułu, więc wywołania sprzed tego momentu nie zostały policzone - a jeśli kanał jest skalowany, jego zegar wykonał jednorazowy skok w chwili dołączenia do sesji.",

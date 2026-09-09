@@ -491,7 +491,10 @@ pub const CTL_MAGIC: u64 = 0x4348_524F_4E4F_4354; // "CHRONOCT"
 /// 4: `CHANNEL_COUNT` grew from 37 to 41 for the four waits that were neither scaled nor counted
 /// (the condition-variable pair, `WaitOnAddress`, `WSAWaitForMultipleEvents`), which widens `calls`
 /// and so moves the slots again.
-pub const CTL_LAYOUT_VERSION: u32 = 4;
+///
+/// 5: `Cov` gained `waits_at_floor`, which widens it by 8 bytes and moves every slot after the first,
+/// for the same reason version 3 did.
+pub const CTL_LAYOUT_VERSION: u32 = 5;
 
 /// Session-wide control block in `Local\ChronoCtl`. `#[repr(C)]` so both processes
 /// agree on the layout. Coverage lives here too, one `Cov` per registry slot, so a
@@ -589,6 +592,16 @@ pub struct Cov {
     ///
     /// Reported as one warning rather than two, because it is one event with two effects.
     pub late_installed: u64,
+    /// Waits this process made that were held at the scaling floor ([`MIN_SCALED_WAIT_MS`]) instead of
+    /// being divided by the full multiplier.
+    ///
+    /// A count rather than a flag, because the two readings differ: one such wait in a session is a
+    /// rounding detail, while a hot polling loop produces thousands and means a real part of this
+    /// application is not accelerating. The report says the number.
+    ///
+    /// It is a volatile RMW like `calls`, so concurrent threads can lose a bump - which under-counts
+    /// and never invents one, the same direction of error the call counters already accept.
+    pub waits_at_floor: u64,
     /// Per-channel call counters for this process, indexed by IDX_*.
     pub calls: [u64; CHANNEL_COUNT],
 }
@@ -596,8 +609,13 @@ pub struct Cov {
 impl Cov {
     /// An empty slot. A `const` rather than `Default` so `[Cov::ZEROED; MAX_COV_PIDS]` builds the
     /// `Ctl` array without requiring `Copy` on a type that must never be copied around by accident.
-    pub const ZEROED: Cov =
-        Cov { installed_channels: 0, uninjected_children: 0, late_installed: 0, calls: [0; CHANNEL_COUNT] };
+    pub const ZEROED: Cov = Cov {
+        installed_channels: 0,
+        uninjected_children: 0,
+        late_installed: 0,
+        waits_at_floor: 0,
+        calls: [0; CHANNEL_COUNT],
+    };
 }
 
 /// Stamp the block as ours, at the layout this build speaks.
@@ -1165,32 +1183,95 @@ pub unsafe fn read_uninjected_children(p: *const Cov) -> u64 { unsafe {
     read_volatile(addr_of!((*p).uninjected_children))
 }}
 
+/// Count one wait held at the scaling floor (hook side, this process's own `Cov`).
+///
+/// # Safety
+/// `p` must point to a live, correctly aligned `Cov`.
+pub unsafe fn bump_waits_at_floor(p: *mut Cov) { unsafe {
+    let slot = addr_of_mut!((*p).waits_at_floor);
+    let cur = read_volatile(slot);
+    write_volatile(slot, cur.wrapping_add(1));
+}}
+
+/// How many of this process's waits were held at the floor (mechanism side, per-process `Cov`).
+///
+/// # Safety
+/// `p` must point to a live, correctly aligned `Cov`.
+pub unsafe fn read_waits_at_floor(p: *const Cov) -> u64 { unsafe {
+    read_volatile(addr_of!((*p).waits_at_floor))
+}}
+
+/// The shortest real wait a scaled timeout is allowed to become.
+///
+/// 🔴 One millisecond, and the difference between it and zero is the whole reason it exists. Integer
+/// division truncates, so under a large multiplier every timeout below M ms came out as 0 - and the
+/// comment here used to call that "collapsing to a yield". `Sleep(0)` is not a short sleep: it gives
+/// up the rest of the time slice and returns AT ONCE. An application polling with
+/// `while (!done) Sleep(100)` therefore stopped sleeping under x1000 and started spinning a core
+/// flat out, for the length of the session, with nothing said about it anywhere.
+///
+/// That is a cost the tester pays and cannot see, and it lands on the very thing this tool exists to
+/// measure: they would read the load as a property of their application. The timer family already had
+/// this floor for the same reason (`scale_timer_period_ms` clamps so a periodic timer never becomes a
+/// one-shot) - the wait family simply never got one.
+///
+/// The floor is not free either, and the honesty is the other half of the fix: a wait that lands here
+/// is NOT scaled by the full multiplier, so the hook counts it and the audit warns
+/// (`wait.timeout_collapsed`). Coverage first, and say what is left over (rule 27).
+pub const MIN_SCALED_WAIT_MS: u32 = 1;
+
 /// Scale a wait timeout in milliseconds by the duration multiplier: real wait =
 /// requested / M (ADR-7). `INFINITE` (0xFFFFFFFF) and 0 pass through untouched - never
-/// turn "wait forever" into a finite wait, never lengthen a poll. `m` is clamped to >= 1,
-/// so frozen (M=0) leaves waits at real length (untouchable rule 3). The multiplier is an integer,
-/// so a fractional "slow motion" (0<M<1) is not representable and never arises - symmetric to the
-/// duration axis. Integer division truncates: a sub-M timeout
-/// collapses to a yield, the honest coarse behavior under heavy acceleration.
+/// turn "wait forever" into a finite wait, never lengthen a poll, and never turn a caller's own
+/// deliberate yield into a sleep. `m` is clamped to >= 1, so frozen (M=0) leaves waits at real length
+/// (untouchable rule 3). The multiplier is an integer, so a fractional "slow motion" (0<M<1) is not
+/// representable and never arises - symmetric to the duration axis. A positive timeout never reaches
+/// zero: see [`MIN_SCALED_WAIT_MS`].
 pub fn scale_wait(ms: u32, m: i64) -> u32 {
     const INFINITE_MS: u32 = 0xFFFF_FFFF;
     if ms == 0 || ms == INFINITE_MS {
         return ms;
     }
     let m = m.max(1) as u64;
-    (ms as u64 / m) as u32
+    ((ms as u64 / m) as u32).max(MIN_SCALED_WAIT_MS)
 }
+
+/// Whether [`scale_wait`] had to hold this timeout at the floor - that is, whether the acceleration
+/// on THIS wait is less than the session's multiplier.
+///
+/// Separate from the scaling itself so the hot path keeps one return value and the audit still gets
+/// the fact. Both are a couple of instructions and fold together under LTO.
+pub fn wait_hit_floor(ms: u32, m: i64) -> bool {
+    const INFINITE_MS: u32 = 0xFFFF_FFFF;
+    if ms == 0 || ms == INFINITE_MS {
+        return false; // passed through by contract, not clamped
+    }
+    (ms as u64 / m.max(1) as u64) < MIN_SCALED_WAIT_MS as u64
+}
+
+/// The shortest real delay a scaled `NtDelayExecution` interval becomes, in 100 ns units - the same
+/// millisecond floor as [`MIN_SCALED_WAIT_MS`], in this API's own unit. `Sleep` and `SleepEx` bottom
+/// out here, so a floor on one and not the other would be a floor on neither.
+pub const MIN_SCALED_DELAY_TICKS: i64 = MIN_SCALED_WAIT_MS as i64 * 10_000;
 
 /// Scale an `NtDelayExecution` interval (100 ns units) by the duration multiplier. Only a
 /// NEGATIVE interval is a relative delay - scale its magnitude (interval / M, toward zero).
 /// A positive interval is an absolute deadline and a zero is a yield - both pass through
-/// untouched. `m` is clamped to >= 1 (rule 3, symmetric to scale_wait).
+/// untouched. `m` is clamped to >= 1 (rule 3, symmetric to scale_wait). A relative delay never
+/// reaches zero, for the reason [`MIN_SCALED_WAIT_MS`] gives: a zero delay is a yield, and turning a
+/// sleep into a yield turns a polling loop into a spin.
 pub fn scale_delay_interval(interval: i64, m: i64) -> i64 {
     if interval < 0 {
-        interval / m.max(1)
+        (interval / m.max(1)).min(-MIN_SCALED_DELAY_TICKS)
     } else {
         interval
     }
+}
+
+/// Whether [`scale_delay_interval`] had to hold this delay at the floor. Companion of
+/// [`wait_hit_floor`], for the relative-delay shape.
+pub fn delay_hit_floor(interval: i64, m: i64) -> bool {
+    interval < 0 && (interval / m.max(1)) > -MIN_SCALED_DELAY_TICKS
 }
 
 /// Scale a waitable-timer due time (100 ns, FILETIME convention) into a RELATIVE real interval,
@@ -1697,8 +1778,54 @@ mod tests {
         // Frozen (0) and slow motion clamp to real length (>= 1) - rule 3.
         assert_eq!(scale_wait(6000, 0), 6000);
         assert_eq!(scale_wait(6000, -5), 6000);
-        // Truncation: a sub-M timeout collapses to a yield (honest coarseness).
-        assert_eq!(scale_wait(30, 60), 0);
+    }
+
+    /// 🔴 A sub-M timeout used to come out as 0, and this test asserted that as "honest coarseness".
+    /// It is not coarseness. `Sleep(0)` gives up the time slice and returns AT ONCE, so
+    /// `while (!done) Sleep(100)` stopped sleeping under a large multiplier and started spinning a
+    /// core flat out - a cost charged to the application under test, invisible, and easily read back
+    /// as a property of that application. The timer family has had this floor all along.
+    #[test]
+    fn a_positive_timeout_never_becomes_a_yield() {
+        assert_eq!(scale_wait(30, 60), MIN_SCALED_WAIT_MS);
+        assert_eq!(scale_wait(100, 1_000), MIN_SCALED_WAIT_MS);
+        assert_eq!(scale_wait(1, 1_000_000), MIN_SCALED_WAIT_MS);
+
+        // A caller's OWN zero is still a yield - the floor is about what the scaling produces, never
+        // about overriding what the application asked for.
+        assert_eq!(scale_wait(0, 1_000), 0);
+        assert_eq!(scale_wait(0xFFFF_FFFF, 1_000), 0xFFFF_FFFF);
+    }
+
+    /// The floor is a partial coverage, so it has to be reportable - the audit warns on it.
+    #[test]
+    fn the_floor_reports_itself_and_only_when_it_applies() {
+        assert!(wait_hit_floor(30, 60), "30 ms at x60 is under a millisecond");
+        assert!(!wait_hit_floor(6000, 60), "100 ms comes out exactly");
+        assert!(!wait_hit_floor(60, 60), "exactly 1 ms is the floor, not below it");
+        // Pass-through shapes are not clamped, so they are not reported either.
+        assert!(!wait_hit_floor(0, 1_000));
+        assert!(!wait_hit_floor(0xFFFF_FFFF, 1_000));
+        // Frozen leaves waits real, so nothing is ever at the floor.
+        assert!(!wait_hit_floor(30, 0));
+    }
+
+    /// Sleep and SleepEx bottom out on NtDelayExecution, so a floor on one and not the other would be
+    /// a floor on neither - the scaled Sleep would re-enter here and be truncated back to a yield.
+    #[test]
+    fn a_relative_delay_never_becomes_a_yield_either() {
+        // -3 ms at x60 would be -0.05 ms, which truncates to 0 - a yield.
+        assert_eq!(scale_delay_interval(-30_000, 60), -MIN_SCALED_DELAY_TICKS);
+        assert!(delay_hit_floor(-30_000, 60));
+
+        // A delay that divides cleanly is untouched, and does not report.
+        assert_eq!(scale_delay_interval(-6_000_000, 60), -100_000);
+        assert!(!delay_hit_floor(-6_000_000, 60));
+
+        // A positive interval is an absolute deadline: passed through, never floored or reported.
+        assert_eq!(scale_delay_interval(1_000, 60), 1_000);
+        assert!(!delay_hit_floor(1_000, 60));
+        assert!(!delay_hit_floor(0, 60));
     }
 
     #[test]

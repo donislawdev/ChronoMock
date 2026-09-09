@@ -152,6 +152,13 @@ pub(crate) fn describe_warning(key: &str) -> String {
         "wait.object_waits_not_scaled" => {
             "object waits are hooked but left real - an I/O or hardware timeout is not shortened"
         }
+        // The floor is coverage with a cost, so it is named like the other two opt-in costs above it.
+        // Without this line the key itself reached the report, which is the raw-jargon shape the GUI
+        // side had just been cleaned of.
+        "wait.timeout_collapsed" => {
+            "some waits were too short to divide by the full speed factor and ran at this tool's \
+             shortest step (1 ms) instead - that part of the application did not accelerate"
+        }
         "timer.multimedia_not_scaled" => "the multimedia timer (timeSetEvent) is observed but not scaled",
         // The coverage has a cost, so it is named - the same shape as the QPC opt-in's warning. winmm is
         // also the audio path, and the scheduler timeSetEvent stays untouched, so this is about a clock

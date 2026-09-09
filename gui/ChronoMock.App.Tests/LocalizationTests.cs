@@ -42,7 +42,7 @@ public class LocalizationTests
         "chromium.contexts_covered", "chromium.contexts_partial",
         "chromium.no_time_calls", "chromium.no_contexts",
         // Coverage warning keys (CoverageEvent warning_keys).
-        "source.network_at_start", "wait.object_waits_not_scaled",
+        "source.network_at_start", "wait.object_waits_not_scaled", "wait.timeout_collapsed",
         "timer.multimedia_not_scaled", "clock.timegettime_scaled_audio_may_shift",
         "coverage.channel_installed_late",
         "inheritance.ntcreateuserprocess_child_maybe_uncovered",

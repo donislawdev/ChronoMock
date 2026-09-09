@@ -66,8 +66,9 @@ use chrono_ctl::{
     bump_calls, bump_uninjected_children, cov_at_mut, dur_qpc_at, dur_quit_at, dur_tick_at,
     header_is_ours,
     publish_pid, read_anchor, read_core_pid, read_dur, read_qpc, read_scale_dur, read_scale_qpc,
-    read_installed, read_late_installed, read_tz_bias, reserve_cov_slot, scale_delay_interval, scale_timer_due, scale_timer_elapse, scale_timer_period,
-    scale_timer_period_ms, scale_wait, set_channels_installed, set_late_installed, ChannelModule, Cov,
+    bump_waits_at_floor, delay_hit_floor, read_installed, read_late_installed, read_tz_bias, reserve_cov_slot,
+    scale_delay_interval, scale_timer_due, scale_timer_elapse, scale_timer_period,
+    scale_timer_period_ms, scale_wait, set_channels_installed, set_late_installed, wait_hit_floor, ChannelModule, Cov,
     Ctl, CHANNELS, IDX_GDTZI, IDX_GLT, IDX_GST, IDX_GSTAFT, IDX_GSTPAFT, IDX_GTC, IDX_GTC64,
     IDX_GTZI, IDX_NTDELAY, IDX_NTQSI, IDX_NTQST, IDX_QUIT, IDX_SLEEP, IDX_SLEEPEX, IDX_STSL,
     IDX_STSLEX, IDX_FTLFT, IDX_LFTFT, IDX_TLTST, IDX_TLTSTEX, IDX_WFSO, IDX_WFSOEX, IDX_WFMO,
@@ -1254,6 +1255,25 @@ impl Drop for WaitGuard {
 /// original through, uncounted) or the core has detached (fall through to real time). Bumps
 /// coverage only for a top-level app call, so the audit counts what the app called, not what
 /// Windows re-entered.
+/// Record that one wait could not be divided by the full multiplier, so the audit can say so.
+///
+/// Silent partial coverage is what rule 27 calls a breach rather than a compromise, and this is
+/// exactly a partial: the wait is still shortened, just not by M. Counting it here, in the process
+/// that made the call, keeps it attributable like every other piece of per-process evidence.
+fn note_wait_at_floor() {
+    if let Some(p) = cov_ptr() {
+        unsafe { bump_waits_at_floor(p) }
+    }
+}
+
+/// The scaled timeout, counting the case where the floor had to hold it.
+fn scaled_wait_ms(ms: u32, m: i64) -> u32 {
+    if wait_hit_floor(ms, m) {
+        note_wait_at_floor();
+    }
+    scale_wait(ms, m)
+}
+
 fn try_enter_wait(idx: usize) -> Option<(i64, WaitGuard)> {
     if SCALING_WAIT.get() {
         return None; // internal cascade: pass through, do not bump
@@ -1276,7 +1296,7 @@ unsafe extern "system" fn h_sleep(ms: u32) { unsafe {
         None => return,
     };
     match try_enter_wait(IDX_SLEEP) {
-        Some((m, _guard)) => o(scale_wait(ms, m)),
+        Some((m, _guard)) => o(scaled_wait_ms(ms, m)),
         None => o(ms),
     }
 }}
@@ -1287,7 +1307,7 @@ unsafe extern "system" fn h_sleepex(ms: u32, alertable: i32) -> u32 { unsafe {
         None => return 0,
     };
     match try_enter_wait(IDX_SLEEPEX) {
-        Some((m, _guard)) => o(scale_wait(ms, m), alertable),
+        Some((m, _guard)) => o(scaled_wait_ms(ms, m), alertable),
         None => o(ms, alertable),
     }
 }}
@@ -1306,6 +1326,9 @@ unsafe extern "system" fn h_ntdelay(alertable: u8, interval: *const i64) -> i32 
             if interval.is_null() {
                 o(alertable, interval)
             } else {
+                if delay_hit_floor(*interval, m) {
+                    note_wait_at_floor();
+                }
                 let scaled = scale_delay_interval(*interval, m);
                 o(alertable, &scaled as *const i64)
             }

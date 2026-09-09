@@ -20,7 +20,7 @@ use chrono_core::{ChannelCoverage, Coverage, SessionSpec, TimeMode};
 use chrono_ctl::{
     cov_at, ctl_size, freeze_dur, freeze_qpc, header_is_ours, read_anchor, read_calls,
     read_core_pid, read_dur, read_installed, read_late_installed, read_pid, read_pid_count, read_qpc,
-    read_uninjected_children,
+    read_uninjected_children, read_waits_at_floor,
     write_anchor, write_anchor_full, write_header,
     write_core_pid, write_scale_dur, write_scale_qpc, write_tz_bias, ChannelCategory, ChannelModule,
     Cov, Ctl, CHANNELS, IDX_TIMEGETTIME, MAX_COV_PIDS,
@@ -640,6 +640,14 @@ unsafe fn gather_coverage(
     // ADR-2, class C). Each fires only when that kind actually ran under acceleration (calls > 0).
     if any_wait_observed {
         out.warning_keys.push("wait.object_waits_not_scaled".to_string());
+    }
+    // A wait too short to divide by the full multiplier ran at the floor instead, so part of this
+    // application did NOT accelerate. Said out loud rather than left as an unexplained difference in
+    // behaviour - and it is the honest half of the floor itself, which exists because the alternative
+    // (a timeout truncated to zero) turned a polling loop into a spin. Coverage first, and name what
+    // is left over (rule 27, rule 4).
+    if read_waits_at_floor(cov) > 0 {
+        out.warning_keys.push("wait.timeout_collapsed".to_string());
     }
     if any_timer_observed {
         out.warning_keys.push("timer.multimedia_not_scaled".to_string());
@@ -1395,6 +1403,27 @@ mod tests {
         assert!(!off.covered.iter().any(|c| is_tgt(&c.channel)));
         assert!(!off.observed.iter().any(|c| is_tgt(&c.channel)));
         assert!(!warned(&off));
+    }
+
+    /// A wait held at the scaling floor is reported, because it is partial coverage.
+    ///
+    /// The floor exists so a sub-multiplier timeout does not truncate to zero and turn a polling loop
+    /// into a spin - but a wait at the floor did NOT accelerate by the session's multiplier, and a
+    /// difference in behaviour the tester cannot account for is what rule 27 forbids leaving silent.
+    #[test]
+    fn a_wait_held_at_the_scaling_floor_is_reported() {
+        let says_collapsed =
+            |c: &Coverage| c.warning_keys.iter().any(|k| k == "wait.timeout_collapsed");
+
+        let mut cov = zeroed_cov();
+        cov.waits_at_floor = 4;
+        let gathered = unsafe { gather_coverage(&cov as *const Cov, 0, true, false) };
+        assert!(says_collapsed(&gathered), "four waits ran at the floor and nothing said so");
+
+        // No such wait, no warning - a warning on every session would say nothing at all.
+        let quiet = zeroed_cov();
+        let gathered = unsafe { gather_coverage(&quiet as *const Cov, 0, true, false) };
+        assert!(!says_collapsed(&gathered));
     }
 
     /// A channel hooked late is covered, and the audit says the count is a floor.
