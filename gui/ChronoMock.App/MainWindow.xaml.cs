@@ -188,7 +188,23 @@ public partial class MainWindow : FluentWindow
                 : null;
     }
 
-    private async void OnStartClick(object sender, RoutedEventArgs e) => await _session.StartAsync();
+    // The panel's one action, which is Start or Stop depending on the session (M-10). It reads the state
+    // rather than trusting the label, so a click that arrives just as the session changed does the thing
+    // the session is actually in - stopping is what a RUNNING session does, starting is what any other
+    // does, and neither is decided by what the button happened to say when it was drawn.
+    //
+    // Stopping is what frees the tester from closing the whole window when they are done, or when the core
+    // stops responding. The target reverts to real time, and the app under test is never killed.
+    private async void OnPrimaryActionClick(object sender, RoutedEventArgs e)
+    {
+        if (_session.IsRunning)
+        {
+            _session.RequestStop();
+            return;
+        }
+
+        await _session.StartAsync();
+    }
 
     // In-flight speed control: each button carries its multiplier in Tag ("0" = freeze).
     private void OnSpeedClick(object sender, RoutedEventArgs e)
@@ -231,10 +247,6 @@ public partial class MainWindow : FluentWindow
     // applies it or surfaces an in-flight error, so a bad value is not a silent no-op (rule 6, RELEASE P3).
     private void OnSetSpeedClick(object sender, RoutedEventArgs e)
         => _session.SetCustomSpeed(CustomSpeedBox.Text);
-
-    // Stop the running session (M-10) - so the user is not forced to close the whole window when they are
-    // done (or when the core stops responding). The target reverts to real time, the app is never killed.
-    private void OnStopClick(object sender, RoutedEventArgs e) => _session.RequestStop();
 
     // Copy the session summary to the clipboard (chrono-mock 7.2, 8.8). The summary is built in the UI
     // language - a clipboard held by another process is reported honestly, never swallowed (rule 6).

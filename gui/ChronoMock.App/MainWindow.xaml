@@ -364,13 +364,39 @@
              same size, same grey, sitting in a row of secondary controls. A primary action has to be
              findable without reading, so it carries the accent fill and a size nothing else here has.
              Meaning is still in the label, never in the colour alone (zasady/13 9) - the fill only makes
-             it the obvious thing to press. -->
+             it the obvious thing to press.
+
+             🔴 IT IS ALSO THE STOP, and that is one control rather than two on purpose. Stop used to sit
+             at the bottom of the in-flight block, under the speed and jump rows: the control that ENDS
+             what this screen is doing was the last thing on it, three groups away from the control that
+             started it. One place for "the action" means the tester looks in one place both times, and
+             the running state is told by the label AND the fill turning to the failure red - never by
+             colour alone (zasady/13 9). Content, tooltip and enabled state live in the style rather than
+             on the element, because a local value outranks a trigger and the running state would never
+             have shown.
+
+             Connecting and stopping are deliberately neither: the button reads Start and is disabled,
+             because a session that has not begun cannot be stopped, and one already closing cannot be
+             stopped twice. The status line names those two states. -->
         <Button Grid.Row="1" Margin="{StaticResource SpaceSm}" HorizontalAlignment="Center"
-                MinWidth="{StaticResource PrimaryActionMinWidth}" Padding="{StaticResource SpaceMd}"
-                Background="{DynamicResource BrushAccent}" Foreground="{DynamicResource BrushBgBase}"
-                FontSize="{StaticResource FontSizeBody}" FontWeight="SemiBold"
-                Content="{DynamicResource action.start}" IsEnabled="{Binding CanStart}" Click="OnStartClick"
-                ToolTip="{DynamicResource tip.start}" ToolTipService.ShowOnDisabled="True" />
+                x:Name="PrimaryActionButton" Click="OnPrimaryActionClick"
+                ToolTipService.ShowOnDisabled="True">
+          <Button.Style>
+            <Style TargetType="Button" BasedOn="{StaticResource PrimaryActionButton}">
+              <Setter Property="Content" Value="{DynamicResource action.start}" />
+              <Setter Property="ToolTip" Value="{DynamicResource tip.start}" />
+              <Setter Property="IsEnabled" Value="{Binding CanStart}" />
+              <Style.Triggers>
+                <DataTrigger Binding="{Binding IsRunning}" Value="True">
+                  <Setter Property="Content" Value="{DynamicResource control.stop}" />
+                  <Setter Property="ToolTip" Value="{DynamicResource tip.stop}" />
+                  <Setter Property="Background" Value="{DynamicResource BrushStatusFails}" />
+                  <Setter Property="IsEnabled" Value="True" />
+                </DataTrigger>
+              </Style.Triggers>
+            </Style>
+          </Button.Style>
+        </Button>
 
         <!-- The two clocks: fake and real, each from the same tile template, each with its explicit zone. -->
         <Grid Grid.Row="2" VerticalAlignment="Center">
@@ -538,13 +564,10 @@
             <Button Content="{DynamicResource jump.plus_hour}" Tag="+1h" Margin="{StaticResource SpaceXs}" Click="OnJumpClick" />
             <Button Content="{DynamicResource jump.plus_day}" Tag="+1d" Margin="{StaticResource SpaceXs}" Click="OnJumpClick" />
           </StackPanel>
-          <!-- Stop the session on demand (chrono-mock 7.2, M-10): the meaning is in the label, not colour
-               (zasady/13 9). It ends the core cleanly (or kills a hung one), the hook self-detaches, and the
-               target returns to real time - the app under test is never killed. -->
-          <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="{StaticResource SpaceXs}">
-            <Button Content="{DynamicResource control.stop}" Margin="{StaticResource SpaceXs}"
-                    ToolTip="{DynamicResource tip.stop}" Click="OnStopClick" />
-          </StackPanel>
+          <!-- Stopping a session lives on the primary action above (chrono-mock 7.2, M-10), not here: it
+               ends the core cleanly (or kills a hung one), the hook self-detaches, and the target returns
+               to real time - the app under test is never killed. What stays in this block is what only
+               makes sense WHILE a session runs and does not end it: the rate and the jumps. -->
         </StackPanel>
 
         <!-- Status and rate. The meaning is carried by the translated label, not by colour (zasady/13 9). -->
