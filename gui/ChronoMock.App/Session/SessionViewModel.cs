@@ -845,10 +845,14 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     /// <summary>True when this session is driven over CDP (a Chromium/Electron target, ADR-9). The coverage
     /// unit is then a JS context, not an OS process, so the audit accumulates every context and the note
     /// reflects that. Set once at start from the plan.</summary>
+    /// <remarks>The setter is internal rather than private so a test can drive the CDP coverage branch
+    /// without a Chromium target and a live debug port. Production still sets it in exactly one place
+    /// (from the session plan) - the widening buys a test for how contexts are told apart, which is a
+    /// thing the panel gets wrong silently when it is wrong.</remarks>
     public bool IsCdp
     {
         get => _isCdp;
-        private set
+        internal set
         {
             if (Set(ref _isCdp, value))
             {
@@ -1047,10 +1051,12 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
             case CoverageEvent c when _isCdp:
                 // CDP emits one coverage per JS context - accumulate them all (each context's counts stay
                 // its own, never summed across contexts, rule 4) - union the warnings and uncovered lists.
-                // The channel strings already carry the context type ("page setInterval"), so the reader
-                // can tell contexts apart without a per-context breakdown.
-                Covered = [.. _covered, .. c.Covered.Select(FormatChannel)];
-                Observed = [.. _observed, .. c.Observed.Select(FormatChannel)];
+                // 🔴 Each row carries its CONTEXT, because the channel name carries only the context TYPE:
+                // two pages both produce "page Date.now", and two identical rows with different counts
+                // cannot be explained by the reader. The comment here used to say the name told them
+                // apart, which was true of the kind and not of the context.
+                Covered = [.. _covered, .. c.Covered.Select(ch => FormatCdpChannel(c.Pid, ch))];
+                Observed = [.. _observed, .. c.Observed.Select(ch => FormatCdpChannel(c.Pid, ch))];
                 Uncovered = [.. _uncovered, .. c.Uncovered.Where(u => !_uncovered.Contains(u))];
                 Unobserved = [.. _unobserved, .. c.Unobserved.Where(u => !_unobserved.Contains(u))];
                 Warnings = [.. _warnings, .. c.WarningKeys.Where(w => !_warnings.Contains(w))];
@@ -1321,6 +1327,24 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     }
 
     private static string FormatChannel(CoveredChannel channel) => $"{channel.Channel}  ×{channel.Calls}";
+
+    /// <summary>
+    /// A CDP channel, tagged with the context it belongs to.
+    ///
+    /// <para>
+    /// The core names a Chromium channel by context TYPE plus API - "page Date.now" - and emits one
+    /// coverage event per context. An application with two pages therefore produced two identical rows
+    /// with different counts, and nothing on the panel said which was which. A comment here claimed the
+    /// name told them apart, which was true of the KIND of context and not of the context.
+    /// </para>
+    /// <para>
+    /// Tagged on every row rather than only when there are several, because the list is built as the
+    /// events arrive - the second context is not known when the first is rendered. The CLI does the
+    /// same with pids, for the same reason.
+    /// </para>
+    /// </summary>
+    private static string FormatCdpChannel(uint context, CoveredChannel channel)
+        => $"context {context.ToString(CultureInfo.InvariantCulture)}: {FormatChannel(channel)}";
 
     /// <summary>Build the wire time from the inputs. The moment is the local time in the session zone
     /// (rule 2, chrono-mock 9.5) - the core turns it into UTC and validates it (docs/08 section 5).</summary>

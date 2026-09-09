@@ -683,6 +683,51 @@ public class SessionViewModelTests
         Assert.Equal(startZone.BiasMinutes, record.TzBiasMin);
     }
 
+    /// <summary>
+    /// A Chromium channel is named by context TYPE plus API - "page Date.now" - and the core emits one
+    /// coverage event per context. An application with two pages therefore produced two identical rows
+    /// with different counts, and nothing said which was which. A row a reader cannot attribute is a
+    /// result they cannot explain, which is the defect this project treats as a defect.
+    /// </summary>
+    [Fact]
+    public void Cdp_coverage_rows_say_which_context_they_came_from()
+    {
+        var vm = new SessionViewModel { IsCdp = true };
+
+        vm.Apply(new CoverageEvent
+        {
+            V = ProtocolJson.ProtocolVersion,
+            Pid = 0,
+            Covered = [new CoveredChannel { Channel = "page Date.now", Calls = 5 }],
+        });
+        vm.Apply(new CoverageEvent
+        {
+            V = ProtocolJson.ProtocolVersion,
+            Pid = 1,
+            Covered = [new CoveredChannel { Channel = "page Date.now", Calls = 9 }],
+        });
+
+        Assert.Equal(2, vm.Covered.Count);
+        Assert.Contains(vm.Covered, r => r.Contains("context 0", StringComparison.Ordinal)
+                                      && r.Contains("×5", StringComparison.Ordinal));
+        Assert.Contains(vm.Covered, r => r.Contains("context 1", StringComparison.Ordinal)
+                                      && r.Contains("×9", StringComparison.Ordinal));
+        // Still never summed across contexts (rule 4) - two rows, each with its own count.
+        Assert.DoesNotContain(vm.Covered, r => r.Contains("×14", StringComparison.Ordinal));
+    }
+
+    /// <summary>The native branch is unchanged: an OS process is already named by its pid in the panel's
+    /// own layout, and prefixing there would be noise the CDP case needs and this one does not.</summary>
+    [Fact]
+    public void Native_coverage_rows_are_not_tagged_with_a_context()
+    {
+        var vm = new SessionViewModel();
+
+        vm.Apply(Coverage(pid: 4242, "GetSystemTimeAsFileTime", 7));
+
+        Assert.DoesNotContain(vm.Covered, r => r.Contains("context", StringComparison.Ordinal));
+    }
+
     [Fact]
     public void Is_running_follows_the_status()
     {
