@@ -279,6 +279,16 @@ pub enum EvalError {
     /// name step 1 - a step the expression may not even have, sending the reader to look at the
     /// wrong thing. Only `AbsoluteUtc` can produce it, because it is the only base that converts.
     BaseOverflow,
+    /// The base is not a civil date at all: a month outside 1..=12, or a day that month cannot have.
+    ///
+    /// `CivilDateTime` has public fields and `eval` is public API, so a caller can hand over fields no
+    /// parser ever produced. The year was checked and the rest was not, which left the month running
+    /// through arithmetic written for 1..=12: `(month - 1)` underflows on 0 in `apply_snap`, `metadata`
+    /// and `mask_token`, and `MONTH_ABBR[month - 1]` indexes past its end above 12. Unreachable through
+    /// every surface this build ships - all of them go through `parse_civil` - so this is about the API
+    /// keeping the promise its own doc comment makes, on a horizon where a second consumer is likely
+    /// (rule 28).
+    BaseNotACivilDate,
     /// A step COMPUTED a year outside that band. Its own variant, and not folded into `Overflow`,
     /// because nothing overflowed: `+300000y` from 2026 is an exact, representable number that this
     /// build simply will not compute a calendar on, and saying "overflow" would point at the wrong
@@ -303,6 +313,13 @@ pub fn parse_civil_datetime(s: &str) -> Result<CivilDateTime, String> {
     })
 }
 
+/// Whether these civil fields name a day that exists: a month in 1..=12, and a day within that
+/// month's length in that year. The TIME fields are not checked here - `set_time` has its own
+/// refusal, and every other path builds them from arithmetic that cannot leave the range.
+fn is_a_civil_date(c: &CivilDateTime) -> bool {
+    (1..=12).contains(&c.month) && c.day >= 1 && c.day <= last_day_of_month(c.year, c.month as i64)
+}
+
 /// Evaluate an expression against a context. Folds each step onto the running civil
 /// value left to right, recording the value after each step.
 pub fn eval(expr: &MomentExpr, ctx: &EvalContext) -> Result<EvalOutcome, EvalError> {
@@ -323,6 +340,13 @@ pub fn eval(expr: &MomentExpr, ctx: &EvalContext) -> Result<EvalOutcome, EvalErr
     };
     if !crate::civil_year_in_band(base.year) {
         return Err(EvalError::BaseYearOutOfRange);
+    }
+    // The other two civil fields, for the same reason the year is checked: this is public API over a
+    // struct with public fields, so "the caller already validated it" is an assumption rather than a
+    // fact. Below here the month indexes month-name tables and feeds `(month - 1)` arithmetic that has
+    // no answer for 0.
+    if !is_a_civil_date(&base) {
+        return Err(EvalError::BaseNotACivilDate);
     }
     let mut cur = base;
     let mut cur_bias = ctx.zone_bias_min;
@@ -2335,6 +2359,37 @@ mod tests {
         assert!(analyze_date("hello", 0).is_err());
         assert!(analyze_date("04/08/08", 0).is_err()); // year not four digits
         assert!(analyze_date("2008/08/04", 0).is_err()); // year-first numeric not recognised yet
+    }
+
+    /// `eval` is public API over a struct with public fields, so "the caller validated it" is an
+    /// assumption, not a fact. It checked the year and nothing else - and below that check the month
+    /// indexes month-name tables and feeds `(month - 1)` arithmetic with no answer for 0.
+    ///
+    /// Unreachable through every surface this build ships (all of them parse the base), which is why
+    /// this is a low-priority fix and not a bug report. It is fixed because the doc comment on `eval`
+    /// already promised it, and because a second consumer of this crate is likely on a decade horizon.
+    #[test]
+    fn eval_refuses_a_base_that_is_not_a_real_date() {
+        let with_base = |c: CivilDateTime| {
+            eval(
+                &MomentExpr { base: Base::Absolute(c), steps: vec![Step::Snap(SnapTarget::StartOfQuarter)] },
+                &EvalContext { now: dt(2026, 1, 1, 0, 0, 0), zone_bias_min: 0, calendar: None },
+            )
+        };
+
+        // Month 0: `(month - 1) / 3` in the quarter arithmetic has no answer for it.
+        assert_eq!(with_base(dt(2026, 0, 15, 0, 0, 0)), Err(EvalError::BaseNotACivilDate));
+        // Month 13: indexes past the end of the month-name tables.
+        assert_eq!(with_base(dt(2026, 13, 15, 0, 0, 0)), Err(EvalError::BaseNotACivilDate));
+        // A day that month cannot have, and the leap-year case that makes it a real rule.
+        assert_eq!(with_base(dt(2026, 4, 31, 0, 0, 0)), Err(EvalError::BaseNotACivilDate));
+        assert_eq!(with_base(dt(2026, 2, 29, 0, 0, 0)), Err(EvalError::BaseNotACivilDate));
+        assert_eq!(with_base(dt(2026, 1, 0, 0, 0, 0)), Err(EvalError::BaseNotACivilDate));
+
+        // February 29 in a LEAP year is a real date and still passes - the check is about impossible
+        // dates, not about unusual ones.
+        assert!(with_base(dt(2024, 2, 29, 0, 0, 0)).is_ok());
+        assert!(with_base(dt(2026, 12, 31, 0, 0, 0)).is_ok());
     }
 
     /// A number that cannot be a date gets a refusal about its RANGE, not about its format.

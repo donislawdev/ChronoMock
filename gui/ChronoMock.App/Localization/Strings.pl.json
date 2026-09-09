@@ -376,6 +376,7 @@
   "calc.err.bad_set_time": "Krok ustawienia godziny ma godzinę, minutę albo sekundę poza zakresem.",
   "calc.err.year_out_of_range": "Wynik wypada w roku spoza zakresu, na którym ta wersja liczy (od -262143 do 262143).",
   "calc.err.base_overflow": "Punkt startowy w UTC wskazuje moment spoza zakresu, jaki ta wersja potrafi wyrazić.",
+  "calc.err.base_not_a_date": "Punkt startowy nie jest prawdziwą datą - sprawdź w nim miesiąc i dzień.",
   "calc.err.analyze_unrecognized": "To nie jest format daty, który analiza rozpoznaje. Czyta ISO (2026-01-31), daty liczbowe z czterocyfrowym rokiem (31.01.2026) oraz samą liczbę jako znacznik czasu uniksowego.",
   "calc.err.preset_not_for_calculator": "Ten preset opisuje sesję podmiany czasu, a nie datę do policzenia.",
   // Two failures that are not the engine's: its answer arrived and was not usable. Rare, and worth saying
