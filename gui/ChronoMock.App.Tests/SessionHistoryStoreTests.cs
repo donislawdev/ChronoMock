@@ -50,6 +50,34 @@ public sealed class SessionHistoryStoreTests : IDisposable
         Assert.Empty(Directory.GetFiles(_dir, "*.tmp"));
     }
 
+    /// <summary>
+    /// 🔴 Every concurrent append has to SURVIVE, not merely complete.
+    ///
+    /// The test above asserts that nothing throws and the file is not empty, and both were already
+    /// true of the broken version: the write is atomic, so the file is never half-written, but the
+    /// read-modify-write around it was not serialised. Two instances read the same list, both appended
+    /// their own record, and the second move won - nothing failed, nothing retried, and one session
+    /// was simply not in the history. A test that counts is what tells those two states apart.
+    /// </summary>
+    [Fact]
+    public async Task Every_concurrent_append_survives_rather_than_the_last_one_winning()
+    {
+        Directory.CreateDirectory(_dir);
+        const int writers = 8;
+        var tasks = Enumerable.Range(0, writers)
+            .Select(i => Task.Run(() => new FileSessionHistoryStore(_dir).Append(Record($"app{i}"))))
+            .ToArray();
+
+        await Task.WhenAll(tasks);
+
+        var loaded = new FileSessionHistoryStore(_dir).Load();
+        Assert.Equal(writers, loaded.Count);
+        for (var i = 0; i < writers; i++)
+        {
+            Assert.Contains(loaded, r => r.TargetName == $"app{i}.exe");
+        }
+    }
+
     [Fact]
     public void Append_then_load_round_trips_the_records_in_order()
     {

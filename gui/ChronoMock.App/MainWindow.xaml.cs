@@ -46,7 +46,7 @@ public partial class MainWindow : FluentWindow
         }
 
         // Closing the window ends the session: disposing the client stops the core, and the hook
-        // self-detaches so the target reverts to real time on its own (plasterek 10) - we never kill it.
+        // self-detaches so the target reverts to real time on its own (slice 10) - we never kill it.
         // Done in Closing, with a bounded wait, rather than as an async-void handler on Closed: WPF does
         // not await such a handler, so the process could exit mid-shutdown. It survived on the core seeing
         // EOF on stdin and cleaning up by itself, which is luck, not a design. The wait is bounded because

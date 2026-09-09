@@ -300,18 +300,23 @@ fn render_head(
 
     if page.meta.indexable {
         h.push_str(&format!("<link rel=\"canonical\" href=\"{}\">\n", esc(&url)));
+        // Escaped like every other attribute in this function. These three interpolations were the
+        // only ones that were not, sitting between neighbours that were - and a rule with three
+        // exceptions is not a rule anyone can apply. Nothing in the config reaches them today, which
+        // is exactly why the inconsistency would have survived until the first value that did.
         for l in &cfg.languages {
             if let Some(p) = page.url_path(l) {
                 h.push_str(&format!(
-                    "<link rel=\"alternate\" hreflang=\"{l}\" href=\"{}{p}\">\n",
-                    cfg.host
+                    "<link rel=\"alternate\" hreflang=\"{}\" href=\"{}\">\n",
+                    esc(l),
+                    esc(&format!("{}{p}", cfg.host))
                 ));
             }
         }
         if let Some(p) = page.url_path(ROOT_LANGUAGE) {
             h.push_str(&format!(
-                "<link rel=\"alternate\" hreflang=\"x-default\" href=\"{}{p}\">\n",
-                cfg.host
+                "<link rel=\"alternate\" hreflang=\"x-default\" href=\"{}\">\n",
+                esc(&format!("{}{p}", cfg.host))
             ));
         }
     } else {

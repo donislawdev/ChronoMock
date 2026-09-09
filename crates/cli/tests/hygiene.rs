@@ -1081,6 +1081,63 @@ fn is_comment(line: &str) -> bool {
     trimmed.starts_with("//") || trimmed.starts_with("<!--") || trimmed.starts_with("///")
 }
 
+/// The comment part of a line, whether it starts the line or trails code.
+///
+/// 🔴 `is_comment` above answers "does this line BEGIN with a comment", and the language scan used it
+/// as if it answered "does this line contain one". A trailing `// ...` after code was therefore
+/// outside the guard entirely - it could say anything in any language and this file would pass.
+///
+/// 🔴 The first version of this split on the first `//` and claimed in a comment that a `//` inside a
+/// string literal was a safe false positive, "because the URLs in this codebase hold no Polish
+/// letters". Running it said otherwise at once: a CDP probe builds a URL with `"ó".repeat(60)` as a
+/// deliberate over-long path, and `site/i18n/pl.json` uses `"//"` as a KEY for its note fields, whose
+/// values are Polish because that file is the Polish half of the site. Three false alarms in the
+/// first run, from an assumption written down as a fact.
+///
+/// So a `//` with an odd number of quotes before it is inside a string and is not a comment. Naive
+/// against an escaped quote, and that stays naive on purpose: the alternative is a string parser per
+/// language in a guard whose job is to read prose.
+fn comment_part(line: &str) -> Option<&str> {
+    if is_comment(line) {
+        return Some(line);
+    }
+    let bytes = line.as_bytes();
+    let mut quotes = 0usize;
+    let mut i = 0;
+    while i + 1 < bytes.len() {
+        match bytes[i] {
+            b'"' => quotes += 1,
+            b'/' if bytes[i + 1] == b'/' && quotes.is_multiple_of(2) => return Some(&line[i..]),
+            _ => {}
+        }
+        i += 1;
+    }
+    None
+}
+
+/// Polish words that survive without their diacritics, for a scan that would otherwise miss them.
+///
+/// 🔴 The letter scan below catches `zażółć` and nothing about `plasterek`. Both are Polish in a
+/// repository whose language is English (rules 9 and 14), and the second kind is what actually
+/// accumulated: three uses of `plasterek` and one `jawne` dropped into an English sentence, all four
+/// invisible to a guard that was green the whole time. A guard that is green and does not look is the
+/// shape rule 12 calls worse than none.
+///
+/// The list only grows, like `FILE_SUFFIXES` above it. Every entry has to be a word that cannot be
+/// English - `to`, `me` and `pole` are Polish too, and are not here, because a list that reddens on
+/// English prose gets suppressed rather than fixed.
+/// Whether `haystack` holds `word` as a WHOLE word. Substring matching would redden on English that
+/// merely contains the letters ("sonda" inside a longer identifier), and a guard with false alarms is
+/// a guard that gets suppressed.
+fn contains_word(haystack: &str, word: &str) -> bool {
+    haystack.split(|c: char| !c.is_alphanumeric()).any(|w| w == word)
+}
+
+const POLISH_WORDS_WITHOUT_DIACRITICS: [&str; 12] = [
+    "plasterek", "jawne", "sonda", "straznik", "bramka", "wlasciciel", "zmierzone", "cisza",
+    "wiec", "dlatego", "poniewaz", "kolejnosc",
+];
+
 /// Untouchable rules 9 and 14: comments in the repository are English, without exception.
 ///
 /// VALUES are a different question and are deliberately not checked. `Strings.pl.json` is Polish
@@ -1103,7 +1160,15 @@ fn every_comment_in_the_repository_is_english() {
             continue;
         };
         for (number, line) in text.lines().enumerate() {
-            if is_comment(line) && line.chars().any(|c| POLISH_LETTERS.contains(&c)) {
+            let Some(comment) = comment_part(line) else { continue };
+            let by_letter = comment.chars().any(|c| POLISH_LETTERS.contains(&c));
+            // Words too, because a Polish word with no diacritics in it looks exactly like English to
+            // the letter scan - and that is the kind this repository actually accumulated.
+            let lowered = comment.to_ascii_lowercase();
+            let by_word = POLISH_WORDS_WITHOUT_DIACRITICS
+                .iter()
+                .any(|w| contains_word(&lowered, w));
+            if by_letter || by_word {
                 offenders.push(format!("{}:{}", rel(path), number + 1));
             }
         }

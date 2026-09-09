@@ -125,7 +125,7 @@ impl Verdict {
     /// exactly the pair `(has_covered, has_uncovered)` - the family ORs those bits across
     /// processes, so the family `works` only when something is covered and nothing is left
     /// uncovered anywhere (untouchable rule 4 at the session level). This aggregates
-    /// JUDGMENTS, never call counts - per-process reports stay separate (plasterek 11). OR
+    /// JUDGMENTS, never call counts - per-process reports stay separate (slice 11). OR
     /// is commutative and associative, so accumulation order does not matter, and coverage
     /// only grows, so the fold is monotonic.
     pub fn combine(self, other: Verdict) -> Verdict {

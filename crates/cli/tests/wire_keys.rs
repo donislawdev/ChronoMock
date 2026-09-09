@@ -77,7 +77,7 @@ fn is_key_shaped(s: &str) -> bool {
     {
         return false;
     }
-    // File names share the shape. The list is short, jawne and only ever grows when a new kind of
+    // File names share the shape. The list is short, explicit and only ever grows when a new kind of
     // file name shows up in the sources (icudtl.dat, snapshot_blob.bin, v8_context_snapshot.bin).
     const FILE_SUFFIXES: [&str; 7] = [".dat", ".bin", ".exe", ".dll", ".json", ".js", ".now"];
     !FILE_SUFFIXES.iter().any(|suffix| s.ends_with(suffix))

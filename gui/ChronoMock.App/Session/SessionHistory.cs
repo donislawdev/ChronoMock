@@ -163,7 +163,56 @@ public sealed class FileSessionHistoryStore : ISessionHistoryStore
         }
     }
 
+    /// <summary>
+    /// Serialises the read-modify-write below ACROSS PROCESSES.
+    ///
+    /// The write itself was already safe - a uniquely named scratch file and an atomic move, so the
+    /// file on disk is never half-written. What was not safe is the sequence: two portable instances
+    /// finishing a session at the same moment both read the same list, both appended their own record,
+    /// and the second move won. Nothing failed, nothing retried, and one session was simply not in the
+    /// history. The retry loop cannot see that, because both writes succeed.
+    ///
+    /// A named mutex is the same tool the mechanism uses for the session itself, and for the same
+    /// reason: the kernel releases it when its owner dies, so a killed instance cannot wedge the log
+    /// for the next one. Local\ scopes it to the session, which is where the file it protects lives.
+    /// </summary>
+    private const string WriteMutexName = @"Local\ChronoMock.History";
+
+    /// <summary>How long to wait for the other instance to finish its append. History is written once
+    /// at the end of a session and the whole cycle is milliseconds, so anything longer than this means
+    /// something is wrong rather than busy - and the write then goes ahead anyway, because losing this
+    /// record to be tidy would be the very failure this guards against.</summary>
+    private static readonly TimeSpan WriteMutexWait = TimeSpan.FromSeconds(5);
+
     public void Append(SessionRecord record)
+    {
+        using var gate = new Mutex(initiallyOwned: false, WriteMutexName);
+        var held = false;
+        try
+        {
+            // AbandonedMutexException means the previous holder died without releasing - we now hold it,
+            // and the file it left behind is a complete one either way (the move is atomic).
+            try
+            {
+                held = gate.WaitOne(WriteMutexWait);
+            }
+            catch (AbandonedMutexException)
+            {
+                held = true;
+            }
+
+            AppendUnderGate(record);
+        }
+        finally
+        {
+            if (held)
+            {
+                gate.ReleaseMutex();
+            }
+        }
+    }
+
+    private void AppendUnderGate(SessionRecord record)
     {
         var existing = ReadFile(out var unreadable);
         if (unreadable)

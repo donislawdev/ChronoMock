@@ -245,7 +245,7 @@ public sealed class CoreClient : IAsyncDisposable
                 }
 
                 // Give the core a moment to end cleanly, then take down just the core (not the target
-                // tree). The hook self-detaches when the core dies (plasterek 10), so the target reverts
+                // tree). The hook self-detaches when the core dies (slice 10), so the target reverts
                 // to real time on its own - we never kill the application under test.
                 using var grace = new CancellationTokenSource(TimeSpan.FromSeconds(2));
                 try
