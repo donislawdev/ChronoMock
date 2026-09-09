@@ -84,6 +84,64 @@ public sealed class SessionHistoryStoreTests : IDisposable
         Assert.True(File.Exists(path)); // a broken history is never deleted
     }
 
+    /// <summary>
+    /// Load promises not to delete a broken history, and it kept that promise - Append then broke it one
+    /// step later. It built its new list from Load's empty answer and wrote over the file, so the first
+    /// session recorded after a DOWNGRADE (a newer build's schema this one will not read) wiped the whole
+    /// log. The schema gate stopped this build from misreading the file and did nothing to stop it
+    /// destroying it.
+    /// </summary>
+    [Fact]
+    public void Append_sets_an_unreadable_history_aside_instead_of_writing_over_it()
+    {
+        Directory.CreateDirectory(_dir);
+        var path = Path.Combine(_dir, "sessions.json");
+        const string fromALaterBuild =
+            "{\"schema\":2,\"stability\":\"unstable\",\"sessions\":[{\"target_path\":\"Ledger.exe\","
+            + "\"moment_local\":\"2038-01-19T03:14:07\",\"tz_bias_min\":0,\"mode\":\"flow\","
+            + "\"verdict\":\"works\",\"ended_at_utc\":\"2026-09-03T10:00:00Z\"}]}";
+        File.WriteAllText(path, fromALaterBuild);
+
+        var store = new FileSessionHistoryStore(_dir);
+        store.Append(Record("Ledger"));
+
+        // The new session is recorded...
+        Assert.Equal("Ledger.exe", Assert.Single(store.Load()).TargetName);
+
+        // ...and the log it could not read is still on disk, under a name that says what it is.
+        var setAside = Directory.GetFiles(_dir, "sessions.json.unreadable-*");
+        Assert.Single(setAside);
+        Assert.Equal(fromALaterBuild, File.ReadAllText(setAside[0]));
+    }
+
+    /// <summary>The same for a file that is not JSON at all - the other way Load answers "not mine".</summary>
+    [Fact]
+    public void Append_sets_a_corrupt_history_aside_too()
+    {
+        Directory.CreateDirectory(_dir);
+        File.WriteAllText(Path.Combine(_dir, "sessions.json"), "{ this is not valid json");
+
+        new FileSessionHistoryStore(_dir).Append(Record("Ledger"));
+
+        Assert.Single(Directory.GetFiles(_dir, "sessions.json.unreadable-*"));
+    }
+
+    /// <summary>Setting aside happens ONCE: the second append finds an ordinary file and simply extends it,
+    /// rather than shuffling a fresh copy aside on every session for the rest of the install's life.</summary>
+    [Fact]
+    public void An_unreadable_history_is_set_aside_once_not_on_every_append()
+    {
+        Directory.CreateDirectory(_dir);
+        File.WriteAllText(Path.Combine(_dir, "sessions.json"), "{ this is not valid json");
+
+        var store = new FileSessionHistoryStore(_dir);
+        store.Append(Record("First"));
+        store.Append(Record("Second"));
+
+        Assert.Single(Directory.GetFiles(_dir, "sessions.json.unreadable-*"));
+        Assert.Equal(2, store.Load().Count); // both sessions are in the new log
+    }
+
     [Fact]
     public void Load_is_empty_and_keeps_the_file_when_the_schema_is_not_this_one()
     {

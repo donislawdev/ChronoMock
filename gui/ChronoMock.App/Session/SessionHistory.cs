@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.IO; // The WPF SDK trims System.IO from implicit usings (Path collides with Shapes.Path).
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -23,7 +24,12 @@ public interface ISessionHistoryStore
 
     /// <summary>Append one session and persist, keeping only the most recent <see cref="SessionHistoryLimits.Max"/>.
     /// Throws <see cref="IOException"/> or <see cref="UnauthorizedAccessException"/> when the location cannot
-    /// be written (e.g. a read-only drive) so the caller can say so out loud, never swallow it (rule 6).</summary>
+    /// be written (e.g. a read-only drive) so the caller can say so out loud, never swallow it (rule 6).
+    /// <para>
+    /// An existing store this build cannot read is SET ASIDE, never written over: <see cref="Load"/>
+    /// promises not to delete a broken history, and an append that overwrote it would have broken that
+    /// promise one step later.
+    /// </para></summary>
     void Append(SessionRecord record);
 
     /// <summary>Remove one recorded session (matched by value). Same write-failure contract as Append.</summary>
@@ -114,8 +120,20 @@ public sealed class FileSessionHistoryStore : ISessionHistoryStore
     /// instances - together they make every scratch file name unique.</summary>
     private static int _tempCounter;
 
-    public IReadOnlyList<SessionRecord> Load()
+    public IReadOnlyList<SessionRecord> Load() => ReadFile(out _);
+
+    /// <summary>
+    /// The records on disk, plus whether there IS a file here that this build could not read.
+    ///
+    /// Load answers only the first half, because a reader has nothing to do with the second. A WRITER does:
+    /// an unreadable file is still somebody's history, and overwriting it is a deletion however quietly it
+    /// happens. That is precisely what used to occur - Load returned empty, Append built its new list from
+    /// that empty, and the first session after a downgrade wiped the whole log the newer build had written.
+    /// The schema gate stopped this build from MISREADING the file and did nothing to stop it destroying it.
+    /// </summary>
+    private IReadOnlyList<SessionRecord> ReadFile(out bool unreadable)
     {
+        unreadable = false;
         if (!File.Exists(FilePath))
         {
             return [];
@@ -127,26 +145,61 @@ public sealed class FileSessionHistoryStore : ISessionHistoryStore
             // The schema gates the file, like the calendar and preset readers (R2-N10). The shape is marked
             // unstable, so a file written by a later build is not a history this one can read - starting
             // empty and leaving the file alone beats showing rows misread through an older shape.
-            return file is { Schema: Schema } ? file.Sessions : [];
+            if (file is { Schema: Schema })
+            {
+                return file.Sessions;
+            }
+
+            unreadable = true; // a real file, in a shape this build does not speak
+            return [];
         }
         catch (Exception e) when (e is JsonException or IOException or UnauthorizedAccessException)
         {
             // A corrupt OR unreadable history must not crash the app or be deleted - start empty and leave
             // the file be (the interface contract, rule 6). IOException covers a file locked by a second
             // portable instance - UnauthorizedAccessException a read-denied location.
+            unreadable = true;
             return [];
         }
     }
 
     public void Append(SessionRecord record)
     {
-        var sessions = new List<SessionRecord>(Load()) { record };
+        var existing = ReadFile(out var unreadable);
+        if (unreadable)
+        {
+            // Set it aside under a dated name instead of writing over it (rule 7 - nothing deletes itself).
+            // The ordinary way to get here is a DOWNGRADE: a newer build wrote a schema this one does not
+            // read, and the tester came back to compare. Their log survives, they can see where it went,
+            // and this session still gets recorded.
+            SetAsideUnreadableFile();
+            existing = [];
+        }
+
+        var sessions = new List<SessionRecord>(existing) { record };
         if (sessions.Count > SessionHistoryLimits.Max)
         {
             sessions.RemoveRange(0, sessions.Count - SessionHistoryLimits.Max); // drop the oldest
         }
 
         Write(sessions);
+    }
+
+    /// <summary>Rename the unreadable history out of the way, to a name that says what it is and cannot
+    /// collide with an earlier one. A move, never a copy-then-delete: on one volume it is atomic, so there
+    /// is no window in which both or neither exists.</summary>
+    private void SetAsideUnreadableFile()
+    {
+        var stamp = DateTime.UtcNow.ToString("yyyyMMdd-HHmmss", CultureInfo.InvariantCulture);
+        var target = $"{FilePath}.unreadable-{stamp}";
+        // Two sessions ending in the same second would land on one name, so the counter that already keeps
+        // scratch names apart does the same job here.
+        if (File.Exists(target))
+        {
+            target = $"{target}.{Interlocked.Increment(ref _tempCounter)}";
+        }
+
+        File.Move(FilePath, target);
     }
 
     public void Remove(SessionRecord record)
