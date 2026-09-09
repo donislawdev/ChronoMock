@@ -70,10 +70,24 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     private bool _launched;
     private bool _stopRequested;
     private string _historyError = string.Empty;
-    // Snapshot of the start moment/mode, taken at Start, so history and the summary record what was
-    // REQUESTED even after the moment or speed is changed in flight (rule 4 - the record is the start).
+    // Snapshot of the start setup, taken at Start, so history and the summary record what was REQUESTED
+    // even after the form is changed (rule 4 - the record is the start).
+    //
+    // 🔴 The target and the zone are in here for a REASON that the moment and the mode do not have. Those
+    // two can change IN FLIGHT (the moment becomes a jump, the mode a set_multiplier), which is the case the
+    // first two fields were written for. The target and the zone cannot - they are start-only, and the drop
+    // handler and every setup control gate on IsIdle. What they CAN do is change AFTER the session ends,
+    // because the form unlocks while the summary is still copyable (CanCopySummary holds for every status
+    // but Idle and Connecting). Reading them live then produced a report that carried one session's verdict
+    // under another session's target name and zone - evidence naming the wrong application, in the one
+    // artifact that leaves this tool and lands in somebody else's ticket.
+    //
+    // Null means "no session has started yet", and every reader falls back to the live value for it, so a
+    // view model that never ran (a unit test, a fresh window) reads exactly as it did before.
     private string _startMomentText = string.Empty;
     private ModeOption? _startMode;
+    private string? _startTargetPath;
+    private ZoneOption? _startZone;
     private string _inFlightErrorKey = string.Empty;
     private bool _applyingMultiplier; // guard: syncing the Mode dropdown from a state event must not re-send
 
@@ -1073,10 +1087,13 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
         CoreSession? session = null;
         try
         {
-            // Snapshot the start moment and mode NOW, before they can be changed in flight, so history and
-            // the summary always report what was REQUESTED (rule 4), not the last in-flight change.
+            // Snapshot the start setup NOW, so history, the summary and the diagnostics block always report
+            // what was REQUESTED (rule 4) - neither a later in-flight change nor an edit made after the
+            // session ended, while the form is unlocked and the summary is still copyable.
             _startMomentText = Moment.Canonical;
             _startMode = SelectedMode;
+            _startTargetPath = TargetPath;
+            _startZone = SelectedZone;
 
             // Build the plan by reading the target's PE header. Classify a TARGET problem here (RELEASE-007)
             // so it is not reported as a broken core install: a non-PE file yields InvalidOperationException
@@ -1286,6 +1303,22 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
         };
     }
 
+    /// <summary>The target the session STARTED on - the snapshot, falling back to the live path when no
+    /// session has started (a fresh window, a unit test). Every report reads this rather than
+    /// <see cref="TargetPath"/>, so none of them can name a target chosen after the run.</summary>
+    private string RequestedTargetPath => _startTargetPath ?? _targetPath ?? string.Empty;
+
+    /// <summary>The zone the session STARTED in, with the same fallback as
+    /// <see cref="RequestedTargetPath"/>.</summary>
+    private ZoneOption RequestedZone => _startZone ?? SelectedZone;
+
+    /// <summary>The moment the session STARTED at, with the same fallback. Canonical either way - the live
+    /// value comes from <see cref="MomentField"/>, which only ever holds a canonical string or nothing.</summary>
+    private string RequestedMoment => _startMomentText.Length > 0 ? _startMomentText : Moment.Canonical;
+
+    /// <summary>The mode the session STARTED in, with the same fallback.</summary>
+    private ModeOption RequestedMode => _startMode ?? SelectedMode;
+
     /// <summary>
     /// Compose the paste-into-ticket session summary (chrono-mock 7.2, 8.8) in the interface language. It
     /// mirrors the CLI evidence export (crates/cli render_evidence): a session that is anything other than a
@@ -1304,7 +1337,9 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
         }
 
         sb.Append(translate("report.title")).Append('\n');
-        sb.Append("  ").Append(translate("report.target")).Append(": ").Append(TargetName).Append('\n');
+        // The target the session RAN ON, not the one now in the form - see the snapshot fields.
+        sb.Append("  ").Append(translate("report.target")).Append(": ")
+          .Append(Path.GetFileName(RequestedTargetPath)).Append('\n');
 
         // Verdict headline: a vanish is an honest non-effect first, then the family/parent verdict, else none.
         if (_statusKind == SessionStatusKind.DidNotTakeEffect)
@@ -1369,11 +1404,13 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
         // Cleanup residue the core could not remove (ended.residue_keys) - reported, never hidden (rule 6).
         AppendList(sb, translate, "report.cleanup", _residueKeys, translateItems: true);
 
-        // The "requested" line is the START request (snapshot), even if the moment or speed changed live.
-        var reqMoment = _startMomentText.Length > 0 ? _startMomentText : Moment.Canonical;
-        var reqMode = _startMode ?? SelectedMode;
+        // The "requested" line is the START request (snapshot) throughout - moment, zone and mode alike.
         sb.Append("  ")
-          .Append(Fmt(translate("report.requested"), reqMoment, SelectedZone.Label, translate(reqMode.LabelKey)))
+          .Append(Fmt(
+              translate("report.requested"),
+              RequestedMoment,
+              RequestedZone.Label,
+              translate(RequestedMode.LabelKey)))
           .Append('\n');
 
         return sb.ToString();
@@ -1409,8 +1446,7 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     /// UI - this is data). Pure over the view state, so it is unit tested with a fake line list.</summary>
     internal string BuildDiagnosticsBlock(IEnumerable<string> lines)
     {
-        var mode = _startMode ?? SelectedMode;
-        var moment = _startMomentText.Length > 0 ? _startMomentText : Moment.Canonical;
+        var mode = RequestedMode;
         var modeToken = mode.Mode switch { "frozen" => "frozen", "flow" => "flow", _ => $"x{mode.Multiplier ?? 1}" };
 
         var sb = new StringBuilder();
@@ -1418,9 +1454,10 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
         sb.Append("  when:      ")
           .Append(DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture)).Append('\n');
         sb.Append("  status:    ").Append(_statusKind).Append(" (").Append(_statusKey).Append(")\n");
-        sb.Append("  target:    ").Append(_targetPath ?? "(none)").Append('\n');
-        sb.Append("  requested: ").Append(moment)
-          .Append(" (zone ").Append(SelectedZone.Label).Append(", mode ").Append(modeToken).Append(")\n");
+        var target = RequestedTargetPath;
+        sb.Append("  target:    ").Append(target.Length > 0 ? target : "(none)").Append('\n');
+        sb.Append("  requested: ").Append(RequestedMoment)
+          .Append(" (zone ").Append(RequestedZone.Label).Append(", mode ").Append(modeToken).Append(")\n");
 
         sb.Append("  core output:\n");
         var any = false;
@@ -1483,17 +1520,17 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     /// target is faked), so DateTime.UtcNow is the true end time.</summary>
     internal SessionRecord BuildRecord()
     {
-        // Record the START moment and mode (snapshot), not any in-flight change (rule 4). The zone is
-        // start-only (never changed in flight), so the live SelectedZone is the start zone. The snapshot
-        // is already canonical - the fallback (no session started, e.g. a unit test) canonicalizes too.
-        var mode = _startMode ?? SelectedMode;
-        var moment = _startMomentText.Length > 0 ? _startMomentText : Moment.Canonical;
+        // Record the START setup (snapshot), never an in-flight change and never a later edit (rule 4).
+        // This one is written from the Start finally, BEFORE the form unlocks, so reading live would have
+        // been correct here today - it reads the snapshot anyway, so the record does not depend on WHEN it
+        // happens to be built. The fallback (no session started, e.g. a unit test) is the live value.
+        var mode = RequestedMode;
 
         return new SessionRecord
         {
-            TargetPath = _targetPath ?? string.Empty,
-            MomentLocal = moment,
-            TzBiasMin = SelectedZone.BiasMinutes,
+            TargetPath = RequestedTargetPath,
+            MomentLocal = RequestedMoment,
+            TzBiasMin = RequestedZone.BiasMinutes,
             Mode = mode.Mode,
             Multiplier = mode.Multiplier,
             Verdict = RecordedVerdict(),

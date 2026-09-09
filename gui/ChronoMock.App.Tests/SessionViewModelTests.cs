@@ -625,6 +625,64 @@ public class SessionViewModelTests
         Assert.Contains("source.network_at_start", summary, StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// The summary is the one artifact that LEAVES this tool and lands in somebody else's ticket, so it has
+    /// to describe the session that RAN, not the form as it stands now. The two are reachable at once: the
+    /// form unlocks the moment a session ends, while the summary stays copyable for every status but Idle
+    /// and Connecting - so a tester lining up the next run and then copying the last one used to get a
+    /// report carrying one session's verdict under another session's target name and zone.
+    /// </summary>
+    [Fact]
+    public async Task The_summary_names_the_target_and_zone_the_session_ran_on_not_a_later_edit()
+    {
+        var vm = new SessionViewModel();
+        var ranOn = Path.Combine(Path.GetTempPath(), $"chrono-ran-{Guid.NewGuid():N}.exe");
+        var startZone = TimeInputs.Zones.First(z => z.BiasMinutes == 0);
+        vm.SetTarget(ranOn);
+        vm.SelectedZone = startZone;
+
+        // The file does not exist, so this ends as an error - but the snapshot is taken before the plan is
+        // built, which is the whole point: even a session that never launched reports what it asked for.
+        await vm.StartAsync();
+        Assert.True(vm.IsIdle, "the form is unlocked again, which is what makes the edit below possible");
+        Assert.True(vm.CanCopySummary, "and the summary is still copyable, which is what makes it a problem");
+
+        var laterZone = TimeInputs.Zones.First(z => z.BiasMinutes != startZone.BiasMinutes);
+        vm.SetTarget(Path.Combine(Path.GetTempPath(), $"chrono-next-{Guid.NewGuid():N}.exe"));
+        vm.SelectedZone = laterZone;
+
+        var summary = vm.BuildSummary(T());
+
+        Assert.Contains(Path.GetFileName(ranOn), summary, StringComparison.Ordinal);
+        Assert.Contains($"zone {startZone.Label}", summary, StringComparison.Ordinal);
+        Assert.DoesNotContain($"zone {laterZone.Label}", summary, StringComparison.Ordinal);
+    }
+
+    /// <summary>The same snapshot, in the diagnostics block and the history record - they are built inside
+    /// the Start finally, before the form unlocks, so reading live is correct there TODAY. Pinning them to
+    /// the snapshot is what stops that from depending on when they happen to be called.</summary>
+    [Fact]
+    public async Task The_diagnostics_block_and_the_history_record_also_carry_the_start_setup()
+    {
+        var vm = new SessionViewModel();
+        var ranOn = Path.Combine(Path.GetTempPath(), $"chrono-ran-{Guid.NewGuid():N}.exe");
+        var startZone = TimeInputs.Zones.First(z => z.BiasMinutes == 0);
+        vm.SetTarget(ranOn);
+        vm.SelectedZone = startZone;
+        await vm.StartAsync();
+
+        vm.SetTarget(Path.Combine(Path.GetTempPath(), $"chrono-next-{Guid.NewGuid():N}.exe"));
+        vm.SelectedZone = TimeInputs.Zones.First(z => z.BiasMinutes != startZone.BiasMinutes);
+
+        var block = vm.BuildDiagnosticsBlock([]);
+        Assert.Contains(ranOn, block, StringComparison.Ordinal);
+        Assert.Contains($"zone {startZone.Label}", block, StringComparison.Ordinal);
+
+        var record = vm.BuildRecord();
+        Assert.Equal(ranOn, record.TargetPath);
+        Assert.Equal(startZone.BiasMinutes, record.TzBiasMin);
+    }
+
     [Fact]
     public void Is_running_follows_the_status()
     {
