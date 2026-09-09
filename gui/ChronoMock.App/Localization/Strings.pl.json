@@ -146,6 +146,10 @@
   "protocol.no_command": "Rdzeń nie otrzymał komendy - sesja nie wystartowała.",
   "protocol.bad_command": "Rdzeń otrzymał błędną komendę - sesja nie wystartowała.",
   "protocol.bad_command_ignored": "Rdzeń nie odczytał komendy i ją pominął - sesja nadal trwa.",
+  // The two ways the command stream itself fails. They end the session, unlike a single unreadable command,
+  // and each names what the client sent rather than blaming the core, which is what the silence used to do.
+  "protocol.line_too_long": "Komenda wysłana do rdzenia była za długa, żeby ją odczytać, więc sesja się zakończyła.",
+  "protocol.stream_unreadable": "Rdzeń dostał bajty, których nie potrafi odczytać jako tekstu, więc sesja się zakończyła.",
   "protocol.unsupported_command": "Rdzeń otrzymał komendę, której w tym miejscu nie obsługuje, i ją pominął - sesja nadal trwa.",
   "protocol.expected_start": "Rdzeń oczekiwał komendy start - sesja nie wystartowała.",
 

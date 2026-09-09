@@ -147,6 +147,10 @@
   // Mid-session, unlike the two above: the session is still running, the line was simply not
   // readable. Reported rather than dropped, so a client waiting on `ack` is not left waiting.
   "protocol.bad_command_ignored": "The core could not read a command and ignored it - the session is still running.",
+  // The two ways the command stream itself fails. They end the session, unlike a single unreadable command,
+  // and each names what the client sent rather than blaming the core, which is what the silence used to do.
+  "protocol.line_too_long": "A command sent to the core was too long to read, so the session ended.",
+  "protocol.stream_unreadable": "The core received bytes it could not read as text, so the session ended.",
   "protocol.unsupported_command": "The core received a command it does not act on here and ignored it - the session is still running.",
   "protocol.expected_start": "The core expected a start command - the session did not start.",
 

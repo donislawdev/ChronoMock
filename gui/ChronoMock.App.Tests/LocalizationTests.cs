@@ -78,6 +78,8 @@ public class LocalizationTests
         "target.attach_failed", "target.bitness_mismatch", "session.already_active",
         "protocol.no_command", "protocol.bad_command",
         "protocol.bad_command_ignored",
+        // The command stream itself failing, which ENDS the session - unlike one unreadable command.
+        "protocol.line_too_long", "protocol.stream_unreadable",
         "protocol.unsupported_command", "protocol.expected_start",
     ];
 
