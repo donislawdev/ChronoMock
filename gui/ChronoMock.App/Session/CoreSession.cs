@@ -33,6 +33,10 @@ internal sealed class CoreSession : IAsyncDisposable
     /// <summary>The core's stderr, drained by dispose and captured for support (RELEASE-012).</summary>
     internal IReadOnlyCollection<string> Diagnostics => _client.Diagnostics;
 
+    /// <summary>How many stderr lines were dropped to stay under the client's cap - so a captured block
+    /// can say it is a tail rather than the whole of it (rule 6).</summary>
+    internal int DiagnosticsDropped => _client.DiagnosticsDropped;
+
     /// <summary>
     /// Connect to the core and complete the handshake. The returned session is ALWAYS non-null once the
     /// core process exists, even when the handshake refuses - the caller owns disposal either way, and a

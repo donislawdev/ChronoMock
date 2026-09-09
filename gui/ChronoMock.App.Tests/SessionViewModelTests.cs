@@ -1056,6 +1056,29 @@ public class SessionViewModelTests
         Assert.Contains("core stderr: hi", block, StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// A diagnostics block that is only the TAIL of the core's output has to say so, and say how much
+    /// is missing - a reader who takes it for the whole draws conclusions from an absence that was
+    /// never there (rule 6).
+    ///
+    /// 🔴 The old marker was a LINE enqueued once at the first drop. Enqueue appends and the trimming
+    /// dequeues from the front, so after another cap's worth of lines the marker reached the front and
+    /// was dropped itself - and the flag guarding it was already set, so it never came back. The block
+    /// then read as complete again, which is exactly what the marker existed to prevent.
+    /// </summary>
+    [Fact]
+    public void A_truncated_diagnostics_block_says_how_much_was_dropped()
+    {
+        var vm = new SessionViewModel();
+        vm.SetTarget(@"C:\apps\Foo.exe");
+
+        var whole = vm.BuildDiagnosticsBlock(["core stderr: one"], dropped: 0);
+        Assert.DoesNotContain("dropped", whole, StringComparison.Ordinal);
+
+        var tail = vm.BuildDiagnosticsBlock(["core stderr: one"], dropped: 137);
+        Assert.Contains("137 earlier line(s) dropped", tail, StringComparison.Ordinal);
+    }
+
     [Fact]
     public void A_read_only_medium_still_captures_diagnostics_without_a_saved_path()
     {

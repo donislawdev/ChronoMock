@@ -61,13 +61,18 @@ public partial class App : Application
         // Surface the failure and keep the app alive - a recoverable slip (one bad event, one bad preset)
         // should not take down the whole session. Marked handled so the dispatcher does not tear down.
         //
-        // Shown ONCE per run (R2-N12): a repeating exception - a binding that throws on every heartbeat -
-        // used to open a modal box per occurrence, and a window the user cannot out-click is worse than the
-        // fault it reports. The later ones are still handled, so the app stays up, and the first box has
-        // already named the failure.
-        if (!_reportedUnhandled)
+        // A modal box per occurrence is not an option (R2-N12): a repeating exception - a binding that
+        // throws on every heartbeat - opened one box per beat, and a window the user cannot out-click is
+        // worse than the fault it reports. But the fix for that was a flag set once per RUN, which
+        // silenced every later exception including UNRELATED ones. An early stumble in the preset list
+        // then muted a coverage failure an hour later, and the app went on looking healthy while every
+        // operation threw. That is rule 6 spread over a session.
+        //
+        // So the box is per SIGNATURE, not per run. A repeating fault still shows once - a genuinely new
+        // one is still reported, because it is new information and the reader has not seen it.
+        var signature = $"{e.Exception.GetType().FullName}|{e.Exception.StackTrace?.Split('\n').FirstOrDefault()?.Trim()}";
+        if (_reportedSignatures.Count < MaxReportedSignatures && _reportedSignatures.Add(signature))
         {
-            _reportedUnhandled = true;
             System.Windows.MessageBox.Show(
                 e.Exception.Message, "Chrono Mock",
                 System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
@@ -76,5 +81,12 @@ public partial class App : Application
         e.Handled = true;
     }
 
-    private bool _reportedUnhandled;
+    /// <summary>How many DISTINCT faults are reported before the app stops opening boxes. Past this many
+    /// different failures the interface is not recoverable in any useful sense, and the boxes have stopped
+    /// being information - one more would be noise on top of an app that is already broken.</summary>
+    private const int MaxReportedSignatures = 8;
+
+    /// <summary>Fault signatures already reported this run - type plus innermost frame, so a repeating
+    /// fault is one box and a genuinely different one is still heard.</summary>
+    private readonly HashSet<string> _reportedSignatures = new(StringComparer.Ordinal);
 }

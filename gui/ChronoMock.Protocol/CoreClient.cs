@@ -26,9 +26,24 @@ public sealed class CoreClient : IAsyncDisposable
     /// block, so it is capped and the OLDEST lines go - a failure is explained by what happened last.</summary>
     private const int MaxDiagnostics = 2000;
 
+    /// <summary>How many unread events the client will hold before it makes the reader block.
+    ///
+    /// Every other input channel in this tool is bounded - MAX_WS_BYTES, MAX_PROTOCOL_LINE,
+    /// MAX_QUEUED_EVENTS, the seqlock read budget, the business-day walk, MaxDiagnostics - and this one
+    /// was not, so a consumer that stopped draining (a UI thread parked on a modal dialog) grew it for
+    /// as long as the session ran. The core emits about one event a second, so the cap is thousands of
+    /// times what a healthy session queues, and BlockingFull is the right full-behaviour here: dropping
+    /// an event would lose a verdict or an `ended`, and back-pressure onto a core we started ourselves
+    /// costs nothing worse than a paused reader.</summary>
+    private const int MaxQueuedEvents = 4096;
+
     private readonly Process _process;
-    private readonly Channel<ChronoEvent> _events =
-        Channel.CreateUnbounded<ChronoEvent>(new UnboundedChannelOptions { SingleWriter = true });
+    private readonly Channel<ChronoEvent> _events = Channel.CreateBounded<ChronoEvent>(
+        new BoundedChannelOptions(MaxQueuedEvents)
+        {
+            SingleWriter = true,
+            FullMode = BoundedChannelFullMode.Wait,
+        });
     private readonly ConcurrentQueue<string> _diagnostics = new();
     private int _diagnosticsDropped;
     private readonly object _stdinLock = new();
@@ -269,19 +284,41 @@ public sealed class CoreClient : IAsyncDisposable
         _process.Dispose();
     }
 
-    /// <summary>Append one diagnostic line, dropping the oldest past the cap and leaving a single marker
-    /// so a truncated block never reads as a complete one.</summary>
+    /// <summary>
+    /// Append one diagnostic line, dropping the oldest past the cap and counting what was dropped.
+    ///
+    /// <para>
+    /// 🔴 The marker used to be a LINE, enqueued once when the first drop happened. Enqueue appends and
+    /// the trimming dequeues from the front, so after another <see cref="MaxDiagnostics"/> lines the
+    /// marker reached the front and was dropped itself - and the flag that guarded it was already set,
+    /// so it never came back. The block then read as complete again, which is exactly what it was
+    /// written to prevent. A counter cannot fall out of the queue, and it can say HOW MANY lines went,
+    /// which the marker never could.
+    /// </para>
+    /// </summary>
     private void AddDiagnostic(string line)
     {
         _diagnostics.Enqueue(line);
-        while (_diagnostics.Count > MaxDiagnostics && _diagnostics.TryDequeue(out _))
-        {
-            if (Interlocked.Exchange(ref _diagnosticsDropped, 1) == 0)
-            {
-                _diagnostics.Enqueue($"[older diagnostics dropped - keeping the last {MaxDiagnostics} lines]");
-            }
-        }
+        _diagnosticsDropped += TrimToCap(_diagnostics, MaxDiagnostics);
     }
+
+    /// <summary>Drop the oldest entries until the queue is within <paramref name="cap"/>, and say how many
+    /// went. Pure over the queue, so the rule this replaced - a marker line that fell out of its own queue
+    /// - is testable without a core process.</summary>
+    internal static int TrimToCap(ConcurrentQueue<string> queue, int cap)
+    {
+        var dropped = 0;
+        while (queue.Count > cap && queue.TryDequeue(out _))
+        {
+            dropped++;
+        }
+
+        return dropped;
+    }
+
+    /// <summary>How many diagnostic lines were dropped to stay under the cap, so a caller can say the
+    /// block is a tail rather than the whole of it. Zero means nothing was lost.</summary>
+    public int DiagnosticsDropped => Volatile.Read(ref _diagnosticsDropped);
 
     /// <summary>How long dispose waits to join a background reader before giving up on it. The read loop
     /// can be parked on a pipe the target still holds, so this is a bound on OUR shutdown, not on the

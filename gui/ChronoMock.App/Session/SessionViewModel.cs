@@ -1232,7 +1232,7 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
                 // session was anything but a clean success (RELEASE-012). A clean works session captures
                 // nothing. (On a Stop the core was already disposed off-thread, so this is best-effort -
                 // but a stopped healthy session has no error stderr to lose.)
-                CaptureDiagnostics(session.Diagnostics);
+                CaptureDiagnostics(session.Diagnostics, session.DiagnosticsDropped);
 
                 if (ReferenceEquals(_session, session))
                 {
@@ -1457,14 +1457,14 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     /// the StartAsync finally AFTER the client is disposed, so the core's stderr has been fully drained.
     /// Internal so a unit test can drive it with a fake line list and a fake log (no core process).
     /// </summary>
-    internal void CaptureDiagnostics(IEnumerable<string> lines)
+    internal void CaptureDiagnostics(IEnumerable<string> lines, int dropped = 0)
     {
         if (IsReliable)
         {
             return; // a clean works session needs no diagnostics - keep the button and the log out of it
         }
 
-        var block = BuildDiagnosticsBlock(lines);
+        var block = BuildDiagnosticsBlock(lines, dropped);
         DiagnosticsText = block;
         // Best-effort file: a read-only medium returns null, and the in-memory copy behind the button stands.
         var path = _diagnosticsLog.Save(block);
@@ -1478,7 +1478,7 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     /// the core's stderr and parse-error lines verbatim. English and stable, like the core's own stderr and
     /// the CLI report - it is a technical artifact for a bug report, not interface text (rule 15 governs the
     /// UI - this is data). Pure over the view state, so it is unit tested with a fake line list.</summary>
-    internal string BuildDiagnosticsBlock(IEnumerable<string> lines)
+    internal string BuildDiagnosticsBlock(IEnumerable<string> lines, int dropped = 0)
     {
         var mode = RequestedMode;
         var modeToken = mode.Mode switch { "frozen" => "frozen", "flow" => "flow", _ => $"x{mode.Multiplier ?? 1}" };
@@ -1504,6 +1504,16 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
         if (!any)
         {
             sb.Append("    (no diagnostic output)\n");
+        }
+
+        // A block that is a TAIL has to say so, and say how much is missing. The line count is capped
+        // so a chatty target cannot grow it without bound, and a reader who takes the tail for the
+        // whole of it draws conclusions from an absence that was never there (rule 6).
+        if (dropped > 0)
+        {
+            sb.Append("    [")
+              .Append(dropped.ToString(CultureInfo.InvariantCulture))
+              .Append(" earlier line(s) dropped - this is the tail of the core's output]\n");
         }
 
         return sb.ToString();
