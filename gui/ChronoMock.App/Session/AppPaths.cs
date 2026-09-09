@@ -37,4 +37,9 @@ internal static class AppPaths
 
     /// <summary>The shared preset catalogue directory.</summary>
     public static string PresetsDir => Path.Combine(DataRoot, "presets");
+
+    /// <summary>Client for the component register the About window shows, from the same core as the rest.</summary>
+    public static LicenseClient LicenceClient => IsPortable
+        ? LicenseClient.ForPortable(AppContext.BaseDirectory)
+        : LicenseClient.ForRepo(DevPaths.RepoRoot());
 }

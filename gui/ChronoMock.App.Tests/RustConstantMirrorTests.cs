@@ -1,6 +1,7 @@
 using System.IO; // The WPF SDK trims System.IO from implicit usings (Path collides with Shapes.Path).
 using System.Text.RegularExpressions;
 using ChronoMock.App.Calc;
+using ChronoMock.Protocol;
 
 namespace ChronoMock.App.Tests;
 
@@ -36,6 +37,40 @@ public class RustConstantMirrorTests
             $"expected exactly one match for {what} in the Rust source, found {matches.Count} - "
                 + "the guard is reading the wrong thing, which is worse than not reading it");
         return matches[0].Groups[1].Value;
+    }
+
+    /// <summary>
+    /// The About window states an SPDX identifier, and the workspace manifest declares one. Two halves of
+    /// one product naming different licences would be the worst kind of quiet wrong: nothing breaks, the
+    /// window looks authoritative, and it is telling a reader something untrue about their rights.
+    /// </summary>
+    [Fact]
+    public void The_licence_the_window_states_matches_the_one_the_workspace_declares()
+    {
+        var manifest = ReadRustSource("Cargo.toml");
+        var declared = CaptureOne(manifest, @"(?m)^license = ""([^""]+)""", "the workspace licence");
+
+        Assert.True(
+            declared == AppLicence.Spdx,
+            $"Cargo.toml declares {declared} but the About window states {AppLicence.Spdx} - "
+                + "change both together");
+    }
+
+    /// <summary>
+    /// The About window cuts the core's notice off its component listing at the first group heading, so
+    /// that the notice it has already stated in its own words does not appear a second time underneath.
+    /// If the core rewords that heading, the cut silently stops finding it and the window goes back to
+    /// showing everything twice - which looks like sloppiness rather than a bug, so nobody files it.
+    /// </summary>
+    [Fact]
+    public void The_component_heading_the_window_cuts_at_is_the_one_the_core_prints()
+    {
+        var cli = ReadRustSource("crates", "cli", "src", "cli.rs");
+
+        Assert.True(
+            cli.Contains(LicenseClient.FirstGroupHeading, StringComparison.Ordinal),
+            $"the core no longer prints \"{LicenseClient.FirstGroupHeading}\" - the About window cuts its "
+                + "component list at that heading, and without it the whole notice appears twice");
     }
 
     /// <summary>

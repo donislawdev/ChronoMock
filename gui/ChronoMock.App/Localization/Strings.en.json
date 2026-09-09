@@ -268,6 +268,38 @@
   "nav.substitution": "Substitution",
   "nav.calculator": "Calculator",
 
+  // The support link in the title bar. The tooltip names the destination and repeats the offline promise
+  // in the same breath, because this is the one control in the application that leads to the internet and
+  // a QA tool that swears it never connects has to be the one to raise that, not the user.
+  // The failure text is for a machine with nothing associated with web addresses. It says what did not
+  // happen and is followed by the address itself, so being unable to open it is not a dead end.
+  "support.button": "Donate",
+  "support.name": "Donate to support Chrono Mock",
+  "support.tip": "Opens donislawdev.com/support in your browser. Chrono Mock itself still connects to nothing.",
+  "support.failed_title": "The page could not be opened",
+  "support.failed": "Windows did not open a browser for this address. You can open it yourself:",
+
+  // The About window. It states what the command line has always stated through `chrono license` - the
+  // build, the copyright, the licence, the warranty disclaimer and every bundled component - because the
+  // window is the default way into this product and had none of it. The warranty sentence is the one GPL-3
+  // section 0 asks an interactive interface to carry, so it is quoted rather than paraphrased.
+  // "GPL-3.0-only" never appears here: it is an identifier, and a translated licence name would name a
+  // licence that does not exist.
+  "about.button": "About",
+  "about.name": "About Chrono Mock",
+  "about.tip": "The version, the licence, and what is inside this build.",
+  "about.title": "About Chrono Mock",
+  "about.licence_label": "Licence",
+  "about.warranty": "This program comes with ABSOLUTELY NO WARRANTY, to the extent permitted by law. It is free software, and you are welcome to redistribute it under the conditions of the GNU General Public License version 3.",
+  "about.licence_file": "Full licence text",
+  "about.notices_file": "Third-party notices",
+  "about.file_absent": "not beside this build",
+  "about.read_licence": "Read the licence online",
+  "about.read_licence_tip": "Opens gnu.org in your browser. Chrono Mock itself still connects to nothing.",
+  "about.components": "What is inside this build",
+  "about.components_asking": "Asking the core…",
+  "about.components_unavailable": "The core could not be asked, so nothing is listed here rather than a list that might be incomplete. The notices file named above carries the same information.",
+
   // Date calculator (chrono-mock 7.3). Slice G1 is the layout shell; more keys arrive with the wiring.
   "calc.presets_header": "Presets",
   "calc.filter_placeholder": "Filter scenarios…",

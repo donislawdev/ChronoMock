@@ -10,12 +10,18 @@
 //! # Two questions, two registers
 //!
 //! **Forbidden** names have no legitimate place in this workspace at all. An HTTP client, a
-//! download helper, a URL-opening shell verb: their presence is the finding, and there is no file
-//! that may carry one.
+//! download helper, a name lookup: their presence is the finding, and there is no file that may
+//! carry one.
 //!
 //! **Watched** names are legitimate somewhere and nowhere else. A TCP socket is how the Chromium
 //! mode talks to a debug port on this machine, and spawning a process is how every session starts
 //! its target. Each use is registered below with the reason, and a use outside that register fails.
+//!
+//! Opening an address through the shell sits in the second register rather than the first, and that
+//! is worth stating plainly because this file used to offer it as an example of the first. There is
+//! exactly one of them and there is meant to stay one: the support link in the title bar. It is a
+//! handover rather than a connection - the shell starts the browser the user already chose, and this
+//! application opens no socket either way - and it happens only when somebody presses the button.
 //!
 //! # What this canNOT prove, said plainly
 //!
@@ -173,6 +179,30 @@ const ALLOWED: &[(&str, &str, &str)] = &[
         "gui/ChronoMock.Protocol/CalcClient.cs",
         "spawn",
         "the same launch for a one-shot calculator query",
+    ),
+    (
+        "gui/ChronoMock.Protocol/LicenseClient.cs",
+        "spawn",
+        "the About window asking the core what is inside this build, by running `chrono license \
+         --components`. The same launch the calculator makes, for a register the core carries compiled \
+         in - a second copy of that list in C# would be the thing that drifts",
+    ),
+    (
+        "gui/ChronoMock.App/ExternalLinks.cs",
+        "spawn",
+        "the support link in the title bar, handed to the shell so that the browser the user already \
+         chose is what opens it. Every destination is a constant in that file and no caller supplies \
+         one, which is what stops a shell-open from being a way to start anything: the argument \
+         cannot come from a dropped file, a recent target or a preset",
+    ),
+    (
+        "gui/ChronoMock.App/ExternalLinks.cs",
+        "shell-open",
+        "the same single link, and the only shell-open in the product. It is the one control that \
+         leads off this machine, and it leads there only when somebody presses it. The application \
+         still opens no connection of its own, nothing it measured about the target goes anywhere, \
+         and the button names the address in its tooltip before it is pressed - a tool that promises \
+         to stay offline has to be the one to raise this, rather than let a user discover it",
     ),
 ];
 
