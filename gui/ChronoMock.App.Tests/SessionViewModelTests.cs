@@ -802,6 +802,44 @@ public class SessionViewModelTests
         Assert.Equal("2038-01-19T03:14:07", vm.Fake.Wall);
     }
 
+    /// <summary>
+    /// 🔴 The watchdog must time the gap BETWEEN events, not the gap plus however long the handler took.
+    ///
+    /// It used to arm a timer before each wait and let it run through the handling loop - and the
+    /// handler runs on the UI thread by design, so a stall there cancelled the token while events were
+    /// arriving perfectly well. `CancelAfter` does not un-cancel an already-cancelled source, so the
+    /// next wait threw at once and the session was reported as "core not responding": a statement about
+    /// the CORE, made because of a stall in the interface (rule 4).
+    ///
+    /// Modelled with a handler slower than the window, on a stream that keeps delivering.
+    /// </summary>
+    [Fact]
+    public async Task Watchdog_measures_the_gap_between_events_not_the_time_spent_handling_them()
+    {
+        var channel = Channel.CreateUnbounded<ChronoEvent>();
+        for (var i = 0; i < 3; i++)
+        {
+            await channel.Writer.WriteAsync(
+                State("2038-01-19T03:14:07", "2026-08-26T00:00:00", bias: 0, multiplier: 60),
+                TestContext.Current.CancellationToken);
+        }
+
+        channel.Writer.Complete();
+
+        var handled = 0;
+        var fired = await CoreSession.PumpAsync(
+            channel.Reader,
+            _ =>
+            {
+                handled++;
+                Thread.Sleep(80); // longer than the window below, as a parked UI thread would be
+            },
+            TimeSpan.FromMilliseconds(50));
+
+        Assert.Equal(3, handled);
+        Assert.False(fired, "the stream was delivering the whole time - the handler was simply slow");
+    }
+
     [Fact]
     public void A_works_session_summary_has_no_unreliable_banner_and_echoes_the_target()
     {
