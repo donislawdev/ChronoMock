@@ -308,6 +308,24 @@ public partial class MainWindow : FluentWindow
         }
     }
 
+    // The support link. The destination is chosen inside ExternalLinks and never here, so this method is
+    // not a place where a string could turn into something the shell runs.
+    //
+    // A machine with nothing associated with https is rare and real, and on one the shell simply refuses.
+    // Refusing quietly would leave a button that does nothing at all, so the failure is said out loud and
+    // the address goes into the message beneath it - a notice with no way out is half an answer, and the
+    // way out here is being able to type the address in by hand.
+    private void OnSupportClick(object sender, RoutedEventArgs e)
+    {
+        if (!ExternalLinks.TryOpenSupport())
+        {
+            Views.MessageDialog.Tell(
+                this,
+                Text("support.failed_title"),
+                Text("support.failed") + Environment.NewLine + Environment.NewLine + ExternalLinks.Support);
+        }
+    }
+
     // Resolve a translation key to text for a native dialog (rule 15) - falls back to the raw key if missing.
     private static string Text(string key) => Application.Current?.TryFindResource(key) as string ?? key;
 }

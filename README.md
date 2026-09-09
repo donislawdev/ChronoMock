@@ -395,6 +395,11 @@ problems go through [SECURITY.md](SECURITY.md) rather than the issue tracker.
 
 GPL-3.0. See [LICENSE](LICENSE). Free, no account, no telemetry, and it never talks to the internet.
 
+The window has one control that leads outside it: **Donate**, in the title bar. Pressing it hands
+`https://donislawdev.com/support/` to your browser, and your browser is what connects. Chrono Mock opens
+no socket either way, nothing it measured about your application goes anywhere, and the button says all
+of this in its tooltip before you press it.
+
 Chrono Mock is built with an AI-assisted workflow.
 
 ---

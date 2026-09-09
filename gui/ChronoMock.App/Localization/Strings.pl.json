@@ -267,6 +267,17 @@
   "nav.substitution": "Podmiana",
   "nav.calculator": "Kalkulator",
 
+  // The support link in the title bar. The tooltip names the destination and repeats the offline promise
+  // in the same breath, because this is the one control in the application that leads to the internet and
+  // a QA tool that swears it never connects has to be the one to raise that, not the user.
+  // The failure text is for a machine with nothing associated with web addresses. It says what did not
+  // happen and is followed by the address itself, so being unable to open it is not a dead end.
+  "support.button": "Wesprzyj",
+  "support.name": "Wesprzyj Chrono Mock",
+  "support.tip": "Otwiera donislawdev.com/support w Twojej przeglądarce. Sam Chrono Mock nadal z niczym się nie łączy.",
+  "support.failed_title": "Nie udało się otworzyć strony",
+  "support.failed": "Windows nie otworzył przeglądarki dla tego adresu. Możesz otworzyć go samodzielnie:",
+
   // Date calculator (chrono-mock 7.3). Slice G1 is the layout shell; more keys arrive with the wiring.
   "calc.presets_header": "Presety",
   "calc.filter_placeholder": "Filtruj scenariusze…",

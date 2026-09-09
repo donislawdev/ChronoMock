@@ -145,6 +145,55 @@
     </Setter>
   </Style>
 
+  <!-- A title-bar action: the veil mechanics of the primary action above, with no fill of its own.
+       Deliberately quiet. It shares a strip with the minimise, maximise and close buttons, and anything
+       filled or accented there would read as more important than Start, which is the one control on this
+       window that should pull the eye. Secondary text on no background is the same weight the window
+       title next to it carries, so the strip stays one thing rather than a button bolted onto it.
+
+       The veil is the only thing that moves, so hover and press never shift the label by a pixel in a
+       strip where a shifting control sits next to the close button. -->
+  <Style x:Key="TitleBarActionButton" TargetType="Button">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="Foreground" Value="{DynamicResource BrushTextSecondary}" />
+    <Setter Property="FontSize" Value="{DynamicResource FontSizeCaption}" />
+    <Setter Property="Padding" Value="{StaticResource SpaceSm}" />
+    <Setter Property="Cursor" Value="Hand" />
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="Button">
+          <Grid>
+            <Border x:Name="Fill" Background="{TemplateBinding Background}"
+                    BorderBrush="Transparent" BorderThickness="{StaticResource StrokeThinEdge}"
+                    CornerRadius="{StaticResource RadiusSm}" SnapsToDevicePixels="True" />
+            <Border x:Name="Veil" Background="{DynamicResource BrushTextPrimary}" Opacity="0"
+                    CornerRadius="{StaticResource RadiusSm}" IsHitTestVisible="False" />
+            <ContentPresenter Margin="{TemplateBinding Padding}" RecognizesAccessKey="True"
+                              HorizontalAlignment="Center" VerticalAlignment="Center" />
+          </Grid>
+          <ControlTemplate.Triggers>
+            <!-- Hover brightens the label as well as the ground. On a control this quiet the veil alone
+                 is easy to miss, and the label going from secondary to primary is what says "this is a
+                 button" to somebody who has not hovered it before. -->
+            <Trigger Property="IsMouseOver" Value="True">
+              <Setter TargetName="Veil" Property="Opacity" Value="0.1" />
+              <Setter Property="Foreground" Value="{DynamicResource BrushTextPrimary}" />
+            </Trigger>
+            <Trigger Property="IsPressed" Value="True">
+              <Setter TargetName="Veil" Property="Opacity" Value="0.18" />
+            </Trigger>
+            <!-- The focus ring matters more here than on a filled button: keyboard users reach this
+                 through a strip whose other buttons are drawn by Windows, not by us. -->
+            <Trigger Property="IsKeyboardFocused" Value="True">
+              <Setter TargetName="Fill" Property="BorderBrush" Value="{DynamicResource BrushFocusRing}" />
+              <Setter Property="Foreground" Value="{DynamicResource BrushTextPrimary}" />
+            </Trigger>
+          </ControlTemplate.Triggers>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+
   <!-- Tooltip: dark surface, readable text, wrapped - the default WPF tooltip is a light-yellow box that
        is jarring and low-contrast on the dark base. Content is a translation key's text (rule 15). -->
   <Style TargetType="ToolTip">
