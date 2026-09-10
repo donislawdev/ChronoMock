@@ -25,7 +25,7 @@ body:
         window, the title bar carries the version, or in PowerShell next to the
         unzipped build:
         `(Get-Item .\ChronoMock.exe).VersionInfo.ProductVersion`.
-      placeholder: "chrono 0.1.0 (x64, protocol 1)"
+      placeholder: "chrono 0.2.0 (x64, protocol 1)"
     validations:
       required: true
   - type: dropdown

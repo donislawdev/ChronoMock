@@ -132,7 +132,7 @@ into its own data, and no tool can undo that - the README says so before you sta
 
 ## Verifying a download
 
-From the release after v0.1.0, each one carries four things beside the archives:
+From v0.2.0 onward, each release carries four things beside the archives:
 
 - **`SHA256SUMS`** - the hash of every published file.
 - **A bill of materials per package** (`*.spdx.json`, SPDX 2.3) listing every

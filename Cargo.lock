@@ -14,7 +14,7 @@ dependencies = [
 
 [[package]]
 name = "chrono-cli"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "chrono-core",
  "chrono-mech",
@@ -28,15 +28,15 @@ dependencies = [
 
 [[package]]
 name = "chrono-core"
-version = "0.1.0"
+version = "0.2.0"
 
 [[package]]
 name = "chrono-ctl"
-version = "0.1.0"
+version = "0.2.0"
 
 [[package]]
 name = "chrono-hook"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "chrono-ctl",
  "minhook",
@@ -45,7 +45,7 @@ dependencies = [
 
 [[package]]
 name = "chrono-mech"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "chrono-core",
  "chrono-ctl",
@@ -54,7 +54,7 @@ dependencies = [
 
 [[package]]
 name = "chrono-proto"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -62,7 +62,7 @@ dependencies = [
 
 [[package]]
 name = "chrono-site"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "chrono-ctl",
  "serde",
