@@ -326,9 +326,18 @@ foreach ($archive in $archives) {
     }
     if (-not $DryRun) {
         # Exactly the files we meant to sign changed state, and nobody else's signature broke.
+        # 🔴 The comparison list is $OURS VERBATIM. Get-SignatureStates keys relative to the
+        # directory the archive was expanded INTO, and each archive carries its own top folder, so
+        # its keys have exactly the shape $OURS uses to find these files a few lines above - which
+        # Assert-Path already proved when it resolved every one of them. Deriving a second shape by
+        # stripping that folder is what broke the first signing run: measured, the stripped list
+        # matched 0 of 7 keys in the window archive and 0 of 4 in the command line one, so every
+        # file that had just been signed looked like one we should never have touched. A check that
+        # rebuilds the value it is checking against agrees with its own arithmetic and with nothing
+        # on disk. Note that -DryRun skips this whole block, so a dry run could not have caught it.
         $after = Get-SignatureStates $unpacked[$archive.Name]
         $changed = @($after.Keys | Where-Object { $after[$_] -ne $before[$archive.Name][$_] })
-        $expected = @($OURS[$archive.Name] | ForEach-Object { $_ -replace '^[^/]+/', '' })
+        $expected = @($OURS[$archive.Name])
         $unexpected = @($changed | Where-Object { $expected -notcontains $_ })
         if ($unexpected) {
             throw ("sign-release: signing changed files it should not have touched in $($archive.Name): " +
