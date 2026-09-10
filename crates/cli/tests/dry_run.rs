@@ -128,40 +128,70 @@ fn the_same_command_line_without_the_flag_does_start_the_target() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-/// The probe above needs an artifact `cargo test` does not build, so CI has to build it first. That
-/// ordering is a precondition living in another file, and nothing else would notice it leaving:
-/// `tools/gates.ps1` builds too, so the local gates would stay green while every push went red.
-/// This is how that was found in the first place.
+/// The probe above needs an artifact `cargo test` does not build, so whatever runs the workspace
+/// tests has to build it first. That ordering is a precondition living in other files, and nothing
+/// else would notice it leaving: `tools/gates.ps1` builds too, so the local gates would stay green
+/// while every clean machine went red. This is how that was found in the first place.
 ///
-/// The needle is the `run:` line rather than the two words, because a bare `cargo build` is also in
-/// the comment that explains the step and in two release-build steps below it. An assertion that
-/// prose about itself can satisfy is not an assertion.
+/// It is checked in EVERY committed file that runs those tests, and not only in CI, because the
+/// release packaging script was missed when CI was fixed. Phase A of a release calls that script,
+/// so the first tagged release failed on precisely the fault this guard exists for, with the guard
+/// green beside it. A guard that watches one of two doors reports on the door, not on the house.
+///
+/// The needle is the START of the line rather than the two words anywhere in it, because a bare
+/// `cargo build` is also in the comments that explain these steps and in two release-build steps.
+/// An assertion that prose about itself can satisfy is not an assertion.
 #[test]
-fn ci_still_builds_the_debug_artifacts_before_it_runs_the_tests() {
-    let workflow = std::fs::read_to_string(
-        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("..")
-            .join("..")
-            .join(".github")
-            .join("workflows")
-            .join("ci.yml"),
-    )
-    .expect("the CI workflow is readable");
+fn every_committed_runner_builds_the_debug_artifacts_before_it_runs_the_tests() {
+    // Both doors into the workspace tests. `tools/gates.ps1` is deliberately absent: it lives
+    // outside the repository, so a clean clone could not read it and this would fail for the
+    // wrong reason - which is its own kind of lie about what is guarded.
+    const RUNNERS: [&str; 2] = [".github/workflows/ci.yml", "packaging/build-dist.ps1"];
 
-    let build = workflow.find("run: cargo build --workspace");
-    let test = workflow.find("run: cargo test --workspace");
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("..");
 
-    assert!(
-        build.is_some(),
-        "no CI step builds the debug artifacts any more, so the probe that drives a real session \
-         will fail on a clean runner with the product's message about an incomplete installation"
-    );
-    assert!(test.is_some(), "no CI step runs the Rust tests any more");
-    assert!(
-        build < test,
-        "CI builds the debug artifacts AFTER running the tests, which is the same as not building \
-         them: the session probe reads the directory as it is when it runs"
-    );
+    for runner in RUNNERS {
+        let text = std::fs::read_to_string(root.join(runner))
+            .unwrap_or_else(|e| panic!("{runner} is readable: {e}"));
+
+        let mut build = None;
+        let mut test = None;
+        for (index, line) in text.lines().enumerate() {
+            // A YAML step writes `- run: cargo ...` and a PowerShell script writes the command
+            // bare. Stripping only those two prefixes keeps a comment, which starts with `#`,
+            // out of reach of the match.
+            let command = line
+                .trim_start()
+                .trim_start_matches("- ")
+                .trim_start()
+                .trim_start_matches("run: ")
+                .trim_start();
+            if build.is_none() && command.starts_with("cargo build --workspace") {
+                build = Some(index);
+            }
+            if test.is_none() && command.starts_with("cargo test --workspace") {
+                test = Some(index);
+            }
+        }
+
+        let Some(test) = test else {
+            panic!("{runner} no longer runs the workspace tests, so this guard is watching nothing")
+        };
+        let Some(build) = build else {
+            panic!(
+                "{runner} runs the workspace tests without building the debug artifacts first, so \
+                 the probe that drives a real session fails on any clean machine with the \
+                 product's message about an incomplete installation"
+            )
+        };
+        assert!(
+            build < test,
+            "{runner} builds the debug artifacts AFTER running the tests, which is the same as \
+             not building them: the session probe reads the directory as it is when it runs"
+        );
+    }
 }
 
 /// A path with a directory component that holds no file is a fact the plan can establish without

@@ -100,6 +100,14 @@ if (-not $SkipGates) {
         if ($LASTEXITCODE -ne 0) { throw "cargo deny failed with exit $LASTEXITCODE" }
         cargo clippy --workspace --all-targets -- -D warnings
         if ($LASTEXITCODE -ne 0) { throw "cargo clippy failed with exit $LASTEXITCODE" }
+        # `cargo test` compiles chrono-hook as a test harness and never lands the cdylib, so the
+        # probe that drives a real session finds no target/debug/chrono_hook.dll and fails. It fails
+        # on a CLEAN machine only - a developer box still has one from an earlier build - which is
+        # why this was invisible here for so long. CI learned to build first and this script did not,
+        # and phase A of a release calls this script, so the first tagged release died on this line.
+        # Guarded by every_committed_runner_builds_the_debug_artifacts_before_it_runs_the_tests.
+        cargo build --workspace
+        if ($LASTEXITCODE -ne 0) { throw "cargo build (debug) failed with exit $LASTEXITCODE" }
         cargo test --workspace
         if ($LASTEXITCODE -ne 0) { throw "cargo test failed with exit $LASTEXITCODE" }
         dotnet format (Join-Path $root 'gui/ChronoMock.slnx') --verify-no-changes
