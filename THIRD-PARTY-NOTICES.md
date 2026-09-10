@@ -57,8 +57,8 @@ formality: two of the three are MIT, and MIT asks that its notice travel with ev
 
 | Pack | Version | Licence | Copyright |
 |---|---|---|---|
-| `Microsoft.NETCore.App.Runtime.win-x64` | 10.0.11 | MIT | Copyright (c) .NET Foundation and Contributors |
-| `Microsoft.WindowsDesktop.App.Runtime.win-x64` | 10.0.11 | MIT | Copyright (c) .NET Foundation and Contributors |
+| `Microsoft.NETCore.App.Runtime.win-x64` | 10.0.12 | MIT | Copyright (c) .NET Foundation and Contributors |
+| `Microsoft.WindowsDesktop.App.Runtime.win-x64` | 10.0.12 | MIT | Copyright (c) .NET Foundation and Contributors |
 | `Microsoft.Windows.SDK.NET.Ref` | 10.0.17763.57 | Windows SDK licence terms, see below | © Microsoft Corporation. All rights reserved. |
 
 The licences are read from each pack's own `.nuspec` rather than assumed. The MIT text is the
