@@ -240,7 +240,8 @@ fn every_nuget_component_the_register_declares_has_its_bytes_pinned() {
     let lock: serde_json::Value =
         serde_json::from_str(&text).unwrap_or_else(|e| panic!("the lock file must be valid JSON: {e}"));
 
-    // One target framework in this project, and the lock file nests every package under it.
+    // Two targets since the window package also publishes for a runtime identifier, and the lock
+    // file nests every package under each of them. Looking through all of them is deliberate.
     let frameworks = lock["dependencies"].as_object().expect("the lock file must list dependencies");
     let mut checked = 0usize;
     let mut missing: Vec<String> = Vec::new();
@@ -349,4 +350,73 @@ fn the_register_is_well_formed() {
     // would produce a document that says different things about the same element.
     let names: BTreeSet<String> = all.iter().map(|(n, _, _)| n.clone()).collect();
     assert_eq!(names.len(), all.len(), "two components share a name");
+}
+
+/// Publishing the window package self-contained pulls the runtime packs, which changes the
+/// dependency graph, so a locked restore needs that runtime identifier to be IN the lock file.
+/// Locked mode is switched on by `CI` being set, which a runner does and a developer box does not,
+/// so a lock file without it restores happily here and fails every runner with NU1004. That is
+/// what killed the second attempt at tagging 0.2.0, one failure after the first.
+///
+/// The identifier is read out of the packaging script rather than written here twice. A guard that
+/// keeps its own copy of the value it is guarding agrees with itself and with nothing else.
+#[test]
+fn the_gui_lock_files_carry_the_identifier_the_packaging_script_publishes_for() {
+    let script_path = repo_root().join("packaging").join("build-dist.ps1");
+    let script = std::fs::read_to_string(&script_path)
+        .unwrap_or_else(|e| panic!("the packaging script must be readable: {e}"));
+
+    // PowerShell wraps the publish onto a second line with a backtick, so the identifier is not on
+    // the line that names the command. Join the continuation before looking for it.
+    let lines: Vec<&str> = script.lines().collect();
+    let Some(start) = lines
+        .iter()
+        .position(|line| line.trim_start().starts_with("dotnet publish"))
+    else {
+        panic!(
+            "the packaging script no longer publishes the window package, so this guard is \
+             watching nothing"
+        )
+    };
+    let mut command = String::from(lines[start]);
+    let mut index = start;
+    while lines[index].trim_end().ends_with('`') && index + 1 < lines.len() {
+        index += 1;
+        command.push(' ');
+        command.push_str(lines[index]);
+    }
+
+    let mut tokens = command.split_whitespace();
+    let mut rid = None;
+    while let Some(token) = tokens.next() {
+        if token == "-r" || token == "--runtime" {
+            rid = tokens.next().map(str::to_owned);
+            break;
+        }
+    }
+    let Some(rid) = rid else {
+        panic!("the publish command names no runtime identifier, so nothing here can be checked")
+    };
+
+    // Both, because the library is restored along with the application it is referenced by, and the
+    // first failure named both projects.
+    for project in ["ChronoMock.App", "ChronoMock.Protocol"] {
+        let path = repo_root().join("gui").join(project).join("packages.lock.json");
+        let text = std::fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("{project} must have a lock file: {e}"));
+        let lock: serde_json::Value = serde_json::from_str(&text)
+            .unwrap_or_else(|e| panic!("{project}'s lock file must be valid JSON: {e}"));
+        let targets = lock["dependencies"]
+            .as_object()
+            .expect("the lock file must list dependencies");
+        let suffix = format!("/{rid}");
+        assert!(
+            targets.keys().any(|target| target.ends_with(&suffix)),
+            "{project}'s lock file carries no target for {rid}, so a locked restore for that \
+             identifier fails with NU1004 - invisible on a developer box, fatal on every runner. \
+             Regenerate with `dotnet restore gui/ChronoMock.slnx --force-evaluate` and commit the \
+             lock files. Targets present: {:?}",
+            targets.keys().collect::<Vec<_>>()
+        );
+    }
 }

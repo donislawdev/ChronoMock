@@ -179,7 +179,7 @@
       "ChronoMock": {
         "type": "Project",
         "dependencies": {
-          "ChronoMock.Protocol": "[0.1.0, )",
+          "ChronoMock.Protocol": "[0.2.0, )",
           "WPF-UI": "[4.3.0, )"
         }
       },

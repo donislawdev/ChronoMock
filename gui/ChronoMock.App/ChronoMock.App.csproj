@@ -14,6 +14,13 @@
     <IsPackable>false</IsPackable>
     <!-- AnyCPU is deliberate: the GUI launches the right-bitness core, it never matches the target itself. -->
     <Platforms>AnyCPU</Platforms>
+    <!-- The packaging script publishes this self-contained for win-x64, which pulls the runtime packs
+         and so changes the dependency graph. Declaring the identifier HERE makes every restore
+         evaluate it, so the lock file carries that target and locked mode accepts it. Passing the
+         identifier only on the publish command line is what broke the first tagged release: locked
+         mode is on when CI is set and off on a developer box, so the mismatch was invisible locally
+         and fatal on every runner (NU1004). Guarded by the lock-file test in crates/cli/tests. -->
+    <RuntimeIdentifiers>win-x64</RuntimeIdentifiers>
     <!-- The shipped launcher is ChronoMock.exe, not ChronoMock.App.exe (Stage 5). RootNamespace stays
          ChronoMock.App (the project-name default is unaffected by AssemblyName), so no code moves. -->
     <AssemblyName>ChronoMock</AssemblyName>
