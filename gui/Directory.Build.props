@@ -47,7 +47,7 @@
          Single source for the GUI stack. The version WILL change across releases - bump it here
          (and the Rust workspace version in the root Cargo.toml, which drives the CLI exe). The
          assistant does not bump it on its own (untouchable rule 18). -->
-    <Version>0.1.0</Version>
+    <Version>0.2.0</Version>
     <Company>DonislawDev</Company>
     <Authors>DonislawDev</Authors>
     <Product>Chrono Mock</Product>

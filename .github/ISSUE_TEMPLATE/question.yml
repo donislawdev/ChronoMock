@@ -26,7 +26,7 @@ body:
       description: >-
         If the tool is already installed, `chrono version` prints it, and the
         window carries it in the title bar.
-      placeholder: "chrono 0.1.0 (x64, protocol 1)"
+      placeholder: "chrono 0.2.0 (x64, protocol 1)"
   - type: dropdown
     id: mode
     attributes:

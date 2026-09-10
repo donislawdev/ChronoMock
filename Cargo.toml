@@ -9,7 +9,7 @@ members = ["crates/core", "crates/ctl", "crates/mech", "crates/hook", "crates/pr
 exclude = ["tools"]
 
 [workspace.package]
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 license = "GPL-3.0-only"
 # None of these crates goes to crates.io - the product ships as executables, and the layer crates
