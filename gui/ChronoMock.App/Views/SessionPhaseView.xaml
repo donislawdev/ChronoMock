@@ -103,7 +103,21 @@
           not. Equal width because neither is the more important one - the fake clock is the product's
           whole point and the real one is what makes it legible.
         -->
-        <UniformGrid Columns="2">
+        <!-- 🔴 WHICH APPLICATION THIS IS, and it was missing. Replacing the form with this phase took the
+             answer to "what am I looking at" off the screen with it - the shipped panel carried it only
+             because the form stayed standing. Somebody who comes back to the window ten minutes later, or
+             runs two sessions in an afternoon, has nothing else to tell them which one this is. First
+             line, above the clocks, because it is the subject and they are the predicate. -->
+        <WrapPanel Visibility="{Binding HasTarget, Converter={StaticResource BoolToVis}}">
+          <TextBlock Style="{StaticResource PartCaption}" TextWrapping="NoWrap"
+                     VerticalAlignment="Center"
+                     Text="{DynamicResource session.running_label}" />
+          <TextBlock Style="{StaticResource PartLabel}" Margin="{StaticResource SpaceXs}"
+                     TextTrimming="CharacterEllipsis"
+                     Text="{Binding TargetName}" />
+        </WrapPanel>
+
+        <UniformGrid Columns="2" Margin="{StaticResource StackGapSm}">
           <ContentControl Template="{StaticResource PartClock}" DataContext="{Binding Fake}"
                           Margin="{StaticResource SpaceXs}" />
           <ContentControl Template="{StaticResource PartClock}" DataContext="{Binding Real}"
@@ -229,7 +243,9 @@
                                   Header="{DynamicResource coverage.unobserved}"
                                   ItemsSource="{Binding Unobserved}"
                                   Visibility="{Binding HasUnobserved, Converter={StaticResource BoolToVis}}" />
-            <HeaderedItemsControl Style="{StaticResource PartFactList}"
+            <!-- The note variant, because these are sentences: a warning clipped at the card's edge is
+                 one the reader cannot act on, which is the whole point of having raised it. -->
+            <HeaderedItemsControl Style="{StaticResource PartNoteList}"
                                   Header="{DynamicResource coverage.warnings}"
                                   ItemsSource="{Binding Warnings}"
                                   Visibility="{Binding HasWarnings, Converter={StaticResource BoolToVis}}" />
@@ -281,6 +297,17 @@
                 IsEnabled="{Binding IsRunning}"
                 HorizontalAlignment="Left"
                 Margin="{StaticResource StackGapSm}" />
+
+        <!-- 🔴 OUT OF THE TOOLTIP. "The app returns to real time - it is not closed" was already written,
+             and it was written where somebody has to hover to find it - so the one question a reader
+             actually has before pressing a button called Stop ("does this kill the application I am
+             testing?") was answered only after they had decided to risk it. This library's own comment on
+             the QPC option says a consequence that lives in a tooltip is one most people meet after the
+             fact. Same fault, same fix. -->
+        <TextBlock Style="{StaticResource PartCaption}" TextWrapping="Wrap"
+                   Margin="{StaticResource StackGapSm}"
+                   Text="{DynamicResource session.stop_note}"
+                   Visibility="{Binding IsRunning, Converter={StaticResource BoolToVis}}" />
       </StackPanel>
     </Border>
   </Grid>

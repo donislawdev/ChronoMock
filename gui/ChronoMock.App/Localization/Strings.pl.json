@@ -69,6 +69,8 @@
   "session.label_jump": "Skok",
   "session.jump_note": "Zegar trwania nigdy nie cofa się, także przy skoku wstecz.",
   "session.rate_placeholder": "dowolne tempo",
+  "session.running_label": "Uruchomione:",
+  "session.stop_note": "Zatrzymanie przywraca aplikacji prawdziwy zegar. Nie zamyka jej.",
   "session.audit_pending": "Audyt pojawi się tutaj, gdy rdzeń zgłosi, z których kanałów czasu aplikacja naprawdę korzystała.",
   "session.chip_covered": "objętych",
   "session.chip_uncovered": "nieobjętych",
@@ -265,6 +267,13 @@
   // continuously backward - which the time model has as a jump, never as a speed.
   "time.bad_multiplier": "Prędkość poza zakresem - musi mieścić się między 0 (zamrożenie) a 1,000,000. Sesja nie wystartowała.",
   "moment.invalid": "Nieprawidłowy moment (luka czasu letniego, 29 lutego w roku nieprzestępnym albo poza zakresem) - sesja nie wystartowała.",
+  // 🔴 THE SAME TWO REASONS, FOR A COMMAND REJECTED MID-SESSION. The core sends one key whether a bad
+  // moment arrives with the start command or with a jump, so the panel printed "the session did not
+  // start" under a status line reading "Running" - a screen contradicting itself. These say what actually
+  // did not happen. Which one is used is decided by the surface, not by the core (SessionViewModel.
+  // InFlightKey), because only the surface knows which command the error answered.
+  "moment.invalid_in_flight": "Nieprawidłowy moment (luka czasu letniego, 29 lutego w roku nieprzestępnym albo poza zakresem) - zegar nie drgnął.",
+  "time.bad_multiplier_in_flight": "Prędkość poza zakresem - musi mieścić się między 0 (zamrożenie) a 1,000,000. Tempo się nie zmieniło.",
   "moment.needs_calendar": "Ten skok liczy dni robocze, a trwająca sesja nie ma kalendarza - skocz do konkretnej daty albo policz ją najpierw w kalkulatorze.",
   "moment.unsupported_kind": "Rdzeń nie rozpoznał tego rodzaju celu skoku.",
   "session.control_failed": "Nie udało się utworzyć kanału sterowania sesji - podmiana nie zadziałała.",

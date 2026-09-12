@@ -1174,7 +1174,7 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
                 // A per-command error (e.g. an invalid in-flight jump moment): the core rejects the one
                 // command WE sent - its id echoes our command's - and keeps running, so surface it and STAY
                 // live, never end the session (rule 6).
-                InFlightErrorKey = err.Key;
+                InFlightErrorKey = InFlightKey(err.Key);
                 break;
             case ErrorEvent err when !IsTerminal(StatusKind):
                 // A start-time or fatal error (bad start moment, hook DLL missing, launch/inject/attach
@@ -1955,4 +1955,30 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     /// whose ids run from <see cref="FirstInFlightCommandId"/> up. A start/fatal error instead carries the
     /// start command's id (1) or none, so it is never treated as an in-flight rejection (RELEASE-001).</summary>
     private static bool IsInFlightError(ErrorEvent err) => err.Id is >= FirstInFlightCommandId;
+
+    /// <summary>
+    /// The reason a rejected IN-FLIGHT command gets, where the core's key has a start-time tail on it.
+    /// </summary>
+    /// <remarks>
+    /// 🔴 THE SCREEN CONTRADICTED ITSELF. The core sends one key for a bad moment whether it arrives with
+    /// the start command or with a jump, and the same for a rate out of range - and both of its texts end
+    /// "the session did not start". In flight that is false twice over: the core's own comment on the rate
+    /// path says "the session keeps running at the rate it had", and the panel printed the denial directly
+    /// under a status line reading "Running". Measured on the session-error render.
+    ///
+    /// So the key is mapped, not the text rewritten: at START those two sentences are correct and they are
+    /// the whole headline there. The CLI never had this problem - its own wording for the same keys names
+    /// the reason and stops ("the requested speed is outside the range this core accepts"), which is the
+    /// shape these two now follow in flight.
+    ///
+    /// Two entries rather than a table over every key: these are the only two of the seven texts that
+    /// mention starting AND can answer an in-flight command. The guard in SessionViewModelTests holds that
+    /// pairing from both ends.
+    /// </remarks>
+    private static string InFlightKey(string coreKey) => coreKey switch
+    {
+        "moment.invalid" => "moment.invalid_in_flight",
+        "time.bad_multiplier" => "time.bad_multiplier_in_flight",
+        _ => coreKey,
+    };
 }

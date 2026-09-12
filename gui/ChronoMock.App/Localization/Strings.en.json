@@ -68,6 +68,8 @@
   "session.label_jump": "Jump",
   "session.jump_note": "The duration clock never goes backwards, even on a backward jump.",
   "session.rate_placeholder": "any rate",
+  "session.running_label": "Running:",
+  "session.stop_note": "Stopping returns the application to the real clock. It is not closed.",
   "session.audit_pending": "The audit appears here once the core reports which time channels the application actually read.",
   "session.chip_covered": "covered",
   "session.chip_uncovered": "uncovered",
@@ -263,7 +265,17 @@
   // mid-session and the time channels start disagreeing, and a negative rate would run the clock
   // continuously backward - which the time model has as a jump, never as a speed.
   "time.bad_multiplier": "Speed out of range - it must be between 0 (freeze) and 1,000,000. The session did not start.",
-  "moment.invalid": "That moment is not valid (a daylight-saving gap, Feb 29 in a common year, or out of range) - the session did not start.",
+  // 🔴 "29 February in a year that is not a leap year", not "Feb 29 in a common year". The abbreviation
+  // was the only one in the interface - every other date is spelled out - and "common year" is the
+  // correct term for what almost nobody calls it.
+  "moment.invalid": "That moment is not valid (a daylight-saving gap, 29 February in a year that is not a leap year, or out of range) - the session did not start.",
+  // 🔴 THE SAME TWO REASONS, FOR A COMMAND REJECTED MID-SESSION. The core sends one key whether a bad
+  // moment arrives with the start command or with a jump, so the panel printed "the session did not
+  // start" under a status line reading "Running" - a screen contradicting itself. These say what actually
+  // did not happen. Which one is used is decided by the surface, not by the core (SessionViewModel.
+  // InFlightKey), because only the surface knows which command the error answered.
+  "moment.invalid_in_flight": "That moment is not valid (a daylight-saving gap, 29 February in a year that is not a leap year, or out of range) - the clock did not move.",
+  "time.bad_multiplier_in_flight": "Speed out of range - it must be between 0 (freeze) and 1,000,000. The rate did not change.",
   "moment.needs_calendar": "That jump counts business days, and a running session has no calendar - jump to a date instead, or work the date out in the calculator first.",
   "moment.unsupported_kind": "The core did not recognise that kind of jump target.",
   "session.control_failed": "Could not set up the session's control channel - the substitution did not take effect.",

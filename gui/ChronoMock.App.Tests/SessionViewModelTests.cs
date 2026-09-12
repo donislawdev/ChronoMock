@@ -138,7 +138,10 @@ public class SessionViewModelTests
 
         // The one command is rejected, but the session stays live and the error is shown (rule 6).
         Assert.Equal(SessionStatusKind.Running, vm.StatusKind);
-        Assert.Equal("moment.invalid", vm.InFlightErrorKey);
+        // 🔴 The IN-FLIGHT wording of that reason, since 2026-09-12. The core's own text for this key ends
+        // "the session did not start", which the line above proves is false here - the panel was printing
+        // that denial under a status reading "Running".
+        Assert.Equal("moment.invalid_in_flight", vm.InFlightErrorKey);
         Assert.True(vm.HasInFlightError);
     }
 
@@ -1330,6 +1333,85 @@ public class SessionViewModelTests
         Assert.True(vm.ForceStart);
         Assert.False(vm.HasHistoryNote, "everything was on offer, so there is nothing to report");
     }
+
+    /// <summary>
+    /// A command the core rejects mid-session says what did not happen, not that nothing started.
+    /// </summary>
+    /// <remarks>
+    /// 🔴 The core sends one key whether a bad moment arrives with the start command or with a jump, and
+    /// both of its texts ended "the session did not start" - so the panel printed that denial directly
+    /// under a status line reading "Running". The core's own comment on the rate path says "the session
+    /// keeps running at the rate it had". Only the surface knows which command an error answered, so only
+    /// the surface can pick the wording.
+    /// </remarks>
+    [Fact]
+    public void A_rejected_in_flight_command_says_what_did_not_happen()
+    {
+        var vm = SessionStates.Running();
+
+        vm.Apply(InFlightRejection("moment.invalid"));
+
+        Assert.True(vm.IsRunning, "an in-flight rejection never ends the session");
+        Assert.True(vm.HasInFlightError);
+        Assert.Equal("moment.invalid_in_flight", vm.InFlightErrorKey);
+
+        vm.Apply(InFlightRejection("time.bad_multiplier"));
+
+        Assert.True(vm.IsRunning);
+        Assert.Equal("time.bad_multiplier_in_flight", vm.InFlightErrorKey);
+
+        // A reason with no start-time tail on it passes through untouched - the mapping is two entries,
+        // not a translation layer over every key the core can send.
+        vm.Apply(InFlightRejection("moment.unsupported_kind"));
+
+        Assert.Equal("moment.unsupported_kind", vm.InFlightErrorKey);
+    }
+
+    /// <summary>
+    /// The pairing held from BOTH ends, in both languages: the start reason keeps the tail that is true
+    /// there, and the in-flight reason does not have it. Without the second half a new key could quietly
+    /// be written as a copy of the old one and the contradiction would be back with a longer name.
+    /// </summary>
+    [Fact]
+    public void The_in_flight_reasons_drop_the_start_tail_and_the_start_reasons_keep_it()
+    {
+        (string Culture, string Tail)[] languages =
+        [
+            ("en", "did not start"),
+            ("pl", "nie wystartowa"),
+        ];
+
+        (string Start, string InFlight)[] pairs =
+        [
+            ("moment.invalid", "moment.invalid_in_flight"),
+            ("time.bad_multiplier", "time.bad_multiplier_in_flight"),
+        ];
+
+        foreach (var (culture, tail) in languages)
+        {
+            var strings = WpfTestHost.Invoke(
+                () => ChronoMock.App.Localization.LocalizationService.Load(culture));
+
+            foreach (var (start, inFlight) in pairs)
+            {
+                var startText = Assert.IsType<string>(strings[start]);
+                var inFlightText = Assert.IsType<string>(strings[inFlight]);
+
+                Assert.Contains(tail, startText, StringComparison.OrdinalIgnoreCase);
+                Assert.DoesNotContain(tail, inFlightText, StringComparison.OrdinalIgnoreCase);
+                Assert.NotEqual(startText, inFlightText);
+            }
+        }
+    }
+
+    private static ErrorEvent InFlightRejection(string key) => new()
+    {
+        V = ProtocolJson.ProtocolVersion,
+        Id = 11,
+        Code = 1,
+        Key = key,
+        Origin = "core",
+    };
 
     /// <summary>
     /// Every refusal has words, and they are exactly the refusals.

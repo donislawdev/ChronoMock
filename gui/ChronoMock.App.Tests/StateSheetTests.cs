@@ -161,10 +161,13 @@ public class StateSheetTests
             total += RenderSession("session-error", SessionStates.InFlightError()).Count;
             total += RenderSession("session-ended", SessionStates.Ended()).Count;
 
-            // The window's floor, where the clocks and the action have to survive together.
+            // The window's floor, where the clocks and the action have to survive together. Its model
+            // goes through the same helper, so it carries a target like every other session state.
+            var floor = SessionStates.Running();
+            floor.SetTarget(Path.Combine(TestPaths.RepoRoot(), "target.exe"));
             total += StateSheet.Write(
                 "session-floor",
-                new SessionPhaseView { DataContext = SessionStates.Running() },
+                new SessionPhaseView { DataContext = floor },
                 MinimumWidth,
                 MinimumHeight).Count;
 
@@ -179,6 +182,13 @@ public class StateSheetTests
         SessionViewModel model,
         string? openSection = null)
     {
+        // 🔴 A SESSION HAS A TARGET, and the shared fixtures do not set one - they were written for the
+        // panel, where the form supplies it. Without this the phase's first line ("Running: …") is bound
+        // to a model with no target and renders as nothing, so the render would be missing the one thing
+        // that says which session it is. Set here rather than in SessionStates, because the panel renders
+        // use the same fixtures and their baselines would move.
+        model.SetTarget(Path.Combine(TestPaths.RepoRoot(), "target.exe"));
+
         var view = new SessionPhaseView { DataContext = model };
 
         if (openSection is not null

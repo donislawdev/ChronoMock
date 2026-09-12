@@ -393,28 +393,34 @@
             </HeaderedItemsControl.ItemsSource>
           </HeaderedItemsControl>
 
-          <!-- The extremes together: more rows than the cap allows, and one row far longer than the card. -->
-          <HeaderedItemsControl Style="{StaticResource PartFactList}" Header="Warnings">
+          <!-- The NOTE variant: same list, prose rows. The extremes together - more rows than the cap
+               allows, and sentences far longer than the card, which is what the wrapping is for. -->
+          <HeaderedItemsControl Style="{StaticResource PartNoteList}" Header="Warnings">
             <HeaderedItemsControl.ItemsSource>
               <x:Array Type="sys:String">
-                <sys:String>A time channel was only hooked after its module loaded, so calls before that were real.</sys:String>
-                <sys:String>Some of this application's waits were too short to divide by the multiplier and ran at their floor of one millisecond, which is longer than the scaled figure asked for.</sys:String>
-                <sys:String>wait.timeout_collapsed</sys:String>
-                <sys:String>time.duration_axis_clamped</sys:String>
                 <sys:String>coverage.channel_installed_late</sys:String>
+                <sys:String>wait.timeout_collapsed</sys:String>
                 <sys:String>cleanup.chromium_profile_left</sys:String>
                 <sys:String>coverage.family_note</sys:String>
                 <sys:String>coverage.contexts_note</sys:String>
+                <sys:String>runtime.python_monotonic_qpc</sys:String>
+                <sys:String>runtime.java_nanotime_qpc</sys:String>
+                <sys:String>chromium.interval_queued_before_change</sys:String>
                 <!-- 🔴 These six exist to make the cap ENGAGE. The first render of this block had eight
                      rows, which fitted inside the 140 px the part allows, so the catalogue claimed to be
                      showing a scrolling list and was showing a short one - promising a state it did not
-                     have. Fourteen rows overflow it, and the scrollbar in the picture is the proof. -->
-                <sys:String>time.jump_backward_duration_held</sys:String>
-                <sys:String>zone.bias_applied_without_dst</sys:String>
-                <sys:String>qpc.scaling_enabled_by_request</sys:String>
-                <sys:String>process.child_inherited_session</sys:String>
-                <sys:String>audit.channel_never_called</sys:String>
-                <sys:String>core.handshake_took_longer_than_usual</sys:String>
+                     have. Fourteen rows overflow it, and the scrollbar in the picture is the proof.
+
+                     They are real warning KEYS, which is the second thing this block now shows: the part
+                     puts every row through the translator, so a key arrives here as a sentence. The last
+                     one is deliberately not a key at all - that is what a missing translation looks like,
+                     and seeing it is better than discovering it. -->
+                <sys:String>time.duration_axis_clamped</sys:String>
+                <sys:String>source.network_at_start</sys:String>
+                <sys:String>wait.object_waits_not_scaled</sys:String>
+                <sys:String>timer.multimedia_not_scaled</sys:String>
+                <sys:String>runtime.dotnet_stopwatch_qpc</sys:String>
+                <sys:String>warning.no.such.key.exists</sys:String>
               </x:Array>
             </HeaderedItemsControl.ItemsSource>
           </HeaderedItemsControl>
