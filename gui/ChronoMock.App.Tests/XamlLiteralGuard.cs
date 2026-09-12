@@ -28,8 +28,16 @@ internal static class XamlLiteralGuard
 
     private static readonly (string Kind, Regex Pattern)[] Rules =
     [
-        // A literal hex colour in a brush/colour attribute.
-        ("colour", new Regex("""(?i)\b(Foreground|Background|Fill|Stroke|BorderBrush|Color)\s*=\s*"#""", RegexOptions.Compiled)),
+        // 🔴 ANY literal colour in a brush attribute, not just a hex one. This used to require a "#", so
+        // Background="White" and Fill="Red" walked straight past a guard whose whole job is colour coming
+        // from the palette - and WPF has 140-odd named colours to walk past it with. The rule is now
+        // inverted: a value that does not START a markup extension is a literal, whatever it spells.
+        //
+        // Transparent is the one word allowed, and it is not a colour decision - it means "paint nothing
+        // here", which is exactly what a template says when the fill belongs to a parent or to a
+        // TemplateBinding. Measured when this was tightened: 8 named colours in the whole of the scanned
+        // XAML and all 8 of them Transparent, so nothing needed an allowance.
+        ("colour", new Regex("""(?i)\b(Foreground|Background|Fill|Stroke|BorderBrush|Color)\s*=\s*"(?!\{|Transparent")""", RegexOptions.Compiled)),
         // A literal numeric font size.
         ("font-size", new Regex("""(?i)\bFontSize\s*=\s*"[0-9]""", RegexOptions.Compiled)),
         // A literal spacing/thickness/radius. "0" is allowed - it is not a design token worth naming.

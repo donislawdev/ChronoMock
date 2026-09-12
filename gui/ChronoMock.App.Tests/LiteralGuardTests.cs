@@ -22,6 +22,38 @@ public class LiteralGuardTests
     public void Guard_reddens_on_a_literal_colour()
         => Assert.NotEmpty(XamlLiteralGuard.FindViolations("x.xaml", """<TextBlock Foreground="#FFFF0000" />"""));
 
+    /// <summary>
+    /// 🔴 A NAMED colour, which walked past this guard until 2026-09-12 because the rule required a "#".
+    /// WPF ships some 140 of these, so the hole was not theoretical - it was every colour a person is
+    /// most likely to type by hand. All four attributes are probed, not just one, because the rule lists
+    /// them by name and a typo in that list would leave exactly one of them open.
+    /// </summary>
+    [Fact]
+    public void Guard_reddens_on_a_colour_spelled_as_a_word()
+    {
+        Assert.NotEmpty(XamlLiteralGuard.FindViolations("x.xaml", """<Border Background="White" />"""));
+        Assert.NotEmpty(XamlLiteralGuard.FindViolations("x.xaml", """<Path Fill="Red" />"""));
+        Assert.NotEmpty(XamlLiteralGuard.FindViolations("x.xaml", """<Path Stroke="Black" />"""));
+        Assert.NotEmpty(XamlLiteralGuard.FindViolations("x.xaml", """<Border BorderBrush="Gray" />"""));
+        Assert.NotEmpty(XamlLiteralGuard.FindViolations("x.xaml", """<TextBlock Foreground="DodgerBlue" />"""));
+        Assert.NotEmpty(XamlLiteralGuard.FindViolations("x.xaml", """<SolidColorBrush Color="Coral" />"""));
+    }
+
+    /// <summary>
+    /// Transparent is the one word that is not a colour decision - it means "paint nothing here", which
+    /// is what a template says when the fill belongs to a parent or to a TemplateBinding. All 8 named
+    /// colours in the scanned XAML are this word, which is why tightening the rule needed no allowance.
+    /// </summary>
+    [Fact]
+    public void Guard_allows_transparent_because_it_paints_nothing()
+    {
+        Assert.Empty(XamlLiteralGuard.FindViolations("x.xaml", """<Border Background="Transparent" />"""));
+        Assert.Empty(XamlLiteralGuard.FindViolations("x.xaml", """<Border BorderBrush="Transparent" />"""));
+
+        // And it is the word, not a prefix of it.
+        Assert.NotEmpty(XamlLiteralGuard.FindViolations("x.xaml", """<Border Background="TransparentIsh" />"""));
+    }
+
     [Fact]
     public void Guard_reddens_on_a_literal_font_size()
         => Assert.NotEmpty(XamlLiteralGuard.FindViolations("x.xaml", """<TextBlock FontSize="13" />"""));
