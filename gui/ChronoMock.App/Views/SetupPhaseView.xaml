@@ -550,12 +550,17 @@
                    Text="{Binding SelectedMode.LabelKey, Converter={StaticResource KeyToText}}" />
       </WrapPanel>
 
-      <!-- 🔴 The caption colour, not the error colour. Nothing has gone WRONG on a screen somebody has
-           just opened - a step is outstanding, and red would tell a first run it had already made a
-           mistake. The accent sitting on Choose is what does the pointing. -->
+      <!-- 🔴 EVERY REFUSAL, not just the first one. This was bound to "no application chosen", so with an
+           application picked and an unreadable date the footer printed nothing: the contract line above is
+           gone too (there is no moment to promise), leaving a disabled button and no account of itself.
+           The key comes from the state now, which has a branch for each term of CanStart.
+
+           The caption colour, not the error colour. Nothing has gone WRONG on a screen somebody has just
+           opened - a step is outstanding, and red would tell a first run it had already made a mistake.
+           When something IS wrong the field itself says so in red, and this sentence points at it. -->
       <TextBlock Style="{StaticResource PartCaption}" Margin="{StaticResource StackGapSm}"
-                 Text="{DynamicResource setup.needs_target}"
-                 Visibility="{Binding ShowsDropHint, Converter={StaticResource BoolToVis}}" />
+                 Text="{Binding StartRefusalKey, Converter={StaticResource KeyToText}}"
+                 Visibility="{Binding HasStartRefusal, Converter={StaticResource BoolToVis}}" />
 
       <Button Style="{StaticResource PartPrimaryAction}"
               Content="{DynamicResource action.start}"

@@ -56,6 +56,13 @@
   // languages.
   "setup.scenario_available": "gotowych dat:",
   "setup.needs_target": "Wybierz aplikację, zanim wystartujesz.",
+  // 🔴 The other two refusals, which the footer had no words for. It said why Start was disabled only
+  // when no application had been chosen - so a picked application plus an unreadable date left a dead
+  // button with no account of itself, and at the window's floor the field's own message is off-screen.
+  // These point at the field rather than repeating its message: the field says WHAT is wrong, this says
+  // where to go and that it is what is holding Start.
+  "setup.needs_moment": "Popraw datę i godzinę powyżej, zanim wystartujesz.",
+  "setup.already_running": "Sesja już działa.",
   "setup.chip_duration": "trwanie skalowane",
   "setup.chip_qpc": "QPC skalowane",
   "setup.chip_force": "start wymuszony",

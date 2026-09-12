@@ -148,6 +148,7 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
         Moment.Changed += (_, _) =>
         {
             RaisePropertyChanged(nameof(CanStart));
+            RaiseStartRefusalChanged();
             RaiseMomentPreviewChanged();
 
             // 🔴 The shipped date stops explaining itself the moment it is no longer the shipped date.
@@ -318,6 +319,7 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
                 RaisePropertyChanged(nameof(HasTarget));
                 RaisePropertyChanged(nameof(ShowsDropHint));
                 RaisePropertyChanged(nameof(CanStart));
+                RaiseStartRefusalChanged();
             }
         }
     }
@@ -535,6 +537,39 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
 
     /// <summary>True when a session may be started: nothing is running, a target is chosen, moment is valid.</summary>
     public bool CanStart => _idle && HasTarget && Moment.IsValid;
+
+    /// <summary>
+    /// Why Start is refusing, as a translation key, or empty when it is not refusing.
+    /// </summary>
+    /// <remarks>
+    /// 🔴 ONE REASON FOR EVERY REFUSAL, because the screen used to have one for exactly one of the three.
+    /// The sentence above Start was bound to "no application chosen", so with an application picked and an
+    /// unreadable date the footer lost the contract line as well (there is no moment to promise) and
+    /// printed nothing at all: a disabled button with no account of itself, which is the one thing this
+    /// phase is not allowed. At the window's floor the field's own red message is off-screen, so the
+    /// footer was the only place left to say it and it was silent.
+    ///
+    /// Total by construction - every term of <see cref="CanStart"/> has a branch here, in the order the
+    /// reader meets them. A gap would put the hole straight back.
+    ///
+    /// A string rather than a type: this class stands on its coupling ceiling (gui/CodeMetricsConfig.txt).
+    /// </remarks>
+    public string StartRefusalKey =>
+        !_idle ? "setup.already_running"
+        : !HasTarget ? "setup.needs_target"
+        : !Moment.IsValid ? "setup.needs_moment"
+        : string.Empty;
+
+    /// <summary>Whether <see cref="StartRefusalKey"/> has something to say. Exactly the negation of
+    /// <see cref="CanStart"/>, and asserted to be so - the two are read by one footer and must never
+    /// disagree about whether a session can begin.</summary>
+    public bool HasStartRefusal => StartRefusalKey.Length > 0;
+
+    private void RaiseStartRefusalChanged()
+    {
+        RaisePropertyChanged(nameof(StartRefusalKey));
+        RaisePropertyChanged(nameof(HasStartRefusal));
+    }
 
     /// <summary>Choose the target executable to run (from the picker, the recent list, or the dev default).</summary>
     public void SetTarget(string path) => TargetPath = path;
@@ -893,6 +928,7 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
             if (Set(ref _idle, value))
             {
                 RaisePropertyChanged(nameof(CanStart));
+                RaiseStartRefusalChanged();
                 RaisePropertyChanged(nameof(IsIdle));
                 RaisePropertyChanged(nameof(CanEditTime));
             }

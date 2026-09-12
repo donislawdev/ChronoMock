@@ -1328,6 +1328,69 @@ public class SessionViewModelTests
     }
 
     /// <summary>
+    /// Every refusal has words, and they are exactly the refusals.
+    /// </summary>
+    /// <remarks>
+    /// 🔴 The footer used to name one of the three: with an application chosen and a date that does not
+    /// parse it printed nothing at all, because the contract line has no moment to show either. A disabled
+    /// button and no account of itself. The pairing with CanStart is asserted at every step rather than
+    /// once, because the two are read by one footer and a screen where they disagree either refuses
+    /// silently or explains a refusal that is not happening.
+    /// </remarks>
+    [Fact]
+    public void Start_has_a_reason_for_every_refusal_and_none_when_it_is_not_refusing()
+    {
+        var vm = new SessionViewModel();
+
+        Assert.False(vm.CanStart);
+        Assert.True(vm.HasStartRefusal);
+        Assert.Equal("setup.needs_target", vm.StartRefusalKey);
+
+        vm.SetTarget(@"C:\apps\Ledger.exe");
+
+        Assert.True(vm.CanStart);
+        Assert.False(vm.HasStartRefusal);
+        Assert.Equal(string.Empty, vm.StartRefusalKey);
+
+        // The case the footer used to meet in silence.
+        vm.Moment.DateText = "2038-02-31";
+
+        Assert.False(vm.Moment.IsValid);
+        Assert.False(vm.CanStart);
+        Assert.True(vm.HasStartRefusal);
+        Assert.Equal("setup.needs_moment", vm.StartRefusalKey);
+
+        vm.Moment.DateText = "2038-01-19";
+
+        Assert.True(vm.CanStart);
+        Assert.False(vm.HasStartRefusal);
+    }
+
+    /// <summary>
+    /// A reason that arrives after the button is already grey is a reason nobody reads.
+    /// </summary>
+    [Fact]
+    public void The_refusal_reason_is_announced_wherever_the_button_state_is()
+    {
+        var vm = new SessionViewModel();
+        var announced = new List<string>();
+        vm.PropertyChanged += (_, e) => announced.Add(e.PropertyName ?? string.Empty);
+
+        vm.SetTarget(@"C:\apps\Ledger.exe");
+
+        Assert.Contains(nameof(SessionViewModel.CanStart), announced);
+        Assert.Contains(nameof(SessionViewModel.StartRefusalKey), announced);
+        Assert.Contains(nameof(SessionViewModel.HasStartRefusal), announced);
+
+        announced.Clear();
+        vm.Moment.DateText = "2038-02-31";
+
+        Assert.Contains(nameof(SessionViewModel.CanStart), announced);
+        Assert.Contains(nameof(SessionViewModel.StartRefusalKey), announced);
+        Assert.Contains(nameof(SessionViewModel.HasStartRefusal), announced);
+    }
+
+    /// <summary>
     /// The launch fields live inside the speed section now, so its folded header has to say they are set.
     /// A header that went on reading "×1" over a session carrying arguments would be folding turned into
     /// hiding, which is the one thing a summary may not do.

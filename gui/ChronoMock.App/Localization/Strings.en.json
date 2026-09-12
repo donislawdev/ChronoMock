@@ -55,6 +55,13 @@
   // languages.
   "setup.scenario_available": "ready-made dates:",
   "setup.needs_target": "Choose an application before starting.",
+  // 🔴 The other two refusals, which the footer had no words for. It said why Start was disabled only
+  // when no application had been chosen - so a picked application plus an unreadable date left a dead
+  // button with no account of itself, and at the window's floor the field's own message is off-screen.
+  // These point at the field rather than repeating its message: the field says WHAT is wrong, this says
+  // where to go and that it is what is holding Start.
+  "setup.needs_moment": "Fix the date and time above before starting.",
+  "setup.already_running": "A session is already running.",
   "setup.chip_duration": "duration scaled",
   "setup.chip_qpc": "QPC scaled",
   "setup.chip_force": "forced start",

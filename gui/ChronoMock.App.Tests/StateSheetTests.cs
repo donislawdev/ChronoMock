@@ -99,6 +99,15 @@ public class StateSheetTests
             options.WorkingFolder = @"C:\apps\data";
             total += RenderSetup("setup-options", options, "SpeedSection").Count;
 
+            // 🔴 AN APPLICATION CHOSEN AND A DATE THAT DOES NOT PARSE, which is the state the footer used
+            // to meet in silence: the contract line has no moment to print, Start is disabled, and the
+            // only sentence the footer knew was "choose an application" - which had been done. Nothing in
+            // the sheet had ever rendered a refusal other than the first one.
+            var badDate = WithScenarios();
+            badDate.SetTarget(Path.Combine(TestPaths.RepoRoot(), "target.exe"));
+            badDate.Moment.DateText = "2038-02-31";
+            total += RenderSetup("setup-bad-date", badDate).Count;
+
             var configured = WithScenarios();
             configured.SetTarget(Path.Combine(TestPaths.RepoRoot(), "target.exe"));
             configured.ScaleDuration = true;
