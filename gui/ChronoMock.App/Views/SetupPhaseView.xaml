@@ -144,7 +144,10 @@
       <!-- 🔴 What this screen does, and what it will not do, for somebody who has no way of knowing
            either. The second half is the product's whole promise and the question a stranger actually
            arrives with: is this going to change my computer. -->
-      <TextBlock Style="{StaticResource PartCaption}" Margin="{StaticResource StackGapSm}"
+      <!-- The primary ink, not the caption's. On a first run this is the most important sentence on the
+           screen, and it was the quietest. -->
+      <TextBlock Style="{StaticResource PartLabel}" TextWrapping="Wrap"
+                 Margin="{StaticResource StackGapSm}"
                  Text="{DynamicResource setup.intro}" />
 
       <!--
@@ -238,9 +241,18 @@
                       Margin="{StaticResource SpaceXs}" />
             </StackPanel>
             <HeaderedContentControl.Tag>
-              <TextBlock Style="{StaticResource PartFieldMessage}"
-                         Text="{Binding Moment.ActiveErrorKey, Converter={StaticResource KeyToText}}"
-                         Visibility="{Binding Moment.HasError, Converter={StaticResource BoolToVis}}" />
+              <!-- 🔴 Two things share this slot and never appear together: what is wrong with the date, or
+                   where the date came from. The second is what a first reader needs - a field pre-filled
+                   with a moment in 2038 looks arbitrary, and an unexplained value is a value nobody
+                   trusts. It stops as soon as the date stops being the shipped one. -->
+              <Grid>
+                <TextBlock Style="{StaticResource PartFieldMessage}"
+                           Text="{Binding Moment.ActiveErrorKey, Converter={StaticResource KeyToText}}"
+                           Visibility="{Binding Moment.HasError, Converter={StaticResource BoolToVis}}" />
+                <TextBlock Style="{StaticResource PartCaption}" TextWrapping="NoWrap"
+                           Text="{DynamicResource setup.default_moment_note}"
+                           Visibility="{Binding MomentIsDefault, Converter={StaticResource BoolToVis}}" />
+              </Grid>
             </HeaderedContentControl.Tag>
           </HeaderedContentControl>
 
@@ -283,7 +295,7 @@
                   </DataTemplate>
                 </ComboBox.ItemTemplate>
               </ComboBox>
-              <Button Content="{DynamicResource action.set_relative}"
+              <Button Content="{DynamicResource setup.action_fill}"
                       ToolTip="{DynamicResource setup.tip_shift}"
                       Margin="{StaticResource SpaceXs}" />
             </StackPanel>

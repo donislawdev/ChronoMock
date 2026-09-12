@@ -52,7 +52,10 @@
   // The contract sentence above Start names the CLOCK - the instant and the rate. The options are how the
   // rate is delivered rather than what the application sees, so they stay in the section header and the
   // sentence does not repeat them.
-  "setup.contract_speed": "running at",
+  // 🔴 A label, not a preposition. "running at ×60" reads well and "running at Flowing" does not, and the
+  // mode list holds both kinds of value - a rate and a manner. A label and a value is grammatical
+  // whatever the list is asked to hold next.
+  "setup.contract_speed": "speed:",
 
   // 🔴 The form labels again, without their trailing colons. A colon separates a label from a value on
   // one line; in a label column the alignment already does that, and the colons only made a ragged right
@@ -110,6 +113,14 @@
   // Both of these say "target" in the shipped panel, which is the word this screen stopped using.
   "setup.tip_recent": "The applications you have run before. Choose… picks one this machine has not run yet.",
   "setup.tip_start": "Launches the application under the fake clock. Needs an application and a valid date.",
+
+  // Shown only while the date field still holds the one this build ships with. A pre-filled date in 2038
+  // looks arbitrary to a first reader, and an unexplained value is a value nobody trusts.
+  "setup.default_moment_note": "The 32-bit time boundary - a common first test. Change it, or pick a scenario below.",
+
+  // "Set" reads as already set, which is exactly what this row is not: it holds numbers nobody has
+  // applied yet. The button says what pressing it does.
+  "setup.action_fill": "Fill the date",
 
   // Marks a recent target whose file is gone (a wiped build output, an uninstalled app). Shown rather than the entry being dropped, so the list never goes quiet about why a shortcut will not work (rule 6).
   "target.missing": "(missing)",

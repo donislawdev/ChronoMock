@@ -55,6 +55,7 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     private string _scenarioExplains = string.Empty;
     private string _scenarioErrorKey = string.Empty;
     private bool _applyingScenario; // guard: filling the moment from a scenario must not clear the selection
+    private bool _momentIsDefault = true;
     /// <summary>The editable moment (a date and optional time in the session zone, rule 2). The shared
     /// MomentInput control binds to it, and MomentParse composes it culture-invariantly (locale-safe).</summary>
     public MomentField Moment { get; } = new();
@@ -121,8 +122,15 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
         _calcClient = calcClient;
         _presetsDir = presetsDir;
 
-        // Defaults match the moment/mode the panel shipped with before these inputs existed.
-        _selectedZone = TimeInputs.Zones.First(z => z.BiasMinutes == -120); // UTC+02:00
+        // 🔴 UTC, changed 2026-09-12, and UTC+02:00 before that. The old default was one market's summer
+        // time and read on a first run as somebody's local clock without saying whose - while the list it
+        // comes from covers Poland and the United States only, so for most of the world nothing in it is
+        // right and an arbitrary default is worse than a neutral one. UTC is deterministic, universally
+        // understood, and does not pretend to be anybody's.
+        //
+        // It also makes the default MOMENT true: 2038-01-19T03:14:07 is the 32-bit boundary in UTC, and at
+        // +02:00 it was two hours past it. The two defaults now agree with each other.
+        _selectedZone = TimeInputs.Zones.First(z => z.BiasMinutes == 0);
 
         // 🔴 FLOWING, not x60, changed 2026-09-12 on the owner's decision. This tool's promise is that an
         // application sees a different DATE - running it sixty times faster as well is the second feature,
@@ -141,6 +149,15 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
         {
             RaisePropertyChanged(nameof(CanStart));
             RaiseMomentPreviewChanged();
+
+            // 🔴 The shipped date stops explaining itself the moment it is no longer the shipped date.
+            // Unconditional, unlike the scenario clearing below: a moment filled FROM a scenario is not
+            // the default either, it is that scenario's.
+            if (_momentIsDefault)
+            {
+                _momentIsDefault = false;
+                RaisePropertyChanged(nameof(MomentIsDefault));
+            }
 
             // A hand-edited moment is no longer the scenario's moment, so the selection stops claiming it
             // is (the calculator's active-preset banner clears the same way). Guarded, because filling the
@@ -382,6 +399,20 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
                 $"{moment:dddd, d MMMM yyyy, HH:mm:ss} ({_selectedZone.Label})");
         }
     }
+
+    /// <summary>
+    /// True while the date field still holds the moment this build ships with, and nobody has touched it.
+    /// </summary>
+    /// <remarks>
+    /// 🔴 It exists so the screen can SAY where that date came from. A field pre-filled with a date in
+    /// 2038 looks arbitrary to somebody opening the tool for the first time, and an unexplained value is
+    /// a value nobody trusts. It is the 32-bit time boundary and worth suggesting - it just has to admit
+    /// as much, and only for as long as it is still true.
+    ///
+    /// A bool rather than a type: this class sits near its coupling ceiling, and a bool costs nothing
+    /// there (gui/CodeMetricsConfig.txt).
+    /// </remarks>
+    public bool MomentIsDefault => _momentIsDefault;
 
     /// <summary>Whether the preview line has something to say. False for a moment that does not parse -
     /// the validation message takes that line instead, so the two never appear together and the row

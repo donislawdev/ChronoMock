@@ -315,7 +315,11 @@ public class SessionViewModelTests
     {
         var vm = new SessionViewModel();
 
-        Assert.Equal(-120, vm.SelectedZone.BiasMinutes); // UTC+02:00
+        // 🔴 UTC since 2026-09-12, and UTC+02:00 before it. The old default was one market's summer time,
+        // read on a first run as somebody's local clock without saying whose, out of a list that covers
+        // Poland and the United States only. It also makes the shipped MOMENT true: 2038-01-19T03:14:07 is
+        // the 32-bit boundary in UTC and was two hours past it at +02:00.
+        Assert.Equal(0, vm.SelectedZone.BiasMinutes);
 
         // 🔴 Flowing since 2026-09-12, and x60 before that. The tool's promise is that an application sees
         // a different DATE - running it sixty times faster as well is the second feature, and a first run
@@ -1133,14 +1137,14 @@ public class SessionViewModelTests
     [Fact]
     public void The_diagnostics_block_names_the_requested_moment_zone_and_mode()
     {
-        // Defaults: moment 2038-01-19T03:14:07, zone UTC+02:00, mode flow.
+        // Defaults: moment 2038-01-19T03:14:07, zone UTC, mode flow.
         var vm = new SessionViewModel();
         vm.SetTarget(@"C:\apps\Foo.exe");
 
         var block = vm.BuildDiagnosticsBlock(new[] { "core stderr: hi" });
 
         Assert.Contains("2038-01-19T03:14:07", block, StringComparison.Ordinal);
-        Assert.Contains("zone UTC+02:00", block, StringComparison.Ordinal);
+        Assert.Contains("zone UTC+00:00", block, StringComparison.Ordinal);
         Assert.Contains("mode flow", block, StringComparison.Ordinal);
         Assert.Contains("core stderr: hi", block, StringComparison.Ordinal);
     }
@@ -1193,7 +1197,7 @@ public class SessionViewModelTests
     [Fact]
     public void The_summary_echoes_the_requested_moment_zone_and_mode()
     {
-        // Defaults: moment 2038-01-19T03:14:07, zone UTC+02:00, mode Flowing.
+        // Defaults: moment 2038-01-19T03:14:07, zone UTC, mode Flowing.
         var vm = new SessionViewModel();
         vm.SetTarget(@"C:\apps\Ledger.exe");
         vm.Apply(Verdict("works", "verdict.works.covered"));
@@ -1201,7 +1205,7 @@ public class SessionViewModelTests
         var summary = vm.BuildSummary(T());
 
         Assert.Contains("2038-01-19T03:14:07", summary, StringComparison.Ordinal);
-        Assert.Contains("UTC+02:00", summary, StringComparison.Ordinal);
+        Assert.Contains("UTC+00:00", summary, StringComparison.Ordinal);
         Assert.Contains("Flowing", summary, StringComparison.Ordinal);
     }
 
