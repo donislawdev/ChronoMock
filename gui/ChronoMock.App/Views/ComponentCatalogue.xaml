@@ -112,6 +112,18 @@
                    Style="{StaticResource PartCaption}" />
       </Border>
 
+      <!-- ============ Pinned footer ============ -->
+      <TextBlock Text="Pinned footer" Style="{StaticResource PartSectionHeading}" Margin="{StaticResource StackGapLg}" />
+
+      <Border Style="{StaticResource PartFooter}" Margin="{StaticResource StackGapSm}">
+        <StackPanel>
+          <TextBlock Style="{StaticResource PartCaption}"
+                     Text="Where a screen's action lives while everything above it scrolls. One edge, along the top, because a footer is not a box - it is where the scrolling stopped. It carries the base background so content disappears under it rather than through it." />
+          <Button Content="Start" Style="{StaticResource PartPrimaryAction}"
+                  HorizontalAlignment="Left" Margin="{StaticResource StackGapSm}" />
+        </StackPanel>
+      </Border>
+
       <!-- ============ Text field ============ -->
       <TextBlock Text="Text field" Style="{StaticResource PartSectionHeading}" Margin="{StaticResource StackGapLg}" />
 

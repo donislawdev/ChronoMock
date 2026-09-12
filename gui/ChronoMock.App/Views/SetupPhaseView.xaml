@@ -129,7 +129,16 @@
     </ResourceDictionary>
   </UserControl.Resources>
 
-  <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+  <!-- 🔴 THE FORM SCROLLS, THE ACTION DOES NOT. This phase is around 940 px tall and the window may be
+       360, so Start used to sit below the fold - the one button the screen exists for had to be hunted
+       for, and the sentence explaining why it was refusing went with it. -->
+  <Grid>
+    <Grid.RowDefinitions>
+      <RowDefinition Height="*" />
+      <RowDefinition Height="Auto" />
+    </Grid.RowDefinitions>
+
+  <ScrollViewer Grid.Row="0" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
     <StackPanel Margin="{StaticResource SpaceXl}">
 
       <!-- 🔴 What this screen does, and what it will not do, for somebody who has no way of knowing
@@ -151,12 +160,17 @@
           <StackPanel Orientation="Horizontal">
             <ComboBox ItemsSource="{Binding RecentTargets}" SelectedItem="{Binding SelectedTarget}"
                       ItemContainerStyle="{StaticResource RecentTargetRow}"
-                      ToolTip="{DynamicResource tip.target_recent}"
+                      ToolTip="{DynamicResource setup.tip_recent}"
                       MaxWidth="{StaticResource TargetBoxMaxWidth}"
                       Visibility="{Binding HasRecentTargets, Converter={StaticResource BoolToVis}}">
               <ComboBox.ItemTemplate>
                 <DataTemplate>
-                  <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" />
+                  <!-- 🔴 The FULL path on the row, because a file name does not identify a build: an x64
+                       and an x86 output are both called the same thing, and choosing the wrong one is a
+                       session that proves nothing about the binary somebody meant. Until now the path
+                       existed only in the name read out to assistive tech. -->
+                  <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis"
+                             ToolTip="{Binding FullPath}" />
                 </DataTemplate>
               </ComboBox.ItemTemplate>
             </ComboBox>
@@ -359,9 +373,17 @@
           <CheckBox Content="{DynamicResource setup.opt_qpc}" IsChecked="{Binding ScaleQpc}"
                     IsEnabled="{Binding IsIdle}" ToolTip="{DynamicResource tip.scale_qpc}"
                     Margin="{StaticResource StackGapSm}" />
+          <!-- 🔴 The cost, where the decision is made rather than a hover away from it. Both of these
+               options can change what a session is worth, and a consequence that only exists in a tooltip
+               is a consequence most people meet after the fact. -->
+          <TextBlock Style="{StaticResource PartCaption}" Margin="{StaticResource OptionNoteGap}"
+                     Text="{DynamicResource setup.opt_qpc_note}" />
+
           <CheckBox Content="{DynamicResource setup.opt_force}" IsChecked="{Binding ForceStart}"
                     IsEnabled="{Binding IsIdle}" ToolTip="{DynamicResource tip.force}"
                     Margin="{StaticResource StackGapSm}" />
+          <TextBlock Style="{StaticResource PartCaption}" Margin="{StaticResource OptionNoteGap}"
+                     Text="{DynamicResource setup.opt_force_note}" />
         </StackPanel>
       </Expander>
 
@@ -411,44 +433,54 @@
       </Expander>
 
       <!--
-        THE CONTRACT, immediately above the button that signs it: the exact instant the application will
-        be told it is, and the clock it will run under. It names the weekday and the zone because a bare
-        date is the ambiguity untouchable rule 2 exists to prevent.
-
-        Under it, and only when it applies, the reason Start is refusing. A disabled button whose reason
-        lives in a tooltip is a result the reader cannot account for, and this screen is not allowed those.
+        The form ends here. What it adds up to, and the button that acts on it, are pinned below.
       -->
-      <StackPanel Margin="{StaticResource StackGapLg}">
-        <WrapPanel Visibility="{Binding HasMomentPreview, Converter={StaticResource BoolToVis}}">
-          <TextBlock Style="{StaticResource PartCaption}" TextWrapping="NoWrap"
-                     VerticalAlignment="Center"
-                     Text="{DynamicResource moment.preview_label}" />
-          <TextBlock Style="{StaticResource PartLabel}" Margin="{StaticResource SpaceXs}"
-                     Text="{Binding MomentPreview}" />
-          <!-- 🔴 The rate, and deliberately NOT the option chips beside it in the speed header. This
-               sentence is about the CLOCK the application will read: the instant and the rate are what it
-               sees, while scaling durations or QPC is how the rate is delivered to it. Printing all three
-               here as well put the same row on the screen twice, a hundred pixels apart. -->
-          <TextBlock Style="{StaticResource PartCaption}" TextWrapping="NoWrap"
-                     VerticalAlignment="Center"
-                     Text="{DynamicResource setup.contract_speed}" />
-          <TextBlock Style="{StaticResource PartLabel}" Margin="{StaticResource SpaceXs}"
-                     Text="{Binding SelectedMode.LabelKey, Converter={StaticResource KeyToText}}" />
-        </WrapPanel>
+    </StackPanel>
+  </ScrollViewer>
 
-        <TextBlock Style="{StaticResource PartFieldMessage}" Margin="{StaticResource StackGapSm}"
-                   Text="{DynamicResource setup.needs_target}"
-                   Visibility="{Binding ShowsDropHint, Converter={StaticResource BoolToVis}}" />
-      </StackPanel>
+  <!--
+    THE CONTRACT, immediately above the button that signs it: the exact instant the application will be
+    told it is, and the clock it will run under. It names the weekday and the zone because a bare date is
+    the ambiguity untouchable rule 2 exists to prevent.
+
+    Under it, and only when it applies, the reason Start is refusing. A disabled button whose reason lives
+    in a tooltip is a result the reader cannot account for, and this screen is not allowed those.
+  -->
+  <Border Grid.Row="1" Style="{StaticResource PartFooter}">
+    <StackPanel>
+      <WrapPanel Visibility="{Binding HasMomentPreview, Converter={StaticResource BoolToVis}}">
+        <TextBlock Style="{StaticResource PartCaption}" TextWrapping="NoWrap"
+                   VerticalAlignment="Center"
+                   Text="{DynamicResource moment.preview_label}" />
+        <TextBlock Style="{StaticResource PartLabel}" Margin="{StaticResource SpaceXs}"
+                   Text="{Binding MomentPreview}" />
+        <!-- 🔴 The rate, and deliberately NOT the option chips beside it in the speed header. This
+             sentence is about the CLOCK the application will read: the instant and the rate are what it
+             sees, while scaling durations or QPC is how the rate is delivered to it. Printing all three
+             here as well put the same row on the screen twice, a hundred pixels apart. -->
+        <TextBlock Style="{StaticResource PartCaption}" TextWrapping="NoWrap"
+                   VerticalAlignment="Center"
+                   Text="{DynamicResource setup.contract_speed}" />
+        <TextBlock Style="{StaticResource PartLabel}" Margin="{StaticResource SpaceXs}"
+                   Text="{Binding SelectedMode.LabelKey, Converter={StaticResource KeyToText}}" />
+      </WrapPanel>
+
+      <!-- 🔴 The caption colour, not the error colour. Nothing has gone WRONG on a screen somebody has
+           just opened - a step is outstanding, and red would tell a first run it had already made a
+           mistake. The accent sitting on Choose is what does the pointing. -->
+      <TextBlock Style="{StaticResource PartCaption}" Margin="{StaticResource StackGapSm}"
+                 Text="{DynamicResource setup.needs_target}"
+                 Visibility="{Binding ShowsDropHint, Converter={StaticResource BoolToVis}}" />
 
       <Button Style="{StaticResource PartPrimaryAction}"
               Content="{DynamicResource action.start}"
-              ToolTip="{DynamicResource tip.start}"
+              ToolTip="{DynamicResource setup.tip_start}"
               ToolTipService.ShowOnDisabled="True"
               IsEnabled="{Binding CanStart}"
               HorizontalAlignment="Left"
               Margin="{StaticResource StackGapSm}" />
-
     </StackPanel>
-  </ScrollViewer>
+  </Border>
+
+  </Grid>
 </UserControl>

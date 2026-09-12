@@ -97,7 +97,20 @@
   // The two ways of filling the moment, both of them shortcuts to the field above rather than settings of
   // their own. Said out loud, because a list that just sits there does not explain what choosing from it
   // will do.
-  "setup.or_pick_scenario": "Albo wybierz gotową datę - wypełni pola powyżej i niczego nie uruchomi.",
+  // 🔴 It TEACHES the word rather than avoiding it. Calling this a "ready-made date" here while the box
+  // under it says "Search scenarios" gave one thing two names on one screen, which is worse for a first
+  // run than one unfamiliar word explained in the same breath. Scenario is the product's word, in the
+  // calculator and on the site, so the reader meets it once and knows it everywhere.
+  "setup.or_pick_scenario": "Albo wybierz scenariusz - gotową datę, która wypełni pola powyżej. Wybór niczego nie uruchamia.",
+
+  // The two options that can cost something. The tooltip carries the full story; these carry the part a
+  // reader has to weigh BEFORE ticking, where the decision is made rather than a hover away from it.
+  "setup.opt_qpc_note": "Animacja i wideo wewnątrz aplikacji mogą wyglądać źle.",
+  "setup.opt_force_note": "Sesja jest wtedy wszędzie oznaczona jako niewiarygodna.",
+
+  // Both of these say "target" in the shipped panel, which is the word this screen stopped using.
+  "setup.tip_recent": "Aplikacje uruchamiane wcześniej. Choose… wybiera taką, której ta maszyna jeszcze nie uruchamiała.",
+  "setup.tip_start": "Uruchamia aplikację pod podmienionym zegarem. Wymaga aplikacji i poprawnej daty.",
 
   // Marks a recent target whose file is gone (a wiped build output, an uninstalled app). Shown rather than the entry being dropped, so the list never goes quiet about why a shortcut will not work (rule 6).
   "target.missing": "(brak pliku)",

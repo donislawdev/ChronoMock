@@ -68,6 +68,27 @@
   </Style>
 
   <!--
+    ============================ Pinned footer ============================
+
+    Where a screen's action lives, held at the bottom while everything above it scrolls.
+
+    🔴 THE REASON IS MEASURED, not stylistic. The setup phase is around 940 px tall and the window may be
+    360, so the one button the screen exists for was below the fold and had to be hunted for. A footer
+    does not make the screen shorter - it makes the action reachable without knowing there is more of it.
+
+    It carries the base background rather than the card's, because content has to disappear UNDER it
+    rather than through it, and the single top edge is what says the scrolling stopped here. An all-round
+    border would make it a box, and it is not a box.
+  -->
+  <Style x:Key="PartFooter" TargetType="Border">
+    <Setter Property="Background" Value="{DynamicResource BrushBgBase}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource BrushDivider}" />
+    <Setter Property="BorderThickness" Value="{StaticResource FooterEdge}" />
+    <Setter Property="Padding" Value="{StaticResource CardPadding}" />
+    <Setter Property="SnapsToDevicePixels" Value="True" />
+  </Style>
+
+  <!--
     ============================ Type roles ============================
 
     Named text roles, so a view says what a piece of text IS rather than how big it is. Sizes come from

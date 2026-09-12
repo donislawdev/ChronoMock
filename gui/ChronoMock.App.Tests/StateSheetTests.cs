@@ -90,6 +90,14 @@ public class StateSheetTests
             configured.ForceStart = true;
             total += RenderSetup("setup-configured", configured).Count;
 
+            // 🔴 The window's own floor, which is the whole reason the footer is pinned. At 360 px the
+            // form is far taller than the frame, so this is the sheet that shows whether the action and
+            // the sentence explaining it survived - or whether they went below the fold with everything
+            // else, which is what they used to do.
+            total += StateSheet
+                .Write("setup-floor", new SetupPhaseView { DataContext = WithScenarios() }, MinimumWidth, MinimumHeight)
+                .Count;
+
             return total;
         });
 
