@@ -27,7 +27,7 @@ public class StateSheetTests
     ///
     /// 🔴 The height is a fixed number, and the test asserts the catalogue FITS in it. Without that
     /// assertion, adding a part would quietly push the newest one out of frame - and the newest part is
-    /// exactly the one somebody wanted to look at. When this reddens, raise the number; do not crop.
+    /// exactly the one somebody wanted to look at. When this reddens, raise the number rather than crop.
     /// </remarks>
     [Fact]
     public void The_component_catalogue_renders_and_fits_in_the_sheet()
@@ -48,7 +48,7 @@ public class StateSheetTests
     }
 
     private const int CatalogueWidth = 900;
-    private const int CatalogueHeight = 880;
+    private const int CatalogueHeight = 2200;
 
     [Fact]
     public void The_substitution_panel_renders_in_its_startup_state()

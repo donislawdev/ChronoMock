@@ -1,6 +1,7 @@
 <UserControl x:Class="ChronoMock.App.Views.ComponentCatalogue"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:app="clr-namespace:ChronoMock.App"
              Background="{DynamicResource BrushBgBase}">
 
   <!--
@@ -23,7 +24,17 @@
   -->
 
   <UserControl.Resources>
-    <ResourceDictionary Source="../Themes/Parts.xaml" />
+    <ResourceDictionary>
+      <ResourceDictionary.MergedDictionaries>
+        <ResourceDictionary Source="../Themes/Parts.xaml" />
+      </ResourceDictionary.MergedDictionaries>
+
+      <!-- The message a form row carries under its control. It is content rather than a string property
+           so a row can hold anything there - a sentence, a link, a value - without the part having to
+           know which. -->
+      <TextBlock x:Key="CatalogueFieldMessage" Style="{StaticResource PartFieldMessage}"
+                 Text="That folder does not exist - pick one, or leave it empty to use the target's own." />
+    </ResourceDictionary>
   </UserControl.Resources>
 
   <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="{StaticResource SpaceXl}">
@@ -85,6 +96,145 @@
       <Border Style="{StaticResource PartCard}" Margin="{StaticResource StackGapSm}">
         <TextBlock Text="An empty card, for the case where a section has nothing in it yet."
                    Style="{StaticResource PartCaption}" />
+      </Border>
+
+      <!-- ============ Text field ============ -->
+      <TextBlock Text="Text field" Style="{StaticResource PartSectionHeading}" Margin="{StaticResource StackGapLg}" />
+
+      <Border Style="{StaticResource PartCard}" Margin="{StaticResource StackGapSm}">
+        <StackPanel>
+          <TextBlock Style="{StaticResource PartCaption}"
+                     Text="A field shows its ring on any focus, not only keyboard focus: the ring says your typing lands here, which is true however the caret arrived. The error state moves the EDGE, never the fill - a tinted fill would change the surface the text is read on while somebody is fixing it." />
+          <WrapPanel Margin="{StaticResource StackGapSm}">
+            <TextBox Text="2038-01-19" Width="{StaticResource LaunchFieldWidth}" Margin="{StaticResource SpaceXs}" />
+            <TextBox Text="" Width="{StaticResource TargetBoxMaxWidth}" Margin="{StaticResource SpaceXs}" />
+          </WrapPanel>
+          <WrapPanel>
+            <TextBox Text="2038-13-45" Width="{StaticResource LaunchFieldWidth}" Margin="{StaticResource SpaceXs}"
+                     app:PartState.HasError="True" />
+            <TextBox Text="Disabled" Width="{StaticResource TargetBoxMaxWidth}" Margin="{StaticResource SpaceXs}"
+                     IsEnabled="False" />
+          </WrapPanel>
+          <TextBlock Style="{StaticResource PartFieldMessage}" Margin="{StaticResource SpaceXs}"
+                     Text="Month must be 1 to 12 and day must exist in that month." />
+        </StackPanel>
+      </Border>
+
+      <!-- ============ Check ============ -->
+      <TextBlock Text="Check" Style="{StaticResource PartSectionHeading}" Margin="{StaticResource StackGapLg}" />
+
+      <Border Style="{StaticResource PartCard}" Margin="{StaticResource StackGapSm}">
+        <StackPanel>
+          <CheckBox Content="Scale duration too" Margin="{StaticResource SpaceXs}" />
+          <CheckBox Content="Scale QPC too" IsChecked="True" Margin="{StaticResource SpaceXs}" />
+          <CheckBox Content="Run even if it does not work" IsEnabled="False" Margin="{StaticResource SpaceXs}" />
+          <CheckBox Content="Checked and disabled - the fill dims too, or a dead control shouts in the accent colour"
+                    IsChecked="True" IsEnabled="False" Margin="{StaticResource SpaceXs}" />
+        </StackPanel>
+      </Border>
+
+      <!-- ============ Drop-down ============ -->
+      <TextBlock Text="Drop-down" Style="{StaticResource PartSectionHeading}" Margin="{StaticResource StackGapLg}" />
+
+      <Border Style="{StaticResource PartCard}" Margin="{StaticResource StackGapSm}">
+        <StackPanel>
+          <TextBlock Style="{StaticResource PartCaption}"
+                     Text="One edge and one fill, not a control with a button sitting inside it. The chevron is drawn, not a glyph, so its stroke stays constant on screen at any size." />
+          <WrapPanel Margin="{StaticResource StackGapSm}">
+            <ComboBox Width="{StaticResource LaunchFieldWidth}" Margin="{StaticResource SpaceXs}" SelectedIndex="0">
+              <ComboBoxItem Content="UTC+02:00 - Poland (summer)" />
+              <ComboBoxItem Content="UTC-05:00 - New York" />
+            </ComboBox>
+            <ComboBox Width="{StaticResource TargetBoxMaxWidth}" Margin="{StaticResource SpaceXs}"
+                      IsEnabled="False" SelectedIndex="0">
+              <ComboBoxItem Content="Disabled" />
+            </ComboBox>
+          </WrapPanel>
+        </StackPanel>
+      </Border>
+
+      <!-- ============ Choice list ============ -->
+      <TextBlock Text="Choice list" Style="{StaticResource PartSectionHeading}" Margin="{StaticResource StackGapLg}" />
+
+      <Border Style="{StaticResource PartCard}" Margin="{StaticResource StackGapSm}">
+        <StackPanel>
+          <TextBlock Style="{StaticResource PartCaption}"
+                     Text="Searched rather than scanned, because this catalogue is meant to grow well past what fits on a screen. Selection is a fill AND an accent bar: colour alone would be the only thing saying which one, and it is the one signal a reader may not have." />
+          <TextBox Margin="{StaticResource StackGapSm}" Text="" />
+          <ListBox MaxHeight="{StaticResource ChoiceListMaxHeight}" Margin="{StaticResource StackGapSm}"
+                   Background="Transparent" BorderThickness="0" SelectedIndex="1">
+            <ListBoxItem Content="2038 boundary" />
+            <ListBoxItem Content="29 February" />
+            <ListBoxItem Content="Licence expired a year ago" />
+            <ListBoxItem Content="A scenario with a name long enough that it has to decide what to do with the space it has" />
+          </ListBox>
+        </StackPanel>
+      </Border>
+
+      <!-- ============ Form row ============ -->
+      <TextBlock Text="Form row" Style="{StaticResource PartSectionHeading}" Margin="{StaticResource StackGapLg}" />
+
+      <Border Style="{StaticResource PartCard}" Margin="{StaticResource StackGapSm}">
+        <!-- 🔴 Grid.IsSharedSizeScope is what makes the label column agree across rows. Without it each
+             row sizes its own label and the controls start at different x - which is the fault this part
+             exists to fix. -->
+        <StackPanel Grid.IsSharedSizeScope="True">
+          <TextBlock Style="{StaticResource PartCaption}"
+                     Text="The labels line up and the controls start at one x, whatever the label says. The column width is computed from the widest label present, not chosen - so it still holds after a translation." />
+
+          <HeaderedContentControl Style="{StaticResource PartFormRow}" Margin="{StaticResource StackGapSm}">
+            <HeaderedContentControl.Header>
+              <TextBlock Text="Target" Style="{StaticResource PartLabel}" />
+            </HeaderedContentControl.Header>
+            <ComboBox Width="{StaticResource LaunchFieldWidth}" SelectedIndex="0">
+              <ComboBoxItem Content="the application under test" />
+            </ComboBox>
+          </HeaderedContentControl>
+
+          <HeaderedContentControl Style="{StaticResource PartFormRow}">
+            <HeaderedContentControl.Header>
+              <TextBlock Text="At" Style="{StaticResource PartLabel}" />
+            </HeaderedContentControl.Header>
+            <TextBox Text="2038-01-19" Width="{StaticResource LaunchFieldWidth}" />
+          </HeaderedContentControl>
+
+          <HeaderedContentControl Style="{StaticResource PartFormRow}"
+                                  Tag="{StaticResource CatalogueFieldMessage}">
+            <HeaderedContentControl.Header>
+              <TextBlock Text="Working folder" Style="{StaticResource PartLabel}" />
+            </HeaderedContentControl.Header>
+            <TextBox Text="C:\nowhere" Width="{StaticResource LaunchFieldWidth}"
+                     app:PartState.HasError="True" />
+          </HeaderedContentControl>
+        </StackPanel>
+      </Border>
+
+      <!-- ============ Verdict badge ============ -->
+      <TextBlock Text="Verdict badge" Style="{StaticResource PartSectionHeading}" Margin="{StaticResource StackGapLg}" />
+
+      <Border Style="{StaticResource PartCard}" Margin="{StaticResource StackGapSm}">
+        <StackPanel>
+          <TextBlock Style="{StaticResource PartCaption}"
+                     Text="The one place the meaning palette goes on something other than plain text. Colour never carries the meaning alone - the badge always holds a word." />
+          <WrapPanel Margin="{StaticResource StackGapSm}">
+            <Border Style="{StaticResource PartBadge}" Margin="{StaticResource SpaceXs}">
+              <TextBlock Text="Works" Foreground="{DynamicResource BrushStatusWorks}"
+                         FontSize="{StaticResource FontSizeBody}" />
+            </Border>
+            <Border Style="{StaticResource PartBadge}" Margin="{StaticResource SpaceXs}">
+              <TextBlock Text="Partial" Foreground="{DynamicResource BrushStatusPartial}"
+                         FontSize="{StaticResource FontSizeBody}" />
+            </Border>
+            <Border Style="{StaticResource PartBadge}" Margin="{StaticResource SpaceXs}">
+              <TextBlock Text="Does not work" Foreground="{DynamicResource BrushStatusFails}"
+                         FontSize="{StaticResource FontSizeBody}" />
+            </Border>
+            <Border Style="{StaticResource PartBadge}" Margin="{StaticResource SpaceXs}">
+              <TextBlock Text="Undetermined" Foreground="{DynamicResource BrushStatusUndetermined}"
+                         FontSize="{StaticResource FontSizeBody}" />
+            </Border>
+          </WrapPanel>
+        </StackPanel>
       </Border>
 
       <!-- ============ Type roles ============ -->

@@ -962,6 +962,14 @@ const CS_KNOWN_UNUSED: &[(&str, &str)] = &[
         "Protocol surface that is deliberately unsent. The core knows `query`          (`chrono_proto::Command::Query`) and this is the client half of it, but the core already          beats `state` about once a real second, so no client has needed to ask. Deleting it          would make the C# client a subset of the contract rather than a mirror of it.",
     ),
     (
+        "GetHasError",
+        "WPF attached-property accessor. The XAML parser calls it by CONVENTION - markup writing          `app:PartState.HasError=\"True\"` never spells the method name, and a trigger keying on          the property does not either. So this guard is right that the name appears nowhere and          wrong that the method is dead: deleting it breaks every view that sets the state. It          goes if the attached property goes.",
+    ),
+    (
+        "SetHasError",
+        "The other half of `GetHasError`, and required by the same parser convention - WPF looks          for both accessors by name and refuses the property if either is missing. It lives and          dies with its pair.",
+    ),
+    (
         "Launch",
         "`CoreClient.Launch` spawns the core and sends `start` in one step, for callers that do          not gate on `ready`. Its own XML comment says the conformance tests use it, and they are          its only callers - the GUI goes through `Connect` and waits. It exists FOR the tests,          which is a reason, and deleting it deletes what those five conformance tests drive.",
     ),

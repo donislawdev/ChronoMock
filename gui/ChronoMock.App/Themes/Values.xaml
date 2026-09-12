@@ -53,7 +53,54 @@
   <!-- The keyboard focus ring sits OUTSIDE the control edge, so a focused control does not change size
        and its neighbours do not shift. Two pixels: one is invisible next to a one pixel border. -->
   <Thickness x:Key="FocusRingThickness">2</Thickness>
-  <Thickness x:Key="FocusRingMargin">-3</Thickness>
+  <!-- Four out, two of which the ring itself occupies, leaves two pixels of background between the ring
+       and the control edge. That gap is not decoration: the ring and the accent fill are the same hue,
+       so without background showing between them a focused primary button is one solid blue shape. -->
+  <Thickness x:Key="FocusRingMargin">-4</Thickness>
+
+  <!-- 🔴 The label column of a form has NO width here, on purpose, and that is the correction to a first
+       draft which gave it 150. A number wide enough for today's longest label is a number measured off
+       the content, and it stops being right at the first translation or font change. The rows share one
+       computed width instead, through SharedSizeGroup: the column is as wide as the widest label there
+       actually is, every row agrees, and nobody picked a number. -->
+
+  <!-- 🔴 The gap between the label column and the control. Rendered without it, the shared column comes
+       out exactly as wide as the longest label, so THAT row's label touched its field while every
+       shorter one looked fine - the fault appears only on the row that sets the width, which is why it
+       survived reading the markup and did not survive one look at the picture. -->
+  <Thickness x:Key="FormLabelGap">0,0,16,0</Thickness>
+
+  <!-- Room kept for a field's message whether or not there is one. Reserved, not conditional: a message
+       that appears and pushes everything below it down makes the reader lose their place at the exact
+       moment they are being told they got something wrong. -->
+  <sys:Double x:Key="FieldMessageHeight">18</sys:Double>
+
+  <!-- Check control. The box is bigger than the tick inside it, and the tick is drawn rather than set in
+       a glyph font, so it scales with the box instead of with whatever the system font does. -->
+  <sys:Double x:Key="CheckBoxSize">20</sys:Double>
+  <sys:Double x:Key="CheckTickSize">12</sys:Double>
+  <sys:Double x:Key="CheckTickStroke">2</sys:Double>
+  <!-- Directional: a uniform margin here would indent the label from the top and bottom as well, and a
+       column of checkboxes would stop lining up with the rows above it. -->
+  <Thickness x:Key="CheckLabelGap">8,0,0,0</Thickness>
+
+  <!-- The bar that marks the selected row. Narrow enough to read as a marker rather than a second
+       column, wide enough to survive a non-integer display scale. -->
+  <sys:Double x:Key="SelectionBarWidth">3</sys:Double>
+
+  <!-- The drop-down chevron, drawn rather than taken from a glyph font. A glyph is sized in the font's
+       own units and a 12 px one sits beside a 16 px one looking like two different icon sets; a drawn
+       one keeps its stroke on screen whatever size it is asked for. -->
+  <sys:Double x:Key="ChevronSize">12</sys:Double>
+  <Thickness x:Key="ChevronGap">0,0,12,0</Thickness>
+
+  <!-- The floating list stands off the control it belongs to, so the two edges do not merge into one
+       thick line and the list reads as being above the screen rather than glued to the field. -->
+  <Thickness x:Key="PopupGap">0,4,0,0</Thickness>
+
+  <!-- A list of choices that is searched rather than scanned. The cap is what keeps a growing catalogue
+       from taking the screen: the list scrolls inside it, and the filter box above it does the finding. -->
+  <sys:Double x:Key="ChoiceListMaxHeight">240</sys:Double>
   <sys:Double x:Key="StrokeThin">1</sys:Double>
   <!-- The same one-pixel edge as a Thickness, for a BorderThickness. WPF does not convert a Double to a
        Thickness through a resource reference, so the two spellings of one decision both have to exist. -->

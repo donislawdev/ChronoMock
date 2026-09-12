@@ -1,5 +1,6 @@
 <ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:app="clr-namespace:ChronoMock.App">
 
   <!--
     THE PARTS LIBRARY. Everything a screen is built from, drawn by us rather than by the toolkit.
@@ -208,6 +209,394 @@
         <Setter Property="Foreground" Value="{DynamicResource BrushTextSecondary}" />
       </Trigger>
     </Style.Triggers>
+  </Style>
+
+  <!--
+    ============================ Text field ============================
+
+    🔴 A field shows its ring on ANY focus, where a button shows it on keyboard focus only. That is not
+    an inconsistency in the language, it is the language being about meaning: on a field the ring says
+    "your typing lands here", which is true however the caret arrived. On a button the same mark would
+    say the same thing and be a lie.
+
+    The error state moves the EDGE, not the fill. A tinted fill would change the surface the typed text
+    is read on, which is the one thing a field must not do while somebody is fixing a mistake on it.
+  -->
+  <Style TargetType="TextBox">
+    <Setter Property="Background" Value="{DynamicResource BrushControlRest}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource BrushControlBorder}" />
+    <Setter Property="Foreground" Value="{DynamicResource BrushTextPrimary}" />
+    <Setter Property="CaretBrush" Value="{DynamicResource BrushTextPrimary}" />
+    <Setter Property="SelectionBrush" Value="{DynamicResource BrushAccent}" />
+    <Setter Property="FontSize" Value="{StaticResource FontSizeBody}" />
+    <Setter Property="Height" Value="{StaticResource ControlHeight}" />
+    <Setter Property="Padding" Value="{StaticResource ControlPadding}" />
+    <Setter Property="VerticalContentAlignment" Value="Center" />
+    <Setter Property="SnapsToDevicePixels" Value="True" />
+    <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="TextBox">
+          <Grid>
+            <Border x:Name="Ring" Style="{StaticResource PartFocusRing}" Visibility="Collapsed" />
+            <Border Background="{TemplateBinding Background}"
+                    BorderBrush="{TemplateBinding BorderBrush}"
+                    BorderThickness="{StaticResource StrokeThinEdge}"
+                    CornerRadius="{StaticResource RadiusSm}"
+                    SnapsToDevicePixels="True">
+              <ScrollViewer x:Name="PART_ContentHost"
+                            Padding="{TemplateBinding Padding}"
+                            VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
+                            Focusable="False"
+                            HorizontalScrollBarVisibility="Hidden"
+                            VerticalScrollBarVisibility="Hidden" />
+            </Border>
+          </Grid>
+          <ControlTemplate.Triggers>
+            <Trigger Property="IsFocused" Value="True">
+              <Setter TargetName="Ring" Property="Visibility" Value="Visible" />
+            </Trigger>
+          </ControlTemplate.Triggers>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+    <Style.Triggers>
+      <Trigger Property="IsMouseOver" Value="True">
+        <Setter Property="Background" Value="{DynamicResource BrushControlHover}" />
+      </Trigger>
+      <Trigger Property="app:PartState.HasError" Value="True">
+        <Setter Property="BorderBrush" Value="{DynamicResource BrushError}" />
+      </Trigger>
+      <Trigger Property="IsEnabled" Value="False">
+        <Setter Property="BorderBrush" Value="{DynamicResource BrushDivider}" />
+        <Setter Property="Foreground" Value="{DynamicResource BrushTextSecondary}" />
+      </Trigger>
+    </Style.Triggers>
+  </Style>
+
+  <!--
+    ============================ Check ============================
+
+    The box carries the state, the label never moves and never changes colour. Checked is the accent
+    fill with a dark tick on it, which is the same pairing the primary action uses - one accent meaning
+    one thing across the whole interface.
+  -->
+  <Style TargetType="CheckBox">
+    <Setter Property="Foreground" Value="{DynamicResource BrushTextPrimary}" />
+    <Setter Property="FontSize" Value="{StaticResource FontSizeBody}" />
+    <Setter Property="VerticalContentAlignment" Value="Center" />
+    <Setter Property="SnapsToDevicePixels" Value="True" />
+    <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="CheckBox">
+          <StackPanel Orientation="Horizontal" Background="Transparent">
+            <Grid VerticalAlignment="Center">
+              <Border x:Name="Ring" Style="{StaticResource PartFocusRing}" Visibility="Collapsed" />
+              <Border x:Name="Box"
+                      Width="{StaticResource CheckBoxSize}" Height="{StaticResource CheckBoxSize}"
+                      Background="{DynamicResource BrushControlRest}"
+                      BorderBrush="{DynamicResource BrushControlBorder}"
+                      BorderThickness="{StaticResource StrokeThinEdge}"
+                      CornerRadius="{StaticResource RadiusSm}"
+                      SnapsToDevicePixels="True">
+                <Path x:Name="Tick"
+                      Width="{StaticResource CheckTickSize}" Height="{StaticResource CheckTickSize}"
+                      Stretch="Uniform"
+                      Data="M 0,5 L 4,9 L 11,1"
+                      Stroke="{DynamicResource BrushOnAccent}"
+                      StrokeThickness="{StaticResource CheckTickStroke}"
+                      StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"
+                      Visibility="Collapsed" />
+              </Border>
+            </Grid>
+            <ContentPresenter x:Name="Label"
+                              Margin="{StaticResource CheckLabelGap}"
+                              VerticalAlignment="Center"
+                              RecognizesAccessKey="True" />
+          </StackPanel>
+          <ControlTemplate.Triggers>
+            <Trigger Property="IsChecked" Value="True">
+              <Setter TargetName="Box" Property="Background" Value="{DynamicResource BrushAccent}" />
+              <Setter TargetName="Box" Property="BorderBrush" Value="{DynamicResource BrushAccent}" />
+              <Setter TargetName="Tick" Property="Visibility" Value="Visible" />
+            </Trigger>
+            <Trigger Property="IsMouseOver" Value="True">
+              <Setter TargetName="Box" Property="BorderBrush" Value="{DynamicResource BrushGlyphMuted}" />
+            </Trigger>
+            <Trigger Property="IsKeyboardFocused" Value="True">
+              <Setter TargetName="Ring" Property="Visibility" Value="Visible" />
+            </Trigger>
+            <Trigger Property="IsEnabled" Value="False">
+              <Setter TargetName="Box" Property="BorderBrush" Value="{DynamicResource BrushDivider}" />
+              <Setter Property="Foreground" Value="{DynamicResource BrushTextSecondary}" />
+            </Trigger>
+            <!-- Checked AND disabled: the fill has to dim too, or a dead control still shouts in the
+                 accent colour and reads as the most important thing on the screen. -->
+            <MultiTrigger>
+              <MultiTrigger.Conditions>
+                <Condition Property="IsChecked" Value="True" />
+                <Condition Property="IsEnabled" Value="False" />
+              </MultiTrigger.Conditions>
+              <Setter TargetName="Box" Property="Background" Value="{DynamicResource BrushControlPressed}" />
+              <Setter TargetName="Tick" Property="Stroke" Value="{DynamicResource BrushTextSecondary}" />
+            </MultiTrigger>
+          </ControlTemplate.Triggers>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+
+  <!--
+    ============================ Drop-down ============================
+
+    The hardest part to draw, because it is three things at once: a face that shows the current choice,
+    a button that opens, and a floating list. All three answer in the same language as everything else.
+
+    🔴 The toggle inside it carries NO look of its own. It is a transparent hit area over the face, so
+    the control has one edge and one fill rather than a control with a button sitting in it - which is
+    what a toolkit drop-down looks like, and one of the things that makes a screen look assembled from
+    parts rather than designed.
+  -->
+  <Style x:Key="PartDropDownToggle" TargetType="ToggleButton">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderThickness" Value="0" />
+    <Setter Property="Focusable" Value="False" />
+    <Setter Property="ClickMode" Value="Press" />
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="ToggleButton">
+          <Border Background="{TemplateBinding Background}" SnapsToDevicePixels="True" />
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+
+  <Style TargetType="ComboBox">
+    <Setter Property="Background" Value="{DynamicResource BrushControlRest}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource BrushControlBorder}" />
+    <Setter Property="Foreground" Value="{DynamicResource BrushTextPrimary}" />
+    <Setter Property="FontSize" Value="{StaticResource FontSizeBody}" />
+    <Setter Property="Height" Value="{StaticResource ControlHeight}" />
+    <Setter Property="Padding" Value="{StaticResource ControlPadding}" />
+    <Setter Property="VerticalContentAlignment" Value="Center" />
+    <Setter Property="SnapsToDevicePixels" Value="True" />
+    <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="ComboBox">
+          <Grid>
+            <Border x:Name="Ring" Style="{StaticResource PartFocusRing}" Visibility="Collapsed" />
+            <Border x:Name="Face"
+                    Background="{TemplateBinding Background}"
+                    BorderBrush="{TemplateBinding BorderBrush}"
+                    BorderThickness="{StaticResource StrokeThinEdge}"
+                    CornerRadius="{StaticResource RadiusSm}"
+                    SnapsToDevicePixels="True">
+              <Grid>
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="*" />
+                  <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <ContentPresenter Grid.Column="0"
+                                  Margin="{TemplateBinding Padding}"
+                                  Content="{TemplateBinding SelectionBoxItem}"
+                                  ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}"
+                                  VerticalAlignment="Center"
+                                  HorizontalAlignment="Left"
+                                  IsHitTestVisible="False" />
+
+                <Path x:Name="Chevron" Grid.Column="1"
+                      Width="{StaticResource ChevronSize}" Height="{StaticResource ChevronSize}"
+                      Margin="{StaticResource ChevronGap}"
+                      Stretch="Uniform"
+                      Data="M 1,1 L 6,6 L 11,1"
+                      Stroke="{DynamicResource BrushGlyphMuted}"
+                      StrokeThickness="{StaticResource CheckTickStroke}"
+                      StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"
+                      VerticalAlignment="Center"
+                      IsHitTestVisible="False" />
+
+                <ToggleButton Grid.Column="0" Grid.ColumnSpan="2"
+                              Style="{StaticResource PartDropDownToggle}"
+                              IsChecked="{Binding IsDropDownOpen, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}" />
+              </Grid>
+            </Border>
+
+            <!-- The list floats above everything, so it needs its own surface and its own edge: it is
+                 the one place where a border does not mean "you can act on this" but "this is not part
+                 of the screen behind it". -->
+            <Popup x:Name="PART_Popup"
+                   AllowsTransparency="True"
+                   Placement="Bottom"
+                   Focusable="False"
+                   PopupAnimation="None"
+                   IsOpen="{Binding IsDropDownOpen, RelativeSource={RelativeSource TemplatedParent}}">
+              <Border Background="{DynamicResource BrushBgSurface}"
+                      BorderBrush="{DynamicResource BrushControlBorder}"
+                      BorderThickness="{StaticResource StrokeThinEdge}"
+                      CornerRadius="{StaticResource RadiusSm}"
+                      Margin="{StaticResource PopupGap}"
+                      Padding="{StaticResource SpaceXs}"
+                      MinWidth="{TemplateBinding ActualWidth}"
+                      MaxHeight="{StaticResource ChoiceListMaxHeight}"
+                      SnapsToDevicePixels="True">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                  <ItemsPresenter />
+                </ScrollViewer>
+              </Border>
+            </Popup>
+          </Grid>
+          <ControlTemplate.Triggers>
+            <Trigger Property="IsMouseOver" Value="True">
+              <Setter TargetName="Face" Property="Background" Value="{DynamicResource BrushControlHover}" />
+            </Trigger>
+            <!-- Open is a state and has to look like one, or the only way to tell an open drop-down
+                 from a closed one is the list underneath it. -->
+            <Trigger Property="IsDropDownOpen" Value="True">
+              <Setter TargetName="Face" Property="Background" Value="{DynamicResource BrushControlPressed}" />
+              <Setter TargetName="Chevron" Property="Stroke" Value="{DynamicResource BrushTextPrimary}" />
+            </Trigger>
+            <Trigger Property="IsKeyboardFocused" Value="True">
+              <Setter TargetName="Ring" Property="Visibility" Value="Visible" />
+            </Trigger>
+            <Trigger Property="IsEnabled" Value="False">
+              <Setter TargetName="Face" Property="BorderBrush" Value="{DynamicResource BrushDivider}" />
+              <Setter TargetName="Chevron" Property="Stroke" Value="{DynamicResource BrushTextSecondary}" />
+              <Setter Property="Foreground" Value="{DynamicResource BrushTextSecondary}" />
+            </Trigger>
+          </ControlTemplate.Triggers>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+
+  <!--
+    ============================ Choice row ============================
+
+    One row of a list that is chosen from. Selection is a FILL plus an accent bar down the leading edge:
+    colour alone would be the only thing saying "this one", and it is the one signal a reader may not
+    have. The bar is also what survives the row being hovered while another row is selected.
+  -->
+  <Style TargetType="ListBoxItem">
+    <Setter Property="Foreground" Value="{DynamicResource BrushTextPrimary}" />
+    <Setter Property="FontSize" Value="{StaticResource FontSizeBody}" />
+    <Setter Property="Padding" Value="{StaticResource ChipPadding}" />
+    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+    <Setter Property="SnapsToDevicePixels" Value="True" />
+    <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="ListBoxItem">
+          <Border x:Name="Face"
+                  Background="Transparent"
+                  CornerRadius="{StaticResource RadiusSm}"
+                  SnapsToDevicePixels="True">
+            <Grid>
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+              </Grid.ColumnDefinitions>
+              <Border x:Name="Marker" Grid.Column="0"
+                      Width="{StaticResource SelectionBarWidth}"
+                      Background="{DynamicResource BrushAccent}"
+                      CornerRadius="{StaticResource RadiusSm}"
+                      Visibility="Hidden" />
+              <ContentPresenter Grid.Column="1" Margin="{TemplateBinding Padding}" />
+            </Grid>
+          </Border>
+          <ControlTemplate.Triggers>
+            <Trigger Property="IsMouseOver" Value="True">
+              <Setter TargetName="Face" Property="Background" Value="{DynamicResource BrushControlHover}" />
+            </Trigger>
+            <Trigger Property="IsSelected" Value="True">
+              <Setter TargetName="Face" Property="Background" Value="{DynamicResource BrushControlRest}" />
+              <Setter TargetName="Marker" Property="Visibility" Value="Visible" />
+            </Trigger>
+            <Trigger Property="IsKeyboardFocused" Value="True">
+              <Setter TargetName="Face" Property="Background" Value="{DynamicResource BrushControlHover}" />
+            </Trigger>
+            <Trigger Property="IsEnabled" Value="False">
+              <Setter Property="Foreground" Value="{DynamicResource BrushTextSecondary}" />
+            </Trigger>
+          </ControlTemplate.Triggers>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+
+  <!--
+    ============================ Form row ============================
+
+    🔴 THE PART THAT FIXES "EVERYTHING LOOKS RANDOMLY PLACED". A form is a grid with a label column, not
+    a stack of centred rows: when every row centres itself, the control beside a short label and the
+    control beside a long one start at different x, and the eye looks for a vertical line that is not
+    there. Measured on the shipped panel: 33 separate centrings, and three checkboxes whose boxes sit at
+    three different x for no reason other than their labels being different lengths.
+
+    HeaderedContentControl is used because a form row IS a header and a content: the toolkit already has
+    the shape, so this is a drawing rather than a new control with its own lifetime.
+
+    🔴 The label column has no chosen width. It is Auto with a SHARED size group, so every row on a
+    screen computes one width together - as wide as the widest label that is actually there. A fixed
+    width would be a number measured off today's text, and it would be wrong at the first translation.
+    The screen holding the rows has to set Grid.IsSharedSizeScope="True", which is the one thing a
+    caller must remember; without it the rows still work and simply stop agreeing with each other.
+
+    The message line under the control is always there, occupied or not. See FieldMessageHeight.
+  -->
+  <Style x:Key="PartFormRow" TargetType="HeaderedContentControl">
+    <Setter Property="HorizontalContentAlignment" Value="Left" />
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="HeaderedContentControl">
+          <Grid Margin="{StaticResource StackGapSm}">
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="Auto" SharedSizeGroup="FormLabel" />
+              <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <Grid.RowDefinitions>
+              <RowDefinition Height="Auto" />
+              <RowDefinition Height="Auto" MinHeight="{StaticResource FieldMessageHeight}" />
+            </Grid.RowDefinitions>
+
+            <ContentPresenter Grid.Row="0" Grid.Column="0"
+                              ContentSource="Header"
+                              Margin="{StaticResource FormLabelGap}"
+                              VerticalAlignment="Center"
+                              HorizontalAlignment="Left" />
+            <ContentPresenter Grid.Row="0" Grid.Column="1"
+                              HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                              VerticalAlignment="Center" />
+            <ContentPresenter Grid.Row="1" Grid.Column="1"
+                              Content="{Binding Tag, RelativeSource={RelativeSource TemplatedParent}}"
+                              VerticalAlignment="Center" />
+          </Grid>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+
+  <!-- The message under a field. Quiet by default, the error colour when the field is wrong - and it
+       always says what to do about it, never just that something is wrong. -->
+  <Style x:Key="PartFieldMessage" TargetType="TextBlock" BasedOn="{StaticResource PartCaption}">
+    <Setter Property="Foreground" Value="{DynamicResource BrushError}" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+  </Style>
+
+  <!--
+    ============================ Verdict badge ============================
+
+    The one place the meaning palette is allowed on something other than plain text. Colour never
+    carries the meaning alone: the badge always holds a word, and the caller pairs it with a glyph.
+  -->
+  <Style x:Key="PartBadge" TargetType="Border">
+    <Setter Property="Background" Value="{DynamicResource BrushBgSurfaceAlt}" />
+    <Setter Property="CornerRadius" Value="{StaticResource RadiusPill}" />
+    <Setter Property="Padding" Value="{StaticResource ChipPadding}" />
+    <Setter Property="HorizontalAlignment" Value="Left" />
+    <Setter Property="SnapsToDevicePixels" Value="True" />
   </Style>
 
 </ResourceDictionary>

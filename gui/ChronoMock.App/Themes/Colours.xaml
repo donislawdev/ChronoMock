@@ -132,9 +132,20 @@
 
   <!-- Verdict status colours. Always paired with a shape and a label, never colour alone. Each holds
        5.28 or better against both the window and a card. -->
-  <SolidColorBrush x:Key="BrushStatusWorks" Color="#FF4EC9A8" />
-  <SolidColorBrush x:Key="BrushStatusPartial" Color="#FFE5C07B" />
-  <SolidColorBrush x:Key="BrushStatusFails" Color="#FFF0736A" />
-  <SolidColorBrush x:Key="BrushStatusUndetermined" Color="#FF9AA0A6" />
+  <Color x:Key="StatusWorks">#FF4EC9A8</Color>
+  <Color x:Key="StatusPartial">#FFE5C07B</Color>
+  <Color x:Key="StatusFails">#FFF0736A</Color>
+  <Color x:Key="StatusUndetermined">#FF9AA0A6</Color>
+
+  <SolidColorBrush x:Key="BrushStatusWorks" Color="{StaticResource StatusWorks}" />
+  <SolidColorBrush x:Key="BrushStatusPartial" Color="{StaticResource StatusPartial}" />
+  <SolidColorBrush x:Key="BrushStatusFails" Color="{StaticResource StatusFails}" />
+  <SolidColorBrush x:Key="BrushStatusUndetermined" Color="{StaticResource StatusUndetermined}" />
+
+  <!-- A field holding something unusable. Its own role rather than a second name for the failure
+       verdict: they are the same colour today and answer different questions, so if one ever has to
+       move, there is somewhere for it to move to. Measured as an edge: 5.28 against a card, against
+       a floor of 3.0 for a non-text boundary. -->
+  <SolidColorBrush x:Key="BrushError" Color="{StaticResource StatusFails}" />
 
 </ResourceDictionary>
