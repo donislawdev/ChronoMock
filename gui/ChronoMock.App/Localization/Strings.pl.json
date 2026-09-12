@@ -29,6 +29,26 @@
   "scenario.unsupported": "Plik presetu tego scenariusza ma kształt, którego ta wersja nie czyta.",
   "scenario.engine_missing": "Nie udało się uruchomić silnika kalkulatora, więc scenariuszy nie da się policzyć.",
 
+  // The list is searched rather than scanned, because the catalogue is meant to grow. Nothing matched and
+  // nothing installed are opposite problems, so they get different sentences - and the first one says what
+  // to do about it, never only that something is wrong.
+  "scenario.filter_placeholder": "Szukaj scenariuszy",
+  "scenario.no_matches": "Żaden scenariusz nie pasuje. Wyczyść pole, żeby zobaczyć wszystkie.",
+
+  // The rebuilt setup screen: one thing always visible and the rest folded away behind a header that keeps
+  // saying what is set inside it. The chips are deliberately short - they sit in a section header beside a
+  // speed, where a full sentence would push the speed off the end.
+  "setup.section_moment": "Moment",
+  "setup.section_speed": "Tempo i opcje",
+  "setup.needs_target": "Wybierz aplikację, zanim wystartujesz.",
+  "setup.chip_duration": "trwanie skalowane",
+  "setup.chip_qpc": "QPC skalowane",
+  "setup.chip_force": "start wymuszony",
+  // The contract sentence above Start names the CLOCK - the instant and the rate. The options are how the
+  // rate is delivered rather than what the application sees, so they stay in the section header and the
+  // sentence does not repeat them.
+  "setup.contract_speed": "w tempie",
+
   // Marks a recent target whose file is gone (a wiped build output, an uninstalled app). Shown rather than the entry being dropped, so the list never goes quiet about why a shortcut will not work (rule 6).
   "target.missing": "(brak pliku)",
 

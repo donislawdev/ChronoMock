@@ -620,6 +620,17 @@
   </Style>
 
   <!--
+    🔴 AND THE SAME ROW INSIDE A DROP-DOWN, which was missing and left every open list still wearing the
+    toolkit's own item while the closed field beside it was ours. ComboBoxItem derives from ListBoxItem, so
+    the drawing above applies to it unchanged - one line rather than a second copy of the same template,
+    which is the difference between one thing to keep in step and two that drift.
+
+    An implicit style keys on the exact type and does not reach a derived one, which is why this has to be
+    written at all: without it the popup silently falls back past this dictionary to the toolkit's.
+  -->
+  <Style TargetType="ComboBoxItem" BasedOn="{StaticResource {x:Type ListBoxItem}}" />
+
+  <!--
     ============================ Form row ============================
 
     🔴 THE PART THAT FIXES "EVERYTHING LOOKS RANDOMLY PLACED". A form is a grid with a label column, not

@@ -28,6 +28,26 @@
   "scenario.unsupported": "That scenario's preset file is in a shape this build cannot read.",
   "scenario.engine_missing": "The calculator engine could not be run, so scenarios cannot be computed.",
 
+  // The list is searched rather than scanned, because the catalogue is meant to grow. Nothing matched and
+  // nothing installed are opposite problems, so they get different sentences - and the first one says what
+  // to do about it, never only that something is wrong.
+  "scenario.filter_placeholder": "Search scenarios",
+  "scenario.no_matches": "No scenario matches that. Clear the box to see them all.",
+
+  // The rebuilt setup screen: one thing always visible and the rest folded away behind a header that keeps
+  // saying what is set inside it. The chips are deliberately short - they sit in a section header beside a
+  // speed, where a full sentence would push the speed off the end.
+  "setup.section_moment": "Moment",
+  "setup.section_speed": "Speed and options",
+  "setup.needs_target": "Choose an application before starting.",
+  "setup.chip_duration": "duration scaled",
+  "setup.chip_qpc": "QPC scaled",
+  "setup.chip_force": "forced start",
+  // The contract sentence above Start names the CLOCK - the instant and the rate. The options are how the
+  // rate is delivered rather than what the application sees, so they stay in the section header and the
+  // sentence does not repeat them.
+  "setup.contract_speed": "running at",
+
   // Marks a recent target whose file is gone (a wiped build output, an uninstalled app). Shown rather than the entry being dropped, so the list never goes quiet about why a shortcut will not work (rule 6).
   "target.missing": "(missing)",
 

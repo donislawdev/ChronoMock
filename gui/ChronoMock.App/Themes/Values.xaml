@@ -113,6 +113,14 @@
        still sizes to its contents, which is the honest trade against a list that never moves and is
        mostly blank on a small install. -->
   <sys:Double x:Key="ChoiceListMinHeight">96</sys:Double>
+
+  <!-- The three fields of the "relative to now" shift, which is one idea spread over three controls and
+       therefore needs its widths named together rather than each guessed where it stands. The sign holds
+       one character and a chevron, the amount holds a number nobody will type four digits into, and the
+       unit holds the longest word in the unit list plus its chevron. -->
+  <sys:Double x:Key="ShiftSignWidth">64</sys:Double>
+  <sys:Double x:Key="ShiftAmountWidth">72</sys:Double>
+  <sys:Double x:Key="ShiftUnitWidth">128</sys:Double>
   <sys:Double x:Key="StrokeThin">1</sys:Double>
   <!-- The same one-pixel edge as a Thickness, for a BorderThickness. WPF does not convert a Double to a
        Thickness through a resource reference, so the two spellings of one decision both have to exist. -->

@@ -57,6 +57,57 @@ public class StateSheetTests
     /// </summary>
     private const int CatalogueHeight = 3584;
 
+    /// <summary>
+    /// The rebuilt setup phase, in the three states that decide whether it works.
+    /// </summary>
+    /// <remarks>
+    /// First contact is the one that matters: the shipped panel's measured fault was that twelve blocks
+    /// looked equally required, so the state where nothing has been chosen yet is the state the rework is
+    /// answering. The other two exist because a filter that finds nothing and a session that is fully
+    /// configured are the two ends this screen has to hold without moving anything under them.
+    ///
+    /// The view is not wired to the window yet and MainWindow is untouched, which is what keeps the 22
+    /// product renders identical while this one is designed.
+    /// </remarks>
+    [Fact]
+    public void The_setup_phase_renders_in_the_states_that_decide_whether_it_works()
+    {
+        var written = WpfTestHost.InvokeSettled(() =>
+        {
+            var total = 0;
+
+            total += RenderSetup("setup-startup", WithScenarios()).Count;
+
+            var searching = WithScenarios();
+            searching.ScenarioPicker.Filter = "nothing is called this";
+            total += RenderSetup("setup-no-matches", searching).Count;
+
+            var configured = WithScenarios();
+            configured.SetTarget(Path.Combine(TestPaths.RepoRoot(), "target.exe"));
+            configured.ScaleDuration = true;
+            configured.ScaleQpc = true;
+            configured.ForceStart = true;
+            total += RenderSetup("setup-configured", configured).Count;
+
+            return total;
+        });
+
+        Assert.True(written > 0);
+    }
+
+    private static SessionViewModel WithScenarios()
+        => new(new InMemorySessionHistoryStore(), presetsDir: Path.Combine(TestPaths.RepoRoot(), "presets"));
+
+    private static IReadOnlyList<LaidOutElement> RenderSetup(string name, SessionViewModel model)
+        => StateSheet.Write(name, new SetupPhaseView { DataContext = model }, SetupWidth, SetupHeight);
+
+    /// <summary>The window's own width, so the phase is judged at the size it will be read at.</summary>
+    private const int SetupWidth = 1040;
+
+    /// <summary>Taller than the window: the phase scrolls, and a sheet that cropped it would hide the
+    /// contract sentence and the button, which are the two things below the fold.</summary>
+    private const int SetupHeight = 1000;
+
     [Fact]
     public void The_substitution_panel_renders_in_its_startup_state()
     {

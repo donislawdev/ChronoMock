@@ -1,0 +1,419 @@
+<UserControl x:Class="ChronoMock.App.Views.SetupPhaseView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:app="clr-namespace:ChronoMock.App"
+             xmlns:controls="clr-namespace:ChronoMock.App.Controls"
+             Background="{DynamicResource BrushBgBase}">
+
+  <!--
+    THE FIRST OF THE THREE PHASES: what is about to be run, and under what clock.
+
+    🔴 PHASES REPLACE EACH OTHER, they do not stand side by side. A two-column screen was tried on
+    2026-09-08 and thrown away for a reason that is not a matter of taste: before a session starts the
+    right-hand column has nothing to show, so half the screen is empty at exactly the moment the reader
+    is deciding what to do.
+
+    🔴 WHAT THIS SCREEN ANSWERS. The measured fault on the shipped panel was not ugliness, it was that
+    twelve blocks all looked equally required when exactly one of them was. So one thing is always
+    visible - the application - and everything else is folded into a section whose header keeps saying
+    what is set inside it. Nothing is hidden, it is moved out of the way, which is only honest as long as
+    the header answers the question the section would.
+
+    🔴 IT LOADS THE PARTS LIBRARY LOCALLY, exactly as the catalogue does. App.xaml does not merge
+    Parts.xaml yet, so the shipped screens keep the pixels they have while this one is designed. When the
+    product moves over, this local merge goes and the application-wide one replaces it - one line, for
+    every screen at once.
+
+    🔴 NO VALUES OF ITS OWN. Every colour, gap, size and string comes from the library, the value
+    dictionaries or a translation key. Anything that cannot be built that way is a finding about the
+    library rather than something to draw here.
+  -->
+
+  <UserControl.Resources>
+    <ResourceDictionary>
+      <ResourceDictionary.MergedDictionaries>
+        <ResourceDictionary Source="../Themes/Parts.xaml" />
+      </ResourceDictionary.MergedDictionaries>
+
+      <!--
+        What the clock is set to: the speed, then a chip for each option that is on. It answers the
+        question the speed section would open to answer, which is the whole bargain of folding.
+
+        Chips rather than a comma-separated line: a Run cannot be hidden, so a conditional list built out
+        of them would need either a converter composing user-visible text or three punctuation marks that
+        appear and vanish. A chip carries its own edge and simply is not there when its option is off.
+
+        Named rather than written inline because the session phase shows the same fact while a run is under
+        way, and the same fact written twice in two hands drifts the first time one of them changes.
+      -->
+      <ControlTemplate x:Key="SpeedSummary">
+        <StackPanel Orientation="Horizontal">
+          <TextBlock Style="{StaticResource PartCaption}" TextWrapping="NoWrap"
+                     VerticalAlignment="Center"
+                     Text="{Binding SelectedMode.LabelKey, Converter={StaticResource KeyToText}}" />
+          <Border Style="{StaticResource PartBadge}" Margin="{StaticResource SpaceXs}"
+                  Visibility="{Binding ScaleDuration, Converter={StaticResource BoolToVis}}">
+            <TextBlock Style="{StaticResource PartCaption}" TextWrapping="NoWrap"
+                       Text="{DynamicResource setup.chip_duration}" />
+          </Border>
+          <Border Style="{StaticResource PartBadge}" Margin="{StaticResource SpaceXs}"
+                  Visibility="{Binding ScaleQpc, Converter={StaticResource BoolToVis}}">
+            <TextBlock Style="{StaticResource PartCaption}" TextWrapping="NoWrap"
+                       Text="{DynamicResource setup.chip_qpc}" />
+          </Border>
+          <Border Style="{StaticResource PartBadge}" Margin="{StaticResource SpaceXs}"
+                  Visibility="{Binding ForceStart, Converter={StaticResource BoolToVis}}">
+            <TextBlock Style="{StaticResource PartCaption}" TextWrapping="NoWrap"
+                       Text="{DynamicResource setup.chip_force}" />
+          </Border>
+        </StackPanel>
+      </ControlTemplate>
+
+      <!--
+        🔴 ACCESSIBLE NAMES FOR THE FIVE TEMPLATED LISTS. WPF names an item container from the DATA ITEM,
+        never from the template's TextBlock, so a list bound to records reads its ToString() aloud. The
+        guard in ItemNameGuardTests caught all five of these on the first build of this screen, which is
+        what a rule written in comments three times and enforced once looks like when it works.
+
+        They repeat App.xaml's four for one reason and not for long: those are based on the toolkit's item,
+        because App.xaml does not merge the parts library yet. When it does, App.xaml's own BasedOn will
+        resolve to the parts row instead and these go with the old panel.
+      -->
+      <Style x:Key="RecentTargetRow" TargetType="ComboBoxItem" BasedOn="{StaticResource {x:Type ComboBoxItem}}">
+        <!-- The FULL path: a file name alone does not identify a build, since an x64 and an x86 output are
+             both called the same thing. -->
+        <Setter Property="AutomationProperties.Name" Value="{Binding FullPath}" />
+      </Style>
+
+      <Style x:Key="LabelKeyRow" TargetType="ComboBoxItem" BasedOn="{StaticResource {x:Type ComboBoxItem}}">
+        <Setter Property="AutomationProperties.Name"
+                Value="{Binding LabelKey, Converter={StaticResource KeyToText}}" />
+      </Style>
+
+      <Style x:Key="ZoneRow" TargetType="ComboBoxItem" BasedOn="{StaticResource {x:Type ComboBoxItem}}">
+        <!-- The offset first and the market second, because the offset is the fact and the market is the
+             gloss - a bare "US Pacific" would not say what the session will actually run on. -->
+        <Setter Property="AutomationProperties.Name">
+          <Setter.Value>
+            <MultiBinding StringFormat="{}{0}, {1}">
+              <Binding Path="Label" />
+              <Binding Path="HintKey" Converter="{StaticResource KeyToText}" />
+            </MultiBinding>
+          </Setter.Value>
+        </Setter>
+      </Style>
+
+      <Style x:Key="ScenarioRowContainer" TargetType="ListBoxItem" BasedOn="{StaticResource {x:Type ListBoxItem}}">
+        <Setter Property="AutomationProperties.Name" Value="{Binding DisplayName}" />
+      </Style>
+
+      <!-- One scenario row. It trims rather than clipping mid-word, and carries the catalogue author's
+           "what this date tests" line as its tooltip, so the reason for a name is reachable before it is
+           chosen rather than only after. -->
+      <DataTemplate x:Key="ScenarioRow">
+        <TextBlock Text="{Binding DisplayName}" TextTrimming="CharacterEllipsis"
+                   ToolTip="{Binding DisplayExplains}" />
+      </DataTemplate>
+    </ResourceDictionary>
+  </UserControl.Resources>
+
+  <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+    <StackPanel Margin="{StaticResource SpaceXl}">
+
+      <!--
+        THE APPLICATION, and it never folds away. It is the one answer without which nothing else on this
+        screen means anything, and the only one whose absence stops Start.
+      -->
+      <Border Style="{StaticResource PartCard}" Grid.IsSharedSizeScope="True">
+        <HeaderedContentControl Style="{StaticResource PartFormRow}"
+                                IsEnabled="{Binding IsIdle}">
+          <HeaderedContentControl.Header>
+            <TextBlock Style="{StaticResource PartLabel}" Text="{DynamicResource target.label}" />
+          </HeaderedContentControl.Header>
+          <StackPanel Orientation="Horizontal">
+            <ComboBox ItemsSource="{Binding RecentTargets}" SelectedItem="{Binding SelectedTarget}"
+                      ItemContainerStyle="{StaticResource RecentTargetRow}"
+                      ToolTip="{DynamicResource tip.target_recent}"
+                      MaxWidth="{StaticResource TargetBoxMaxWidth}"
+                      Visibility="{Binding HasRecentTargets, Converter={StaticResource BoolToVis}}">
+              <ComboBox.ItemTemplate>
+                <DataTemplate>
+                  <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" />
+                </DataTemplate>
+              </ComboBox.ItemTemplate>
+            </ComboBox>
+            <Button Content="{DynamicResource action.choose_target}"
+                    ToolTip="{DynamicResource tip.choose_target}"
+                    Margin="{StaticResource SpaceXs}" />
+          </StackPanel>
+          <HeaderedContentControl.Tag>
+            <TextBlock Style="{StaticResource PartCaption}"
+                       Text="{DynamicResource target.drop_hint}"
+                       Visibility="{Binding ShowsDropHint, Converter={StaticResource BoolToVis}}" />
+          </HeaderedContentControl.Tag>
+        </HeaderedContentControl>
+      </Border>
+
+      <!--
+        THE MOMENT, open by default. Two of the four groups on this screen have to be answered, and this
+        is the second - a first contact that had to open something to find the date field would have been
+        the old fault in a new shape.
+
+        Its header carries the moment itself, or the reason it is not a moment. A folded section whose
+        summary went blank exactly when something was wrong would be hiding the one thing worth showing.
+      -->
+      <Expander Style="{StaticResource PartSection}" IsExpanded="True"
+                Margin="{StaticResource StackGapSm}"
+                IsEnabled="{Binding CanEditTime}">
+        <Expander.Header>
+          <TextBlock Style="{StaticResource PartLabel}" Text="{DynamicResource setup.section_moment}" />
+        </Expander.Header>
+        <Expander.Tag>
+          <Grid>
+            <TextBlock Style="{StaticResource PartCaption}" TextWrapping="NoWrap"
+                       TextTrimming="CharacterEllipsis"
+                       Text="{Binding MomentPreview}"
+                       Visibility="{Binding HasMomentPreview, Converter={StaticResource BoolToVis}}" />
+            <TextBlock Style="{StaticResource PartFieldMessage}" TextWrapping="NoWrap"
+                       TextTrimming="CharacterEllipsis"
+                       Text="{Binding Moment.ActiveErrorKey, Converter={StaticResource KeyToText}}"
+                       Visibility="{Binding Moment.HasError, Converter={StaticResource BoolToVis}}" />
+          </Grid>
+        </Expander.Tag>
+
+        <StackPanel Grid.IsSharedSizeScope="True">
+
+          <!-- The scenarios, searched rather than scanned. The catalogue is meant to grow well past what
+               a row of chips could hold, and the search box is what keeps that growth free. Picking one
+               fills the date below and nothing else (untouchable rule 7). -->
+          <StackPanel Visibility="{Binding ScenarioPicker.HasScenarios, Converter={StaticResource BoolToVis}}">
+            <TextBox Text="{Binding ScenarioPicker.Filter, UpdateSourceTrigger=PropertyChanged}"
+                     app:PartState.Placeholder="{DynamicResource scenario.filter_placeholder}" />
+            <Grid Margin="{StaticResource StackGapSm}">
+              <ListBox ItemsSource="{Binding ScenarioPicker.Visible}"
+                       SelectedItem="{Binding SelectedScenario}"
+                       ItemTemplate="{StaticResource ScenarioRow}"
+                       ItemContainerStyle="{StaticResource ScenarioRowContainer}"
+                       ToolTip="{DynamicResource tip.scenario}" />
+              <!-- Inside the well, not under it: the sentence explaining an empty list has to appear
+                   where the list was, or the screen answers by moving rather than by speaking. -->
+              <TextBlock Style="{StaticResource PartCaption}"
+                         Margin="{StaticResource SpaceMd}"
+                         HorizontalAlignment="Center" VerticalAlignment="Center"
+                         Text="{DynamicResource scenario.no_matches}"
+                         Visibility="{Binding ScenarioPicker.HasNoMatches, Converter={StaticResource BoolToVis}}" />
+            </Grid>
+
+            <TextBlock Style="{StaticResource PartCaption}" Margin="{StaticResource StackGapSm}"
+                       Text="{Binding ScenarioExplains}"
+                       Visibility="{Binding HasSelectedScenario, Converter={StaticResource BoolToVis}}" />
+            <TextBlock Style="{StaticResource PartFieldMessage}" Margin="{StaticResource StackGapSm}"
+                       Text="{Binding ScenarioErrorKey, Converter={StaticResource KeyToText}}"
+                       Visibility="{Binding HasScenarioError, Converter={StaticResource BoolToVis}}" />
+            <TextBlock Style="{StaticResource PartCaption}" Margin="{StaticResource StackGapSm}"
+                       Visibility="{Binding ScenarioPicker.HasNeedingParameters, Converter={StaticResource BoolToVis}}">
+              <Run Text="{Binding ScenarioPicker.NeedingParameters, Mode=OneWay}" /><Run Text=" " /><Run Text="{DynamicResource scenario.needs_parameters}" />
+            </TextBlock>
+          </StackPanel>
+
+          <!-- The date and time, which are the ONLY source of truth for the moment: a scenario and the
+               shift below both fill this and nothing else, so there is one place to read what the
+               application will be told. -->
+          <HeaderedContentControl Style="{StaticResource PartFormRow}" Margin="{StaticResource StackGapLg}">
+            <HeaderedContentControl.Header>
+              <TextBlock Style="{StaticResource PartLabel}" Text="{DynamicResource moment.label}" />
+            </HeaderedContentControl.Header>
+            <StackPanel Orientation="Horizontal">
+              <controls:MomentInput DataContext="{Binding Moment}" />
+              <Button Content="{DynamicResource action.today}" ToolTip="{DynamicResource tip.today}"
+                      Margin="{StaticResource SpaceXs}" />
+              <Button Content="{DynamicResource action.now}" ToolTip="{DynamicResource tip.now}"
+                      Margin="{StaticResource SpaceXs}" />
+            </StackPanel>
+            <HeaderedContentControl.Tag>
+              <TextBlock Style="{StaticResource PartFieldMessage}"
+                         Text="{Binding Moment.ActiveErrorKey, Converter={StaticResource KeyToText}}"
+                         Visibility="{Binding Moment.HasError, Converter={StaticResource BoolToVis}}" />
+            </HeaderedContentControl.Tag>
+          </HeaderedContentControl>
+
+          <HeaderedContentControl Style="{StaticResource PartFormRow}">
+            <HeaderedContentControl.Header>
+              <TextBlock Style="{StaticResource PartLabel}" Text="{DynamicResource zone.label}" />
+            </HeaderedContentControl.Header>
+            <ComboBox ItemsSource="{Binding Zones}" SelectedItem="{Binding SelectedZone}"
+                      ItemContainerStyle="{StaticResource ZoneRow}"
+                      IsEnabled="{Binding IsIdle}" ToolTip="{DynamicResource tip.zone}"
+                      HorizontalAlignment="Left" MaxWidth="{StaticResource TargetBoxMaxWidth}">
+              <ComboBox.ItemTemplate>
+                <DataTemplate>
+                  <TextBlock Text="{Binding Label, Mode=OneWay}" />
+                </DataTemplate>
+              </ComboBox.ItemTemplate>
+            </ComboBox>
+          </HeaderedContentControl>
+
+          <HeaderedContentControl Style="{StaticResource PartFormRow}"
+                                  DataContext="{Binding Relative}">
+            <HeaderedContentControl.Header>
+              <TextBlock Style="{StaticResource PartLabel}" Text="{DynamicResource moment.relative_label}" />
+            </HeaderedContentControl.Header>
+            <StackPanel Orientation="Horizontal">
+              <ComboBox ItemsSource="{Binding Signs}" SelectedItem="{Binding Sign}"
+                        Width="{StaticResource ShiftSignWidth}"
+                        AutomationProperties.Name="{DynamicResource moment.relative_sign}" />
+              <TextBox Text="{Binding Amount, UpdateSourceTrigger=PropertyChanged}"
+                       Width="{StaticResource ShiftAmountWidth}" Margin="{StaticResource SpaceXs}"
+                       FontFamily="{StaticResource FontFamilyMono}"
+                       AutomationProperties.Name="{DynamicResource moment.relative_amount}" />
+              <ComboBox ItemsSource="{Binding Units}" SelectedItem="{Binding Unit}"
+                        ItemContainerStyle="{StaticResource LabelKeyRow}"
+                        Width="{StaticResource ShiftUnitWidth}"
+                        AutomationProperties.Name="{DynamicResource moment.relative_unit}">
+                <ComboBox.ItemTemplate>
+                  <DataTemplate>
+                    <TextBlock Text="{Binding LabelKey, Converter={StaticResource KeyToText}}" />
+                  </DataTemplate>
+                </ComboBox.ItemTemplate>
+              </ComboBox>
+              <Button Content="{DynamicResource action.set_relative}"
+                      ToolTip="{DynamicResource tip.relative_moment}"
+                      Margin="{StaticResource SpaceXs}" />
+            </StackPanel>
+            <HeaderedContentControl.Tag>
+              <TextBlock Style="{StaticResource PartFieldMessage}"
+                         Text="{Binding ErrorKey, Converter={StaticResource KeyToText}}"
+                         Visibility="{Binding HasError, Converter={StaticResource BoolToVis}}" />
+            </HeaderedContentControl.Tag>
+          </HeaderedContentControl>
+        </StackPanel>
+      </Expander>
+
+      <!--
+        SPEED AND OPTIONS, folded. Its header answers the question it would open to answer, which is the
+        whole bargain of folding: the speed and every option that is on are readable without a click.
+      -->
+      <Expander Style="{StaticResource PartSection}" Margin="{StaticResource StackGapSm}">
+        <Expander.Header>
+          <TextBlock Style="{StaticResource PartLabel}" Text="{DynamicResource setup.section_speed}" />
+        </Expander.Header>
+        <Expander.Tag>
+          <ContentControl Template="{StaticResource SpeedSummary}" />
+        </Expander.Tag>
+
+        <StackPanel Grid.IsSharedSizeScope="True">
+          <HeaderedContentControl Style="{StaticResource PartFormRow}">
+            <HeaderedContentControl.Header>
+              <TextBlock Style="{StaticResource PartLabel}" Text="{DynamicResource mode.label}" />
+            </HeaderedContentControl.Header>
+            <ComboBox ItemsSource="{Binding Modes}" SelectedItem="{Binding SelectedMode}"
+                      ItemContainerStyle="{StaticResource LabelKeyRow}"
+                      IsEnabled="{Binding CanEditTime}" ToolTip="{DynamicResource tip.mode}"
+                      HorizontalAlignment="Left" MinWidth="{StaticResource LaunchFieldWidth}">
+              <ComboBox.ItemTemplate>
+                <DataTemplate>
+                  <TextBlock Text="{Binding LabelKey, Converter={StaticResource KeyToText}}" />
+                </DataTemplate>
+              </ComboBox.ItemTemplate>
+            </ComboBox>
+          </HeaderedContentControl>
+
+          <CheckBox Content="{DynamicResource mode.scale_duration}" IsChecked="{Binding ScaleDuration}"
+                    IsEnabled="{Binding IsIdle}" ToolTip="{DynamicResource tip.scale_duration}"
+                    Margin="{StaticResource StackGapSm}" />
+          <CheckBox Content="{DynamicResource mode.scale_qpc}" IsChecked="{Binding ScaleQpc}"
+                    IsEnabled="{Binding IsIdle}" ToolTip="{DynamicResource tip.scale_qpc}"
+                    Margin="{StaticResource StackGapSm}" />
+          <CheckBox Content="{DynamicResource mode.force}" IsChecked="{Binding ForceStart}"
+                    IsEnabled="{Binding IsIdle}" ToolTip="{DynamicResource tip.force}"
+                    Margin="{StaticResource StackGapSm}" />
+        </StackPanel>
+      </Expander>
+
+      <!--
+        ARGUMENTS AND WORKING FOLDER, folded, and the one section whose header is usually silent - because
+        most sessions need neither, and a summary that said "none" three times would be noise standing
+        where information goes.
+      -->
+      <Expander Style="{StaticResource PartSection}" Margin="{StaticResource StackGapSm}"
+                IsEnabled="{Binding IsIdle}">
+        <Expander.Header>
+          <TextBlock Style="{StaticResource PartLabel}" Text="{DynamicResource launch.header}" />
+        </Expander.Header>
+        <Expander.Tag>
+          <TextBlock Style="{StaticResource PartCaption}" TextWrapping="NoWrap"
+                     TextTrimming="CharacterEllipsis" Text="{Binding TargetArgs}" />
+        </Expander.Tag>
+
+        <StackPanel Grid.IsSharedSizeScope="True">
+          <HeaderedContentControl Style="{StaticResource PartFormRow}">
+            <HeaderedContentControl.Header>
+              <TextBlock Style="{StaticResource PartLabel}" Text="{DynamicResource launch.args_label}" />
+            </HeaderedContentControl.Header>
+            <TextBox Text="{Binding TargetArgs, UpdateSourceTrigger=PropertyChanged}"
+                     ToolTip="{DynamicResource tip.target_args}"
+                     HorizontalAlignment="Left" Width="{StaticResource LaunchFieldWidth}" />
+          </HeaderedContentControl>
+
+          <HeaderedContentControl Style="{StaticResource PartFormRow}">
+            <HeaderedContentControl.Header>
+              <TextBlock Style="{StaticResource PartLabel}" Text="{DynamicResource launch.cwd_label}" />
+            </HeaderedContentControl.Header>
+            <StackPanel Orientation="Horizontal">
+              <TextBox Text="{Binding WorkingFolder, UpdateSourceTrigger=PropertyChanged}"
+                       ToolTip="{DynamicResource tip.working_folder}"
+                       Width="{StaticResource LaunchFieldWidth}" />
+              <Button Content="{DynamicResource action.browse_folder}"
+                      ToolTip="{DynamicResource tip.browse_folder}"
+                      Margin="{StaticResource SpaceXs}" />
+            </StackPanel>
+          </HeaderedContentControl>
+
+          <TextBlock Style="{StaticResource PartCaption}" Margin="{StaticResource StackGapSm}"
+                     MaxWidth="{StaticResource LaunchNoteMaxWidth}" HorizontalAlignment="Left"
+                     Text="{DynamicResource launch.cwd_note}" />
+        </StackPanel>
+      </Expander>
+
+      <!--
+        THE CONTRACT, immediately above the button that signs it: the exact instant the application will
+        be told it is, and the clock it will run under. It names the weekday and the zone because a bare
+        date is the ambiguity untouchable rule 2 exists to prevent.
+
+        Under it, and only when it applies, the reason Start is refusing. A disabled button whose reason
+        lives in a tooltip is a result the reader cannot account for, and this screen is not allowed those.
+      -->
+      <StackPanel Margin="{StaticResource StackGapLg}">
+        <WrapPanel Visibility="{Binding HasMomentPreview, Converter={StaticResource BoolToVis}}">
+          <TextBlock Style="{StaticResource PartCaption}" TextWrapping="NoWrap"
+                     VerticalAlignment="Center"
+                     Text="{DynamicResource moment.preview_label}" />
+          <TextBlock Style="{StaticResource PartLabel}" Margin="{StaticResource SpaceXs}"
+                     Text="{Binding MomentPreview}" />
+          <!-- 🔴 The rate, and deliberately NOT the option chips beside it in the speed header. This
+               sentence is about the CLOCK the application will read: the instant and the rate are what it
+               sees, while scaling durations or QPC is how the rate is delivered to it. Printing all three
+               here as well put the same row on the screen twice, a hundred pixels apart. -->
+          <TextBlock Style="{StaticResource PartCaption}" TextWrapping="NoWrap"
+                     VerticalAlignment="Center"
+                     Text="{DynamicResource setup.contract_speed}" />
+          <TextBlock Style="{StaticResource PartLabel}" Margin="{StaticResource SpaceXs}"
+                     Text="{Binding SelectedMode.LabelKey, Converter={StaticResource KeyToText}}" />
+        </WrapPanel>
+
+        <TextBlock Style="{StaticResource PartFieldMessage}" Margin="{StaticResource StackGapSm}"
+                   Text="{DynamicResource setup.needs_target}"
+                   Visibility="{Binding ShowsDropHint, Converter={StaticResource BoolToVis}}" />
+      </StackPanel>
+
+      <Button Style="{StaticResource PartPrimaryAction}"
+              Content="{DynamicResource action.start}"
+              ToolTip="{DynamicResource tip.start}"
+              ToolTipService.ShowOnDisabled="True"
+              IsEnabled="{Binding CanStart}"
+              HorizontalAlignment="Left"
+              Margin="{StaticResource StackGapSm}" />
+
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>
