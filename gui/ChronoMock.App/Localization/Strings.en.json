@@ -37,7 +37,13 @@
   // The rebuilt setup screen: one thing always visible and the rest folded away behind a header that keeps
   // saying what is set inside it. The chips are deliberately short - they sit in a section header beside a
   // speed, where a full sentence would push the speed off the end.
-  "setup.section_moment": "Moment",
+  // 🔴 One line saying what the screen does and what it will not do, because somebody opening this for
+  // the first time has no way of knowing either. The second half is the product's whole promise
+  // (untouchable rule 1) and the question a stranger actually has: is this going to change my computer.
+  "setup.intro": "Runs an application as if it were another date and time. The real system clock is never changed.",
+
+  // "Moment" is our word, not the reader's.
+  "setup.section_moment": "Date and time",
   "setup.section_speed": "Speed and options",
   "setup.needs_target": "Choose an application before starting.",
   "setup.chip_duration": "duration scaled",
@@ -53,21 +59,44 @@
   // edge down the column. They are new keys rather than edits to the shipped ones because the old panel
   // still binds those, and the rework measures itself on its renders not moving. The pair goes when the
   // old panel does.
-  "setup.label_target": "Target",
-  "setup.label_at": "At",
-  "setup.label_zone": "Zone",
+  // 🔴 "Application", not "Target". The screen already said "application" in three places - the drop
+  // hint, the Choose tooltip and the sentence above Start - and "Target" in exactly one, so this removes
+  // an inconsistency rather than inventing a vocabulary. Target stays the word in the CLI, the docs and
+  // the wire, where it names an argument rather than addressing a person seeing the tool for the first
+  // time.
+  "setup.label_target": "Application",
+  // "At" never said at WHAT. This one says the fake clock STARTS here, which is the fact a first run
+  // needs and the reason the multiplier below makes sense.
+  "setup.label_at": "Starts at",
+  "setup.label_zone": "Time zone",
   // Short on purpose. A shared label column is as wide as its longest entry, so "Relative to now" pushed
   // At and Zone a third of the way across the card away from their own fields. The controls beside it say
   // the rest: "From now  + 1 days [Set]".
   "setup.label_shift": "From now",
-  "setup.label_mode": "Mode",
+  "setup.label_mode": "Speed",
   "setup.label_args": "Arguments",
   "setup.label_cwd": "Working folder",
+
+  // 🔴 The three options, said in words rather than in ours. The shipped panel labels them "Scale
+  // duration too", "Scale QPC too" and "Run even if it does not work" - the first two are our vocabulary
+  // and an acronym only a Windows developer knows, and the third never says what "it" is. Every one of
+  // these sentences was already written correctly, in the tooltip nobody reads first.
+  "setup.opt_duration": "Also speed up timers and countdowns inside the application",
+  "setup.opt_qpc": "Also speed up high-precision timers (Stopwatch, nanoTime, monotonic)",
+  "setup.opt_force": "Start even if the fake clock turns out not to work",
+
+  // Fits after a number, like the shipped one. It names the button to press rather than quoting it in
+  // passing, because a reader who has never opened the calculator cannot tell a quotation from a label.
+  "setup.scenario_parametric": "more need a value you choose. Build one in the calculator, then press “Use in substitution” there.",
+
+  // The shipped tooltip says the ready-made moments are in the list ABOVE, which stopped being true when
+  // the field moved to the top of its section. Same text, one word honest again, and shorter.
+  "setup.tip_shift": "Fills the date above with now, shifted by this much - the command line spells it --at +30d. Months, quarters and years land on the calendar date, not on a fixed number of hours. One shift and no more: business days are absent because a session carries no holiday calendar, and ready-made moments such as a month end are in the list below.",
 
   // The two ways of filling the moment, both of them shortcuts to the field above rather than settings of
   // their own. Said out loud, because a list that just sits there does not explain what choosing from it
   // will do.
-  "setup.or_pick_scenario": "Or pick a named moment - it fills the date above.",
+  "setup.or_pick_scenario": "Or pick a ready-made date - it fills the fields above and starts nothing.",
 
   // Marks a recent target whose file is gone (a wiped build output, an uninstalled app). Shown rather than the entry being dropped, so the list never goes quiet about why a shortcut will not work (rule 6).
   "target.missing": "(missing)",

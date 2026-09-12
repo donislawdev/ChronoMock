@@ -132,6 +132,12 @@
   <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
     <StackPanel Margin="{StaticResource SpaceXl}">
 
+      <!-- 🔴 What this screen does, and what it will not do, for somebody who has no way of knowing
+           either. The second half is the product's whole promise and the question a stranger actually
+           arrives with: is this going to change my computer. -->
+      <TextBlock Style="{StaticResource PartCaption}" Margin="{StaticResource StackGapSm}"
+                 Text="{DynamicResource setup.intro}" />
+
       <!--
         THE APPLICATION, and it never folds away. It is the one answer without which nothing else on this
         screen means anything, and the only one whose absence stops Start.
@@ -264,7 +270,7 @@
                 </ComboBox.ItemTemplate>
               </ComboBox>
               <Button Content="{DynamicResource action.set_relative}"
-                      ToolTip="{DynamicResource tip.relative_moment}"
+                      ToolTip="{DynamicResource setup.tip_shift}"
                       Margin="{StaticResource SpaceXs}" />
             </StackPanel>
             <HeaderedContentControl.Tag>
@@ -308,7 +314,7 @@
                        Visibility="{Binding HasScenarioError, Converter={StaticResource BoolToVis}}" />
             <TextBlock Style="{StaticResource PartCaption}" Margin="{StaticResource StackGapSm}"
                        Visibility="{Binding ScenarioPicker.HasNeedingParameters, Converter={StaticResource BoolToVis}}">
-              <Run Text="{Binding ScenarioPicker.NeedingParameters, Mode=OneWay}" /><Run Text=" " /><Run Text="{DynamicResource scenario.needs_parameters}" />
+              <Run Text="{Binding ScenarioPicker.NeedingParameters, Mode=OneWay}" /><Run Text=" " /><Run Text="{DynamicResource setup.scenario_parametric}" />
             </TextBlock>
           </StackPanel>
         </StackPanel>
@@ -343,13 +349,17 @@
             </ComboBox>
           </HeaderedContentControl>
 
-          <CheckBox Content="{DynamicResource mode.scale_duration}" IsChecked="{Binding ScaleDuration}"
+          <!-- 🔴 Labels in the reader's words, not ours. The shipped panel says "Scale duration too",
+               "Scale QPC too" and "Run even if it does not work" - two of our vocabulary and an acronym,
+               and one that never says what "it" is. The tooltips beside them were already right, which is
+               the point: the explanation existed and only the label had to catch up. -->
+          <CheckBox Content="{DynamicResource setup.opt_duration}" IsChecked="{Binding ScaleDuration}"
                     IsEnabled="{Binding IsIdle}" ToolTip="{DynamicResource tip.scale_duration}"
                     Margin="{StaticResource StackGapSm}" />
-          <CheckBox Content="{DynamicResource mode.scale_qpc}" IsChecked="{Binding ScaleQpc}"
+          <CheckBox Content="{DynamicResource setup.opt_qpc}" IsChecked="{Binding ScaleQpc}"
                     IsEnabled="{Binding IsIdle}" ToolTip="{DynamicResource tip.scale_qpc}"
                     Margin="{StaticResource StackGapSm}" />
-          <CheckBox Content="{DynamicResource mode.force}" IsChecked="{Binding ForceStart}"
+          <CheckBox Content="{DynamicResource setup.opt_force}" IsChecked="{Binding ForceStart}"
                     IsEnabled="{Binding IsIdle}" ToolTip="{DynamicResource tip.force}"
                     Margin="{StaticResource StackGapSm}" />
         </StackPanel>
