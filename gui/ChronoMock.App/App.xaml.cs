@@ -31,6 +31,15 @@ public partial class App : Application
             // data, not translation.
             var stringsProblem = LocalizationService.ApplyOrDegrade(this, LocalizationService.DefaultCulture);
 
+            // The component catalogue, behind a switch nobody reaches by accident. It is how the parts
+            // library is looked at in the real toolkit, at a real display scale, rather than trusted
+            // from a render - and a catalogue that can only be produced by a test is one nobody opens.
+            if (e.Args.Contains(CatalogueSwitch, StringComparer.OrdinalIgnoreCase))
+            {
+                ShowCatalogue();
+                return;
+            }
+
             new MainWindow().Show();
 
             if (stringsProblem is not null)
@@ -55,6 +64,28 @@ public partial class App : Application
             Shutdown(1);
         }
     }
+
+    /// <summary>The switch that opens the component catalogue instead of the application.</summary>
+    internal const string CatalogueSwitch = "--catalogue";
+
+    /// <summary>
+    /// Open the catalogue in a plain window.
+    /// </summary>
+    /// <remarks>
+    /// Deliberately not a FluentWindow and deliberately scrollable: the catalogue is a sheet to read, and
+    /// it is taller than any screen once it holds every part. The window is plain so that what is being
+    /// judged is the parts, not the frame around them.
+    /// </remarks>
+    private static void ShowCatalogue() => new Window
+    {
+        Title = "Chrono Mock - component catalogue",
+        Content = new Views.ComponentCatalogue(),
+        Width = CatalogueWindowWidth,
+        Height = CatalogueWindowHeight,
+    }.Show();
+
+    private const double CatalogueWindowWidth = 960;
+    private const double CatalogueWindowHeight = 900;
 
     private void OnDispatcherUnhandledException(object sender, DispatcherUnhandledExceptionEventArgs e)
     {
