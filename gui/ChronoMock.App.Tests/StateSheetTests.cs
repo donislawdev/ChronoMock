@@ -48,7 +48,7 @@ public class StateSheetTests
     }
 
     private const int CatalogueWidth = 900;
-    private const int CatalogueHeight = 2200;
+    private const int CatalogueHeight = 2560;
 
     [Fact]
     public void The_substitution_panel_renders_in_its_startup_state()

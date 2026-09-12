@@ -98,6 +98,11 @@
        thick line and the list reads as being above the screen rather than glued to the field. -->
   <Thickness x:Key="PopupGap">0,4,0,0</Thickness>
 
+  <!-- A folded section: the chevron leads the title, and the body stands off the header enough to read
+       as contained by it rather than as the next thing down the page. -->
+  <Thickness x:Key="SectionChevronGap">0,0,8,0</Thickness>
+  <Thickness x:Key="SectionBodyGap">0,12,0,0</Thickness>
+
   <!-- A list of choices that is searched rather than scanned. The cap is what keeps a growing catalogue
        from taking the screen: the list scrolls inside it, and the filter box above it does the finding. -->
   <sys:Double x:Key="ChoiceListMaxHeight">240</sys:Double>

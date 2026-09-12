@@ -586,6 +586,99 @@
   </Style>
 
   <!--
+    ============================ Collapsible section ============================
+
+    A card that can be folded away, carrying a SUMMARY of what is inside it in its own header.
+
+    🔴 The summary is the whole point, and it is what separates this from an ordinary expander. A folded
+    section that says only "Speed" hides its setting and forces a click to find out; one that says
+    "Speed - x60, duration scaled" answers the question without opening. That is what makes folding
+    honest: nothing is hidden, only moved out of the way.
+
+    It also answers the first-contact fault on the substitution panel, where twelve blocks all looked
+    equally required and exactly one of them was.
+
+    The header is a toggle across the full width, because a target the size of a word is a target people
+    miss. The chevron turns rather than swapping glyph, so there is one drawing instead of two.
+  -->
+  <Style x:Key="PartSection" TargetType="Expander">
+    <Setter Property="Foreground" Value="{DynamicResource BrushTextPrimary}" />
+    <Setter Property="FontSize" Value="{StaticResource FontSizeBody}" />
+    <Setter Property="SnapsToDevicePixels" Value="True" />
+    <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="Expander">
+          <Border Style="{StaticResource PartCard}" Padding="{StaticResource SpaceMd}">
+            <Grid>
+              <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+              </Grid.RowDefinitions>
+
+              <Grid Grid.Row="0">
+                <Border x:Name="Ring" Style="{StaticResource PartFocusRing}" Visibility="Collapsed" />
+                <ToggleButton x:Name="HeaderToggle"
+                              Style="{StaticResource PartDropDownToggle}"
+                              IsChecked="{Binding IsExpanded, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}" />
+                <Grid IsHitTestVisible="False">
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                  </Grid.ColumnDefinitions>
+
+                  <Path x:Name="Chevron" Grid.Column="0"
+                        Width="{StaticResource ChevronSize}" Height="{StaticResource ChevronSize}"
+                        Margin="{StaticResource SectionChevronGap}"
+                        Stretch="Uniform"
+                        Data="M 1,1 L 6,6 L 11,1"
+                        Stroke="{DynamicResource BrushGlyphMuted}"
+                        StrokeThickness="{StaticResource CheckTickStroke}"
+                        StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"
+                        VerticalAlignment="Center"
+                        RenderTransformOrigin="0.5,0.5" />
+
+                  <ContentPresenter Grid.Column="1" ContentSource="Header" VerticalAlignment="Center" />
+
+                  <!-- The summary of what is folded away. Quiet, and on the far side of the header, so
+                       the eye reads the section name first and the setting second. -->
+                  <ContentPresenter Grid.Column="2"
+                                    Content="{Binding Tag, RelativeSource={RelativeSource TemplatedParent}}"
+                                    HorizontalAlignment="Right"
+                                    VerticalAlignment="Center" />
+                </Grid>
+              </Grid>
+
+              <ContentPresenter x:Name="Body" Grid.Row="1" Margin="{StaticResource SectionBodyGap}" />
+            </Grid>
+          </Border>
+          <ControlTemplate.Triggers>
+            <Trigger Property="IsExpanded" Value="False">
+              <Setter TargetName="Body" Property="Visibility" Value="Collapsed" />
+            </Trigger>
+            <!-- One drawing, turned, rather than two glyphs swapped: a second glyph is a second thing
+                 to keep in step, and they drift the first time one of them is resized. -->
+            <Trigger Property="IsExpanded" Value="True">
+              <Setter TargetName="Chevron" Property="RenderTransform">
+                <Setter.Value>
+                  <RotateTransform Angle="180" />
+                </Setter.Value>
+              </Setter>
+            </Trigger>
+            <Trigger SourceName="HeaderToggle" Property="IsMouseOver" Value="True">
+              <Setter TargetName="Chevron" Property="Stroke" Value="{DynamicResource BrushTextPrimary}" />
+            </Trigger>
+            <Trigger Property="IsKeyboardFocusWithin" Value="True">
+              <Setter TargetName="Ring" Property="Visibility" Value="Visible" />
+            </Trigger>
+          </ControlTemplate.Triggers>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+
+  <!--
     ============================ Verdict badge ============================
 
     The one place the meaning palette is allowed on something other than plain text. Colour never

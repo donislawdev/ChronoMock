@@ -34,6 +34,11 @@
            know which. -->
       <TextBlock x:Key="CatalogueFieldMessage" Style="{StaticResource PartFieldMessage}"
                  Text="That folder does not exist - pick one, or leave it empty to use the target's own." />
+
+      <TextBlock x:Key="CatalogueSectionSummary" Style="{StaticResource PartCaption}"
+                 Text="x60, duration scaled" />
+      <TextBlock x:Key="CatalogueSectionSummaryOpen" Style="{StaticResource PartCaption}"
+                 Text="19 January 2038, 03:14:07 (UTC+02:00)" />
     </ResourceDictionary>
   </UserControl.Resources>
 
@@ -208,6 +213,39 @@
           </HeaderedContentControl>
         </StackPanel>
       </Border>
+
+      <!-- ============ Collapsible section ============ -->
+      <TextBlock Text="Section" Style="{StaticResource PartSectionHeading}" Margin="{StaticResource StackGapLg}" />
+
+      <TextBlock Style="{StaticResource PartCaption}" Margin="{StaticResource StackGapSm}"
+                 Text="Folded, it still says what is set inside it. That is what makes folding honest - nothing is hidden, only moved out of the way. A section that said only 'Speed' would force a click to find out." />
+
+      <Expander Style="{StaticResource PartSection}" Margin="{StaticResource StackGapSm}" IsExpanded="False"
+                Tag="{StaticResource CatalogueSectionSummary}">
+        <Expander.Header>
+          <TextBlock Text="Speed and options" Style="{StaticResource PartLabel}" />
+        </Expander.Header>
+        <StackPanel>
+          <CheckBox Content="Scale duration too" IsChecked="True" />
+        </StackPanel>
+      </Expander>
+
+      <Expander Style="{StaticResource PartSection}" Margin="{StaticResource StackGapSm}" IsExpanded="True"
+                Tag="{StaticResource CatalogueSectionSummaryOpen}">
+        <Expander.Header>
+          <TextBlock Text="Moment" Style="{StaticResource PartLabel}" />
+        </Expander.Header>
+        <StackPanel Grid.IsSharedSizeScope="True">
+          <HeaderedContentControl Style="{StaticResource PartFormRow}">
+            <HeaderedContentControl.Header>
+              <TextBlock Text="Zone" Style="{StaticResource PartLabel}" />
+            </HeaderedContentControl.Header>
+            <ComboBox Width="{StaticResource LaunchFieldWidth}" SelectedIndex="0">
+              <ComboBoxItem Content="UTC+02:00 - Poland (summer)" />
+            </ComboBox>
+          </HeaderedContentControl>
+        </StackPanel>
+      </Expander>
 
       <!-- ============ Verdict badge ============ -->
       <TextBlock Text="Verdict badge" Style="{StaticResource PartSectionHeading}" Margin="{StaticResource StackGapLg}" />
