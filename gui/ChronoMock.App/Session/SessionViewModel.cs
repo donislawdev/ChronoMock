@@ -123,7 +123,13 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
 
         // Defaults match the moment/mode the panel shipped with before these inputs existed.
         _selectedZone = TimeInputs.Zones.First(z => z.BiasMinutes == -120); // UTC+02:00
-        _selectedMode = TimeInputs.Modes.First(m => m.Multiplier == 60);    // x60
+
+        // 🔴 FLOWING, not x60, changed 2026-09-12 on the owner's decision. This tool's promise is that an
+        // application sees a different DATE - running it sixty times faster as well is the second feature,
+        // and defaulting to it meant a first run got an effect it never asked for. It was never hidden:
+        // the sentence above Start has always named the rate. It was simply a surprise, and a surprise on
+        // a first run is a cost paid by everyone once.
+        _selectedMode = TimeInputs.Modes.First(m => m.Mode == "flow");
 
         // The relative line fills the same field the At row edits, and reads the zone at the moment of use,
         // so changing the zone changes what "now plus one day" means without any wiring between the two.

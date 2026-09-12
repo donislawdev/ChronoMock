@@ -42,6 +42,7 @@ public class SessionViewModelTests
             ["cleanup.chromium_profile_left"] = "temp profile left behind",
             ["report.requested"] = "requested: {0} (zone {1}, mode {2})",
             ["mode.x60"] = "×60",
+            ["mode.flow"] = "Flowing",
         };
         return key => map.TryGetValue(key, out var value) ? value : key;
     }
@@ -221,7 +222,7 @@ public class SessionViewModelTests
     [Fact]
     public void State_syncs_the_mode_dropdown_to_the_live_multiplier()
     {
-        var vm = new SessionViewModel(); // default mode is x60
+        var vm = new SessionViewModel(); // default mode is flow
 
         vm.Apply(State("2038-01-19T03:14:07", "2026-08-24T20:30:00", bias: 0, multiplier: 1440));
 
@@ -315,8 +316,13 @@ public class SessionViewModelTests
         var vm = new SessionViewModel();
 
         Assert.Equal(-120, vm.SelectedZone.BiasMinutes); // UTC+02:00
-        Assert.Equal("multiplier", vm.SelectedMode.Mode);
-        Assert.Equal(60, vm.SelectedMode.Multiplier);
+
+        // 🔴 Flowing since 2026-09-12, and x60 before that. The tool's promise is that an application sees
+        // a different DATE - running it sixty times faster as well is the second feature, and a first run
+        // used to get it without asking. The null multiplier is asserted as well as the mode, because
+        // "flow" with a number attached would send a rate the panel is not showing.
+        Assert.Equal("flow", vm.SelectedMode.Mode);
+        Assert.Null(vm.SelectedMode.Multiplier);
         Assert.True(vm.Moment.IsValid);
     }
 
@@ -1127,7 +1133,7 @@ public class SessionViewModelTests
     [Fact]
     public void The_diagnostics_block_names_the_requested_moment_zone_and_mode()
     {
-        // Defaults: moment 2038-01-19T03:14:07, zone UTC+02:00, mode x60.
+        // Defaults: moment 2038-01-19T03:14:07, zone UTC+02:00, mode flow.
         var vm = new SessionViewModel();
         vm.SetTarget(@"C:\apps\Foo.exe");
 
@@ -1135,7 +1141,7 @@ public class SessionViewModelTests
 
         Assert.Contains("2038-01-19T03:14:07", block, StringComparison.Ordinal);
         Assert.Contains("zone UTC+02:00", block, StringComparison.Ordinal);
-        Assert.Contains("mode x60", block, StringComparison.Ordinal);
+        Assert.Contains("mode flow", block, StringComparison.Ordinal);
         Assert.Contains("core stderr: hi", block, StringComparison.Ordinal);
     }
 
@@ -1187,7 +1193,7 @@ public class SessionViewModelTests
     [Fact]
     public void The_summary_echoes_the_requested_moment_zone_and_mode()
     {
-        // Defaults: moment 2038-01-19T03:14:07, zone UTC+02:00, mode ×60.
+        // Defaults: moment 2038-01-19T03:14:07, zone UTC+02:00, mode Flowing.
         var vm = new SessionViewModel();
         vm.SetTarget(@"C:\apps\Ledger.exe");
         vm.Apply(Verdict("works", "verdict.works.covered"));
@@ -1196,7 +1202,7 @@ public class SessionViewModelTests
 
         Assert.Contains("2038-01-19T03:14:07", summary, StringComparison.Ordinal);
         Assert.Contains("UTC+02:00", summary, StringComparison.Ordinal);
-        Assert.Contains("×60", summary, StringComparison.Ordinal);
+        Assert.Contains("Flowing", summary, StringComparison.Ordinal);
     }
 
     [Fact]
