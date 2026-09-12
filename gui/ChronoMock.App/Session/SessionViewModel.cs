@@ -1143,6 +1143,7 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
                 _elapsedRealMs = s.ElapsedRealMs;
                 _elapsedFakeMs = s.ElapsedFakeMs;
                 _hasTiming = true;
+                PublishElapsed();
                 SetStatus("status.running", SessionStatusKind.Running);
                 break;
             case VanishedEvent vd:
@@ -1161,6 +1162,7 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
                     _elapsedRealMs = e.ElapsedRealMs;
                     _elapsedFakeMs = e.ElapsedFakeMs;
                     _hasTiming = true;
+                    PublishElapsed();
                 }
 
                 // Surface the target's own exit code and any cleanup residue the core reported, rather than
@@ -1472,6 +1474,10 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
         _hasTiming = false;
         _elapsedRealMs = 0;
         _elapsedFakeMs = 0;
+        // 🔴 Cleared, not zeroed on screen: "0:00:00" beside a clock is a measurement, and a session that
+        // has not reported yet has not measured anything. The tile drops the line instead.
+        Fake.Elapsed = string.Empty;
+        Real.Elapsed = string.Empty;
         _fakeEndWall = string.Empty;
         _vanishReasonKey = string.Empty;
         _livedMs = 0;
@@ -1955,6 +1961,20 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     /// whose ids run from <see cref="FirstInFlightCommandId"/> up. A start/fatal error instead carries the
     /// start command's id (1) or none, so it is never treated as an in-flight rejection (RELEASE-001).</summary>
     private static bool IsInFlightError(ErrorEvent err) => err.Id is >= FirstInFlightCommandId;
+
+    /// <summary>
+    /// Put the two durations on their own clocks.
+    /// </summary>
+    /// <remarks>
+    /// One place rather than three: the timing arrives from a heartbeat and again from the core's
+    /// authoritative end report, and a third site resets it. Formatting it at each of them would be three
+    /// chances for the fake clock's duration and the real one's to end up written differently.
+    /// </remarks>
+    private void PublishElapsed()
+    {
+        Fake.Elapsed = ClockView.FormatDuration(_elapsedFakeMs);
+        Real.Elapsed = ClockView.FormatDuration(_elapsedRealMs);
+    }
 
     /// <summary>
     /// The reason a rejected IN-FLIGHT command gets, where the core's key has a start-time tail on it.

@@ -938,6 +938,21 @@
                    Text="{Binding Time}" />
         <TextBlock Style="{StaticResource PartCaption}" Margin="{StaticResource StackGapSm}"
                    Text="{Binding Zone}" />
+        <!-- 🔴 HOW MUCH TIME PASSED ON THIS CLOCK, which is the multiplier stated as a fact. Two clocks
+             showing different dates prove a substitution happened; two durations beside them - two
+             minutes here, two days there - are what make the rate something a reader can see rather than
+             a number they have to trust. It disappears until the first heartbeat rather than reading
+             zero, because a zero beside a clock looks like a measurement. -->
+        <WrapPanel Margin="{StaticResource StackGapSm}"
+                   Visibility="{Binding HasElapsed, Converter={StaticResource BoolToVis}}">
+          <TextBlock Style="{StaticResource PartCaption}" TextWrapping="NoWrap"
+                     VerticalAlignment="Center"
+                     Text="{DynamicResource clock.elapsed}" />
+          <TextBlock Style="{StaticResource PartCaption}" TextWrapping="NoWrap"
+                     Margin="{StaticResource SpaceXs}"
+                     FontFamily="{StaticResource FontFamilyMono}"
+                     Text="{Binding Elapsed}" />
+        </WrapPanel>
       </StackPanel>
     </Border>
   </ControlTemplate>

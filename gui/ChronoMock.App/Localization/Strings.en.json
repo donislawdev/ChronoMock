@@ -13,6 +13,10 @@
   // Clock roles.
   "clock.fake": "Fake clock",
   "clock.real": "Real clock",
+  // 🔴 How much time PASSED on that clock, which is the multiplier as a fact rather than a number to
+  // trust. A label, because a bare duration beside a wall reading is two numbers and no way to tell
+  // them apart.
+  "clock.elapsed": "elapsed",
 
   // Target selection (chrono-mock 7.1). The dialog strings are keyed too (rule 15).
   "target.label": "Target:",
@@ -64,15 +68,18 @@
   // 🔴 The session phase's own keys, in its own namespace, for the same reason the setup phase has its:
   // every key shared with the shipped panel moves that panel's pixels, and these go with the old screen
   // when the product adopts the parts library.
-  "session.section_audit": "Audit",
+  // 🔴 The question, not our word for asking it. "Audit" is the mechanism's name for this block and
+  // the reader has one question it answers - the same reason the four headers inside it stopped
+  // saying "covered channel".
+  "session.section_audit": "What the application read",
   "session.label_jump": "Jump",
   "session.jump_note": "The duration clock never goes backwards, even on a backward jump.",
   "session.rate_placeholder": "any rate",
   "session.running_label": "Running:",
   "session.stop_note": "Stopping returns the application to the real clock. It is not closed.",
-  "session.audit_pending": "The audit appears here once the core reports which time channels the application actually read.",
-  "session.chip_covered": "covered",
-  "session.chip_uncovered": "uncovered",
+  "session.audit_pending": "The audit appears here once the core reports which clock the application actually read.",
+  "session.chip_covered": "on the fake clock",
+  "session.chip_uncovered": "on the real clock",
   "session.chip_warnings": "warnings",
   "setup.already_running": "A session is already running.",
   "setup.chip_duration": "duration scaled",
@@ -161,7 +168,7 @@
   // Shown only while no target is chosen: dropping a file on the window is not discoverable on its own, and once there is a target the hint would be noise on every later run (chrono-mock 7.1 pt 1).
   "target.drop_hint": "…or drag an application onto this window",
   "target.drop_rejected_title": "That file cannot be a target",
-  "target.drop_rejected": "Only .exe files can be run - that is what the hook and the Chromium detection both need.",
+  "target.drop_rejected": "Only .exe files can be run - a shortcut or a script is not something a clock can be attached to.",
 
   // Arguments and working folder (chrono-mock 7.1 pt 1). Collapsed by default: most sessions need neither. The wire and the mechanism have carried both since the protocol was written; only the surfaces did not offer them.
   "launch.header": "Arguments and working folder",
@@ -258,7 +265,7 @@
   "status.error": "Session error",
 
   // Core failure reasons (RELEASE-001). When a start/fatal error ends a session, its specific reason becomes the status headline, so a failed start never reads as "Session ended". Phrased as failure statements because they ARE the status line. Emitted by the core (crates/cli, crates/mech).
-  "core.hook_dll_missing": "The time hook is missing - the app was not launched under a fake clock (reinstall Chrono Mock).",
+  "core.hook_dll_missing": "Part of Chrono Mock is missing, so the application was not launched under a fake clock (reinstall Chrono Mock).",
   "protocol.version_mismatch": "This app and the core speak different protocol versions - reinstall Chrono Mock so both come from the same build.",
   "time.bad_mode": "Unsupported time mode - the session did not start.",
   // Rejected rather than applied: past the bound the fake clock leaves the representable date range
@@ -278,16 +285,16 @@
   "time.bad_multiplier_in_flight": "Speed out of range - it must be between 0 (freeze) and 1,000,000. The rate did not change.",
   "moment.needs_calendar": "That jump counts business days, and a running session has no calendar - jump to a date instead, or work the date out in the calculator first.",
   "moment.unsupported_kind": "The core did not recognise that kind of jump target.",
-  "session.control_failed": "Could not set up the session's control channel - the substitution did not take effect.",
+  "session.control_failed": "Could not set up the link the session is steered through - the substitution did not take effect.",
   "target.launch_failed": "Could not launch the target - the substitution did not take effect.",
   // Checked in the core before either mechanism starts. Without it the failure arrives as target.launch_failed, which blames the application for a folder that is simply not there.
   "target.cwd_missing": "The working folder does not exist - the session did not start. Pick a folder that is there, or leave it empty to start where the application normally would.",
-  "target.inject_failed": "Could not inject the time hook - the substitution did not take effect (an antivirus or a hardened target may have blocked it).",
+  "target.inject_failed": "Could not attach the fake clock to that application - the substitution did not take effect (an antivirus or a hardened application may have blocked it).",
   "target.attach_failed": "Could not attach to the Chromium/Electron app - the substitution did not take effect.",
   // R2-S1. The GUI normally catches this itself (HandshakeGate, from the target's PE), so this is the
   // core's own second line of defence - reachable for a target whose real bitness differs from what its
   // file header declares, such as a .NET AnyCPU executable.
-  "target.bitness_mismatch": "The target runs at a different bitness than this core - the time hook cannot cross bitness.",
+  "target.bitness_mismatch": "That application's bitness does not match this core's - a fake clock cannot cross between 32-bit and 64-bit.",
   "session.already_active": "Another Chrono Mock session is already running - only one at a time.",
   "protocol.no_command": "The core received no command - the session did not start.",
   "protocol.bad_command": "The core received a malformed command - the session did not start.",
@@ -313,19 +320,19 @@
   "verdict.unknown": "Unknown",
 
   // One-sentence "what this means for the test" for a non-works verdict.
-  "verdict.partial.meaning": "Some time channels were not covered - their readings are real, so the test may be unreliable.",
-  "verdict.fails.meaning": "The swap did not cover the key channels - the session was refused as unreliable.",
+  "verdict.partial.meaning": "The application read some of its time from the real clock, so the test may be unreliable.",
+  "verdict.fails.meaning": "The application went on reading the real clock where it matters, so the session was refused as unreliable.",
   "verdict.undetermined.meaning": "Coverage could not be determined - treated as unproven, never as working.",
 
   // Verdict reason keys the core sends over the wire (VerdictEvent / SessionVerdict reason_key), shown under a non-works verdict. The family variants (session.family_*) mirror the per-process ones and are emitted for the family aggregate at end. Wording mirrors the CLI report (describe_reason). RELEASE-002.
-  "coverage.time_channels_covered": "Every process that read time saw the session clock.",
-  "coverage.time_channels_partial": "Some time channels were covered, some were queried but not covered.",
-  "coverage.time_channels_uncovered": "Time was queried but no channel was covered.",
-  "coverage.undetermined": "No process read a covered time channel.",
-  "session.family_covered": "Every process that read time saw the session clock.",
-  "session.family_partial": "Some time channels were covered, some were queried but not covered.",
-  "session.family_uncovered": "Time was queried but no channel was covered.",
-  "session.family_undetermined": "No process read a covered time channel.",
+  "coverage.time_channels_covered": "Every process that read the time saw the fake clock.",
+  "coverage.time_channels_partial": "Some time readings came from the fake clock and some from the real one.",
+  "coverage.time_channels_uncovered": "The application asked for the time and always got the real clock.",
+  "coverage.undetermined": "Nothing read the fake clock, so there is nothing to judge.",
+  "session.family_covered": "Every process that read the time saw the fake clock.",
+  "session.family_partial": "Some time readings came from the fake clock and some from the real one.",
+  "session.family_uncovered": "The application asked for the time and always got the real clock.",
+  "session.family_undetermined": "Nothing read the fake clock, so there is nothing to judge.",
 
   // Coverage / audit preview (chrono-mock 7.2). Channel names are raw API identifiers, not translated.
   //
@@ -344,23 +351,23 @@
   // application asked for, this one is a watch we promised and never started.
   "coverage.unobserved": "Could not be watched",
   "coverage.warnings": "Warnings",
-  "coverage.family_note": "Family session - call counts are the parent process, warnings and uncovered channels cover every process.",
-  "coverage.contexts_note": "Chromium session - showing every JS context (page and workers), never summed.",
+  "coverage.family_note": "Several processes ran - the call counts are the first one's, while the warnings and everything read from the real clock cover all of them.",
+  "coverage.contexts_note": "A Chromium application - every JS context is listed on its own (the page and its workers), never added together.",
 
   // Coverage warning keys the core raises (CoverageEvent warning_keys), and the vanish reason (VanishedEvent reason_key, shown inside report.vanish_detail). Wording mirrors the CLI report (describe_warning). The Chromium (CDP) warnings live in the section below. RELEASE-002.
-  "source.network_at_start": "The target opened a network connection - it may read time from a server, which no local hook can cover.",
-  "wait.object_waits_not_scaled": "Object waits are hooked but left real - an I/O or hardware timeout is not shortened.",
+  "source.network_at_start": "The application opened a network connection - it may read the time from a server, which no local clock can change.",
+  "wait.object_waits_not_scaled": "Waits on system objects are left on the real clock on purpose - an I/O or hardware timeout is not shortened.",
   "wait.timeout_collapsed": "Some of this application's waits were too short to divide by the full speed factor, so they ran at the shortest step this tool uses (1 ms) instead. That part of the application did not accelerate - a lower speed makes it exact again.",
   "timer.multimedia_not_scaled": "The multimedia timer (timeSetEvent) is observed but not scaled.",
   "clock.timegettime_scaled_audio_may_shift": "The winmm clock timeGetTime is being scaled with the rest of the duration axis, so a target that paces itself from it follows the session - but a media application that positions audio from that clock may drift.",
-  "coverage.channel_installed_late": "A time channel was only hooked after its module loaded, so calls the target made before that were not counted - and if the channel is a scaled one, its clock made a single jump when it joined the session.",
-  "inheritance.ntcreateuserprocess_child_maybe_uncovered": "A child spawned directly via NtCreateUserProcess may not be covered.",
+  "coverage.channel_installed_late": "One time function came under the fake clock only after its own module loaded, so calls the application made before that are missing from the counts - and if that function is a scaled one, its clock jumped once when it joined.",
+  "inheritance.ntcreateuserprocess_child_maybe_uncovered": "A child process started through a lower-level call may have run on the real clock.",
   // R2-S2. Distinct from the NtCreateUserProcess warning above it: there we choose not to inject,
   // here we tried and it did not take, so a process of this family really did run on the real clock.
-  "inheritance.child_not_injected": "A child process could not be covered and ran on the real clock - usually a child of a different bitness. The process count is short by that many.",
+  "inheritance.child_not_injected": "A child process could not be given the fake clock and ran on the real one - usually a child of a different bitness. The process count is short by that many.",
   // R2-S9. Session-level, not per-process: it is about processes that never got a coverage slot,
   // so it arrives on session_verdict rather than on any one coverage event.
-  "coverage.pid_registry_full": "This session ran more processes than the audit can track (256). Some ran uncovered and are missing from the process count and the channel lists.",
+  "coverage.pid_registry_full": "This session ran more processes than the audit can track (256). Some ran with no fake clock at all and are missing from the process count and the lists above.",
   "time.fake_clock_clamped": "The fake clock reached the last date this build can represent (year 30828) and stood there for the rest of the session. Late readings are not the moments the chosen speed would have produced.",
   "time.duration_axis_clamped": "The monotonic counters (tick count, unbiased interrupt time, and QPC when scaled) reached the end of their range and stood there, so elapsed time inside the application stopped advancing even though the session went on. A lower speed or a shorter session avoids it.",
   "target.single_instance_suspected": "exited right after injection, before the swap could be confirmed",
@@ -376,8 +383,8 @@
   "qpc.scaled_render_may_distort": "QueryPerformanceCounter is being scaled, so a QPC-timed monotonic/elapsed clock accelerates - but a target that times its rendering or animation off QPC may look distorted.",
 
   // Chromium/Electron (CDP) mode, ADR-8/ADR-9: verdict reasons and warnings the CDP core emits. The coverage unit is a JS context, not an OS process.
-  "chromium.contexts_covered": "Every JS context ran on the session clock.",
-  "chromium.contexts_partial": "Some JS contexts ran on the session clock; some could not be reached.",
+  "chromium.contexts_covered": "Every JS context ran on the fake clock.",
+  "chromium.contexts_partial": "Some JS contexts ran on the fake clock and some could not be reached.",
   "chromium.no_time_calls": "The shim was installed, but the app called no JS time API.",
   "chromium.no_contexts": "No JS context could be shimmed.",
   "chromium.launched_with_debug_port": "Electron/Chromium app: launched with a remote-debugging port and a clean isolated profile, not your real one. While the session runs, any other local process can use that port to control the app.",

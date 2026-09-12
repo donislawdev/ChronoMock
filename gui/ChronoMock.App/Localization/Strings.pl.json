@@ -14,6 +14,10 @@
   // Clock roles.
   "clock.fake": "Zegar fałszywy",
   "clock.real": "Zegar rzeczywisty",
+  // 🔴 How much time PASSED on that clock, which is the multiplier as a fact rather than a number to
+  // trust. A label, because a bare duration beside a wall reading is two numbers and no way to tell
+  // them apart.
+  "clock.elapsed": "upłynęło",
 
   // Target selection (chrono-mock 7.1). The dialog strings are keyed too (rule 15).
   "target.label": "Cel:",
@@ -65,15 +69,18 @@
   // 🔴 The session phase's own keys, in its own namespace, for the same reason the setup phase has its:
   // every key shared with the shipped panel moves that panel's pixels, and these go with the old screen
   // when the product adopts the parts library.
-  "session.section_audit": "Audyt",
+  // 🔴 The question, not our word for asking it. "Audit" is the mechanism's name for this block and
+  // the reader has one question it answers - the same reason the four headers inside it stopped
+  // saying "covered channel".
+  "session.section_audit": "Co aplikacja odczytała",
   "session.label_jump": "Skok",
   "session.jump_note": "Zegar trwania nigdy nie cofa się, także przy skoku wstecz.",
   "session.rate_placeholder": "dowolne tempo",
   "session.running_label": "Uruchomione:",
   "session.stop_note": "Zatrzymanie przywraca aplikacji prawdziwy zegar. Nie zamyka jej.",
-  "session.audit_pending": "Audyt pojawi się tutaj, gdy rdzeń zgłosi, z których kanałów czasu aplikacja naprawdę korzystała.",
-  "session.chip_covered": "objętych",
-  "session.chip_uncovered": "nieobjętych",
+  "session.audit_pending": "Audyt pojawi się tutaj, gdy rdzeń zgłosi, z którego zegara aplikacja naprawdę czytała.",
+  "session.chip_covered": "z fałszywego zegara",
+  "session.chip_uncovered": "z prawdziwego zegara",
   "session.chip_warnings": "ostrzeżeń",
   "setup.already_running": "Sesja już działa.",
   "setup.chip_duration": "trwanie skalowane",
@@ -162,7 +169,7 @@
   // Shown only while no target is chosen: dropping a file on the window is not discoverable on its own, and once there is a target the hint would be noise on every later run (chrono-mock 7.1 pt 1).
   "target.drop_hint": "…albo przeciągnij aplikację na to okno",
   "target.drop_rejected_title": "Ten plik nie może być celem",
-  "target.drop_rejected": "Uruchomić można tylko pliki .exe - tego wymaga i hook, i wykrywanie Chromium.",
+  "target.drop_rejected": "Uruchomić można tylko pliki .exe - do skrótu ani skryptu nie da się podłączyć zegara.",
 
   // Arguments and working folder (chrono-mock 7.1 pt 1). Collapsed by default: most sessions need neither. The wire and the mechanism have carried both since the protocol was written; only the surfaces did not offer them.
   "launch.header": "Argumenty i katalog roboczy",
@@ -259,7 +266,7 @@
   "status.error": "Błąd sesji",
 
   // Core failure reasons (RELEASE-001). When a start/fatal error ends a session, its specific reason becomes the status headline, so a failed start never reads as "Session ended". Phrased as failure statements because they ARE the status line. Emitted by the core (crates/cli, crates/mech).
-  "core.hook_dll_missing": "Brak haka czasu - aplikacja nie została uruchomiona z fałszywym zegarem (zainstaluj Chrono Mock ponownie).",
+  "core.hook_dll_missing": "Brakuje części Chrono Mocka, więc aplikacja nie została uruchomiona z fałszywym zegarem (zainstaluj Chrono Mock ponownie).",
   "protocol.version_mismatch": "Aplikacja i rdzeń mówią różnymi wersjami protokołu - zainstaluj Chrono Mock ponownie, żeby oba pochodziły z tej samej kompilacji.",
   "time.bad_mode": "Nieobsługiwany tryb czasu - sesja nie wystartowała.",
   // Rejected rather than applied: past the bound the fake clock leaves the representable date range
@@ -276,16 +283,16 @@
   "time.bad_multiplier_in_flight": "Prędkość poza zakresem - musi mieścić się między 0 (zamrożenie) a 1,000,000. Tempo się nie zmieniło.",
   "moment.needs_calendar": "Ten skok liczy dni robocze, a trwająca sesja nie ma kalendarza - skocz do konkretnej daty albo policz ją najpierw w kalkulatorze.",
   "moment.unsupported_kind": "Rdzeń nie rozpoznał tego rodzaju celu skoku.",
-  "session.control_failed": "Nie udało się utworzyć kanału sterowania sesji - podmiana nie zadziałała.",
+  "session.control_failed": "Nie udało się ustawić łącza, którym steruje się sesją - podmiana nie zadziałała.",
   "target.launch_failed": "Nie udało się uruchomić celu - podmiana nie zadziałała.",
   // Checked in the core before either mechanism starts. Without it the failure arrives as target.launch_failed, which blames the application for a folder that is simply not there.
   "target.cwd_missing": "Katalog roboczy nie istnieje - sesja nie wystartowała. Wskaż istniejący katalog albo zostaw pole puste, żeby aplikacja wystartowała tam, gdzie normalnie.",
-  "target.inject_failed": "Nie udało się wstrzyknąć haka czasu - podmiana nie zadziałała (mógł ją zablokować antywirus albo utwardzony cel).",
+  "target.inject_failed": "Nie udało się podłączyć fałszywego zegara do tej aplikacji - podmiana nie zadziałała (mógł ją zablokować antywirus albo utwardzona aplikacja).",
   "target.attach_failed": "Nie udało się podłączyć do aplikacji Chromium/Electron - podmiana nie zadziałała.",
   // R2-S1. The GUI normally catches this itself (HandshakeGate, from the target's PE), so this is the
   // core's own second line of defence - reachable for a target whose real bitness differs from what its
   // file header declares, such as a .NET AnyCPU executable.
-  "target.bitness_mismatch": "Cel działa w innej bitowości niż ten rdzeń - hak czasu nie przechodzi przez granicę bitowości.",
+  "target.bitness_mismatch": "Bitowość tej aplikacji nie zgadza się z bitowością tego rdzenia - fałszywy zegar nie przechodzi między 32 a 64 bitami.",
   "session.already_active": "Inna sesja Chrono Mock już działa - tylko jedna naraz.",
   "protocol.no_command": "Rdzeń nie otrzymał komendy - sesja nie wystartowała.",
   "protocol.bad_command": "Rdzeń otrzymał błędną komendę - sesja nie wystartowała.",
@@ -309,19 +316,19 @@
   "verdict.unknown": "Nieznany",
 
   // One-sentence "what this means for the test" for a non-works verdict.
-  "verdict.partial.meaning": "Część kanałów czasu nie została objęta - ich odczyty są prawdziwe, więc test może być niewiarygodny.",
-  "verdict.fails.meaning": "Podmiana nie objęła kluczowych kanałów - sesja odrzucona jako niewiarygodna.",
+  "verdict.partial.meaning": "Część czasu aplikacja odczytała z prawdziwego zegara, więc test może być niewiarygodny.",
+  "verdict.fails.meaning": "Aplikacja czytała prawdziwy zegar tam, gdzie to istotne, więc sesja została odrzucona jako niewiarygodna.",
   "verdict.undetermined.meaning": "Nie dało się ustalić pokrycia - traktowane jako niepotwierdzone, nigdy jako działające.",
 
   // Verdict reason keys the core sends over the wire (VerdictEvent / SessionVerdict reason_key), shown under a non-works verdict. The family variants (session.family_*) mirror the per-process ones and are emitted for the family aggregate at end. Wording mirrors the CLI report (describe_reason). RELEASE-002.
-  "coverage.time_channels_covered": "Każdy proces, który odczytał czas, widział zegar sesji.",
-  "coverage.time_channels_partial": "Część kanałów czasu objęto, część odpytano ale nie objęto.",
-  "coverage.time_channels_uncovered": "Czas był odpytywany, ale nie objęto żadnego kanału.",
-  "coverage.undetermined": "Żaden proces nie odczytał objętego kanału czasu.",
-  "session.family_covered": "Każdy proces, który odczytał czas, widział zegar sesji.",
-  "session.family_partial": "Część kanałów czasu objęto, część odpytano ale nie objęto.",
-  "session.family_uncovered": "Czas był odpytywany, ale nie objęto żadnego kanału.",
-  "session.family_undetermined": "Żaden proces nie odczytał objętego kanału czasu.",
+  "coverage.time_channels_covered": "Każdy proces, który odczytał czas, widział fałszywy zegar.",
+  "coverage.time_channels_partial": "Część odczytów czasu pochodziła z fałszywego zegara, część z prawdziwego.",
+  "coverage.time_channels_uncovered": "Aplikacja pytała o czas i zawsze dostawała prawdziwy zegar.",
+  "coverage.undetermined": "Nic nie odczytało fałszywego zegara, więc nie ma czego oceniać.",
+  "session.family_covered": "Każdy proces, który odczytał czas, widział fałszywy zegar.",
+  "session.family_partial": "Część odczytów czasu pochodziła z fałszywego zegara, część z prawdziwego.",
+  "session.family_uncovered": "Aplikacja pytała o czas i zawsze dostawała prawdziwy zegar.",
+  "session.family_undetermined": "Nic nie odczytało fałszywego zegara, więc nie ma czego oceniać.",
 
   // Coverage / audit preview (chrono-mock 7.2). Channel names are raw API identifiers, not translated.
   //
@@ -340,23 +347,23 @@
   // application asked for, this one is a watch we promised and never started.
   "coverage.unobserved": "Nie dało się obserwować",
   "coverage.warnings": "Ostrzeżenia",
-  "coverage.family_note": "Sesja rodziny - liczniki wywołań z procesu rodzica, ostrzeżenia i nieobjęte kanały ze wszystkich procesów.",
-  "coverage.contexts_note": "Sesja Chromium - pokazano każdy kontekst JS (stronę i workery), nigdy sumowane.",
+  "coverage.family_note": "Uruchomiło się kilka procesów - liczniki wywołań są z pierwszego, a ostrzeżenia i wszystko czytane z prawdziwego zegara dotyczą wszystkich.",
+  "coverage.contexts_note": "Aplikacja Chromium - każdy kontekst JS jest wypisany osobno (strona i jej workery), nigdy sumowane.",
 
   // Coverage warning keys the core raises (CoverageEvent warning_keys), and the vanish reason (VanishedEvent reason_key, shown inside report.vanish_detail). Wording mirrors the CLI report (describe_warning). The Chromium (CDP) warnings live in the section below. RELEASE-002.
-  "source.network_at_start": "Cel otworzył połączenie sieciowe - może czytać czas z serwera, którego żaden lokalny hak nie obejmie.",
-  "wait.object_waits_not_scaled": "Oczekiwania na obiekty są podpięte, ale pozostawione realne - limit czasu I/O lub sprzętu nie jest skracany.",
+  "source.network_at_start": "Aplikacja otworzyła połączenie sieciowe - może czytać czas z serwera, na który żaden lokalny zegar nie ma wpływu.",
+  "wait.object_waits_not_scaled": "Oczekiwania na obiekty systemowe są świadomie zostawione na prawdziwym zegarze - limit czasu I/O albo sprzętu nie jest skracany.",
   "wait.timeout_collapsed": "Część oczekiwań tej aplikacji była za krótka, żeby podzielić je przez pełny mnożnik, więc przebiegły w najkrótszym kroku, jakiego to narzędzie używa (1 ms). Ta część aplikacji nie przyspieszyła - mniejsza prędkość sprawi, że będzie dokładnie.",
   "timer.multimedia_not_scaled": "Timer multimedialny (timeSetEvent) jest obserwowany, ale nie skalowany.",
   "clock.timegettime_scaled_audio_may_shift": "Zegar winmm timeGetTime jest skalowany razem z resztą osi trwania, więc cel odmierzający z niego własne tempo podąża za sesją - ale aplikacja multimedialna pozycjonująca dźwięk z tego zegara może dryfować.",
-  "coverage.channel_installed_late": "Kanał czasu został podpięty dopiero po załadowaniu jego modułu, więc wywołania sprzed tego momentu nie zostały policzone - a jeśli kanał jest skalowany, jego zegar wykonał jednorazowy skok w chwili dołączenia do sesji.",
-  "inheritance.ntcreateuserprocess_child_maybe_uncovered": "Dziecko utworzone bezpośrednio przez NtCreateUserProcess może nie być objęte.",
+  "coverage.channel_installed_late": "Jedna funkcja czasu trafiła pod fałszywy zegar dopiero po załadowaniu swojego modułu, więc wywołania sprzed tego momentu nie ma w licznikach - a jeśli ta funkcja jest skalowana, jej zegar wykonał wtedy jednorazowy skok.",
+  "inheritance.ntcreateuserprocess_child_maybe_uncovered": "Proces potomny utworzony niższym wywołaniem systemu mógł działać na prawdziwym zegarze.",
   // R2-S2. Distinct from the NtCreateUserProcess warning above it: there we choose not to inject,
   // here we tried and it did not take, so a process of this family really did run on the real clock.
-  "inheritance.child_not_injected": "Proces potomny nie został objęty i działał na realnym zegarze - zwykle dziecko o innej bitowości. Liczba procesów jest o tyle zaniżona.",
+  "inheritance.child_not_injected": "Procesowi potomnemu nie udało się podać fałszywego zegara i działał na prawdziwym - zwykle dziecko o innej bitowości. Liczba procesów jest o tyle zaniżona.",
   // R2-S9. Session-level, not per-process: it is about processes that never got a coverage slot,
   // so it arrives on session_verdict rather than on any one coverage event.
-  "coverage.pid_registry_full": "Ta sesja uruchomiła więcej procesów, niż audyt potrafi śledzić (256). Część działała bez pokrycia i nie ma jej w liczbie procesów ani na listach kanałów.",
+  "coverage.pid_registry_full": "Ta sesja uruchomiła więcej procesów, niż audyt potrafi śledzić (256). Część działała całkiem bez fałszywego zegara i nie ma jej w liczbie procesów ani na listach powyżej.",
   "time.fake_clock_clamped": "Fałszywy zegar doszedł do ostatniej daty, jaką ta wersja potrafi wyrazić (rok 30828), i stanął tam do końca sesji. Późniejsze odczyty nie są momentami, które dałaby wybrana prędkość.",
   "time.duration_axis_clamped": "Liczniki monotoniczne (licznik tyknięć, nieobciążony czas przerwań oraz QPC, gdy skalowany) doszły do końca swojego zakresu i stanęły, więc czas, jaki upłynął wewnątrz aplikacji, przestał rosnąć, mimo że sesja trwała dalej. Mniejsza prędkość albo krótsza sesja tego unika.",
   "target.single_instance_suspected": "zakończył się zaraz po injekcji, zanim podmianę dało się potwierdzić",
@@ -609,7 +616,7 @@
   "tip.mode": "Jak szybko idzie podmieniony zegar: ×1 to zwykłe tempo, zamrożony go zatrzymuje, reszta idzie tyle razy szybciej.",
   "tip.scale_duration": "Przyśpiesz też liczniki, uśpienia i odliczania w aplikacji - nie tylko zegar ścienny.",
   "tip.scale_qpc": "Przyśpiesz też zegary na QPC (Python monotonic, .NET Stopwatch, Java nanoTime). Może zniekształcić aplikację liczącą render z QPC.",
-  "tip.force": "Domyślnie wyłączone. Gdy werdykt otwierający mówi, że podmiana nie zadziałała, cel jest zatrzymywany zamiast oddany do pracy - jego dowód dotyczyłby realnego zegara. Zaznacz, aby mimo to uruchomić; sesja jest wtedy wszędzie oznaczona jako nierzetelna.",
+  "tip.force": "Domyślnie wyłączone. Gdy werdykt otwierający mówi, że podmiana nie zadziałała, cel jest zatrzymywany zamiast oddany do pracy - jego dowód dotyczyłby realnego zegara. Zaznacz, aby mimo to uruchomić - sesja jest wtedy wszędzie oznaczona jako nierzetelna.",
   "tip.start": "Uruchom cel z podmienionym zegarem. Wymaga celu i poprawnego momentu.",
   "tip.jump_to": "W trakcie sesji: przeskocz podmieniony zegar do momentu po lewej.",
   "tip.freeze": "Zamroź podmieniony zegar, by przestał iść.",

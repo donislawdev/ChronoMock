@@ -1,3 +1,5 @@
+using System.Globalization;
+
 namespace ChronoMock.App;
 
 /// <summary>
@@ -18,6 +20,7 @@ public sealed class ClockView : ObservableObject
     private string _date = Placeholder;
     private string _time = string.Empty;
     private string _zone = string.Empty;
+    private string _elapsed = string.Empty;
 
     public ClockView(string roleKey) => RoleKey = roleKey;
 
@@ -53,4 +56,55 @@ public sealed class ClockView : ObservableObject
 
     /// <summary>The session zone this reading is expressed in, e.g. "UTC+02:00".</summary>
     public string Zone { get => _zone; set => Set(ref _zone, value); }
+
+    /// <summary>
+    /// How much time has PASSED on this clock since the session began, as "h:mm:ss" or "d.hh:mm:ss".
+    /// </summary>
+    /// <remarks>
+    /// 🔴 THE MOST DIRECT PROOF THE TOOL IS DOING ANYTHING, and it reached the copied report and never the
+    /// screen. Two clocks showing different dates prove a substitution happened. The pair of durations
+    /// beside them - two minutes here, two days there - is the MULTIPLIER, stated as a fact rather than as
+    /// a number somebody has to trust.
+    ///
+    /// It is time that PASSED, not the difference between two readings: the core banks fake time per rate
+    /// segment (mech::fake_elapsed_ticks), so changing the rate mid-session keeps it honest, and a jump
+    /// does not inflate it - a jump moves a clock, it does not make time pass. That is also why it can be
+    /// shown next to a wall reading without the two contradicting each other.
+    ///
+    /// Empty until the first heartbeat, so the tile simply has one fewer line rather than printing a zero
+    /// that looks like a measurement.
+    /// </remarks>
+    public string Elapsed
+    {
+        get => _elapsed;
+        set
+        {
+            if (Set(ref _elapsed, value))
+            {
+                RaisePropertyChanged(nameof(HasElapsed));
+            }
+        }
+    }
+
+    /// <summary>True once there is a duration to show. The tile's line disappears rather than reading
+    /// "elapsed" beside nothing.</summary>
+    public bool HasElapsed => _elapsed.Length > 0;
+
+    /// <summary>
+    /// A duration as the clocks above it are written: digits and colons, no words.
+    /// </summary>
+    /// <remarks>
+    /// 🔴 NO HUMANISED UNITS, on purpose. "1 h 2 min" needs a unit vocabulary in every language and Polish
+    /// needs three plural forms for each of them, which is a translation surface bought for nothing here -
+    /// this sits directly under a clock reading "03:14:07", so the same notation is the one a reader has
+    /// already parsed. Days are prefixed rather than folded into hours, because a fake session at ×1440
+    /// reaches "60.00:00:00" within an hour and "1440:00:00" would be a number nobody can read.
+    /// </remarks>
+    public static string FormatDuration(long milliseconds)
+    {
+        var span = TimeSpan.FromMilliseconds(Math.Max(milliseconds, 0));
+        return span.Days > 0
+            ? span.ToString(@"d\.hh\:mm\:ss", CultureInfo.InvariantCulture)
+            : span.ToString(@"h\:mm\:ss", CultureInfo.InvariantCulture);
+    }
 }
