@@ -81,11 +81,23 @@ public class StateSheetTests
 
             // The catalogue open, which is the only render showing the well, its rows and the sentence
             // saying what choosing from it will do.
-            total += RenderSetup("setup-scenarios", WithScenarios(), openScenarios: true).Count;
+            total += RenderSetup("setup-scenarios", WithScenarios(), "ScenarioSection").Count;
 
             var searching = WithScenarios();
             searching.ScenarioPicker.Filter = "nothing is called this";
-            total += RenderSetup("setup-no-matches", searching, openScenarios: true).Count;
+            total += RenderSetup("setup-no-matches", searching, "ScenarioSection").Count;
+
+            // 🔴 The merged group open, with everything in it turned on. The speed section absorbed the
+            // launch fields when five groups would not fit the window, and without this render the merge
+            // is a thing nobody looked at - the two halves meeting, the chips in the header, and the label
+            // column agreeing across a boundary that used to be two separate scopes.
+            var options = WithScenarios();
+            options.ScaleDuration = true;
+            options.ScaleQpc = true;
+            options.ForceStart = true;
+            options.TargetArgs = "--seed 7 --headless";
+            options.WorkingFolder = @"C:\apps\data";
+            total += RenderSetup("setup-options", options, "SpeedSection").Count;
 
             var configured = WithScenarios();
             configured.SetTarget(Path.Combine(TestPaths.RepoRoot(), "target.exe"));
@@ -128,7 +140,7 @@ public class StateSheetTests
     private static IReadOnlyList<LaidOutElement> RenderSetup(
         string name,
         SessionViewModel model,
-        bool openScenarios = false)
+        string? openSection = null)
     {
         var view = new SetupPhaseView { DataContext = model };
 
@@ -139,7 +151,8 @@ public class StateSheetTests
         // flag on the model.
         // Fully qualified: Wpf.Ui.Controls has an Expander too, and the one in the view is the stock WPF
         // control (the toolkit's does not appear anywhere in this project).
-        if (openScenarios && view.FindName("ScenarioSection") is System.Windows.Controls.Expander section)
+        if (openSection is not null
+            && view.FindName(openSection) is System.Windows.Controls.Expander section)
         {
             section.IsExpanded = true;
 

@@ -491,13 +491,47 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     /// Split into the wire's argument list by <see cref="TargetArguments"/>, which mirrors the CLI's own
     /// rule so <c>--args</c> and this field cannot launch the same application two different ways.
     /// Start-only: arguments are fixed once the process exists.</summary>
-    public string TargetArgs { get => _targetArgs; set => Set(ref _targetArgs, value); }
+    public string TargetArgs
+    {
+        get => _targetArgs;
+        set
+        {
+            if (Set(ref _targetArgs, value))
+            {
+                RaisePropertyChanged(nameof(HasTargetArgs));
+            }
+        }
+    }
+
+    /// <summary>Whether anything was typed in the arguments field.</summary>
+    /// <remarks>
+    /// 🔴 It exists because the launch fields now live INSIDE the speed section, and a folded section has
+    /// to say what is set inside it or folding becomes hiding. The header shows a chip rather than the
+    /// text: an argument list is as long as somebody makes it, and a summary that grew with it would push
+    /// the rate and the option chips off the right-hand side. A bool, not a type - this class stands on
+    /// its coupling ceiling (gui/CodeMetricsConfig.txt).
+    /// </remarks>
+    public bool HasTargetArgs => _targetArgs.Length > 0;
 
     /// <summary>Working folder for the target (chrono-mock 7.1 pt 1). Empty means "do not ask for one", and
     /// the target then inherits ours - the behaviour every session had before this field existed. The wire
     /// and the mechanism have carried <c>cwd</c> since the protocol was written - only the two surfaces
     /// never offered it. Start-only.</summary>
-    public string WorkingFolder { get => _workingFolder; set => Set(ref _workingFolder, value); }
+    public string WorkingFolder
+    {
+        get => _workingFolder;
+        set
+        {
+            if (Set(ref _workingFolder, value))
+            {
+                RaisePropertyChanged(nameof(HasWorkingFolder));
+            }
+        }
+    }
+
+    /// <summary>Whether a working folder was named. See <see cref="HasTargetArgs"/> for why it is a chip
+    /// in the folded header rather than the path itself - a path is even longer than an argument list.</summary>
+    public bool HasWorkingFolder => _workingFolder.Length > 0;
 
     /// <summary>True when a session may be started: nothing is running, a target is chosen, moment is valid.</summary>
     public bool CanStart => _idle && HasTarget && Moment.IsValid;

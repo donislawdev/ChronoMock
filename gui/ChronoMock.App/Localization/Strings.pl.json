@@ -59,6 +59,10 @@
   "setup.chip_duration": "trwanie skalowane",
   "setup.chip_qpc": "QPC skalowane",
   "setup.chip_force": "start wymuszony",
+  // The launch fields moved into this section, so its folded header says they are set without printing
+  // values that have no length limit.
+  "setup.chip_args": "argumenty ustawione",
+  "setup.chip_cwd": "folder ustawiony",
   // The contract sentence above Start names the CLOCK - the instant and the rate. The options are how the
   // rate is delivered rather than what the application sees, so they stay in the section header and the
   // sentence does not repeat them.
@@ -179,8 +183,18 @@
   "zone.us_mountain": "USA górski",
   "zone.us_pacific": "USA pacyficzny",
   "mode.label": "Tryb:",
-  "mode.flow": "Płynący",
+  // 🔴 THE RATE, NOT A WORD FOR IT. This said "Płynący", which named the mechanism rather than answering
+  // "how fast" - and it sat in a list whose other four entries answer that question in one glyph. A
+  // reader met it with no way to tell whether it was faster or slower than ×10. The key still names the
+  // MODE, because that is its identity, and the wire value "flow" is untouched.
+  //
+  // Written ×1 rather than 1x to match the four beside it. A list mixing both notations would be a new
+  // inconsistency traded for the one being removed.
+  "mode.flow": "×1",
   "mode.frozen": "Zamrożony",
+  // The same rate as mode.flow and deliberately the same text: this one is the in-session button that
+  // sets the multiplier to 1, that one is the mode list's entry for starting at real speed. Two keys
+  // because they are two controls in two phases, one reading because it is one rate.
   "mode.x1": "×1",
   "mode.x10": "×10",
   "mode.x60": "×60",
@@ -556,7 +570,7 @@
   "tip.now": "Wstaw bieżącą datę i godzinę (strefa sesji).",
   "tip.zone": "Strefa czasowa sesji - stały offset bez zmiany czasu. Moment jest w niej liczony.",
   "tip.relative_moment": "Wypełnia moment powyżej czasem teraz, przesuniętym o tę wartość - w wierszu poleceń to --at +30d. Miesiące, kwartały i lata trafiają na datę kalendarzową, nie na stałą liczbę godzin. Ten wiersz robi jedno przesunięcie i nic więcej, dlatego ma mniej opcji niż kalkulator: dni roboczych nie ma, bo sesja nie niesie kalendarza świąt, a gotowe momenty w rodzaju końca miesiąca stoją na liście scenariuszy powyżej.",
-  "tip.mode": "Jak szybko idzie podmieniony zegar: płynnie, zamrożony, albo N razy szybciej.",
+  "tip.mode": "Jak szybko idzie podmieniony zegar: ×1 to zwykłe tempo, zamrożony go zatrzymuje, reszta idzie tyle razy szybciej.",
   "tip.scale_duration": "Przyśpiesz też liczniki, uśpienia i odliczania w aplikacji - nie tylko zegar ścienny.",
   "tip.scale_qpc": "Przyśpiesz też zegary na QPC (Python monotonic, .NET Stopwatch, Java nanoTime). Może zniekształcić aplikację liczącą render z QPC.",
   "tip.force": "Domyślnie wyłączone. Gdy werdykt otwierający mówi, że podmiana nie zadziałała, cel jest zatrzymywany zamiast oddany do pracy - jego dowód dotyczyłby realnego zegara. Zaznacz, aby mimo to uruchomić; sesja jest wtedy wszędzie oznaczona jako nierzetelna.",

@@ -42,7 +42,11 @@ public class SessionViewModelTests
             ["cleanup.chromium_profile_left"] = "temp profile left behind",
             ["report.requested"] = "requested: {0} (zone {1}, mode {2})",
             ["mode.x60"] = "×60",
-            ["mode.flow"] = "Flowing",
+            // The shipped reading, so a test that prints a mode prints what a reader would see. It said
+            // "Flowing" until 2026-09-12, and nothing here reddened when the label changed - this stub is
+            // its own dictionary, which is right for the test and worth saying out loud: the label itself
+            // is guarded by XamlResourceKeyTests and by the renders, not from in here.
+            ["mode.flow"] = "×1",
         };
         return key => map.TryGetValue(key, out var value) ? value : key;
     }
@@ -321,7 +325,7 @@ public class SessionViewModelTests
         // the 32-bit boundary in UTC and was two hours past it at +02:00.
         Assert.Equal(0, vm.SelectedZone.BiasMinutes);
 
-        // 🔴 Flowing since 2026-09-12, and x60 before that. The tool's promise is that an application sees
+        // 🔴 Real speed since 2026-09-12, and x60 before that. The tool's promise is that an application sees
         // a different DATE - running it sixty times faster as well is the second feature, and a first run
         // used to get it without asking. The null multiplier is asserted as well as the mode, because
         // "flow" with a number attached would send a rate the panel is not showing.
@@ -1197,7 +1201,7 @@ public class SessionViewModelTests
     [Fact]
     public void The_summary_echoes_the_requested_moment_zone_and_mode()
     {
-        // Defaults: moment 2038-01-19T03:14:07, zone UTC, mode Flowing.
+        // Defaults: moment 2038-01-19T03:14:07, zone UTC, mode flow (shown as ×1).
         var vm = new SessionViewModel();
         vm.SetTarget(@"C:\apps\Ledger.exe");
         vm.Apply(Verdict("works", "verdict.works.covered"));
@@ -1206,7 +1210,7 @@ public class SessionViewModelTests
 
         Assert.Contains("2038-01-19T03:14:07", summary, StringComparison.Ordinal);
         Assert.Contains("UTC+00:00", summary, StringComparison.Ordinal);
-        Assert.Contains("Flowing", summary, StringComparison.Ordinal);
+        Assert.Contains("×1", summary, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -1321,6 +1325,41 @@ public class SessionViewModelTests
         Assert.True(vm.ScaleQpc);
         Assert.True(vm.ForceStart);
         Assert.False(vm.HasHistoryNote, "everything was on offer, so there is nothing to report");
+    }
+
+    /// <summary>
+    /// The launch fields live inside the speed section now, so its folded header has to say they are set.
+    /// A header that went on reading "×1" over a session carrying arguments would be folding turned into
+    /// hiding, which is the one thing a summary may not do.
+    /// </summary>
+    [Fact]
+    public void Setting_an_argument_or_a_folder_announces_it_for_the_folded_header()
+    {
+        var vm = new SessionViewModel();
+
+        Assert.False(vm.HasTargetArgs);
+        Assert.False(vm.HasWorkingFolder);
+
+        var announced = new List<string>();
+        vm.PropertyChanged += (_, e) => announced.Add(e.PropertyName ?? string.Empty);
+
+        vm.TargetArgs = "--seed 7";
+        vm.WorkingFolder = @"C:\apps\data";
+
+        Assert.True(vm.HasTargetArgs);
+        Assert.True(vm.HasWorkingFolder);
+        Assert.Contains(nameof(SessionViewModel.HasTargetArgs), announced);
+        Assert.Contains(nameof(SessionViewModel.HasWorkingFolder), announced);
+
+        // And back, because a chip that appears and never leaves is worse than no chip.
+        announced.Clear();
+        vm.TargetArgs = string.Empty;
+        vm.WorkingFolder = string.Empty;
+
+        Assert.False(vm.HasTargetArgs);
+        Assert.False(vm.HasWorkingFolder);
+        Assert.Contains(nameof(SessionViewModel.HasTargetArgs), announced);
+        Assert.Contains(nameof(SessionViewModel.HasWorkingFolder), announced);
     }
 
     /// <summary>The other half: what BuildRecord writes, or the load above has nothing to restore from.</summary>

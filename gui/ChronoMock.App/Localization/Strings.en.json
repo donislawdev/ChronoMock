@@ -58,6 +58,10 @@
   "setup.chip_duration": "duration scaled",
   "setup.chip_qpc": "QPC scaled",
   "setup.chip_force": "forced start",
+  // The launch fields moved into this section, so its folded header says they are set without printing
+  // values that have no length limit.
+  "setup.chip_args": "arguments set",
+  "setup.chip_cwd": "folder set",
   // The contract sentence above Start names the CLOCK - the instant and the rate. The options are how the
   // rate is delivered rather than what the application sees, so they stay in the section header and the
   // sentence does not repeat them.
@@ -178,8 +182,18 @@
   "zone.us_mountain": "US Mountain",
   "zone.us_pacific": "US Pacific",
   "mode.label": "Mode:",
-  "mode.flow": "Flowing",
+  // 🔴 THE RATE, NOT A WORD FOR IT. This said "Flowing", which named the mechanism rather than answering
+  // "how fast" - and it sat in a list whose other four entries answer that question in one glyph. A
+  // reader met "Flowing" with no way to tell whether it was faster or slower than ×10. The key still
+  // names the MODE, because that is its identity, and the wire value "flow" is untouched.
+  //
+  // Written ×1 rather than 1x to match the four beside it. A list mixing both notations would be a new
+  // inconsistency traded for the one being removed.
+  "mode.flow": "×1",
   "mode.frozen": "Frozen",
+  // The same rate as mode.flow and deliberately the same text: this one is the in-session button that
+  // sets the multiplier to 1, that one is the mode list's entry for starting at real speed. Two keys
+  // because they are two controls in two phases, one reading because it is one rate.
   "mode.x1": "×1",
   "mode.x10": "×10",
   "mode.x60": "×60",
@@ -557,7 +571,7 @@
   "tip.now": "Fill in the current date and time (session zone).",
   "tip.zone": "The session time zone - a fixed offset with no daylight saving. The moment is read in it.",
   "tip.relative_moment": "Fill the moment above with now, shifted by this much - the command line spells it --at +30d. Months, quarters and years land on the calendar date, not on a fixed number of hours. This row makes one shift and no more, which is why it offers fewer choices than the calculator: business days are absent because a session carries no holiday calendar, and ready-made moments such as a month end are in the Scenario list above.",
-  "tip.mode": "How fast the fake clock runs: flowing at real speed, frozen, or N times faster.",
+  "tip.mode": "How fast the fake clock runs: ×1 is real speed, frozen stops it, and the rest run that many times faster.",
   "tip.scale_duration": "Also speed up timers, sleeps and countdowns inside the app - not just the wall clock.",
   "tip.scale_qpc": "Also speed up QPC-based clocks (Python monotonic, .NET Stopwatch, Java nanoTime). May distort an app that times its rendering off QPC.",
   "tip.force": "Off by default. When the opening verdict says the substitution did not take effect, the target is stopped rather than handed to you, because its evidence would be about the real clock. Tick this to run anyway - the session is then marked unreliable everywhere it appears.",

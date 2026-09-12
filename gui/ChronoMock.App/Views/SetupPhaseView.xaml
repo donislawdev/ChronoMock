@@ -66,6 +66,20 @@
             <TextBlock Style="{StaticResource PartCaption}" TextWrapping="NoWrap"
                        Text="{DynamicResource setup.chip_force}" />
           </Border>
+          <!-- 🔴 The launch fields live in this section too, so its header has to account for them. A chip
+               rather than the value: an argument list and a folder path are both as long as somebody makes
+               them, and a summary that grew with them would push the rate off the right-hand edge. Neither
+               shows on a default session, so the header reads exactly as it did before they moved in. -->
+          <Border Style="{StaticResource PartBadge}" Margin="{StaticResource SpaceXs}"
+                  Visibility="{Binding HasTargetArgs, Converter={StaticResource BoolToVis}}">
+            <TextBlock Style="{StaticResource PartCaption}" TextWrapping="NoWrap"
+                       Text="{DynamicResource setup.chip_args}" />
+          </Border>
+          <Border Style="{StaticResource PartBadge}" Margin="{StaticResource SpaceXs}"
+                  Visibility="{Binding HasWorkingFolder, Converter={StaticResource BoolToVis}}">
+            <TextBlock Style="{StaticResource PartCaption}" TextWrapping="NoWrap"
+                       Text="{DynamicResource setup.chip_cwd}" />
+          </Border>
         </StackPanel>
       </ControlTemplate>
 
@@ -393,10 +407,17 @@
       </Expander>
 
       <!--
-        SPEED AND OPTIONS, folded. Its header answers the question it would open to answer, which is the
-        whole bargain of folding: the speed and every option that is on are readable without a click.
+        SPEED AND OPTIONS, folded, and it holds everything about HOW the application runs - the rate its
+        clock moves at, the two opt-ins, the forced start, and what it is handed on the way in. Its header
+        answers the question it would open to answer, which is the whole bargain of folding: the speed and
+        every option that is on are readable without a click.
+
+        The title stays "Speed and options" rather than a broader word invented for the merge. Arguments
+        and a working folder ARE options, "Options" alone is the kind of empty label this screen is
+        removing elsewhere, and the header's chips are what actually answer "what is set in here".
       -->
-      <Expander Style="{StaticResource PartSection}" Margin="{StaticResource StackGapXl}">
+      <Expander x:Name="SpeedSection"
+                Style="{StaticResource PartSection}" Margin="{StaticResource StackGapXl}">
         <Expander.Header>
           <TextBlock Style="{StaticResource PartHeading}" Text="{DynamicResource setup.section_speed}" />
         </Expander.Header>
@@ -442,51 +463,53 @@
                     Margin="{StaticResource StackGapSm}" />
           <TextBlock Style="{StaticResource PartCaption}" Margin="{StaticResource OptionNoteGap}"
                      Text="{DynamicResource setup.opt_force_note}" />
-        </StackPanel>
-      </Expander>
 
-      <!--
-        ARGUMENTS AND WORKING FOLDER, folded, and the one section whose header is usually silent - because
-        most sessions need neither, and a summary that said "none" three times would be noise standing
-        where information goes.
-      -->
-      <Expander Style="{StaticResource PartSection}" Margin="{StaticResource StackGapXl}"
-                IsEnabled="{Binding IsIdle}">
-        <Expander.Header>
-          <TextBlock Style="{StaticResource PartHeading}" Text="{DynamicResource launch.header}" />
-        </Expander.Header>
-        <Expander.Tag>
-          <TextBlock Style="{StaticResource PartCaption}" TextWrapping="NoWrap"
-                     TextTrimming="CharacterEllipsis" Text="{Binding TargetArgs}" />
-        </Expander.Tag>
+          <!--
+            🔴 AND THE LAUNCH OPTIONS, IN THE SAME GROUP. They were a fifth section of their own, and
+            measured at the window's real height the five groups came to 710 px against a 671 px viewport:
+            the last one was clipped, and because the footer loses a line once an application is chosen,
+            the clip landed through the middle of its title in one state and looked like a fault rather
+            than like "there is more below". Four groups fit.
 
-        <StackPanel Grid.IsSharedSizeScope="True">
-          <HeaderedContentControl Style="{StaticResource PartFormRow}">
-            <HeaderedContentControl.Header>
-              <TextBlock Style="{StaticResource PartLabel}" Text="{DynamicResource setup.label_args}" />
-            </HeaderedContentControl.Header>
-            <TextBox Text="{Binding TargetArgs, UpdateSourceTrigger=PropertyChanged}"
-                     ToolTip="{DynamicResource tip.target_args}"
-                     HorizontalAlignment="Left" Width="{StaticResource LaunchFieldWidth}" />
-          </HeaderedContentControl>
+            They belong together on the reading too. Everything in this group is HOW the application is
+            run - the rate its clock moves at, and what it is handed on the way in - against the group
+            above, which is WHEN. The channel between the two halves is the group channel, because inside
+            one section that is what separates two subjects.
+          -->
+          <!-- 🔴 NO SCOPE OF ITS OWN, and that is the whole point of merging rather than nesting. The
+               first build of this gave the launch rows their own IsSharedSizeScope, so they agreed with
+               each other and NOT with the Speed row above them: measured on the render, the mode list
+               started at x=96 and both launch fields at x=150, two label columns in one section. That is
+               the exact fault PartFormRow exists to remove, reintroduced one level down. One section, one
+               scope, one left edge for every control in it. -->
+          <StackPanel Margin="{StaticResource StackGapXl}" IsEnabled="{Binding IsIdle}">
+            <HeaderedContentControl Style="{StaticResource PartFormRow}">
+              <HeaderedContentControl.Header>
+                <TextBlock Style="{StaticResource PartLabel}" Text="{DynamicResource setup.label_args}" />
+              </HeaderedContentControl.Header>
+              <TextBox Text="{Binding TargetArgs, UpdateSourceTrigger=PropertyChanged}"
+                       ToolTip="{DynamicResource tip.target_args}"
+                       HorizontalAlignment="Left" Width="{StaticResource LaunchFieldWidth}" />
+            </HeaderedContentControl>
 
-          <HeaderedContentControl Style="{StaticResource PartFormRow}">
-            <HeaderedContentControl.Header>
-              <TextBlock Style="{StaticResource PartLabel}" Text="{DynamicResource setup.label_cwd}" />
-            </HeaderedContentControl.Header>
-            <StackPanel Orientation="Horizontal">
-              <TextBox Text="{Binding WorkingFolder, UpdateSourceTrigger=PropertyChanged}"
-                       ToolTip="{DynamicResource tip.working_folder}"
-                       Width="{StaticResource LaunchFieldWidth}" />
-              <Button Content="{DynamicResource action.browse_folder}"
-                      ToolTip="{DynamicResource tip.browse_folder}"
-                      Margin="{StaticResource SpaceXs}" />
-            </StackPanel>
-          </HeaderedContentControl>
+            <HeaderedContentControl Style="{StaticResource PartFormRow}">
+              <HeaderedContentControl.Header>
+                <TextBlock Style="{StaticResource PartLabel}" Text="{DynamicResource setup.label_cwd}" />
+              </HeaderedContentControl.Header>
+              <StackPanel Orientation="Horizontal">
+                <TextBox Text="{Binding WorkingFolder, UpdateSourceTrigger=PropertyChanged}"
+                         ToolTip="{DynamicResource tip.working_folder}"
+                         Width="{StaticResource LaunchFieldWidth}" />
+                <Button Content="{DynamicResource action.browse_folder}"
+                        ToolTip="{DynamicResource tip.browse_folder}"
+                        Margin="{StaticResource SpaceXs}" />
+              </StackPanel>
+            </HeaderedContentControl>
 
-          <TextBlock Style="{StaticResource PartCaption}" Margin="{StaticResource StackGapSm}"
-                     MaxWidth="{StaticResource LaunchNoteMaxWidth}" HorizontalAlignment="Left"
-                     Text="{DynamicResource launch.cwd_note}" />
+            <TextBlock Style="{StaticResource PartCaption}" Margin="{StaticResource StackGapSm}"
+                       MaxWidth="{StaticResource LaunchNoteMaxWidth}" HorizontalAlignment="Left"
+                       Text="{DynamicResource launch.cwd_note}" />
+          </StackPanel>
         </StackPanel>
       </Expander>
 

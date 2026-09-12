@@ -400,6 +400,54 @@ public class LayoutGuardTests
     /// <summary>Measured today: 49 on the panel and 29 on the calculator. The floor is well under both.</summary>
     private const int TextReadingsAtLeast = 20;
 
+    /// <summary>
+    /// One section, one label column - measured on the arrange pass rather than declared.
+    /// </summary>
+    /// <remarks>
+    /// 🔴 THIS GUARD EXISTS BECAUSE THE FAULT WAS MADE. When the launch fields were merged into the speed
+    /// section they were given an IsSharedSizeScope of their own, so they agreed with each other and not
+    /// with the row above: the mode list started at x=96 and both launch fields at x=150. Two label
+    /// columns inside one section is the exact thing PartFormRow exists to remove, and nothing in the
+    /// suite noticed - the sheet that would have shown it is Category=Integration, which the gate skips.
+    ///
+    /// Reversal probe: put Grid.IsSharedSizeScope="True" back on the inner StackPanel in
+    /// SetupPhaseView.xaml and this reddens with two columns instead of one.
+    ///
+    /// The count is asserted as a literal beside the agreement, because "all the x values agree" is true
+    /// of an empty set, and a filter that matched nothing would pass silently.
+    /// </remarks>
+    [Fact]
+    public void Every_field_in_the_options_section_starts_at_one_x()
+    {
+        var columns = WpfTestHost.InvokeSettled(() =>
+        {
+            var view = new SetupPhaseView { DataContext = new SessionViewModel() };
+            if (view.FindName("SpeedSection") is Expander section)
+            {
+                section.IsExpanded = true;
+            }
+
+            LayoutProbe.Settle(view);
+            var elements = LayoutProbe.Walk(view);
+            var band = elements.Single(e => e.Name == "SpeedSection").Bounds;
+
+            return elements
+                .Where(e => e.IsVisible
+                    && (e.Kind == nameof(ComboBox) || e.Kind == nameof(TextBox))
+                    && e.Bounds.Top >= band.Top
+                    && e.Bounds.Bottom <= band.Bottom)
+                .Select(e => (int)Math.Round(e.Bounds.X))
+                .ToList();
+        });
+
+        Assert.Equal(OptionsSectionFields, columns.Count);
+        Assert.Single(columns.Distinct());
+    }
+
+    /// <summary>The speed list, the arguments box and the working-folder box. A literal, so the agreement
+    /// assertion above cannot be satisfied by a filter that matched nothing.</summary>
+    private const int OptionsSectionFields = 3;
+
     private static (IReadOnlyList<LaidOutElement> Elements, IReadOnlyList<string> Complaints) Inspect(
         FrameworkElement root)
     {
