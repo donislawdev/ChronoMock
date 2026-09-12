@@ -975,8 +975,28 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     public bool CoverageKnown
     {
         get => _coverageKnown;
-        private set { if (Set(ref _coverageKnown, value)) { RaisePropertyChanged(nameof(HasCoverageNote)); } }
+        private set
+        {
+            if (Set(ref _coverageKnown, value))
+            {
+                RaisePropertyChanged(nameof(HasCoverageNote));
+                RaisePropertyChanged(nameof(CoverageNotKnown));
+            }
+        }
     }
+
+    /// <summary>
+    /// The other half of <see cref="CoverageKnown"/>, so a screen can say the audit is not here YET.
+    /// </summary>
+    /// <remarks>
+    /// 🔴 A PLACE THAT IS EMPTY HAS TO SAY WHY. The session phase hides the audit until a report arrives,
+    /// which left 300 px of nothing between the controls and the footer on the first render - a screen
+    /// that looks unfinished rather than one that is waiting. This is the state behind the sentence that
+    /// fills it. WPF has no negating visibility converter here and a second converter would be a second
+    /// thing to keep in step, so the model says both halves out loud, as it does for the scenario
+    /// selection. A bool costs nothing at this class's coupling ceiling.
+    /// </remarks>
+    public bool CoverageNotKnown => !_coverageKnown;
 
     /// <summary>True when this session is driven over CDP (a Chromium/Electron target, ADR-9). The coverage
     /// unit is then a JS context, not an OS process, so the audit accumulates every context and the note
@@ -1114,7 +1134,11 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
                 Fake.Zone = ZoneLabel.FromBiasMinutes(s.Fake.ZoneBiasMin);
                 Real.Wall = s.Real.Wall;
                 Real.Zone = ZoneLabel.FromBiasMinutes(s.Real.ZoneBiasMin);
-                MultiplierText = $"x{s.Multiplier}";
+                // 🔴 The same multiplication sign the rate BUTTONS wear. This read "x60" beside a control
+                // labelled "×60" - one rate written two ways on one screen, and the session phase puts
+                // them within a hundred pixels of each other. The number is the core's, the notation is
+                // ours, and there is only one of it.
+                MultiplierText = $"×{s.Multiplier}";
                 SyncModeToMultiplier(s.Multiplier);
                 _elapsedRealMs = s.ElapsedRealMs;
                 _elapsedFakeMs = s.ElapsedFakeMs;

@@ -61,6 +61,17 @@
   // These point at the field rather than repeating its message: the field says WHAT is wrong, this says
   // where to go and that it is what is holding Start.
   "setup.needs_moment": "Fix the date and time above before starting.",
+  // 🔴 The session phase's own keys, in its own namespace, for the same reason the setup phase has its:
+  // every key shared with the shipped panel moves that panel's pixels, and these go with the old screen
+  // when the product adopts the parts library.
+  "session.section_audit": "Audit",
+  "session.label_jump": "Jump",
+  "session.jump_note": "The duration clock never goes backwards, even on a backward jump.",
+  "session.rate_placeholder": "any rate",
+  "session.audit_pending": "The audit appears here once the core reports which time channels the application actually read.",
+  "session.chip_covered": "covered",
+  "session.chip_uncovered": "uncovered",
+  "session.chip_warnings": "warnings",
   "setup.already_running": "A session is already running.",
   "setup.chip_duration": "duration scaled",
   "setup.chip_qpc": "QPC scaled",

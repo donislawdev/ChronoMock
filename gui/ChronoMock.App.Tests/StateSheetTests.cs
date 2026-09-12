@@ -134,6 +134,68 @@ public class StateSheetTests
         Assert.True(written > 0);
     }
 
+    /// <summary>
+    /// The rebuilt session phase, in the states that decide whether it works.
+    /// </summary>
+    /// <remarks>
+    /// The FIXTURES ARE THE PANEL'S OWN - SessionStates drives the same model into the same shapes the
+    /// shipped renders use. That is the point: the two screens are then pictures of one state, and any
+    /// difference between them is a difference in the drawing rather than in the data.
+    ///
+    /// The audit state is rendered with its section OPEN and scrolled to, because a folded section's
+    /// contents are the half of this screen that carries untouchable rule 4 - the lists that say what was
+    /// covered and, more importantly, what was not.
+    /// </remarks>
+    [Fact]
+    public void The_session_phase_renders_in_the_states_that_decide_whether_it_works()
+    {
+        var written = WpfTestHost.InvokeSettled(() =>
+        {
+            var total = 0;
+
+            total += RenderSession("session-running", SessionStates.Running()).Count;
+            total += RenderSession(
+                "session-audit",
+                SessionStates.RunningWithCoverageWarnings(),
+                "AuditSection").Count;
+            total += RenderSession("session-error", SessionStates.InFlightError()).Count;
+            total += RenderSession("session-ended", SessionStates.Ended()).Count;
+
+            // The window's floor, where the clocks and the action have to survive together.
+            total += StateSheet.Write(
+                "session-floor",
+                new SessionPhaseView { DataContext = SessionStates.Running() },
+                MinimumWidth,
+                MinimumHeight).Count;
+
+            return total;
+        });
+
+        Assert.True(written > 0);
+    }
+
+    private static IReadOnlyList<LaidOutElement> RenderSession(
+        string name,
+        SessionViewModel model,
+        string? openSection = null)
+    {
+        var view = new SessionPhaseView { DataContext = model };
+
+        if (openSection is not null
+            && view.FindName(openSection) is System.Windows.Controls.Expander section)
+        {
+            section.IsExpanded = true;
+            LayoutProbe.Settle(view);
+            if (view.FindName("FormScroll") is System.Windows.Controls.ScrollViewer scroll)
+            {
+                scroll.ScrollToEnd();
+                LayoutProbe.Settle(view);
+            }
+        }
+
+        return StateSheet.Write(name, view);
+    }
+
     private static SessionViewModel WithScenarios()
         => new(new InMemorySessionHistoryStore(), presetsDir: Path.Combine(TestPaths.RepoRoot(), "presets"));
 

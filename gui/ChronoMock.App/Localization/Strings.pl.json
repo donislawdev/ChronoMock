@@ -62,6 +62,17 @@
   // These point at the field rather than repeating its message: the field says WHAT is wrong, this says
   // where to go and that it is what is holding Start.
   "setup.needs_moment": "Popraw datę i godzinę powyżej, zanim wystartujesz.",
+  // 🔴 The session phase's own keys, in its own namespace, for the same reason the setup phase has its:
+  // every key shared with the shipped panel moves that panel's pixels, and these go with the old screen
+  // when the product adopts the parts library.
+  "session.section_audit": "Audyt",
+  "session.label_jump": "Skok",
+  "session.jump_note": "Zegar trwania nigdy nie cofa się, także przy skoku wstecz.",
+  "session.rate_placeholder": "dowolne tempo",
+  "session.audit_pending": "Audyt pojawi się tutaj, gdy rdzeń zgłosi, z których kanałów czasu aplikacja naprawdę korzystała.",
+  "session.chip_covered": "objętych",
+  "session.chip_uncovered": "nieobjętych",
+  "session.chip_warnings": "ostrzeżeń",
   "setup.already_running": "Sesja już działa.",
   "setup.chip_duration": "trwanie skalowane",
   "setup.chip_qpc": "QPC skalowane",

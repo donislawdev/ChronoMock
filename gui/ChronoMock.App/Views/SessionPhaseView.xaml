@@ -1,0 +1,287 @@
+<UserControl x:Class="ChronoMock.App.Views.SessionPhaseView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:app="clr-namespace:ChronoMock.App"
+             Background="{DynamicResource BrushBgBase}">
+
+  <!--
+    THE SECOND OF THE THREE PHASES: a session under way.
+
+    🔴 WHAT THIS SCREEN ANSWERS, and why it is not the setup screen with extra blocks. On the shipped
+    panel a running session leaves the whole form standing - target, date, zone, shift, mode, three
+    checkboxes - and pushes the two clocks below the fold, with the verdict and the audit below THEM.
+    Measured on panel-coverage-warnings: at the window's height the clocks are the last thing visible and
+    the answer is not visible at all. So the phases replace each other. Once a session is running, the
+    form has done its job and the clocks are the subject.
+
+    🔴 THE ORDER IS THE ORDER THE QUESTIONS ARRIVE IN. What does the application think the time is (the
+    clocks, at the top, as big as they get). How fast is it going and can I move it (the controls, under
+    them, because that is what this phase is FOR). Did the substitution actually work (the verdict, in the
+    footer beside the status, where the setup phase keeps its contract). What exactly was covered (the
+    audit, folded, because it is evidence and not the answer).
+
+    🔴 THE RATE IS READ FROM THE CORE, NOT FROM THE BUTTONS. The preset buttons are imperative: pressing
+    one sends a command that can fail, so a row of buttons with the current one highlighted would be
+    showing an INTENTION as a fact. The line under the clocks states what the core last reported, which is
+    the only rate anybody can rely on.
+
+    🔴 NOT WIRED YET. No handler, no command - the buttons here are a drawing under review, exactly as the
+    setup phase was. They come alive in the slice that moves the product onto the parts library.
+
+    🔴 IT LOADS THE PARTS LIBRARY LOCALLY, like the catalogue and the setup phase, so the shipped screens
+    keep their pixels while this one is designed.
+  -->
+
+  <UserControl.Resources>
+    <ResourceDictionary>
+      <ResourceDictionary.MergedDictionaries>
+        <ResourceDictionary Source="../Themes/Parts.xaml" />
+      </ResourceDictionary.MergedDictionaries>
+
+      <!--
+        One button, drawn once, for both control rows. Nine buttons live on this screen and they are nine
+        instances of one drawing differing by a label - the shape that is a list, not nine copies. The
+        shipped panel writes them out one at a time, which is why adding a rate means editing markup.
+      -->
+      <DataTemplate x:Key="ControlButton">
+        <Button Content="{Binding LabelKey, Converter={StaticResource KeyToText}}"
+                Margin="{StaticResource SpaceXs}" />
+      </DataTemplate>
+
+      <!-- Wrapping, because nine buttons at the window's floor width do not fit on one line and a row
+           that cannot wrap pushes its last button off the card instead. -->
+      <ItemsPanelTemplate x:Key="ControlRow">
+        <WrapPanel />
+      </ItemsPanelTemplate>
+
+      <!--
+        What the folded audit says without being opened: the two numbers that decide whether the session
+        proved anything, and the warning count. Chips, for the same reason the speed section uses them - a
+        Run cannot be hidden, so a conditional list of them needs punctuation that appears and vanishes.
+      -->
+      <ControlTemplate x:Key="AuditSummary">
+        <StackPanel Orientation="Horizontal">
+          <Border Style="{StaticResource PartBadge}" Margin="{StaticResource SpaceXs}"
+                  Visibility="{Binding HasCovered, Converter={StaticResource BoolToVis}}">
+            <TextBlock Style="{StaticResource PartCaption}" TextWrapping="NoWrap">
+              <Run Text="{Binding Covered.Count, Mode=OneWay}" /><Run Text=" " /><Run Text="{DynamicResource session.chip_covered}" />
+            </TextBlock>
+          </Border>
+          <Border Style="{StaticResource PartBadge}" Margin="{StaticResource SpaceXs}"
+                  Visibility="{Binding HasUncovered, Converter={StaticResource BoolToVis}}">
+            <TextBlock Style="{StaticResource PartCaption}" TextWrapping="NoWrap">
+              <Run Text="{Binding Uncovered.Count, Mode=OneWay}" /><Run Text=" " /><Run Text="{DynamicResource session.chip_uncovered}" />
+            </TextBlock>
+          </Border>
+          <Border Style="{StaticResource PartBadge}" Margin="{StaticResource SpaceXs}"
+                  Visibility="{Binding HasWarnings, Converter={StaticResource BoolToVis}}">
+            <TextBlock Style="{StaticResource PartCaption}" TextWrapping="NoWrap">
+              <Run Text="{Binding Warnings.Count, Mode=OneWay}" /><Run Text=" " /><Run Text="{DynamicResource session.chip_warnings}" />
+            </TextBlock>
+          </Border>
+        </StackPanel>
+      </ControlTemplate>
+    </ResourceDictionary>
+  </UserControl.Resources>
+
+  <!-- The clocks and the audit scroll, the action and the answer do not - the same division the setup
+       phase makes, for the same reason: at the window's floor of 360 px everything else goes under the
+       fold and Stop would have to be hunted for. -->
+  <Grid>
+    <Grid.RowDefinitions>
+      <RowDefinition Height="*" />
+      <RowDefinition Height="Auto" />
+    </Grid.RowDefinitions>
+
+    <ScrollViewer x:Name="FormScroll" Grid.Row="0"
+                  VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+      <StackPanel Margin="{StaticResource ScrollFormInset}">
+
+        <!--
+          THE TWO CLOCKS, side by side and equal. This is the one place two columns are right: both halves
+          always have something to show, which is exactly what the setup phase's right-hand column did
+          not. Equal width because neither is the more important one - the fake clock is the product's
+          whole point and the real one is what makes it legible.
+        -->
+        <UniformGrid Columns="2">
+          <ContentControl Template="{StaticResource PartClock}" DataContext="{Binding Fake}"
+                          Margin="{StaticResource SpaceXs}" />
+          <ContentControl Template="{StaticResource PartClock}" DataContext="{Binding Real}"
+                          Margin="{StaticResource SpaceXs}" />
+        </UniformGrid>
+
+        <!--
+          THE CONTROLS, never folded. Changing the rate and jumping the clock in flight are what a person
+          opened this phase to do, and a section that had to be opened first would be a setting rather
+          than a control.
+        -->
+        <Border Style="{StaticResource PartCard}" Margin="{StaticResource StackGapXl}"
+                Grid.IsSharedSizeScope="True">
+          <StackPanel IsEnabled="{Binding IsRunning}">
+            <HeaderedContentControl Style="{StaticResource PartFormRow}">
+              <HeaderedContentControl.Header>
+                <TextBlock Style="{StaticResource PartLabel}" Text="{DynamicResource setup.label_mode}" />
+              </HeaderedContentControl.Header>
+              <WrapPanel>
+                <ItemsControl ItemsSource="{x:Static app:TimeInputs.SessionSpeeds}"
+                              ItemTemplate="{StaticResource ControlButton}"
+                              ItemsPanel="{StaticResource ControlRow}" />
+                <!-- Any rate at all, for the one that is not a preset. Unbound in this drawing: the
+                     shipped panel reads it by name on the click, and the wiring arrives with the rest. -->
+                <!-- Wide enough for its own PROMPT rather than for its content. A box sized to hold three
+                     digits cannot show the words that say what it is for, and a placeholder clipped to
+                     "any…" explains nothing. Measured on the first render of this row. -->
+                <TextBox Width="{StaticResource ShiftUnitWidth}"
+                         Margin="{StaticResource SpaceSm}" VerticalAlignment="Center"
+                         FontFamily="{StaticResource FontFamilyMono}"
+                         app:PartState.Placeholder="{DynamicResource session.rate_placeholder}"
+                         AutomationProperties.Name="{DynamicResource session.rate_placeholder}" />
+                <Button Content="{DynamicResource action.set_speed}" VerticalAlignment="Center"
+                        ToolTip="{DynamicResource tip.set_speed}" />
+              </WrapPanel>
+              <!-- 🔴 THE RATE THE CORE REPORTS, in the row's own message slot - directly under the
+                   buttons that ask for it, which is where a reader looks after pressing one. It stood on
+                   its own line between the clocks and this card on the first render and read as an
+                   orphan: a fact about the buttons, floating above them. -->
+              <HeaderedContentControl.Tag>
+                <WrapPanel>
+                  <TextBlock Style="{StaticResource PartCaption}" TextWrapping="NoWrap"
+                             VerticalAlignment="Center"
+                             Text="{DynamicResource setup.contract_speed}" />
+                  <TextBlock Style="{StaticResource PartLabel}" Margin="{StaticResource SpaceXs}"
+                             Text="{Binding MultiplierText}" />
+                </WrapPanel>
+              </HeaderedContentControl.Tag>
+            </HeaderedContentControl>
+
+            <!-- 🔴 Ordered as a timeline reads, earliest on the left, so the row is a line with a
+                 direction rather than four options in an arbitrary order. -->
+            <HeaderedContentControl Style="{StaticResource PartFormRow}">
+              <HeaderedContentControl.Header>
+                <TextBlock Style="{StaticResource PartLabel}" Text="{DynamicResource session.label_jump}" />
+              </HeaderedContentControl.Header>
+              <ItemsControl ItemsSource="{x:Static app:TimeInputs.SessionJumps}"
+                            ItemTemplate="{StaticResource ControlButton}"
+                            ItemsPanel="{StaticResource ControlRow}" />
+              <HeaderedContentControl.Tag>
+                <TextBlock Style="{StaticResource PartCaption}"
+                           Text="{DynamicResource session.jump_note}" />
+              </HeaderedContentControl.Tag>
+            </HeaderedContentControl>
+          </StackPanel>
+        </Border>
+
+        <!--
+          THE AUDIT, folded, and absent entirely until a coverage report has arrived - an empty audit box
+          on a session that has not reported yet would be answering a question nobody can answer.
+
+          Its header carries the two numbers that decide whether the session proved anything. Untouchable
+          rule 4 lives here: the tool never claims to have covered a channel it did not, so "meant to
+          watch, could not hook" is its own list rather than being folded into the uncovered one.
+        -->
+        <!-- 🔴 THE EMPTY STATE, where the audit will be. Hiding the section left 300 px of nothing
+             between the controls and the footer on the first render - a screen that looks unfinished
+             rather than one that is waiting for a report. It also answers a question a first session
+             actually raises: the tool has not said whether the substitution worked, and the reader has no
+             way to know whether that is a verdict or a delay. -->
+        <TextBlock Style="{StaticResource PartCaption}" TextWrapping="Wrap"
+                   Margin="{StaticResource StackGapXl}"
+                   Text="{DynamicResource session.audit_pending}"
+                   Visibility="{Binding CoverageNotKnown, Converter={StaticResource BoolToVis}}" />
+
+        <Expander x:Name="AuditSection" Style="{StaticResource PartSection}"
+                  Margin="{StaticResource StackGapXl}"
+                  Visibility="{Binding CoverageKnown, Converter={StaticResource BoolToVis}}">
+          <Expander.Header>
+            <TextBlock Style="{StaticResource PartHeading}" Text="{DynamicResource session.section_audit}" />
+          </Expander.Header>
+          <Expander.Tag>
+            <ContentControl Template="{StaticResource AuditSummary}" />
+          </Expander.Tag>
+
+          <StackPanel>
+            <!-- Why the verdict says what it says, then what that means for the reader. The verdict word
+                 itself is in the footer: this is the reasoning behind it, which belongs with the
+                 evidence. -->
+            <TextBlock Style="{StaticResource PartLabel}" TextWrapping="Wrap"
+                       Text="{Binding VerdictReasonKey, Converter={StaticResource KeyToText}}"
+                       Visibility="{Binding VerdictHasReason, Converter={StaticResource BoolToVis}}" />
+            <TextBlock Style="{StaticResource PartCaption}" Margin="{StaticResource StackGapSm}"
+                       Text="{Binding VerdictMeaningKey, Converter={StaticResource KeyToText}}"
+                       Visibility="{Binding VerdictHasMeaning, Converter={StaticResource BoolToVis}}" />
+            <TextBlock Style="{StaticResource PartCaption}" Margin="{StaticResource StackGapSm}"
+                       Text="{Binding CoverageNoteKey, Converter={StaticResource KeyToText}}"
+                       Visibility="{Binding HasCoverageNote, Converter={StaticResource BoolToVis}}" />
+
+            <HeaderedItemsControl Style="{StaticResource PartFactList}"
+                                  Header="{DynamicResource coverage.covered}"
+                                  ItemsSource="{Binding Covered}"
+                                  Visibility="{Binding HasCovered, Converter={StaticResource BoolToVis}}" />
+            <HeaderedItemsControl Style="{StaticResource PartFactList}"
+                                  Header="{DynamicResource coverage.uncovered}"
+                                  ItemsSource="{Binding Uncovered}"
+                                  Visibility="{Binding HasUncovered, Converter={StaticResource BoolToVis}}" />
+            <HeaderedItemsControl Style="{StaticResource PartFactList}"
+                                  Header="{DynamicResource coverage.observed}"
+                                  ItemsSource="{Binding Observed}"
+                                  Visibility="{Binding HasObserved, Converter={StaticResource BoolToVis}}" />
+            <HeaderedItemsControl Style="{StaticResource PartFactList}"
+                                  Header="{DynamicResource coverage.unobserved}"
+                                  ItemsSource="{Binding Unobserved}"
+                                  Visibility="{Binding HasUnobserved, Converter={StaticResource BoolToVis}}" />
+            <HeaderedItemsControl Style="{StaticResource PartFactList}"
+                                  Header="{DynamicResource coverage.warnings}"
+                                  ItemsSource="{Binding Warnings}"
+                                  Visibility="{Binding HasWarnings, Converter={StaticResource BoolToVis}}" />
+          </StackPanel>
+        </Expander>
+      </StackPanel>
+    </ScrollViewer>
+
+    <!--
+      THE ANSWER AND THE ACTION, pinned, exactly where the setup phase keeps its contract and its Start.
+
+      The status is the largest text in it, because "Running" and "Session ended" are the difference
+      between watching and reading. The verdict rides beside it as a chip - colour AND a word AND a glyph,
+      never colour alone (zasady/13 section 9), and absent until a verdict exists rather than showing a
+      placeholder nobody can act on.
+    -->
+    <Border Grid.Row="1" Style="{StaticResource PartFooter}">
+      <StackPanel>
+        <WrapPanel>
+          <TextBlock Style="{StaticResource PartHeading}"
+                     Text="{Binding StatusKey, Converter={StaticResource KeyToText}}" />
+          <Border Style="{StaticResource PartBadge}" Margin="{StaticResource SpaceSm}"
+                  VerticalAlignment="Center"
+                  Visibility="{Binding VerdictKnown, Converter={StaticResource BoolToVis}}">
+            <StackPanel Orientation="Horizontal">
+              <TextBlock Style="{StaticResource PartLabel}"
+                         Text="{Binding VerdictKind, Converter={StaticResource VerdictGlyph}}"
+                         Foreground="{Binding VerdictKind, Converter={StaticResource VerdictBrush}}" />
+              <TextBlock Style="{StaticResource PartLabel}" Margin="{StaticResource SpaceXs}"
+                         Text="{Binding VerdictLabelKey, Converter={StaticResource KeyToText}}"
+                         Foreground="{Binding VerdictKind, Converter={StaticResource VerdictBrush}}" />
+            </StackPanel>
+          </Border>
+        </WrapPanel>
+
+        <!-- 🔴 THE ERROR COLOUR HERE, unlike the setup phase's refusal line. Nothing has gone wrong on a
+             screen somebody has just opened, but a command that failed MID-SESSION is a thing that went
+             wrong, and the reader has to be able to tell it from the status above. -->
+        <TextBlock Style="{StaticResource PartFieldMessage}" TextWrapping="Wrap"
+                   Margin="{StaticResource StackGapSm}"
+                   Text="{Binding InFlightErrorKey, Converter={StaticResource KeyToText}}"
+                   Visibility="{Binding HasInFlightError, Converter={StaticResource BoolToVis}}" />
+
+        <!-- 🔴 STOP IS NOT THE ACCENT. The accent on this library means "the next step", and while a
+             session runs there is no next step - the reader is watching. An accented Stop would be the
+             screen asking to be ended. It is an ordinary button, and it says what it does in a word. -->
+        <Button Content="{DynamicResource control.stop}"
+                ToolTip="{DynamicResource tip.stop}"
+                IsEnabled="{Binding IsRunning}"
+                HorizontalAlignment="Left"
+                Margin="{StaticResource StackGapSm}" />
+      </StackPanel>
+    </Border>
+  </Grid>
+</UserControl>

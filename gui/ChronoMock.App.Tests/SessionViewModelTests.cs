@@ -101,7 +101,11 @@ public class SessionViewModelTests
         Assert.Equal("2026-08-24", vm.Real.Date);
         Assert.Equal("20:30:00", vm.Real.Time);
         Assert.Equal("UTC+02:00", vm.Real.Zone);
-        Assert.Equal("x60", vm.MultiplierText);
+        // 🔴 The multiplication sign, since 2026-09-12, so the rate reads the same here as on the buttons
+        // that set it. This assertion is also the ONLY thing that caught the change: the status line it
+        // renders into sits below the 800 px the panel baselines capture, so the 22 renders stayed
+        // identical to the byte while a user-visible string changed.
+        Assert.Equal("×60", vm.MultiplierText);
         Assert.Equal(SessionStatusKind.Running, vm.StatusKind);
     }
 
