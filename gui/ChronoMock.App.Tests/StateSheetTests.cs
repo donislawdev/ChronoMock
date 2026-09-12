@@ -48,7 +48,14 @@ public class StateSheetTests
     }
 
     private const int CatalogueWidth = 900;
-    private const int CatalogueHeight = 2560;
+
+    /// <summary>
+    /// Tall enough for every part in every state it can be shown in - 3 244 px of them once the choice
+    /// list arrived with its five, so this went up one step of the same scale rather than to the
+    /// measurement. A canvas is not a ratchet: it exists to hold the picture, and a figure sitting exactly
+    /// on today's content would have to move for every part added after it.
+    /// </summary>
+    private const int CatalogueHeight = 3584;
 
     [Fact]
     public void The_substitution_panel_renders_in_its_startup_state()

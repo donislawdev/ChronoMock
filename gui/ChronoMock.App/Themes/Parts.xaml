@@ -244,17 +244,34 @@
                     BorderThickness="{StaticResource StrokeThinEdge}"
                     CornerRadius="{StaticResource RadiusSm}"
                     SnapsToDevicePixels="True">
-              <ScrollViewer x:Name="PART_ContentHost"
-                            Padding="{TemplateBinding Padding}"
-                            VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
-                            Focusable="False"
-                            HorizontalScrollBarVisibility="Hidden"
-                            VerticalScrollBarVisibility="Hidden" />
+              <Grid>
+                <!-- 🔴 UNDER the text host, not instead of it, and inset by the SAME padding: the hint
+                     has to start on the exact x the caret will, or it reads as a value already in the
+                     field. It never takes the mouse, so a click lands on the field beneath it. -->
+                <TextBlock x:Name="Placeholder"
+                           Text="{Binding Path=(app:PartState.Placeholder), RelativeSource={RelativeSource TemplatedParent}}"
+                           Margin="{TemplateBinding Padding}"
+                           VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
+                           Foreground="{DynamicResource BrushTextSecondary}"
+                           TextTrimming="CharacterEllipsis"
+                           IsHitTestVisible="False"
+                           Visibility="Collapsed" />
+                <ScrollViewer x:Name="PART_ContentHost"
+                              Padding="{TemplateBinding Padding}"
+                              VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
+                              Focusable="False"
+                              HorizontalScrollBarVisibility="Hidden"
+                              VerticalScrollBarVisibility="Hidden" />
+              </Grid>
             </Border>
           </Grid>
           <ControlTemplate.Triggers>
             <Trigger Property="IsFocused" Value="True">
               <Setter TargetName="Ring" Property="Visibility" Value="Visible" />
+            </Trigger>
+            <!-- Empty is the whole condition, focus is not part of it. See PartState.Placeholder. -->
+            <Trigger Property="Text" Value="">
+              <Setter TargetName="Placeholder" Property="Visibility" Value="Visible" />
             </Trigger>
           </ControlTemplate.Triggers>
         </ControlTemplate>
@@ -473,6 +490,72 @@
   </Style>
 
   <!--
+    ============================ Choice list ============================
+
+    The well a list of choices is read in, with a search field above it doing the finding. The catalogue
+    it holds is meant to grow well past what a row of chips can carry, which is why it is a list at all.
+
+    🔴 IT HAS AN EDGE AND NO FILL, and that is arithmetic rather than taste. BrushBgSurfaceAlt and
+    BrushControlRest are the SAME neutral (both Neutral03), and BrushControlRest is what a selected row
+    paints itself with - so any surface fill on this container would erase the selection it exists to
+    show. With no fill, the rows read against whatever holds the list: on a card that is Neutral02, one
+    step under the selected row and two under a hovered one. The edge is what says "you can act on this",
+    exactly as the card comment promises, and it is the same 3.0-contrast border every other control has.
+
+    🔴 THE THREE VIRTUALISATION SETTERS ARE LOAD-BEARING, not ceremony. A hand-written template drops
+    what the toolkit's own ListBox style sets, and the loss is silent: a list of forty scenarios looks
+    identical to a virtualised one and builds forty containers to do it. They are written here so the
+    part keeps its manners at the size this catalogue is heading for.
+
+    No focus ring on the well. The ROW carries keyboard focus and already shows it, and a second mark for
+    one fact is the thing this library is trying not to do.
+  -->
+  <Style TargetType="ListBox">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderBrush" Value="{DynamicResource BrushControlBorder}" />
+    <Setter Property="Foreground" Value="{DynamicResource BrushTextPrimary}" />
+    <Setter Property="FontSize" Value="{StaticResource FontSizeBody}" />
+    <Setter Property="MaxHeight" Value="{StaticResource ChoiceListMaxHeight}" />
+    <Setter Property="MinHeight" Value="{StaticResource ChoiceListMinHeight}" />
+    <Setter Property="Padding" Value="{StaticResource SpaceXs}" />
+    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+    <Setter Property="SnapsToDevicePixels" Value="True" />
+    <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+    <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled" />
+    <Setter Property="ScrollViewer.CanContentScroll" Value="True" />
+    <Setter Property="VirtualizingStackPanel.IsVirtualizing" Value="True" />
+    <Setter Property="VirtualizingStackPanel.VirtualizationMode" Value="Recycling" />
+    <Setter Property="ItemsPanel">
+      <Setter.Value>
+        <ItemsPanelTemplate>
+          <VirtualizingStackPanel />
+        </ItemsPanelTemplate>
+      </Setter.Value>
+    </Setter>
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="ListBox">
+          <Border Background="{TemplateBinding Background}"
+                  BorderBrush="{TemplateBinding BorderBrush}"
+                  BorderThickness="{StaticResource StrokeThinEdge}"
+                  CornerRadius="{StaticResource RadiusSm}"
+                  SnapsToDevicePixels="True">
+            <ScrollViewer Focusable="False" Padding="{TemplateBinding Padding}">
+              <ItemsPresenter SnapsToDevicePixels="True" />
+            </ScrollViewer>
+          </Border>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+    <Style.Triggers>
+      <Trigger Property="IsEnabled" Value="False">
+        <Setter Property="BorderBrush" Value="{DynamicResource BrushDivider}" />
+        <Setter Property="Foreground" Value="{DynamicResource BrushTextSecondary}" />
+      </Trigger>
+    </Style.Triggers>
+  </Style>
+
+  <!--
     ============================ Choice row ============================
 
     One row of a list that is chosen from. Selection is a FILL plus an accent bar down the leading edge:
@@ -520,6 +603,16 @@
             <Trigger Property="IsEnabled" Value="False">
               <Setter Property="Foreground" Value="{DynamicResource BrushTextSecondary}" />
             </Trigger>
+            <!-- 🔴 Selected AND disabled, the same lesson the check control already carries one part up:
+                 a dead row still shouting in the accent colour is the loudest thing on a list nobody can
+                 use. Caught on the render, where a fully disabled list kept a full-strength bar. -->
+            <MultiTrigger>
+              <MultiTrigger.Conditions>
+                <Condition Property="IsSelected" Value="True" />
+                <Condition Property="IsEnabled" Value="False" />
+              </MultiTrigger.Conditions>
+              <Setter TargetName="Marker" Property="Background" Value="{DynamicResource BrushGlyphMuted}" />
+            </MultiTrigger>
           </ControlTemplate.Triggers>
         </ControlTemplate>
       </Setter.Value>

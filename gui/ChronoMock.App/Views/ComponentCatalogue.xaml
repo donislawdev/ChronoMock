@@ -122,6 +122,21 @@
           </WrapPanel>
           <TextBlock Style="{StaticResource PartFieldMessage}" Margin="{StaticResource SpaceXs}"
                      Text="Month must be 1 to 12 and day must exist in that month." />
+
+          <TextBlock Style="{StaticResource PartCaption}" Margin="{StaticResource StackGapLg}"
+                     Text="With a hint. It sits on the exact x the caret will, it never takes the mouse, and it goes when there is text - not when the field is focused. A search box somebody has clicked into and is still thinking about is precisely when the hint is worth reading." />
+          <WrapPanel Margin="{StaticResource StackGapSm}">
+            <TextBox Text="" Width="{StaticResource TargetBoxMaxWidth}" Margin="{StaticResource SpaceXs}"
+                     app:PartState.Placeholder="Search scenarios" />
+            <TextBox Text="leap" Width="{StaticResource LaunchFieldWidth}" Margin="{StaticResource SpaceXs}"
+                     app:PartState.Placeholder="Search scenarios" />
+          </WrapPanel>
+          <WrapPanel>
+            <TextBox Text="" Width="{StaticResource TargetBoxMaxWidth}" Margin="{StaticResource SpaceXs}"
+                     IsEnabled="False" app:PartState.Placeholder="Search scenarios" />
+            <TextBox Text="" Width="{StaticResource LaunchFieldWidth}" Margin="{StaticResource SpaceXs}"
+                     app:PartState.Placeholder="A hint written at a length no field on this screen could hold, so the ellipsis is shown rather than promised" />
+          </WrapPanel>
         </StackPanel>
       </Border>
 
@@ -164,14 +179,44 @@
       <Border Style="{StaticResource PartCard}" Margin="{StaticResource StackGapSm}">
         <StackPanel>
           <TextBlock Style="{StaticResource PartCaption}"
-                     Text="Searched rather than scanned, because this catalogue is meant to grow well past what fits on a screen. Selection is a fill AND an accent bar: colour alone would be the only thing saying which one, and it is the one signal a reader may not have." />
-          <TextBox Margin="{StaticResource StackGapSm}" Text="" />
-          <ListBox MaxHeight="{StaticResource ChoiceListMaxHeight}" Margin="{StaticResource StackGapSm}"
-                   Background="Transparent" BorderThickness="0" SelectedIndex="1">
+                     Text="Searched rather than scanned, because this catalogue is meant to grow well past what fits on a screen. Selection is a fill AND an accent bar: colour alone would be the only thing saying which one, and it is the one signal a reader may not have. The well has an edge and no fill - a fill would be the same neutral a selected row paints itself with, and would erase the selection." />
+          <TextBox Margin="{StaticResource StackGapSm}" Text=""
+                   app:PartState.Placeholder="Search scenarios" />
+          <ListBox Margin="{StaticResource StackGapSm}" SelectedIndex="1">
             <ListBoxItem Content="2038 boundary" />
             <ListBoxItem Content="29 February" />
             <ListBoxItem Content="Licence expired a year ago" />
-            <ListBoxItem Content="A scenario with a name long enough that it has to decide what to do with the space it has" />
+            <ListBoxItem Content="A scenario carrying a name far longer than any well it will ever be read in, because a catalogue anybody can add to will eventually contain one and the row has to decide what to do about it rather than be surprised" />
+          </ListBox>
+
+          <TextBlock Style="{StaticResource PartCaption}" Margin="{StaticResource StackGapLg}"
+                     Text="Longer than its own cap, so it scrolls inside the well instead of pushing the screen down. The cap is a named value, not geometry chosen by eye." />
+          <ListBox Margin="{StaticResource StackGapSm}">
+            <ListBoxItem Content="29 February" />
+            <ListBoxItem Content="31 December, 23:59" />
+            <ListBoxItem Content="2038 boundary" />
+            <ListBoxItem Content="Daylight saving, spring forward" />
+            <ListBoxItem Content="Daylight saving, fall back" />
+            <ListBoxItem Content="Licence expired a year ago" />
+            <ListBoxItem Content="Licence expires tomorrow" />
+            <ListBoxItem Content="Leap second, 30 June" />
+            <ListBoxItem Content="Year rollover" />
+            <ListBoxItem Content="End of the quarter" />
+          </ListBox>
+
+          <TextBlock Style="{StaticResource PartCaption}" Margin="{StaticResource StackGapLg}"
+                     Text="Empty. It keeps a floor rather than collapsing to a rule, so a filter that matches nothing does not drag everything under it up the screen - the first render of this part did exactly that, which is what the floor is for. What the emptiness MEANS is a sentence the screen puts inside it, because nothing installed and nothing matched are opposite problems." />
+          <ListBox Margin="{StaticResource StackGapSm}" />
+
+          <TextBlock Style="{StaticResource PartCaption}" Margin="{StaticResource StackGapLg}"
+                     Text="One row disabled while the list is live, and then the whole list disabled. A dead control has to look dead without becoming unreadable - including its selection mark, which the first render of this part left at full accent strength on a list nobody could use. A row here holds bare text and simply runs out of room - what a screen does about a name that long is the screen's row template, and it arrives with the first one." />
+          <ListBox Margin="{StaticResource StackGapSm}" SelectedIndex="1">
+            <ListBoxItem Content="Disabled row, still readable" IsEnabled="False" />
+            <ListBoxItem Content="Selected row" />
+          </ListBox>
+          <ListBox Margin="{StaticResource StackGapSm}" IsEnabled="False" SelectedIndex="0">
+            <ListBoxItem Content="The whole list is disabled" />
+            <ListBoxItem Content="Nothing here can be chosen" />
           </ListBox>
         </StackPanel>
       </Border>

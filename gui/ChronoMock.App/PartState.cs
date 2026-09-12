@@ -26,4 +26,23 @@ public static class PartState
 
     public static void SetHasError(DependencyObject element, bool value)
         => element.SetValue(HasErrorProperty, value);
+
+    /// <summary>What an empty field is for, shown inside it until something is typed.</summary>
+    /// <remarks>
+    /// 🔴 It is a VALUE like the one above, so the catalogue can show the state, and a translation key
+    /// resolves to it exactly as every other user-visible string does (untouchable rule 15).
+    ///
+    /// The hint stays while the field has focus and goes only when there is text, which is the opposite
+    /// of the older habit of clearing it on focus. A search box people click into and then think about
+    /// is precisely when the hint is still worth reading, and a field that empties its own explanation
+    /// the moment somebody looks at it is answering a question nobody asked.
+    /// </remarks>
+    public static readonly DependencyProperty PlaceholderProperty = DependencyProperty.RegisterAttached(
+        "Placeholder", typeof(string), typeof(PartState), new PropertyMetadata(string.Empty));
+
+    public static string GetPlaceholder(DependencyObject element)
+        => (string)element.GetValue(PlaceholderProperty);
+
+    public static void SetPlaceholder(DependencyObject element, string value)
+        => element.SetValue(PlaceholderProperty, value);
 }

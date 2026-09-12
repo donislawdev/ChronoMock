@@ -106,6 +106,13 @@
   <!-- A list of choices that is searched rather than scanned. The cap is what keeps a growing catalogue
        from taking the screen: the list scrolls inside it, and the filter box above it does the finding. -->
   <sys:Double x:Key="ChoiceListMaxHeight">240</sys:Double>
+  <!-- 🔴 And a FLOOR, which the render is what asked for: an empty list collapses to a sliver, so a
+       filter that matched nothing turned the well into a line and dropped everything under it up the
+       screen. Three control heights - enough to read as a list rather than a rule, and enough to hold
+       the sentence saying why it is empty. A floor, not a freeze: between this and the cap the well
+       still sizes to its contents, which is the honest trade against a list that never moves and is
+       mostly blank on a small install. -->
+  <sys:Double x:Key="ChoiceListMinHeight">96</sys:Double>
   <sys:Double x:Key="StrokeThin">1</sys:Double>
   <!-- The same one-pixel edge as a Thickness, for a BorderThickness. WPF does not convert a Double to a
        Thickness through a resource reference, so the two spellings of one decision both have to exist. -->
