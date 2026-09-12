@@ -56,7 +56,10 @@
   "setup.label_target": "Target",
   "setup.label_at": "At",
   "setup.label_zone": "Zone",
-  "setup.label_shift": "Relative to now",
+  // Short on purpose. A shared label column is as wide as its longest entry, so "Relative to now" pushed
+  // At and Zone a third of the way across the card away from their own fields. The controls beside it say
+  // the rest: "From now  + 1 days [Set]".
+  "setup.label_shift": "From now",
   "setup.label_mode": "Mode",
   "setup.label_args": "Arguments",
   "setup.label_cwd": "Working folder",

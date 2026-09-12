@@ -83,6 +83,15 @@
             <Button Content="Start" Style="{StaticResource PartPrimaryAction}" Margin="{StaticResource SpaceXs}" />
             <Button Content="Start" Style="{StaticResource PartPrimaryAction}" IsEnabled="False" Margin="{StaticResource SpaceXs}" />
           </WrapPanel>
+
+          <TextBlock Style="{StaticResource PartCaption}" Margin="{StaticResource StackGapLg}"
+                     Text="The accent itself is a STATE, so it can move to whatever is the next step. An ordinary button wears it while it is the thing to do, and a disabled one drops it - otherwise a suggestion nobody can act on would be the loudest thing on the screen." />
+          <WrapPanel Margin="{StaticResource StackGapSm}">
+            <Button Content="Choose..." app:PartState.IsSuggested="True" Margin="{StaticResource SpaceXs}" />
+            <Button Content="Choose..." Margin="{StaticResource SpaceXs}" />
+            <Button Content="Suggested and disabled" app:PartState.IsSuggested="True" IsEnabled="False"
+                    Margin="{StaticResource SpaceXs}" />
+          </WrapPanel>
         </StackPanel>
       </Border>
 

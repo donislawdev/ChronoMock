@@ -57,7 +57,10 @@
   "setup.label_target": "Cel",
   "setup.label_at": "Moment",
   "setup.label_zone": "Strefa",
-  "setup.label_shift": "Względem teraz",
+  // Short on purpose. A shared label column is as wide as its longest entry, so "Relative to now" pushed
+  // At and Zone a third of the way across the card away from their own fields. The controls beside it say
+  // the rest: "From now  + 1 days [Set]".
+  "setup.label_shift": "Od teraz",
   "setup.label_mode": "Tryb",
   "setup.label_args": "Argumenty",
   "setup.label_cwd": "Katalog roboczy",

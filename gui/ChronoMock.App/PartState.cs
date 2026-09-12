@@ -45,4 +45,23 @@ public static class PartState
 
     public static void SetPlaceholder(DependencyObject element, string value)
         => element.SetValue(PlaceholderProperty, value);
+
+    /// <summary>This is the thing to do next, and it wears the accent while that is true.</summary>
+    /// <remarks>
+    /// 🔴 A STATE RATHER THAN A STYLE, so that "the accent marks the next step" can be a fact about the
+    /// application instead of a decision each screen makes again. A screen binds it to whatever makes the
+    /// step next - an empty target, a valid form - and the accent moves on its own.
+    ///
+    /// The alternative was a second accent style to swap in, which cannot be done by a trigger and would
+    /// have meant a second copy of the four accent values. One suggested control at a time is the screen's
+    /// job to arrange, not something the drawing can check.
+    /// </remarks>
+    public static readonly DependencyProperty IsSuggestedProperty = DependencyProperty.RegisterAttached(
+        "IsSuggested", typeof(bool), typeof(PartState), new PropertyMetadata(false));
+
+    public static bool GetIsSuggested(DependencyObject element)
+        => (bool)element.GetValue(IsSuggestedProperty);
+
+    public static void SetIsSuggested(DependencyObject element, bool value)
+        => element.SetValue(IsSuggestedProperty, value);
 }

@@ -155,6 +155,42 @@
       <Trigger Property="IsPressed" Value="True">
         <Setter Property="Background" Value="{DynamicResource BrushControlPressed}" />
       </Trigger>
+
+      <!--
+        🔴 THE ACCENT IS A STATE, NOT A SECOND BUTTON. It marks the thing to do next, and it lives on the
+        ordinary button so a screen can move it as the answer changes - an empty target makes Choose the
+        step, a filled one makes Start the step - without either control changing which style it wears.
+        See PartState.IsSuggested.
+
+        Ordered after the plain cursor states and before the disabled one, deliberately: the last matching
+        trigger wins, so a suggested button gets accent hover rather than grey hover, and a disabled one
+        goes quiet whatever it was suggesting.
+
+        The ink is DARK on this fill, which is a property of the hue rather than a preference: 8.56 against
+        white ink's 2.01, on a floor of 4.5. White on accent is closed for this application.
+      -->
+      <Trigger Property="app:PartState.IsSuggested" Value="True">
+        <Setter Property="Background" Value="{DynamicResource BrushAccent}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource BrushAccent}" />
+        <Setter Property="Foreground" Value="{DynamicResource BrushOnAccent}" />
+      </Trigger>
+      <MultiTrigger>
+        <MultiTrigger.Conditions>
+          <Condition Property="app:PartState.IsSuggested" Value="True" />
+          <Condition Property="IsMouseOver" Value="True" />
+        </MultiTrigger.Conditions>
+        <Setter Property="Background" Value="{DynamicResource BrushAccentHover}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource BrushAccentHover}" />
+      </MultiTrigger>
+      <MultiTrigger>
+        <MultiTrigger.Conditions>
+          <Condition Property="app:PartState.IsSuggested" Value="True" />
+          <Condition Property="IsPressed" Value="True" />
+        </MultiTrigger.Conditions>
+        <Setter Property="Background" Value="{DynamicResource BrushAccentPressed}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource BrushAccentPressed}" />
+      </MultiTrigger>
+
       <!--
         No invitation, but still a control.
 
@@ -167,8 +203,14 @@
         present-but-inactive rather than absent. The fill does not move at all, which is the second half
         of the fix - every variant now says "disabled" the same way, by dimming, and none of them says it
         by disappearing.
+
+        🔴 The fill IS restated here, and only because of the suggested state above: for a plain button
+        this setter changes nothing, while without it a disabled suggestion would keep shouting in the
+        accent colour. That is the third time this library has had to be taught the same lesson, after the
+        check control and the choice row.
       -->
       <Trigger Property="IsEnabled" Value="False">
+        <Setter Property="Background" Value="{DynamicResource BrushControlRest}" />
         <Setter Property="BorderBrush" Value="{DynamicResource BrushDivider}" />
         <Setter Property="Foreground" Value="{DynamicResource BrushTextSecondary}" />
       </Trigger>
@@ -176,39 +218,20 @@
   </Style>
 
   <!--
-    The primary action. One per screen. It is the same template with a different fill and a size nothing
-    else has, because an accent fill alone reads as decoration on a control shaped like its neighbours.
+    The primary action. One per screen. It is the same template with a size nothing else has, because an
+    accent fill alone reads as decoration on a control shaped exactly like its neighbours.
 
-    🔴 Its label is DARK, and that is a property of this hue rather than a preference: dark ink on the
-    accent measures 8.56 and white ink 2.01, against a floor of 4.5. White on accent is closed for this
-    application. A later session "fixing" this label to white would drop it under the floor with nothing
-    visibly wrong on screen.
+    🔴 IT NO LONGER OWNS THE ACCENT, it only declares itself suggested and lets the base style draw it.
+    The variant used to carry its own copy of the four accent values, which was fine while the accent was
+    the property of one control - and stopped being fine the moment a screen needed the accent to MOVE,
+    to Choose while there is no target and to Start once there is. Two copies of one look drift the first
+    time either is touched, so there is now one, in PartState.IsSuggested's trigger above.
+
+    What is left here is the part that really is the variant: it is bigger.
   -->
   <Style x:Key="PartPrimaryAction" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
-    <Setter Property="Background" Value="{DynamicResource BrushAccent}" />
-    <Setter Property="BorderBrush" Value="{DynamicResource BrushAccent}" />
-    <Setter Property="Foreground" Value="{DynamicResource BrushOnAccent}" />
+    <Setter Property="app:PartState.IsSuggested" Value="True" />
     <Setter Property="MinWidth" Value="{StaticResource PrimaryActionMinWidth}" />
-
-    <!-- The whole variant: four values per state, and not one line of drawing. The template, the ring,
-         the radius and the metrics all come from the base style above. -->
-    <Style.Triggers>
-      <Trigger Property="IsMouseOver" Value="True">
-        <Setter Property="Background" Value="{DynamicResource BrushAccentHover}" />
-        <Setter Property="BorderBrush" Value="{DynamicResource BrushAccentHover}" />
-      </Trigger>
-      <Trigger Property="IsPressed" Value="True">
-        <Setter Property="Background" Value="{DynamicResource BrushAccentPressed}" />
-        <Setter Property="BorderBrush" Value="{DynamicResource BrushAccentPressed}" />
-      </Trigger>
-      <!-- The same sentence as every other control says it: dim the ink, quieten the edge, drop the
-           accent fill. It must not say it by a different mechanism than the default button does. -->
-      <Trigger Property="IsEnabled" Value="False">
-        <Setter Property="Background" Value="{DynamicResource BrushControlRest}" />
-        <Setter Property="BorderBrush" Value="{DynamicResource BrushDivider}" />
-        <Setter Property="Foreground" Value="{DynamicResource BrushTextSecondary}" />
-      </Trigger>
-    </Style.Triggers>
   </Style>
 
   <!--
