@@ -19,6 +19,37 @@ namespace ChronoMock.App.Tests;
 [Trait("Category", "Integration")]
 public class StateSheetTests
 {
+    /// <summary>
+    /// The component catalogue, which is where the parts library is looked at.
+    /// </summary>
+    /// <remarks>
+    /// It renders taller than any window, on purpose: it is a sheet to read, not a screen to fit.
+    ///
+    /// 🔴 The height is a fixed number, and the test asserts the catalogue FITS in it. Without that
+    /// assertion, adding a part would quietly push the newest one out of frame - and the newest part is
+    /// exactly the one somebody wanted to look at. When this reddens, raise the number; do not crop.
+    /// </remarks>
+    [Fact]
+    public void The_component_catalogue_renders_and_fits_in_the_sheet()
+    {
+        var (elements, needed) = WpfTestHost.InvokeSettled(() =>
+        {
+            var catalogue = new ComponentCatalogue();
+            catalogue.Measure(new Size(CatalogueWidth, double.PositiveInfinity));
+            var wanted = catalogue.DesiredSize.Height;
+            return (StateSheet.Write("catalogue", catalogue, CatalogueWidth, CatalogueHeight), wanted);
+        });
+
+        Assert.NotEmpty(elements);
+        Assert.True(
+            needed <= CatalogueHeight,
+            $"the catalogue needs {needed:F0} px and the sheet is {CatalogueHeight} px - "
+                + "raise CatalogueHeight so the part you just added is actually in the picture");
+    }
+
+    private const int CatalogueWidth = 900;
+    private const int CatalogueHeight = 880;
+
     [Fact]
     public void The_substitution_panel_renders_in_its_startup_state()
     {

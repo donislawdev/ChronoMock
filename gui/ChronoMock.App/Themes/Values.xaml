@@ -28,9 +28,32 @@
   <sys:Double x:Key="FontSizeTitle">24</sys:Double>
   <sys:Double x:Key="FontSizeClock">34</sys:Double>
 
-  <!-- Radii and stroke. -->
+  <!-- Radii and stroke. Three radii with three jobs, not a free axis: control, card, pill. The pill
+       radius is half the control height, which is what makes a pill a pill at any height. -->
   <CornerRadius x:Key="RadiusSm">4</CornerRadius>
   <CornerRadius x:Key="RadiusMd">8</CornerRadius>
+  <CornerRadius x:Key="RadiusPill">16</CornerRadius>
+
+  <!--
+    Control metrics. A template that writes its own numbers is the same failure as a view that does,
+    and it is worse there, because no render-side guard measures inside a template (see the note in
+    XamlLiteralGuard). So the shapes of the parts library are named here like everything else.
+
+    32 is the control height: two 16s, on the spacing scale, and the height at which a 14 px label has
+    room to breathe without the control dominating a form row. The pill radius above is half of it.
+  -->
+  <sys:Double x:Key="ControlHeight">32</sys:Double>
+  <!-- A control is never narrower than it is tall. Rendered without this, a button labelled "+" came out
+       a fifth of its own height and was a worse target than the text it held. -->
+  <sys:Double x:Key="ControlMinWidth">32</sys:Double>
+  <Thickness x:Key="ControlPadding">12,0,12,0</Thickness>
+  <Thickness x:Key="CardPadding">16</Thickness>
+  <Thickness x:Key="ChipPadding">12,8,12,8</Thickness>
+
+  <!-- The keyboard focus ring sits OUTSIDE the control edge, so a focused control does not change size
+       and its neighbours do not shift. Two pixels: one is invisible next to a one pixel border. -->
+  <Thickness x:Key="FocusRingThickness">2</Thickness>
+  <Thickness x:Key="FocusRingMargin">-3</Thickness>
   <sys:Double x:Key="StrokeThin">1</sys:Double>
   <!-- The same one-pixel edge as a Thickness, for a BorderThickness. WPF does not convert a Double to a
        Thickness through a resource reference, so the two spellings of one decision both have to exist. -->

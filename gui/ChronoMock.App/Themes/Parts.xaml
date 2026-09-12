@@ -1,0 +1,213 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+  <!--
+    THE PARTS LIBRARY. Everything a screen is built from, drawn by us rather than by the toolkit.
+
+    🔴 THIS DICTIONARY IS NOT MERGED INTO App.xaml YET, and that is deliberate. The styles here are
+    implicit (keyed by type), so merging them application-wide would restyle every existing screen the
+    moment the file exists. Until the screens are rebuilt, only the component catalogue loads this,
+    which keeps the shipped views pixel-identical while the parts are designed. Adopting it later is
+    ONE line in App.xaml, for the whole application at once.
+
+    WHY DRAW THEM AT ALL. A toolkit control renders itself its own way and no amount of theming changes
+    the drawing - same colour, same height, same font, different shape. That is a decision with a real
+    price (this is code to maintain for as long as the product lives) and it was the owner's to make.
+
+    THE LANGUAGE OF STATES, and it is one language across every part here:
+      the cursor is here       -> the FILL moves one step
+      it is being pressed      -> the fill moves the other way, a recess
+      the keyboard is here     -> a RING appears outside the control
+      it cannot be used        -> the edge goes, the ink dims
+    Cursor and keyboard answer on different axes on purpose, so a control that is hovered AND focused
+    still says both things at once.
+
+    🔴 NO PART CHANGES ITS LABEL COLOUR ON HOVER. That is a standing rule, and it is also why the accent
+    fill moves rather than the ink on it: the dark label holds 8.56, 9.93 and 7.19 across rest, hover
+    and press, so it never has to.
+
+    Values: every colour, gap, radius and size here comes from Colours.xaml or Values.xaml. The literal
+    guard scans this file - a raw number in it is a build failure, not a style choice.
+  -->
+
+  <!--
+    ============================ Focus ring ============================
+
+    One ring, drawn OUTSIDE the control with a gap of background between them, reused by every part.
+
+    🔴 Why outside rather than on the edge. The accent fill and the ring are the same hue by design, and
+    the hovered accent fill sits 1.02 from the ring - a ring drawn on that edge disappears into it, and
+    no shade fixes it while both stay this hue. Outside, the ring is measured against the surface behind
+    the control instead: 10.08 on the window, 8.84 on a card.
+
+    It is also why the ring carries a negative margin rather than padding the control: a focused control
+    must not change size, or every neighbour shifts when the keyboard arrives.
+  -->
+  <Style x:Key="PartFocusRing" TargetType="Border">
+    <Setter Property="BorderBrush" Value="{DynamicResource BrushFocusRing}" />
+    <Setter Property="BorderThickness" Value="{StaticResource FocusRingThickness}" />
+    <Setter Property="CornerRadius" Value="{StaticResource RadiusMd}" />
+    <Setter Property="Margin" Value="{StaticResource FocusRingMargin}" />
+    <Setter Property="IsHitTestVisible" Value="False" />
+    <Setter Property="SnapsToDevicePixels" Value="True" />
+  </Style>
+
+  <!--
+    ============================ Card ============================
+
+    The one container for content. No border: it is told apart from the window by its fill alone, which
+    is the distance every dark interface uses for this (1.14 here, GitHub 1.09, VS Code 1.08). Borders
+    are reserved for controls, so a rectangle with an edge always means "you can act on this".
+  -->
+  <Style x:Key="PartCard" TargetType="Border">
+    <Setter Property="Background" Value="{DynamicResource BrushBgSurface}" />
+    <Setter Property="CornerRadius" Value="{StaticResource RadiusMd}" />
+    <Setter Property="Padding" Value="{StaticResource CardPadding}" />
+    <Setter Property="SnapsToDevicePixels" Value="True" />
+  </Style>
+
+  <!--
+    ============================ Type roles ============================
+
+    Named text roles, so a view says what a piece of text IS rather than how big it is. Sizes come from
+    the five-step scale and nowhere else.
+  -->
+  <Style x:Key="PartSectionHeading" TargetType="TextBlock">
+    <Setter Property="FontSize" Value="{StaticResource FontSizeSubtitle}" />
+    <Setter Property="Foreground" Value="{DynamicResource BrushTextPrimary}" />
+  </Style>
+
+  <Style x:Key="PartLabel" TargetType="TextBlock">
+    <Setter Property="FontSize" Value="{StaticResource FontSizeBody}" />
+    <Setter Property="Foreground" Value="{DynamicResource BrushTextPrimary}" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+  </Style>
+
+  <Style x:Key="PartCaption" TargetType="TextBlock">
+    <Setter Property="FontSize" Value="{StaticResource FontSizeCaption}" />
+    <Setter Property="Foreground" Value="{DynamicResource BrushTextSecondary}" />
+    <Setter Property="TextWrapping" Value="Wrap" />
+  </Style>
+
+  <!--
+    ============================ Button ============================
+
+    Implicit: every button on a screen that loads this dictionary is drawn by this template. A second
+    look (the primary action) is a VARIANT below, driven by a property, never a copy of the template.
+  -->
+  <Style TargetType="Button">
+    <Setter Property="Background" Value="{DynamicResource BrushControlRest}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource BrushControlBorder}" />
+    <Setter Property="Foreground" Value="{DynamicResource BrushTextPrimary}" />
+    <Setter Property="FontSize" Value="{StaticResource FontSizeBody}" />
+    <Setter Property="Height" Value="{StaticResource ControlHeight}" />
+    <Setter Property="MinWidth" Value="{StaticResource ControlMinWidth}" />
+    <Setter Property="Padding" Value="{StaticResource ControlPadding}" />
+    <Setter Property="HorizontalContentAlignment" Value="Center" />
+    <Setter Property="VerticalContentAlignment" Value="Center" />
+    <Setter Property="SnapsToDevicePixels" Value="True" />
+    <!-- The toolkit's dotted rectangle is replaced by the ring in the template, so it is turned off
+         here rather than left to draw a second, different focus indicator on top of ours. -->
+    <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="Button">
+          <Grid>
+            <Border x:Name="Ring" Style="{StaticResource PartFocusRing}" Visibility="Collapsed" />
+            <Border x:Name="Face"
+                    Background="{TemplateBinding Background}"
+                    BorderBrush="{TemplateBinding BorderBrush}"
+                    BorderThickness="{StaticResource StrokeThinEdge}"
+                    CornerRadius="{StaticResource RadiusSm}"
+                    Padding="{TemplateBinding Padding}"
+                    SnapsToDevicePixels="True">
+              <ContentPresenter x:Name="Label"
+                                HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
+                                RecognizesAccessKey="True" />
+            </Border>
+          </Grid>
+          <ControlTemplate.Triggers>
+            <!-- The keyboard answers on the ring, and only the keyboard: a ring that also appeared on
+                 mouse focus would say "you can type here" after every click. The ring is identical for
+                 every variant, so it is the one state that belongs to the drawing rather than the style. -->
+            <Trigger Property="IsKeyboardFocused" Value="True">
+              <Setter TargetName="Ring" Property="Visibility" Value="Visible" />
+            </Trigger>
+          </ControlTemplate.Triggers>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+
+    <!--
+      🔴 State lives in the STYLE, not in the template, and that is what makes a variant a parameter
+      instead of a copy. The face binds Background and BorderBrush from the control, so a variant only
+      restates those two values per state - it never restates the drawing. The first draft of this file
+      did copy the whole template for the primary action, which is the same mistake as a second style
+      sheet: two drawings of one shape, drifting apart from the day they exist.
+    -->
+    <Style.Triggers>
+      <!-- The cursor answers on fill. The label is untouched, here and everywhere. -->
+      <Trigger Property="IsMouseOver" Value="True">
+        <Setter Property="Background" Value="{DynamicResource BrushControlHover}" />
+      </Trigger>
+      <Trigger Property="IsPressed" Value="True">
+        <Setter Property="Background" Value="{DynamicResource BrushControlPressed}" />
+      </Trigger>
+      <!--
+        No invitation, but still a control.
+
+        🔴 The first version removed the edge entirely and put the card's own fill behind it. Rendered,
+        the button VANISHED - fill equal to the card and no border leaves nothing to see, and "cannot be
+        used" had turned into "is not there". A disabled control still has to be findable, or the screen
+        silently loses a row.
+
+        So the edge stays and goes QUIET instead: the divider step, 1.34 against a card, which reads as
+        present-but-inactive rather than absent. The fill does not move at all, which is the second half
+        of the fix - every variant now says "disabled" the same way, by dimming, and none of them says it
+        by disappearing.
+      -->
+      <Trigger Property="IsEnabled" Value="False">
+        <Setter Property="BorderBrush" Value="{DynamicResource BrushDivider}" />
+        <Setter Property="Foreground" Value="{DynamicResource BrushTextSecondary}" />
+      </Trigger>
+    </Style.Triggers>
+  </Style>
+
+  <!--
+    The primary action. One per screen. It is the same template with a different fill and a size nothing
+    else has, because an accent fill alone reads as decoration on a control shaped like its neighbours.
+
+    🔴 Its label is DARK, and that is a property of this hue rather than a preference: dark ink on the
+    accent measures 8.56 and white ink 2.01, against a floor of 4.5. White on accent is closed for this
+    application. A later session "fixing" this label to white would drop it under the floor with nothing
+    visibly wrong on screen.
+  -->
+  <Style x:Key="PartPrimaryAction" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+    <Setter Property="Background" Value="{DynamicResource BrushAccent}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource BrushAccent}" />
+    <Setter Property="Foreground" Value="{DynamicResource BrushOnAccent}" />
+    <Setter Property="MinWidth" Value="{StaticResource PrimaryActionMinWidth}" />
+
+    <!-- The whole variant: four values per state, and not one line of drawing. The template, the ring,
+         the radius and the metrics all come from the base style above. -->
+    <Style.Triggers>
+      <Trigger Property="IsMouseOver" Value="True">
+        <Setter Property="Background" Value="{DynamicResource BrushAccentHover}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource BrushAccentHover}" />
+      </Trigger>
+      <Trigger Property="IsPressed" Value="True">
+        <Setter Property="Background" Value="{DynamicResource BrushAccentPressed}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource BrushAccentPressed}" />
+      </Trigger>
+      <!-- The same sentence as every other control says it: dim the ink, quieten the edge, drop the
+           accent fill. It must not say it by a different mechanism than the default button does. -->
+      <Trigger Property="IsEnabled" Value="False">
+        <Setter Property="Background" Value="{DynamicResource BrushControlRest}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource BrushDivider}" />
+        <Setter Property="Foreground" Value="{DynamicResource BrushTextSecondary}" />
+      </Trigger>
+    </Style.Triggers>
+  </Style>
+
+</ResourceDictionary>

@@ -1,0 +1,105 @@
+<UserControl x:Class="ChronoMock.App.Views.ComponentCatalogue"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             Background="{DynamicResource BrushBgBase}">
+
+  <!--
+    THE COMPONENT CATALOGUE. Every part of the interface, in every state it can be in, on one screen.
+
+    🔴 It loads the parts library LOCALLY. App.xaml does not merge Parts.xaml yet, so the shipped screens
+    keep the exact pixels they have while the parts are designed here. When the screens adopt the parts,
+    this local merge goes and the application-wide one replaces it.
+
+    🔴 THIS FILE MAY NOT CONTAIN A SINGLE VALUE OF ITS OWN. Not a colour, not a size, not a gap. If
+    something here cannot be built out of the library, that is the finding - it means a part is missing,
+    and the answer is to add it there rather than to draw it here. That rule is what keeps the catalogue
+    a test of the library instead of a picture of one.
+
+    WHAT IT SHOWS AND WHAT IT DOES NOT. Rest, disabled, the variants, and the extremes (a very long
+    label, a very short one). It does NOT show hover, press or keyboard focus: those need real input, and
+    a control cannot be put into them declaratively. Drawing them by hand here would be the worse answer -
+    it would show a hand-made picture of a state rather than the state, and the two drift apart silently.
+    They are measured on the live window instead, by tools/gui/hover-sheet.ps1 and focus-sheet.ps1.
+  -->
+
+  <UserControl.Resources>
+    <ResourceDictionary Source="../Themes/Parts.xaml" />
+  </UserControl.Resources>
+
+  <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="{StaticResource SpaceXl}">
+    <StackPanel>
+
+      <TextBlock Text="Component catalogue" Style="{StaticResource PartSectionHeading}" />
+      <TextBlock Style="{StaticResource PartCaption}" Margin="{StaticResource StackGapSm}"
+                 Text="Every part, in every state that can be shown without input. Hover, press and keyboard focus are measured on the live window - see hover-sheet.ps1 and focus-sheet.ps1." />
+
+      <!-- ============ Button ============ -->
+      <TextBlock Text="Button" Style="{StaticResource PartSectionHeading}" Margin="{StaticResource StackGapLg}" />
+
+      <Border Style="{StaticResource PartCard}" Margin="{StaticResource StackGapSm}">
+        <StackPanel>
+          <TextBlock Text="Default" Style="{StaticResource PartCaption}" />
+          <WrapPanel Margin="{StaticResource StackGapSm}">
+            <Button Content="Start" Margin="{StaticResource SpaceXs}" />
+            <Button Content="Choose..." Margin="{StaticResource SpaceXs}" />
+            <Button Content="Disabled" IsEnabled="False" Margin="{StaticResource SpaceXs}" />
+            <Button Content="x1" Margin="{StaticResource SpaceXs}" />
+          </WrapPanel>
+
+          <TextBlock Text="Extremes: the longest label a translation can produce, and the shortest"
+                     Style="{StaticResource PartCaption}" Margin="{StaticResource StackGapLg}" />
+          <WrapPanel Margin="{StaticResource StackGapSm}">
+            <Button Margin="{StaticResource SpaceXs}"
+                    Content="Run even if the opening verdict says the substitution did not take effect" />
+            <Button Content="+" Margin="{StaticResource SpaceXs}" />
+          </WrapPanel>
+        </StackPanel>
+      </Border>
+
+      <!-- ============ Primary action ============ -->
+      <TextBlock Text="Primary action" Style="{StaticResource PartSectionHeading}" Margin="{StaticResource StackGapLg}" />
+
+      <Border Style="{StaticResource PartCard}" Margin="{StaticResource StackGapSm}">
+        <StackPanel>
+          <TextBlock Style="{StaticResource PartCaption}"
+                     Text="One per screen. Wider than its neighbours, because an accent fill alone reads as decoration on a control shaped like everything around it. Its label is dark: this accent carries dark ink at 8.56 and white ink at 2.01." />
+          <WrapPanel Margin="{StaticResource StackGapSm}">
+            <Button Content="Start" Style="{StaticResource PartPrimaryAction}" Margin="{StaticResource SpaceXs}" />
+            <Button Content="Start" Style="{StaticResource PartPrimaryAction}" IsEnabled="False" Margin="{StaticResource SpaceXs}" />
+          </WrapPanel>
+        </StackPanel>
+      </Border>
+
+      <!-- ============ Card ============ -->
+      <TextBlock Text="Card" Style="{StaticResource PartSectionHeading}" Margin="{StaticResource StackGapLg}" />
+
+      <Border Style="{StaticResource PartCard}" Margin="{StaticResource StackGapSm}">
+        <StackPanel>
+          <TextBlock Text="A card has no border. It is told apart from the window by its fill alone."
+                     Style="{StaticResource PartLabel}" />
+          <TextBlock Style="{StaticResource PartCaption}" Margin="{StaticResource StackGapSm}"
+                     Text="That distance is 1.14, which is what every dark interface uses here - GitHub 1.09, VS Code 1.08. Borders are reserved for controls, so a rectangle with an edge always means you can act on it." />
+        </StackPanel>
+      </Border>
+
+      <Border Style="{StaticResource PartCard}" Margin="{StaticResource StackGapSm}">
+        <TextBlock Text="An empty card, for the case where a section has nothing in it yet."
+                   Style="{StaticResource PartCaption}" />
+      </Border>
+
+      <!-- ============ Type roles ============ -->
+      <TextBlock Text="Type" Style="{StaticResource PartSectionHeading}" Margin="{StaticResource StackGapLg}" />
+
+      <Border Style="{StaticResource PartCard}" Margin="{StaticResource StackGapSm}">
+        <StackPanel>
+          <TextBlock Text="Section heading" Style="{StaticResource PartSectionHeading}" />
+          <TextBlock Text="Label - what a form row is called" Style="{StaticResource PartLabel}"
+                     Margin="{StaticResource StackGapSm}" />
+          <TextBlock Style="{StaticResource PartCaption}" Margin="{StaticResource StackGapSm}"
+                     Text="Caption - the quieter line that explains a value, and the one that has to stay readable on every fill it can land on. Measured: 5.15 or better on all of them." />
+        </StackPanel>
+      </Border>
+
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

@@ -82,6 +82,17 @@
   <Color x:Key="AccentBase">#FF4CC2FF</Color>
   <Color x:Key="AccentRing">#FF7CD0FF</Color>
 
+  <!-- 9-10: the accent fill under the cursor and under the press. Lighter on hover, darker on press,
+       the WinUI direction. The dark label holds on all three: 8.56 at rest, 9.93 hovered, 7.19 pressed.
+
+       🔴 These sit close to the focus ring by necessity - they are the same hue - and the hover step is
+       1.02 away from it. That is why the ring is drawn OUTSIDE the control with a gap of background
+       between them, rather than on its edge: a ring touching this fill would vanish into it, and no
+       choice of shade fixes that while both stay this hue. Measured against the surfaces the ring
+       actually sits on instead: 10.08 on the window, 8.84 on a card. -->
+  <Color x:Key="AccentHover">#FF6FD0FF</Color>
+  <Color x:Key="AccentPressed">#FF3BB2EE</Color>
+
   <!--
     ============================ LAYER TWO: role tokens ============================
 
@@ -111,6 +122,8 @@
 
   <!-- Accent and keyboard focus (focus ring must be visibly high-contrast, section 9). -->
   <SolidColorBrush x:Key="BrushAccent" Color="{StaticResource AccentBase}" />
+  <SolidColorBrush x:Key="BrushAccentHover" Color="{StaticResource AccentHover}" />
+  <SolidColorBrush x:Key="BrushAccentPressed" Color="{StaticResource AccentPressed}" />
   <SolidColorBrush x:Key="BrushFocusRing" Color="{StaticResource AccentRing}" />
 
   <!-- The label that sits ON the accent fill. Named so the pairing is one decision in one place,
