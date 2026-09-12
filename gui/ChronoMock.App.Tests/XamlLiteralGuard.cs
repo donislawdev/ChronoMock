@@ -10,7 +10,17 @@ namespace ChronoMock.App.Tests;
 ///
 /// What it does NOT catch, on purpose: element/window geometry (Width/Height/MinWidth/MinHeight), a value
 /// built from named parts, a value computed in code, and a resource assigned to the wrong-typed property.
-/// It scans views only - the Themes dictionaries DEFINE the values and the Localization files hold strings.
+///
+/// 🔴 WHAT IT SCANS, and why that changed. It used to skip all of Themes/, which was right when Themes/
+/// held only definitions. It is wrong now: control templates live there too, and a template is a CONSUMER
+/// of the scale exactly like a view. Measured when the exclusion was narrowed - the style dictionary was
+/// already carrying Padding="7,6" and FontSize="16", neither of which is on any declared scale, and no
+/// guard had ever looked at them. The split is now by ROLE: a file that DEFINES values is skipped, a file
+/// that USES them is scanned.
+///
+/// The other half of the same blind spot stays open and is not this guard's job: SpacingReport only judges
+/// a gap whose nearest named ancestor is named in our views, so gaps INSIDE a control template are not
+/// measured on the render either. That is why this text scan has to hold that ground.
 /// </summary>
 internal static class XamlLiteralGuard
 {
@@ -26,6 +36,40 @@ internal static class XamlLiteralGuard
         ("spacing", new Regex("""(?i)\b(Margin|Padding|BorderThickness|CornerRadius)\s*=\s*"(?!0")[0-9.\-]""", RegexOptions.Compiled)),
     ];
 
+    /// <summary>
+    /// Literals that stay for now, each with the reason and the condition under which it goes.
+    /// </summary>
+    /// <remarks>
+    /// 🔴 These all sit in styles that the parts library REPLACES. Rewriting them to tokens first would
+    /// mean editing code that is about to be deleted, and would move the pixels of a shipped build for no
+    /// reason. The list only shrinks: <see cref="Allowances"/> is checked from both ends, so an entry that
+    /// stops matching anything has to come out, and a new literal cannot hide behind an old excuse.
+    ///
+    /// The match is on the exact trimmed line, not a line number, so ordinary edits above do not silently
+    /// re-arm an allowance somewhere else.
+    /// </remarks>
+    internal static readonly (string File, string Line, string Reason)[] Allowances =
+    [
+        ("Themes/Controls.xaml",
+         """BorderThickness="1" CornerRadius="4" Padding="7,6" SnapsToDevicePixels="True">""",
+         "CalendarToggleStyle face; 7 is on no scale. Goes when the toggle gets its own template (2b)"),
+        ("Themes/Controls.xaml",
+         """<TextBlock Text="&#xE787;" FontFamily="Segoe MDL2 Assets" FontSize="16" """.TrimEnd(),
+         "calendar glyph sized off the type scale; goes with the same template (2b)"),
+        ("Themes/Controls.xaml",
+         """BorderThickness="1" CornerRadius="4" Padding="10,6" SnapsToDevicePixels="True">""",
+         "TitleBarActionButton face; goes when the button gets its own template (2b)"),
+        ("Themes/Controls.xaml",
+         """<Border x:Name="Box" Width="20" Height="20" CornerRadius="4" """.TrimEnd(),
+         "CalendarToggleStyle checkbox face; goes when the check control gets its own template (slice 2b)"),
+        ("Themes/Controls.xaml",
+         """BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1" """.TrimEnd(),
+         "as above, same template"),
+        ("Themes/Controls.xaml",
+         """<ContentPresenter Margin="8,0,0,0" VerticalAlignment="Center" RecognizesAccessKey="True" />""",
+         "as above, same template"),
+    ];
+
     /// <summary>Find design-literal violations in a single XAML text.</summary>
     public static IReadOnlyList<Violation> FindViolations(string file, string content)
     {
@@ -33,11 +77,17 @@ internal static class XamlLiteralGuard
         var lines = content.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n');
         for (int i = 0; i < lines.Length; i++)
         {
+            var trimmed = lines[i].Trim();
+            if (IsAllowed(file, trimmed))
+            {
+                continue;
+            }
+
             foreach (var (kind, pattern) in Rules)
             {
                 if (pattern.IsMatch(lines[i]))
                 {
-                    violations.Add(new Violation(file, i + 1, kind, lines[i].Trim()));
+                    violations.Add(new Violation(file, i + 1, kind, trimmed));
                 }
             }
         }
@@ -45,27 +95,57 @@ internal static class XamlLiteralGuard
         return violations;
     }
 
+    /// <summary>Whether this exact line in this exact file carries a standing allowance.</summary>
+    internal static bool IsAllowed(string file, string trimmedLine)
+        => Allowances.Any(a
+            => file.EndsWith(a.File, StringComparison.OrdinalIgnoreCase)
+               && string.Equals(a.Line, trimmedLine, StringComparison.Ordinal));
+
     /// <summary>Scan every view XAML under the app directory (skipping the value dictionaries, the string
     /// files, and build output).</summary>
-    public static IReadOnlyList<Violation> ScanViews(string appDirectory)
+    public static IReadOnlyList<Violation> ScanConsumers(string appDirectory)
     {
         var violations = new List<Violation>();
-        foreach (var file in Directory.EnumerateFiles(appDirectory, "*.xaml", SearchOption.AllDirectories))
+        foreach (var rel in ConsumerPaths(appDirectory))
         {
-            var rel = Path.GetRelativePath(appDirectory, file).Replace('\\', '/');
-            if (IsExcluded(rel))
-            {
-                continue;
-            }
-
-            violations.AddRange(FindViolations(rel, File.ReadAllText(file)));
+            violations.AddRange(FindViolations(rel, File.ReadAllText(Path.Combine(appDirectory, rel))));
         }
 
         return violations;
     }
 
+    /// <summary>
+    /// The files this guard walks, relative to the app directory. Exposed so a test can assert WHAT was
+    /// visited rather than only what came back: a guard that silently stops visiting the style dictionary
+    /// reports zero violations and looks exactly like a clean one.
+    /// </summary>
+    public static IReadOnlyList<string> ConsumerPaths(string appDirectory)
+    {
+        var paths = new List<string>();
+        foreach (var file in Directory.EnumerateFiles(appDirectory, "*.xaml", SearchOption.AllDirectories))
+        {
+            var rel = Path.GetRelativePath(appDirectory, file).Replace('\\', '/');
+            if (!IsExcluded(rel))
+            {
+                paths.Add(rel);
+            }
+        }
+
+        return paths;
+    }
+
+    /// <summary>
+    /// The files that DEFINE design values. Everything else under the app - views and the style
+    /// dictionaries alike - consumes them and is scanned.
+    /// </summary>
+    private static readonly string[] ValueDefinitions =
+    [
+        "Themes/Colours.xaml",
+        "Themes/Values.xaml",
+    ];
+
     private static bool IsExcluded(string relativePath)
-        => relativePath.StartsWith("Themes/", StringComparison.OrdinalIgnoreCase)
+        => ValueDefinitions.Contains(relativePath, StringComparer.OrdinalIgnoreCase)
            || relativePath.StartsWith("Localization/", StringComparison.OrdinalIgnoreCase)
            || relativePath.StartsWith("bin/", StringComparison.OrdinalIgnoreCase)
            || relativePath.StartsWith("obj/", StringComparison.OrdinalIgnoreCase)
