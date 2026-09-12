@@ -328,12 +328,21 @@
   "session.family_undetermined": "No process read a covered time channel.",
 
   // Coverage / audit preview (chrono-mock 7.2). Channel names are raw API identifiers, not translated.
-  "coverage.covered": "Covered channels",
-  "coverage.observed": "Observed (hooked, left real)",
-  "coverage.uncovered": "Uncovered channels",
-  // Not the same thing as uncovered, and the wording has to keep them apart: an uncovered channel is
-  // time the target asked for and did not get, this one is a watch we promised and did not start.
-  "coverage.unobserved": "Meant to watch, could not hook",
+  //
+  // 🔴 WHICH CLOCK THE APPLICATION READ, in those words. These four headers were written in the
+  // mechanism's vocabulary - "covered", "channel", "hooked" - and the last two carried it in a
+  // parenthesis, which is where jargon goes when nobody can think of the plain word. A reader of this
+  // audit has one question, and untouchable rule 4 makes answering it honestly the product's promise:
+  // did the application see the fake clock or the real one. The rows underneath are the API names, so
+  // the header does not have to name the unit as well.
+  "coverage.covered": "Read from the fake clock",
+  "coverage.uncovered": "Read from the real clock",
+  // Read from the real clock too, and the difference is INTENT - QPC-based timing is left alone on
+  // purpose (ADR-2), and the reader has to be able to tell "we chose this" from "we missed it".
+  "coverage.observed": "Left on the real clock on purpose",
+  // Not the same thing as either, and the wording has to keep them apart: the two above are time the
+  // application asked for, this one is a watch we promised and never started.
+  "coverage.unobserved": "Could not be watched",
   "coverage.warnings": "Warnings",
   "coverage.family_note": "Family session - call counts are the parent process, warnings and uncovered channels cover every process.",
   "coverage.contexts_note": "Chromium session - showing every JS context (page and workers), never summed.",

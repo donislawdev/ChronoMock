@@ -124,6 +124,28 @@
   </Style>
 
   <!--
+    🔴 PROSE IS NOT A CAPTION, and one role was doing both jobs. A caption is metadata standing beside a
+    value - "speed:", a chip, the zone under a clock - and 12 px of quiet ink is right for it. An
+    explanation is the text that TEACHES the tool: why the date says 2038, what an option costs, what
+    stopping does, what a warning means. Measured on the two phases: 32 of 54 text elements were captions,
+    and about eighteen of those were whole sentences.
+
+    Written the wrong way round, that text took TWO reductions at once - smaller AND quieter - and the
+    measure in the suite could not see it: every reading passes WCAG at 7.3 to 8.6 against a required 4.5.
+    The ratio was never the problem. The size was.
+
+    So this is body size in the caption's ink: quieter than a label, exactly as large. The ink is
+    deliberately unchanged - held up beside another tool whose secondary text reads well, its grey is no
+    lighter than ours and often darker, and what it does differently is keep that text the same size as
+    the text above it.
+  -->
+  <Style x:Key="PartNote" TargetType="TextBlock">
+    <Setter Property="FontSize" Value="{StaticResource FontSizeBody}" />
+    <Setter Property="Foreground" Value="{DynamicResource BrushTextSecondary}" />
+    <Setter Property="TextWrapping" Value="Wrap" />
+  </Style>
+
+  <!--
     ============================ Button ============================
 
     Implicit: every button on a screen that loads this dictionary is drawn by this template. A second
@@ -1003,7 +1025,7 @@
     <Setter Property="ItemTemplate">
       <Setter.Value>
         <DataTemplate>
-          <TextBlock Style="{StaticResource PartCaption}" TextWrapping="Wrap"
+          <TextBlock Style="{StaticResource PartNote}"
                      Margin="{StaticResource StackGapSm}"
                      Text="{Binding Converter={StaticResource KeyToText}}" />
         </DataTemplate>

@@ -324,12 +324,21 @@
   "session.family_undetermined": "Żaden proces nie odczytał objętego kanału czasu.",
 
   // Coverage / audit preview (chrono-mock 7.2). Channel names are raw API identifiers, not translated.
-  "coverage.covered": "Objęte kanały",
-  "coverage.observed": "Obserwowane (podpięte, pozostawione realne)",
-  "coverage.uncovered": "Nieobjęte kanały",
-  // Not the same thing as uncovered, and the wording has to keep them apart: an uncovered channel is
-  // time the target asked for and did not get, this one is a watch we promised and did not start.
-  "coverage.unobserved": "Mieliśmy obserwować, nie udało się podpiąć",
+  //
+  // 🔴 WHICH CLOCK THE APPLICATION READ, in those words. These four headers were written in the
+  // mechanism's vocabulary - "covered", "channel", "hooked" - and the last two carried it in a
+  // parenthesis, which is where jargon goes when nobody can think of the plain word. A reader of this
+  // audit has one question, and untouchable rule 4 makes answering it honestly the product's promise:
+  // did the application see the fake clock or the real one. The rows underneath are the API names, so
+  // the header does not have to name the unit as well.
+  "coverage.covered": "Czytane z fałszywego zegara",
+  "coverage.uncovered": "Czytane z prawdziwego zegara",
+  // Read from the real clock too, and the difference is INTENT - QPC-based timing is left alone on
+  // purpose (ADR-2), and the reader has to be able to tell "we chose this" from "we missed it".
+  "coverage.observed": "Świadomie zostawione na prawdziwym zegarze",
+  // Not the same thing as either, and the wording has to keep them apart: the two above are time the
+  // application asked for, this one is a watch we promised and never started.
+  "coverage.unobserved": "Nie dało się obserwować",
   "coverage.warnings": "Ostrzeżenia",
   "coverage.family_note": "Sesja rodziny - liczniki wywołań z procesu rodzica, ostrzeżenia i nieobjęte kanały ze wszystkich procesów.",
   "coverage.contexts_note": "Sesja Chromium - pokazano każdy kontekst JS (stronę i workery), nigdy sumowane.",

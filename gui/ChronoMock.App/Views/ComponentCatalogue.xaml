@@ -435,8 +435,10 @@
           <TextBlock Text="Section heading" Style="{StaticResource PartHeading}" />
           <TextBlock Text="Label - what a form row is called" Style="{StaticResource PartLabel}"
                      Margin="{StaticResource StackGapSm}" />
+          <TextBlock Style="{StaticResource PartNote}" Margin="{StaticResource StackGapSm}"
+                     Text="Note - the prose that explains the tool: why a date is suggested, what an option costs, what a warning means. Quieter than a label and exactly as large, because that text used to take two reductions at once and reading it was work." />
           <TextBlock Style="{StaticResource PartCaption}" Margin="{StaticResource StackGapSm}"
-                     Text="Caption - the quieter line that explains a value, and the one that has to stay readable on every fill it can land on. Measured: 5.15 or better on all of them." />
+                     Text="Caption - metadata standing beside a value: a chip, a unit, the zone under a clock. Small because it is not read, it is glanced at. Measured: 5.15 or better on every fill it can land on." />
         </StackPanel>
       </Border>
 

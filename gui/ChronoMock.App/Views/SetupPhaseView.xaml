@@ -135,7 +135,7 @@
       <DataTemplate x:Key="ScenarioRow">
         <StackPanel ToolTip="{Binding DisplayExplains}">
           <TextBlock Text="{Binding DisplayName}" TextTrimming="CharacterEllipsis" />
-          <TextBlock Style="{StaticResource PartCaption}" TextWrapping="NoWrap"
+          <TextBlock Style="{StaticResource PartNote}" TextWrapping="NoWrap"
                      TextTrimming="CharacterEllipsis"
                      Text="{Binding DisplayExplains}" />
         </StackPanel>
@@ -209,7 +209,7 @@
                what PartFormRow does for a field message, and what this has to do by hand now that the
                card is a titled group rather than a row. -->
           <Grid Margin="{StaticResource StackGapSm}" MinHeight="{StaticResource FieldMessageHeight}">
-            <TextBlock Style="{StaticResource PartCaption}"
+            <TextBlock Style="{StaticResource PartNote}"
                        Text="{DynamicResource target.drop_hint}"
                        Visibility="{Binding ShowsDropHint, Converter={StaticResource BoolToVis}}" />
           </Grid>
@@ -273,7 +273,7 @@
                 <TextBlock Style="{StaticResource PartFieldMessage}"
                            Text="{Binding Moment.ActiveErrorKey, Converter={StaticResource KeyToText}}"
                            Visibility="{Binding Moment.HasError, Converter={StaticResource BoolToVis}}" />
-                <TextBlock Style="{StaticResource PartCaption}" TextWrapping="NoWrap"
+                <TextBlock Style="{StaticResource PartNote}" TextWrapping="NoWrap"
                            Text="{DynamicResource setup.default_moment_note}"
                            Visibility="{Binding MomentIsDefault, Converter={StaticResource BoolToVis}}" />
               </Grid>
@@ -373,7 +373,7 @@
         <!-- A list that just sits there does not explain what choosing from it will do (untouchable
              rule 7 - it fills the date and starts nothing), so it says so in a sentence. -->
         <StackPanel>
-          <TextBlock Style="{StaticResource PartCaption}"
+          <TextBlock Style="{StaticResource PartNote}"
                      Text="{DynamicResource setup.or_pick_scenario}" />
           <TextBox Margin="{StaticResource StackGapSm}"
                    Text="{Binding ScenarioPicker.Filter, UpdateSourceTrigger=PropertyChanged}"
@@ -386,20 +386,20 @@
                      ToolTip="{DynamicResource tip.scenario}" />
             <!-- Inside the well, not under it: the sentence explaining an empty list has to appear
                  where the list was, or the screen answers by moving rather than by speaking. -->
-            <TextBlock Style="{StaticResource PartCaption}"
+            <TextBlock Style="{StaticResource PartNote}"
                        Margin="{StaticResource SpaceMd}"
                        HorizontalAlignment="Center" VerticalAlignment="Center"
                        Text="{DynamicResource scenario.no_matches}"
                        Visibility="{Binding ScenarioPicker.HasNoMatches, Converter={StaticResource BoolToVis}}" />
           </Grid>
 
-          <TextBlock Style="{StaticResource PartCaption}" Margin="{StaticResource StackGapSm}"
+          <TextBlock Style="{StaticResource PartNote}" Margin="{StaticResource StackGapSm}"
                      Text="{Binding ScenarioExplains}"
                      Visibility="{Binding HasSelectedScenario, Converter={StaticResource BoolToVis}}" />
           <TextBlock Style="{StaticResource PartFieldMessage}" Margin="{StaticResource StackGapSm}"
                      Text="{Binding ScenarioErrorKey, Converter={StaticResource KeyToText}}"
                      Visibility="{Binding HasScenarioError, Converter={StaticResource BoolToVis}}" />
-          <TextBlock Style="{StaticResource PartCaption}" Margin="{StaticResource StackGapSm}"
+          <TextBlock Style="{StaticResource PartNote}" Margin="{StaticResource StackGapSm}"
                      Visibility="{Binding ScenarioPicker.ShowsParametricNote, Converter={StaticResource BoolToVis}}">
             <Run Text="{Binding ScenarioPicker.NeedingParameters, Mode=OneWay}" /><Run Text=" " /><Run Text="{DynamicResource setup.scenario_parametric}" />
           </TextBlock>
@@ -455,13 +455,13 @@
           <!-- 🔴 The cost, where the decision is made rather than a hover away from it. Both of these
                options can change what a session is worth, and a consequence that only exists in a tooltip
                is a consequence most people meet after the fact. -->
-          <TextBlock Style="{StaticResource PartCaption}" Margin="{StaticResource OptionNoteGap}"
+          <TextBlock Style="{StaticResource PartNote}" Margin="{StaticResource OptionNoteGap}"
                      Text="{DynamicResource setup.opt_qpc_note}" />
 
           <CheckBox Content="{DynamicResource setup.opt_force}" IsChecked="{Binding ForceStart}"
                     IsEnabled="{Binding IsIdle}" ToolTip="{DynamicResource tip.force}"
                     Margin="{StaticResource StackGapSm}" />
-          <TextBlock Style="{StaticResource PartCaption}" Margin="{StaticResource OptionNoteGap}"
+          <TextBlock Style="{StaticResource PartNote}" Margin="{StaticResource OptionNoteGap}"
                      Text="{DynamicResource setup.opt_force_note}" />
 
           <!--
@@ -506,7 +506,7 @@
               </StackPanel>
             </HeaderedContentControl>
 
-            <TextBlock Style="{StaticResource PartCaption}" Margin="{StaticResource StackGapSm}"
+            <TextBlock Style="{StaticResource PartNote}" Margin="{StaticResource StackGapSm}"
                        MaxWidth="{StaticResource LaunchNoteMaxWidth}" HorizontalAlignment="Left"
                        Text="{DynamicResource launch.cwd_note}" />
           </StackPanel>
@@ -558,7 +558,7 @@
            The caption colour, not the error colour. Nothing has gone WRONG on a screen somebody has just
            opened - a step is outstanding, and red would tell a first run it had already made a mistake.
            When something IS wrong the field itself says so in red, and this sentence points at it. -->
-      <TextBlock Style="{StaticResource PartCaption}" Margin="{StaticResource StackGapSm}"
+      <TextBlock Style="{StaticResource PartNote}" Margin="{StaticResource StackGapSm}"
                  Text="{Binding StartRefusalKey, Converter={StaticResource KeyToText}}"
                  Visibility="{Binding HasStartRefusal, Converter={StaticResource BoolToVis}}" />
 
