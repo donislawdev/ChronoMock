@@ -43,7 +43,16 @@
 # still holds 82, but the field behind it has moved UP. `CalculatorViewModel` is now 72, then
 # `SessionViewModelTests` and `MainWindow` at 71 - so the sentence above about a band rather than one
 # outlier is truer now than when it was written, and the runner-up figures in it were stale.
-CA1506: 82
+#
+# 82 to 81 on 2026-09-12, the down door again, and worth reading as the answer to a question this file
+# gets asked often: the GUI rework needed ONE piece of state here, the text that narrows the scenario
+# list, and at 82 there was no room for it. The number did not move. The scenario catalogue moved, into
+# `ScenarioPicker`, which took the catalogue record and its reader out and brought one type back - so
+# the filter arrived with room to spare. Measured either side with `tools/margin.ps1`: 82 before, 81
+# after. The SELECTION deliberately stayed, because turning a scenario into a date needs the calc
+# client, the session zone and the moment field, and moving those would have been a bigger carve-out
+# wearing a smaller one's clothes.
+CA1506: 81
 
 # `PresetCatalog.ReadParameters`, a JSON reader that validates each field as it goes. Next are
 # `SessionViewModel.Apply` at 15 and `SessionViewModel`'s event router at 13. The analyzer's default

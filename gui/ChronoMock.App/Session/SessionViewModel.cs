@@ -50,7 +50,7 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     private RecentTarget? _selectedTarget;
     private readonly CalcClient? _calcClient;
     private readonly string? _presetsDir;
-    private ScenarioCatalogue _scenarios = ScenarioCatalogue.Empty;
+    private readonly ScenarioPicker _scenarios = new();
     private ScenarioItem? _selectedScenario;
     private string _scenarioExplains = string.Empty;
     private string _scenarioErrorKey = string.Empty;
@@ -159,7 +159,7 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
         // must start nothing).
         if (_presetsDir is not null)
         {
-            _scenarios = ScenarioCatalog.Load(_presetsDir);
+            _scenarios.Load(_presetsDir);
         }
     }
     private bool _verdictKnown;
@@ -566,20 +566,36 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
         }
     }
 
-    /// <summary>The scenarios this panel offers (chrono-mock 7.1 pt 2): named moments from the shared
-    /// preset catalogue that fill the date with one click, so a tester never has to type one.</summary>
-    public IReadOnlyList<ScenarioItem> Scenarios => _scenarios.Ready;
+    /// <summary>
+    /// The scenario list this session offers, and the text that narrows it (chrono-mock 7.1 pt 2).
+    /// </summary>
+    /// <remarks>
+    /// A type of its own so the filter has somewhere to live: this class stood exactly on its coupling
+    /// ceiling, and the catalogue leaving took more types out than the picker brought in. See
+    /// <see cref="ScenarioPicker"/> for why the SELECTION stayed behind here.
+    /// </remarks>
+    public ScenarioPicker ScenarioPicker => _scenarios;
+
+    /// <summary>The scenarios on show (chrono-mock 7.1 pt 2): named moments from the shared preset
+    /// catalogue that fill the date with one click, so a tester never has to type one.</summary>
+    /// <remarks>
+    /// 🔴 A FLAT ALIAS FOR <see cref="ScenarioPicker"/>, kept because MainWindow.xaml binds these four
+    /// names and that file is being replaced rather than edited - the rework measures itself on 22
+    /// renders being identical to the byte, and a renamed binding path would end that. These four go the
+    /// day the old panel does, and not before.
+    /// </remarks>
+    public IReadOnlyList<ScenarioItem> Scenarios => _scenarios.Visible;
 
     /// <summary>True when the catalogue offered at least one scenario - the list hides itself otherwise
     /// rather than showing an empty box (a portable install with no presets/ folder).</summary>
-    public bool HasScenarios => _scenarios.Ready.Count > 0;
+    public bool HasScenarios => _scenarios.HasScenarios;
 
     /// <summary>How many substitution presets this list does NOT offer because they take parameters. Said
     /// out loud in the panel rather than hidden (rule 6) - the calculator can build those and hand the
     /// moment back over the "Use in substitution" bridge.</summary>
     public int ScenariosNeedingParameters => _scenarios.NeedingParameters;
 
-    public bool HasScenariosNeedingParameters => _scenarios.NeedingParameters > 0;
+    public bool HasScenariosNeedingParameters => _scenarios.HasNeedingParameters;
 
     /// <summary>The chosen scenario. Setting it computes its moment and fills the date - and nothing else:
     /// it never starts a session (untouchable rule 7) and never touches the time mode, which is a separate
