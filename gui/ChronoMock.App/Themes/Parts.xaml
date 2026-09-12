@@ -457,7 +457,7 @@
                       Margin="{StaticResource PopupGap}"
                       Padding="{StaticResource SpaceXs}"
                       MinWidth="{TemplateBinding ActualWidth}"
-                      MaxHeight="{StaticResource ChoiceListMaxHeight}"
+                      MaxHeight="{StaticResource DropDownMaxHeight}"
                       SnapsToDevicePixels="True">
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
                   <ItemsPresenter />
@@ -515,8 +515,7 @@
     <Setter Property="BorderBrush" Value="{DynamicResource BrushControlBorder}" />
     <Setter Property="Foreground" Value="{DynamicResource BrushTextPrimary}" />
     <Setter Property="FontSize" Value="{StaticResource FontSizeBody}" />
-    <Setter Property="MaxHeight" Value="{StaticResource ChoiceListMaxHeight}" />
-    <Setter Property="MinHeight" Value="{StaticResource ChoiceListMinHeight}" />
+    <Setter Property="Height" Value="{StaticResource ChoiceListHeight}" />
     <Setter Property="Padding" Value="{StaticResource SpaceXs}" />
     <Setter Property="HorizontalContentAlignment" Value="Stretch" />
     <Setter Property="SnapsToDevicePixels" Value="True" />
@@ -746,8 +745,13 @@
                   <ContentPresenter Grid.Column="1" ContentSource="Header" VerticalAlignment="Center" />
 
                   <!-- The summary of what is folded away. Quiet, and on the far side of the header, so
-                       the eye reads the section name first and the setting second. -->
-                  <ContentPresenter Grid.Column="2"
+                       the eye reads the section name first and the setting second.
+
+                       🔴 IT SHOWS ONLY WHILE THE SECTION IS FOLDED, which is the whole of what it is for:
+                       an open section already says all of this in its body, and printing it twice put the
+                       same row on one screen twice over. Measured on the first render of the setup phase,
+                       where the moment appeared in this header and again in the sentence above Start. -->
+                  <ContentPresenter x:Name="Summary" Grid.Column="2"
                                     Content="{Binding Tag, RelativeSource={RelativeSource TemplatedParent}}"
                                     HorizontalAlignment="Right"
                                     VerticalAlignment="Center" />
@@ -769,6 +773,7 @@
                   <RotateTransform Angle="180" />
                 </Setter.Value>
               </Setter>
+              <Setter TargetName="Summary" Property="Visibility" Value="Collapsed" />
             </Trigger>
             <Trigger SourceName="HeaderToggle" Property="IsMouseOver" Value="True">
               <Setter TargetName="Chevron" Property="Stroke" Value="{DynamicResource BrushTextPrimary}" />

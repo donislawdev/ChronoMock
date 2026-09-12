@@ -128,7 +128,7 @@
         <HeaderedContentControl Style="{StaticResource PartFormRow}"
                                 IsEnabled="{Binding IsIdle}">
           <HeaderedContentControl.Header>
-            <TextBlock Style="{StaticResource PartLabel}" Text="{DynamicResource target.label}" />
+            <TextBlock Style="{StaticResource PartLabel}" Text="{DynamicResource setup.label_target}" />
           </HeaderedContentControl.Header>
           <StackPanel Orientation="Horizontal">
             <ComboBox ItemsSource="{Binding RecentTargets}" SelectedItem="{Binding SelectedTarget}"
@@ -183,45 +183,16 @@
 
         <StackPanel Grid.IsSharedSizeScope="True">
 
-          <!-- The scenarios, searched rather than scanned. The catalogue is meant to grow well past what
-               a row of chips could hold, and the search box is what keeps that growth free. Picking one
-               fills the date below and nothing else (untouchable rule 7). -->
-          <StackPanel Visibility="{Binding ScenarioPicker.HasScenarios, Converter={StaticResource BoolToVis}}">
-            <TextBox Text="{Binding ScenarioPicker.Filter, UpdateSourceTrigger=PropertyChanged}"
-                     app:PartState.Placeholder="{DynamicResource scenario.filter_placeholder}" />
-            <Grid Margin="{StaticResource StackGapSm}">
-              <ListBox ItemsSource="{Binding ScenarioPicker.Visible}"
-                       SelectedItem="{Binding SelectedScenario}"
-                       ItemTemplate="{StaticResource ScenarioRow}"
-                       ItemContainerStyle="{StaticResource ScenarioRowContainer}"
-                       ToolTip="{DynamicResource tip.scenario}" />
-              <!-- Inside the well, not under it: the sentence explaining an empty list has to appear
-                   where the list was, or the screen answers by moving rather than by speaking. -->
-              <TextBlock Style="{StaticResource PartCaption}"
-                         Margin="{StaticResource SpaceMd}"
-                         HorizontalAlignment="Center" VerticalAlignment="Center"
-                         Text="{DynamicResource scenario.no_matches}"
-                         Visibility="{Binding ScenarioPicker.HasNoMatches, Converter={StaticResource BoolToVis}}" />
-            </Grid>
-
-            <TextBlock Style="{StaticResource PartCaption}" Margin="{StaticResource StackGapSm}"
-                       Text="{Binding ScenarioExplains}"
-                       Visibility="{Binding HasSelectedScenario, Converter={StaticResource BoolToVis}}" />
-            <TextBlock Style="{StaticResource PartFieldMessage}" Margin="{StaticResource StackGapSm}"
-                       Text="{Binding ScenarioErrorKey, Converter={StaticResource KeyToText}}"
-                       Visibility="{Binding HasScenarioError, Converter={StaticResource BoolToVis}}" />
-            <TextBlock Style="{StaticResource PartCaption}" Margin="{StaticResource StackGapSm}"
-                       Visibility="{Binding ScenarioPicker.HasNeedingParameters, Converter={StaticResource BoolToVis}}">
-              <Run Text="{Binding ScenarioPicker.NeedingParameters, Mode=OneWay}" /><Run Text=" " /><Run Text="{DynamicResource scenario.needs_parameters}" />
-            </TextBlock>
-          </StackPanel>
-
-          <!-- The date and time, which are the ONLY source of truth for the moment: a scenario and the
-               shift below both fill this and nothing else, so there is one place to read what the
-               application will be told. -->
-          <HeaderedContentControl Style="{StaticResource PartFormRow}" Margin="{StaticResource StackGapLg}">
+          <!--
+            🔴 THE ANSWER FIRST, THE WAYS OF REACHING IT AFTER. The date and time are the ONLY source of
+            truth for the moment, and both things below - the shift and the scenario catalogue - do
+            nothing but fill them. The first build of this screen put the catalogue ABOVE the field and
+            the shift below it, so one filler stood on each side of the thing they fill, and the answer
+            itself sat 390 px into the section. Reading order now says what the code says.
+          -->
+          <HeaderedContentControl Style="{StaticResource PartFormRow}">
             <HeaderedContentControl.Header>
-              <TextBlock Style="{StaticResource PartLabel}" Text="{DynamicResource moment.label}" />
+              <TextBlock Style="{StaticResource PartLabel}" Text="{DynamicResource setup.label_at}" />
             </HeaderedContentControl.Header>
             <StackPanel Orientation="Horizontal">
               <controls:MomentInput DataContext="{Binding Moment}" />
@@ -239,7 +210,7 @@
 
           <HeaderedContentControl Style="{StaticResource PartFormRow}">
             <HeaderedContentControl.Header>
-              <TextBlock Style="{StaticResource PartLabel}" Text="{DynamicResource zone.label}" />
+              <TextBlock Style="{StaticResource PartLabel}" Text="{DynamicResource setup.label_zone}" />
             </HeaderedContentControl.Header>
             <ComboBox ItemsSource="{Binding Zones}" SelectedItem="{Binding SelectedZone}"
                       ItemContainerStyle="{StaticResource ZoneRow}"
@@ -256,7 +227,7 @@
           <HeaderedContentControl Style="{StaticResource PartFormRow}"
                                   DataContext="{Binding Relative}">
             <HeaderedContentControl.Header>
-              <TextBlock Style="{StaticResource PartLabel}" Text="{DynamicResource moment.relative_label}" />
+              <TextBlock Style="{StaticResource PartLabel}" Text="{DynamicResource setup.label_shift}" />
             </HeaderedContentControl.Header>
             <StackPanel Orientation="Horizontal">
               <ComboBox ItemsSource="{Binding Signs}" SelectedItem="{Binding Sign}"
@@ -286,6 +257,44 @@
                          Visibility="{Binding HasError, Converter={StaticResource BoolToVis}}" />
             </HeaderedContentControl.Tag>
           </HeaderedContentControl>
+
+          <!-- The catalogue, searched rather than scanned, and last because it is the second way of
+               filling the field above rather than a setting of its own. It says so in a sentence: a list
+               that just sits there does not explain what choosing from it will do (untouchable rule 7 -
+               it fills the date and starts nothing). -->
+          <StackPanel Margin="{StaticResource StackGapLg}"
+                      Visibility="{Binding ScenarioPicker.HasScenarios, Converter={StaticResource BoolToVis}}">
+            <TextBlock Style="{StaticResource PartCaption}"
+                       Text="{DynamicResource setup.or_pick_scenario}" />
+            <TextBox Margin="{StaticResource StackGapSm}"
+                     Text="{Binding ScenarioPicker.Filter, UpdateSourceTrigger=PropertyChanged}"
+                     app:PartState.Placeholder="{DynamicResource scenario.filter_placeholder}" />
+            <Grid Margin="{StaticResource StackGapSm}">
+              <ListBox ItemsSource="{Binding ScenarioPicker.Visible}"
+                       SelectedItem="{Binding SelectedScenario}"
+                       ItemTemplate="{StaticResource ScenarioRow}"
+                       ItemContainerStyle="{StaticResource ScenarioRowContainer}"
+                       ToolTip="{DynamicResource tip.scenario}" />
+              <!-- Inside the well, not under it: the sentence explaining an empty list has to appear
+                   where the list was, or the screen answers by moving rather than by speaking. -->
+              <TextBlock Style="{StaticResource PartCaption}"
+                         Margin="{StaticResource SpaceMd}"
+                         HorizontalAlignment="Center" VerticalAlignment="Center"
+                         Text="{DynamicResource scenario.no_matches}"
+                         Visibility="{Binding ScenarioPicker.HasNoMatches, Converter={StaticResource BoolToVis}}" />
+            </Grid>
+
+            <TextBlock Style="{StaticResource PartCaption}" Margin="{StaticResource StackGapSm}"
+                       Text="{Binding ScenarioExplains}"
+                       Visibility="{Binding HasSelectedScenario, Converter={StaticResource BoolToVis}}" />
+            <TextBlock Style="{StaticResource PartFieldMessage}" Margin="{StaticResource StackGapSm}"
+                       Text="{Binding ScenarioErrorKey, Converter={StaticResource KeyToText}}"
+                       Visibility="{Binding HasScenarioError, Converter={StaticResource BoolToVis}}" />
+            <TextBlock Style="{StaticResource PartCaption}" Margin="{StaticResource StackGapSm}"
+                       Visibility="{Binding ScenarioPicker.HasNeedingParameters, Converter={StaticResource BoolToVis}}">
+              <Run Text="{Binding ScenarioPicker.NeedingParameters, Mode=OneWay}" /><Run Text=" " /><Run Text="{DynamicResource scenario.needs_parameters}" />
+            </TextBlock>
+          </StackPanel>
         </StackPanel>
       </Expander>
 
@@ -304,7 +313,7 @@
         <StackPanel Grid.IsSharedSizeScope="True">
           <HeaderedContentControl Style="{StaticResource PartFormRow}">
             <HeaderedContentControl.Header>
-              <TextBlock Style="{StaticResource PartLabel}" Text="{DynamicResource mode.label}" />
+              <TextBlock Style="{StaticResource PartLabel}" Text="{DynamicResource setup.label_mode}" />
             </HeaderedContentControl.Header>
             <ComboBox ItemsSource="{Binding Modes}" SelectedItem="{Binding SelectedMode}"
                       ItemContainerStyle="{StaticResource LabelKeyRow}"
@@ -348,7 +357,7 @@
         <StackPanel Grid.IsSharedSizeScope="True">
           <HeaderedContentControl Style="{StaticResource PartFormRow}">
             <HeaderedContentControl.Header>
-              <TextBlock Style="{StaticResource PartLabel}" Text="{DynamicResource launch.args_label}" />
+              <TextBlock Style="{StaticResource PartLabel}" Text="{DynamicResource setup.label_args}" />
             </HeaderedContentControl.Header>
             <TextBox Text="{Binding TargetArgs, UpdateSourceTrigger=PropertyChanged}"
                      ToolTip="{DynamicResource tip.target_args}"
@@ -357,7 +366,7 @@
 
           <HeaderedContentControl Style="{StaticResource PartFormRow}">
             <HeaderedContentControl.Header>
-              <TextBlock Style="{StaticResource PartLabel}" Text="{DynamicResource launch.cwd_label}" />
+              <TextBlock Style="{StaticResource PartLabel}" Text="{DynamicResource setup.label_cwd}" />
             </HeaderedContentControl.Header>
             <StackPanel Orientation="Horizontal">
               <TextBox Text="{Binding WorkingFolder, UpdateSourceTrigger=PropertyChanged}"

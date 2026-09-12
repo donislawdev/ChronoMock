@@ -103,16 +103,24 @@
   <Thickness x:Key="SectionChevronGap">0,0,8,0</Thickness>
   <Thickness x:Key="SectionBodyGap">0,12,0,0</Thickness>
 
-  <!-- A list of choices that is searched rather than scanned. The cap is what keeps a growing catalogue
-       from taking the screen: the list scrolls inside it, and the filter box above it does the finding. -->
-  <sys:Double x:Key="ChoiceListMaxHeight">240</sys:Double>
-  <!-- 🔴 And a FLOOR, which the render is what asked for: an empty list collapses to a sliver, so a
-       filter that matched nothing turned the well into a line and dropped everything under it up the
-       screen. Three control heights - enough to read as a list rather than a rule, and enough to hold
-       the sentence saying why it is empty. A floor, not a freeze: between this and the cap the well
-       still sizes to its contents, which is the honest trade against a list that never moves and is
-       mostly blank on a small install. -->
-  <sys:Double x:Key="ChoiceListMinHeight">96</sys:Double>
+  <!--
+    A list of choices that is searched rather than scanned. The height keeps a growing catalogue from
+    taking the screen: the list scrolls inside it, and the filter box above it does the finding.
+
+    🔴 IT IS A FIXED HEIGHT, NOT A CAP, and the search box is the entire reason. A well that sized to its
+    contents changed height on every keystroke - measured at 144 px between the full catalogue and a
+    filter that matched nothing - so the screen moved under the hands of somebody who was reading it. A
+    cap plus a floor was tried first and only made the movement smaller, which is the same fault quieter.
+    The cost is a partly empty well on an install with three presets, and that is the cheaper half: a
+    blank strip is untidy, while a button that walks away as you type is a mistake waiting to be made.
+  -->
+  <sys:Double x:Key="ChoiceListHeight">240</sys:Double>
+
+  <!-- The floating list of a drop-down, which is a CAP rather than a height: nothing searches it, so it
+       may be as short as its contents and only needs stopping before it runs off the screen. Same number
+       as the well above and a different decision, which is why it is a different name - the day one of
+       them moves, the other must not follow by accident. -->
+  <sys:Double x:Key="DropDownMaxHeight">240</sys:Double>
 
   <!-- The three fields of the "relative to now" shift, which is one idea spread over three controls and
        therefore needs its widths named together rather than each guessed where it stands. The sign holds

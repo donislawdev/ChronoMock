@@ -49,6 +49,24 @@
   // sentence does not repeat them.
   "setup.contract_speed": "w tempie",
 
+  // 🔴 The form labels again, without their trailing colons. A colon separates a label from a value on
+  // one line; in a label column the alignment already does that, and the colons only made a ragged right
+  // edge down the column. They are new keys rather than edits to the shipped ones because the old panel
+  // still binds those, and the rework measures itself on its renders not moving. The pair goes when the
+  // old panel does.
+  "setup.label_target": "Cel",
+  "setup.label_at": "Moment",
+  "setup.label_zone": "Strefa",
+  "setup.label_shift": "Względem teraz",
+  "setup.label_mode": "Tryb",
+  "setup.label_args": "Argumenty",
+  "setup.label_cwd": "Katalog roboczy",
+
+  // The two ways of filling the moment, both of them shortcuts to the field above rather than settings of
+  // their own. Said out loud, because a list that just sits there does not explain what choosing from it
+  // will do.
+  "setup.or_pick_scenario": "Albo wybierz nazwany moment - wypełni datę powyżej.",
+
   // Marks a recent target whose file is gone (a wiped build output, an uninstalled app). Shown rather than the entry being dropped, so the list never goes quiet about why a shortcut will not work (rule 6).
   "target.missing": "(brak pliku)",
 
