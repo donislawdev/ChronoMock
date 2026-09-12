@@ -129,17 +129,18 @@
     </ResourceDictionary>
   </UserControl.Resources>
 
-  <!-- 🔴 THE FORM SCROLLS, THE ACTION DOES NOT. This phase is around 940 px tall and the window may be
-       360, so Start used to sit below the fold - the one button the screen exists for had to be hunted
-       for, and the sentence explaining why it was refusing went with it. -->
+  <!-- 🔴 THE FORM SCROLLS, THE ACTION DOES NOT. This phase comes to around 710 px, the window opens at
+       800 and may be dragged down to 360, so Start used to sit below the fold - the one button the screen
+       exists for had to be hunted for, and the sentence explaining why it was refusing went with it. -->
   <Grid>
     <Grid.RowDefinitions>
       <RowDefinition Height="*" />
       <RowDefinition Height="Auto" />
     </Grid.RowDefinitions>
 
-  <ScrollViewer Grid.Row="0" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-    <StackPanel Margin="{StaticResource SpaceXl}">
+  <ScrollViewer x:Name="FormScroll" Grid.Row="0"
+                VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+    <StackPanel Margin="{StaticResource ScrollFormInset}">
 
       <!-- 🔴 What this screen does, and what it will not do, for somebody who has no way of knowing
            either. The second half is the product's whole promise and the question a stranger actually
@@ -154,16 +155,19 @@
         THE APPLICATION, and it never folds away. It is the one answer without which nothing else on this
         screen means anything, and the only one whose absence stops Start.
       -->
-      <Border Style="{StaticResource PartCard}" Grid.IsSharedSizeScope="True">
-        <HeaderedContentControl Style="{StaticResource PartFormRow}"
-                                IsEnabled="{Binding IsIdle}">
-          <HeaderedContentControl.Header>
-            <TextBlock Style="{StaticResource PartLabel}" Text="{DynamicResource setup.label_target}" />
-          </HeaderedContentControl.Header>
-          <StackPanel Orientation="Horizontal">
+      <!-- 🔴 A TITLED GROUP, not a labelled field, and the difference is the whole hierarchy of this
+           screen. The other three groups below are sections with a title of their own, so a card whose
+           name sat in a form-row label column was the same text at the same size as "Starts at" inside
+           one of them - the most important answer on the screen wearing the typography of a detail.
+           Four groups, four titles, one left edge. -->
+      <Border Style="{StaticResource PartCard}" Margin="{StaticResource StackGapXl}">
+        <StackPanel IsEnabled="{Binding IsIdle}">
+          <TextBlock Style="{StaticResource PartHeading}" Text="{DynamicResource setup.label_target}" />
+          <StackPanel Orientation="Horizontal" Margin="{StaticResource StackGapSm}">
             <ComboBox ItemsSource="{Binding RecentTargets}" SelectedItem="{Binding SelectedTarget}"
                       ItemContainerStyle="{StaticResource RecentTargetRow}"
                       ToolTip="{DynamicResource setup.tip_recent}"
+                      AutomationProperties.Name="{DynamicResource setup.label_target}"
                       MaxWidth="{StaticResource TargetBoxMaxWidth}"
                       Visibility="{Binding HasRecentTargets, Converter={StaticResource BoolToVis}}">
               <ComboBox.ItemTemplate>
@@ -185,27 +189,33 @@
                     app:PartState.IsSuggested="{Binding ShowsDropHint}"
                     Margin="{StaticResource SpaceXs}" />
           </StackPanel>
-          <HeaderedContentControl.Tag>
+          <!-- 🔴 The floor is the point, not the hint. This line empties out the moment an application is
+               chosen, and without a reserved height the card would shrink by one line at that instant and
+               drag the whole form up under the reader's cursor. Same height, occupied or not - which is
+               what PartFormRow does for a field message, and what this has to do by hand now that the
+               card is a titled group rather than a row. -->
+          <Grid Margin="{StaticResource StackGapSm}" MinHeight="{StaticResource FieldMessageHeight}">
             <TextBlock Style="{StaticResource PartCaption}"
                        Text="{DynamicResource target.drop_hint}"
                        Visibility="{Binding ShowsDropHint, Converter={StaticResource BoolToVis}}" />
-          </HeaderedContentControl.Tag>
-        </HeaderedContentControl>
+          </Grid>
+        </StackPanel>
       </Border>
 
       <!--
-        THE MOMENT, open by default. Two of the four groups on this screen have to be answered, and this
+        THE MOMENT, open by default. Two of the five groups on this screen have to be answered, and this
         is the second - a first contact that had to open something to find the date field would have been
-        the old fault in a new shape.
+        the old fault in a new shape. It is also why the other three are folded: on a screen where
+        everything is open, "which of these do I have to fill in" has no answer.
 
         Its header carries the moment itself, or the reason it is not a moment. A folded section whose
         summary went blank exactly when something was wrong would be hiding the one thing worth showing.
       -->
       <Expander Style="{StaticResource PartSection}" IsExpanded="True"
-                Margin="{StaticResource StackGapSm}"
+                Margin="{StaticResource StackGapXl}"
                 IsEnabled="{Binding CanEditTime}">
         <Expander.Header>
-          <TextBlock Style="{StaticResource PartLabel}" Text="{DynamicResource setup.section_moment}" />
+          <TextBlock Style="{StaticResource PartHeading}" Text="{DynamicResource setup.section_moment}" />
         </Expander.Header>
         <Expander.Tag>
           <Grid>
@@ -305,44 +315,80 @@
                          Visibility="{Binding HasError, Converter={StaticResource BoolToVis}}" />
             </HeaderedContentControl.Tag>
           </HeaderedContentControl>
+        </StackPanel>
+      </Expander>
 
-          <!-- The catalogue, searched rather than scanned, and last because it is the second way of
-               filling the field above rather than a setting of its own. It says so in a sentence: a list
-               that just sits there does not explain what choosing from it will do (untouchable rule 7 -
-               it fills the date and starts nothing). -->
-          <StackPanel Margin="{StaticResource StackGapLg}"
-                      Visibility="{Binding ScenarioPicker.HasScenarios, Converter={StaticResource BoolToVis}}">
-            <TextBlock Style="{StaticResource PartCaption}"
-                       Text="{DynamicResource setup.or_pick_scenario}" />
-            <TextBox Margin="{StaticResource StackGapSm}"
-                     Text="{Binding ScenarioPicker.Filter, UpdateSourceTrigger=PropertyChanged}"
-                     app:PartState.Placeholder="{DynamicResource scenario.filter_placeholder}" />
-            <Grid Margin="{StaticResource StackGapSm}">
-              <ListBox ItemsSource="{Binding ScenarioPicker.Visible}"
-                       SelectedItem="{Binding SelectedScenario}"
-                       ItemTemplate="{StaticResource ScenarioRow}"
-                       ItemContainerStyle="{StaticResource ScenarioRowContainer}"
-                       ToolTip="{DynamicResource tip.scenario}" />
-              <!-- Inside the well, not under it: the sentence explaining an empty list has to appear
-                   where the list was, or the screen answers by moving rather than by speaking. -->
-              <TextBlock Style="{StaticResource PartCaption}"
-                         Margin="{StaticResource SpaceMd}"
-                         HorizontalAlignment="Center" VerticalAlignment="Center"
-                         Text="{DynamicResource scenario.no_matches}"
-                         Visibility="{Binding ScenarioPicker.HasNoMatches, Converter={StaticResource BoolToVis}}" />
-            </Grid>
+      <!--
+        THE SCENARIO CATALOGUE, its own group and folded.
 
-            <TextBlock Style="{StaticResource PartCaption}" Margin="{StaticResource StackGapSm}"
-                       Text="{Binding ScenarioExplains}"
+        🔴 IT USED TO LIVE INSIDE THE SECTION ABOVE, and that was measured as the thing wrong with this
+        screen. At the window's real height the moment section came to 603 px of a 671 px viewport - the
+        catalogue alone is a 240 px well, a search field and two sentences - so Speed and Arguments were
+        not merely below the fold, they were INVISIBLE on a first run. Four groups where one is nine
+        tenths of the height is not a hierarchy, and "twelve blocks all looked equally required" would
+        have come back as "two of the four groups do not exist".
+
+        Folded rather than removed, and its header says how many dates are inside, because a closed
+        section that gives no reason to open it is a hidden feature. The reading order still puts the
+        ANSWER first and the ways of reaching it after: the date and time are above, this fills them.
+      -->
+      <!-- Named so the state sheet can open it. A folded section's contents are a state of the screen
+           like any other, and one that can only be reached by clicking is one nobody reviews. -->
+      <Expander x:Name="ScenarioSection"
+                Style="{StaticResource PartSection}" Margin="{StaticResource StackGapXl}"
+                IsEnabled="{Binding CanEditTime}"
+                Visibility="{Binding ScenarioPicker.HasScenarios, Converter={StaticResource BoolToVis}}">
+        <Expander.Header>
+          <TextBlock Style="{StaticResource PartHeading}" Text="{DynamicResource setup.section_scenario}" />
+        </Expander.Header>
+        <Expander.Tag>
+          <Grid>
+            <!-- Which one was chosen, or how many there are to choose from - never both, and never
+                 nothing. -->
+            <TextBlock Style="{StaticResource PartCaption}" TextWrapping="NoWrap"
+                       TextTrimming="CharacterEllipsis"
+                       Text="{Binding SelectedScenario.DisplayName}"
                        Visibility="{Binding HasSelectedScenario, Converter={StaticResource BoolToVis}}" />
-            <TextBlock Style="{StaticResource PartFieldMessage}" Margin="{StaticResource StackGapSm}"
-                       Text="{Binding ScenarioErrorKey, Converter={StaticResource KeyToText}}"
-                       Visibility="{Binding HasScenarioError, Converter={StaticResource BoolToVis}}" />
-            <TextBlock Style="{StaticResource PartCaption}" Margin="{StaticResource StackGapSm}"
-                       Visibility="{Binding ScenarioPicker.HasNeedingParameters, Converter={StaticResource BoolToVis}}">
-              <Run Text="{Binding ScenarioPicker.NeedingParameters, Mode=OneWay}" /><Run Text=" " /><Run Text="{DynamicResource setup.scenario_parametric}" />
+            <TextBlock Style="{StaticResource PartCaption}" TextWrapping="NoWrap"
+                       Visibility="{Binding HasNoSelectedScenario, Converter={StaticResource BoolToVis}}">
+              <Run Text="{DynamicResource setup.scenario_available}" /><Run Text=" " /><Run Text="{Binding ScenarioPicker.Available, Mode=OneWay}" />
             </TextBlock>
-          </StackPanel>
+          </Grid>
+        </Expander.Tag>
+
+        <!-- A list that just sits there does not explain what choosing from it will do (untouchable
+             rule 7 - it fills the date and starts nothing), so it says so in a sentence. -->
+        <StackPanel>
+          <TextBlock Style="{StaticResource PartCaption}"
+                     Text="{DynamicResource setup.or_pick_scenario}" />
+          <TextBox Margin="{StaticResource StackGapSm}"
+                   Text="{Binding ScenarioPicker.Filter, UpdateSourceTrigger=PropertyChanged}"
+                   app:PartState.Placeholder="{DynamicResource scenario.filter_placeholder}" />
+          <Grid Margin="{StaticResource StackGapSm}">
+            <ListBox ItemsSource="{Binding ScenarioPicker.Visible}"
+                     SelectedItem="{Binding SelectedScenario}"
+                     ItemTemplate="{StaticResource ScenarioRow}"
+                     ItemContainerStyle="{StaticResource ScenarioRowContainer}"
+                     ToolTip="{DynamicResource tip.scenario}" />
+            <!-- Inside the well, not under it: the sentence explaining an empty list has to appear
+                 where the list was, or the screen answers by moving rather than by speaking. -->
+            <TextBlock Style="{StaticResource PartCaption}"
+                       Margin="{StaticResource SpaceMd}"
+                       HorizontalAlignment="Center" VerticalAlignment="Center"
+                       Text="{DynamicResource scenario.no_matches}"
+                       Visibility="{Binding ScenarioPicker.HasNoMatches, Converter={StaticResource BoolToVis}}" />
+          </Grid>
+
+          <TextBlock Style="{StaticResource PartCaption}" Margin="{StaticResource StackGapSm}"
+                     Text="{Binding ScenarioExplains}"
+                     Visibility="{Binding HasSelectedScenario, Converter={StaticResource BoolToVis}}" />
+          <TextBlock Style="{StaticResource PartFieldMessage}" Margin="{StaticResource StackGapSm}"
+                     Text="{Binding ScenarioErrorKey, Converter={StaticResource KeyToText}}"
+                     Visibility="{Binding HasScenarioError, Converter={StaticResource BoolToVis}}" />
+          <TextBlock Style="{StaticResource PartCaption}" Margin="{StaticResource StackGapSm}"
+                     Visibility="{Binding ScenarioPicker.ShowsParametricNote, Converter={StaticResource BoolToVis}}">
+            <Run Text="{Binding ScenarioPicker.NeedingParameters, Mode=OneWay}" /><Run Text=" " /><Run Text="{DynamicResource setup.scenario_parametric}" />
+          </TextBlock>
         </StackPanel>
       </Expander>
 
@@ -350,9 +396,9 @@
         SPEED AND OPTIONS, folded. Its header answers the question it would open to answer, which is the
         whole bargain of folding: the speed and every option that is on are readable without a click.
       -->
-      <Expander Style="{StaticResource PartSection}" Margin="{StaticResource StackGapSm}">
+      <Expander Style="{StaticResource PartSection}" Margin="{StaticResource StackGapXl}">
         <Expander.Header>
-          <TextBlock Style="{StaticResource PartLabel}" Text="{DynamicResource setup.section_speed}" />
+          <TextBlock Style="{StaticResource PartHeading}" Text="{DynamicResource setup.section_speed}" />
         </Expander.Header>
         <Expander.Tag>
           <ContentControl Template="{StaticResource SpeedSummary}" />
@@ -404,10 +450,10 @@
         most sessions need neither, and a summary that said "none" three times would be noise standing
         where information goes.
       -->
-      <Expander Style="{StaticResource PartSection}" Margin="{StaticResource StackGapSm}"
+      <Expander Style="{StaticResource PartSection}" Margin="{StaticResource StackGapXl}"
                 IsEnabled="{Binding IsIdle}">
         <Expander.Header>
-          <TextBlock Style="{StaticResource PartLabel}" Text="{DynamicResource launch.header}" />
+          <TextBlock Style="{StaticResource PartHeading}" Text="{DynamicResource launch.header}" />
         </Expander.Header>
         <Expander.Tag>
           <TextBlock Style="{StaticResource PartCaption}" TextWrapping="NoWrap"
@@ -464,7 +510,11 @@
         <TextBlock Style="{StaticResource PartCaption}" TextWrapping="NoWrap"
                    VerticalAlignment="Center"
                    Text="{DynamicResource moment.preview_label}" />
-        <TextBlock Style="{StaticResource PartLabel}" Margin="{StaticResource SpaceXs}"
+        <!-- 🔴 THE ANSWER, and the largest text on the screen because it is the most important. Measured
+             on the first render: this line held four size changes (12, 14, 12, 14) and nothing in it
+             dominated, so the one sentence the whole screen exists to produce read as evenly grey as the
+             help text above it. One peak per screen, and this is it. -->
+        <TextBlock Style="{StaticResource PartHeading}" Margin="{StaticResource SpaceXs}"
                    Text="{Binding MomentPreview}" />
         <!-- 🔴 The rate, and deliberately NOT the option chips beside it in the speed header. This
              sentence is about the CLOCK the application will read: the instant and the rate are what it

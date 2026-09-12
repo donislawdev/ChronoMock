@@ -39,8 +39,10 @@ public sealed class ScenarioPicker : ObservableObject
         _catalogue = ScenarioCatalog.Load(presetsDir);
         Narrow();
         RaisePropertyChanged(nameof(HasScenarios));
+        RaisePropertyChanged(nameof(Available));
         RaisePropertyChanged(nameof(NeedingParameters));
         RaisePropertyChanged(nameof(HasNeedingParameters));
+        RaisePropertyChanged(nameof(ShowsParametricNote));
     }
 
     /// <summary>What the tester typed to narrow the list. Empty, or only spaces, shows everything.</summary>
@@ -64,6 +66,17 @@ public sealed class ScenarioPicker : ObservableObject
     public bool HasScenarios => _catalogue.Ready.Count > 0;
 
     /// <summary>
+    /// How many scenarios the list offers, unfiltered.
+    /// </summary>
+    /// <remarks>
+    /// 🔴 It exists so a FOLDED catalogue can advertise itself. The section holding it is closed on a
+    /// first run, and a closed section saying only "Scenarios" gives a reader no reason to open it - while
+    /// one saying there are sixteen ready-made dates inside is the reason. Unfiltered on purpose: the
+    /// number is about what is installed, not about what a search left standing.
+    /// </remarks>
+    public int Available => _catalogue.Ready.Count;
+
+    /// <summary>
     /// True when there ARE scenarios and the filter hid all of them.
     /// </summary>
     /// <remarks>
@@ -80,6 +93,18 @@ public sealed class ScenarioPicker : ObservableObject
     /// <summary>True when at least one preset was left out for taking parameters.</summary>
     public bool HasNeedingParameters => _catalogue.NeedingParameters > 0;
 
+    /// <summary>
+    /// Whether to print the "N more need a value you choose" line under the well.
+    /// </summary>
+    /// <remarks>
+    /// 🔴 NOT WHILE A SEARCH FOUND NOTHING. The count is about the whole catalogue, but the line sits
+    /// directly under the well - so with an empty result it read as the explanation of that result, as
+    /// if three scenarios HAD matched and were waiting for a value. Measured on the setup-no-matches
+    /// render, where it stood one line below "No scenario matches that". The sentence is about what is
+    /// installed, and it says so only when the list beside it is showing what is installed.
+    /// </remarks>
+    public bool ShowsParametricNote => HasNeedingParameters && !HasNoMatches;
+
     private void Narrow()
     {
         var needle = _filter.Trim();
@@ -90,6 +115,7 @@ public sealed class ScenarioPicker : ObservableObject
 
         RaisePropertyChanged(nameof(Visible));
         RaisePropertyChanged(nameof(HasNoMatches));
+        RaisePropertyChanged(nameof(ShowsParametricNote));
     }
 
     /// <summary>

@@ -72,9 +72,10 @@
 
     Where a screen's action lives, held at the bottom while everything above it scrolls.
 
-    🔴 THE REASON IS MEASURED, not stylistic. The setup phase is around 940 px tall and the window may be
-    360, so the one button the screen exists for was below the fold and had to be hunted for. A footer
-    does not make the screen shorter - it makes the action reachable without knowing there is more of it.
+    🔴 THE REASON IS MEASURED, not stylistic. The setup phase comes to around 710 px, the window opens at
+    800 and may be dragged down to 360, so the one button the screen exists for was below the fold and
+    had to be hunted for. A footer does not make the screen shorter - it makes the action reachable
+    without knowing there is more of it.
 
     It carries the base background rather than the card's, because content has to disappear UNDER it
     rather than through it, and the single top edge is what says the scrolling stopped here. An all-round
@@ -93,10 +94,21 @@
 
     Named text roles, so a view says what a piece of text IS rather than how big it is. Sizes come from
     the five-step scale and nowhere else.
+
+    🔴 THREE ROLES, AND THE SCREEN HAS TO USE ALL THREE. Measured on the first setup render: 13 labels,
+    19 captions and NOT ONE heading, so a section title and the field label under it were the same size,
+    the same weight and the same ink. There was nothing left to tell a reader which level they were
+    looking at, and the whole screen read as one list of equal things.
+
+    It is called a heading rather than a section heading because it is one step above body wherever that
+    step is needed - the title of a group, and the answer a footer exists to state. Two names for one
+    appearance is the same fault as one name for two, in the other direction.
   -->
-  <Style x:Key="PartSectionHeading" TargetType="TextBlock">
+  <Style x:Key="PartHeading" TargetType="TextBlock">
     <Setter Property="FontSize" Value="{StaticResource FontSizeSubtitle}" />
+    <Setter Property="FontWeight" Value="{StaticResource FontWeightHeading}" />
     <Setter Property="Foreground" Value="{DynamicResource BrushTextPrimary}" />
+    <Setter Property="VerticalAlignment" Value="Center" />
   </Style>
 
   <Style x:Key="PartLabel" TargetType="TextBlock">
@@ -539,12 +551,20 @@
     The well a list of choices is read in, with a search field above it doing the finding. The catalogue
     it holds is meant to grow well past what a row of chips can carry, which is why it is a list at all.
 
-    🔴 IT HAS AN EDGE AND NO FILL, and that is arithmetic rather than taste. BrushBgSurfaceAlt and
-    BrushControlRest are the SAME neutral (both Neutral03), and BrushControlRest is what a selected row
-    paints itself with - so any surface fill on this container would erase the selection it exists to
-    show. With no fill, the rows read against whatever holds the list: on a card that is Neutral02, one
-    step under the selected row and two under a hovered one. The edge is what says "you can act on this",
-    exactly as the card comment promises, and it is the same 3.0-contrast border every other control has.
+    🔴 IT IS RECESSED: the fill goes DOWN to the base neutral, one step BELOW the card holding it. The
+    first version of this part had no fill at all, on arithmetic that was half right - BrushBgSurfaceAlt
+    and BrushControlRest are the SAME neutral (both Neutral03), so filling the well with the alt surface
+    would have erased the selected row it exists to show. The conclusion was the wrong way out. Going
+    down instead of up avoids that collision and improves every reading, measured on the render:
+
+        selected row against the ground   1.13 -> 1.29
+        hovered row against the ground    1.42 -> 1.62
+        row text against the ground       7.32 -> 8.35
+
+    Against the card it sits in this is 1.14 - the SAME step the card already takes against the window,
+    which the card comment defends as what every dark interface uses for one level. With no fill the well
+    was exactly 1.00 against its card, so a container and its contents were one surface and the screen
+    lost a level it needed. The edge still says "you can act on this", as the card comment promises.
 
     🔴 THE THREE VIRTUALISATION SETTERS ARE LOAD-BEARING, not ceremony. A hand-written template drops
     what the toolkit's own ListBox style sets, and the loss is silent: a list of forty scenarios looks
@@ -555,7 +575,7 @@
     one fact is the thing this library is trying not to do.
   -->
   <Style TargetType="ListBox">
-    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="Background" Value="{DynamicResource BrushBgBase}" />
     <Setter Property="BorderBrush" Value="{DynamicResource BrushControlBorder}" />
     <Setter Property="Foreground" Value="{DynamicResource BrushTextPrimary}" />
     <Setter Property="FontSize" Value="{StaticResource FontSizeBody}" />
@@ -691,7 +711,8 @@
     The screen holding the rows has to set Grid.IsSharedSizeScope="True", which is the one thing a
     caller must remember; without it the rows still work and simply stop agreeing with each other.
 
-    The message line under the control is always there, occupied or not. See FieldMessageHeight.
+    The message line under the control keeps its height whether it is occupied or not, so a message
+    appearing does not shove the form - but only on rows that were GIVEN one. See the trigger below.
   -->
   <Style x:Key="PartFormRow" TargetType="HeaderedContentControl">
     <Setter Property="HorizontalContentAlignment" Value="Left" />
@@ -705,7 +726,7 @@
             </Grid.ColumnDefinitions>
             <Grid.RowDefinitions>
               <RowDefinition Height="Auto" />
-              <RowDefinition Height="Auto" MinHeight="{StaticResource FieldMessageHeight}" />
+              <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
 
             <ContentPresenter Grid.Row="0" Grid.Column="0"
@@ -716,10 +737,22 @@
             <ContentPresenter Grid.Row="0" Grid.Column="1"
                               HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
                               VerticalAlignment="Center" />
-            <ContentPresenter Grid.Row="1" Grid.Column="1"
+            <ContentPresenter x:Name="MessageSlot" Grid.Row="1" Grid.Column="1"
                               Content="{Binding Tag, RelativeSource={RelativeSource TemplatedParent}}"
+                              MinHeight="{StaticResource FieldMessageHeight}"
                               VerticalAlignment="Center" />
           </Grid>
+          <ControlTemplate.Triggers>
+            <!-- 🔴 THE FLOOR IS FOR ROWS THAT CAN SPEAK, not for every row. It exists so a field whose
+                 message comes and goes does not change height underneath the reader - but a row given no
+                 Tag at all has no message to wait for, and reserving a line for it spent 18 px per row on
+                 nothing. Measured on the setup phase: the time-zone row, the mode row and both launch
+                 rows, 72 px of reserved blank for messages that cannot exist. The predicate is exactly
+                 "was this row given a message slot", which is Tag being there. -->
+            <Trigger Property="Tag" Value="{x:Null}">
+              <Setter TargetName="MessageSlot" Property="Visibility" Value="Collapsed" />
+            </Trigger>
+          </ControlTemplate.Triggers>
         </ControlTemplate>
       </Setter.Value>
     </Setter>
@@ -756,7 +789,11 @@
     <Setter Property="Template">
       <Setter.Value>
         <ControlTemplate TargetType="Expander">
-          <Border Style="{StaticResource PartCard}" Padding="{StaticResource SpaceMd}">
+          <!-- 🔴 The card's own padding, NOT a tighter one of its own. A section and a card are peers on
+               the screen, and a peer with 12 px of padding beside one with 16 starts its content at a
+               different x - so the left edges of the groups did not line up, and they read as unrelated
+               blocks instead of one column. One padding, one left edge. -->
+          <Border Style="{StaticResource PartCard}">
             <Grid>
               <Grid.RowDefinitions>
                 <RowDefinition Height="Auto" />

@@ -93,6 +93,48 @@ public class ScenarioPickerTests
         Assert.False(bare.HasNoMatches);
     }
 
+    /// <summary>
+    /// The "N more need a value you choose" line is about what is INSTALLED, and it sits directly under
+    /// the well - so with a search showing nothing it read as the explanation of that emptiness, as if
+    /// those N had matched and were waiting for a value. Measured on the setup-no-matches render.
+    /// </summary>
+    [Fact]
+    public void The_parametric_note_goes_quiet_while_a_search_is_showing_nothing()
+    {
+        var picker = Loaded();
+
+        Assert.True(picker.HasNeedingParameters, "the shipped presets folder has parametric ones in it");
+        Assert.True(picker.ShowsParametricNote);
+
+        picker.Filter = "no scenario is called this";
+
+        Assert.True(picker.HasNeedingParameters, "the count itself does not depend on the filter");
+        Assert.False(picker.ShowsParametricNote);
+
+        picker.Filter = string.Empty;
+
+        Assert.True(picker.ShowsParametricNote);
+    }
+
+    /// <summary>
+    /// The folded catalogue's header advertises how many dates are inside. A number that followed the
+    /// filter would say "ready-made dates: 0" while the reason was a word in a box the reader cannot see
+    /// with the section shut.
+    /// </summary>
+    [Fact]
+    public void The_count_the_header_shows_is_the_whole_catalogue_and_not_the_filtered_view()
+    {
+        var picker = Loaded();
+        var all = picker.Available;
+
+        Assert.Equal(picker.Visible.Count, all);
+
+        picker.Filter = "no scenario is called this";
+
+        Assert.Empty(picker.Visible);
+        Assert.Equal(all, picker.Available);
+    }
+
     [Fact]
     public void Clearing_the_filter_brings_the_whole_catalogue_back()
     {
@@ -120,6 +162,7 @@ public class ScenarioPickerTests
         Assert.Contains(nameof(ScenarioPicker.Filter), announced);
         Assert.Contains(nameof(ScenarioPicker.Visible), announced);
         Assert.Contains(nameof(ScenarioPicker.HasNoMatches), announced);
+        Assert.Contains(nameof(ScenarioPicker.ShowsParametricNote), announced);
     }
 
     [Fact]
@@ -133,8 +176,10 @@ public class ScenarioPickerTests
 
         Assert.Contains(nameof(ScenarioPicker.Visible), announced);
         Assert.Contains(nameof(ScenarioPicker.HasScenarios), announced);
+        Assert.Contains(nameof(ScenarioPicker.Available), announced);
         Assert.Contains(nameof(ScenarioPicker.NeedingParameters), announced);
         Assert.Contains(nameof(ScenarioPicker.HasNeedingParameters), announced);
+        Assert.Contains(nameof(ScenarioPicker.ShowsParametricNote), announced);
     }
 
     /// <summary>

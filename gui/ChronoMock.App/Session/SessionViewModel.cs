@@ -645,6 +645,7 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
             if (Set(ref _selectedScenario, value))
             {
                 RaisePropertyChanged(nameof(HasSelectedScenario));
+                RaisePropertyChanged(nameof(HasNoSelectedScenario));
                 ScenarioExplains = value?.DisplayExplains ?? string.Empty;
                 if (value is not null)
                 {
@@ -655,6 +656,17 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     }
 
     public bool HasSelectedScenario => _selectedScenario is not null;
+
+    /// <summary>
+    /// The other half of <see cref="HasSelectedScenario"/>, for a slot that must never be empty.
+    /// </summary>
+    /// <remarks>
+    /// The folded catalogue's header shows the chosen scenario OR the number on offer, and those two
+    /// TextBlocks share one cell. WPF has no negating converter here and a second one would be a second
+    /// thing to keep in step, so the state says both halves out loud. A bool costs nothing at this
+    /// class's coupling ceiling (gui/CodeMetricsConfig.txt) - a type would have.
+    /// </remarks>
+    public bool HasNoSelectedScenario => _selectedScenario is null;
 
     /// <summary>The chosen scenario's "what this date tests" line, straight from the catalogue (DATA
     /// locales, not interface keys - the author wrote it, we do not translate it).</summary>
@@ -721,6 +733,7 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
         ScenarioErrorKey = string.Empty;
         RaisePropertyChanged(nameof(SelectedScenario));
         RaisePropertyChanged(nameof(HasSelectedScenario));
+        RaisePropertyChanged(nameof(HasNoSelectedScenario));
     }
 
     /// <summary>

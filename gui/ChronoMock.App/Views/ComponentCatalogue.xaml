@@ -45,12 +45,12 @@
   <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="{StaticResource SpaceXl}">
     <StackPanel>
 
-      <TextBlock Text="Component catalogue" Style="{StaticResource PartSectionHeading}" />
+      <TextBlock Text="Component catalogue" Style="{StaticResource PartHeading}" />
       <TextBlock Style="{StaticResource PartCaption}" Margin="{StaticResource StackGapSm}"
                  Text="Every part, in every state that can be shown without input. Hover, press and keyboard focus are measured on the live window - see hover-sheet.ps1 and focus-sheet.ps1." />
 
       <!-- ============ Button ============ -->
-      <TextBlock Text="Button" Style="{StaticResource PartSectionHeading}" Margin="{StaticResource StackGapLg}" />
+      <TextBlock Text="Button" Style="{StaticResource PartHeading}" Margin="{StaticResource StackGapLg}" />
 
       <Border Style="{StaticResource PartCard}" Margin="{StaticResource StackGapSm}">
         <StackPanel>
@@ -73,7 +73,7 @@
       </Border>
 
       <!-- ============ Primary action ============ -->
-      <TextBlock Text="Primary action" Style="{StaticResource PartSectionHeading}" Margin="{StaticResource StackGapLg}" />
+      <TextBlock Text="Primary action" Style="{StaticResource PartHeading}" Margin="{StaticResource StackGapLg}" />
 
       <Border Style="{StaticResource PartCard}" Margin="{StaticResource StackGapSm}">
         <StackPanel>
@@ -96,7 +96,7 @@
       </Border>
 
       <!-- ============ Card ============ -->
-      <TextBlock Text="Card" Style="{StaticResource PartSectionHeading}" Margin="{StaticResource StackGapLg}" />
+      <TextBlock Text="Card" Style="{StaticResource PartHeading}" Margin="{StaticResource StackGapLg}" />
 
       <Border Style="{StaticResource PartCard}" Margin="{StaticResource StackGapSm}">
         <StackPanel>
@@ -113,7 +113,7 @@
       </Border>
 
       <!-- ============ Pinned footer ============ -->
-      <TextBlock Text="Pinned footer" Style="{StaticResource PartSectionHeading}" Margin="{StaticResource StackGapLg}" />
+      <TextBlock Text="Pinned footer" Style="{StaticResource PartHeading}" Margin="{StaticResource StackGapLg}" />
 
       <Border Style="{StaticResource PartFooter}" Margin="{StaticResource StackGapSm}">
         <StackPanel>
@@ -125,7 +125,7 @@
       </Border>
 
       <!-- ============ Text field ============ -->
-      <TextBlock Text="Text field" Style="{StaticResource PartSectionHeading}" Margin="{StaticResource StackGapLg}" />
+      <TextBlock Text="Text field" Style="{StaticResource PartHeading}" Margin="{StaticResource StackGapLg}" />
 
       <Border Style="{StaticResource PartCard}" Margin="{StaticResource StackGapSm}">
         <StackPanel>
@@ -162,7 +162,7 @@
       </Border>
 
       <!-- ============ Check ============ -->
-      <TextBlock Text="Check" Style="{StaticResource PartSectionHeading}" Margin="{StaticResource StackGapLg}" />
+      <TextBlock Text="Check" Style="{StaticResource PartHeading}" Margin="{StaticResource StackGapLg}" />
 
       <Border Style="{StaticResource PartCard}" Margin="{StaticResource StackGapSm}">
         <StackPanel>
@@ -175,7 +175,7 @@
       </Border>
 
       <!-- ============ Drop-down ============ -->
-      <TextBlock Text="Drop-down" Style="{StaticResource PartSectionHeading}" Margin="{StaticResource StackGapLg}" />
+      <TextBlock Text="Drop-down" Style="{StaticResource PartHeading}" Margin="{StaticResource StackGapLg}" />
 
       <Border Style="{StaticResource PartCard}" Margin="{StaticResource StackGapSm}">
         <StackPanel>
@@ -195,7 +195,7 @@
       </Border>
 
       <!-- ============ Choice list ============ -->
-      <TextBlock Text="Choice list" Style="{StaticResource PartSectionHeading}" Margin="{StaticResource StackGapLg}" />
+      <TextBlock Text="Choice list" Style="{StaticResource PartHeading}" Margin="{StaticResource StackGapLg}" />
 
       <Border Style="{StaticResource PartCard}" Margin="{StaticResource StackGapSm}">
         <StackPanel>
@@ -243,7 +243,7 @@
       </Border>
 
       <!-- ============ Form row ============ -->
-      <TextBlock Text="Form row" Style="{StaticResource PartSectionHeading}" Margin="{StaticResource StackGapLg}" />
+      <TextBlock Text="Form row" Style="{StaticResource PartHeading}" Margin="{StaticResource StackGapLg}" />
 
       <Border Style="{StaticResource PartCard}" Margin="{StaticResource StackGapSm}">
         <!-- 🔴 Grid.IsSharedSizeScope is what makes the label column agree across rows. Without it each
@@ -251,7 +251,7 @@
              exists to fix. -->
         <StackPanel Grid.IsSharedSizeScope="True">
           <TextBlock Style="{StaticResource PartCaption}"
-                     Text="The labels line up and the controls start at one x, whatever the label says. The column width is computed from the widest label present, not chosen - so it still holds after a translation." />
+                     Text="The labels line up and the controls start at one x, whatever the label says. The column width is computed from the widest label present, not chosen - so it still holds after a translation. The first two rows were given no message slot and reserve no line for one. The third was given one, so it holds that line's height whether the message is showing or not." />
 
           <HeaderedContentControl Style="{StaticResource PartFormRow}" Margin="{StaticResource StackGapSm}">
             <HeaderedContentControl.Header>
@@ -281,7 +281,7 @@
       </Border>
 
       <!-- ============ Collapsible section ============ -->
-      <TextBlock Text="Section" Style="{StaticResource PartSectionHeading}" Margin="{StaticResource StackGapLg}" />
+      <TextBlock Text="Section" Style="{StaticResource PartHeading}" Margin="{StaticResource StackGapLg}" />
 
       <TextBlock Style="{StaticResource PartCaption}" Margin="{StaticResource StackGapSm}"
                  Text="Folded, it still says what is set inside it. That is what makes folding honest - nothing is hidden, only moved out of the way. A section that said only 'Speed' would force a click to find out." />
@@ -314,7 +314,7 @@
       </Expander>
 
       <!-- ============ Verdict badge ============ -->
-      <TextBlock Text="Verdict badge" Style="{StaticResource PartSectionHeading}" Margin="{StaticResource StackGapLg}" />
+      <TextBlock Text="Verdict badge" Style="{StaticResource PartHeading}" Margin="{StaticResource StackGapLg}" />
 
       <Border Style="{StaticResource PartCard}" Margin="{StaticResource StackGapSm}">
         <StackPanel>
@@ -342,11 +342,11 @@
       </Border>
 
       <!-- ============ Type roles ============ -->
-      <TextBlock Text="Type" Style="{StaticResource PartSectionHeading}" Margin="{StaticResource StackGapLg}" />
+      <TextBlock Text="Type" Style="{StaticResource PartHeading}" Margin="{StaticResource StackGapLg}" />
 
       <Border Style="{StaticResource PartCard}" Margin="{StaticResource StackGapSm}">
         <StackPanel>
-          <TextBlock Text="Section heading" Style="{StaticResource PartSectionHeading}" />
+          <TextBlock Text="Section heading" Style="{StaticResource PartHeading}" />
           <TextBlock Text="Label - what a form row is called" Style="{StaticResource PartLabel}"
                      Margin="{StaticResource StackGapSm}" />
           <TextBlock Style="{StaticResource PartCaption}" Margin="{StaticResource StackGapSm}"

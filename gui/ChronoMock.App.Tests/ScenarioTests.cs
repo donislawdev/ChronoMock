@@ -72,6 +72,35 @@ public class ScenarioTests
         Assert.Equal(string.Empty, vm.ScenarioExplains);
     }
 
+    /// <summary>
+    /// The folded catalogue's header shows the chosen scenario or the number on offer, and the two share
+    /// one cell - so the state has to say both halves out loud. A header that went blank would be the one
+    /// thing a folded section may not do.
+    /// </summary>
+    [Fact]
+    public void The_scenario_selection_says_both_halves_and_announces_both()
+    {
+        var vm = new SessionViewModel(new InMemorySessionHistoryStore(), presetsDir: PresetsDir());
+        var announced = new List<string>();
+        vm.PropertyChanged += (_, e) => announced.Add(e.PropertyName ?? string.Empty);
+
+        Assert.False(vm.HasSelectedScenario);
+        Assert.True(vm.HasNoSelectedScenario);
+
+        vm.SelectedScenario = vm.Scenarios.First(s => s.Id == "year-rollover");
+
+        Assert.True(vm.HasSelectedScenario);
+        Assert.False(vm.HasNoSelectedScenario);
+        Assert.Contains(nameof(SessionViewModel.HasNoSelectedScenario), announced);
+
+        // And back, through the path that clears it rather than the setter.
+        announced.Clear();
+        vm.Moment.LoadCanonical("2030-01-01T00:00:00");
+
+        Assert.True(vm.HasNoSelectedScenario);
+        Assert.Contains(nameof(SessionViewModel.HasNoSelectedScenario), announced);
+    }
+
     [Fact]
     public void A_scenario_says_so_when_the_engine_is_not_available()
     {

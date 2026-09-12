@@ -79,9 +79,13 @@ public class StateSheetTests
 
             total += RenderSetup("setup-startup", WithScenarios()).Count;
 
+            // The catalogue open, which is the only render showing the well, its rows and the sentence
+            // saying what choosing from it will do.
+            total += RenderSetup("setup-scenarios", WithScenarios(), openScenarios: true).Count;
+
             var searching = WithScenarios();
             searching.ScenarioPicker.Filter = "nothing is called this";
-            total += RenderSetup("setup-no-matches", searching).Count;
+            total += RenderSetup("setup-no-matches", searching, openScenarios: true).Count;
 
             var configured = WithScenarios();
             configured.SetTarget(Path.Combine(TestPaths.RepoRoot(), "target.exe"));
@@ -107,15 +111,54 @@ public class StateSheetTests
     private static SessionViewModel WithScenarios()
         => new(new InMemorySessionHistoryStore(), presetsDir: Path.Combine(TestPaths.RepoRoot(), "presets"));
 
-    private static IReadOnlyList<LaidOutElement> RenderSetup(string name, SessionViewModel model)
-        => StateSheet.Write(name, new SetupPhaseView { DataContext = model }, SetupWidth, SetupHeight);
+    /// <summary>
+    /// The phase at the window's REAL size, which is the only size worth judging it at.
+    /// </summary>
+    /// <remarks>
+    /// 🔴 THIS USED TO RENDER AT 1 000 px, 200 TALLER THAN THE WINDOW, on the reasoning that a shorter
+    /// sheet would crop the contract sentence and the button. That reasoning was wrong about its own
+    /// screen: the footer is PINNED, in its own grid row outside the scroll area, so it cannot go below
+    /// any fold - being pinned is the whole point of it. What the extra 200 px actually did was hide how
+    /// much of the form is below the fold at the size a user gets, and every judgement made on those
+    /// renders was made on a window nobody has.
+    ///
+    /// The size comes from LayoutProbe rather than a second copy of the numbers, so the sheet cannot
+    /// drift away from MainWindow's declared size the way this constant did.
+    /// </remarks>
+    private static IReadOnlyList<LaidOutElement> RenderSetup(
+        string name,
+        SessionViewModel model,
+        bool openScenarios = false)
+    {
+        var view = new SetupPhaseView { DataContext = model };
 
-    /// <summary>The window's own width, so the phase is judged at the size it will be read at.</summary>
-    private const int SetupWidth = 1040;
+        // 🔴 A FOLDED SECTION'S CONTENTS ARE A STATE, and this is the only way to reach it from here. The
+        // catalogue moved into a section that starts closed, and for one render that turned the empty-list
+        // state into a copy of the startup one - the sheet kept writing a file and stopped showing the
+        // thing the file was for. Opening it is a user action, so it belongs to the sheet and not to a
+        // flag on the model.
+        // Fully qualified: Wpf.Ui.Controls has an Expander too, and the one in the view is the stock WPF
+        // control (the toolkit's does not appear anywhere in this project).
+        if (openScenarios && view.FindName("ScenarioSection") is System.Windows.Controls.Expander section)
+        {
+            section.IsExpanded = true;
 
-    /// <summary>Taller than the window: the phase scrolls, and a sheet that cropped it would hide the
-    /// contract sentence and the button, which are the two things below the fold.</summary>
-    private const int SetupHeight = 1000;
+            // 🔴 AND SCROLLED TO IT, because opening it is not enough. The window is 800 px and the two
+            // groups above the catalogue come to 446, so an opened 240 px well starts below the fold: the
+            // first attempt at this render wrote a picture of a search box with an empty box under it and
+            // the sentence explaining the emptiness out of frame. A sheet that writes a file showing
+            // nothing is worse than no sheet. This is the screen as somebody who opened the section and
+            // scrolled down sees it.
+            LayoutProbe.Settle(view);
+            if (view.FindName("FormScroll") is System.Windows.Controls.ScrollViewer scroll)
+            {
+                scroll.ScrollToEnd();
+                LayoutProbe.Settle(view);
+            }
+        }
+
+        return StateSheet.Write(name, view);
+    }
 
     [Fact]
     public void The_substitution_panel_renders_in_its_startup_state()

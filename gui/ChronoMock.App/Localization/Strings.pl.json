@@ -46,6 +46,15 @@
   // "Moment" is our word, not the reader's.
   "setup.section_moment": "Data i godzina",
   "setup.section_speed": "Tempo i opcje",
+  // 🔴 The catalogue is its own group now, and folded. Measured at the window's real height: the moment
+  // section was 603 px of a 671 px viewport because the catalogue lived inside it, so the two groups
+  // under it were not merely below the fold - they were invisible on a first run, which is the fault this
+  // rework exists to remove, in a new shape.
+  "setup.section_scenario": "Scenariusze",
+  // A label and a value, so the count is grammatical whatever it is. "16 ready-made dates" reads well
+  // and "1 ready-made dates" does not, and a summary is not the place to start pluralising in two
+  // languages.
+  "setup.scenario_available": "gotowych dat:",
   "setup.needs_target": "Wybierz aplikację, zanim wystartujesz.",
   "setup.chip_duration": "trwanie skalowane",
   "setup.chip_qpc": "QPC skalowane",
