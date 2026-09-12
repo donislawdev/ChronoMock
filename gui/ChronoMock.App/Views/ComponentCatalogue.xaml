@@ -2,6 +2,7 @@
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:app="clr-namespace:ChronoMock.App"
+             xmlns:sys="clr-namespace:System;assembly=System.Runtime"
              Background="{DynamicResource BrushBgBase}">
 
   <!--
@@ -338,6 +339,85 @@
                          FontSize="{StaticResource FontSizeBody}" />
             </Border>
           </WrapPanel>
+        </StackPanel>
+      </Border>
+
+      <!-- ============ Clock ============ -->
+      <TextBlock Text="Clock" Style="{StaticResource PartHeading}" Margin="{StaticResource StackGapLg}" />
+
+      <TextBlock Style="{StaticResource PartCaption}" Margin="{StaticResource StackGapSm}"
+                 Text="One drawing, both clocks. They stand next to each other here for the same reason they do on the session screen - side by side is the only way a difference of one pixel between them shows. The time is monospaced so the digits do not creep sideways while somebody watches them tick." />
+
+      <UniformGrid Columns="2" Margin="{StaticResource StackGapSm}">
+        <ContentControl Template="{StaticResource PartClock}"
+                        Content="{Binding SampleFakeClock, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                        DataContext="{Binding SampleFakeClock, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                        Margin="{StaticResource SpaceXs}" />
+        <ContentControl Template="{StaticResource PartClock}"
+                        Content="{Binding SampleRealClock, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                        DataContext="{Binding SampleRealClock, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                        Margin="{StaticResource SpaceXs}" />
+      </UniformGrid>
+
+      <TextBlock Style="{StaticResource PartCaption}" Margin="{StaticResource StackGapLg}"
+                 Text="The extreme: a zone label far longer than any real one." />
+
+      <ContentControl Template="{StaticResource PartClock}"
+                      Content="{Binding SampleExtremeClock, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                      DataContext="{Binding SampleExtremeClock, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                      Margin="{StaticResource StackGapSm}" />
+
+      <!-- ============ Fact list ============ -->
+      <TextBlock Text="Fact list" Style="{StaticResource PartHeading}" Margin="{StaticResource StackGapLg}" />
+
+      <TextBlock Style="{StaticResource PartCaption}" Margin="{StaticResource StackGapSm}"
+                 Text="Read-only, so no edge and no fill - an edge means you can act on something. The count comes from the list itself rather than from the caller, so a name and the rows under it cannot disagree. Rows are monospaced because they are data in columns, not prose." />
+
+      <Border Style="{StaticResource PartCard}" Margin="{StaticResource StackGapSm}">
+        <StackPanel>
+          <HeaderedItemsControl Style="{StaticResource PartFactList}" Header="Covered channels">
+            <HeaderedItemsControl.ItemsSource>
+              <x:Array Type="sys:String">
+                <sys:String>GetSystemTimeAsFileTime  x128004</sys:String>
+                <sys:String>GetTickCount64  x44910</sys:String>
+                <sys:String>GetLocalTime  x3517</sys:String>
+              </x:Array>
+            </HeaderedItemsControl.ItemsSource>
+          </HeaderedItemsControl>
+
+          <!-- Empty, which is a state and not a mistake: a session can cover nothing, and the count has
+               to say zero rather than the list vanishing and leaving the reader to guess. -->
+          <HeaderedItemsControl Style="{StaticResource PartFactList}" Header="Uncovered channels">
+            <HeaderedItemsControl.ItemsSource>
+              <x:Array Type="sys:String" />
+            </HeaderedItemsControl.ItemsSource>
+          </HeaderedItemsControl>
+
+          <!-- The extremes together: more rows than the cap allows, and one row far longer than the card. -->
+          <HeaderedItemsControl Style="{StaticResource PartFactList}" Header="Warnings">
+            <HeaderedItemsControl.ItemsSource>
+              <x:Array Type="sys:String">
+                <sys:String>A time channel was only hooked after its module loaded, so calls before that were real.</sys:String>
+                <sys:String>Some of this application's waits were too short to divide by the multiplier and ran at their floor of one millisecond, which is longer than the scaled figure asked for.</sys:String>
+                <sys:String>wait.timeout_collapsed</sys:String>
+                <sys:String>time.duration_axis_clamped</sys:String>
+                <sys:String>coverage.channel_installed_late</sys:String>
+                <sys:String>cleanup.chromium_profile_left</sys:String>
+                <sys:String>coverage.family_note</sys:String>
+                <sys:String>coverage.contexts_note</sys:String>
+                <!-- 🔴 These six exist to make the cap ENGAGE. The first render of this block had eight
+                     rows, which fitted inside the 140 px the part allows, so the catalogue claimed to be
+                     showing a scrolling list and was showing a short one - promising a state it did not
+                     have. Fourteen rows overflow it, and the scrollbar in the picture is the proof. -->
+                <sys:String>time.jump_backward_duration_held</sys:String>
+                <sys:String>zone.bias_applied_without_dst</sys:String>
+                <sys:String>qpc.scaling_enabled_by_request</sys:String>
+                <sys:String>process.child_inherited_session</sys:String>
+                <sys:String>audit.channel_never_called</sys:String>
+                <sys:String>core.handshake_took_longer_than_usual</sys:String>
+              </x:Array>
+            </HeaderedItemsControl.ItemsSource>
+          </HeaderedItemsControl>
         </StackPanel>
       </Border>
 

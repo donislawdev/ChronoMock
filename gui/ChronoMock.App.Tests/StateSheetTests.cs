@@ -50,13 +50,18 @@ public class StateSheetTests
     private const int CatalogueWidth = 900;
 
     /// <summary>
-    /// Tall enough for every part in every state it can be shown in - 3 799 px of them once the choice
-    /// list took a fixed height and its five states stopped shrinking to their contents, so this went up
-    /// one step of the same scale rather than to the measurement. A canvas is not a ratchet: it exists to
-    /// hold the picture, and a figure sitting exactly on today's content would have to move for every part
-    /// added after it.
+    /// Tall enough for every part in every state it can be shown in. A canvas is not a ratchet: it exists
+    /// to hold the picture, and a figure sitting exactly on today's content would have to move for every
+    /// part added after it.
     /// </summary>
-    private const int CatalogueHeight = 4096;
+    /// <remarks>
+    /// 🔴 THE SCALE IS WRITTEN DOWN NOW, because "one step of the same scale" was not enough to act on -
+    /// 4 096 is both a power of two and a multiple of 1 024, and the two readings part company above it.
+    /// The grid is 1 024. The clock and the fact list took the content to 4 851 px, so this went to 5 120:
+    /// one step, not the measurement. Doubling to 8 192 would have doubled the cost of every render of it
+    /// for 269 px of content.
+    /// </remarks>
+    private const int CatalogueHeight = 5120;
 
     /// <summary>
     /// The rebuilt setup phase, in the three states that decide whether it works.

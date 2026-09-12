@@ -882,4 +882,98 @@
     <Setter Property="SnapsToDevicePixels" Value="True" />
   </Style>
 
+  <!--
+    ============================ Clock ============================
+
+    One clock, drawn once and used for both of them. The fake clock and the real one are the same drawing
+    with different data, so they cannot be allowed to drift apart - and the session phase shows them side
+    by side, where a difference of one pixel between them reads as a difference in meaning.
+
+    Its DataContext is a ClockView, so the template names that shape's four members and nothing else.
+
+    🔴 THE TIME IS MONOSPACED and the shipped tile's is not. A clock at this size in a proportional face
+    re-lays itself out on every tick, because a 1 is narrower than a 0 - so the digits creep sideways
+    while somebody is watching them, and two clocks side by side stop lining up with each other. The date
+    stays proportional: it is read once, not watched.
+
+    🔴 Meaning comes from the role LABEL and the explicit zone, never from colour (zasady/13 section 9),
+    and the zone is spelled out on every clock because untouchable rule 2 says a bare time is exactly the
+    ambiguity we exist to remove.
+  -->
+  <ControlTemplate x:Key="PartClock">
+    <Border Style="{StaticResource PartCard}">
+      <StackPanel>
+        <TextBlock Style="{StaticResource PartCaption}"
+                   Text="{Binding RoleKey, Converter={StaticResource KeyToText}}" />
+        <TextBlock Style="{StaticResource PartHeading}" Margin="{StaticResource StackGapSm}"
+                   HorizontalAlignment="Left"
+                   Text="{Binding Date}" />
+        <TextBlock Style="{StaticResource PartLabel}"
+                   FontFamily="{StaticResource FontFamilyMono}"
+                   FontSize="{StaticResource FontSizeClock}"
+                   FontWeight="{StaticResource FontWeightHeading}"
+                   HorizontalAlignment="Left"
+                   Text="{Binding Time}" />
+        <TextBlock Style="{StaticResource PartCaption}" Margin="{StaticResource StackGapSm}"
+                   Text="{Binding Zone}" />
+      </StackPanel>
+    </Border>
+  </ControlTemplate>
+
+  <!--
+    ============================ Fact list ============================
+
+    A named list of facts the session measured - covered channels and their call counts, the ones left
+    real on purpose, the ones nothing was hooked in, the warnings. Read-only: there is nothing to choose
+    here, which is what separates it from the choice well above. No border and no fill for the same
+    reason - an edge means "you can act on this", and acting on this is not a thing.
+
+    🔴 THE COUNT IS PART OF THE NAME, and the template composes it rather than the caller. Five of these
+    appear on one screen, and a caller composing "name (n)" five times over is five chances for one of
+    them to disagree with its own list. It reads the count off Items, so the number and the rows it
+    describes cannot come apart.
+
+    🔴 THE ROWS ARE MONOSPACED because they are data, not prose: an API name and a call count line up
+    into columns that can be scanned, and "GetTickCount64  x44910" in a proportional face is a ragged
+    edge down the middle of the list. Capped in height and scrolling, because a family session can
+    produce forty channels and this is a detail inside a folded section, not the subject of the screen.
+  -->
+  <Style x:Key="PartFactList" TargetType="HeaderedItemsControl">
+    <Setter Property="Margin" Value="{StaticResource StackGapLg}" />
+    <Setter Property="ItemTemplate">
+      <Setter.Value>
+        <DataTemplate>
+          <TextBlock Style="{StaticResource PartCaption}" TextWrapping="NoWrap"
+                     TextTrimming="CharacterEllipsis"
+                     FontFamily="{StaticResource FontFamilyMono}"
+                     Text="{Binding}" />
+        </DataTemplate>
+      </Setter.Value>
+    </Setter>
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="HeaderedItemsControl">
+          <StackPanel>
+            <TextBlock Style="{StaticResource PartLabel}" TextWrapping="NoWrap"
+                       TextTrimming="CharacterEllipsis">
+              <TextBlock.Text>
+                <MultiBinding StringFormat="{}{0} ({1})">
+                  <Binding Path="Header" RelativeSource="{RelativeSource TemplatedParent}" />
+                  <Binding Path="Items.Count" RelativeSource="{RelativeSource TemplatedParent}" />
+                </MultiBinding>
+              </TextBlock.Text>
+            </TextBlock>
+            <ScrollViewer VerticalScrollBarVisibility="Auto"
+                          HorizontalScrollBarVisibility="Disabled"
+                          MaxHeight="{StaticResource CoverageMaxHeight}"
+                          Margin="{StaticResource StackGapSm}"
+                          Focusable="False">
+              <ItemsPresenter />
+            </ScrollViewer>
+          </StackPanel>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+
 </ResourceDictionary>
