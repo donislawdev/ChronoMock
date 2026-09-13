@@ -348,16 +348,18 @@
       <TextBlock Style="{StaticResource PartCaption}" Margin="{StaticResource StackGapSm}"
                  Text="One drawing, both clocks. They stand next to each other here for the same reason they do on the session screen - side by side is the only way a difference of one pixel between them shows. The time is monospaced so the digits do not creep sideways while somebody watches them tick." />
 
-      <UniformGrid Columns="2" Margin="{StaticResource StackGapSm}">
-        <ContentControl Template="{StaticResource PartClock}"
-                        Content="{Binding SampleFakeClock, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                        DataContext="{Binding SampleFakeClock, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                        Margin="{StaticResource SpaceXs}" />
+      <!-- The pair is PartSideBySide, the part the session screen draws it with, so the channel between the
+           clocks and their outer edges here are the ones a user sees there. -->
+      <HeaderedContentControl Style="{StaticResource PartSideBySide}" Margin="{StaticResource StackGapSm}">
+        <HeaderedContentControl.Header>
+          <ContentControl Template="{StaticResource PartClock}"
+                          Content="{Binding SampleFakeClock, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                          DataContext="{Binding SampleFakeClock, RelativeSource={RelativeSource AncestorType=UserControl}}" />
+        </HeaderedContentControl.Header>
         <ContentControl Template="{StaticResource PartClock}"
                         Content="{Binding SampleRealClock, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                        DataContext="{Binding SampleRealClock, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                        Margin="{StaticResource SpaceXs}" />
-      </UniformGrid>
+                        DataContext="{Binding SampleRealClock, RelativeSource={RelativeSource AncestorType=UserControl}}" />
+      </HeaderedContentControl>
 
       <TextBlock Style="{StaticResource PartCaption}" Margin="{StaticResource StackGapLg}"
                  Text="The extreme: a zone label far longer than any real one." />
@@ -437,6 +439,8 @@
                      Margin="{StaticResource StackGapSm}" />
           <TextBlock Style="{StaticResource PartNote}" Margin="{StaticResource StackGapSm}"
                      Text="Note - the prose that explains the tool: why a date is suggested, what an option costs, what a warning means. Quieter than a label and exactly as large, because that text used to take two reductions at once and reading it was work." />
+          <TextBlock Style="{StaticResource PartErrorNote}" Margin="{StaticResource StackGapSm}"
+                     Text="Error note - a failure explained in a sentence, such as a command that failed while a session runs. The size of a note in the error ink: set as a caption, the one line in the footer that says something went wrong read as the least important line in it." />
           <TextBlock Style="{StaticResource PartCaption}" Margin="{StaticResource StackGapSm}"
                      Text="Caption - metadata standing beside a value: a chip, a unit, the zone under a clock. Small because it is not read, it is glanced at. Measured: 5.15 or better on every fill it can land on." />
         </StackPanel>

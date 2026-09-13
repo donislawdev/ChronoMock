@@ -74,13 +74,19 @@
   "session.section_audit": "What the application read",
   "session.label_jump": "Jump",
   "session.jump_note": "The duration clock never goes backwards, even on a backward jump.",
-  "session.rate_placeholder": "any rate",
-  "session.running_label": "Running:",
+  // One word for one idea: the row says Speed and so does the tooltip, so the box does too.
+  "session.rate_placeholder": "any speed",
+  // 🔴 Application, not Running. The line outlives the run - the same screen shows a session that has
+  // ended - and "Running:" stood above "Session ended" there.
+  "session.application_label": "Application:",
   "session.stop_note": "Stopping returns the application to the real clock. It is not closed.",
-  "session.audit_pending": "The audit appears here once the core reports which clock the application actually read.",
-  "session.chip_covered": "on the fake clock",
-  "session.chip_uncovered": "on the real clock",
-  "session.chip_warnings": "warnings",
+  // Without "audit" and "core", the two mechanism words this screen stopped using everywhere else.
+  "session.audit_pending": "The clocks this application reads will be listed here once the tool has checked.",
+  // A label and a number, for the reason setup.scenario_available gives: "1 warnings" was on this header.
+  "session.chip_covered": "fake clock:",
+  "session.chip_uncovered": "real clock:",
+  "session.chip_unobserved": "could not be watched:",
+  "session.chip_warnings": "warnings:",
   "setup.already_running": "A session is already running.",
   "setup.chip_duration": "duration scaled",
   "setup.chip_qpc": "QPC scaled",

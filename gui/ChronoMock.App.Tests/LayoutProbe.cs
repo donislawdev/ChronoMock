@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Documents;
 using System.Windows.Media;
 
 namespace ChronoMock.App.Tests;
@@ -155,7 +156,7 @@ internal static class LayoutProbe
     {
         var copy = new TextBlock
         {
-            Text = source.Text,
+            Text = ShownText(source),
             FontFamily = source.FontFamily,
             FontSize = source.FontSize,
             FontStyle = source.FontStyle,
@@ -170,9 +171,37 @@ internal static class LayoutProbe
     /// <summary>Whatever the element shows as text, which is what a reader would call its content.</summary>
     private static string TextOf(FrameworkElement element) => element switch
     {
-        TextBlock block => block.Text ?? string.Empty,
+        TextBlock block => ShownText(block),
         TextBox box => box.Text ?? string.Empty,
         ContentControl { Content: string content } => content,
+        _ => string.Empty,
+    };
+
+    /// <summary>
+    /// The text a TextBlock shows, whether it came from its Text property or from runs inside it.
+    /// </summary>
+    /// <remarks>
+    /// 🔴 A TEXTBLOCK BUILT FROM RUNS HAS AN EMPTY Text PROPERTY, and this walk used to read only that. So
+    /// every line composed of runs - a label and a bound number, a count beside its name - reached the
+    /// contrast rule, the type-scale rule, the squeezed-to-nothing rule and the truncation rule as a line
+    /// with no text, and each of them skips a line with no text. It surfaced when the first guard to assert
+    /// the words of such a line - the chips of the folded audit - read an empty string.
+    ///
+    /// Measured across the fix, on the renders: visible text blocks with no text went from 8 to 7 on the
+    /// startup panel, 16 to 14 on the calculator and 4 to 0 on the ended session. The ones that remain
+    /// hold no run of text at all, so the blind spot on the shipped screens was three lines, and none of
+    /// the rules reddens now that it can see them.
+    ///
+    /// The property wins when it is set, so a block written with Text reads exactly as it did.
+    /// </remarks>
+    private static string ShownText(TextBlock block) =>
+        string.IsNullOrEmpty(block.Text) ? string.Concat(block.Inlines.Select(ShownText)) : block.Text;
+
+    private static string ShownText(Inline inline) => inline switch
+    {
+        Run run => run.Text ?? string.Empty,
+        Span span => string.Concat(span.Inlines.Select(ShownText)),
+        LineBreak => "\n",
         _ => string.Empty,
     };
 

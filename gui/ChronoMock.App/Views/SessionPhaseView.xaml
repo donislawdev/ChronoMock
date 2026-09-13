@@ -42,10 +42,15 @@
         One button, drawn once, for both control rows. Nine buttons live on this screen and they are nine
         instances of one drawing differing by a label - the shape that is a list, not nine copies. The
         shipped panel writes them out one at a time, which is why adding a rate means editing markup.
+
+        🔴 THE GAP COMES AFTER EACH BUTTON, NEVER BEFORE IT (ControlRowGap). A uniform margin pushed the
+        first button 4 px into its own column, so a row no longer started where the line under it did -
+        measured on the first render of this phase: both rows at x=99, the reported speed and the jump
+        note at x=95.
       -->
       <DataTemplate x:Key="ControlButton">
         <Button Content="{Binding LabelKey, Converter={StaticResource KeyToText}}"
-                Margin="{StaticResource SpaceXs}" />
+                Margin="{StaticResource ControlRowGap}" />
       </DataTemplate>
 
       <!-- Wrapping, because nine buttons at the window's floor width do not fit on one line and a row
@@ -55,28 +60,48 @@
       </ItemsPanelTemplate>
 
       <!--
-        What the folded audit says without being opened: the two numbers that decide whether the session
-        proved anything, and the warning count. Chips, for the same reason the speed section uses them - a
-        Run cannot be hidden, so a conditional list of them needs punctuation that appears and vanishes.
+        What the folded audit says without being opened. Chips, for the same reason the speed section uses
+        them - a Run cannot be hidden, so a conditional list of them needs punctuation that appears and
+        vanishes.
+
+        🔴 FOUR COUNTS, AND THE THIRD ONE WAS MISSING. The two that decide the verdict, then the channels
+        the session meant to watch and could not, then the warnings. The unwatched count was left out as
+        "not part of the verdict", and folding turned that into silence: a session with a channel nobody
+        could watch said nothing about it until somebody opened this section, while the shipped panel lists
+        it in the open. A watch the tool promised and is not running is what untouchable rule 4 forbids
+        hiding, and a fold whose header does not mention it hides it. The channels left real on purpose
+        stay inside, because they are by design and change no answer.
+
+        🔴 A LABEL AND A NUMBER, never a number and a noun, for the reason setup.scenario_available gives.
+        A count followed by a noun needs plural rules in two languages, and this header had them wrong in
+        both.
+
+        Named, so the layout guard can read each chip's number off the render.
       -->
       <ControlTemplate x:Key="AuditSummary">
         <StackPanel Orientation="Horizontal">
-          <Border Style="{StaticResource PartBadge}" Margin="{StaticResource SpaceXs}"
+          <Border x:Name="CoveredChip" Style="{StaticResource PartBadge}" Margin="{StaticResource SpaceXs}"
                   Visibility="{Binding HasCovered, Converter={StaticResource BoolToVis}}">
             <TextBlock Style="{StaticResource PartCaption}" TextWrapping="NoWrap">
-              <Run Text="{Binding Covered.Count, Mode=OneWay}" /><Run Text=" " /><Run Text="{DynamicResource session.chip_covered}" />
+              <Run Text="{DynamicResource session.chip_covered}" /><Run Text=" " /><Run Text="{Binding Covered.Count, Mode=OneWay}" />
             </TextBlock>
           </Border>
-          <Border Style="{StaticResource PartBadge}" Margin="{StaticResource SpaceXs}"
+          <Border x:Name="UncoveredChip" Style="{StaticResource PartBadge}" Margin="{StaticResource SpaceXs}"
                   Visibility="{Binding HasUncovered, Converter={StaticResource BoolToVis}}">
             <TextBlock Style="{StaticResource PartCaption}" TextWrapping="NoWrap">
-              <Run Text="{Binding Uncovered.Count, Mode=OneWay}" /><Run Text=" " /><Run Text="{DynamicResource session.chip_uncovered}" />
+              <Run Text="{DynamicResource session.chip_uncovered}" /><Run Text=" " /><Run Text="{Binding Uncovered.Count, Mode=OneWay}" />
             </TextBlock>
           </Border>
-          <Border Style="{StaticResource PartBadge}" Margin="{StaticResource SpaceXs}"
+          <Border x:Name="UnobservedChip" Style="{StaticResource PartBadge}" Margin="{StaticResource SpaceXs}"
+                  Visibility="{Binding HasUnobserved, Converter={StaticResource BoolToVis}}">
+            <TextBlock Style="{StaticResource PartCaption}" TextWrapping="NoWrap">
+              <Run Text="{DynamicResource session.chip_unobserved}" /><Run Text=" " /><Run Text="{Binding Unobserved.Count, Mode=OneWay}" />
+            </TextBlock>
+          </Border>
+          <Border x:Name="WarningsChip" Style="{StaticResource PartBadge}" Margin="{StaticResource SpaceXs}"
                   Visibility="{Binding HasWarnings, Converter={StaticResource BoolToVis}}">
             <TextBlock Style="{StaticResource PartCaption}" TextWrapping="NoWrap">
-              <Run Text="{Binding Warnings.Count, Mode=OneWay}" /><Run Text=" " /><Run Text="{DynamicResource session.chip_warnings}" />
+              <Run Text="{DynamicResource session.chip_warnings}" /><Run Text=" " /><Run Text="{Binding Warnings.Count, Mode=OneWay}" />
             </TextBlock>
           </Border>
         </StackPanel>
@@ -107,29 +132,34 @@
              answer to "what am I looking at" off the screen with it - the shipped panel carried it only
              because the form stayed standing. Somebody who comes back to the window ten minutes later, or
              runs two sessions in an afternoon, has nothing else to tell them which one this is. First
-             line, above the clocks, because it is the subject and they are the predicate. -->
+             line, above the clocks, because it is the subject and they are the predicate.
+
+             It says Application rather than Running because the line outlives the run: the same screen
+             shows a session that has ended, and "Running:" above "Session ended" contradicted itself. -->
         <WrapPanel Visibility="{Binding HasTarget, Converter={StaticResource BoolToVis}}">
           <TextBlock Style="{StaticResource PartCaption}" TextWrapping="NoWrap"
                      VerticalAlignment="Center"
-                     Text="{DynamicResource session.running_label}" />
+                     Text="{DynamicResource session.application_label}" />
           <TextBlock Style="{StaticResource PartLabel}" Margin="{StaticResource SpaceXs}"
                      TextTrimming="CharacterEllipsis"
                      Text="{Binding TargetName}" />
         </WrapPanel>
 
-        <UniformGrid Columns="2" Margin="{StaticResource StackGapSm}">
-          <ContentControl Template="{StaticResource PartClock}" DataContext="{Binding Fake}"
-                          Margin="{StaticResource SpaceXs}" />
-          <ContentControl Template="{StaticResource PartClock}" DataContext="{Binding Real}"
-                          Margin="{StaticResource SpaceXs}" />
-        </UniformGrid>
+        <!-- A pair, drawn by PartSideBySide rather than by a margin on each clock. Named, because the layout
+             guard measures the two clocks against the card under them. -->
+        <HeaderedContentControl Style="{StaticResource PartSideBySide}" Margin="{StaticResource StackGapSm}">
+          <HeaderedContentControl.Header>
+            <ContentControl x:Name="FakeClock" Template="{StaticResource PartClock}" DataContext="{Binding Fake}" />
+          </HeaderedContentControl.Header>
+          <ContentControl x:Name="RealClock" Template="{StaticResource PartClock}" DataContext="{Binding Real}" />
+        </HeaderedContentControl>
 
         <!--
           THE CONTROLS, never folded. Changing the rate and jumping the clock in flight are what a person
           opened this phase to do, and a section that had to be opened first would be a setting rather
           than a control.
         -->
-        <Border Style="{StaticResource PartCard}" Margin="{StaticResource StackGapXl}"
+        <Border x:Name="ControlsCard" Style="{StaticResource PartCard}" Margin="{StaticResource StackGapXl}"
                 Grid.IsSharedSizeScope="True">
           <StackPanel IsEnabled="{Binding IsRunning}">
             <HeaderedContentControl Style="{StaticResource PartFormRow}">
@@ -137,7 +167,8 @@
                 <TextBlock Style="{StaticResource PartLabel}" Text="{DynamicResource setup.label_mode}" />
               </HeaderedContentControl.Header>
               <WrapPanel>
-                <ItemsControl ItemsSource="{x:Static app:TimeInputs.SessionSpeeds}"
+                <ItemsControl x:Name="SpeedPresets"
+                              ItemsSource="{x:Static app:TimeInputs.SessionSpeeds}"
                               ItemTemplate="{StaticResource ControlButton}"
                               ItemsPanel="{StaticResource ControlRow}" />
                 <!-- Any rate at all, for the one that is not a preset. Unbound in this drawing: the
@@ -145,12 +176,14 @@
                 <!-- Wide enough for its own PROMPT rather than for its content. A box sized to hold three
                      digits cannot show the words that say what it is for, and a placeholder clipped to
                      "any…" explains nothing. Measured on the first render of this row. -->
+                <!-- The same gap as the buttons before it, so the row follows one rule rather than three. -->
                 <TextBox Width="{StaticResource ShiftUnitWidth}"
-                         Margin="{StaticResource SpaceSm}" VerticalAlignment="Center"
+                         Margin="{StaticResource ControlRowGap}" VerticalAlignment="Center"
                          FontFamily="{StaticResource FontFamilyMono}"
                          app:PartState.Placeholder="{DynamicResource session.rate_placeholder}"
                          AutomationProperties.Name="{DynamicResource session.rate_placeholder}" />
                 <Button Content="{DynamicResource action.set_speed}" VerticalAlignment="Center"
+                        Margin="{StaticResource ControlRowGap}"
                         ToolTip="{DynamicResource tip.set_speed}" />
               </WrapPanel>
               <!-- 🔴 THE RATE THE CORE REPORTS, in the row's own message slot - directly under the
@@ -158,7 +191,7 @@
                    its own line between the clocks and this card on the first render and read as an
                    orphan: a fact about the buttons, floating above them. -->
               <HeaderedContentControl.Tag>
-                <WrapPanel>
+                <WrapPanel x:Name="SpeedFact">
                   <TextBlock Style="{StaticResource PartCaption}" TextWrapping="NoWrap"
                              VerticalAlignment="Center"
                              Text="{DynamicResource setup.contract_speed}" />
@@ -174,11 +207,12 @@
               <HeaderedContentControl.Header>
                 <TextBlock Style="{StaticResource PartLabel}" Text="{DynamicResource session.label_jump}" />
               </HeaderedContentControl.Header>
-              <ItemsControl ItemsSource="{x:Static app:TimeInputs.SessionJumps}"
+              <ItemsControl x:Name="JumpButtons"
+                            ItemsSource="{x:Static app:TimeInputs.SessionJumps}"
                             ItemTemplate="{StaticResource ControlButton}"
                             ItemsPanel="{StaticResource ControlRow}" />
               <HeaderedContentControl.Tag>
-                <TextBlock Style="{StaticResource PartNote}"
+                <TextBlock x:Name="JumpNote" Style="{StaticResource PartNote}"
                            Text="{DynamicResource session.jump_note}" />
               </HeaderedContentControl.Tag>
             </HeaderedContentControl>
@@ -283,8 +317,13 @@
 
         <!-- 🔴 THE ERROR COLOUR HERE, unlike the setup phase's refusal line. Nothing has gone wrong on a
              screen somebody has just opened, but a command that failed MID-SESSION is a thing that went
-             wrong, and the reader has to be able to tell it from the status above. -->
-        <TextBlock Style="{StaticResource PartFieldMessage}" TextWrapping="Wrap"
+             wrong, and the reader has to be able to tell it from the status above.
+
+             🔴 AT THE SIZE OF PROSE (PartErrorNote). It is a sentence, often past a hundred characters,
+             and set as a caption it read as the least important line in the footer while being the one
+             thing in it that had gone wrong. Named for the layout guard, which holds it to the note under
+             Stop. -->
+        <TextBlock x:Name="InFlightError" Style="{StaticResource PartErrorNote}" TextWrapping="Wrap"
                    Margin="{StaticResource StackGapSm}"
                    Text="{Binding InFlightErrorKey, Converter={StaticResource KeyToText}}"
                    Visibility="{Binding HasInFlightError, Converter={StaticResource BoolToVis}}" />
@@ -304,7 +343,7 @@
              testing?") was answered only after they had decided to risk it. This library's own comment on
              the QPC option says a consequence that lives in a tooltip is one most people meet after the
              fact. Same fault, same fix. -->
-        <TextBlock Style="{StaticResource PartNote}" TextWrapping="Wrap"
+        <TextBlock x:Name="StopNote" Style="{StaticResource PartNote}" TextWrapping="Wrap"
                    Margin="{StaticResource StackGapSm}"
                    Text="{DynamicResource session.stop_note}"
                    Visibility="{Binding IsRunning, Converter={StaticResource BoolToVis}}" />

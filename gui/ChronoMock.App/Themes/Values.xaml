@@ -90,6 +90,11 @@
        column of checkboxes would stop lining up with the rows above it. -->
   <Thickness x:Key="CheckLabelGap">8,0,0,0</Thickness>
 
+  <!-- Controls in a row that wraps. The gap goes AFTER each control and never before it, so the first
+       control starts exactly where its column does and a line under the row lines up with it. The top
+       and bottom halves keep wrapped lines apart without moving a control off the middle of its row. -->
+  <Thickness x:Key="ControlRowGap">0,4,8,4</Thickness>
+
   <!-- The bar that marks the selected row. Narrow enough to read as a marker rather than a second
        column, wide enough to survive a non-integer display scale. -->
   <sys:Double x:Key="SelectionBarWidth">3</sys:Double>
@@ -171,6 +176,13 @@
        strongest grouping cue there is, and it was pointing the wrong way. This step is the only gap on
        the screen that separates GROUPS - everything smaller belongs inside one. -->
   <Thickness x:Key="StackGapXl">0,24,0,0</Thickness>
+
+  <!-- 🔴 THE SAME CHANNEL ACROSS, for groups that stand side by side instead of stacked (PartSideBySide).
+       A column width is a GridLength, and a resource reference hands the object over as it is, so the
+       Thickness above cannot serve - two spellings of one decision, like StrokeThin and its edge. The
+       first clock pair made this gap from a 4 px margin on each clock and came to 8 px, against 16 inside
+       each card. -->
+  <GridLength x:Key="GroupChannelWidth">24</GridLength>
 
   <!-- 🔴 A SCROLLING FORM UNDER A PINNED FOOTER, and its bottom gap is the FOOTER'S. The form used a
        uniform 24 px inset, so the blank between the last group and the footer came to 24 plus the

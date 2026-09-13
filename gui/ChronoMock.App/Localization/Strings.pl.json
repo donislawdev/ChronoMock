@@ -76,12 +76,17 @@
   "session.label_jump": "Skok",
   "session.jump_note": "Zegar trwania nigdy nie cofa się, także przy skoku wstecz.",
   "session.rate_placeholder": "dowolne tempo",
-  "session.running_label": "Uruchomione:",
+  // 🔴 Application, not Running. The line outlives the run - the same screen shows a session that has
+  // ended - and "Running:" stood above "Session ended" there.
+  "session.application_label": "Aplikacja:",
   "session.stop_note": "Zatrzymanie przywraca aplikacji prawdziwy zegar. Nie zamyka jej.",
-  "session.audit_pending": "Audyt pojawi się tutaj, gdy rdzeń zgłosi, z którego zegara aplikacja naprawdę czytała.",
-  "session.chip_covered": "z fałszywego zegara",
-  "session.chip_uncovered": "z prawdziwego zegara",
-  "session.chip_warnings": "ostrzeżeń",
+  // Without "audit" and "core", the two mechanism words this screen stopped using everywhere else.
+  "session.audit_pending": "Zegary, które odczytuje ta aplikacja, pojawią się tutaj, gdy narzędzie to sprawdzi.",
+  // A label and a number, for the reason setup.scenario_available gives: "1 warnings" was on this header.
+  "session.chip_covered": "fałszywy zegar:",
+  "session.chip_uncovered": "prawdziwy zegar:",
+  "session.chip_unobserved": "nie dało się obserwować:",
+  "session.chip_warnings": "ostrzeżenia:",
   "setup.already_running": "Sesja już działa.",
   "setup.chip_duration": "trwanie skalowane",
   "setup.chip_qpc": "QPC skalowane",

@@ -787,6 +787,15 @@
     <Setter Property="VerticalAlignment" Value="Center" />
   </Style>
 
+  <!-- 🔴 A FAILURE EXPLAINED IN A SENTENCE is prose, and a field message is not. PartFieldMessage is a
+       caption in the error colour, which is right for a short line under the field it belongs to. The
+       footer of a running session explains a command that failed mid-flight in a whole sentence, and at
+       caption size that sentence took the two reductions PartNote exists to undo. The colour was never
+       the problem: the error ink reads 6.02 to 1 on the footer. -->
+  <Style x:Key="PartErrorNote" TargetType="TextBlock" BasedOn="{StaticResource PartNote}">
+    <Setter Property="Foreground" Value="{DynamicResource BrushError}" />
+  </Style>
+
   <!--
     ============================ Collapsible section ============================
 
@@ -902,6 +911,40 @@
     <Setter Property="Padding" Value="{StaticResource ChipPadding}" />
     <Setter Property="HorizontalAlignment" Value="Left" />
     <Setter Property="SnapsToDevicePixels" Value="True" />
+  </Style>
+
+  <!--
+    ============================ Side by side ============================
+
+    Two peers in one row: equal width, apart by the channel between groups, and flush with whatever the
+    row stands in. Header is the left one and Content the right one - the control's two slots, used as
+    two slots.
+
+    🔴 THE CHANNEL IS A COLUMN, NOT A MARGIN ON EACH SIDE. The first clock pair gave both clocks a 4 px
+    margin all round, which was two faults at once: the gap between them came to 8 px against the 16 px
+    of padding inside each card, and both outer edges stood 4 px inside the card underneath, so the page
+    had two left edges. A column gives the gap once and leaves the outer edges where the container puts
+    them.
+  -->
+  <Style x:Key="PartSideBySide" TargetType="HeaderedContentControl">
+    <!-- A layout, so never a stop on the keyboard path. -->
+    <Setter Property="Focusable" Value="False" />
+    <Setter Property="IsTabStop" Value="False" />
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="HeaderedContentControl">
+          <Grid>
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="*" />
+              <ColumnDefinition Width="{StaticResource GroupChannelWidth}" />
+              <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <ContentPresenter Grid.Column="0" ContentSource="Header" />
+            <ContentPresenter Grid.Column="2" />
+          </Grid>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
   </Style>
 
   <!--

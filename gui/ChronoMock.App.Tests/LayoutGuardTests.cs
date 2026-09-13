@@ -3,6 +3,7 @@ using System.Windows.Controls;
 using System.Windows.Media;
 using ChronoMock.App;
 using ChronoMock.App.Views;
+using ChronoMock.Protocol;
 
 namespace ChronoMock.App.Tests;
 
@@ -447,6 +448,177 @@ public class LayoutGuardTests
     /// <summary>The speed list, the arguments box and the working-folder box. A literal, so the agreement
     /// assertion above cannot be satisfied by a filter that matched nothing.</summary>
     private const int OptionsSectionFields = 3;
+
+    /// <summary>
+    /// A folded audit still states every count that can change what the reader concludes, each read off
+    /// its own list.
+    /// </summary>
+    /// <remarks>
+    /// 🔴 THIS GUARD EXISTS BECAUSE THE FAULT WAS MADE. The folded header carried the covered, uncovered and
+    /// warning counts and nothing for the channels the session could not watch, so a session with an
+    /// unwatched channel said nothing about it until the section was opened (untouchable rule 4).
+    ///
+    /// The four counts differ on purpose. With two lists of the same length, a chip bound to the wrong
+    /// list would show the right number and pass.
+    ///
+    /// Reversal probes: delete UnobservedChip from AuditSummary in SessionPhaseView.xaml and this reddens on
+    /// the chip count. Bind that chip to Uncovered.Count instead and it reddens on the number.
+    /// </remarks>
+    [Fact]
+    public void A_folded_audit_counts_every_list_that_can_change_what_the_reader_concludes()
+    {
+        var chips = WpfTestHost.InvokeSettled(() =>
+        {
+            var model = SessionStates.Running();
+            model.Apply(new CoverageEvent
+            {
+                V = ProtocolJson.ProtocolVersion,
+                Pid = 4242,
+                Covered =
+                [
+                    new CoveredChannel { Channel = "GetSystemTimeAsFileTime", Calls = 10 },
+                    new CoveredChannel { Channel = "GetLocalTime", Calls = 20 },
+                    new CoveredChannel { Channel = "GetTickCount64", Calls = 30 },
+                ],
+                Uncovered = ["QueryPerformanceCounter"],
+                Unobserved = ["NtQuerySystemTime", "timeGetTime"],
+                WarningKeys =
+                [
+                    "wait.timeout_collapsed",
+                    "coverage.channel_installed_late",
+                    "coverage.pid_registry_full",
+                    "source.network_at_start",
+                ],
+            });
+
+            var view = new SessionPhaseView { DataContext = model };
+            LayoutProbe.Settle(view);
+            var elements = LayoutProbe.Walk(view);
+
+            return elements
+                .Where(e => e.IsVisible && e.Name.EndsWith("Chip", StringComparison.Ordinal))
+                .ToDictionary(
+                    chip => chip.Name,
+                    chip => elements.Single(e => e.Kind == nameof(TextBlock) && chip.Bounds.Contains(e.Bounds)).Text);
+        });
+
+        Assert.Equal(AuditChips, chips.Count);
+        Assert.EndsWith(" 3", chips["CoveredChip"], StringComparison.Ordinal);
+        Assert.EndsWith(" 1", chips["UncoveredChip"], StringComparison.Ordinal);
+        Assert.EndsWith(" 2", chips["UnobservedChip"], StringComparison.Ordinal);
+        Assert.EndsWith(" 4", chips["WarningsChip"], StringComparison.Ordinal);
+    }
+
+    /// <summary>Covered, uncovered, could not be watched, warnings. A literal, so a walk that found no chips
+    /// cannot pass by never reaching the number checks.</summary>
+    private const int AuditChips = 4;
+
+    /// <summary>
+    /// The two clocks share the outer edges of the card under them, and the channel between them is wider
+    /// than the padding inside either.
+    /// </summary>
+    /// <remarks>
+    /// 🔴 THIS GUARD EXISTS BECAUSE THE FAULT WAS MADE. The first pair gave each clock a 4 px margin all
+    /// round: 8 px between the clocks against 16 px of padding inside each, so the channel between two
+    /// groups was narrower than the space inside one, and both outer edges stood 4 px inside the card below.
+    ///
+    /// Reversal probe: put back UniformGrid Columns="2" with a SpaceXs margin on each clock in
+    /// SessionPhaseView.xaml and this reddens on the left edge.
+    /// </remarks>
+    [Fact]
+    public void The_two_clocks_share_the_edges_of_the_card_under_them_and_stand_further_apart_than_its_padding()
+    {
+        var (fake, real, card, padding) = WpfTestHost.InvokeSettled(() =>
+        {
+            var view = new SessionPhaseView { DataContext = SessionStates.Running() };
+            LayoutProbe.Settle(view);
+            var elements = LayoutProbe.Walk(view);
+
+            return (
+                elements.Single(e => e.Name == "FakeClock").Bounds,
+                elements.Single(e => e.Name == "RealClock").Bounds,
+                elements.Single(e => e.Name == "ControlsCard").Bounds,
+                ((Thickness)view.FindResource("CardPadding")).Left);
+        });
+
+        Assert.Equal(Math.Round(card.Left), Math.Round(fake.Left));
+        Assert.Equal(Math.Round(card.Right), Math.Round(real.Right));
+        Assert.Equal(Math.Round(fake.Width), Math.Round(real.Width));
+        Assert.True(
+            real.Left - fake.Right > padding,
+            $"the clocks stand {real.Left - fake.Right} px apart, which is not wider than the {padding} px inside each");
+    }
+
+    /// <summary>
+    /// Both control rows start at the x the line under them starts at.
+    /// </summary>
+    /// <remarks>
+    /// 🔴 THIS GUARD EXISTS BECAUSE THE FAULT WAS MADE. Every button carried a uniform 4 px margin, the first
+    /// one included, so both rows began 4 px inside their column while the reported speed and the jump note
+    /// began on it.
+    ///
+    /// Reversal probe: set the ControlButton margin in SessionPhaseView.xaml back to SpaceXs and this reddens
+    /// with two x values instead of one.
+    ///
+    /// The card's left edge is asserted too, because four readings agree perfectly over a tree the layout
+    /// pass never reached - every one of them zero.
+    /// </remarks>
+    [Fact]
+    public void Both_control_rows_start_where_the_line_under_them_starts()
+    {
+        var (starts, cardLeft) = WpfTestHost.InvokeSettled(() =>
+        {
+            var view = new SessionPhaseView { DataContext = SessionStates.Running() };
+            LayoutProbe.Settle(view);
+            var elements = LayoutProbe.Walk(view);
+
+            int FirstButton(string row)
+            {
+                var band = elements.Single(e => e.Name == row).Bounds;
+                return elements
+                    .Where(e => e.IsVisible && e.Kind == nameof(Button) && band.Contains(e.Bounds))
+                    .Min(e => (int)Math.Round(e.Bounds.X));
+            }
+
+            int Start(string name) => (int)Math.Round(elements.Single(e => e.Name == name).Bounds.X);
+
+            int[] readings = [FirstButton("SpeedPresets"), Start("SpeedFact"), FirstButton("JumpButtons"), Start("JumpNote")];
+            return (readings, elements.Single(e => e.Name == "ControlsCard").Bounds.Left);
+        });
+
+        Assert.Single(starts.Distinct());
+        Assert.True(starts[0] > cardLeft, $"the rows start at {starts[0]}, which is not inside the card at {cardLeft}");
+    }
+
+    /// <summary>
+    /// A command that fails while a session runs is explained at the size of the prose beside it, in the
+    /// error ink.
+    /// </summary>
+    /// <remarks>
+    /// 🔴 THIS GUARD EXISTS BECAUSE THE FAULT WAS MADE. The line took PartFieldMessage, a caption in the error
+    /// colour, and set a sentence of more than a hundred characters at 12 px - the two reductions at once
+    /// that PartNote was made to undo. It is compared with the note under Stop rather than with a number,
+    /// so the rule is "as large as the prose beside it" and survives a change to the type scale.
+    ///
+    /// Reversal probe: give InFlightError the PartFieldMessage style again in SessionPhaseView.xaml and this
+    /// reddens on the size.
+    /// </remarks>
+    [Fact]
+    public void A_command_that_fails_mid_session_is_explained_at_the_size_of_the_prose_beside_it()
+    {
+        var (error, note) = WpfTestHost.InvokeSettled(() =>
+        {
+            var view = new SessionPhaseView { DataContext = SessionStates.InFlightError() };
+            LayoutProbe.Settle(view);
+            var elements = LayoutProbe.Walk(view);
+
+            return (elements.Single(e => e.Name == "InFlightError"), elements.Single(e => e.Name == "StopNote"));
+        });
+
+        Assert.True(error.IsVisible && note.IsVisible, "the fixture no longer shows both lines, so nothing was compared");
+        Assert.Equal(note.FontSize, error.FontSize);
+        Assert.NotEqual(note.Foreground, error.Foreground);
+    }
 
     private static (IReadOnlyList<LaidOutElement> Elements, IReadOnlyList<string> Complaints) Inspect(
         FrameworkElement root)

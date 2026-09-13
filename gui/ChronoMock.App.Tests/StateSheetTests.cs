@@ -183,7 +183,7 @@ public class StateSheetTests
         string? openSection = null)
     {
         // 🔴 A SESSION HAS A TARGET, and the shared fixtures do not set one - they were written for the
-        // panel, where the form supplies it. Without this the phase's first line ("Running: …") is bound
+        // panel, where the form supplies it. Without this the phase's first line ("Application: …") is bound
         // to a model with no target and renders as nothing, so the render would be missing the one thing
         // that says which session it is. Set here rather than in SessionStates, because the panel renders
         // use the same fixtures and their baselines would move.
