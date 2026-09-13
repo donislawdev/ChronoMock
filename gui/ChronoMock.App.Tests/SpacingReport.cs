@@ -141,11 +141,16 @@ internal static class SpacingReport
     private static readonly Regex NameAttribute = new("x:Name=\"([^\"]+)\"", RegexOptions.Compiled);
 
     /// <summary>
-    /// Every x:Name declared in our own views, read from the source XAML.
+    /// Every x:Name declared in our own XAML, the views and the templates under Themes/ alike, read from the
+    /// source.
     /// </summary>
     /// <remarks>
     /// The same method the other XAML guards use: read the source rather than the compiled BAML, so the
     /// list is what a person wrote. A name absent here belongs to a control template we did not write.
+    ///
+    /// A gap inside one of OUR templates is judged too, and not only through the names in Themes/: the
+    /// insides of a template hang in the visual tree under the control a view named. An off-scale margin
+    /// put on the body of the section template came back as "7px under Expander 'AuditSection'".
     /// </remarks>
     private static readonly HashSet<string> OurNames = ReadOurNames();
 
