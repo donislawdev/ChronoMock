@@ -93,7 +93,7 @@ internal static class ContrastReport
                 continue;
             }
 
-            var paper = DominantColour(pixels, stride, width, height, element.Bounds);
+            var paper = PaperBehind(pixels, stride, width, height, element.Bounds, ink);
             readings.Add(Describe(element, ink, paper));
         }
 
@@ -106,21 +106,41 @@ internal static class ContrastReport
         Text = element.Text.Length > 40 ? element.Text[..40] + "..." : element.Text,
         FontSize = element.FontSize,
         Ratio = paper is { } known ? Math.Round(Contrast(ink, known), 2) : 0,
-        // 🔴 A text box whose rectangle is mostly ink has no readable background in it, and guessing one
-        // would invent a finding. Reported as unknown rather than as a failure.
-        BackgroundKnown = paper is { } surface && Distance(ink, surface) > InkConfusionDistance,
+        // Unknown only when the line has no pixels on the canvas to sample. Everything else is judged,
+        // including a line whose surface turned out to be its own ink - see PaperBehind.
+        BackgroundKnown = paper is not null,
         Ink = Hex(ink),
         Paper = paper is { } shown ? Hex(shown) : "?",
     };
 
-    /// <summary>How close a sampled background may get to the ink before we stop trusting it.</summary>
+    /// <summary>How close two colours may sit before they count as one - the ink and a colour sampled from
+    /// the box it is painted in.</summary>
     private const double InkConfusionDistance = 32;
 
+    /// <summary>The share of a box a second colour must cover before it is taken as the surface under a line
+    /// whose most common colour is its own ink.</summary>
+    private const double SecondSurfaceShare = 0.1;
+
     /// <summary>
-    /// The colour covering most of a rectangle, which for a line of text is the surface behind it.
-    /// Buckets of eight per channel, so antialiasing does not scatter one fill across a dozen shades.
+    /// The surface a line of text is painted on, read from the pixels inside its rectangle. Buckets of eight
+    /// per channel, so antialiasing does not scatter one fill across a dozen shades.
     /// </summary>
-    private static Color? DominantColour(byte[] pixels, int stride, int width, int height, Rect bounds)
+    /// <remarks>
+    /// The most common colour is the surface for an ordinary line, where letters cover a minority of the box.
+    ///
+    /// 🔴 WHEN THE MOST COMMON COLOUR IS THE INK, this used to report no background at all, and that was a
+    /// hole: text painted in its own surface's colour - invisible - is exactly that case, and it never
+    /// reddened. Two different boxes look alike here. A heavy glyph covers most of its box and still has a
+    /// surface showing through, so the next colour that is not the ink, if it covers a real share, is the
+    /// surface. A box with no such colour holds nothing that differs from the ink, which means the text
+    /// cannot be seen, and it is read against its own ink - a ratio near one, and a finding.
+    ///
+    /// A band sampled AROUND the box was the first design and was dropped before it was written: white text
+    /// on a white chip would read against the card beyond the chip and pass, invisible as it is.
+    ///
+    /// Only a line with no pixels on the canvas at all comes back unknown.
+    /// </remarks>
+    private static Color? PaperBehind(byte[] pixels, int stride, int width, int height, Rect bounds, Color ink)
     {
         int x0 = Math.Max(0, (int)bounds.X);
         int y0 = Math.Max(0, (int)bounds.Y);
@@ -147,9 +167,33 @@ internal static class ContrastReport
             return null;
         }
 
-        int top = counts.MaxBy(pair => pair.Value).Key;
-        return Color.FromRgb((byte)((top >> 16) * 8), (byte)(((top >> 8) & 0xFF) * 8), (byte)((top & 0xFF) * 8));
+        var ranked = counts.OrderByDescending(pair => pair.Value).ToList();
+        var dominant = BucketColour(ranked[0].Key);
+        if (Distance(ink, dominant) > InkConfusionDistance)
+        {
+            return dominant;
+        }
+
+        double total = (x1 - x0) * (y1 - y0);
+        foreach (var (key, count) in ranked.Skip(1))
+        {
+            if (count / total < SecondSurfaceShare)
+            {
+                break;
+            }
+
+            var colour = BucketColour(key);
+            if (Distance(ink, colour) > InkConfusionDistance)
+            {
+                return colour;
+            }
+        }
+
+        return dominant;
     }
+
+    private static Color BucketColour(int key)
+        => Color.FromRgb((byte)((key >> 16) * 8), (byte)(((key >> 8) & 0xFF) * 8), (byte)((key & 0xFF) * 8));
 
     /// <summary>WCAG 2.1 contrast ratio between two colours.</summary>
     private static double Contrast(Color a, Color b)

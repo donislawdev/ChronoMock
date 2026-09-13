@@ -61,6 +61,20 @@ internal sealed record LaidOutElement
     public required int ParentIndex { get; init; }
 
     /// <summary>
+    /// The partition the parent reserved for this element, in the ROOT's coordinates, or null when there is
+    /// no layout parent to reserve one.
+    /// </summary>
+    /// <remarks>
+    /// 🔴 THE SLOT, NOT THE BOUNDS, IS WHAT A SPACING DECISION IS MADE OF. The bounds are where the content
+    /// landed after alignment, so the distance between two of them also holds whatever a right alignment, a
+    /// star column or a shared label column left over - space nobody laid out.
+    /// </remarks>
+    public Rect? Slot { get; init; }
+
+    /// <summary>The element's own margin, which sits inside its slot.</summary>
+    public Thickness Margin { get; init; }
+
+    /// <summary>
     /// How wide this text WANTS to be on one line, measured on a detached copy, or zero when the element
     /// is not text.
     /// </summary>

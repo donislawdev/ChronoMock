@@ -70,7 +70,11 @@ internal static class LayoutProbe
             if (step.Node is FrameworkElement described && bounds.HasValue)
             {
                 index = found.Count;
-                found.Add(Describe(described, bounds.Value, step, visible));
+                found.Add(Describe(described, bounds.Value, step, visible) with
+                {
+                    Slot = SlotWithin(described, root),
+                    Margin = described.Margin,
+                });
             }
 
             if (step.Node is Visual)
@@ -80,6 +84,38 @@ internal static class LayoutProbe
         }
 
         return found;
+    }
+
+    /// <summary>
+    /// The partition the element's parent reserved for it, moved into the root's coordinates, or null for the
+    /// root itself and for an element no longer connected to it.
+    /// </summary>
+    /// <remarks>
+    /// The slot is taken to be in the PARENT's coordinates, so it goes through the parent's transform rather
+    /// than the element's own. The two spacing canaries in LayoutGuardTests hold that to account: a wrong
+    /// space would move every gap they measure.
+    /// </remarks>
+    private static Rect? SlotWithin(FrameworkElement element, FrameworkElement root)
+    {
+        if (ReferenceEquals(element, root) || VisualTreeHelper.GetParent(element) is not Visual parent)
+        {
+            return null;
+        }
+
+        var slot = System.Windows.Controls.Primitives.LayoutInformation.GetLayoutSlot(element);
+        if (ReferenceEquals(parent, root))
+        {
+            return slot;
+        }
+
+        try
+        {
+            return parent.TransformToAncestor(root).TransformBounds(slot);
+        }
+        catch (InvalidOperationException)
+        {
+            return null;
+        }
     }
 
     /// <summary>

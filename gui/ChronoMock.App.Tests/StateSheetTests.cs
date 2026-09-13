@@ -82,50 +82,34 @@ public class StateSheetTests
         {
             var total = 0;
 
-            total += RenderSetup("setup-startup", WithScenarios()).Count;
+            total += RenderSetup("setup-startup", PhaseStates.SetupStartup()).Count;
 
             // The catalogue open, which is the only render showing the well, its rows and the sentence
             // saying what choosing from it will do.
-            total += RenderSetup("setup-scenarios", WithScenarios(), "ScenarioSection").Count;
+            total += RenderSetup("setup-scenarios", PhaseStates.SetupStartup(), "ScenarioSection").Count;
 
-            var searching = WithScenarios();
-            searching.ScenarioPicker.Filter = "nothing is called this";
-            total += RenderSetup("setup-no-matches", searching, "ScenarioSection").Count;
+            total += RenderSetup("setup-no-matches", PhaseStates.SetupSearchingForNothing(), "ScenarioSection").Count;
 
             // 🔴 The merged group open, with everything in it turned on. The speed section absorbed the
             // launch fields when five groups would not fit the window, and without this render the merge
             // is a thing nobody looked at - the two halves meeting, the chips in the header, and the label
             // column agreeing across a boundary that used to be two separate scopes.
-            var options = WithScenarios();
-            options.ScaleDuration = true;
-            options.ScaleQpc = true;
-            options.ForceStart = true;
-            options.TargetArgs = "--seed 7 --headless";
-            options.WorkingFolder = @"C:\apps\data";
-            total += RenderSetup("setup-options", options, "SpeedSection").Count;
+            total += RenderSetup("setup-options", PhaseStates.SetupWithEveryOption(), "SpeedSection").Count;
 
             // 🔴 AN APPLICATION CHOSEN AND A DATE THAT DOES NOT PARSE, which is the state the footer used
             // to meet in silence: the contract line has no moment to print, Start is disabled, and the
             // only sentence the footer knew was "choose an application" - which had been done. Nothing in
             // the sheet had ever rendered a refusal other than the first one.
-            var badDate = WithScenarios();
-            badDate.SetTarget(Path.Combine(TestPaths.RepoRoot(), "target.exe"));
-            badDate.Moment.DateText = "2038-02-31";
-            total += RenderSetup("setup-bad-date", badDate).Count;
+            total += RenderSetup("setup-bad-date", PhaseStates.SetupWithBadDate()).Count;
 
-            var configured = WithScenarios();
-            configured.SetTarget(Path.Combine(TestPaths.RepoRoot(), "target.exe"));
-            configured.ScaleDuration = true;
-            configured.ScaleQpc = true;
-            configured.ForceStart = true;
-            total += RenderSetup("setup-configured", configured).Count;
+            total += RenderSetup("setup-configured", PhaseStates.SetupConfigured()).Count;
 
             // 🔴 The window's own floor, which is the whole reason the footer is pinned. At 360 px the
             // form is far taller than the frame, so this is the sheet that shows whether the action and
             // the sentence explaining it survived - or whether they went below the fold with everything
             // else, which is what they used to do.
             total += StateSheet
-                .Write("setup-floor", new SetupPhaseView { DataContext = WithScenarios() }, MinimumWidth, MinimumHeight)
+                .Write("setup-floor", new SetupPhaseView { DataContext = PhaseStates.SetupStartup() }, MinimumWidth, MinimumHeight)
                 .Count;
 
             return total;
@@ -163,11 +147,9 @@ public class StateSheetTests
 
             // The window's floor, where the clocks and the action have to survive together. Its model
             // goes through the same helper, so it carries a target like every other session state.
-            var floor = SessionStates.Running();
-            floor.SetTarget(Path.Combine(TestPaths.RepoRoot(), "target.exe"));
             total += StateSheet.Write(
                 "session-floor",
-                new SessionPhaseView { DataContext = floor },
+                new SessionPhaseView { DataContext = PhaseStates.WithTarget(SessionStates.Running()) },
                 MinimumWidth,
                 MinimumHeight).Count;
 
@@ -182,14 +164,9 @@ public class StateSheetTests
         SessionViewModel model,
         string? openSection = null)
     {
-        // 🔴 A SESSION HAS A TARGET, and the shared fixtures do not set one - they were written for the
-        // panel, where the form supplies it. Without this the phase's first line ("Application: …") is bound
-        // to a model with no target and renders as nothing, so the render would be missing the one thing
-        // that says which session it is. Set here rather than in SessionStates, because the panel renders
-        // use the same fixtures and their baselines would move.
-        model.SetTarget(Path.Combine(TestPaths.RepoRoot(), "target.exe"));
-
-        var view = new SessionPhaseView { DataContext = model };
+        // A session has an application and the shared fixtures do not set one - PhaseStates.WithTarget says
+        // why it is added there rather than in SessionStates.
+        var view = new SessionPhaseView { DataContext = PhaseStates.WithTarget(model) };
 
         if (openSection is not null
             && view.FindName(openSection) is System.Windows.Controls.Expander section)
@@ -205,9 +182,6 @@ public class StateSheetTests
 
         return StateSheet.Write(name, view);
     }
-
-    private static SessionViewModel WithScenarios()
-        => new(new InMemorySessionHistoryStore(), presetsDir: Path.Combine(TestPaths.RepoRoot(), "presets"));
 
     /// <summary>
     /// The phase at the window's REAL size, which is the only size worth judging it at.

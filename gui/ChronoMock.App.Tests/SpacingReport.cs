@@ -186,6 +186,11 @@ internal static class SpacingReport
     /// The overlap test is what keeps this honest. Two controls in different columns of a grid are not
     /// vertical neighbours however their tops compare, and measuring the distance between them would
     /// invent a gap nobody laid out.
+    ///
+    /// 🔴 WHAT THIS DOES NOT READ: neighbours in ONE grid of several rows whose columns line up. Sorted on
+    /// one axis, the second row's label sits between the first row's label and its value, so that pair is
+    /// never consecutive and never measured. Found when a two-row canary came back with no gaps at all. The
+    /// forms in this interface are one grid per row (PartFormRow), where it does not arise.
     /// </remarks>
     private static IEnumerable<Gap> Along(
         string panel, string where, bool ours, List<LaidOutElement> siblings, bool vertical)
@@ -203,9 +208,7 @@ internal static class SpacingReport
                 continue;
             }
 
-            double gap = vertical
-                ? after.Bounds.Top - before.Bounds.Bottom
-                : after.Bounds.Left - before.Bounds.Right;
+            double gap = LaidOutGap(before, after, vertical);
 
             // A negative gap is an overlap, which is the spill rule's business rather than spacing's.
             if (gap < 0)
@@ -224,6 +227,33 @@ internal static class SpacingReport
                 Vertical = vertical,
             };
         }
+    }
+
+    /// <summary>
+    /// The space between two neighbours that somebody laid out: slot to slot, plus the margins that face
+    /// each other.
+    /// </summary>
+    /// <remarks>
+    /// 🔴 NOT THE DISTANCE BETWEEN THEIR BOUNDS, which is what this measured first. A bound is where content
+    /// landed after alignment, so that distance also held whatever a right alignment, a star column or a
+    /// shared label column left over. On the rebuilt phases it read a right-aligned summary as a 772 px gap
+    /// and a shorter label in a shared column as 21.3 px. A fixed track between two slots is still a gap
+    /// here, and still read.
+    ///
+    /// The bounds are the fallback only for an element the walk could not give a slot.
+    /// </remarks>
+    private static double LaidOutGap(LaidOutElement before, LaidOutElement after, bool vertical)
+    {
+        if (before.Slot is not { } first || after.Slot is not { } second)
+        {
+            return vertical
+                ? after.Bounds.Top - before.Bounds.Bottom
+                : after.Bounds.Left - before.Bounds.Right;
+        }
+
+        return vertical
+            ? second.Top - first.Bottom + before.Margin.Bottom + after.Margin.Top
+            : second.Left - first.Right + before.Margin.Right + after.Margin.Left;
     }
 
     private static bool SharesTheOtherAxis(Rect a, Rect b, bool vertical) => vertical

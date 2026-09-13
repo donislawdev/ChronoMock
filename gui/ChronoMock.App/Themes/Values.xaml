@@ -139,8 +139,11 @@
 
   <!-- The consequence line under a check, indented to start where its LABEL starts rather than where the
        box does: 20 for the box plus 8 for the gap beside it, both from the two values above. A note that
-       began under the box would read as a second option rather than as a footnote to the first. -->
-  <Thickness x:Key="OptionNoteGap">28,2,0,0</Thickness>
+       began under the box would read as a second option rather than as a footnote to the first.
+
+       🔴 4 below, the smallest step of the scale. It was 2, off the scale, and nothing noticed until the
+       spacing guard read the setup phase - the literal guard accepts any value that has a name. -->
+  <Thickness x:Key="OptionNoteGap">28,4,0,0</Thickness>
 
   <!-- The three fields of the "relative to now" shift, which is one idea spread over three controls and
        therefore needs its widths named together rather than each guessed where it stands. The sign holds
