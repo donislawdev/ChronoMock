@@ -140,6 +140,10 @@ pub enum Event {
         /// Additive like `observed`: a message from before this field existed still parses.
         #[serde(default)]
         unobserved: Vec<String>,
+        /// Channels hooked only once their module loaded, by name - see `chrono_core::Coverage`.
+        /// Additive like the two above: a message from before this field existed still parses.
+        #[serde(default)]
+        installed_late: Vec<String>,
         warning_keys: Vec<String>,
     },
     Verdict {
@@ -325,28 +329,33 @@ mod tests {
             observed: vec![CoveredChannel { channel: "WaitForSingleObject".into(), calls: 5 }],
             uncovered: vec![],
             unobserved: vec!["WaitOnAddress".into()],
+            installed_late: vec!["timeGetTime".into()],
             warning_keys: vec!["wait.object_waits_not_scaled".into()],
         };
         let line = ev.to_ndjson();
         assert!(line.contains(r#""observed""#), "observed must serialize, got {line}");
         assert!(line.contains(r#""unobserved""#), "unobserved must serialize, got {line}");
+        assert!(line.contains(r#""installed_late""#), "installed_late must serialize, got {line}");
         match parse_event(&line).unwrap() {
-            Event::Coverage { observed, unobserved, warning_keys, .. } => {
+            Event::Coverage { observed, unobserved, installed_late, warning_keys, .. } => {
                 assert_eq!(observed.len(), 1);
                 assert_eq!(observed[0].channel, "WaitForSingleObject");
                 assert_eq!(observed[0].calls, 5);
                 assert_eq!(unobserved, vec!["WaitOnAddress".to_string()]);
+                assert_eq!(installed_late, vec!["timeGetTime".to_string()]);
                 assert_eq!(warning_keys, vec!["wait.object_waits_not_scaled".to_string()]);
             }
             _ => panic!("wrong event variant"),
         }
-        // A coverage message from before `observed` and `unobserved` existed still parses (serde
-        // default on both), which is what makes each of them an additive change rather than a break.
+        // A coverage message from before `observed`, `unobserved` and `installed_late` existed still
+        // parses (serde default on all three), which is what makes each of them an additive change
+        // rather than a break.
         let old = r#"{"type":"coverage","v":1,"pid":42,"covered":[],"uncovered":[],"warning_keys":[]}"#;
         match parse_event(old).unwrap() {
-            Event::Coverage { observed, unobserved, .. } => {
+            Event::Coverage { observed, unobserved, installed_late, .. } => {
                 assert!(observed.is_empty());
                 assert!(unobserved.is_empty());
+                assert!(installed_late.is_empty());
             }
             _ => panic!("wrong event variant"),
         }

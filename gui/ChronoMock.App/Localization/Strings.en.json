@@ -82,6 +82,8 @@
   "session.stop_note": "Stopping returns the application to the real clock. It is not closed.",
   // Without "audit" and "core", the two mechanism words this screen stopped using everywhere else.
   "session.audit_pending": "The clocks this application reads will be listed here once the tool has checked.",
+  // When the session is over and no report came, the sentence above would be a promise nobody keeps.
+  "session.audit_never_arrived": "The session ended before the tool could check which clocks this application reads.",
   // A label and a number, for the reason setup.scenario_available gives: "1 warnings" was on this header.
   "session.chip_covered": "fake clock:",
   "session.chip_uncovered": "real clock:",
@@ -356,6 +358,9 @@
   // Not the same thing as either, and the wording has to keep them apart: the two above are time the
   // application asked for, this one is a watch we promised and never started.
   "coverage.unobserved": "Could not be watched",
+  // Every row here is also in one of the lists above with its count. This names which of those counts are
+  // floors - which the late-hook warning needs, and could not say on its own.
+  "coverage.installed_late": "Came under the fake clock late",
   "coverage.warnings": "Warnings",
   "coverage.family_note": "Several processes ran - the call counts are the first one's, while the warnings and everything read from the real clock cover all of them.",
   "coverage.contexts_note": "A Chromium application - every JS context is listed on its own (the page and its workers), never added together.",
@@ -366,7 +371,7 @@
   "wait.timeout_collapsed": "Some of this application's waits were too short to divide by the full speed factor, so they ran at the shortest step this tool uses (1 ms) instead. That part of the application did not accelerate - a lower speed makes it exact again.",
   "timer.multimedia_not_scaled": "The multimedia timer (timeSetEvent) is observed but not scaled.",
   "clock.timegettime_scaled_audio_may_shift": "The winmm clock timeGetTime is being scaled with the rest of the duration axis, so a target that paces itself from it follows the session - but a media application that positions audio from that clock may drift.",
-  "coverage.channel_installed_late": "One time function came under the fake clock only after its own module loaded, so calls the application made before that are missing from the counts - and if that function is a scaled one, its clock jumped once when it joined.",
+  "coverage.channel_installed_late": "The functions listed as coming under the fake clock late were hooked only once their own module loaded, so calls the application made before that are missing from their counts - and a scaled one's clock jumped once when it joined.",
   "inheritance.ntcreateuserprocess_child_maybe_uncovered": "A child process started through a lower-level call may have run on the real clock.",
   // R2-S2. Distinct from the NtCreateUserProcess warning above it: there we choose not to inject,
   // here we tried and it did not take, so a process of this family really did run on the real clock.

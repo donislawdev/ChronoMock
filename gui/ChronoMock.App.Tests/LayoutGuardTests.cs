@@ -533,19 +533,25 @@ public class LayoutGuardTests
         return SpacingReport.Measure(LayoutProbe.Walk(root));
     }
 
-    private static IReadOnlyList<ContrastReport.Reading> ReadText(FrameworkElement root, int height = LayoutProbe.WindowHeight)
+    private static IReadOnlyList<ContrastReport.Reading> ReadText(
+        FrameworkElement root, int height = LayoutProbe.WindowHeight, int textAtLeast = TextReadingsAtLeast)
     {
         LayoutProbe.Settle(root, LayoutProbe.WindowWidth, height);
         var readings = ContrastReport.Measure(root, LayoutProbe.Walk(root), LayoutProbe.WindowWidth, height);
 
         Assert.True(
-            readings.Count >= TextReadingsAtLeast,
+            readings.Count >= textAtLeast,
             $"only {readings.Count} pieces of text were measured, so this screen was not really read");
         return readings;
     }
 
     /// <summary>Measured today: 49 on the panel and 29 on the calculator. The floor is well under both.</summary>
     private const int TextReadingsAtLeast = 20;
+
+    /// <summary>Measured today: 16 in the sparsest state of the rebuilt phases - a session that did not take
+    /// effect, with no controls and no audit left to read - and more than twice that in the others. Its own
+    /// floor, because the panel's would call that honest state unread.</summary>
+    private const int PhaseTextReadingsAtLeast = 8;
 
     /// <summary>
     /// Every line of text in both rebuilt phases reaches its contrast floor, in every state the sheet draws.
@@ -565,7 +571,7 @@ public class LayoutGuardTests
             var found = new List<string>();
             foreach (var (name, view) in PhaseStatesOnCanvas())
             {
-                var readings = ReadText(view, PhaseCanvasHeight);
+                var readings = ReadText(view, PhaseCanvasHeight, PhaseTextReadingsAtLeast);
                 AssertNothingLeftToScroll(name, view);
                 found.AddRange(readings
                     .Where(r => r.TooFaint)
@@ -592,7 +598,7 @@ public class LayoutGuardTests
             var found = new List<string>();
             foreach (var (name, view) in PhaseStatesOnCanvas())
             {
-                var readings = ReadText(view, PhaseCanvasHeight);
+                var readings = ReadText(view, PhaseCanvasHeight, PhaseTextReadingsAtLeast);
                 AssertNothingLeftToScroll(name, view);
                 found.AddRange(readings
                     .Where(r => r.OffScale)
@@ -680,6 +686,86 @@ public class LayoutGuardTests
     /// </remarks>
     private const int PhaseCanvasHeight = 2048;
 
+    /// <summary>
+    /// A session that is over offers no control the reader cannot use, and a live one still has its controls.
+    /// </summary>
+    /// <remarks>
+    /// 🔴 THIS GUARD EXISTS BECAUSE THE FAULT WAS MADE. An ended session kept the whole control card on screen,
+    /// disabled, with a Stop that could stop nothing.
+    ///
+    /// The running state is asserted as well, because "no disabled control is visible" is also true of a
+    /// screen that hides its controls in every state.
+    ///
+    /// Reversal probe: take the Visibility binding off ControlsCard and StopButton in SessionPhaseView.xaml and
+    /// this reddens on both ended states.
+    /// </remarks>
+    [Fact]
+    public void A_session_that_is_over_offers_no_control_it_cannot_use()
+    {
+        var (dead, live) = WpfTestHost.InvokeSettled(() =>
+        {
+            var found = new List<string>();
+            foreach (var (name, model) in new[]
+            {
+                ("session ended", SessionStates.Ended()),
+                ("session that did not take effect", SessionStates.TargetVanished()),
+            })
+            {
+                var view = new SessionPhaseView { DataContext = PhaseStates.WithTarget(model) };
+                LayoutProbe.Settle(view);
+                found.AddRange(LayoutProbe.Walk(view)
+                    .Where(e => e.IsVisible && !e.IsEnabled && e.Kind is nameof(Button) or nameof(TextBox))
+                    .Select(e => $"{name}: {e.Kind} \"{e.Text}\" is shown and cannot be used"));
+            }
+
+            var running = new SessionPhaseView { DataContext = PhaseStates.WithTarget(SessionStates.Running()) };
+            LayoutProbe.Settle(running);
+            var pressable = LayoutProbe.Walk(running).Count(e => e.IsVisible && e.IsEnabled && e.Kind == nameof(Button));
+            return (found, pressable);
+        });
+
+        AssertNoFindings(dead);
+        Assert.True(live >= LiveSessionButtonsAtLeast, $"a running session shows only {live} buttons it can press");
+    }
+
+    /// <summary>Speed presets, Set, the jumps and Stop come to eleven on a running session. A literal under that,
+    /// so a view hiding its controls in every state cannot pass the half above by showing none.</summary>
+    private const int LiveSessionButtonsAtLeast = 8;
+
+    /// <summary>
+    /// A session that ended before any report says so, instead of promising one that will not come.
+    /// </summary>
+    /// <remarks>
+    /// 🔴 THIS GUARD EXISTS BECAUSE THE FAULT WAS MADE. The place for the audit kept saying the clocks would be
+    /// listed once the tool had checked, under a session whose application had already vanished.
+    ///
+    /// Reversal probe: make IsAuditPending in SessionViewModel ignore whether the session is over, which is what
+    /// the sentence used to be bound to, and this reddens.
+    /// </remarks>
+    [Fact]
+    public void A_session_that_ended_without_a_report_says_so_instead_of_promising_one()
+    {
+        var (pendingWhenOver, neverWhenOver, pendingWhenLive) = WpfTestHost.InvokeSettled(() =>
+        {
+            var gone = new SessionPhaseView { DataContext = PhaseStates.WithTarget(SessionStates.TargetVanished()) };
+            LayoutProbe.Settle(gone);
+            var over = LayoutProbe.Walk(gone);
+
+            var running = new SessionPhaseView { DataContext = PhaseStates.WithTarget(SessionStates.Running()) };
+            LayoutProbe.Settle(running);
+            var live = LayoutProbe.Walk(running);
+
+            return (
+                over.Single(e => e.Name == "AuditPending").IsVisible,
+                over.Single(e => e.Name == "AuditNeverArrived").IsVisible,
+                live.Single(e => e.Name == "AuditPending").IsVisible);
+        });
+
+        Assert.False(pendingWhenOver, "a session that is over still promises a report");
+        Assert.True(neverWhenOver, "a session that ended without a report does not say it will not come");
+        Assert.True(pendingWhenLive, "a running session no longer says its report is on the way");
+    }
+
     /// <summary>Both rebuilt phases in every state the sheet draws, with the section that holds the state opened.</summary>
     /// <remarks>Lazy on purpose: every view is created inside the caller's dispatcher call.</remarks>
     private static IEnumerable<(string Name, FrameworkElement View)> PhaseStatesOnCanvas()
@@ -694,6 +780,7 @@ public class LayoutGuardTests
         yield return ("session with the audit open", SessionView(SessionStates.RunningWithCoverageWarnings(), "AuditSection"));
         yield return ("session with a failed command", SessionView(SessionStates.InFlightError()));
         yield return ("session ended", SessionView(SessionStates.Ended()));
+        yield return ("session that did not take effect", SessionView(SessionStates.TargetVanished()));
     }
 
     private static FrameworkElement SetupView(SessionViewModel model, string? openSection = null)

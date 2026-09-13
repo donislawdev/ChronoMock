@@ -35,6 +35,11 @@ public sealed record CoverageEvent : ChronoEvent
     /// uncovered channel and not a verdict input: a watch that never started says nothing about whether
     /// the substitution took effect. It exists because the alternative was no line at all.</summary>
     [JsonPropertyName("unobserved")] public IReadOnlyList<string> Unobserved { get; init; } = [];
+
+    /// <summary>Channels that came under the fake clock only once their module loaded, by name. Each is also
+    /// in Covered or Observed with its count - this says that count is a floor, and names what the warning
+    /// coverage.channel_installed_late is about. Absent from a core older than the field, and then empty.</summary>
+    [JsonPropertyName("installed_late")] public IReadOnlyList<string> InstalledLate { get; init; } = [];
     [JsonPropertyName("warning_keys")] public IReadOnlyList<string> WarningKeys { get; init; } = [];
 }
 

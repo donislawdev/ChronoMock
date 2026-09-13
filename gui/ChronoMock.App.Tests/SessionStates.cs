@@ -46,6 +46,7 @@ internal static class SessionStates
             ],
             Uncovered = ["QueryPerformanceCounter"],
             Unobserved = ["NtQuerySystemTime"],
+            InstalledLate = ["timeGetTime"],
             WarningKeys = ["wait.timeout_collapsed", "coverage.channel_installed_late"],
         });
         return vm;

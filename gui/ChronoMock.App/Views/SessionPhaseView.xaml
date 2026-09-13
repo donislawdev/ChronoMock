@@ -159,7 +159,11 @@
           opened this phase to do, and a section that had to be opened first would be a setting rather
           than a control.
         -->
+        <!-- 🔴 GONE ONCE THE SESSION IS OVER, and only then. A finished session kept this card on screen
+             disabled, nine buttons nobody could press. While it is stopping the card stays, disabled, so it
+             does not vanish under the pointer that just pressed Stop. -->
         <Border x:Name="ControlsCard" Style="{StaticResource PartCard}" Margin="{StaticResource StackGapXl}"
+                Visibility="{Binding ShowsSessionControls, Converter={StaticResource BoolToVis}}"
                 Grid.IsSharedSizeScope="True">
           <StackPanel IsEnabled="{Binding IsRunning}">
             <HeaderedContentControl Style="{StaticResource PartFormRow}">
@@ -232,10 +236,17 @@
              rather than one that is waiting for a report. It also answers a question a first session
              actually raises: the tool has not said whether the substitution worked, and the reader has no
              way to know whether that is a verdict or a delay. -->
-        <TextBlock Style="{StaticResource PartNote}" TextWrapping="Wrap"
+        <TextBlock x:Name="AuditPending" Style="{StaticResource PartNote}" TextWrapping="Wrap"
                    Margin="{StaticResource StackGapXl}"
                    Text="{DynamicResource session.audit_pending}"
-                   Visibility="{Binding CoverageNotKnown, Converter={StaticResource BoolToVis}}" />
+                   Visibility="{Binding IsAuditPending, Converter={StaticResource BoolToVis}}" />
+        <!-- 🔴 AND WHEN IT WILL NOT COME. A session that ended before any report - the application vanished,
+             the core stopped - kept promising the list would appear once the tool had checked. It never
+             will, so the place says that instead. -->
+        <TextBlock x:Name="AuditNeverArrived" Style="{StaticResource PartNote}" TextWrapping="Wrap"
+                   Margin="{StaticResource StackGapXl}"
+                   Text="{DynamicResource session.audit_never_arrived}"
+                   Visibility="{Binding AuditNeverArrived, Converter={StaticResource BoolToVis}}" />
 
         <Expander x:Name="AuditSection" Style="{StaticResource PartSection}"
                   Margin="{StaticResource StackGapXl}"
@@ -277,6 +288,12 @@
                                   Header="{DynamicResource coverage.unobserved}"
                                   ItemsSource="{Binding Unobserved}"
                                   Visibility="{Binding HasUnobserved, Converter={StaticResource BoolToVis}}" />
+            <!-- Named, and above the warning that explains them: every row is also in a list above with its
+                 count, and this is the list that says which of those counts are floors. -->
+            <HeaderedItemsControl Style="{StaticResource PartFactList}"
+                                  Header="{DynamicResource coverage.installed_late}"
+                                  ItemsSource="{Binding InstalledLate}"
+                                  Visibility="{Binding HasInstalledLate, Converter={StaticResource BoolToVis}}" />
             <!-- The note variant, because these are sentences: a warning clipped at the card's edge is
                  one the reader cannot act on, which is the whole point of having raised it. -->
             <HeaderedItemsControl Style="{StaticResource PartNoteList}"
@@ -326,14 +343,15 @@
         <TextBlock x:Name="InFlightError" Style="{StaticResource PartErrorNote}" TextWrapping="Wrap"
                    Margin="{StaticResource StackGapSm}"
                    Text="{Binding InFlightErrorKey, Converter={StaticResource KeyToText}}"
-                   Visibility="{Binding HasInFlightError, Converter={StaticResource BoolToVis}}" />
+                   Visibility="{Binding ShowsInFlightError, Converter={StaticResource BoolToVis}}" />
 
         <!-- 🔴 STOP IS NOT THE ACCENT. The accent on this library means "the next step", and while a
              session runs there is no next step - the reader is watching. An accented Stop would be the
              screen asking to be ended. It is an ordinary button, and it says what it does in a word. -->
-        <Button Content="{DynamicResource control.stop}"
+        <Button x:Name="StopButton" Content="{DynamicResource control.stop}"
                 ToolTip="{DynamicResource tip.stop}"
                 IsEnabled="{Binding IsRunning}"
+                Visibility="{Binding ShowsSessionControls, Converter={StaticResource BoolToVis}}"
                 HorizontalAlignment="Left"
                 Margin="{StaticResource StackGapSm}" />
 

@@ -230,6 +230,39 @@ public class SessionViewModelTests
         Assert.Equal("status.target_unreadable", vm.StatusKey);
     }
 
+    /// <summary>
+    /// A new session starts with an empty audit, not with the previous session's lists.
+    /// </summary>
+    /// <remarks>
+    /// 🔴 THIS GUARD EXISTS BECAUSE THE FAULT WAS MADE. The reset cleared the covered, observed, uncovered and
+    /// warning lists and not the one saying what could not be watched, and those lists are unions - so a second
+    /// session in the same window went on listing the first one's channels (untouchable rule 4). The start is
+    /// aimed at a missing file, which fails after the reset and before any core is launched.
+    /// </remarks>
+    [Fact]
+    public async Task A_new_session_does_not_inherit_the_previous_sessions_audit_lists()
+    {
+        var vm = new SessionViewModel();
+        vm.Apply(new CoverageEvent
+        {
+            V = ProtocolJson.ProtocolVersion,
+            Pid = 100,
+            Covered = [new CoveredChannel { Channel = "timeGetTime", Calls = 12 }],
+            Unobserved = ["NtQuerySystemTime"],
+            InstalledLate = ["timeGetTime"],
+            WarningKeys = ["coverage.channel_installed_late"],
+        });
+        Assert.True(vm.HasUnobserved && vm.HasInstalledLate, "the fixture no longer carries a previous session");
+
+        vm.SetTarget(Path.Combine(Path.GetTempPath(), $"chrono-missing-{Guid.NewGuid():N}.exe"));
+        await vm.StartAsync();
+
+        Assert.Equal("status.target_unreadable", vm.StatusKey);
+        Assert.Empty(vm.Covered);
+        Assert.Empty(vm.Unobserved);
+        Assert.Empty(vm.InstalledLate);
+    }
+
     [Fact]
     public void State_syncs_the_mode_dropdown_to_the_live_multiplier()
     {
@@ -499,6 +532,66 @@ public class SessionViewModelTests
         Assert.Contains("QueryPerformanceCounter", vm.Observed[0], StringComparison.Ordinal);
         Assert.Equal("KUSER_SHARED_DATA", Assert.Single(vm.Uncovered));
         Assert.Equal("source.network_at_start", Assert.Single(vm.Warnings));
+    }
+
+    /// <summary>
+    /// The channels hooked late are named, unioned over the family like the other reasons behind a verdict.
+    /// </summary>
+    [Fact]
+    public void Channels_hooked_late_are_named_and_unioned_over_the_family()
+    {
+        var vm = new SessionViewModel();
+
+        vm.Apply(new CoverageEvent
+        {
+            V = ProtocolJson.ProtocolVersion,
+            Pid = 100,
+            Covered = [new CoveredChannel { Channel = "timeGetTime", Calls = 12 }],
+            InstalledLate = ["timeGetTime"],
+            WarningKeys = ["coverage.channel_installed_late"],
+        });
+        vm.Apply(new CoverageEvent
+        {
+            V = ProtocolJson.ProtocolVersion,
+            Pid = 200,
+            InstalledLate = ["timeGetTime", "WSAWaitForMultipleEvents"],
+            WarningKeys = ["coverage.channel_installed_late"],
+        });
+
+        Assert.True(vm.HasInstalledLate);
+        Assert.Equal(["timeGetTime", "WSAWaitForMultipleEvents"], vm.InstalledLate);
+    }
+
+    /// <summary>
+    /// A session that is over stops offering on the session phase what only a live session can use: its
+    /// controls, a refused command's error, and the promise of an audit that will not come.
+    /// </summary>
+    [Fact]
+    public void A_session_that_is_over_stops_offering_what_only_a_live_session_can_use()
+    {
+        var vm = SessionStates.InFlightError();
+        Assert.True(vm.ShowsSessionControls);
+        Assert.True(vm.ShowsInFlightError);
+        Assert.True(vm.IsAuditPending);
+        Assert.False(vm.AuditNeverArrived);
+
+        vm.Apply(new VanishedEvent
+        {
+            V = ProtocolJson.ProtocolVersion,
+            Pid = 4242,
+            ReasonKey = "target.single_instance_handoff",
+            LivedMs = 180,
+        });
+
+        Assert.False(vm.ShowsSessionControls);
+        Assert.True(vm.HasInFlightError, "the shipped panel keeps the error it had");
+        Assert.False(vm.ShowsInFlightError, "the session phase does not show it under a session that is over");
+        Assert.False(vm.IsAuditPending);
+        Assert.True(vm.AuditNeverArrived);
+
+        var ended = SessionStates.Ended();
+        Assert.False(ended.ShowsSessionControls);
+        Assert.False(ended.AuditNeverArrived, "an ended session that did report has nothing missing to announce");
     }
 
     /// <summary>

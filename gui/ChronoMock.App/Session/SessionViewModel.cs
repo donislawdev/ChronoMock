@@ -203,6 +203,7 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     private IReadOnlyList<string> _observed = [];
     private IReadOnlyList<string> _uncovered = [];
     private IReadOnlyList<string> _unobserved = [];
+    private IReadOnlyList<string> _installedLate = [];
     private IReadOnlyList<string> _warnings = [];
 
     private bool _hasTiming;
@@ -240,12 +241,27 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
                 RaisePropertyChanged(nameof(IsRunning));
                 RaisePropertyChanged(nameof(CanCopySummary));
                 RaisePropertyChanged(nameof(CanEditTime));
+                RaisePropertyChanged(nameof(ShowsSessionControls));
+                RaisePropertyChanged(nameof(ShowsInFlightError));
+                RaisePropertyChanged(nameof(IsAuditPending));
+                RaisePropertyChanged(nameof(AuditNeverArrived));
             }
         }
     }
 
     /// <summary>True while the session is live - the in-flight controls bind their visibility to this.</summary>
     public bool IsRunning => _statusKind == SessionStatusKind.Running;
+
+    /// <summary>
+    /// The session phase's controls are still worth showing: the session is live, or on its way in or out.
+    /// </summary>
+    /// <remarks>
+    /// 🔴 NOT <see cref="IsRunning"/>. An ended session kept the whole control card on screen, disabled, with a
+    /// Stop that could stop nothing - nine buttons offered to a reader who could press none of them. They go
+    /// once the session is over. Stopping is not over: the reader has just pressed Stop, and the card stays,
+    /// disabled, until the core confirms, rather than vanishing under the pointer.
+    /// </remarks>
+    public bool ShowsSessionControls => !IsTerminal(_statusKind);
 
     /// <summary>True once a session has started (running or finished) - there is then something to copy.
     /// The Copy summary button binds its visibility to this (chrono-mock 7.2, 8.8).</summary>
@@ -263,11 +279,24 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     public string InFlightErrorKey
     {
         get => _inFlightErrorKey;
-        private set { if (Set(ref _inFlightErrorKey, value)) { RaisePropertyChanged(nameof(HasInFlightError)); } }
+        private set
+        {
+            if (Set(ref _inFlightErrorKey, value))
+            {
+                RaisePropertyChanged(nameof(HasInFlightError));
+                RaisePropertyChanged(nameof(ShowsInFlightError));
+            }
+        }
     }
 
     /// <summary>True when a per-command in-flight error is being shown.</summary>
     public bool HasInFlightError => _inFlightErrorKey.Length > 0;
+
+    /// <summary>The in-flight error, for as long as the session it is about can still act on it.</summary>
+    /// <remarks>A refused command from a session that has since ended explains nothing on the session phase,
+    /// where it would sit under "Session ended" saying the clock did not move. The shipped panel binds
+    /// <see cref="HasInFlightError"/> and keeps its own behaviour.</remarks>
+    public bool ShowsInFlightError => HasInFlightError && !IsTerminal(_statusKind);
 
     /// <summary>Translation key for the copy-summary feedback ("copy.done" / "copy.failed"), empty until a
     /// copy is attempted. A clipboard failure is surfaced, never swallowed (rule 6).</summary>
@@ -980,23 +1009,36 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
             if (Set(ref _coverageKnown, value))
             {
                 RaisePropertyChanged(nameof(HasCoverageNote));
-                RaisePropertyChanged(nameof(CoverageNotKnown));
+                RaisePropertyChanged(nameof(IsAuditPending));
+                RaisePropertyChanged(nameof(AuditNeverArrived));
             }
         }
     }
 
     /// <summary>
-    /// The other half of <see cref="CoverageKnown"/>, so a screen can say the audit is not here YET.
+    /// The audit has not arrived and still can, so the place for it says the report is on its way.
     /// </summary>
     /// <remarks>
     /// 🔴 A PLACE THAT IS EMPTY HAS TO SAY WHY. The session phase hides the audit until a report arrives,
     /// which left 300 px of nothing between the controls and the footer on the first render - a screen
     /// that looks unfinished rather than one that is waiting. This is the state behind the sentence that
     /// fills it. WPF has no negating visibility converter here and a second converter would be a second
-    /// thing to keep in step, so the model says both halves out loud, as it does for the scenario
-    /// selection. A bool costs nothing at this class's coupling ceiling.
+    /// thing to keep in step, so the model says each case out loud, as it does for the scenario selection.
+    /// A bool costs nothing at this class's coupling ceiling.
+    ///
+    /// It used to be "coverage not known" alone, which kept promising the report after the session was over.
     /// </remarks>
-    public bool CoverageNotKnown => !_coverageKnown;
+    public bool IsAuditPending => !_coverageKnown && !IsTerminal(_statusKind);
+
+    /// <summary>
+    /// The session is over and no audit ever arrived, so the place for it has to say that it will not.
+    /// </summary>
+    /// <remarks>
+    /// 🔴 A PROMISE THE TOOL CANNOT KEEP. The session phase told an ended session with no report that the list
+    /// would appear once the tool had checked - after the application had vanished, with nothing left to
+    /// check.
+    /// </remarks>
+    public bool AuditNeverArrived => !_coverageKnown && IsTerminal(_statusKind);
 
     /// <summary>True when this session is driven over CDP (a Chromium/Electron target, ADR-9). The coverage
     /// unit is then a JS context, not an OS process, so the audit accumulates every context and the note
@@ -1058,6 +1100,15 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
         private set { if (Set(ref _unobserved, value)) { RaisePropertyChanged(nameof(HasUnobserved)); } }
     }
 
+    /// <summary>Channels that came under the fake clock only once their module loaded, unioned over the
+    /// family. Every one is also in <see cref="Covered"/> or <see cref="Observed"/> with its count - this
+    /// names which of those counts are floors, which the late-hook warning needs and cannot say itself.</summary>
+    public IReadOnlyList<string> InstalledLate
+    {
+        get => _installedLate;
+        private set { if (Set(ref _installedLate, value)) { RaisePropertyChanged(nameof(HasInstalledLate)); } }
+    }
+
     /// <summary>Warning translation keys the core raised (rendered in the current language), unioned over
     /// every process of the family and the session aggregate (R2-W5, R2-S9).</summary>
     public IReadOnlyList<string> Warnings
@@ -1117,6 +1168,8 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     public bool HasUncovered => _uncovered.Count > 0;
 
     public bool HasUnobserved => _unobserved.Count > 0;
+
+    public bool HasInstalledLate => _installedLate.Count > 0;
 
     public bool HasWarnings => _warnings.Count > 0;
 
@@ -1221,6 +1274,7 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
                 Observed = [.. _observed, .. c.Observed.Select(ch => FormatCdpChannel(c.Pid, ch))];
                 Uncovered = [.. _uncovered, .. c.Uncovered.Where(u => !_uncovered.Contains(u))];
                 Unobserved = [.. _unobserved, .. c.Unobserved.Where(u => !_unobserved.Contains(u))];
+                InstalledLate = [.. _installedLate, .. c.InstalledLate.Where(u => !_installedLate.Contains(u))];
                 Warnings = [.. _warnings, .. c.WarningKeys.Where(w => !_warnings.Contains(w))];
                 CoverageKnown = true;
                 break;
@@ -1249,6 +1303,7 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
                 // the family verdict is partial (Verdict::combine).
                 Uncovered = [.. _uncovered, .. c.Uncovered.Where(u => !_uncovered.Contains(u))];
                 Unobserved = [.. _unobserved, .. c.Unobserved.Where(u => !_unobserved.Contains(u))];
+                InstalledLate = [.. _installedLate, .. c.InstalledLate.Where(u => !_installedLate.Contains(u))];
                 Warnings = [.. _warnings, .. c.WarningKeys.Where(w => !_warnings.Contains(w))];
                 CoverageKnown = true;
                 break;
@@ -1469,6 +1524,11 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
         Covered = [];
         Observed = [];
         Uncovered = [];
+        // 🔴 Unobserved was missing from this list, so a second session in the same window kept listing the
+        // first session's channels under "Could not be watched" - both lists are unions, and a union with the
+        // previous session is the audit describing a session that is not this one (untouchable rule 4).
+        Unobserved = [];
+        InstalledLate = [];
         Warnings = [];
 
         _hasTiming = false;

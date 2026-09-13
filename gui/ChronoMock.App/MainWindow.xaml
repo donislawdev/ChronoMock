@@ -580,6 +580,25 @@
               </ItemsControl>
             </StackPanel>
 
+            <!-- Named, because the warning about late hooks says their counts are floors and would otherwise
+                 leave the reader to guess which of the rows above it means. Every row here is also in one
+                 of those lists with its count. -->
+            <StackPanel Margin="{StaticResource SpaceXs}"
+                        Visibility="{Binding HasInstalledLate, Converter={StaticResource BoolToVis}}">
+              <TextBlock FontSize="{StaticResource FontSizeCaption}" Foreground="{DynamicResource BrushStatusPartial}">
+                <Run Text="{DynamicResource coverage.installed_late}" /><Run Text="{Binding InstalledLate.Count, StringFormat=' ({0})', Mode=OneWay}" />
+              </TextBlock>
+              <ItemsControl ItemsSource="{Binding InstalledLate}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate>
+                    <TextBlock Text="{Binding}"
+                               FontSize="{StaticResource FontSizeBody}"
+                               Foreground="{DynamicResource BrushTextPrimary}" />
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </StackPanel>
+
             <StackPanel Margin="{StaticResource SpaceXs}"
                         Visibility="{Binding HasWarnings, Converter={StaticResource BoolToVis}}">
               <TextBlock FontSize="{StaticResource FontSizeCaption}" Foreground="{DynamicResource BrushStatusPartial}">

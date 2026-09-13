@@ -183,6 +183,12 @@ pub struct Coverage {
     /// used to produce NO line at all - not covered, not uncovered, absent - so the report looked
     /// complete while a watch it promised was simply not running (untouchable rules 4 and 6).
     pub unobserved: Vec<String>,
+    /// Channels that came under the fake clock only once their module loaded (ADR-10), by name.
+    ///
+    /// Every one of them is also in `covered` or `observed` with its count - this does not add a
+    /// channel, it says which counts are floors and which scaled clocks jumped once when they joined.
+    /// It exists because the warning alone said "a channel" and left the reader to guess which.
+    pub installed_late: Vec<String>,
     pub warning_keys: Vec<String>,
 }
 

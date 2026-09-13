@@ -82,6 +82,8 @@
   "session.stop_note": "Zatrzymanie przywraca aplikacji prawdziwy zegar. Nie zamyka jej.",
   // Without "audit" and "core", the two mechanism words this screen stopped using everywhere else.
   "session.audit_pending": "Zegary, które odczytuje ta aplikacja, pojawią się tutaj, gdy narzędzie to sprawdzi.",
+  // When the session is over and no report came, the sentence above would be a promise nobody keeps.
+  "session.audit_never_arrived": "Sesja skończyła się, zanim narzędzie zdążyło sprawdzić, które zegary odczytuje ta aplikacja.",
   // A label and a number, for the reason setup.scenario_available gives: "1 warnings" was on this header.
   "session.chip_covered": "fałszywy zegar:",
   "session.chip_uncovered": "prawdziwy zegar:",
@@ -215,7 +217,7 @@
   "zone.us_mountain": "USA górski",
   "zone.us_pacific": "USA pacyficzny",
   "mode.label": "Tryb:",
-  // 🔴 THE RATE, NOT A WORD FOR IT. This said "Płynący", which named the mechanism rather than answering
+  // 🔴 THE RATE, NOT A WORD FOR IT. This said the Polish word for "flowing", which named the mechanism rather than answering
   // "how fast" - and it sat in a list whose other four entries answer that question in one glyph. A
   // reader met it with no way to tell whether it was faster or slower than ×10. The key still names the
   // MODE, because that is its identity, and the wire value "flow" is untouched.
@@ -351,6 +353,9 @@
   // Not the same thing as either, and the wording has to keep them apart: the two above are time the
   // application asked for, this one is a watch we promised and never started.
   "coverage.unobserved": "Nie dało się obserwować",
+  // Every row here is also in one of the lists above with its count. This names which of those counts are
+  // floors - which the late-hook warning needs, and could not say on its own.
+  "coverage.installed_late": "Pod fałszywy zegar trafiły później",
   "coverage.warnings": "Ostrzeżenia",
   "coverage.family_note": "Uruchomiło się kilka procesów - liczniki wywołań są z pierwszego, a ostrzeżenia i wszystko czytane z prawdziwego zegara dotyczą wszystkich.",
   "coverage.contexts_note": "Aplikacja Chromium - każdy kontekst JS jest wypisany osobno (strona i jej workery), nigdy sumowane.",
@@ -361,7 +366,7 @@
   "wait.timeout_collapsed": "Część oczekiwań tej aplikacji była za krótka, żeby podzielić je przez pełny mnożnik, więc przebiegły w najkrótszym kroku, jakiego to narzędzie używa (1 ms). Ta część aplikacji nie przyspieszyła - mniejsza prędkość sprawi, że będzie dokładnie.",
   "timer.multimedia_not_scaled": "Timer multimedialny (timeSetEvent) jest obserwowany, ale nie skalowany.",
   "clock.timegettime_scaled_audio_may_shift": "Zegar winmm timeGetTime jest skalowany razem z resztą osi trwania, więc cel odmierzający z niego własne tempo podąża za sesją - ale aplikacja multimedialna pozycjonująca dźwięk z tego zegara może dryfować.",
-  "coverage.channel_installed_late": "Jedna funkcja czasu trafiła pod fałszywy zegar dopiero po załadowaniu swojego modułu, więc wywołania sprzed tego momentu nie ma w licznikach - a jeśli ta funkcja jest skalowana, jej zegar wykonał wtedy jednorazowy skok.",
+  "coverage.channel_installed_late": "Funkcje z listy „Pod fałszywy zegar trafiły później” zostały podpięte dopiero po załadowaniu swojego modułu, więc wywołań sprzed tego momentu nie ma w ich licznikach - a zegar funkcji skalowanej wykonał przy dołączeniu jednorazowy skok.",
   "inheritance.ntcreateuserprocess_child_maybe_uncovered": "Proces potomny utworzony niższym wywołaniem systemu mógł działać na prawdziwym zegarze.",
   // R2-S2. Distinct from the NtCreateUserProcess warning above it: there we choose not to inject,
   // here we tried and it did not take, so a process of this family really did run on the real clock.

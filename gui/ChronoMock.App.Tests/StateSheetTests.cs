@@ -144,6 +144,8 @@ public class StateSheetTests
                 "AuditSection").Count;
             total += RenderSession("session-error", SessionStates.InFlightError()).Count;
             total += RenderSession("session-ended", SessionStates.Ended()).Count;
+            // A session over before any report: no controls, and a sentence saying the report will not come.
+            total += RenderSession("session-vanished", SessionStates.TargetVanished()).Count;
 
             // The window's floor, where the clocks and the action have to survive together. Its model
             // goes through the same helper, so it carries a target like every other session state.

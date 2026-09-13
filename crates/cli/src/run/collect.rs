@@ -63,6 +63,7 @@ impl Collector {
                 observed: obs,
                 uncovered: unc,
                 unobserved: unobs,
+                installed_late: late,
                 warning_keys,
                 ..
             } => {
@@ -70,8 +71,16 @@ impl Collector {
                 if !self.cov_by_pid.contains_key(&pid) {
                     self.pid_order.push(pid);
                 }
-                self.cov_by_pid
-                    .insert(pid, ProcessCoverage { covered: cov, observed: obs, uncovered: unc, unobserved: unobs });
+                self.cov_by_pid.insert(
+                    pid,
+                    ProcessCoverage {
+                        covered: cov,
+                        observed: obs,
+                        uncovered: unc,
+                        unobserved: unobs,
+                        installed_late: late,
+                    },
+                );
             }
             Event::Ended {
                 elapsed_real_ms,
@@ -119,6 +128,7 @@ impl Collector {
         // Flatten the per-process snapshots into report rows, parent first (first-seen order).
         let mut uncovered: Vec<(u32, String)> = Vec::new(); // (pid, channel) - the honest gaps
         let mut unobserved: Vec<(u32, String)> = Vec::new(); // (pid, channel) - watches that never started
+        let mut installed_late: Vec<(u32, String)> = Vec::new(); // (pid, channel) - hooked once its module loaded
         let mut covered: Vec<(u32, String, u64)> = Vec::new(); // (pid, channel, calls) - what took effect
         let mut observed: Vec<(u32, String, u64)> = Vec::new(); // (pid, channel, calls) - hooked, left real
         for pid in &self.pid_order {
@@ -135,6 +145,9 @@ impl Collector {
                 for ch in &pc.unobserved {
                     unobserved.push((*pid, ch.clone()));
                 }
+                for ch in &pc.installed_late {
+                    installed_late.push((*pid, ch.clone()));
+                }
             }
         }
 
@@ -147,6 +160,7 @@ impl Collector {
             warnings: self.warnings,
             uncovered,
             unobserved,
+            installed_late,
             covered,
             observed,
             timing: self.timing,
@@ -171,6 +185,7 @@ mod tests {
             observed: Vec::new(),
             uncovered: Vec::new(),
             unobserved: Vec::new(),
+            installed_late: Vec::new(),
             warning_keys,
         }
     }

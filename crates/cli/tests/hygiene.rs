@@ -962,14 +962,6 @@ const CS_KNOWN_UNUSED: &[(&str, &str)] = &[
         "Protocol surface that is deliberately unsent. The core knows `query`          (`chrono_proto::Command::Query`) and this is the client half of it, but the core already          beats `state` about once a real second, so no client has needed to ask. Deleting it          would make the C# client a subset of the contract rather than a mirror of it.",
     ),
     (
-        "GetHasError",
-        "WPF attached-property accessor. The XAML parser calls it by CONVENTION - markup writing          `app:PartState.HasError=\"True\"` never spells the method name, and a trigger keying on          the property does not either. So this guard is right that the name appears nowhere and          wrong that the method is dead: deleting it breaks every view that sets the state. It          goes if the attached property goes.",
-    ),
-    (
-        "SetHasError",
-        "The other half of `GetHasError`, and required by the same parser convention - WPF looks          for both accessors by name and refuses the property if either is missing. It lives and          dies with its pair.",
-    ),
-    (
         "Launch",
         "`CoreClient.Launch` spawns the core and sends `start` in one step, for callers that do          not gate on `ready`. Its own XML comment says the conformance tests use it, and they are          its only callers - the GUI goes through `Connect` and waits. It exists FOR the tests,          which is a reason, and deleting it deletes what those five conformance tests drive.",
     ),
@@ -1028,7 +1020,54 @@ fn collect_cs() -> (Vec<Definition>, BTreeMap<String, Vec<Site>>, usize) {
             }
         }
     }
+    reach_attached_properties(&definitions, &sources, &mut mentions);
     (definitions, mentions, files_read)
+}
+
+/// 🔴 A WPF ATTACHED PROPERTY IS REACHED BY CONVENTION, and this scan reads names. Markup that writes
+/// `app:PartState.HasError="True"` never spells `GetHasError`, `SetHasError` or `HasErrorProperty` - the
+/// XAML parser finds them by the shape of their names - so every attached property looked dead here. The
+/// first answer was to list its accessors as known unused, one property at a time, and the list grew by
+/// two with each new property while its own rule says it may only shrink. This reads the convention
+/// instead: an accessor lives when non-test XAML uses the property it serves.
+///
+/// The prefix colon is deliberate. XAML can reach the property only through a namespace prefix
+/// (`app:PartState.HasError`), and a comment that says "see PartState.HasError" is not a use.
+fn reach_attached_properties(
+    definitions: &[Definition],
+    sources: &[(String, String, bool)],
+    mentions: &mut BTreeMap<String, Vec<Site>>,
+) {
+    for definition in definitions {
+        let Some(usage) = attached_property_usage(definition) else {
+            continue;
+        };
+        let used = sources
+            .iter()
+            .any(|(path, text, is_test)| !*is_test && path.ends_with(".xaml") && names_whole(text, &usage));
+        if used {
+            mentions.entry(definition.name.clone()).or_default().push(Site::External);
+        }
+    }
+}
+
+/// How XAML spells a use of the attached property an accessor serves: `GetHasError`, `SetHasError` and
+/// `HasErrorProperty` in `PartState.cs` all answer to `:PartState.HasError`. None for a name of no such shape.
+fn attached_property_usage(definition: &Definition) -> Option<String> {
+    let name = definition.name.as_str();
+    let property = name
+        .strip_suffix("Property")
+        .or_else(|| name.strip_prefix("Get"))
+        .or_else(|| name.strip_prefix("Set"))
+        .filter(|property| !property.is_empty())?;
+    let class = std::path::Path::new(&definition.file).file_stem()?.to_str()?;
+    Some(format!(":{class}.{property}"))
+}
+
+/// Whether `needle` occurs in `text` as a whole name - `:PartState.HasError`, not `:PartState.HasErrorText`.
+fn names_whole(text: &str, needle: &str) -> bool {
+    text.match_indices(needle)
+        .any(|(at, _)| text[at + needle.len()..].chars().next().is_none_or(|c| !is_identifier_char(c)))
 }
 
 #[test]
