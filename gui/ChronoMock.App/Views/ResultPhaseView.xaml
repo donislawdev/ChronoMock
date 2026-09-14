@@ -177,10 +177,12 @@
             <WrapPanel x:Name="CopyRow" Margin="{StaticResource StackGapLg}">
               <Button x:Name="CopySummary" Content="{DynamicResource action.copy_summary}"
                       ToolTip="{DynamicResource tip.copy_summary}"
+                      Command="{Binding Commands.CopySummary}"
                       Margin="{StaticResource ControlRowGap}"
                       Visibility="{Binding CanCopySummary, Converter={StaticResource BoolToVis}}" />
               <Button x:Name="CopyDiagnostics" Content="{DynamicResource action.copy_diagnostics}"
                       ToolTip="{DynamicResource tip.copy_diagnostics}"
+                      Command="{Binding Commands.CopyDiagnostics}"
                       Margin="{StaticResource ControlRowGap}"
                       Visibility="{Binding HasDiagnostics, Converter={StaticResource BoolToVis}}" />
               <TextBlock x:Name="CopyFeedback" Style="{StaticResource PartCaption}" TextWrapping="NoWrap"
@@ -311,6 +313,7 @@
                       Margin="{StaticResource ControlRowGap}"
                       Command="{Binding Commands.Forget}" />
               <Button x:Name="ClearHistory" Content="{DynamicResource result.action_clear_history}"
+                      Command="{Binding Commands.ClearHistory}"
                       Margin="{StaticResource ControlRowGap}" />
             </WrapPanel>
           </StackPanel>

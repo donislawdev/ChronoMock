@@ -201,6 +201,7 @@
             <Button Content="{DynamicResource action.choose_target}"
                     ToolTip="{DynamicResource tip.choose_target}"
                     app:PartState.IsSuggested="{Binding ShowsDropHint}"
+                    Command="{Binding Commands.ChooseTarget}"
                     Margin="{StaticResource SpaceXs}" />
           </StackPanel>
           <!-- 🔴 The floor is the point, not the hint. This line empties out the moment an application is
@@ -508,6 +509,7 @@
                          Width="{StaticResource LaunchFieldWidth}" />
                 <Button Content="{DynamicResource action.browse_folder}"
                         ToolTip="{DynamicResource tip.browse_folder}"
+                        Command="{Binding Commands.BrowseFolder}"
                         Margin="{StaticResource SpaceXs}" />
               </StackPanel>
             </HeaderedContentControl>

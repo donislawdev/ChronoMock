@@ -9,17 +9,21 @@ namespace ChronoMock.App;
 /// bind <c>Command</c> instead of carrying a Click handler each - the released panel wrote 29 handlers into
 /// one screen, which is what made it impossible to rearrange.
 /// <para>
-/// Only the actions that need nothing but the view model live here, and only those with a button to reach
-/// them in the phases. The ones that need a window - a file or folder picker, the clipboard, a confirm
-/// dialog, the support link - take a shell service and are added in the next slice, so this type stays
-/// constructible and testable without a window. In-flight "jump to the entered moment" and clearing the
-/// scenario have no control in the rebuilt phases yet, so their commands wait for the control.
+/// Two kinds live here. The view-model-only actions need nothing but the view model. The window-dependent
+/// ones (the pickers, the clipboard, the confirm dialog) reach the window through an
+/// <see cref="IShellInteraction"/> attached by the window with <see cref="AttachShell"/> - deliberately NOT
+/// passed through the view model's constructor, which would couple every caller of that constructor (the
+/// tests among them, one of which sits on the class-coupling ceiling) to a UI type the view model must not
+/// know (rule 16). When no shell is attached - a phase rendered for the state sheet, or a view model built in
+/// a test - the window commands' CanExecute still follows the data gate so the drawing matches the shipped
+/// panel, and their work is a quiet no-op. Support and About are NOT here: they live on the window's title
+/// bar, which is shell chrome the phases never show.
 /// </para>
 /// <para>
 /// Every command re-queries its CanExecute whenever the view model raises PropertyChanged. That is cheap and
 /// rare here: the two clocks are separate ClockView objects, so their ~1 s ticks do not travel through the
 /// view model's PropertyChanged - only genuine state changes (status, target, the moment-driven CanStart,
-/// the chosen history row) do. A ClockView tick never refreshes a command.
+/// the chosen history row, the history count) do. A ClockView tick never refreshes a command.
 /// </para>
 /// </summary>
 public sealed class SessionCommands
@@ -33,8 +37,14 @@ public sealed class SessionCommands
     private readonly RelayCommand _repeat;
     private readonly RelayCommand _forget;
     private readonly RelayCommand _newSession;
+    private readonly RelayCommand _chooseTarget;
+    private readonly RelayCommand _browseFolder;
+    private readonly RelayCommand _copySummary;
+    private readonly RelayCommand _copyDiagnostics;
+    private readonly RelayCommand _clearHistory;
     private readonly AsyncRelayCommand _start;
     private readonly AsyncRelayCommand _relativeApply;
+    private IShellInteraction? _shell;
 
     internal SessionCommands(SessionViewModel session)
     {
@@ -77,8 +87,64 @@ public sealed class SessionCommands
         // so it only makes sense once the session has ended.
         _newSession = new RelayCommand(session.BeginNewSession, () => session.CanBeginNewSession);
 
+        // Window-dependent actions. CanExecute follows the data gate alone - the shell is checked in Execute,
+        // so a shell-less render draws them exactly as the shipped panel would and a shell-less Execute is a
+        // no-op rather than a crash. They read _shell late, so AttachShell before the first click is enough.
+        _chooseTarget = new RelayCommand(
+            () =>
+            {
+                if (_shell?.PickExecutable() is { } path)
+                {
+                    session.SetTarget(path);
+                }
+            },
+            () => session.IsIdle);
+        _browseFolder = new RelayCommand(
+            () =>
+            {
+                if (_shell?.PickFolder(session.WorkingFolder) is { } folder)
+                {
+                    session.WorkingFolder = folder;
+                }
+            },
+            () => session.IsIdle);
+        _copySummary = new RelayCommand(
+            () =>
+            {
+                if (_shell is not null)
+                {
+                    session.NoteCopy(_shell.CopyToClipboard(session.BuildSummary(_shell.Text)));
+                }
+            },
+            () => session.CanCopySummary);
+        _copyDiagnostics = new RelayCommand(
+            () =>
+            {
+                if (_shell is not null)
+                {
+                    session.NoteCopy(_shell.CopyToClipboard(session.DiagnosticsText));
+                }
+            },
+            () => session.HasDiagnostics);
+        _clearHistory = new RelayCommand(
+            () =>
+            {
+                // Destructive, so it confirms first with the effect spelled out and the affirmative named
+                // after what it does (zasady/13 section 11).
+                if (_shell is not null
+                    && _shell.Confirm("history.clear_confirm", "history.clear_undone", "history.clear_title"))
+                {
+                    session.ClearHistory();
+                }
+            },
+            () => session.HasHistory);
+
         session.PropertyChanged += OnSessionChanged;
     }
+
+    /// <summary>Give the commands a window to open pickers and dialogs against. Called once by the window that
+    /// hosts the phases, before it is shown - the view model never sees this (rule 16).</summary>
+    public void AttachShell(IShellInteraction shell) => _shell = shell;
 
     /// <summary>Start the session (Start), or do nothing while one is already starting (async, no double run).</summary>
     public ICommand Start => _start;
@@ -113,6 +179,21 @@ public sealed class SessionCommands
     /// <summary>Return a finished result to a fresh setup form. Enabled only once the session has ended.</summary>
     public ICommand NewSession => _newSession;
 
+    /// <summary>Pick an executable to run (a file picker), then fill the target. Never starts a session (rule 7).</summary>
+    public ICommand ChooseTarget => _chooseTarget;
+
+    /// <summary>Pick the working folder the target starts in (a folder picker).</summary>
+    public ICommand BrowseFolder => _browseFolder;
+
+    /// <summary>Copy the paste-into-ticket session summary to the clipboard.</summary>
+    public ICommand CopySummary => _copySummary;
+
+    /// <summary>Copy the diagnostics block (the core's stderr and parse errors) to the clipboard.</summary>
+    public ICommand CopyDiagnostics => _copyDiagnostics;
+
+    /// <summary>Clear the whole history, after confirming - a re-run re-creates one.</summary>
+    public ICommand ClearHistory => _clearHistory;
+
     private void OnSessionChanged(object? sender, PropertyChangedEventArgs e)
     {
         // A genuine state change may flip any of these gates, and telling exactly which from the property
@@ -129,5 +210,10 @@ public sealed class SessionCommands
         _repeat.RaiseCanExecuteChanged();
         _forget.RaiseCanExecuteChanged();
         _newSession.RaiseCanExecuteChanged();
+        _chooseTarget.RaiseCanExecuteChanged();
+        _browseFolder.RaiseCanExecuteChanged();
+        _copySummary.RaiseCanExecuteChanged();
+        _copyDiagnostics.RaiseCanExecuteChanged();
+        _clearHistory.RaiseCanExecuteChanged();
     }
 }

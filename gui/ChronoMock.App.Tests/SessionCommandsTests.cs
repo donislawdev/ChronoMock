@@ -112,4 +112,111 @@ public class SessionCommandsTests
 
         Assert.True(fired);
     }
+
+    // --- window-dependent commands, through a fake shell (no window, no clipboard, no dialog) ---
+
+    private sealed class FakeShell : IShellInteraction
+    {
+        public string? Executable;
+        public string? Folder;
+        public bool ClipboardOk = true;
+        public bool ConfirmResult;
+        public string? Copied;
+        public bool WasAsked;
+
+        public string? PickExecutable() => Executable;
+        public string? PickFolder(string? initialDirectory) => Folder;
+        public bool CopyToClipboard(string text) { Copied = text; return ClipboardOk; }
+        public bool Confirm(string headingKey, string messageKey, string affirmativeKey)
+        {
+            WasAsked = true;
+            return ConfirmResult;
+        }
+        public string Text(string key) => key;
+    }
+
+    private static SessionViewModel WithShell(IShellInteraction shell, InMemorySessionHistoryStore? store = null)
+    {
+        var vm = new SessionViewModel(store ?? new InMemorySessionHistoryStore());
+        vm.Commands.AttachShell(shell);
+        return vm;
+    }
+
+    [Fact]
+    public void Choose_target_fills_the_target_from_the_picker()
+    {
+        var shell = new FakeShell { Executable = "picked.exe" };
+        var vm = WithShell(shell);
+
+        vm.Commands.ChooseTarget.Execute(null);
+
+        Assert.Equal("picked.exe", vm.TargetName);
+    }
+
+    [Fact]
+    public void Browse_folder_fills_the_working_folder_from_the_picker()
+    {
+        var shell = new FakeShell { Folder = "picked-folder" };
+        var vm = WithShell(shell);
+
+        vm.Commands.BrowseFolder.Execute(null);
+
+        Assert.Equal("picked-folder", vm.WorkingFolder);
+    }
+
+    [Fact]
+    public void A_window_command_without_a_shell_is_a_quiet_no_op()
+    {
+        // The state sheet and a bare unit test have no shell. The command must not throw, and must change
+        // nothing - here the target set by the dev default stays whatever it was.
+        var vm = new SessionViewModel();
+        var before = vm.TargetName;
+
+        vm.Commands.ChooseTarget.Execute(null);
+
+        Assert.Equal(before, vm.TargetName);
+    }
+
+    [Fact]
+    public void Copy_summary_puts_the_summary_on_the_clipboard_and_notes_it()
+    {
+        var shell = new FakeShell { ClipboardOk = true };
+        var vm = WithShell(shell);
+
+        vm.Commands.CopySummary.Execute(null);
+
+        Assert.False(string.IsNullOrEmpty(shell.Copied));
+        Assert.Equal("copy.done", vm.CopyFeedbackKey);
+    }
+
+    [Fact]
+    public void Clear_history_confirms_before_clearing()
+    {
+        var store = new InMemorySessionHistoryStore();
+        store.Append(Record());
+
+        var refused = WithShell(new FakeShell { ConfirmResult = false }, store);
+        refused.Commands.ClearHistory.Execute(null);
+        Assert.True(refused.HasHistory); // asked, said no, kept
+
+        var confirmed = WithShell(new FakeShell { ConfirmResult = true }, store);
+        confirmed.Commands.ClearHistory.Execute(null);
+        Assert.False(confirmed.HasHistory); // asked, said yes, cleared
+    }
+
+    [Fact]
+    public void The_window_commands_follow_their_data_gate()
+    {
+        // The gate does NOT depend on the shell, so a shell-less render draws them exactly as the shipped
+        // panel does. Choose is idle-only, Copy summary follows CanCopySummary, Clear history needs history.
+        var idle = new SessionViewModel();
+        Assert.True(idle.Commands.ChooseTarget.CanExecute(null)); // idle - a target may be chosen
+        Assert.False(idle.Commands.CopySummary.CanExecute(null)); // idle has nothing to summarise
+        Assert.False(idle.Commands.ClearHistory.CanExecute(null)); // no history yet
+
+        // CopySummary follows the status, which the state factories set through Apply. (The IsIdle-gated
+        // commands cannot be exercised false here: the factories reach "running" via Apply, which never
+        // clears _idle - only a real StartAsync does, and that spawns a core.)
+        Assert.True(SessionStates.Ended().Commands.CopySummary.CanExecute(null));
+    }
 }

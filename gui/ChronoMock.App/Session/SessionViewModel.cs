@@ -188,7 +188,9 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
         }
 
         // The panel's actions, lifted off this view model so it holds state and they hold behaviour (GUI
-        // rule 15). Built last, once Relative and the scenario picker exist for the commands to reach.
+        // rule 15). Built last, once Relative and the scenario picker exist for the commands to reach. The
+        // window that hosts the phases attaches a shell to these later (SessionCommands.AttachShell) - this
+        // view model never sees it (rule 16).
         Commands = new SessionCommands(this);
     }
     private bool _verdictKnown;
