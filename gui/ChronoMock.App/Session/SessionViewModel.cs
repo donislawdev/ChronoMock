@@ -263,6 +263,7 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
         RaisePropertyChanged(nameof(ResultHasEnding));
         RaisePropertyChanged(nameof(AuditExplainsVerdict));
         RaisePropertyChanged(nameof(AuditExplainsMeaning));
+        RaisePropertyChanged(nameof(AuditStartsOpen));
     }
 
     /// <summary>True while the session is live - the in-flight controls bind their visibility to this.</summary>
@@ -1077,6 +1078,19 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     /// <summary>The meaning line of the audit block, on the same terms as <see cref="AuditExplainsVerdict"/>.</summary>
     public bool AuditExplainsMeaning => _verdictHasMeaning && !IsTerminal(_statusKind);
 
+    /// <summary>
+    /// The audit section is drawn open when the verdict is worse than a clean works.
+    /// </summary>
+    /// <remarks>
+    /// 🔴 THE EVIDENCE IS THE ANSWER TO A BAD VERDICT. A reader who sees "Partial" or "Fails" has exactly
+    /// one question - which clocks went to the real one - and the audit is where it is answered. Folded, they
+    /// would have to know to open it - open, the answer is already on the screen. A clean works has nothing to
+    /// worry the reader, so it stays folded. A vanish and a failed start carry no verdict at all
+    /// (<see cref="VerdictKnown"/> is false), so they keep the section folded and let their own sentence stand.
+    /// OneWay in the view, so the reader can still fold it and it stays folded.
+    /// </remarks>
+    public bool AuditStartsOpen => _coverageKnown && _verdictKnown && _verdictKind != VerdictKind.Works;
+
     /// <summary>The core's reason key for a target that vanished, shown with <see cref="LivedMs"/>. On screen only
     /// for a session that did not take effect - the summary composes the same two into one line.</summary>
     public string VanishReasonKey => _vanishReasonKey;
@@ -1141,6 +1155,7 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
                 RaisePropertyChanged(nameof(IsAuditPending));
                 RaisePropertyChanged(nameof(AuditNeverArrived));
                 RaisePropertyChanged(nameof(AuditNeverStarted));
+                RaisePropertyChanged(nameof(AuditStartsOpen));
             }
         }
     }

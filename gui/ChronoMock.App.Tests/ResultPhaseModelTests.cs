@@ -156,6 +156,18 @@ public class ResultPhaseModelTests
     }
 
     [Fact]
+    public void The_audit_opens_itself_when_the_verdict_is_worse_than_works()
+    {
+        // Works has nothing to worry the reader - folded. Partial and fails answer "which clocks" - open.
+        Assert.False(PhaseStates.ResultWorks().AuditStartsOpen);
+        Assert.True(PhaseStates.ResultPartial().AuditStartsOpen);
+        Assert.True(PhaseStates.ResultRefused().AuditStartsOpen);
+        // A vanish and a failed start carry no verdict, so the section stays folded and their own sentence stands.
+        Assert.False(PhaseStates.ResultVanished().AuditStartsOpen);
+        Assert.False(PhaseStates.ResultNotStarted().AuditStartsOpen);
+    }
+
+    [Fact]
     public void A_session_over_without_a_verdict_leads_with_no_verdict()
     {
         var vm = SessionStates.Running();

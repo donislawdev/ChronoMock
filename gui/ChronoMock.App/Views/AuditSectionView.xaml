@@ -112,8 +112,13 @@
       4 lives here: the tool never claims to have covered a channel it did not, so "meant to watch, could
       not hook" is its own list rather than being folded into the uncovered one.
     -->
+    <!-- 🔴 OPEN WHEN THE VERDICT IS WORSE THAN WORKS. A reader who sees Partial or Fails has one
+         question - which clocks read the real one - and folding the answer would make them learn to open it.
+         OneWay, so they can still fold it and it stays folded (AuditStartsOpen says why a vanish and a failed
+         start keep it folded instead). -->
     <Expander x:Name="AuditSection" Style="{StaticResource PartSection}"
               Margin="{StaticResource StackGapXl}"
+              IsExpanded="{Binding AuditStartsOpen, Mode=OneWay}"
               Visibility="{Binding CoverageKnown, Converter={StaticResource BoolToVis}}">
       <Expander.Header>
         <TextBlock Style="{StaticResource PartHeading}" Text="{DynamicResource session.section_audit}" />
