@@ -1,4 +1,5 @@
 using System.Globalization;
+using ChronoMock.App.Localization;
 
 namespace ChronoMock.App;
 
@@ -100,6 +101,30 @@ public sealed class ClockView : ObservableObject
     /// already parsed. Days are prefixed rather than folded into hours, because a fake session at ×1440
     /// reaches "60.00:00:00" within an hour and "1440:00:00" would be a number nobody can read.
     /// </remarks>
+    /// <summary>
+    /// One formatting for every moment the interface states in full: the contract sentence above Start, the
+    /// facts of a finished session, a row of the history. Weekday, long month, seconds and the zone spelled
+    /// out - the weekday because it is often the whole point of the test, the zone because a bare moment is
+    /// the ambiguity untouchable rule 2 exists to remove. Empty for anything that is not a canonical moment,
+    /// the "-" placeholder before the first heartbeat for one.
+    /// </summary>
+    public static string FormatMoment(string canonical, string zoneLabel)
+    {
+        if (!DateTime.TryParseExact(
+                canonical,
+                "yyyy-MM-dd'T'HH:mm:ss",
+                CultureInfo.InvariantCulture,
+                DateTimeStyles.None,
+                out var moment))
+        {
+            return string.Empty;
+        }
+
+        return string.Create(
+            LocalizationService.CurrentFormatCulture,
+            $"{moment:dddd, d MMMM yyyy, HH:mm:ss} ({zoneLabel})");
+    }
+
     public static string FormatDuration(long milliseconds)
     {
         var span = TimeSpan.FromMilliseconds(Math.Max(milliseconds, 0));

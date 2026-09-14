@@ -59,9 +59,9 @@ public class StateSheetTests
     /// 4 096 is both a power of two and a multiple of 1 024, and the two readings part company above it.
     /// The grid is 1 024. The clock and the fact list took the content to 4 851 px, so this went to 5 120:
     /// one step, not the measurement. Doubling to 8 192 would have doubled the cost of every render of it
-    /// for 269 px of content.
+    /// for 269 px of content. The verdict headline took it to 5 397, so one more step: 6 144.
     /// </remarks>
-    private const int CatalogueHeight = 5120;
+    private const int CatalogueHeight = 6144;
 
     /// <summary>
     /// The rebuilt setup phase, in the three states that decide whether it works.
@@ -169,20 +169,87 @@ public class StateSheetTests
         // A session has an application and the shared fixtures do not set one - PhaseStates.WithTarget says
         // why it is added there rather than in SessionStates.
         var view = new SessionPhaseView { DataContext = PhaseStates.WithTarget(model) };
+        OpenAndScrollTo(view, openSection);
+        return StateSheet.Write(name, view);
+    }
 
-        if (openSection is not null
-            && view.FindName(openSection) is System.Windows.Controls.Expander section)
+    /// <summary>
+    /// The rebuilt result phase, in the outcomes a session can end in.
+    /// </summary>
+    /// <remarks>
+    /// One render per kind of ending, because the headline changes with it: a verdict word for a session
+    /// that ran, and a word of its own for the three endings that never produced one. The history state is
+    /// rendered with its section open and a row chosen, because the row actions have no other state to be
+    /// seen in.
+    /// </remarks>
+    [Fact]
+    public void The_result_phase_renders_in_the_outcomes_a_session_can_end_in()
+    {
+        var written = WpfTestHost.InvokeSettled(() =>
         {
-            section.IsExpanded = true;
-            LayoutProbe.Settle(view);
-            if (view.FindName("FormScroll") is System.Windows.Controls.ScrollViewer scroll)
-            {
-                scroll.ScrollToEnd();
-                LayoutProbe.Settle(view);
-            }
+            var total = 0;
+
+            total += RenderResult("result-works", PhaseStates.ResultWorks()).Count;
+            total += RenderResult("result-partial", PhaseStates.ResultPartial()).Count;
+            total += RenderResult("result-refused", PhaseStates.ResultRefused()).Count;
+            total += RenderResult("result-vanished", PhaseStates.ResultVanished()).Count;
+            total += RenderResult("result-not-started", PhaseStates.ResultNotStarted()).Count;
+            total += RenderResult("result-history", PhaseStates.ResultWithHistoryChosen(), "HistorySection").Count;
+
+            total += StateSheet.Write(
+                "result-floor",
+                new ResultPhaseView { DataContext = PhaseStates.ResultWorks() },
+                MinimumWidth,
+                MinimumHeight).Count;
+
+            return total;
+        });
+
+        Assert.True(written > 0);
+    }
+
+    private static IReadOnlyList<LaidOutElement> RenderResult(
+        string name,
+        SessionViewModel model,
+        string? openSection = null)
+    {
+        var view = new ResultPhaseView { DataContext = model };
+        OpenAndScrollTo(view, openSection);
+        return StateSheet.Write(name, view);
+    }
+
+    /// <summary>
+    /// Opens the named section and scrolls the form to its end, or does nothing when no section was asked for.
+    /// </summary>
+    /// <remarks>
+    /// 🔴 A SECTION THAT IS NOT THERE IS A FAILURE, never a folded render. The first opener took a null from
+    /// FindName as "nothing to open" and drew the state closed while the file said it was open - and FindName
+    /// returns null for every section that lives inside a nested control, which the audit block now does.
+    /// Fully qualified: Wpf.Ui.Controls has an Expander too, and the one in the views is the stock WPF
+    /// control (the toolkit's does not appear anywhere in this project).
+    /// </remarks>
+    private static void OpenAndScrollTo(FrameworkElement view, string? openSection)
+    {
+        if (openSection is null)
+        {
+            return;
         }
 
-        return StateSheet.Write(name, view);
+        var section = LayoutProbe.FindNamed(view, openSection) as System.Windows.Controls.Expander
+            ?? throw new InvalidOperationException($"{view.GetType().Name} has no section called {openSection}");
+        section.IsExpanded = true;
+
+        // 🔴 AND SCROLLED TO IT, because opening it is not enough. The window is 800 px and the two groups
+        // above the setup catalogue come to 446, so an opened 240 px well starts below the fold: the first
+        // attempt at that render wrote a picture of a search box with an empty box under it and the sentence
+        // explaining the emptiness out of frame. A sheet that writes a file showing nothing is worse than no
+        // sheet. This is the screen as somebody who opened the section and scrolled down sees it.
+        LayoutProbe.Settle(view);
+        if (view.FindName("FormScroll") is System.Windows.Controls.ScrollViewer scroll)
+        {
+            scroll.ScrollToEnd();
+            LayoutProbe.Settle(view);
+        }
     }
 
     /// <summary>
@@ -211,27 +278,7 @@ public class StateSheetTests
         // state into a copy of the startup one - the sheet kept writing a file and stopped showing the
         // thing the file was for. Opening it is a user action, so it belongs to the sheet and not to a
         // flag on the model.
-        // Fully qualified: Wpf.Ui.Controls has an Expander too, and the one in the view is the stock WPF
-        // control (the toolkit's does not appear anywhere in this project).
-        if (openSection is not null
-            && view.FindName(openSection) is System.Windows.Controls.Expander section)
-        {
-            section.IsExpanded = true;
-
-            // 🔴 AND SCROLLED TO IT, because opening it is not enough. The window is 800 px and the two
-            // groups above the catalogue come to 446, so an opened 240 px well starts below the fold: the
-            // first attempt at this render wrote a picture of a search box with an empty box under it and
-            // the sentence explaining the emptiness out of frame. A sheet that writes a file showing
-            // nothing is worse than no sheet. This is the screen as somebody who opened the section and
-            // scrolled down sees it.
-            LayoutProbe.Settle(view);
-            if (view.FindName("FormScroll") is System.Windows.Controls.ScrollViewer scroll)
-            {
-                scroll.ScrollToEnd();
-                LayoutProbe.Settle(view);
-            }
-        }
-
+        OpenAndScrollTo(view, openSection);
         return StateSheet.Write(name, view);
     }
 

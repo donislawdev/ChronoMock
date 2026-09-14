@@ -113,7 +113,9 @@ internal static class SessionStates
         {
             V = ProtocolJson.ProtocolVersion,
             Pid = 4242,
-            ReasonKey = "target.single_instance_handoff",
+            // The key the core actually sends (crates/cli/src/core.rs) - the fixture used to name one that no
+            // translation knew, which nothing showed until the result phase put the reason on screen.
+            ReasonKey = "target.single_instance_suspected",
             LivedMs = 180,
         });
         return vm;

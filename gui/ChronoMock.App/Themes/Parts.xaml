@@ -146,6 +146,21 @@
   </Style>
 
   <!--
+    🔴 THE ONE WORD A FINISHED SESSION LEADS WITH, a step above the heading because it is the peak of its
+    screen: the result phase has no clocks, so nothing else on it may be this size. The caller sets the
+    ink from the meaning palette and pairs the word with a glyph - colour never carries the meaning alone
+    (zasady/13 section 9) - and the role itself knows nothing of verdicts, so the same drawing serves
+    "Works" and "Did not start" alike.
+  -->
+  <Style x:Key="PartVerdictHeadline" TargetType="TextBlock">
+    <Setter Property="FontSize" Value="{StaticResource FontSizeTitle}" />
+    <Setter Property="FontWeight" Value="{StaticResource FontWeightHeading}" />
+    <Setter Property="Foreground" Value="{DynamicResource BrushTextPrimary}" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+    <Setter Property="TextWrapping" Value="Wrap" />
+  </Style>
+
+  <!--
     ============================ Button ============================
 
     Implicit: every button on a screen that loads this dictionary is drawn by this template. A second

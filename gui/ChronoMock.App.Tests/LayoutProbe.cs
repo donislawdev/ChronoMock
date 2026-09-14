@@ -47,6 +47,34 @@ internal static class LayoutProbe
     }
 
     /// <summary>
+    /// The named element anywhere under the root, across the name scopes of nested user controls.
+    /// </summary>
+    /// <remarks>
+    /// 🔴 FindName STOPS AT A USER CONTROL. It reads one XAML file's name scope, so once the audit block
+    /// became a control of its own, <c>view.FindName("AuditSection")</c> on the phase hosting it returned
+    /// null - and the sheet's opener took a null for "no section asked for" and drew the state folded, while
+    /// saying it was open. The logical tree crosses that boundary, and it exists before any layout pass, so
+    /// a section can be opened before the first render.
+    /// </remarks>
+    public static FrameworkElement? FindNamed(FrameworkElement root, string name)
+    {
+        if (root.Name == name)
+        {
+            return root;
+        }
+
+        foreach (var child in LogicalTreeHelper.GetChildren(root))
+        {
+            if (child is FrameworkElement element && FindNamed(element, name) is { } found)
+            {
+                return found;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
     /// Every framework element below the root, with bounds in the root's coordinates.
     /// </summary>
     public static IReadOnlyList<LaidOutElement> Walk(FrameworkElement root)

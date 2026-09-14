@@ -342,6 +342,27 @@
         </StackPanel>
       </Border>
 
+      <!-- ============ Verdict headline ============ -->
+      <TextBlock Text="Verdict headline" Style="{StaticResource PartHeading}" Margin="{StaticResource StackGapLg}" />
+
+      <Border Style="{StaticResource PartCard}" Margin="{StaticResource StackGapSm}">
+        <StackPanel>
+          <TextBlock Style="{StaticResource PartCaption}"
+                     Text="The one word a finished session leads with, a step above the heading: the peak of the result screen, which has no clocks to compete with it. A glyph and the word in the meaning colour - the same four inks as the badge, and the same rule that colour never carries the meaning alone. The last one is the extreme: a headline long enough to wrap." />
+          <TextBlock Style="{StaticResource PartVerdictHeadline}" Margin="{StaticResource StackGapSm}"
+                     Foreground="{DynamicResource BrushStatusWorks}" Text="✓ Works" />
+          <TextBlock Style="{StaticResource PartVerdictHeadline}" Margin="{StaticResource StackGapSm}"
+                     Foreground="{DynamicResource BrushStatusPartial}" Text="⚠ Partial" />
+          <TextBlock Style="{StaticResource PartVerdictHeadline}" Margin="{StaticResource StackGapSm}"
+                     Foreground="{DynamicResource BrushStatusFails}" Text="✕ Did not take effect" />
+          <TextBlock Style="{StaticResource PartVerdictHeadline}" Margin="{StaticResource StackGapSm}"
+                     Foreground="{DynamicResource BrushStatusUndetermined}" Text="? Undetermined" />
+          <TextBlock Style="{StaticResource PartVerdictHeadline}" Margin="{StaticResource StackGapSm}"
+                     Foreground="{DynamicResource BrushStatusFails}"
+                     Text="✕ Did not take effect because a translation somewhere decided that a headline is the right place for a whole paragraph of explanation" />
+        </StackPanel>
+      </Border>
+
       <!-- ============ Clock ============ -->
       <TextBlock Text="Clock" Style="{StaticResource PartHeading}" Margin="{StaticResource StackGapLg}" />
 

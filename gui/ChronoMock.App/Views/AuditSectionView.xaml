@@ -1,0 +1,171 @@
+<UserControl x:Class="ChronoMock.App.Views.AuditSectionView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+  <!--
+    WHAT THE APPLICATION READ, in every state that block can be in: waiting for the report, told the
+    report will never come, and the report itself, folded, with its counts in the header.
+
+    🔴 ONE COMPONENT, TWO PHASES. The session phase shows this while the session runs and the result phase
+    shows it once the session is over, and the two drawings must not be allowed to drift apart - the lists
+    in here are the half of both screens that carries untouchable rule 4. A section with its own states and
+    its own set of controls is a component from the start (GUI rule 9), and the second occurrence of a
+    drawing is the moment it stops being markup in a view (GUI rule 5).
+
+    🔴 IT KNOWS NOTHING OF PHASES. It binds the session model like every other view and the model says which
+    of its three states applies. The one difference between the phases is where the verdict's reasoning is
+    printed - beside the evidence while the session runs, under the headline once it is over - and that
+    choice is the model's too (AuditExplainsVerdict), not a switch on this control.
+
+    🔴 IT LOADS THE PARTS LIBRARY LOCALLY, like the phases that host it. A StaticResource is resolved while
+    this control's own XAML loads, before it stands in any tree, so the phase's local merge is not visible
+    to it - measured on the first build: "PartNote" not found. The merge goes with the phases' merges when
+    the product adopts the library.
+  -->
+
+  <UserControl.Resources>
+    <ResourceDictionary>
+      <ResourceDictionary.MergedDictionaries>
+        <ResourceDictionary Source="../Themes/Parts.xaml" />
+      </ResourceDictionary.MergedDictionaries>
+
+      <!--
+        What the folded audit says without being opened. Chips, for the same reason the speed section uses
+        them - a Run cannot be hidden, so a conditional list of them needs punctuation that appears and
+        vanishes.
+
+        🔴 FOUR COUNTS, AND THE THIRD ONE WAS MISSING. The two that decide the verdict, then the channels
+        the session meant to watch and could not, then the warnings. The unwatched count was left out as
+        "not part of the verdict", and folding turned that into silence: a session with a channel nobody
+        could watch said nothing about it until somebody opened this section, while the shipped panel lists
+        it in the open. A watch the tool promised and is not running is what untouchable rule 4 forbids
+        hiding, and a fold whose header does not mention it hides it. The channels left real on purpose
+        stay inside, because they are by design and change no answer.
+
+        🔴 A LABEL AND A NUMBER, never a number and a noun, for the reason setup.scenario_available gives.
+        A count followed by a noun needs plural rules in two languages, and this header had them wrong in
+        both.
+
+        Named, so the layout guard can read each chip's number off the render.
+      -->
+      <ControlTemplate x:Key="AuditSummary">
+        <StackPanel Orientation="Horizontal">
+          <Border x:Name="CoveredChip" Style="{StaticResource PartBadge}" Margin="{StaticResource SpaceXs}"
+                  Visibility="{Binding HasCovered, Converter={StaticResource BoolToVis}}">
+            <TextBlock Style="{StaticResource PartCaption}" TextWrapping="NoWrap">
+              <Run Text="{DynamicResource session.chip_covered}" /><Run Text=" " /><Run Text="{Binding Covered.Count, Mode=OneWay}" />
+            </TextBlock>
+          </Border>
+          <Border x:Name="UncoveredChip" Style="{StaticResource PartBadge}" Margin="{StaticResource SpaceXs}"
+                  Visibility="{Binding HasUncovered, Converter={StaticResource BoolToVis}}">
+            <TextBlock Style="{StaticResource PartCaption}" TextWrapping="NoWrap">
+              <Run Text="{DynamicResource session.chip_uncovered}" /><Run Text=" " /><Run Text="{Binding Uncovered.Count, Mode=OneWay}" />
+            </TextBlock>
+          </Border>
+          <Border x:Name="UnobservedChip" Style="{StaticResource PartBadge}" Margin="{StaticResource SpaceXs}"
+                  Visibility="{Binding HasUnobserved, Converter={StaticResource BoolToVis}}">
+            <TextBlock Style="{StaticResource PartCaption}" TextWrapping="NoWrap">
+              <Run Text="{DynamicResource session.chip_unobserved}" /><Run Text=" " /><Run Text="{Binding Unobserved.Count, Mode=OneWay}" />
+            </TextBlock>
+          </Border>
+          <Border x:Name="WarningsChip" Style="{StaticResource PartBadge}" Margin="{StaticResource SpaceXs}"
+                  Visibility="{Binding HasWarnings, Converter={StaticResource BoolToVis}}">
+            <TextBlock Style="{StaticResource PartCaption}" TextWrapping="NoWrap">
+              <Run Text="{DynamicResource session.chip_warnings}" /><Run Text=" " /><Run Text="{Binding Warnings.Count, Mode=OneWay}" />
+            </TextBlock>
+          </Border>
+        </StackPanel>
+      </ControlTemplate>
+    </ResourceDictionary>
+  </UserControl.Resources>
+
+  <StackPanel>
+    <!-- 🔴 THE EMPTY STATE, where the audit will be. Hiding the section left 300 px of nothing between the
+         controls and the footer on the first render of the session phase - a screen that looks unfinished
+         rather than one that is waiting for a report. It also answers a question a first session actually
+         raises: the tool has not said whether the substitution worked, and the reader has no way to know
+         whether that is a verdict or a delay. -->
+    <TextBlock x:Name="AuditPending" Style="{StaticResource PartNote}" TextWrapping="Wrap"
+               Margin="{StaticResource StackGapXl}"
+               Text="{DynamicResource session.audit_pending}"
+               Visibility="{Binding IsAuditPending, Converter={StaticResource BoolToVis}}" />
+    <!-- 🔴 AND WHEN IT WILL NOT COME. A session that ended before any report - the application vanished,
+         the core stopped - kept promising the list would appear once the tool had checked. It never will,
+         so the place says that instead. -->
+    <TextBlock x:Name="AuditNeverArrived" Style="{StaticResource PartNote}" TextWrapping="Wrap"
+               Margin="{StaticResource StackGapXl}"
+               Text="{DynamicResource session.audit_never_arrived}"
+               Visibility="{Binding AuditNeverArrived, Converter={StaticResource BoolToVis}}" />
+    <!-- 🔴 AND WHEN THERE WAS NO SESSION. A start that failed before the first heartbeat got the sentence
+         above on the result phase's first render - "the session ended before" - and no session had begun.
+         The model tells the two apart, and this is the sentence for the second. -->
+    <TextBlock x:Name="AuditNeverStarted" Style="{StaticResource PartNote}" TextWrapping="Wrap"
+               Margin="{StaticResource StackGapXl}"
+               Text="{DynamicResource session.audit_never_started}"
+               Visibility="{Binding AuditNeverStarted, Converter={StaticResource BoolToVis}}" />
+
+    <!--
+      THE AUDIT, folded, and absent entirely until a coverage report has arrived - an empty audit box on a
+      session that has not reported yet would be answering a question nobody can answer.
+
+      Its header carries the two numbers that decide whether the session proved anything. Untouchable rule
+      4 lives here: the tool never claims to have covered a channel it did not, so "meant to watch, could
+      not hook" is its own list rather than being folded into the uncovered one.
+    -->
+    <Expander x:Name="AuditSection" Style="{StaticResource PartSection}"
+              Margin="{StaticResource StackGapXl}"
+              Visibility="{Binding CoverageKnown, Converter={StaticResource BoolToVis}}">
+      <Expander.Header>
+        <TextBlock Style="{StaticResource PartHeading}" Text="{DynamicResource session.section_audit}" />
+      </Expander.Header>
+      <Expander.Tag>
+        <ContentControl Template="{StaticResource AuditSummary}" />
+      </Expander.Tag>
+
+      <StackPanel>
+        <!-- Why the verdict says what it says, then what that means for the reader - while the session
+             runs and the verdict word is a chip in the footer, this is the reasoning behind it and it
+             belongs with the evidence. Once the session is over the result phase prints both under its
+             headline, and the model turns these off so the same sentence is not on the screen twice. -->
+        <TextBlock Style="{StaticResource PartLabel}" TextWrapping="Wrap"
+                   Text="{Binding VerdictReasonKey, Converter={StaticResource KeyToText}}"
+                   Visibility="{Binding AuditExplainsVerdict, Converter={StaticResource BoolToVis}}" />
+        <TextBlock Style="{StaticResource PartNote}" Margin="{StaticResource StackGapSm}"
+                   Text="{Binding VerdictMeaningKey, Converter={StaticResource KeyToText}}"
+                   Visibility="{Binding AuditExplainsMeaning, Converter={StaticResource BoolToVis}}" />
+        <TextBlock Style="{StaticResource PartNote}" Margin="{StaticResource StackGapSm}"
+                   Text="{Binding CoverageNoteKey, Converter={StaticResource KeyToText}}"
+                   Visibility="{Binding HasCoverageNote, Converter={StaticResource BoolToVis}}" />
+
+        <HeaderedItemsControl Style="{StaticResource PartFactList}"
+                              Header="{DynamicResource coverage.covered}"
+                              ItemsSource="{Binding Covered}"
+                              Visibility="{Binding HasCovered, Converter={StaticResource BoolToVis}}" />
+        <HeaderedItemsControl Style="{StaticResource PartFactList}"
+                              Header="{DynamicResource coverage.uncovered}"
+                              ItemsSource="{Binding Uncovered}"
+                              Visibility="{Binding HasUncovered, Converter={StaticResource BoolToVis}}" />
+        <HeaderedItemsControl Style="{StaticResource PartFactList}"
+                              Header="{DynamicResource coverage.observed}"
+                              ItemsSource="{Binding Observed}"
+                              Visibility="{Binding HasObserved, Converter={StaticResource BoolToVis}}" />
+        <HeaderedItemsControl Style="{StaticResource PartFactList}"
+                              Header="{DynamicResource coverage.unobserved}"
+                              ItemsSource="{Binding Unobserved}"
+                              Visibility="{Binding HasUnobserved, Converter={StaticResource BoolToVis}}" />
+        <!-- Named, and above the warning that explains them: every row is also in a list above with its
+             count, and this is the list that says which of those counts are floors. -->
+        <HeaderedItemsControl Style="{StaticResource PartFactList}"
+                              Header="{DynamicResource coverage.installed_late}"
+                              ItemsSource="{Binding InstalledLate}"
+                              Visibility="{Binding HasInstalledLate, Converter={StaticResource BoolToVis}}" />
+        <!-- The note variant, because these are sentences: a warning clipped at the card's edge is one the
+             reader cannot act on, which is the whole point of having raised it. -->
+        <HeaderedItemsControl Style="{StaticResource PartNoteList}"
+                              Header="{DynamicResource coverage.warnings}"
+                              ItemsSource="{Binding Warnings}"
+                              Visibility="{Binding HasWarnings, Converter={StaticResource BoolToVis}}" />
+      </StackPanel>
+    </Expander>
+  </StackPanel>
+</UserControl>

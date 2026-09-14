@@ -72,6 +72,7 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     private bool _stopRequested;
     private string _historyError = string.Empty;
     private string _historyNoteKey = string.Empty;
+    private SessionRecord? _selectedRecord;
     // Snapshot of the start setup, taken at Start, so history and the summary record what was REQUESTED
     // even after the form is changed (rule 4 - the record is the start).
     //
@@ -245,8 +246,23 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
                 RaisePropertyChanged(nameof(ShowsInFlightError));
                 RaisePropertyChanged(nameof(IsAuditPending));
                 RaisePropertyChanged(nameof(AuditNeverArrived));
+                RaisePropertyChanged(nameof(AuditNeverStarted));
+                RaiseResultChanged();
+                RaisePropertyChanged(nameof(HasVanishReason));
             }
         }
+    }
+
+    /// <summary>The result phase's headline and what hangs under it follow the status and the verdict alike.</summary>
+    private void RaiseResultChanged()
+    {
+        RaisePropertyChanged(nameof(ResultHeadlineKey));
+        RaisePropertyChanged(nameof(ResultKind));
+        RaisePropertyChanged(nameof(ResultHasReason));
+        RaisePropertyChanged(nameof(ResultHasMeaning));
+        RaisePropertyChanged(nameof(ResultHasEnding));
+        RaisePropertyChanged(nameof(AuditExplainsVerdict));
+        RaisePropertyChanged(nameof(AuditExplainsMeaning));
     }
 
     /// <summary>True while the session is live - the in-flight controls bind their visibility to this.</summary>
@@ -271,7 +287,11 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     public string MultiplierText { get => _multiplierText; private set => Set(ref _multiplierText, value); }
 
     /// <summary>The raw failure detail when something went wrong - shown verbatim so a failure is never silent.</summary>
-    public string LastError { get => _lastError; private set => Set(ref _lastError, value); }
+    public string LastError
+    {
+        get => _lastError;
+        private set { if (Set(ref _lastError, value)) { RaisePropertyChanged(nameof(HasLastError)); } }
+    }
 
     /// <summary>Translation key for a per-command in-flight error (e.g. an invalid jump moment), empty when
     /// none. Unlike a fatal error it does NOT end the session - the core rejected one command and kept
@@ -300,7 +320,14 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
 
     /// <summary>Translation key for the copy-summary feedback ("copy.done" / "copy.failed"), empty until a
     /// copy is attempted. A clipboard failure is surfaced, never swallowed (rule 6).</summary>
-    public string CopyFeedbackKey { get => _copyFeedbackKey; private set => Set(ref _copyFeedbackKey, value); }
+    public string CopyFeedbackKey
+    {
+        get => _copyFeedbackKey;
+        private set { if (Set(ref _copyFeedbackKey, value)) { RaisePropertyChanged(nameof(HasCopyFeedback)); } }
+    }
+
+    /// <summary>True while a copy outcome is on show - the line is absent, not blank, until a copy is attempted.</summary>
+    public bool HasCopyFeedback => _copyFeedbackKey.Length > 0;
 
     /// <summary>Record the outcome of a clipboard copy so the panel can confirm it or report a failure.</summary>
     public void NoteCopy(bool ok) => CopyFeedbackKey = ok ? "copy.done" : "copy.failed";
@@ -334,6 +361,18 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
 
     /// <summary>True when the last history load left a field it could not fill.</summary>
     public bool HasHistoryNote => _historyNoteKey.Length > 0;
+
+    /// <summary>The recorded session chosen in the history well, or null. Choosing one does nothing by itself
+    /// (untouchable rule 7) - the actions under the well act on it, and setting it up again fills the form and
+    /// never starts a session.</summary>
+    public SessionRecord? SelectedRecord
+    {
+        get => _selectedRecord;
+        set { if (Set(ref _selectedRecord, value)) { RaisePropertyChanged(nameof(HasSelectedRecord)); } }
+    }
+
+    /// <summary>True while a recorded session is chosen - the actions that need one bind their IsEnabled here.</summary>
+    public bool HasSelectedRecord => _selectedRecord is not null;
 
     /// <summary>Path to the target executable to run, chosen by the user (or a bundled default in dev).</summary>
     public string? TargetPath
@@ -411,25 +450,7 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     /// </para>
     /// </summary>
     public string MomentPreview
-    {
-        get
-        {
-            if (!Moment.IsValid
-                || !DateTime.TryParseExact(
-                    Moment.Canonical,
-                    "yyyy-MM-dd'T'HH:mm:ss",
-                    CultureInfo.InvariantCulture,
-                    DateTimeStyles.None,
-                    out var moment))
-            {
-                return string.Empty;
-            }
-
-            return string.Create(
-                LocalizationService.CurrentFormatCulture,
-                $"{moment:dddd, d MMMM yyyy, HH:mm:ss} ({_selectedZone.Label})");
-        }
-    }
+        => Moment.IsValid ? ClockView.FormatMoment(Moment.Canonical, _selectedZone.Label) : string.Empty;
 
     /// <summary>
     /// True while the date field still holds the moment this build ships with, and nobody has touched it.
@@ -454,6 +475,8 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     {
         RaisePropertyChanged(nameof(MomentPreview));
         RaisePropertyChanged(nameof(HasMomentPreview));
+        // The started-at fact falls back to the form until a session has captured its snapshot.
+        RaisePropertyChanged(nameof(StartedAtPreview));
     }
 
 
@@ -983,6 +1006,112 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
 
     public bool VerdictHasMeaning { get => _verdictHasMeaning; private set => Set(ref _verdictHasMeaning, value); }
 
+    /// <summary>
+    /// Translation key for the one word the result phase leads with: the verdict when the session produced
+    /// one, and otherwise what stopped it from producing one.
+    /// </summary>
+    /// <remarks>
+    /// 🔴 THE VERDICT IS NOT THE WHOLE ANSWER. A session that vanished right after injection may carry a
+    /// "works" verdict from its first blink, and a start that failed carries none at all - the summary
+    /// already leads with DID NOT TAKE EFFECT over any verdict for the first case, and this is the same rule
+    /// on screen. An error before the first heartbeat is "did not start": the application never ran under
+    /// the fake clock, whatever the core managed to say about it. An error after one keeps the verdict, because
+    /// the substitution did work for as long as the session lasted and the status line says how it ended.
+    ///
+    /// Strings and an enum this class already couples to, so the coupling ceiling is not touched
+    /// (gui/CodeMetricsConfig.txt).
+    /// </remarks>
+    public string ResultHeadlineKey => _statusKind switch
+    {
+        SessionStatusKind.DidNotTakeEffect => "result.headline_did_not_take_effect",
+        SessionStatusKind.Error when !_hasTiming => "result.headline_did_not_start",
+        _ => _verdictKnown ? _verdictLabelKey : "result.headline_no_verdict",
+    };
+
+    /// <summary>The kind behind <see cref="ResultHeadlineKey"/>, driving its glyph and colour: an outcome
+    /// without a verdict word is drawn as a failure when the substitution never took effect and as
+    /// undetermined when nothing was judged.</summary>
+    public VerdictKind ResultKind => _statusKind switch
+    {
+        SessionStatusKind.DidNotTakeEffect => VerdictKind.Fails,
+        SessionStatusKind.Error when !_hasTiming => VerdictKind.Fails,
+        _ => _verdictKnown ? _verdictKind : VerdictKind.Undetermined,
+    };
+
+    /// <summary>The headline is the verdict word itself, so the verdict's own reason and meaning belong under it.
+    /// Under any other headline they would explain a word that is not on the screen.</summary>
+    private bool ResultIsVerdict
+        => _verdictKnown && ResultHeadlineKey == _verdictLabelKey;
+
+    /// <summary>
+    /// The core's reason for the verdict, for EVERY verdict the result phase leads with.
+    /// </summary>
+    /// <remarks>
+    /// 🔴 UNLIKE <see cref="VerdictHasReason"/>, which hides the reason under a clean "works" because a badge
+    /// in a footer needs no caveat. The result phase exists to explain, and to somebody on their first run
+    /// "Works" alone says nothing about what worked - the core's sentence ("every process that read the time
+    /// saw the fake clock") is the explanation, and it arrives for works as for the rest.
+    /// </remarks>
+    public bool ResultHasReason => ResultIsVerdict && _verdictReasonKey.Length > 0;
+
+    /// <summary>The plain-language meaning, under the headline it is about (see <see cref="ResultHasReason"/>).</summary>
+    public bool ResultHasMeaning => ResultIsVerdict && _verdictHasMeaning;
+
+    /// <summary>The status line tells how the session ended, unless the headline already did: a target that
+    /// vanished has "did not take effect" as its headline and how long it lived under it, and the status
+    /// sentence would say the same thing a third time.</summary>
+    public bool ResultHasEnding => _statusKind != SessionStatusKind.DidNotTakeEffect;
+
+    /// <summary>
+    /// The audit block prints the verdict's reason beside its evidence only while the session runs.
+    /// </summary>
+    /// <remarks>
+    /// While a session is live the verdict word is a chip in the footer and its reasoning belongs with the
+    /// lists that produced it. Once the session is over the result phase leads with the word and prints the
+    /// reason under it, and the same sentence inside the audit as well would put one line on the screen
+    /// twice. The block is one component on both screens, so the choice is made here, where the phase is
+    /// known, rather than by a switch on the drawing. The shipped panel keeps <see cref="VerdictHasReason"/>.
+    /// </remarks>
+    public bool AuditExplainsVerdict => _verdictHasReason && !IsTerminal(_statusKind);
+
+    /// <summary>The meaning line of the audit block, on the same terms as <see cref="AuditExplainsVerdict"/>.</summary>
+    public bool AuditExplainsMeaning => _verdictHasMeaning && !IsTerminal(_statusKind);
+
+    /// <summary>The core's reason key for a target that vanished, shown with <see cref="LivedMs"/>. On screen only
+    /// for a session that did not take effect - the summary composes the same two into one line.</summary>
+    public string VanishReasonKey => _vanishReasonKey;
+
+    public bool HasVanishReason
+        => _statusKind == SessionStatusKind.DidNotTakeEffect && _vanishReasonKey.Length > 0;
+
+    /// <summary>How long the vanished target lived, in milliseconds - what tells a single-instance hand-off
+    /// (gone within a blink) from an application that ran and then quit.</summary>
+    public long LivedMs => _livedMs;
+
+    /// <summary>True once a heartbeat or the end timing arrived: the facts block of the result phase has
+    /// something to say. A start that failed or was refused has no timing and shows no facts.</summary>
+    public bool HasTiming => _hasTiming;
+
+    /// <summary>The moment the session STARTED at, formatted like <see cref="MomentPreview"/>, from the start
+    /// snapshot rather than the form - the form is unlocked once the session is over.</summary>
+    public string StartedAtPreview => ClockView.FormatMoment(RequestedMoment, RequestedZone.Label);
+
+    /// <summary>
+    /// Where the fake clock stopped, formatted like <see cref="MomentPreview"/>.
+    /// </summary>
+    /// <remarks>
+    /// 🔴 THE END TIMING FROM <c>ended</c>, NOT THE LAST HEARTBEAT. The heartbeat is up to a second old when
+    /// the session ends, which at ×1440 is up to a day of fake time - the summary already prefers the
+    /// authoritative end wall for the same reason, and a screen that named a different moment from the
+    /// summary copied off it would be two answers to one question. The heartbeat is the fallback for a
+    /// session that ended without one (a vanished target).
+    /// </remarks>
+    public string FakeEndPreview
+        => ClockView.FormatMoment(_fakeEndWall.Length > 0 ? _fakeEndWall : Fake.Wall, Fake.Zone);
+
+    /// <summary>True when a raw failure detail is being shown (see <see cref="LastError"/>).</summary>
+    public bool HasLastError => _lastError.Length > 0;
+
     /// <summary>Size of the process family the session verdict covers (parent plus children).</summary>
     public int ProcessCount
     {
@@ -1011,6 +1140,7 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
                 RaisePropertyChanged(nameof(HasCoverageNote));
                 RaisePropertyChanged(nameof(IsAuditPending));
                 RaisePropertyChanged(nameof(AuditNeverArrived));
+                RaisePropertyChanged(nameof(AuditNeverStarted));
             }
         }
     }
@@ -1038,7 +1168,19 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     /// would appear once the tool had checked - after the application had vanished, with nothing left to
     /// check.
     /// </remarks>
-    public bool AuditNeverArrived => !_coverageKnown && IsTerminal(_statusKind);
+    public bool AuditNeverArrived => !_coverageKnown && IsTerminal(_statusKind) && !AuditNeverStarted;
+
+    /// <summary>
+    /// The application was never started under the fake clock, so there was nothing to check.
+    /// </summary>
+    /// <remarks>
+    /// 🔴 "THE SESSION ENDED BEFORE THE TOOL COULD CHECK" IS FALSE FOR A START THAT FAILED. There was no
+    /// session to end: the core could not attach, or refused the handshake, and the application never ran
+    /// under the fake clock at all. The result phase put that sentence under a "did not start" headline on
+    /// its first render. A failure before the first heartbeat is this case, and it gets its own sentence.
+    /// </remarks>
+    public bool AuditNeverStarted
+        => !_coverageKnown && _statusKind == SessionStatusKind.Error && !_hasTiming;
 
     /// <summary>True when this session is driven over CDP (a Chromium/Electron target, ADR-9). The coverage
     /// unit is then a JS context, not an OS process, so the audit accumulates every context and the note
@@ -1202,6 +1344,8 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
             case VanishedEvent vd:
                 _vanishReasonKey = vd.ReasonKey;
                 _livedMs = vd.LivedMs;
+                RaisePropertyChanged(nameof(VanishReasonKey));
+                RaisePropertyChanged(nameof(LivedMs));
                 SetStatus("status.did_not_take_effect", SessionStatusKind.DidNotTakeEffect);
                 break;
             // Guarded on the terminal state like `state` above (M-9): a late `ended`/`error` after a
@@ -1348,6 +1492,7 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
             _startScaleQpc = _scaleQpc;
             _startForce = _forceStart;
             _startCaptured = true;
+            RaisePropertyChanged(nameof(StartedAtPreview));
 
             // Build the plan by reading the target's PE header. Classify a TARGET problem here (RELEASE-007)
             // so it is not reported as a broken core install: a non-PE file yields InvalidOperationException
@@ -1991,6 +2136,7 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
         VerdictMeaningKey = VerdictKinds.MeaningKey(kind);
         VerdictHasMeaning = VerdictMeaningKey.Length > 0;
         VerdictKnown = true;
+        RaiseResultChanged();
     }
 
     private static bool IsTerminal(SessionStatusKind kind) => kind
@@ -2034,6 +2180,13 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     {
         Fake.Elapsed = ClockView.FormatDuration(_elapsedFakeMs);
         Real.Elapsed = ClockView.FormatDuration(_elapsedRealMs);
+        // The timing facts of the result phase move with the elapsed values, and the headline with the first
+        // heartbeat: an error before it is "did not start", after it the verdict stands.
+        RaisePropertyChanged(nameof(HasTiming));
+        RaisePropertyChanged(nameof(FakeEndPreview));
+        RaisePropertyChanged(nameof(AuditNeverArrived));
+        RaisePropertyChanged(nameof(AuditNeverStarted));
+        RaiseResultChanged();
     }
 
     /// <summary>

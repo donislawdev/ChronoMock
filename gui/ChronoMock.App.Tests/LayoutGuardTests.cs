@@ -554,7 +554,7 @@ public class LayoutGuardTests
     private const int PhaseTextReadingsAtLeast = 8;
 
     /// <summary>
-    /// Every line of text in both rebuilt phases reaches its contrast floor, in every state the sheet draws.
+    /// Every line of text in the rebuilt phases reaches its contrast floor, in every state the sheet draws.
     /// </summary>
     /// <remarks>
     /// 🔴 THE PHASES WERE NEVER READ. The rule above walks the shipped panel and the calculator, and the
@@ -564,7 +564,7 @@ public class LayoutGuardTests
     /// the notes, while the rule above stays green because the shipped screens do not load the parts library.
     /// </remarks>
     [Fact]
-    public void Every_line_of_text_in_both_phases_reaches_its_contrast_floor_in_every_state()
+    public void Every_line_of_text_in_the_phases_reaches_its_contrast_floor_in_every_state()
     {
         var faint = WpfTestHost.InvokeSettled(() =>
         {
@@ -585,13 +585,13 @@ public class LayoutGuardTests
     }
 
     /// <summary>
-    /// Every type size in both rebuilt phases comes from the declared scale, in every state the sheet draws.
+    /// Every type size in the rebuilt phases comes from the declared scale, in every state the sheet draws.
     /// </summary>
     /// <remarks>
     /// Reversal probe: set PartNote's FontSize to 13 in Themes/Parts.xaml and this reddens on the notes.
     /// </remarks>
     [Fact]
-    public void Every_type_size_in_both_phases_comes_from_the_declared_scale_in_every_state()
+    public void Every_type_size_in_the_phases_comes_from_the_declared_scale_in_every_state()
     {
         var off = WpfTestHost.InvokeSettled(() =>
         {
@@ -628,7 +628,7 @@ public class LayoutGuardTests
     }
 
     /// <summary>
-    /// Every gap laid out in both rebuilt phases comes from the closed spacing scale, in every state the
+    /// Every gap laid out in the rebuilt phases comes from the closed spacing scale, in every state the
     /// sheet draws.
     /// </summary>
     /// <remarks>
@@ -639,7 +639,7 @@ public class LayoutGuardTests
     /// Reversal probe: make SectionBodyGap 0,11,0,0 in Themes/Values.xaml and this reddens on the sections.
     /// </remarks>
     [Fact]
-    public void Every_gap_we_laid_out_in_both_phases_comes_from_the_closed_spacing_scale_in_every_state()
+    public void Every_gap_we_laid_out_in_the_phases_comes_from_the_closed_spacing_scale_in_every_state()
     {
         var (offScale, thin) = WpfTestHost.InvokeSettled(() =>
         {
@@ -667,10 +667,12 @@ public class LayoutGuardTests
         AssertNoFindings([.. thin, .. offScale]);
     }
 
-    /// <summary>Measured today: 26 of our gaps in the smallest state (session running) and 43 in the largest
-    /// (setup with every option). Set under half of the smallest, for the reason the per-state floor exists
-    /// at all.</summary>
-    private const int OurGapsPerPhaseStateAtLeast = 12;
+    /// <summary>Measured today: 10 of our gaps in the smallest state (a result that did not start - one card,
+    /// one sentence, one folded section), 11 in the next (a result that did not take effect), 26 in the
+    /// smallest session state and 43 in the largest setup state. The floor sits at the sparsest honest state
+    /// rather than under half of it: the two result states are that sparse because they have that little to
+    /// say, and a floor above them would call an honest screen unread.</summary>
+    private const int OurGapsPerPhaseStateAtLeast = 10;
 
     /// <summary>
     /// The canvas both phases are read on: the window's width, and one step of the 1 024 grid the catalogue
@@ -766,7 +768,7 @@ public class LayoutGuardTests
         Assert.True(pendingWhenLive, "a running session no longer says its report is on the way");
     }
 
-    /// <summary>Both rebuilt phases in every state the sheet draws, with the section that holds the state opened.</summary>
+    /// <summary>The rebuilt phases in every state the sheet draws, with the section that holds the state opened.</summary>
     /// <remarks>Lazy on purpose: every view is created inside the caller's dispatcher call.</remarks>
     private static IEnumerable<(string Name, FrameworkElement View)> PhaseStatesOnCanvas()
     {
@@ -781,6 +783,12 @@ public class LayoutGuardTests
         yield return ("session with a failed command", SessionView(SessionStates.InFlightError()));
         yield return ("session ended", SessionView(SessionStates.Ended()));
         yield return ("session that did not take effect", SessionView(SessionStates.TargetVanished()));
+        yield return ("result that worked", ResultView(PhaseStates.ResultWorks()));
+        yield return ("result that partly worked", ResultView(PhaseStates.ResultPartial()));
+        yield return ("result refused", ResultView(PhaseStates.ResultRefused()));
+        yield return ("result that did not take effect", ResultView(PhaseStates.ResultVanished()));
+        yield return ("result that did not start", ResultView(PhaseStates.ResultNotStarted()));
+        yield return ("result with the history open", ResultView(PhaseStates.ResultWithHistoryChosen(), "HistorySection"));
     }
 
     private static FrameworkElement SetupView(SessionViewModel model, string? openSection = null)
@@ -789,13 +797,18 @@ public class LayoutGuardTests
     private static FrameworkElement SessionView(SessionViewModel model, string? openSection = null)
         => Opened(new SessionPhaseView { DataContext = PhaseStates.WithTarget(model) }, openSection);
 
+    private static FrameworkElement ResultView(SessionViewModel model, string? openSection = null)
+        => Opened(new ResultPhaseView { DataContext = model }, openSection);
+
     /// <summary>Opens the named section, and fails loudly when it is not there - a state that silently stayed
     /// folded would be read as the startup state under another name.</summary>
     private static FrameworkElement Opened(FrameworkElement view, string? openSection)
     {
         if (openSection is not null)
         {
-            var section = view.FindName(openSection) as Expander
+            // Through the logical tree, not FindName: the audit block is a control of its own now, and
+            // FindName on the phase does not see into it.
+            var section = LayoutProbe.FindNamed(view, openSection) as Expander
                 ?? throw new InvalidOperationException($"{view.GetType().Name} has no section called {openSection}");
             section.IsExpanded = true;
         }

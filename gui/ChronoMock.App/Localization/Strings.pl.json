@@ -84,6 +84,9 @@
   "session.audit_pending": "Zegary, które odczytuje ta aplikacja, pojawią się tutaj, gdy narzędzie to sprawdzi.",
   // When the session is over and no report came, the sentence above would be a promise nobody keeps.
   "session.audit_never_arrived": "Sesja skończyła się, zanim narzędzie zdążyło sprawdzić, które zegary odczytuje ta aplikacja.",
+  // And when there was no session at all - a start that failed before the first heartbeat. The sentence
+  // above says "the session ended", which is false of a session that never began.
+  "session.audit_never_started": "Aplikacja nigdy nie wystartowała pod fałszywym zegarem, więc nie było czego sprawdzać.",
   // A label and a number, for the reason setup.scenario_available gives: "1 warnings" was on this header.
   "session.chip_covered": "fałszywy zegar:",
   "session.chip_uncovered": "prawdziwy zegar:",
@@ -437,6 +440,31 @@
   "history.load_zone_missing": "Ta sesja użyła strefy, której ta wersja już nie oferuje, więc pole strefy trzyma Twój poprzedni wybór - ustaw je przed startem.",
   "history.load_mode_missing": "Ta sesja użyła prędkości, której ta wersja już nie oferuje, więc pole prędkości trzyma Twój poprzedni wybór - ustaw je przed startem.",
   "history.load_zone_and_mode_missing": "Ta sesja użyła strefy i prędkości, których ta wersja już nie oferuje, więc oba pola trzymają Twoje poprzednie wybory - ustaw je przed startem.",
+
+  // The result phase, the third of the rebuilt phases: what a finished session says about itself. The headline is the verdict word when there is one - these three stand in for the outcomes that never produced a verdict. Under it the facts the summary carries, then the way on.
+  "result.headline_did_not_take_effect": "Nie zadziałało",
+  "result.headline_did_not_start": "Nie wystartowało",
+  "result.headline_no_verdict": "Brak werdyktu",
+  // The target's own exit code, in the reader's words (the summary keeps report.target_exit). The number follows this prefix.
+  "result.exit_code": "Aplikacja zakończyła się sama, z kodem wyjścia",
+  // Around the milliseconds a vanished application lived: "The application ran for 180 ms and then vanished."
+  "result.lived_before": "Aplikacja działała przez",
+  "result.lived_after": "i zniknęła.",
+  "result.section_facts": "Co widziała aplikacja",
+  "result.fact_started": "Start o",
+  "result.fact_speed": "Tempo",
+  "result.fact_reached": "Fałszywy zegar doszedł do",
+  "result.fact_elapsed_fake": "Minęło na fałszywym zegarze",
+  "result.fact_elapsed_real": "Minęło naprawdę",
+  "result.section_history": "Poprzednie sesje",
+  "result.chip_history": "sesji:",
+  "result.history_ended": "zakończona",
+  "result.history_note": "Wybierz sesję, żeby ustawić ją ponownie. Nic nie startuje, dopóki nie naciśniesz Start.",
+  "result.action_repeat": "Ustaw ponownie",
+  "result.action_forget": "Zapomnij tę sesję",
+  "result.action_clear_history": "Wyczyść historię",
+  "result.action_new_session": "Nowa sesja",
+  "result.new_session_note": "Formularz zachowuje to, co wpisano. Zapis tej sesji zostaje w historii - jeśli potrzebujesz podsumowania, skopiuj je najpierw.",
 
   // Module switch: the two halves of the product (chrono-mock 6.1/7).
   // Dialog answers. The app labels its own buttons, unlike a native message box, whose Yes and No come

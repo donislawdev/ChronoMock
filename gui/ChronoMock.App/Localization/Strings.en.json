@@ -84,6 +84,9 @@
   "session.audit_pending": "The clocks this application reads will be listed here once the tool has checked.",
   // When the session is over and no report came, the sentence above would be a promise nobody keeps.
   "session.audit_never_arrived": "The session ended before the tool could check which clocks this application reads.",
+  // And when there was no session at all - a start that failed before the first heartbeat. The sentence
+  // above says "the session ended", which is false of a session that never began.
+  "session.audit_never_started": "The application was never started under the fake clock, so there was nothing to check.",
   // A label and a number, for the reason setup.scenario_available gives: "1 warnings" was on this header.
   "session.chip_covered": "fake clock:",
   "session.chip_uncovered": "real clock:",
@@ -442,6 +445,31 @@
   "history.load_zone_missing": "This session used a zone this version no longer offers, so the zone box still holds your previous choice - set it before starting.",
   "history.load_mode_missing": "This session used a speed this version no longer offers, so the speed box still holds your previous choice - set it before starting.",
   "history.load_zone_and_mode_missing": "This session used a zone and a speed this version no longer offers, so both boxes still hold your previous choices - set them before starting.",
+
+  // The result phase, the third of the rebuilt phases: what a finished session says about itself. The headline is the verdict word when there is one - these three stand in for the outcomes that never produced a verdict. Under it the facts the summary carries, then the way on.
+  "result.headline_did_not_take_effect": "Did not take effect",
+  "result.headline_did_not_start": "Did not start",
+  "result.headline_no_verdict": "No verdict",
+  // The target's own exit code, in the reader's words (the summary keeps report.target_exit). The number follows this prefix.
+  "result.exit_code": "The application exited on its own with exit code",
+  // Around the milliseconds a vanished application lived: "The application ran for 180 ms and then vanished."
+  "result.lived_before": "The application ran for",
+  "result.lived_after": "and then vanished.",
+  "result.section_facts": "What the application saw",
+  "result.fact_started": "Started at",
+  "result.fact_speed": "Speed",
+  "result.fact_reached": "Fake clock reached",
+  "result.fact_elapsed_fake": "Passed on the fake clock",
+  "result.fact_elapsed_real": "Passed in real time",
+  "result.section_history": "Previous sessions",
+  "result.chip_history": "sessions:",
+  "result.history_ended": "ended",
+  "result.history_note": "Choose a session to set it up again. Nothing starts until you press Start.",
+  "result.action_repeat": "Set up again",
+  "result.action_forget": "Forget this session",
+  "result.action_clear_history": "Clear the history",
+  "result.action_new_session": "New session",
+  "result.new_session_note": "The setup keeps what you entered. The record of this session stays in the history - copy the summary first if you need it.",
 
   // Module switch: the two halves of the product (chrono-mock 6.1/7).
   // Dialog answers. The app labels its own buttons, unlike a native message box, whose Yes and No come
