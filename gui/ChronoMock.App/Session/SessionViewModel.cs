@@ -186,6 +186,10 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
         {
             _scenarios.Load(_presetsDir);
         }
+
+        // The panel's actions, lifted off this view model so it holds state and they hold behaviour (GUI
+        // rule 15). Built last, once Relative and the scenario picker exist for the commands to reach.
+        Commands = new SessionCommands(this);
     }
     private bool _verdictKnown;
     private VerdictKind _verdictKind = VerdictKind.Unknown;
@@ -224,6 +228,11 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     private string _diagnosticsText = string.Empty;
     private string _diagnosticsSavedPath = string.Empty;
     private string _copyFeedbackKey = string.Empty;
+
+    /// <summary>The panel's actions as bindable commands, so the phase views bind <c>Command</c> and carry
+    /// no Click handler of their own (GUI rules 11 and 15). The window-dependent actions (pickers, clipboard,
+    /// confirm, the support link) join them in the next slice through a shell service.</summary>
+    public SessionCommands Commands { get; }
 
     public ClockView Fake { get; } = new("clock.fake");
 
@@ -971,6 +980,29 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     /// during the brief connecting/ending transitions. Target, zone and scale-duration stay start-only
     /// (zone cannot re-render in flight, scale-duration has no in-flight command).</summary>
     public bool CanEditTime => _idle || IsRunning;
+
+    /// <summary>True once the session has ended, so a finished result can be returned to a fresh setup form
+    /// (New session). Only the terminal states qualify - a live or a still-closing session is not a result
+    /// to leave yet. Tracks the same set as <see cref="ShowsSessionControls"/>, from the other side.</summary>
+    public bool CanBeginNewSession => IsTerminal(_statusKind);
+
+    /// <summary>
+    /// Return a finished session to a fresh setup form: clear the result (verdict, coverage, diagnostics)
+    /// and go back to idle, KEEPING the target, the moment and the history, so the tester can run again at
+    /// once. It never starts a session (rule 7) - it lands on the filled setup form and waits for Start.
+    /// A no-op unless the session has ended, so a stray call while one is live cannot wipe a live result.
+    /// </summary>
+    public void BeginNewSession()
+    {
+        if (!CanBeginNewSession)
+        {
+            return;
+        }
+
+        ResetSession();
+        Idle = true;
+        SetStatus("status.idle", SessionStatusKind.Idle);
+    }
 
     /// <summary>Backs <see cref="CanStart"/> and <see cref="IsIdle"/>: true when no session is running.</summary>
     private bool Idle

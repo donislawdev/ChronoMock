@@ -306,10 +306,10 @@
             <WrapPanel x:Name="HistoryActions" Margin="{StaticResource StackGapSm}">
               <Button x:Name="RepeatSession" Content="{DynamicResource result.action_repeat}"
                       Margin="{StaticResource ControlRowGap}"
-                      IsEnabled="{Binding HasSelectedRecord}" />
+                      Command="{Binding Commands.Repeat}" />
               <Button x:Name="ForgetSession" Content="{DynamicResource result.action_forget}"
                       Margin="{StaticResource ControlRowGap}"
-                      IsEnabled="{Binding HasSelectedRecord}" />
+                      Command="{Binding Commands.Forget}" />
               <Button x:Name="ClearHistory" Content="{DynamicResource result.action_clear_history}"
                       Margin="{StaticResource ControlRowGap}" />
             </WrapPanel>
@@ -327,6 +327,7 @@
       <StackPanel>
         <Button x:Name="NewSession" Style="{StaticResource PartPrimaryAction}"
                 Content="{DynamicResource result.action_new_session}"
+                Command="{Binding Commands.NewSession}"
                 HorizontalAlignment="Left" />
         <TextBlock x:Name="NewSessionNote" Style="{StaticResource PartNote}"
                    Margin="{StaticResource StackGapSm}"

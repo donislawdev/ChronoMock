@@ -260,8 +260,10 @@
             <StackPanel Orientation="Horizontal">
               <controls:MomentInput DataContext="{Binding Moment}" />
               <Button Content="{DynamicResource action.today}" ToolTip="{DynamicResource tip.today}"
+                      Command="{Binding Commands.Today}"
                       Margin="{StaticResource SpaceXs}" />
               <Button Content="{DynamicResource action.now}" ToolTip="{DynamicResource tip.now}"
+                      Command="{Binding Commands.Now}"
                       Margin="{StaticResource SpaceXs}" />
             </StackPanel>
             <HeaderedContentControl.Tag>
@@ -319,8 +321,12 @@
                   </DataTemplate>
                 </ComboBox.ItemTemplate>
               </ComboBox>
+              <!-- The command lives on the view model, but this row's DataContext is Relative, so it reaches
+                   back to the UserControl's DataContext for it - the parameters (sign, amount, unit) are read
+                   from Relative by the command itself. -->
               <Button Content="{DynamicResource setup.action_fill}"
                       ToolTip="{DynamicResource setup.tip_shift}"
+                      Command="{Binding DataContext.Commands.RelativeApply, RelativeSource={RelativeSource AncestorType=UserControl}}"
                       Margin="{StaticResource SpaceXs}" />
             </StackPanel>
             <HeaderedContentControl.Tag>
@@ -566,7 +572,7 @@
               Content="{DynamicResource action.start}"
               ToolTip="{DynamicResource setup.tip_start}"
               ToolTipService.ShowOnDisabled="True"
-              IsEnabled="{Binding CanStart}"
+              Command="{Binding Commands.Start}"
               HorizontalAlignment="Left"
               Margin="{StaticResource StackGapSm}" />
     </StackPanel>

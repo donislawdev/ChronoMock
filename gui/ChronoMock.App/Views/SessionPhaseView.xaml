@@ -40,18 +40,31 @@
       </ResourceDictionary.MergedDictionaries>
 
       <!--
-        One button, drawn once, for both control rows. Nine buttons live on this screen and they are nine
-        instances of one drawing differing by a label - the shape that is a list, not nine copies. The
-        shipped panel writes them out one at a time, which is why adding a rate means editing markup.
+        One button per rate and per jump, each an instance of one drawing differing by a label - the shape
+        that is a list, not nine copies. The shipped panel writes them out one at a time, which is why
+        adding a rate there means editing markup.
+
+        Two templates rather than one, because a speed and a jump run DIFFERENT commands with different
+        parameters (a multiplier, a delta) - the only difference between them, the drawing is the same. The
+        command comes from the view model on the UserControl (the item itself is a static option that knows
+        no view model), and the parameter comes from the item.
 
         🔴 THE GAP COMES AFTER EACH BUTTON, NEVER BEFORE IT (ControlRowGap). A uniform margin pushed the
         first button 4 px into its own column, so a row no longer started where the line under it did -
         measured on the first render of this phase: both rows at x=99, the reported speed and the jump
         note at x=95.
       -->
-      <DataTemplate x:Key="ControlButton">
+      <DataTemplate x:Key="SpeedButton">
         <Button Content="{Binding LabelKey, Converter={StaticResource KeyToText}}"
-                Margin="{StaticResource ControlRowGap}" />
+                Margin="{StaticResource ControlRowGap}"
+                Command="{Binding DataContext.Commands.Speed, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                CommandParameter="{Binding Multiplier}" />
+      </DataTemplate>
+      <DataTemplate x:Key="JumpButton">
+        <Button Content="{Binding LabelKey, Converter={StaticResource KeyToText}}"
+                Margin="{StaticResource ControlRowGap}"
+                Command="{Binding DataContext.Commands.Jump, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                CommandParameter="{Binding Delta}" />
       </DataTemplate>
 
       <!-- Wrapping, because nine buttons at the window's floor width do not fit on one line and a row
@@ -126,22 +139,25 @@
               <WrapPanel>
                 <ItemsControl x:Name="SpeedPresets"
                               ItemsSource="{x:Static app:TimeInputs.SessionSpeeds}"
-                              ItemTemplate="{StaticResource ControlButton}"
+                              ItemTemplate="{StaticResource SpeedButton}"
                               ItemsPanel="{StaticResource ControlRow}" />
-                <!-- Any rate at all, for the one that is not a preset. Unbound in this drawing: the
-                     shipped panel reads it by name on the click, and the wiring arrives with the rest. -->
+                <!-- Any rate at all, for the one that is not a preset. Set passes the box's text to the
+                     command, which parses "N" or "xN" and surfaces a bad value as an in-flight error rather
+                     than a silent no-op (rule 6). -->
                 <!-- Wide enough for its own PROMPT rather than for its content. A box sized to hold three
                      digits cannot show the words that say what it is for, and a placeholder clipped to
                      "any…" explains nothing. Measured on the first render of this row. -->
                 <!-- The same gap as the buttons before it, so the row follows one rule rather than three. -->
-                <TextBox Width="{StaticResource ShiftUnitWidth}"
+                <TextBox x:Name="CustomSpeedBox" Width="{StaticResource ShiftUnitWidth}"
                          Margin="{StaticResource ControlRowGap}" VerticalAlignment="Center"
                          FontFamily="{StaticResource FontFamilyMono}"
                          app:PartState.Placeholder="{DynamicResource session.rate_placeholder}"
                          AutomationProperties.Name="{DynamicResource session.rate_placeholder}" />
                 <Button Content="{DynamicResource action.set_speed}" VerticalAlignment="Center"
                         Margin="{StaticResource ControlRowGap}"
-                        ToolTip="{DynamicResource tip.set_speed}" />
+                        ToolTip="{DynamicResource tip.set_speed}"
+                        Command="{Binding Commands.SetCustomSpeed}"
+                        CommandParameter="{Binding Text, ElementName=CustomSpeedBox}" />
               </WrapPanel>
               <!-- 🔴 THE RATE THE CORE REPORTS, in the row's own message slot - directly under the
                    buttons that ask for it, which is where a reader looks after pressing one. It stood on
@@ -166,7 +182,7 @@
               </HeaderedContentControl.Header>
               <ItemsControl x:Name="JumpButtons"
                             ItemsSource="{x:Static app:TimeInputs.SessionJumps}"
-                            ItemTemplate="{StaticResource ControlButton}"
+                            ItemTemplate="{StaticResource JumpButton}"
                             ItemsPanel="{StaticResource ControlRow}" />
               <HeaderedContentControl.Tag>
                 <TextBlock x:Name="JumpNote" Style="{StaticResource PartNote}"
@@ -228,7 +244,7 @@
              screen asking to be ended. It is an ordinary button, and it says what it does in a word. -->
         <Button x:Name="StopButton" Content="{DynamicResource control.stop}"
                 ToolTip="{DynamicResource tip.stop}"
-                IsEnabled="{Binding IsRunning}"
+                Command="{Binding Commands.Stop}"
                 Visibility="{Binding ShowsSessionControls, Converter={StaticResource BoolToVis}}"
                 HorizontalAlignment="Left"
                 Margin="{StaticResource StackGapSm}" />
