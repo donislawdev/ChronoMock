@@ -79,15 +79,30 @@ jobs:
       # clippy step: GitHub's pwsh shell sets `$ErrorActionPreference = 'stop'`, and where that
       # variable defaults to true a failing native command throws before its exit code can be read,
       # which would invert the meaning of this gate.
+      # 🔴 WARNINGS, NOT ERRORS, AND BOTH RULES BY NAME. This step used to ask only whether the
+      # tightened build failed, and that question has two holes: one rule with slack hides behind the
+      # other, and a rule that fires in the application project stops the build before the test
+      # project is compiled at all, so a maximum sitting in a test class is never seen. Measured
+      # 2026-09-14: CA1506 stood at 81 with the real maximum at 80, in a test class, and the step was
+      # green on CA1502 alone. With warnings left as warnings every project compiles, and the step
+      # requires each ceiling to be reached somewhere.
       - name: C# metric ceilings are the measurement, not headroom
         run: |
           $PSNativeCommandUseErrorActionPreference = $false
-          dotnet build gui/ChronoMock.slnx --no-incremental -p:ChronoMetricsConfig=${{ github.workspace }}/.github/metrics-tight/CodeMetricsConfig.txt
-          if ($LASTEXITCODE -eq 0) {
-            Write-Host "::error::Both metric ceilings in gui/CodeMetricsConfig.txt have room in them: the build is clean one below each. Lower them to the real maxima, and .github/metrics-tight/CodeMetricsConfig.txt with them."
+          $out = dotnet build gui/ChronoMock.slnx --no-incremental -p:ChronoMetricsConfig=${{ github.workspace }}/.github/metrics-tight/CodeMetricsConfig.txt -p:TreatWarningsAsErrors=false 2>&1 | Out-String
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host $out
+            Write-Host "::error::The tightened build did not compile, so the ceilings could not be measured."
             exit 1
           }
-          Write-Host "The failures above are the point: each metric ceiling is a real measurement."
+          $reached = [regex]::Matches($out, 'warning (CA150[26])') | ForEach-Object { $_.Groups[1].Value } | Sort-Object -Unique
+          foreach ($rule in 'CA1502', 'CA1506') {
+            if ($reached -notcontains $rule) {
+              Write-Host "::error::$rule in gui/CodeMetricsConfig.txt has room in it: nothing reaches it one below. Lower it to the real maximum, and .github/metrics-tight/CodeMetricsConfig.txt with it."
+              exit 1
+            }
+          }
+          Write-Host "Both ceilings are reached one below: each metric ceiling is a real measurement."
           exit 0
 
       # -D warnings makes clippy a gate rather than a suggestion. A newer stable Rust can add a lint and
