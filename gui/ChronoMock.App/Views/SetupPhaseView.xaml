@@ -19,10 +19,9 @@
     what is set inside it. Nothing is hidden, it is moved out of the way, which is only honest as long as
     the header answers the question the section would.
 
-    🔴 IT LOADS THE PARTS LIBRARY LOCALLY, exactly as the catalogue does. App.xaml does not merge
-    Parts.xaml yet, so the shipped screens keep the pixels they have while this one is designed. When the
-    product moves over, this local merge goes and the application-wide one replaces it - one line, for
-    every screen at once.
+    🔴 IT MERGES THE PARTS LIBRARY LOCALLY, and keeps doing so even though App.xaml now merges Parts
+    application-wide: a {StaticResource PartX} is resolved as this control's BAML loads, and that lookup never
+    reaches Application.Resources. The application-wide merge is what gives the calculator its Parts look.
 
     🔴 NO VALUES OF ITS OWN. Every colour, gap, size and string comes from the library, the value
     dictionaries or a translation key. Anything that cannot be built that way is a finding about the
@@ -31,10 +30,16 @@
 
   <UserControl.Resources>
     <ResourceDictionary>
+      <!-- 🔴 THE LOCAL PARTS MERGE STAYS, even though App.xaml now merges Parts application-wide. A
+           {StaticResource PartX} below is resolved as THIS control's BAML loads, and that lookup reaches the
+           control's own resources and its ancestors' - never Application.Resources, which is only searched at
+           runtime by DynamicResource and by implicit styles. Removing this merge and leaning on the app-wide
+           one was tried and reverted: StaticResourceExtension threw for every phase the moment the state sheet
+           rendered them together. The app-wide merge exists for the calculator, whose controls take their
+           Parts look from implicit styles (a runtime, tree-time lookup), not from a StaticResource. -->
       <ResourceDictionary.MergedDictionaries>
         <ResourceDictionary Source="../Themes/Parts.xaml" />
       </ResourceDictionary.MergedDictionaries>
-
       <!--
         What the clock is set to: the speed, then a chip for each option that is on. It answers the
         question the speed section would open to answer, which is the whole bargain of folding.

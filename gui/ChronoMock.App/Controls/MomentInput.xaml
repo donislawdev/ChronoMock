@@ -1,7 +1,7 @@
 <UserControl x:Class="ChronoMock.App.Controls.MomentInput"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml">
+             xmlns:app="clr-namespace:ChronoMock.App">
   <!-- Shared moment input (chrono-mock 7.1): an ISO date field plus a calendar popup and an optional 24h
        time field - ONE horizontal line, so it stays level with the buttons and zone beside it. The value is
        composed culture-invariantly by MomentField, so a Polish box and a US VM read a typed date identically
@@ -9,13 +9,13 @@
        validation message is shown by the consumer BELOW the whole row (MomentField.ActiveErrorKey), never
        inside this control, so an error never changes the row height. Bound to a MomentField DataContext. -->
   <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-    <!-- Wide enough for YYYY-MM-DD plus the wpfui clear button that appears on focus (Width 120 clipped
-         the last digit while focused). -->
-    <ui:TextBox Text="{Binding DateText, UpdateSourceTrigger=PropertyChanged}"
-                PlaceholderText="{DynamicResource moment.date_placeholder}"
-                ToolTip="{DynamicResource tip.date_field}"
-                Width="148" FontFamily="{StaticResource FontFamilyMono}"
-                VerticalAlignment="Center" />
+    <!-- Wide enough for YYYY-MM-DD with room to spare. The box takes the parts library's TextBox style
+         (implicit) and its placeholder, so it reads as the same field the rest of the interface uses. -->
+    <TextBox Text="{Binding DateText, UpdateSourceTrigger=PropertyChanged}"
+             app:PartState.Placeholder="{DynamicResource moment.date_placeholder}"
+             ToolTip="{DynamicResource tip.date_field}"
+             Width="148" FontFamily="{StaticResource FontFamilyMono}"
+             VerticalAlignment="Center" />
 
     <ToggleButton x:Name="CalendarToggle" Style="{StaticResource CalendarToggleStyle}"
                   Margin="{StaticResource SpaceXs}" VerticalAlignment="Center"
@@ -29,10 +29,10 @@
       </Border>
     </Popup>
 
-    <ui:TextBox Text="{Binding TimeText, UpdateSourceTrigger=PropertyChanged}"
-                PlaceholderText="{DynamicResource moment.time_placeholder}"
-                ToolTip="{DynamicResource tip.time_field}"
-                Width="84" FontFamily="{StaticResource FontFamilyMono}"
-                Margin="{StaticResource SpaceXs}" VerticalAlignment="Center" />
+    <TextBox Text="{Binding TimeText, UpdateSourceTrigger=PropertyChanged}"
+             app:PartState.Placeholder="{DynamicResource moment.time_placeholder}"
+             ToolTip="{DynamicResource tip.time_field}"
+             Width="84" FontFamily="{StaticResource FontFamilyMono}"
+             Margin="{StaticResource SpaceXs}" VerticalAlignment="Center" />
   </StackPanel>
 </UserControl>

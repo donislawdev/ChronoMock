@@ -25,10 +25,13 @@
 
   <UserControl.Resources>
     <ResourceDictionary>
+      <!-- The local Parts merge STAYS despite App.xaml merging Parts application-wide: a {StaticResource
+           PartX} is resolved as this control's BAML loads, and that lookup never reaches Application.Resources
+           (see SetupPhaseView for the measured revert). This control is nested inside the phases, so it never
+           saw their local merge either - it has always needed its own. -->
       <ResourceDictionary.MergedDictionaries>
         <ResourceDictionary Source="../Themes/Parts.xaml" />
       </ResourceDictionary.MergedDictionaries>
-
       <!--
         What the folded audit says without being opened. Chips, for the same reason the speed section uses
         them - a Run cannot be hidden, so a conditional list of them needs punctuation that appears and

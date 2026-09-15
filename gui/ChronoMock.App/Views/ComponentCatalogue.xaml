@@ -8,9 +8,10 @@
   <!--
     THE COMPONENT CATALOGUE. Every part of the interface, in every state it can be in, on one screen.
 
-    🔴 It loads the parts library LOCALLY. App.xaml does not merge Parts.xaml yet, so the shipped screens
-    keep the exact pixels they have while the parts are designed here. When the screens adopt the parts,
-    this local merge goes and the application-wide one replaces it.
+    🔴 It merges the parts library LOCALLY, and keeps doing so even though App.xaml now merges Parts
+    application-wide. A {StaticResource PartX} here is resolved as this control's BAML loads, a lookup that
+    never reaches Application.Resources - so the app-wide merge cannot feed it. The app-wide merge is what
+    gives the calculator its Parts look, through implicit styles applied at tree time.
 
     🔴 THIS FILE MAY NOT CONTAIN A SINGLE VALUE OF ITS OWN. Not a colour, not a size, not a gap. If
     something here cannot be built out of the library, that is the finding - it means a part is missing,

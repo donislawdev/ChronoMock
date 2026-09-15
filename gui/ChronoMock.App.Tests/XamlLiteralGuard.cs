@@ -67,15 +67,6 @@ internal static class XamlLiteralGuard
         ("Themes/Controls.xaml",
          """BorderThickness="1" CornerRadius="4" Padding="10,6" SnapsToDevicePixels="True">""",
          "TitleBarActionButton face; goes when the button gets its own template (2b)"),
-        ("Themes/Controls.xaml",
-         """<Border x:Name="Box" Width="20" Height="20" CornerRadius="4" """.TrimEnd(),
-         "CalendarToggleStyle checkbox face; goes when the check control gets its own template (slice 2b)"),
-        ("Themes/Controls.xaml",
-         """BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1" """.TrimEnd(),
-         "as above, same template"),
-        ("Themes/Controls.xaml",
-         """<ContentPresenter Margin="8,0,0,0" VerticalAlignment="Center" RecognizesAccessKey="True" />""",
-         "as above, same template"),
     ];
 
     /// <summary>Find design-literal violations in a single XAML text.</summary>

@@ -1,7 +1,7 @@
 <UserControl x:Class="ChronoMock.App.Views.CalculatorView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+             xmlns:app="clr-namespace:ChronoMock.App"
              xmlns:controls="clr-namespace:ChronoMock.App.Controls"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
@@ -59,9 +59,9 @@
             <TextBlock Text="{DynamicResource calc.presets_header}"
                        FontSize="{StaticResource FontSizeCaption}" FontWeight="SemiBold"
                        Foreground="{DynamicResource BrushTextSecondary}" Margin="{StaticResource SpaceXs}" />
-            <ui:TextBox x:Name="PresetFilterBox" Margin="{StaticResource SpaceXs}"
-                        Text="{Binding PresetFilter, UpdateSourceTrigger=PropertyChanged}"
-                        PlaceholderText="{DynamicResource calc.filter_placeholder}" />
+            <TextBox x:Name="PresetFilterBox" Margin="{StaticResource SpaceXs}"
+                     Text="{Binding PresetFilter, UpdateSourceTrigger=PropertyChanged}"
+                     app:PartState.Placeholder="{DynamicResource calc.filter_placeholder}" />
             <ItemsControl x:Name="PresetList" ItemsSource="{Binding Presets}" Margin="{StaticResource SpaceXs}">
               <ItemsControl.ItemTemplate>
                 <DataTemplate>
@@ -496,11 +496,11 @@
                  unknown token run is passed through as text and reported, never a failure), so every intermediate state is
                  a meaningful preview rather than an error flash, and the 250 ms quiet period in the
                  setter still costs one evaluation per pause, not one per keystroke. -->
-            <ui:TextBox x:Name="CustomFormatBox" Margin="{StaticResource SpaceXs}" FontFamily="{StaticResource FontFamilyMono}"
-                        Text="{Binding CustomFormatMask, UpdateSourceTrigger=PropertyChanged}"
-                        PlaceholderText="{DynamicResource calc.custom_format_hint}"
-                        ToolTip="{DynamicResource tip.custom_format}"
-                        AutomationProperties.Name="{DynamicResource calc.custom_format}" />
+            <TextBox x:Name="CustomFormatBox" Margin="{StaticResource SpaceXs}" FontFamily="{StaticResource FontFamilyMono}"
+                     Text="{Binding CustomFormatMask, UpdateSourceTrigger=PropertyChanged}"
+                     app:PartState.Placeholder="{DynamicResource calc.custom_format_hint}"
+                     ToolTip="{DynamicResource tip.custom_format}"
+                     AutomationProperties.Name="{DynamicResource calc.custom_format}" />
             <Grid Margin="{StaticResource SpaceXs}"
                   Visibility="{Binding HasCustomFormat, Converter={StaticResource BoolToVis}}">
               <Grid.ColumnDefinitions>

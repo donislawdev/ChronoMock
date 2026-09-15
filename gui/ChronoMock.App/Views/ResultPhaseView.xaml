@@ -30,19 +30,23 @@
     it is the primary action and it is pinned. Copying the summary acts on the answer and stands beside it,
     an ordinary button - a session run to see whether a screen renders on the right day needs no ticket.
 
-    🔴 NOT WIRED YET. No handler, no command - the buttons are a drawing under review, exactly as the two
-    phases before it were. They come alive in the slice that moves the product onto the parts library.
+    🔴 WIRED to the session's commands (the product transition wired the phases). New session and the copy
+    buttons bind Commands.X.
 
-    🔴 IT LOADS THE PARTS LIBRARY LOCALLY, like the catalogue and the other two phases, so the shipped
-    screens keep their pixels while this one is designed.
+    🔴 IT MERGES THE PARTS LIBRARY LOCALLY, and keeps doing so despite App.xaml now merging Parts
+    application-wide: a {StaticResource PartX} is resolved as this control's BAML loads, and that lookup never
+    reaches Application.Resources.
   -->
 
   <UserControl.Resources>
     <ResourceDictionary>
+      <!-- The local Parts merge STAYS despite App.xaml merging Parts application-wide: a {StaticResource
+           PartX} is resolved as this control's BAML loads, and that lookup never reaches Application.Resources
+           (see SetupPhaseView for the measured revert). The app-wide merge is for the calculator's implicit
+           styles, which are applied at tree time. -->
       <ResourceDictionary.MergedDictionaries>
         <ResourceDictionary Source="../Themes/Parts.xaml" />
       </ResourceDictionary.MergedDictionaries>
-
       <!-- What the folded history says without being opened: how many sessions it holds. A label and a
            number, for the reason setup.scenario_available gives. -->
       <ControlTemplate x:Key="HistorySummary">
