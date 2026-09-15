@@ -46,6 +46,40 @@
     </Setter>
   </Style>
 
+  <!-- The clear affordance inside a search field: the Segoe MDL2 cancel glyph laid over the right end of a
+       field, quiet until there is something to clear. It is the sibling of the calendar toggle above - a
+       small glyph button that lives in a field - and it takes its chrome from the same tokens so the two
+       read as one family. Its visibility and its click belong to the consumer (the SearchBox control). This
+       is only the look. The chevron and the check tick are drawn rather than set in a glyph, but an X is one
+       character the toolkit ships on the TFM floor, and drawing it would add a geometry to keep for nothing. -->
+  <Style x:Key="ClearFieldButton" TargetType="Button">
+    <Setter Property="Foreground" Value="{DynamicResource BrushTextSecondary}" />
+    <Setter Property="Cursor" Value="Hand" />
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="Button">
+          <Border x:Name="Bd" Background="Transparent" BorderBrush="Transparent"
+                  BorderThickness="{StaticResource StrokeThinEdge}" CornerRadius="{StaticResource RadiusSm}"
+                  Padding="{StaticResource SpaceXs}" SnapsToDevicePixels="True">
+            <TextBlock Text="&#xE711;" FontFamily="Segoe MDL2 Assets"
+                       FontSize="{StaticResource FontSizeCaption}"
+                       Foreground="{TemplateBinding Foreground}"
+                       HorizontalAlignment="Center" VerticalAlignment="Center" />
+          </Border>
+          <ControlTemplate.Triggers>
+            <Trigger Property="IsMouseOver" Value="True">
+              <Setter TargetName="Bd" Property="Background" Value="{DynamicResource BrushBgSurfaceAlt}" />
+              <Setter Property="Foreground" Value="{DynamicResource BrushTextPrimary}" />
+            </Trigger>
+            <Trigger Property="IsEnabled" Value="False">
+              <Setter Property="Opacity" Value="0.5" />
+            </Trigger>
+          </ControlTemplate.Triggers>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+
   <!-- The dark CheckBox style lived here - it now lives in Parts.xaml (the implicit CheckBox, merged
        application-wide), so this file no longer defines one and there is no collision to resolve. -->
 

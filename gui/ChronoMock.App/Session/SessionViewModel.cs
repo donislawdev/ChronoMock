@@ -802,6 +802,24 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     /// </remarks>
     public bool HasNoSelectedScenario => _selectedScenario is null;
 
+    /// <summary>
+    /// Choose the first scenario the filter left standing - the keyboard equivalent of clicking the top row,
+    /// which <see cref="Controls.SearchBox"/> binds to Enter.
+    /// </summary>
+    /// <remarks>
+    /// No-op when nothing matched, and deliberately so it never CLEARS a choice: Enter on an empty result
+    /// must not undo the scenario already picked, which the filter is allowed to leave standing (see
+    /// <see cref="ScenarioPicker"/>). Setting <see cref="SelectedScenario"/> is the same path a click takes,
+    /// so the moment is computed once, here as there.
+    /// </remarks>
+    public void ChooseFirstScenario()
+    {
+        if (ScenarioPicker.Visible.FirstOrDefault() is { } first)
+        {
+            SelectedScenario = first;
+        }
+    }
+
     /// <summary>The chosen scenario's "what this date tests" line, straight from the catalogue (DATA
     /// locales, not interface keys - the author wrote it, we do not translate it).</summary>
     public string ScenarioExplains { get => _scenarioExplains; private set => Set(ref _scenarioExplains, value); }

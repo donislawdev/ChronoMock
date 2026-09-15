@@ -38,6 +38,7 @@
   // to do about it, never only that something is wrong.
   "scenario.filter_placeholder": "Szukaj scenariuszy",
   "scenario.no_matches": "Żaden scenariusz nie pasuje. Wyczyść pole, żeby zobaczyć wszystkie.",
+  "scenario.clear_filter": "Wyczyść wyszukiwanie",
 
   // The rebuilt setup screen: one thing always visible and the rest folded away behind a header that keeps
   // saying what is set inside it. The chips are deliberately short - they sit in a section header beside a

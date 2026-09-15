@@ -126,6 +126,57 @@ public class ScenarioTests
     }
 
     [Fact]
+    public void Pressing_enter_in_the_filter_chooses_the_first_scenario_it_left_standing()
+    {
+        var vm = new SessionViewModel(new InMemorySessionHistoryStore(), presetsDir: PresetsDir());
+        var wholeCatalogueFirst = vm.ScenarioPicker.Visible[0];
+
+        // Narrow so the first STANDING hit is not the first of the whole list, or the test could not tell
+        // the behaviour from "always pick index 0 of the catalogue". The guard makes a bad narrowing loud
+        // rather than a false pass.
+        var narrowed = vm.ScenarioPicker.Visible[^1];
+        vm.ScenarioPicker.Filter = narrowed.DisplayName;
+        Assert.NotSame(wholeCatalogueFirst, vm.ScenarioPicker.Visible[0]);
+
+        vm.ChooseFirstScenario();
+
+        Assert.Same(vm.ScenarioPicker.Visible[0], vm.SelectedScenario);
+    }
+
+    [Fact]
+    public void Choosing_the_first_hit_takes_the_same_path_a_click_does()
+    {
+        // It goes through SelectedScenario, so it fills the explanation line and starts nothing (rule 7) -
+        // the keyboard and the mouse must not be two different ways of choosing.
+        var vm = new SessionViewModel(new InMemorySessionHistoryStore(), presetsDir: PresetsDir());
+        var first = vm.ScenarioPicker.Visible[0];
+
+        vm.ChooseFirstScenario();
+
+        Assert.Same(first, vm.SelectedScenario);
+        Assert.Equal(first.DisplayExplains, vm.ScenarioExplains);
+        Assert.Equal(SessionStatusKind.Idle, vm.StatusKind);
+    }
+
+    [Fact]
+    public void Pressing_enter_on_an_empty_result_leaves_a_chosen_scenario_standing()
+    {
+        // The filter is deliberately allowed to leave a choice standing (ScenarioPicker), so Enter on a
+        // list showing nothing must not undo it - a search box that silently changed what the target is
+        // about to see would be the exact fault the picker's design avoids.
+        var vm = new SessionViewModel(new InMemorySessionHistoryStore(), presetsDir: PresetsDir());
+        vm.SelectedScenario = vm.ScenarioPicker.Visible.First(s => s.Id == "year-rollover");
+        var chosen = vm.SelectedScenario;
+
+        vm.ScenarioPicker.Filter = "no scenario is called this";
+        Assert.Empty(vm.ScenarioPicker.Visible);
+
+        vm.ChooseFirstScenario();
+
+        Assert.Same(chosen, vm.SelectedScenario);
+    }
+
+    [Fact]
     public void A_scenario_is_computed_in_the_session_zone_and_not_through_the_preset_flag()
     {
         var scenario = ScenarioCatalog.Load(PresetsDir()).Ready.First(s => s.Id == "year-rollover");

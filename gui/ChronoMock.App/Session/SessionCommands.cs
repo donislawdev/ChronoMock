@@ -42,6 +42,7 @@ public sealed class SessionCommands
     private readonly RelayCommand _copySummary;
     private readonly RelayCommand _copyDiagnostics;
     private readonly RelayCommand _clearHistory;
+    private readonly RelayCommand _chooseFirstScenario;
     private readonly AsyncRelayCommand _start;
     private readonly AsyncRelayCommand _relativeApply;
     private readonly AsyncRelayCommand _refreshRecentTargets;
@@ -68,6 +69,10 @@ public sealed class SessionCommands
             () => session.Moment.SetToday(session.SelectedZone.BiasMinutes), () => session.CanEditTime);
         _now = new RelayCommand(
             () => session.Moment.SetNow(session.SelectedZone.BiasMinutes), () => session.CanEditTime);
+
+        // Enter in the scenario filter picks the first hit - the keyboard's version of clicking the top row.
+        // Editable-only like the moment fillers above, since choosing a scenario is what fills the At field.
+        _chooseFirstScenario = new RelayCommand(session.ChooseFirstScenario, () => session.CanEditTime);
 
         // Repeat and Forget act on the row chosen in the history well (the list sets SelectedRecord), so both
         // are enabled only with a chosen row. Repeat fills the setup form and starts nothing (rule 7).
@@ -180,6 +185,9 @@ public sealed class SessionCommands
     /// <summary>Fill the At field with the current instant, in the session zone.</summary>
     public ICommand Now => _now;
 
+    /// <summary>Pick the first scenario the filter left standing - the SearchBox binds this to Enter.</summary>
+    public ICommand ChooseFirstScenario => _chooseFirstScenario;
+
     /// <summary>Fill the setup form from the chosen history row. Never starts a session (rule 7).</summary>
     public ICommand Repeat => _repeat;
 
@@ -218,6 +226,7 @@ public sealed class SessionCommands
         _refreshRecentTargets.RaiseCanExecuteChanged();
         _today.RaiseCanExecuteChanged();
         _now.RaiseCanExecuteChanged();
+        _chooseFirstScenario.RaiseCanExecuteChanged();
         _repeat.RaiseCanExecuteChanged();
         _forget.RaiseCanExecuteChanged();
         _newSession.RaiseCanExecuteChanged();

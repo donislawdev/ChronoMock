@@ -2,6 +2,7 @@
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:app="clr-namespace:ChronoMock.App"
+             xmlns:controls="clr-namespace:ChronoMock.App.Controls"
              xmlns:sys="clr-namespace:System;assembly=System.Runtime"
              Background="{DynamicResource BrushBgBase}">
 
@@ -196,6 +197,30 @@
         </StackPanel>
       </Border>
 
+      <!-- ============ Search field ============ -->
+      <TextBlock Text="Search field" Style="{StaticResource PartHeading}" Margin="{StaticResource StackGapLg}" />
+
+      <Border Style="{StaticResource PartCard}" Margin="{StaticResource StackGapSm}">
+        <StackPanel>
+          <TextBlock Style="{StaticResource PartCaption}"
+                     Text="A field that filters a list, with a clear glyph that shows only once there is something to clear. It also submits its first hit on Enter and takes the caret when its section opens - both need real input, so they are measured on the live window, not drawn here. The drawing is the ordinary field with the glyph laid over its right end, the same shape the moment input lays a calendar toggle in." />
+          <WrapPanel Margin="{StaticResource StackGapSm}">
+            <controls:SearchBox Width="{StaticResource TargetBoxMaxWidth}" Margin="{StaticResource SpaceXs}"
+                                Placeholder="Search scenarios" ClearHint="Clear search" />
+            <controls:SearchBox Width="{StaticResource TargetBoxMaxWidth}" Margin="{StaticResource SpaceXs}"
+                                Text="february" Placeholder="Search scenarios" ClearHint="Clear search" />
+          </WrapPanel>
+          <WrapPanel>
+            <controls:SearchBox Width="{StaticResource TargetBoxMaxWidth}" Margin="{StaticResource SpaceXs}"
+                                IsEnabled="False" Text="disabled" Placeholder="Search scenarios"
+                                ClearHint="Clear search" />
+            <controls:SearchBox Width="{StaticResource LaunchFieldWidth}" Margin="{StaticResource SpaceXs}"
+                                Text="a filter typed far longer than the field it sits in, so the text runs under the clear glyph the way a system search box lets it"
+                                Placeholder="Search scenarios" ClearHint="Clear search" />
+          </WrapPanel>
+        </StackPanel>
+      </Border>
+
       <!-- ============ Choice list ============ -->
       <TextBlock Text="Choice list" Style="{StaticResource PartHeading}" Margin="{StaticResource StackGapLg}" />
 
@@ -203,8 +228,8 @@
         <StackPanel>
           <TextBlock Style="{StaticResource PartCaption}"
                      Text="Searched rather than scanned, because this catalogue is meant to grow well past what fits on a screen. Selection is a fill AND an accent bar: colour alone would be the only thing saying which one, and it is the one signal a reader may not have. The well has an edge and no fill - a fill would be the same neutral a selected row paints itself with, and would erase the selection." />
-          <TextBox Margin="{StaticResource StackGapSm}" Text=""
-                   app:PartState.Placeholder="Search scenarios" />
+          <controls:SearchBox Margin="{StaticResource StackGapSm}"
+                              Placeholder="Search scenarios" ClearHint="Clear search" />
           <ListBox Margin="{StaticResource StackGapSm}" SelectedIndex="1">
             <ListBoxItem Content="2038 boundary" />
             <ListBoxItem Content="29 February" />

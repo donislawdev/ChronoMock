@@ -388,9 +388,11 @@
         <StackPanel>
           <TextBlock Style="{StaticResource PartNote}"
                      Text="{DynamicResource setup.or_pick_scenario}" />
-          <TextBox Margin="{StaticResource StackGapSm}"
-                   Text="{Binding ScenarioPicker.Filter, UpdateSourceTrigger=PropertyChanged}"
-                   app:PartState.Placeholder="{DynamicResource scenario.filter_placeholder}" />
+          <controls:SearchBox Margin="{StaticResource StackGapSm}"
+                              Text="{Binding ScenarioPicker.Filter, UpdateSourceTrigger=PropertyChanged}"
+                              Placeholder="{DynamicResource scenario.filter_placeholder}"
+                              ClearHint="{DynamicResource scenario.clear_filter}"
+                              SubmitCommand="{Binding Commands.ChooseFirstScenario}" />
           <Grid Margin="{StaticResource StackGapSm}">
             <ListBox ItemsSource="{Binding ScenarioPicker.Visible}"
                      SelectedItem="{Binding SelectedScenario}"
