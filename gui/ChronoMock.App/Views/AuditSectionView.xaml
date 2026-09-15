@@ -148,6 +148,7 @@
         <HeaderedItemsControl Style="{StaticResource PartFactList}"
                               Header="{DynamicResource coverage.covered}"
                               ItemsSource="{Binding Covered}"
+                              ItemTemplate="{StaticResource CoverageRowTemplate}"
                               Visibility="{Binding HasCovered, Converter={StaticResource BoolToVis}}" />
         <HeaderedItemsControl Style="{StaticResource PartFactList}"
                               Header="{DynamicResource coverage.uncovered}"
@@ -156,6 +157,7 @@
         <HeaderedItemsControl Style="{StaticResource PartFactList}"
                               Header="{DynamicResource coverage.observed}"
                               ItemsSource="{Binding Observed}"
+                              ItemTemplate="{StaticResource CoverageRowTemplate}"
                               Visibility="{Binding HasObserved, Converter={StaticResource BoolToVis}}" />
         <HeaderedItemsControl Style="{StaticResource PartFactList}"
                               Header="{DynamicResource coverage.unobserved}"

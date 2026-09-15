@@ -47,6 +47,11 @@ public class SessionViewModelTests
             // its own dictionary, which is right for the test and worth saying out loud: the label itself
             // is guarded by XamlResourceKeyTests and by the renders, not from in here.
             ["mode.flow"] = "×1",
+            // The covered/observed rows fold their read count in through this, the same key the view's
+            // CoverageRowConverter resolves - without it a summary test would read the key back and pass or
+            // fail for the wrong reason.
+            ["coverage.reads"] = "{0} - read {1} times",
+            ["coverage.reads_one"] = "{0} - read once",
         };
         return key => map.TryGetValue(key, out var value) ? value : key;
     }
@@ -526,10 +531,10 @@ public class SessionViewModelTests
 
         Assert.True(vm.CoverageKnown);
         Assert.True(vm.HasCovered);
-        Assert.Contains("GetSystemTimeAsFileTime", vm.Covered[0], StringComparison.Ordinal);
-        Assert.Contains("842", vm.Covered[0], StringComparison.Ordinal);
+        Assert.Equal("GetSystemTimeAsFileTime", vm.Covered[0].Channel);
+        Assert.Equal(842L, vm.Covered[0].Calls);
         Assert.True(vm.HasObserved);
-        Assert.Contains("QueryPerformanceCounter", vm.Observed[0], StringComparison.Ordinal);
+        Assert.Equal("QueryPerformanceCounter", vm.Observed[0].Channel);
         Assert.Equal("KUSER_SHARED_DATA", Assert.Single(vm.Uncovered));
         Assert.Equal("source.network_at_start", Assert.Single(vm.Warnings));
     }
@@ -636,7 +641,9 @@ public class SessionViewModelTests
         vm.Apply(Coverage(pid: 200, "GetSystemTimeAsFileTime", 5));   // a child - never summed in here
 
         // Still the parent's single channel and its own count (untouchable rule 4: never sum processes).
-        Assert.Equal("GetSystemTimeAsFileTime  ×842", Assert.Single(vm.Covered));
+        var covered = Assert.Single(vm.Covered);
+        Assert.Equal("GetSystemTimeAsFileTime", covered.Channel);
+        Assert.Equal(842L, covered.Calls);
     }
 
     /// <summary>
@@ -668,7 +675,9 @@ public class SessionViewModelTests
         });
 
         // Counts: the parent's, unchanged and unsummed (rule 4).
-        Assert.Equal("GetSystemTimeAsFileTime  ×842", Assert.Single(vm.Covered));
+        var covered = Assert.Single(vm.Covered);
+        Assert.Equal("GetSystemTimeAsFileTime", covered.Channel);
+        Assert.Equal(842L, covered.Calls);
         // Reasons: the child's, which used to vanish entirely.
         Assert.Equal("source.network_at_start", Assert.Single(vm.Warnings));
         Assert.Equal("NtQuerySystemInformation", Assert.Single(vm.Uncovered));
@@ -680,7 +689,7 @@ public class SessionViewModelTests
     /// R2-X8. The core reports a process twice - once when it is discovered, once when the session
     /// ends - because the first snapshot is taken inside the ADR-4 guard window and its call counts
     /// are the session's first blink. Measured: a probe that read the clock 25 times was shown here
-    /// as "×2". The panel has to move to the later snapshot for that pid, and to no other.
+    /// as "read 2 times". The panel has to move to the later snapshot for that pid, and to no other.
     /// </summary>
     [Fact]
     public void A_later_snapshot_of_the_parent_replaces_its_counts_but_a_child_never_does()
@@ -691,7 +700,9 @@ public class SessionViewModelTests
         vm.Apply(Coverage(pid: 200, "GetSystemTime", 900)); // a child - never becomes the headline
         vm.Apply(Coverage(pid: 100, "GetSystemTime", 25));  // the parent again, at the end
 
-        Assert.Equal("GetSystemTime  ×25", Assert.Single(vm.Covered));
+        var row = Assert.Single(vm.Covered);
+        Assert.Equal("GetSystemTime", row.Channel);
+        Assert.Equal(25L, row.Calls);
     }
 
     [Fact]
@@ -799,12 +810,12 @@ public class SessionViewModelTests
 
     /// <summary>
     /// A Chromium channel is named by context TYPE plus API - "page Date.now" - and the core emits one
-    /// coverage event per context. An application with two pages therefore produced two identical rows
-    /// with different counts, and nothing said which was which. A row a reader cannot attribute is a
-    /// result they cannot explain, which is the defect this project treats as a defect.
+    /// coverage event per context. Each context's count stays its own and is never summed (rule 4), so two
+    /// pages reading the same channel become two rows that tell apart by their count. The raw context id that
+    /// once prefixed each row was dropped in P6 as a number that named nothing to the reader.
     /// </summary>
     [Fact]
-    public void Cdp_coverage_rows_say_which_context_they_came_from()
+    public void Cdp_keeps_each_contexts_count_separate_and_never_sums_them()
     {
         var vm = new SessionViewModel { IsCdp = true };
 
@@ -822,24 +833,26 @@ public class SessionViewModelTests
         });
 
         Assert.Equal(2, vm.Covered.Count);
-        Assert.Contains(vm.Covered, r => r.Contains("context 0", StringComparison.Ordinal)
-                                      && r.Contains("×5", StringComparison.Ordinal));
-        Assert.Contains(vm.Covered, r => r.Contains("context 1", StringComparison.Ordinal)
-                                      && r.Contains("×9", StringComparison.Ordinal));
+        // The raw context id is gone (P6), so the two contexts' rows tell apart by their read count.
+        Assert.Contains(vm.Covered, r => r.Calls == 5);
+        Assert.Contains(vm.Covered, r => r.Calls == 9);
         // Still never summed across contexts (rule 4) - two rows, each with its own count.
-        Assert.DoesNotContain(vm.Covered, r => r.Contains("×14", StringComparison.Ordinal));
+        Assert.DoesNotContain(vm.Covered, r => r.Calls == 14);
     }
 
-    /// <summary>The native branch is unchanged: an OS process is already named by its pid in the panel's
-    /// own layout, and prefixing there would be noise the CDP case needs and this one does not.</summary>
+    /// <summary>A covered row keeps the channel and its raw read count apart: the display folds the count
+    /// into a sentence and the copy-summary builds the same line, but the model holds the two as data so a
+    /// test - or a later per-process breakdown - can read either without parsing a string.</summary>
     [Fact]
-    public void Native_coverage_rows_are_not_tagged_with_a_context()
+    public void A_covered_row_keeps_the_channel_and_its_read_count_as_data()
     {
         var vm = new SessionViewModel();
 
         vm.Apply(Coverage(pid: 4242, "GetSystemTimeAsFileTime", 7));
 
-        Assert.DoesNotContain(vm.Covered, r => r.Contains("context", StringComparison.Ordinal));
+        var row = Assert.Single(vm.Covered);
+        Assert.Equal("GetSystemTimeAsFileTime", row.Channel);
+        Assert.Equal(7L, row.Calls);
     }
 
     [Fact]

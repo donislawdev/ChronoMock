@@ -206,8 +206,8 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     /// which is the parent. Later events for it replace its counts - other pids never do (R2-X8).</summary>
     private uint? _parentPid;
     private bool _isCdp;
-    private IReadOnlyList<string> _covered = [];
-    private IReadOnlyList<string> _observed = [];
+    private IReadOnlyList<CoveredChannel> _covered = [];
+    private IReadOnlyList<CoveredChannel> _observed = [];
     private IReadOnlyList<string> _uncovered = [];
     private IReadOnlyList<string> _unobserved = [];
     private IReadOnlyList<string> _installedLate = [];
@@ -1262,14 +1262,14 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     public bool HasCoverageNote => _isCdp ? _coverageKnown : IsFamily;
 
     /// <summary>Covered channels, formatted "channel  xN", from the parent process (never summed, rule 4).</summary>
-    public IReadOnlyList<string> Covered
+    public IReadOnlyList<CoveredChannel> Covered
     {
         get => _covered;
         private set { if (Set(ref _covered, value)) { RaisePropertyChanged(nameof(HasCovered)); } }
     }
 
     /// <summary>Channels hooked but deliberately left real (e.g. QPC-based waits, ADR-2), formatted "channel  xN".</summary>
-    public IReadOnlyList<string> Observed
+    public IReadOnlyList<CoveredChannel> Observed
     {
         get => _observed;
         private set { if (Set(ref _observed, value)) { RaisePropertyChanged(nameof(HasObserved)); } }
@@ -1460,12 +1460,12 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
             case CoverageEvent c when _isCdp:
                 // CDP emits one coverage per JS context - accumulate them all (each context's counts stay
                 // its own, never summed across contexts, rule 4) - union the warnings and uncovered lists.
-                // 🔴 Each row carries its CONTEXT, because the channel name carries only the context TYPE:
-                // two pages both produce "page Date.now", and two identical rows with different counts
-                // cannot be explained by the reader. The comment here used to say the name told them
-                // apart, which was true of the kind and not of the context.
-                Covered = [.. _covered, .. c.Covered.Select(ch => FormatCdpChannel(c.Pid, ch))];
-                Observed = [.. _observed, .. c.Observed.Select(ch => FormatCdpChannel(c.Pid, ch))];
+                // Two pages both produce "page Date.now", so two contexts reading one channel become two
+                // rows that tell apart only by their read count (rule 4 keeps each context's count its own,
+                // never summed). The raw context id used to prefix each row - dropped in P6 as a number that
+                // named nothing to the reader.
+                Covered = [.. _covered, .. c.Covered];
+                Observed = [.. _observed, .. c.Observed];
                 Uncovered = [.. _uncovered, .. c.Uncovered.Where(u => !_uncovered.Contains(u))];
                 Unobserved = [.. _unobserved, .. c.Unobserved.Where(u => !_unobserved.Contains(u))];
                 InstalledLate = [.. _installedLate, .. c.InstalledLate.Where(u => !_installedLate.Contains(u))];
@@ -1483,8 +1483,8 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
                 _parentPid ??= c.Pid;
                 if (c.Pid == _parentPid)
                 {
-                    Covered = c.Covered.Select(FormatChannel).ToList();
-                    Observed = c.Observed.Select(FormatChannel).ToList();
+                    Covered = c.Covered.ToList();
+                    Observed = c.Observed.ToList();
                 }
 
                 // Warnings and uncovered channels are not counts - they are the REASON behind the family
@@ -1747,25 +1747,17 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
         HistoryNoteKey = string.Empty;
     }
 
-    private static string FormatChannel(CoveredChannel channel) => $"{channel.Channel}  ×{channel.Calls}";
-
     /// <summary>
-    /// A CDP channel, tagged with the context it belongs to.
-    ///
-    /// <para>
-    /// The core names a Chromium channel by context TYPE plus API - "page Date.now" - and emits one
-    /// coverage event per context. An application with two pages therefore produced two identical rows
-    /// with different counts, and nothing on the panel said which was which. A comment here claimed the
-    /// name told them apart, which was true of the KIND of context and not of the context.
-    /// </para>
-    /// <para>
-    /// Tagged on every row rather than only when there are several, because the list is built as the
-    /// events arrive - the second context is not known when the first is rendered. The CLI does the
-    /// same with pids, for the same reason.
-    /// </para>
+    /// A covered or observed channel as one line for the copy-summary, its read count folded in as prose so
+    /// it does not read as a speed. The view renders the same row through CoverageRowConverter - two
+    /// surfaces, one wording (coverage.reads). InvariantCulture keeps the count stable across machines, and
+    /// CDP no longer prefixes a raw context id (P6): two contexts reading one channel differ by their count.
     /// </summary>
-    private static string FormatCdpChannel(uint context, CoveredChannel channel)
-        => $"context {context.ToString(CultureInfo.InvariantCulture)}: {FormatChannel(channel)}";
+    private static string FormatReadRow(CoveredChannel channel, Func<string, string> translate)
+    {
+        var format = translate(channel.Calls == 1 ? "coverage.reads_one" : "coverage.reads");
+        return string.Format(CultureInfo.InvariantCulture, format, channel.Channel, channel.Calls);
+    }
 
     /// <summary>Build the wire time from the inputs. The moment is the local time in the session zone
     /// (rule 2, chrono-mock 9.5) - the core turns it into UTC and validates it (docs/08 section 5).</summary>
@@ -1876,8 +1868,8 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
         }
 
         // Channel names are raw API identifiers (not translated) - warnings are keys the core raised.
-        AppendList(sb, translate, "coverage.covered", _covered, translateItems: false);
-        AppendList(sb, translate, "coverage.observed", _observed, translateItems: false);
+        AppendList(sb, translate, "coverage.covered", _covered.Select(ch => FormatReadRow(ch, translate)).ToList(), translateItems: false);
+        AppendList(sb, translate, "coverage.observed", _observed.Select(ch => FormatReadRow(ch, translate)).ToList(), translateItems: false);
         AppendList(sb, translate, "coverage.uncovered", _uncovered, translateItems: false);
         AppendList(sb, translate, "coverage.warnings", _warnings, translateItems: true);
         // Cleanup residue the core could not remove (ended.residue_keys) - reported, never hidden (rule 6).

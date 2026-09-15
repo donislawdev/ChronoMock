@@ -258,21 +258,23 @@
   // Session control (M-10). Meaning is carried by the label, never by colour alone.
   "control.stop": "Stop session",
 
-  // Session status. Meaning is carried by this label, never by colour alone.
+  // Session status. Meaning is carried by this label, never by colour alone. No "target" or "core" here -
+  // the two mechanism words this screen dropped everywhere else, said in prose about the application and
+  // its clock (P6).
   "status.idle": "Not started",
-  "status.connecting": "Starting the core",
+  "status.connecting": "Starting the session",
   "status.running": "Running",
   "status.ended": "Session ended",
-  "status.did_not_take_effect": "Did not take effect - the target vanished",
-  "status.core_stopped": "Core stopped - the target time is frozen",
-  "status.stopping": "Stopping - returning the target to real time",
-  "status.refused": "Refused - the substitution did not take effect, so the target was stopped",
-  "status.stopped": "Session stopped - the target is back on real time",
-  "status.core_unresponsive": "Core not responding - stopped, the target is back on real time",
-  "status.core_missing": "The Chrono Mock core could not be started - the installation may be incomplete",
+  "status.did_not_take_effect": "Did not take effect - the application vanished",
+  "status.core_stopped": "Stopped - the application's clock is frozen",
+  "status.stopping": "Stopping - returning the application to the real clock",
+  "status.refused": "Refused - the substitution did not take effect, so the application was stopped",
+  "status.stopped": "Session stopped - the application is back on the real clock",
+  "status.core_unresponsive": "Chrono Mock stopped responding - the application is back on the real clock",
+  "status.core_missing": "Chrono Mock could not be started - the installation may be incomplete",
   "status.target_unsupported": "That file is not a supported executable - choose a .exe application",
-  "status.target_unreadable": "The target could not be read - it may have been moved or is not accessible",
-  "status.no_ready": "No handshake from the core",
+  "status.target_unreadable": "The application could not be read - it may have been moved or is not accessible",
+  "status.no_ready": "Chrono Mock did not start correctly",
   "status.error": "Session error",
 
   // Core failure reasons (RELEASE-001). When a start/fatal error ends a session, its specific reason becomes the status headline, so a failed start never reads as "Session ended". Phrased as failure statements because they ARE the status line. Emitted by the core (crates/cli, crates/mech).
@@ -365,6 +367,10 @@
   // floors - which the late-hook warning needs, and could not say on its own.
   "coverage.installed_late": "Came under the fake clock late",
   "coverage.warnings": "Warnings",
+  // The read count on a covered or observed channel, in prose so it does not read like the speed multiplier
+  // the raw count sat beside - built in code (SessionViewModel.FormatChannel), P6.
+  "coverage.reads": "{0} - read {1} times",
+  "coverage.reads_one": "{0} - read once",
   "coverage.family_note": "Several processes ran - the call counts are the first one's, while the warnings and everything read from the real clock cover all of them.",
   "coverage.contexts_note": "A Chromium application - every JS context is listed on its own (the page and its workers), never added together.",
 
@@ -384,7 +390,7 @@
   "coverage.pid_registry_full": "This session ran more processes than the audit can track (256). Some ran with no fake clock at all and are missing from the process count and the lists above.",
   "time.fake_clock_clamped": "The fake clock reached the last date this build can represent (year 30828) and stood there for the rest of the session. Late readings are not the moments the chosen speed would have produced.",
   "time.duration_axis_clamped": "The monotonic counters (tick count, unbiased interrupt time, and QPC when scaled) reached the end of their range and stood there, so elapsed time inside the application stopped advancing even though the session went on. A lower speed or a shorter session avoids it.",
-  "target.single_instance_suspected": "exited right after injection, before the swap could be confirmed",
+  "target.single_instance_suspected": "exited right after it started, before the substitution could be confirmed",
 
   // Runtime detected statically from the target's files (B1): its monotonic/elapsed clocks stand on QueryPerformanceCounter, which stays real (ADR-2), so a timer built on them does not scale even though the wall clock does. Wording mirrors the CLI describe_warning.
   "runtime.python_monotonic_qpc": "This Python app measures time with perf_counter and monotonic - both use QueryPerformanceCounter on Python 3.13+, which is left real, so a timer built on them does not scale (time.time and the wall clock do).",

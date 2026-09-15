@@ -1033,6 +1033,17 @@
     edge down the middle of the list. Capped in height and scrolling, because a family session can
     produce forty channels and this is a detail inside a folded section, not the subject of the screen.
   -->
+  <!-- The row for a covered or observed channel - a name and a read count folded into a sentence
+       (coverage.reads) so the count does not read as a speed. The same TextBlock as the fact list's own row,
+       so the two line up - only the converter differs, turning a CoveredChannel into text where the fact list
+       turns a key into text. -->
+  <DataTemplate x:Key="CoverageRowTemplate">
+    <TextBlock Style="{StaticResource PartCaption}" TextWrapping="NoWrap"
+               TextTrimming="CharacterEllipsis"
+               FontFamily="{StaticResource FontFamilyMono}"
+               Text="{Binding Converter={StaticResource CoverageRow}}" />
+  </DataTemplate>
+
   <Style x:Key="PartFactList" TargetType="HeaderedItemsControl">
     <Setter Property="Margin" Value="{StaticResource StackGapLg}" />
     <Setter Property="ItemTemplate">
