@@ -54,6 +54,60 @@ public class SessionCommandsTests
     }
 
     [Fact]
+    public void Jump_to_is_enabled_only_while_running_and_only_with_a_valid_moment_in_its_field()
+    {
+        var idle = new SessionViewModel();
+        var running = SessionStates.Running();
+
+        // Idle: never, whatever the field holds - the running clock is what a jump moves.
+        idle.JumpMoment.DateText = "2038-01-19";
+        Assert.False(idle.Commands.JumpToEntered.CanExecute(null));
+
+        // Running but the field is empty - it starts empty, unlike the pre-filled start moment, so the
+        // button waits for a target rather than offering to jump to a default nobody typed.
+        Assert.False(running.Commands.JumpToEntered.CanExecute(null));
+
+        // Running with a valid moment typed into the jump field: enabled.
+        running.JumpMoment.DateText = "2038-01-19";
+        Assert.True(running.Commands.JumpToEntered.CanExecute(null));
+
+        // A malformed moment disables it again - a jump to a date that does not exist is refused at the
+        // button, not sent and rejected downstream.
+        running.JumpMoment.DateText = "2038-13-45";
+        Assert.False(running.Commands.JumpToEntered.CanExecute(null));
+    }
+
+    [Fact]
+    public void Jump_to_refreshes_its_gate_when_the_jump_field_is_typed_into()
+    {
+        // JumpMoment raises its OWN PropertyChanged, which does not travel through the view model's, so the
+        // command hooks the field directly. Reversal probe: drop that hook in SessionCommands and this stays
+        // false, so the button would not light up as a moment is typed.
+        var vm = SessionStates.Running();
+        var fired = false;
+        vm.Commands.JumpToEntered.CanExecuteChanged += (_, _) => fired = true;
+
+        vm.JumpMoment.DateText = "2038-01-19";
+
+        Assert.True(fired);
+    }
+
+    [Fact]
+    public void Typing_a_jump_target_never_touches_the_start_moment()
+    {
+        // The separate field is the whole design: a jump target written into the start Moment would become
+        // the next session's Starts-at, because New session keeps the form filled (ResetSession leaves Moment
+        // alone). Typing a target here leaves the start moment exactly as it was.
+        var vm = SessionStates.Running();
+        var startBefore = vm.Moment.Canonical;
+
+        vm.JumpMoment.DateText = "2050-06-15";
+        vm.JumpMoment.TimeText = "12:00:00";
+
+        Assert.Equal(startBefore, vm.Moment.Canonical);
+    }
+
+    [Fact]
     public void New_session_is_enabled_only_after_the_session_has_ended()
     {
         Assert.False(new SessionViewModel().Commands.NewSession.CanExecute(null));

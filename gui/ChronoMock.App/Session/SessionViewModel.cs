@@ -59,6 +59,19 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     /// <summary>The editable moment (a date and optional time in the session zone, rule 2). The shared
     /// MomentInput control binds to it, and MomentParse composes it culture-invariantly (locale-safe).</summary>
     public MomentField Moment { get; } = new();
+    /// <summary>
+    /// The moment to jump the running clock to - a SEPARATE field from the start <see cref="Moment"/>.
+    /// </summary>
+    /// <remarks>
+    /// 🔴 SEPARATE ON PURPOSE, and the re-analysis that split it named three faults in sharing the start
+    /// field. An in-flight jump would rewrite where the session started, and <c>ResetSession</c> keeps the
+    /// form filled, so "New session" would carry the jump target into the next run's Starts-at. The start
+    /// field pre-fills with the start moment while the clock has moved on, so a jump without an edit would
+    /// send the clock backwards to the start. And the start field's setter drives the setup form
+    /// (CanStart, the default-moment note, the scenario selection), none of which a jump has any business
+    /// touching. This field starts empty and drives nothing but its own Jump button.
+    /// </remarks>
+    public MomentField JumpMoment { get; } = new();
     private ZoneOption _selectedZone;
     private ModeOption _selectedMode;
     private bool _scaleDuration;
@@ -982,13 +995,13 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
         });
     }
 
-    /// <summary>Jump the wall to the moment currently in the At field, in the session zone (rule 2). No-op
-    /// if the moment is malformed (the Jump button is disabled then) or no session is running.</summary>
+    /// <summary>Jump the wall to the moment typed in the session's jump field, in the session zone (rule 2).
+    /// No-op if that moment is malformed (the Jump button is disabled then) or no session is running.</summary>
     public void JumpToEnteredMoment()
     {
-        if (Moment.IsValid)
+        if (JumpMoment.IsValid)
         {
-            SendJumpAbsolute(Moment.Canonical, SelectedZone.BiasMinutes);
+            SendJumpAbsolute(JumpMoment.Canonical, SelectedZone.BiasMinutes);
         }
     }
 

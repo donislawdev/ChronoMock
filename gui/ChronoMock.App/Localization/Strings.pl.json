@@ -76,6 +76,8 @@
   "session.section_audit": "Co aplikacja odczytała",
   "session.label_jump": "Skok",
   "session.jump_note": "Zegar trwania nigdy nie cofa się, także przy skoku wstecz.",
+  "session.label_jump_to": "Skok do",
+  "session.action_jump_to": "Skocz",
   "session.rate_placeholder": "dowolne tempo",
   // 🔴 Application, not Running. The line outlives the run - the same screen shows a session that has
   // ended - and "Running:" stood above "Session ended" there.
@@ -663,6 +665,7 @@
   "tip.freeze": "Zamroź podmieniony zegar, by przestał iść.",
   "tip.set_speed": "Ustaw dowolną prędkość, np. 500.",
   "tip.stop": "Zatrzymaj sesję. Aplikacja wraca do prawdziwego czasu - nie jest zamykana.",
+  "tip.jump_to": "Przesuń fałszywy zegar na tę datę i godzinę, czytaną w strefie sesji.",
   "tip.copy_summary": "Skopiuj gotowe podsumowanie sesji do zgłoszenia.",
   "tip.copy_diagnostics": "Skopiuj diagnostykę rdzenia (jego stderr), by dołączyć do zgłoszenia.",
   "tip.base_kind": "Od czego zaczyna się obliczenie: dziś, teraz, albo konkretna data.",

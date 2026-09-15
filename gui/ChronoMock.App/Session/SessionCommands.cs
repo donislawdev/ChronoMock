@@ -43,6 +43,7 @@ public sealed class SessionCommands
     private readonly RelayCommand _copyDiagnostics;
     private readonly RelayCommand _clearHistory;
     private readonly RelayCommand _chooseFirstScenario;
+    private readonly RelayCommand _jumpToEntered;
     private readonly AsyncRelayCommand _start;
     private readonly AsyncRelayCommand _relativeApply;
     private readonly AsyncRelayCommand _refreshRecentTargets;
@@ -73,6 +74,14 @@ public sealed class SessionCommands
         // Enter in the scenario filter picks the first hit - the keyboard's version of clicking the top row.
         // Editable-only like the moment fillers above, since choosing a scenario is what fills the At field.
         _chooseFirstScenario = new RelayCommand(session.ChooseFirstScenario, () => session.CanEditTime);
+
+        // Jump the running clock to the moment typed in the session's own field. Live only, and only once
+        // that field holds a valid moment - a jump to a malformed date is a no-op the button refuses rather
+        // than a silent failure. JumpMoment raises its OWN PropertyChanged as it is typed, which does not
+        // travel through the view model's, so the button's CanExecute is refreshed from the field here.
+        _jumpToEntered = new RelayCommand(
+            session.JumpToEnteredMoment, () => session.IsRunning && session.JumpMoment.IsValid);
+        session.JumpMoment.PropertyChanged += (_, _) => _jumpToEntered.RaiseCanExecuteChanged();
 
         // Repeat and Forget act on the row chosen in the history well (the list sets SelectedRecord), so both
         // are enabled only with a chosen row. Repeat fills the setup form and starts nothing (rule 7).
@@ -188,6 +197,9 @@ public sealed class SessionCommands
     /// <summary>Pick the first scenario the filter left standing - the SearchBox binds this to Enter.</summary>
     public ICommand ChooseFirstScenario => _chooseFirstScenario;
 
+    /// <summary>Jump the running clock to the moment typed in the session's jump field. Live only.</summary>
+    public ICommand JumpToEntered => _jumpToEntered;
+
     /// <summary>Fill the setup form from the chosen history row. Never starts a session (rule 7).</summary>
     public ICommand Repeat => _repeat;
 
@@ -227,6 +239,7 @@ public sealed class SessionCommands
         _today.RaiseCanExecuteChanged();
         _now.RaiseCanExecuteChanged();
         _chooseFirstScenario.RaiseCanExecuteChanged();
+        _jumpToEntered.RaiseCanExecuteChanged();
         _repeat.RaiseCanExecuteChanged();
         _forget.RaiseCanExecuteChanged();
         _newSession.RaiseCanExecuteChanged();

@@ -965,10 +965,6 @@ const CS_KNOWN_UNUSED: &[(&str, &str)] = &[
         "Launch",
         "`CoreClient.Launch` spawns the core and sends `start` in one step, for callers that do          not gate on `ready`. Its own XML comment says the conformance tests use it, and they are          its only callers - the GUI goes through `Connect` and waits. It exists FOR the tests,          which is a reason, and deleting it deletes what those five conformance tests drive.",
     ),
-    (
-        "JumpToEnteredMoment",
-        "The in-flight jump to the moment typed in the At field. The setup phase owns the moment          input and the running session phase has no field of its own, so no phase carries a control          that calls this yet - it is a deferred rework item rather than dead code, and it keeps          SendJumpAbsolute (its only caller) alive too. It goes when the session phase gains an          in-flight jump-to-entered control, or the owner drops the feature.",
-    ),
 ];
 
 fn collect_cs() -> (Vec<Definition>, BTreeMap<String, Vec<Site>>, usize) {

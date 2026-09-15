@@ -75,6 +75,8 @@
   "session.section_audit": "What the application read",
   "session.label_jump": "Jump",
   "session.jump_note": "The duration clock never goes backwards, even on a backward jump.",
+  "session.label_jump_to": "Jump to",
+  "session.action_jump_to": "Go",
   // One word for one idea: the row says Speed and so does the tooltip, so the box does too.
   "session.rate_placeholder": "any speed",
   // 🔴 Application, not Running. The line outlives the run - the same screen shows a session that has
@@ -672,6 +674,7 @@
   "tip.freeze": "Freeze the fake clock so it stops advancing.",
   "tip.set_speed": "Set any custom speed, e.g. 500.",
   "tip.stop": "Stop the session. The app returns to real time - it is not closed.",
+  "tip.jump_to": "Move the fake clock to this date and time, read in the session zone.",
   "tip.copy_summary": "Copy a paste-ready session summary for a ticket.",
   "tip.copy_diagnostics": "Copy the core diagnostics (its stderr) to attach to a support ticket.",
   "tip.base_kind": "Where the calculation starts: today, now, or a specific date.",

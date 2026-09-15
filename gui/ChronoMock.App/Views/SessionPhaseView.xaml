@@ -2,6 +2,7 @@
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:app="clr-namespace:ChronoMock.App"
+             xmlns:controls="clr-namespace:ChronoMock.App.Controls"
              xmlns:views="clr-namespace:ChronoMock.App.Views"
              Background="{DynamicResource BrushBgBase}">
 
@@ -191,6 +192,31 @@
               <HeaderedContentControl.Tag>
                 <TextBlock x:Name="JumpNote" Style="{StaticResource PartNote}"
                            Text="{DynamicResource session.jump_note}" />
+              </HeaderedContentControl.Tag>
+            </HeaderedContentControl>
+
+            <!-- 🔴 JUMP TO AN ABSOLUTE MOMENT, under the relative steps. The steps above move the clock BY an
+                 amount, this moves it TO a date - the two ways the calculator already offers, in the language
+                 of a running session. It takes its OWN field (JumpMoment), empty until the tester types a
+                 target: nothing is pre-filled to jump to by accident, the Jump button stays disabled until
+                 the field is a real moment, and the session's start moment is never rewritten by a jump. A
+                 moment the core cannot reach (a DST gap, a non-leap 29 February) comes back on the in-flight
+                 error line in the footer, the same path every other live command uses. -->
+            <HeaderedContentControl Style="{StaticResource PartFormRow}">
+              <HeaderedContentControl.Header>
+                <TextBlock Style="{StaticResource PartLabel}" Text="{DynamicResource session.label_jump_to}" />
+              </HeaderedContentControl.Header>
+              <StackPanel Orientation="Horizontal">
+                <controls:MomentInput DataContext="{Binding JumpMoment}" />
+                <Button Content="{DynamicResource session.action_jump_to}"
+                        ToolTip="{DynamicResource tip.jump_to}"
+                        Command="{Binding Commands.JumpToEntered}"
+                        Margin="{StaticResource SpaceXs}" VerticalAlignment="Center" />
+              </StackPanel>
+              <HeaderedContentControl.Tag>
+                <TextBlock Style="{StaticResource PartFieldMessage}"
+                           Text="{Binding JumpMoment.ActiveErrorKey, Converter={StaticResource KeyToText}}"
+                           Visibility="{Binding JumpMoment.HasError, Converter={StaticResource BoolToVis}}" />
               </HeaderedContentControl.Tag>
             </HeaderedContentControl>
           </StackPanel>
