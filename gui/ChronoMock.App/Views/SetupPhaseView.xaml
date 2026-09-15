@@ -183,6 +183,7 @@
                       ToolTip="{DynamicResource setup.tip_recent}"
                       AutomationProperties.Name="{DynamicResource setup.label_target}"
                       MaxWidth="{StaticResource TargetBoxMaxWidth}"
+                      app:ComboBoxBehavior.OpenedCommand="{Binding Commands.RefreshRecentTargets}"
                       Visibility="{Binding HasRecentTargets, Converter={StaticResource BoolToVis}}">
               <ComboBox.ItemTemplate>
                 <DataTemplate>
@@ -299,7 +300,7 @@
             </ComboBox>
           </HeaderedContentControl>
 
-          <HeaderedContentControl Style="{StaticResource PartFormRow}"
+          <HeaderedContentControl x:Name="ShiftRow" Style="{StaticResource PartFormRow}"
                                   DataContext="{Binding Relative}">
             <HeaderedContentControl.Header>
               <TextBlock Style="{StaticResource PartLabel}" Text="{DynamicResource setup.label_shift}" />

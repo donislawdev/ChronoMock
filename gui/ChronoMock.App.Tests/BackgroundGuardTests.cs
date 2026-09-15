@@ -31,26 +31,39 @@ public class BackgroundGuardTests
     private const int SampleStep = 4;
 
     [Fact]
-    public void The_window_paints_the_palette_base_over_most_of_its_surface()
+    public void The_window_paints_our_palette_over_most_of_its_surface()
     {
-        var (dominant, share, distinct) = WpfTestHost.InvokeSettled(() => Rendered(new MainWindow()));
+        var (counts, sampled) = WpfTestHost.InvokeSettled(() => Rendered(new MainWindow()));
 
-        // Canary first: a blank render would hand the assertion below a single flat colour and pass for
+        // Canary first: a blank render is a single flat colour and would pass the coverage test below for
         // the wrong reason. A window that actually drew its content has hundreds of colours in it.
         Assert.True(
-            distinct > 20,
-            $"the render produced only {distinct} distinct colours - it drew nothing, so the colour "
+            counts.Count > 20,
+            $"the render produced only {counts.Count} distinct colours - it drew nothing, so the coverage "
                 + "assertion below would be meaningless");
 
-        var expected = WpfTestHost.InvokeSettled(
-            () => (Application.Current.TryFindResource("BrushBgBase") as SolidColorBrush)?.Color);
+        // 🔴 OUR GROUNDS, not the dependency's default. The trap this guards paints the wpfui #202020 on
+        // every pixel, because a ui:FluentWindow ignores its own Background - our palette never contains that
+        // colour. Which of our grounds dominates is the design's affair - the setup phase covers most of the
+        // window in cards (BrushBgSurface) over the base (BrushBgBase) - so the measure is how much of the
+        // surface OUR grounds cover together. That stays above half whether the base or a card wins, and
+        // collapses the moment #202020 comes back, which is the failure this exists to catch.
+        var grounds = WpfTestHost.InvokeSettled(() =>
+            new[] { "BrushBgBase", "BrushBgSurface", "BrushBgSurfaceAlt" }
+                .Select(key => Application.Current.TryFindResource(key) as SolidColorBrush)
+                .Select(brush => brush?.Color)
+                .ToArray());
 
-        Assert.True(expected is not null, "BrushBgBase is missing from the palette");
-        Assert.Equal(expected!.Value, dominant);
+        Assert.DoesNotContain(grounds, colour => colour is null); // all three grounds resolve from the palette
+
+        var groundKeys = grounds.Select(colour => Packed(colour!.Value)).ToHashSet();
+        double covered = counts.Where(pair => groundKeys.Contains(pair.Key)).Sum(pair => pair.Value)
+            / (double)sampled;
+
         Assert.True(
-            share > 0.5,
-            $"the base colour covers only {share:P1} of the window - something else is painting the "
-                + "background, or the content root lost its Background");
+            covered > 0.5,
+            $"our palette grounds cover only {covered:P1} of the window - something else is painting it, or "
+                + "the content root lost its Background to the FluentWindow trap");
     }
 
     [Fact]
@@ -114,9 +127,12 @@ public class BackgroundGuardTests
             """));
     }
 
-    /// <summary>Render the window's content root and report the colour covering most of it, the share it
-    /// covers, and how many distinct colours the render contains.</summary>
-    private static (Color Dominant, double Share, int Distinct) Rendered(Window window)
+    /// <summary>The packed ARGB key a colour has in the sampled counts, matching the render's byte order.</summary>
+    private static uint Packed(Color c) => ((uint)c.A << 24) | ((uint)c.R << 16) | ((uint)c.G << 8) | c.B;
+
+    /// <summary>Render the window's content root and report how often each colour was sampled, and how many
+    /// pixels were sampled in all, so a caller can ask what share any set of colours covers.</summary>
+    private static (Dictionary<uint, int> Counts, int Sampled) Rendered(Window window)
     {
         // 🔴 An unshown Window has no HWND, so what is rendered is the CONTENT, laid out by hand. Without
         // the measure and arrange pass the visual tree has zero size and the bitmap comes back empty -
@@ -147,9 +163,6 @@ public class BackgroundGuardTests
             }
         }
 
-        var top = counts.MaxBy(pair => pair.Value);
-        var colour = Color.FromArgb(
-            (byte)(top.Key >> 24), (byte)(top.Key >> 16), (byte)(top.Key >> 8), (byte)top.Key);
-        return (colour, (double)top.Value / sampled, counts.Count);
+        return (counts, sampled);
     }
 }

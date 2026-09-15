@@ -1,4 +1,6 @@
+using System.Windows;
 using ChronoMock.App.Calc;
+using ChronoMock.App.Views;
 
 namespace ChronoMock.App.Tests;
 
@@ -111,13 +113,23 @@ public class RelativeMomentTests
         Assert.Equal("2038-01-19T03:14:07", field.Canonical);
     }
 
-    /// <summary>The row in the window is bound to this view model. Without this the XAML could be pointed at
-    /// the session view model, every binding would fail silently, and the controls would sit there empty -
-    /// the one failure mode a unit test over the view model cannot see.</summary>
+    /// <summary>The setup phase binds its shift row to the RELATIVE view model, not the session view model.
+    /// Without this the controls would sit there empty and every binding would fail silently - the one
+    /// failure mode a unit test over the view model cannot see. It moved off the window onto the phase when
+    /// the product adopted the three phases - the row is named so the binding can be read off a laid-out
+    /// control, since a DataContext binding is not evaluated until the tree is measured.</summary>
     [Fact]
-    public void The_window_binds_the_relative_row_to_this_view_model()
+    public void The_setup_phase_binds_the_shift_row_to_the_relative_view_model()
     {
-        var context = WpfTestHost.InvokeSettled(() => new MainWindow().RelativeMomentRow.DataContext);
+        var context = WpfTestHost.InvokeSettled(() =>
+        {
+            var view = new SetupPhaseView { DataContext = new SessionViewModel() };
+            view.Measure(new Size(1200, 1400));
+            view.Arrange(new Rect(0, 0, 1200, 1400));
+            view.UpdateLayout();
+            return view.ShiftRow.DataContext;
+        });
+
         Assert.IsType<RelativeMomentViewModel>(context);
     }
 

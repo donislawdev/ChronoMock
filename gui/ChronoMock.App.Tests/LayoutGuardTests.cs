@@ -300,8 +300,8 @@ public class LayoutGuardTests
                 return SpacingReport.Measure(LayoutProbe.Walk(panel));
             }
 
-            // TargetBox is declared in MainWindow.xaml. ThisNameIsNowhere is not.
-            return (Two("TargetBox"), Two("ThisNameIsNowhere"));
+            // SubstitutionContainer is declared in MainWindow.xaml. ThisNameIsNowhere is not.
+            return (Two("SubstitutionContainer"), Two("ThisNameIsNowhere"));
         });
 
         Assert.Contains(ours, g => g.Ours);

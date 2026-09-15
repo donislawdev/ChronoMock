@@ -44,6 +44,7 @@ public sealed class SessionCommands
     private readonly RelayCommand _clearHistory;
     private readonly AsyncRelayCommand _start;
     private readonly AsyncRelayCommand _relativeApply;
+    private readonly AsyncRelayCommand _refreshRecentTargets;
     private IShellInteraction? _shell;
 
     internal SessionCommands(SessionViewModel session)
@@ -54,6 +55,12 @@ public sealed class SessionCommands
         _jump = new RelayCommand<string>(session.SendJump, _ => session.IsRunning);
         _setCustomSpeed = new RelayCommand<string>(session.SetCustomSpeed, _ => session.IsRunning);
         _relativeApply = new AsyncRelayCommand(session.Relative.ApplyAsync, () => session.CanEditTime);
+
+        // Re-check which recent targets still exist on disk as the list opens, so a wiped build output is
+        // marked rather than silently offered (rule 6). Runs off the UI thread inside the view model - a dead
+        // network path would otherwise freeze the window for as long as the share takes to fail. Idle only:
+        // the list is start-only, and the box is disabled once a session is under way.
+        _refreshRecentTargets = new AsyncRelayCommand(session.RefreshRecentTargetsAsync, () => session.IsIdle);
 
         // Today and Now fill the At field in the SESSION zone (rule 2), never the OS clock - the selected
         // zone's bias is passed so the moment control stays zone-agnostic. Editable idle or while running.
@@ -164,6 +171,9 @@ public sealed class SessionCommands
     /// <summary>"Now, shifted" - fill the At field with a moment relative to now (the calculator's shift step).</summary>
     public ICommand RelativeApply => _relativeApply;
 
+    /// <summary>Re-check which recent targets still exist, bound to the recent list opening (setup only).</summary>
+    public ICommand RefreshRecentTargets => _refreshRecentTargets;
+
     /// <summary>Fill the At field with today at midnight, in the session zone.</summary>
     public ICommand Today => _today;
 
@@ -205,6 +215,7 @@ public sealed class SessionCommands
         _jump.RaiseCanExecuteChanged();
         _setCustomSpeed.RaiseCanExecuteChanged();
         _relativeApply.RaiseCanExecuteChanged();
+        _refreshRecentTargets.RaiseCanExecuteChanged();
         _today.RaiseCanExecuteChanged();
         _now.RaiseCanExecuteChanged();
         _repeat.RaiseCanExecuteChanged();

@@ -1,11 +1,7 @@
-using System.Globalization;
 using System.IO; // The WPF SDK trims System.IO from implicit usings (Path collides with Shapes.Path).
-using System.Runtime.InteropServices;
 using System.Windows;
-using Microsoft.Win32;
 using Wpf.Ui.Controls;
 using ChronoMock.App.Calc;
-using ChronoMock.Protocol;
 
 namespace ChronoMock.App;
 
@@ -30,9 +26,12 @@ public partial class MainWindow : FluentWindow
         InitializeComponent();
         DataContext = _session;
         CalculatorContainer.DataContext = _calculator;
-        // The relative line's own view model, which lives on the panel (SessionViewModel.Relative) - this
-        // only points the row at it, the same shape as the line above.
-        RelativeMomentRow.DataContext = _session.Relative;
+
+        // Hand the session's window-dependent commands (the pickers, the clipboard, the confirm dialog) a
+        // window to act against. This is the ONE place a UI type meets those commands: the view model never
+        // holds it (GUI rules 15 and 16), and a command whose shell is not attached is a quiet no-op rather
+        // than a crash, which is how a phase drawn for the state sheet stays harmless.
+        _session.Commands.AttachShell(new WindowShellInteraction(this));
 
         // Bridge: the calculator asks to send its result to substitution - this window fills the panel.
         _calculator.UseInSubstitutionRequested += OnUseInSubstitution;
@@ -68,8 +67,10 @@ public partial class MainWindow : FluentWindow
         }
     }
 
-    // Swap the visible module: substitution panel vs calculator view. The default radio's Checked fires
-    // during InitializeComponent, before the content elements exist, so both are null-checked here.
+    // Swap the visible module: substitution (the three phases) vs calculator view. The default radio's
+    // Checked fires during InitializeComponent, before the content elements exist, so both are null-checked
+    // here. The substitution container holds the phases - which phase shows inside it is the view model's
+    // ShowsXPhase decision, not this switch's.
     private void OnModeChanged(object sender, RoutedEventArgs e)
     {
         if (SubstitutionContainer is null || CalculatorContainer is null)
@@ -100,43 +101,6 @@ public partial class MainWindow : FluentWindow
         }
 
         ModeSubstitution.IsChecked = true; // OnModeChanged swaps the visible module
-    }
-
-    private void OnChooseTargetClick(object sender, RoutedEventArgs e)
-    {
-        var dialog = new OpenFileDialog
-        {
-            Title = Text("target.dialog_title"),
-            Filter = Text("target.dialog_filter"),
-            CheckFileExists = true,
-        };
-
-        if (dialog.ShowDialog(this) == true)
-        {
-            _session.SetTarget(dialog.FileName);
-        }
-    }
-
-    // Opening the recent list re-checks which of its targets still exist, so a wiped build output is
-    // marked instead of silently offered (rule 6). The check itself runs off the UI thread - a dead
-    // network path would otherwise freeze the window for as long as the share takes to fail.
-    private async void OnRecentTargetsOpened(object sender, EventArgs e)
-        => await _session.RefreshRecentTargetsAsync();
-
-    // The folder the target starts in (chrono-mock 7.1 pt 1). Seeded with whatever is already typed so
-    // browsing from a filled field starts where the tester was, not at the shell root.
-    private void OnBrowseFolderClick(object sender, RoutedEventArgs e)
-    {
-        var dialog = new OpenFolderDialog { Title = Text("launch.cwd_label") };
-        if (!string.IsNullOrWhiteSpace(_session.WorkingFolder) && Directory.Exists(_session.WorkingFolder))
-        {
-            dialog.InitialDirectory = _session.WorkingFolder;
-        }
-
-        if (dialog.ShowDialog(this) == true)
-        {
-            _session.WorkingFolder = dialog.FolderName;
-        }
     }
 
     // Dropping an application on the window (chrono-mock 7.1 pt 1). Only fills the target - it never
@@ -186,126 +150,6 @@ public partial class MainWindow : FluentWindow
             && File.Exists(paths[0])
                 ? paths[0]
                 : null;
-    }
-
-    // The panel's one action, which is Start or Stop depending on the session (M-10). It reads the state
-    // rather than trusting the label, so a click that arrives just as the session changed does the thing
-    // the session is actually in - stopping is what a RUNNING session does, starting is what any other
-    // does, and neither is decided by what the button happened to say when it was drawn.
-    //
-    // Stopping is what frees the tester from closing the whole window when they are done, or when the core
-    // stops responding. The target reverts to real time, and the app under test is never killed.
-    private async void OnPrimaryActionClick(object sender, RoutedEventArgs e)
-    {
-        if (_session.IsRunning)
-        {
-            _session.RequestStop();
-            return;
-        }
-
-        await _session.StartAsync();
-    }
-
-    // In-flight speed control: each button carries its multiplier in Tag ("0" = freeze).
-    private void OnSpeedClick(object sender, RoutedEventArgs e)
-    {
-        if (sender is FrameworkElement { Tag: string tag }
-            && long.TryParse(tag, NumberStyles.Integer, CultureInfo.InvariantCulture, out var multiplier))
-        {
-            _session.SendMultiplier(multiplier);
-        }
-    }
-
-    // In-flight jump: each button carries its relative delta in Tag (e.g. "+1d", "-1h").
-    private void OnJumpClick(object sender, RoutedEventArgs e)
-    {
-        if (sender is FrameworkElement { Tag: string delta } && delta.Length > 0)
-        {
-            _session.SendJump(delta);
-        }
-    }
-
-    // In-flight jump to the ABSOLUTE moment currently in the At field (in the session zone).
-    private void OnJumpToClick(object sender, RoutedEventArgs e) => _session.JumpToEnteredMoment();
-
-    // Quick-fill the At field with today (midnight) or now, in the SESSION zone (rule 2) - the selected
-    // zone's bias, not the OS local time. Works idle (sets the start moment) and while running (the user
-    // then presses Jump to).
-    private void OnTodayClick(object sender, RoutedEventArgs e)
-        => _session.Moment.SetToday(_session.SelectedZone.BiasMinutes);
-
-    private void OnNowClick(object sender, RoutedEventArgs e)
-        => _session.Moment.SetNow(_session.SelectedZone.BiasMinutes);
-
-    // "Now, shifted" - the panel's equivalent of `--at +30d`. Awaited rather than fire-and-forget: the
-    // engine runs out of process, and a discarded task would carry any failure away with it (the view model
-    // turns every reachable one into an error key on screen, and this keeps the unreachable ones loud).
-    private async void OnRelativeSetClick(object sender, RoutedEventArgs e)
-        => await _session.Relative.ApplyAsync();
-
-    // In-flight arbitrary speed: the view model parses the custom-speed box ("500" or "x500") and either
-    // applies it or surfaces an in-flight error, so a bad value is not a silent no-op (rule 6, RELEASE P3).
-    private void OnSetSpeedClick(object sender, RoutedEventArgs e)
-        => _session.SetCustomSpeed(CustomSpeedBox.Text);
-
-    // Copy the session summary to the clipboard (chrono-mock 7.2, 8.8). The summary is built in the UI
-    // language - a clipboard held by another process is reported honestly, never swallowed (rule 6).
-    private void OnCopySummaryClick(object sender, RoutedEventArgs e)
-        => _session.NoteCopy(TrySetClipboard(_session.BuildSummary(Text)));
-
-    // Copy the diagnostics block to the clipboard (RELEASE-012): the core's stderr and parse errors, so a QA
-    // report has something to attach when an injection is blocked. Shown only for a non-clean session - same
-    // clipboard-failure honesty as Copy summary (rule 6).
-    private void OnCopyDiagnosticsClick(object sender, RoutedEventArgs e)
-        => _session.NoteCopy(TrySetClipboard(_session.DiagnosticsText));
-
-    private static bool TrySetClipboard(string text)
-    {
-        for (int attempt = 0; attempt < 2; attempt++)
-        {
-            try
-            {
-                Clipboard.SetText(text);
-                return true;
-            }
-            catch (ExternalException)
-            {
-                // Another process holds the clipboard lock - retry once, then report the failure.
-            }
-        }
-
-        return false;
-    }
-
-    // Repeat a past session: fill the setup form from the clicked record. It never starts a session
-    // (untouchable rule 7, docs/04 section 6) - the user reviews the filled form and clicks Start.
-    private void OnHistoryClick(object sender, RoutedEventArgs e)
-    {
-        if (sender is FrameworkElement { Tag: SessionRecord record })
-        {
-            _session.LoadFromHistory(record);
-        }
-    }
-
-    // Delete one past session. Mild and un-confirmed (zasady/13 section 11) - a re-run re-creates one.
-    private void OnHistoryDeleteClick(object sender, RoutedEventArgs e)
-    {
-        if (sender is FrameworkElement { Tag: SessionRecord record })
-        {
-            _session.RemoveFromHistory(record);
-        }
-    }
-
-    // Clear all history. Destructive, so it confirms first with the effect spelled out (zasady/13 section 11)
-    // and the affirmative NAMED after what it does, rather than left as a Yes that says nothing about which
-    // question it is answering.
-    private void OnHistoryClearClick(object sender, RoutedEventArgs e)
-    {
-        if (Views.MessageDialog.Ask(
-                this, Text("history.clear_confirm"), Text("history.clear_undone"), Text("history.clear_title")))
-        {
-            _session.ClearHistory();
-        }
     }
 
     // The support link. The destination is chosen inside ExternalLinks and never here, so this method is

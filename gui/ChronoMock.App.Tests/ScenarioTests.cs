@@ -50,9 +50,9 @@ public class ScenarioTests
     {
         var vm = new SessionViewModel();
 
-        Assert.Empty(vm.Scenarios);
-        Assert.False(vm.HasScenarios);
-        Assert.False(vm.HasScenariosNeedingParameters);
+        Assert.Empty(vm.ScenarioPicker.Visible);
+        Assert.False(vm.ScenarioPicker.HasScenarios);
+        Assert.False(vm.ScenarioPicker.HasNeedingParameters);
     }
 
     [Fact]
@@ -60,7 +60,7 @@ public class ScenarioTests
     {
         // Otherwise the panel would keep naming a scenario whose moment is no longer in the field.
         var vm = new SessionViewModel(new InMemorySessionHistoryStore(), presetsDir: PresetsDir());
-        var scenario = vm.Scenarios.First(s => s.Id == "year-rollover");
+        var scenario = vm.ScenarioPicker.Visible.First(s => s.Id == "year-rollover");
 
         vm.SelectedScenario = scenario;
         Assert.NotNull(vm.SelectedScenario);
@@ -87,7 +87,7 @@ public class ScenarioTests
         Assert.False(vm.HasSelectedScenario);
         Assert.True(vm.HasNoSelectedScenario);
 
-        vm.SelectedScenario = vm.Scenarios.First(s => s.Id == "year-rollover");
+        vm.SelectedScenario = vm.ScenarioPicker.Visible.First(s => s.Id == "year-rollover");
 
         Assert.True(vm.HasSelectedScenario);
         Assert.False(vm.HasNoSelectedScenario);
@@ -107,7 +107,7 @@ public class ScenarioTests
         // No CalcClient injected: the panel reports it instead of leaving the old date and going quiet.
         var vm = new SessionViewModel(new InMemorySessionHistoryStore(), presetsDir: PresetsDir());
 
-        vm.SelectedScenario = vm.Scenarios.First();
+        vm.SelectedScenario = vm.ScenarioPicker.Visible.First();
 
         Assert.True(vm.HasScenarioError);
         Assert.Equal("scenario.engine_missing", vm.ScenarioErrorKey);
@@ -119,7 +119,7 @@ public class ScenarioTests
         var vm = new SessionViewModel(new InMemorySessionHistoryStore(), presetsDir: PresetsDir());
         var mode = vm.SelectedMode;
 
-        vm.SelectedScenario = vm.Scenarios.First();
+        vm.SelectedScenario = vm.ScenarioPicker.Visible.First();
 
         Assert.Equal(SessionStatusKind.Idle, vm.StatusKind); // rule 7: fills the form, never starts
         Assert.Same(mode, vm.SelectedMode); // "when" and "how fast" are separate axes

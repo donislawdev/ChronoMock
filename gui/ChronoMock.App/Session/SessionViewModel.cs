@@ -260,6 +260,9 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
                 RaisePropertyChanged(nameof(AuditNeverStarted));
                 RaiseResultChanged();
                 RaisePropertyChanged(nameof(HasVanishReason));
+                RaisePropertyChanged(nameof(ShowsSetupPhase));
+                RaisePropertyChanged(nameof(ShowsSessionPhase));
+                RaisePropertyChanged(nameof(ShowsResultPhase));
             }
         }
     }
@@ -290,6 +293,25 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     /// disabled, until the core confirms, rather than vanishing under the pointer.
     /// </remarks>
     public bool ShowsSessionControls => !IsTerminal(_statusKind);
+
+    /// <summary>
+    /// Which of the three phases the window shows. Exactly one is true for any status, and the three are
+    /// defined against each other so a status added later still lands somewhere rather than showing nothing.
+    /// </summary>
+    /// <remarks>
+    /// 🔴 THE PHASE IS THE STATUS, NOT <see cref="IsIdle"/>. A finished session sets <see cref="IsIdle"/>
+    /// true again - the setup form unlocks so the tester can edit and re-run - so a selector reading IsIdle
+    /// would throw the reader back to the setup screen the instant a session ended, losing the verdict the
+    /// session was run to produce. The status stays terminal until a new session starts, which is what the
+    /// result phase is keyed to.
+    /// </remarks>
+    public bool ShowsSetupPhase => _statusKind == SessionStatusKind.Idle;
+
+    /// <summary>See <see cref="ShowsSetupPhase"/> - the result phase owns every terminal status.</summary>
+    public bool ShowsResultPhase => IsTerminal(_statusKind);
+
+    /// <summary>See <see cref="ShowsSetupPhase"/> - a session on its way in, live, or shutting down.</summary>
+    public bool ShowsSessionPhase => !ShowsSetupPhase && !ShowsResultPhase;
 
     /// <summary>True once a session has started (running or finished) - there is then something to copy.
     /// The Copy summary button binds its visibility to this (chrono-mock 7.2, 8.8).</summary>
@@ -745,27 +767,6 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     /// <see cref="ScenarioPicker"/> for why the SELECTION stayed behind here.
     /// </remarks>
     public ScenarioPicker ScenarioPicker => _scenarios;
-
-    /// <summary>The scenarios on show (chrono-mock 7.1 pt 2): named moments from the shared preset
-    /// catalogue that fill the date with one click, so a tester never has to type one.</summary>
-    /// <remarks>
-    /// 🔴 A FLAT ALIAS FOR <see cref="ScenarioPicker"/>, kept because MainWindow.xaml binds these four
-    /// names and that file is being replaced rather than edited - the rework measures itself on 22
-    /// renders being identical to the byte, and a renamed binding path would end that. These four go the
-    /// day the old panel does, and not before.
-    /// </remarks>
-    public IReadOnlyList<ScenarioItem> Scenarios => _scenarios.Visible;
-
-    /// <summary>True when the catalogue offered at least one scenario - the list hides itself otherwise
-    /// rather than showing an empty box (a portable install with no presets/ folder).</summary>
-    public bool HasScenarios => _scenarios.HasScenarios;
-
-    /// <summary>How many substitution presets this list does NOT offer because they take parameters. Said
-    /// out loud in the panel rather than hidden (rule 6) - the calculator can build those and hand the
-    /// moment back over the "Use in substitution" bridge.</summary>
-    public int ScenariosNeedingParameters => _scenarios.NeedingParameters;
-
-    public bool HasScenariosNeedingParameters => _scenarios.HasNeedingParameters;
 
     /// <summary>The chosen scenario. Setting it computes its moment and fills the date - and nothing else:
     /// it never starts a session (untouchable rule 7) and never touches the time mode, which is a separate
