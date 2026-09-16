@@ -8,15 +8,26 @@ namespace ChronoMock.App;
 /// Kept as a flag rather than a magic bias, because the point is the ABSENCE of <c>--zone</c> on the
 /// command line, not a particular offset - an explicit pick that happens to equal the host's offset is
 /// still an explicit pick.</param>
-public sealed record ZoneOption(int BiasMinutes, string Label, string HintKey, bool IsHost = false);
+public sealed record ZoneOption(int BiasMinutes, string Label, string HintKey, bool IsHost = false)
+{
+    // Type-to-select on the market rather than the offset - every zone's offset starts "UTC", so typing
+    // against it never narrows, while the hint lets "P" reach Poland and "U" the US zones.
+    public string DisplayText => TranslationKeyConverter.Resolve(HintKey);
+}
 
 /// <summary>A time-mode option: real speed, frozen, or an xN multiplier, named by a translation key.</summary>
-public sealed record ModeOption(string LabelKey, string Mode, long? Multiplier);
+public sealed record ModeOption(string LabelKey, string Mode, long? Multiplier)
+{
+    public string DisplayText => TranslationKeyConverter.Resolve(LabelKey);
+}
 
 /// <summary>One relative jump a running session can take, named by a translation key. The delta is the
 /// core's own spelling of it ("-1d", "+1h"), carried rather than recomputed so the label and what is sent
 /// cannot disagree.</summary>
-public sealed record JumpOption(string LabelKey, string Delta);
+public sealed record JumpOption(string LabelKey, string Delta)
+{
+    public string DisplayText => TranslationKeyConverter.Resolve(LabelKey);
+}
 
 /// <summary>
 /// The fixed input catalogs - closed lists, not free axes (zasady/13 section 2.3). Zones cover the MVP

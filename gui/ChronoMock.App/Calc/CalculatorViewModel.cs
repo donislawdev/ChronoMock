@@ -32,25 +32,45 @@ public enum StepKind
 
 /// <summary>A base option for the dropdown: the kind plus its translation key (rule 15/16 - the view
 /// renders the key, the view model stays language-agnostic).</summary>
-public sealed record BaseKindOption(BaseKind Kind, string LabelKey);
+public sealed record BaseKindOption(BaseKind Kind, string LabelKey)
+{
+    // Resolved label for type-to-select: a drop-down's TextSearch.TextPath points here, because the built-in
+    // typeahead reads a property on the item, not the record's ToString() or the text the item template draws.
+    public string DisplayText => TranslationKeyConverter.Resolve(LabelKey);
+}
 
 /// <summary>A step-kind option for a row's kind dropdown: the kind plus its translation key.</summary>
-public sealed record StepKindOption(StepKind Kind, string LabelKey);
+public sealed record StepKindOption(StepKind Kind, string LabelKey)
+{
+    public string DisplayText => TranslationKeyConverter.Resolve(LabelKey);
+}
 
 /// <summary>A shift unit option: the CLI token (<c>y</c>, <c>mo</c>, <c>bd</c>, ...) plus its translation key.</summary>
-public sealed record UnitOption(string Token, string LabelKey);
+public sealed record UnitOption(string Token, string LabelKey)
+{
+    public string DisplayText => TranslationKeyConverter.Resolve(LabelKey);
+}
 
 /// <summary>A snap-target option: the CLI token (<c>som</c>/<c>eom</c>/<c>soq</c>/<c>eoq</c>/<c>soy</c>/<c>eoy</c>)
 /// plus its translation key (mirrors <c>parse_snap</c>).</summary>
-public sealed record SnapTargetOption(string Token, string LabelKey);
+public sealed record SnapTargetOption(string Token, string LabelKey)
+{
+    public string DisplayText => TranslationKeyConverter.Resolve(LabelKey);
+}
 
 /// <summary>A nearest-target option: the CLI token (<c>nbd</c>/<c>pbd</c>/<c>next-leap-day</c>) plus its
 /// translation key (mirrors <c>parse_nearest</c>). The business-day targets need a calendar (without one the
 /// engine returns a calendar error) - the leap-day target is pure arithmetic and needs none.</summary>
-public sealed record NearestTargetOption(string Token, string LabelKey);
+public sealed record NearestTargetOption(string Token, string LabelKey)
+{
+    public string DisplayText => TranslationKeyConverter.Resolve(LabelKey);
+}
 
 /// <summary>A calendar option: the id passed to <c>--calendar</c> (null = omit it) plus its translation key.</summary>
-public sealed record CalendarOption(string? Id, string LabelKey);
+public sealed record CalendarOption(string? Id, string LabelKey)
+{
+    public string DisplayText => TranslationKeyConverter.Resolve(LabelKey);
+}
 
 /// <summary>One output-format row: a technical format label (not translated, like the coverage channel
 /// names) and the value the engine produced (or the out-of-range marker).</summary>
@@ -188,7 +208,10 @@ public sealed class PresetItemViewModel(PresetInfo info, string culture)
 /// parameter is a text box (a bare date is midnight) - a <c>duration</c> is an amount plus a unit, seeded
 /// from the file default. The label is the parameter id as a technical name (like the format labels) - the
 /// preset schema carries no localized label. Editing raises PropertyChanged so the parent re-resolves.</summary>
-public sealed record VariantOption(string Token, string LabelKey);
+public sealed record VariantOption(string Token, string LabelKey)
+{
+    public string DisplayText => TranslationKeyConverter.Resolve(LabelKey);
+}
 
 public sealed class ParamInputViewModel : ObservableObject
 {

@@ -483,6 +483,11 @@
   </Style>
 
   <Style TargetType="ComboBox">
+    <!-- Type-to-select matches the label a reader sees. The items are records carrying a translation key, so
+         WPF's built-in typeahead would otherwise compare typed letters against the record's ToString() and
+         never jump to the row. DisplayText resolves the key; an item without that property (a bare string,
+         like the +/- sign picker) simply gets no typeahead, which is harmless. -->
+    <Setter Property="TextSearch.TextPath" Value="DisplayText" />
     <Setter Property="Background" Value="{DynamicResource BrushControlRest}" />
     <Setter Property="BorderBrush" Value="{DynamicResource BrushControlBorder}" />
     <Setter Property="Foreground" Value="{DynamicResource BrushTextPrimary}" />
@@ -552,7 +557,11 @@
                       MinWidth="{TemplateBinding ActualWidth}"
                       MaxHeight="{StaticResource DropDownMaxHeight}"
                       SnapsToDevicePixels="True">
-                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                <!-- CanContentScroll=False: pixel scrolling, so the bottom of a scrolled-open list aligns
+                     exactly with the well instead of snapping to a whole item and leaving a strip of empty
+                     space under the last row. These lists are short (units, zones, modes), so the
+                     virtualisation that item scrolling buys is not needed here. -->
+                <ScrollViewer VerticalScrollBarVisibility="Auto" CanContentScroll="False">
                   <ItemsPresenter />
                 </ScrollViewer>
               </Border>
