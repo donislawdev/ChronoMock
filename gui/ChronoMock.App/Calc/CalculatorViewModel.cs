@@ -1096,6 +1096,15 @@ public sealed class CalculatorViewModel : ObservableObject
         ActivePresetExplains = string.Empty;
         _activePreset = null;
         ClearParamInputsOnly();
+
+        // The list must stop showing a row as the source of a builder that is no longer it. A highlighted row
+        // already equal to the selection cannot be re-chosen (the setter sees the same reference and does
+        // nothing), so without this the reader has no way back to the preset they just edited away from.
+        if (_selectedPreset is not null)
+        {
+            _selectedPreset = null;
+            RaisePropertyChanged(nameof(SelectedPreset));
+        }
     }
 
     /// <summary>Build the calc arguments for the current builder state (pure - unit-tested). Each step

@@ -28,6 +28,7 @@
             Margin="{StaticResource SpaceXs}"
             Focusable="False" IsTabStop="False"
             Click="OnClear"
+            ToolTip="{Binding ClearHint, ElementName=Root}"
             AutomationProperties.Name="{Binding ClearHint, ElementName=Root}">
       <Button.Style>
         <Style TargetType="Button" BasedOn="{StaticResource ClearFieldButton}">

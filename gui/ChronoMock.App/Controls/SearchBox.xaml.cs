@@ -68,7 +68,10 @@ public partial class SearchBox : UserControl
     // separate, which is the whole design of the picker behind it.
     private void OnClear(object sender, RoutedEventArgs e)
     {
-        Text = string.Empty;
+        // SetCurrentValue, not the CLR setter: a plain SetValue would replace the consumer's binding with a
+        // local value, so a filter bound to Text would stop updating after the first clear. This changes the
+        // value while leaving the binding in place.
+        SetCurrentValue(TextProperty, string.Empty);
         Field.Focus();
     }
 

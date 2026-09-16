@@ -1,4 +1,3 @@
-using System.IO;
 using System.Runtime.InteropServices;
 using System.Windows;
 using Microsoft.Win32;
@@ -33,10 +32,12 @@ internal sealed class WindowShellInteraction : IShellInteraction
 
     public string? PickFolder(string? initialDirectory)
     {
-        // Seeded with whatever is already typed, so browsing from a filled field starts where the tester
-        // was rather than at the shell root.
+        // Seeded with whatever is already typed, so browsing from a filled field starts where the tester was
+        // rather than at the shell root. No Directory.Exists probe: that is filesystem I/O on the UI thread
+        // and can block on a disconnected path, and the picker already falls back to its default location
+        // when the seed does not resolve.
         var dialog = new OpenFolderDialog { Title = Text("launch.cwd_label") };
-        if (!string.IsNullOrWhiteSpace(initialDirectory) && Directory.Exists(initialDirectory))
+        if (!string.IsNullOrWhiteSpace(initialDirectory))
         {
             dialog.InitialDirectory = initialDirectory;
         }
