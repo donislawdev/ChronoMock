@@ -709,8 +709,17 @@ unsafe fn gather_coverage(
     // Warned even when the counter is zero, and that is the point rather than an oversight: calls made
     // before the hook landed were never counted, so we cannot tell an idle channel from one that was
     // busy in the window. Claiming otherwise is exactly what untouchable rule 4 forbids.
-    if read_late_installed(cov) & installed != 0 {
+    //
+    // The channels are NAMED as well. The warning alone said "a channel" while a runtime that loads
+    // winmm or ws2_32 brings several at once, and the reader had every row of the audit to guess from.
+    let late = read_late_installed(cov) & installed;
+    if late != 0 {
         out.warning_keys.push("coverage.channel_installed_late".to_string());
+        out.installed_late = CHANNELS
+            .iter()
+            .filter(|ch| late & ch.bit != 0)
+            .map(|ch| ch.name.to_string())
+            .collect();
     }
     out
 }}
@@ -1462,6 +1471,7 @@ mod tests {
         let plain = zeroed_cov();
         let early = unsafe { gather_coverage(&plain as *const Cov, all, true, true) };
         assert!(!warned(&early), "a session with nothing late must not carry the caution");
+        assert!(early.installed_late.is_empty(), "and names no channel as late");
 
         // Late AND installed: covered like any other channel, plus the warning. The channel keeps its
         // place in `covered` on purpose - it WAS substituted, just not for the whole session.
@@ -1473,6 +1483,11 @@ mod tests {
             hooked_late.covered.iter().any(|c| c.channel == "timeGetTime"),
             "late is still covered - it is not a gap"
         );
+        assert_eq!(
+            hooked_late.installed_late,
+            vec!["timeGetTime".to_string()],
+            "the warning is not enough on its own - the channel it is about is named"
+        );
 
         // Late but NOT in the installed mask: the half-written pair. Silence, because the report does
         // not list this channel at all and a warning about it would point at nothing.
@@ -1481,6 +1496,7 @@ mod tests {
             !warned(&torn),
             "the masks are read as an intersection - a late bit alone must never warn"
         );
+        assert!(torn.installed_late.is_empty(), "nor name a channel the report does not list");
     }
 
     /// The paired direction, so the guard above cannot pass by reporting nothing at all: a full

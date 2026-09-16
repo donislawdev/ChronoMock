@@ -98,8 +98,10 @@ pub(crate) fn coverage_events(
             covered: Vec::new(),
             observed: Vec::new(),
             uncovered: Vec::new(),
-            // A Chromium session hooks nothing, so there is no observer that could fail.
+            // A Chromium session hooks nothing, so there is no observer that could fail - and no module
+            // that could arrive late.
             unobserved: Vec::new(),
+            installed_late: Vec::new(),
             warning_keys: warnings,
         }];
     }
@@ -117,6 +119,7 @@ pub(crate) fn coverage_events(
                 observed: Vec::new(),
                 uncovered: Vec::new(),
                 unobserved: Vec::new(),
+                installed_late: Vec::new(),
                 warning_keys: std::mem::take(&mut warnings),
             }
         })

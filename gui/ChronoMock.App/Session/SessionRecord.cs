@@ -61,4 +61,15 @@ public sealed record SessionRecord
 
     /// <summary>The verdict as a kind, so a row reuses the panel's glyph and colour converters.</summary>
     [JsonIgnore] public VerdictKind VerdictKind => VerdictKinds.Parse(Verdict);
+
+    /// <summary>The session zone spelled out ("UTC+02:00"), because a recorded moment without its zone is the
+    /// ambiguity untouchable rule 2 exists to remove - the file keeps the bias, the row shows the label.</summary>
+    [JsonIgnore] public string ZoneText => ZoneLabel.FromBiasMinutes(TzBiasMin);
+
+    /// <summary>The recorded moment as the interface states every moment in full, zone included.</summary>
+    [JsonIgnore] public string MomentText => ClockView.FormatMoment(MomentLocal, ZoneText);
+
+    /// <summary>When the session ended, stated the same way. The file keeps UTC and the row says so - a
+    /// conversion to the reader's own clock is a later decision, and until then the zone is never implied.</summary>
+    [JsonIgnore] public string EndedText => ClockView.FormatMoment(EndedAtUtc.TrimEnd('Z'), "UTC");
 }

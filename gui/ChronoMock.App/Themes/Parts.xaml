@@ -1,0 +1,1162 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:app="clr-namespace:ChronoMock.App">
+
+  <!--
+    THE PARTS LIBRARY. Everything a screen is built from, drawn by us rather than by the toolkit.
+
+    🔴 THIS DICTIONARY IS MERGED INTO App.xaml application-wide (App.xaml). The styles here are implicit
+    (keyed by type), so that one merge gives every screen the same parts look at once - the adopted design,
+    not a hazard to avoid. What the merge does NOT carry is the keyed parts: a {StaticResource PartCard},
+    ScenarioRow or PartClock is resolved as a view's BAML loads and does not reach Application.Resources, so
+    a view that names one of those must ALSO merge this file locally.
+
+    WHY DRAW THEM AT ALL. A toolkit control renders itself its own way and no amount of theming changes
+    the drawing - same colour, same height, same font, different shape. That is a decision with a real
+    price (this is code to maintain for as long as the product lives) and it was the owner's to make.
+
+    THE LANGUAGE OF STATES, and it is one language across every part here:
+      the cursor is here       -> the FILL moves one step
+      it is being pressed      -> the fill moves the other way, a recess
+      the keyboard is here     -> the control's OWN border recolours, tight against the edge
+      it cannot be used        -> the edge goes, the ink dims
+    Cursor and keyboard answer on different axes on purpose, so a control that is hovered AND focused
+    still says both things at once.
+
+    🔴 NO PART CHANGES ITS LABEL COLOUR ON HOVER. That is a standing rule, and it is also why the accent
+    fill moves rather than the ink on it: the dark label holds 8.56, 9.93 and 7.19 across rest, hover
+    and press, so it never has to.
+
+    Values: every colour, gap, radius and size here comes from Colours.xaml or Values.xaml. The literal
+    guard scans this file - a raw number in it is a build failure, not a style choice.
+  -->
+
+  <!--
+    ============================ Focus ============================
+
+    There is no shared focus ring. Keyboard focus recolours each control's OWN 1 px border to
+    BrushFocusRing, tight against the edge, inside that control's own template - a separate ring floating
+    outside the control with a gap of background between them read as a detached halo. AccentRing is a
+    lighter blue than the accent fill, so the tight border stays visible even on a suggested button, which
+    is why the old shared ring's reason for sitting outside (that it would vanish into a same-hue fill) no
+    longer holds. A recoloured border does not change the control's size either, so nothing shifts when
+    the keyboard arrives.
+  -->
+
+  <!--
+    ============================ Card ============================
+
+    The one container for content. No border: it is told apart from the window by its fill alone, which
+    is the distance every dark interface uses for this (1.14 here, GitHub 1.09, VS Code 1.08). Borders
+    are reserved for controls, so a rectangle with an edge always means "you can act on this".
+  -->
+  <Style x:Key="PartCard" TargetType="Border">
+    <Setter Property="Background" Value="{DynamicResource BrushBgSurface}" />
+    <Setter Property="CornerRadius" Value="{StaticResource RadiusMd}" />
+    <Setter Property="Padding" Value="{StaticResource CardPadding}" />
+    <Setter Property="SnapsToDevicePixels" Value="True" />
+  </Style>
+
+  <!--
+    ============================ Pinned footer ============================
+
+    Where a screen's action lives, held at the bottom while everything above it scrolls.
+
+    🔴 THE REASON IS MEASURED, not stylistic. The setup phase comes to around 710 px, the window opens at
+    800 and may be dragged down to 360, so the one button the screen exists for was below the fold and
+    had to be hunted for. A footer does not make the screen shorter - it makes the action reachable
+    without knowing there is more of it.
+
+    It carries the base background rather than the card's, because content has to disappear UNDER it
+    rather than through it, and the single top edge is what says the scrolling stopped here. An all-round
+    border would make it a box, and it is not a box.
+  -->
+  <Style x:Key="PartFooter" TargetType="Border">
+    <Setter Property="Background" Value="{DynamicResource BrushBgBase}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource BrushDivider}" />
+    <Setter Property="BorderThickness" Value="{StaticResource FooterEdge}" />
+    <Setter Property="Padding" Value="{StaticResource CardPadding}" />
+    <Setter Property="SnapsToDevicePixels" Value="True" />
+  </Style>
+
+  <!--
+    ============================ Type roles ============================
+
+    Named text roles, so a view says what a piece of text IS rather than how big it is. Sizes come from
+    the five-step scale and nowhere else.
+
+    🔴 THREE ROLES, AND THE SCREEN HAS TO USE ALL THREE. Measured on the first setup render: 13 labels,
+    19 captions and NOT ONE heading, so a section title and the field label under it were the same size,
+    the same weight and the same ink. There was nothing left to tell a reader which level they were
+    looking at, and the whole screen read as one list of equal things.
+
+    It is called a heading rather than a section heading because it is one step above body wherever that
+    step is needed - the title of a group, and the answer a footer exists to state. Two names for one
+    appearance is the same fault as one name for two, in the other direction.
+  -->
+  <Style x:Key="PartHeading" TargetType="TextBlock">
+    <Setter Property="FontSize" Value="{StaticResource FontSizeSubtitle}" />
+    <Setter Property="FontWeight" Value="{StaticResource FontWeightHeading}" />
+    <Setter Property="Foreground" Value="{DynamicResource BrushTextPrimary}" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+  </Style>
+
+  <Style x:Key="PartLabel" TargetType="TextBlock">
+    <Setter Property="FontSize" Value="{StaticResource FontSizeBody}" />
+    <Setter Property="Foreground" Value="{DynamicResource BrushTextPrimary}" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+  </Style>
+
+  <Style x:Key="PartCaption" TargetType="TextBlock">
+    <Setter Property="FontSize" Value="{StaticResource FontSizeCaption}" />
+    <Setter Property="Foreground" Value="{DynamicResource BrushTextSecondary}" />
+    <Setter Property="TextWrapping" Value="Wrap" />
+  </Style>
+
+  <!--
+    🔴 PROSE IS NOT A CAPTION, and one role was doing both jobs. A caption is metadata standing beside a
+    value - "speed:", a chip, the zone under a clock - and 12 px of quiet ink is right for it. An
+    explanation is the text that TEACHES the tool: why the date says 2038, what an option costs, what
+    stopping does, what a warning means. Measured on the two phases: 32 of 54 text elements were captions,
+    and about eighteen of those were whole sentences.
+
+    Written the wrong way round, that text took TWO reductions at once - smaller AND quieter - and the
+    measure in the suite could not see it: every reading passes WCAG at 7.3 to 8.6 against a required 4.5.
+    The ratio was never the problem. The size was.
+
+    So this is body size in the caption's ink: quieter than a label, exactly as large. The ink is
+    deliberately unchanged - held up beside another tool whose secondary text reads well, its grey is no
+    lighter than ours and often darker, and what it does differently is keep that text the same size as
+    the text above it.
+  -->
+  <Style x:Key="PartNote" TargetType="TextBlock">
+    <Setter Property="FontSize" Value="{StaticResource FontSizeBody}" />
+    <Setter Property="Foreground" Value="{DynamicResource BrushTextSecondary}" />
+    <Setter Property="TextWrapping" Value="Wrap" />
+  </Style>
+
+  <!--
+    🔴 THE ONE WORD A FINISHED SESSION LEADS WITH, a step above the heading because it is the peak of its
+    screen: the result phase has no clocks, so nothing else on it may be this size. The caller sets the
+    ink from the meaning palette and pairs the word with a glyph - colour never carries the meaning alone
+    (zasady/13 section 9) - and the role itself knows nothing of verdicts, so the same drawing serves
+    "Works" and "Did not start" alike.
+  -->
+  <Style x:Key="PartVerdictHeadline" TargetType="TextBlock">
+    <Setter Property="FontSize" Value="{StaticResource FontSizeTitle}" />
+    <Setter Property="FontWeight" Value="{StaticResource FontWeightHeading}" />
+    <Setter Property="Foreground" Value="{DynamicResource BrushTextPrimary}" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+    <Setter Property="TextWrapping" Value="Wrap" />
+  </Style>
+
+  <!--
+    ============================ Button ============================
+
+    Implicit: every button on a screen that loads this dictionary is drawn by this template. A second
+    look (the primary action) is a VARIANT below, driven by a property, never a copy of the template.
+  -->
+  <Style TargetType="Button">
+    <Setter Property="Background" Value="{DynamicResource BrushControlRest}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource BrushControlBorder}" />
+    <Setter Property="Foreground" Value="{DynamicResource BrushTextPrimary}" />
+    <Setter Property="FontSize" Value="{StaticResource FontSizeBody}" />
+    <Setter Property="Height" Value="{StaticResource ControlHeight}" />
+    <Setter Property="MinWidth" Value="{StaticResource ControlMinWidth}" />
+    <Setter Property="Padding" Value="{StaticResource ControlPadding}" />
+    <Setter Property="HorizontalContentAlignment" Value="Center" />
+    <Setter Property="VerticalContentAlignment" Value="Center" />
+    <Setter Property="SnapsToDevicePixels" Value="True" />
+    <!-- The toolkit's dotted rectangle is replaced by the ring in the template, so it is turned off
+         here rather than left to draw a second, different focus indicator on top of ours. -->
+    <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="Button">
+          <Border x:Name="Face"
+                  Background="{TemplateBinding Background}"
+                  BorderBrush="{TemplateBinding BorderBrush}"
+                  BorderThickness="{StaticResource StrokeThinEdge}"
+                  CornerRadius="{StaticResource RadiusSm}"
+                  Padding="{TemplateBinding Padding}"
+                  SnapsToDevicePixels="True">
+            <ContentPresenter x:Name="Label"
+                              HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                              VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
+                              RecognizesAccessKey="True" />
+          </Border>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+
+    <!--
+      🔴 State lives in the STYLE, not in the template, and that is what makes a variant a parameter
+      instead of a copy. The face binds Background and BorderBrush from the control, so a variant only
+      restates those two values per state - it never restates the drawing. The first draft of this file
+      did copy the whole template for the primary action, which is the same mistake as a second style
+      sheet: two drawings of one shape, drifting apart from the day they exist.
+    -->
+    <Style.Triggers>
+      <!-- The cursor answers on fill. The label is untouched, here and everywhere. -->
+      <Trigger Property="IsMouseOver" Value="True">
+        <Setter Property="Background" Value="{DynamicResource BrushControlHover}" />
+      </Trigger>
+      <Trigger Property="IsPressed" Value="True">
+        <Setter Property="Background" Value="{DynamicResource BrushControlPressed}" />
+      </Trigger>
+
+      <!--
+        🔴 THE ACCENT IS A STATE, NOT A SECOND BUTTON. It marks the thing to do next, and it lives on the
+        ordinary button so a screen can move it as the answer changes - an empty target makes Choose the
+        step, a filled one makes Start the step - without either control changing which style it wears.
+        See PartState.IsSuggested.
+
+        Ordered after the plain cursor states and before the disabled one, deliberately: the last matching
+        trigger wins, so a suggested button gets accent hover rather than grey hover, and a disabled one
+        goes quiet whatever it was suggesting.
+
+        The ink is DARK on this fill, which is a property of the hue rather than a preference: 8.56 against
+        white ink's 2.01, on a floor of 4.5. White on accent is closed for this application.
+      -->
+      <Trigger Property="app:PartState.IsSuggested" Value="True">
+        <Setter Property="Background" Value="{DynamicResource BrushAccent}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource BrushAccent}" />
+        <Setter Property="Foreground" Value="{DynamicResource BrushOnAccent}" />
+      </Trigger>
+      <MultiTrigger>
+        <MultiTrigger.Conditions>
+          <Condition Property="app:PartState.IsSuggested" Value="True" />
+          <Condition Property="IsMouseOver" Value="True" />
+        </MultiTrigger.Conditions>
+        <Setter Property="Background" Value="{DynamicResource BrushAccentHover}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource BrushAccentHover}" />
+      </MultiTrigger>
+      <MultiTrigger>
+        <MultiTrigger.Conditions>
+          <Condition Property="app:PartState.IsSuggested" Value="True" />
+          <Condition Property="IsPressed" Value="True" />
+        </MultiTrigger.Conditions>
+        <Setter Property="Background" Value="{DynamicResource BrushAccentPressed}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource BrushAccentPressed}" />
+      </MultiTrigger>
+
+      <!-- Keyboard focus recolours the control's OWN border, tight against the edge, rather than a ring
+           floating outside with a gap - the gap read as a detached halo. Only the keyboard, because a
+           focus mark on mouse click would say "you can type here" after every press. Placed after the
+           suggested state so a focused suggested button shows the ring colour, a lighter blue than the
+           accent fill that stays visible on it. -->
+      <Trigger Property="IsKeyboardFocused" Value="True">
+        <Setter Property="BorderBrush" Value="{DynamicResource BrushFocusRing}" />
+      </Trigger>
+
+      <!--
+        No invitation, but still a control.
+
+        🔴 The first version removed the edge entirely and put the card's own fill behind it. Rendered,
+        the button VANISHED - fill equal to the card and no border leaves nothing to see, and "cannot be
+        used" had turned into "is not there". A disabled control still has to be findable, or the screen
+        silently loses a row.
+
+        So the edge stays and goes QUIET instead: the divider step, 1.34 against a card, which reads as
+        present-but-inactive rather than absent. The fill does not move at all, which is the second half
+        of the fix - every variant now says "disabled" the same way, by dimming, and none of them says it
+        by disappearing.
+
+        🔴 The fill IS restated here, and only because of the suggested state above: for a plain button
+        this setter changes nothing, while without it a disabled suggestion would keep shouting in the
+        accent colour. That is the third time this library has had to be taught the same lesson, after the
+        check control and the choice row.
+      -->
+      <Trigger Property="IsEnabled" Value="False">
+        <Setter Property="Background" Value="{DynamicResource BrushControlRest}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource BrushDivider}" />
+        <Setter Property="Foreground" Value="{DynamicResource BrushTextSecondary}" />
+      </Trigger>
+    </Style.Triggers>
+  </Style>
+
+  <!--
+    The primary action. One per screen. It is the same template with a size nothing else has, because an
+    accent fill alone reads as decoration on a control shaped exactly like its neighbours.
+
+    🔴 IT NO LONGER OWNS THE ACCENT, it only declares itself suggested and lets the base style draw it.
+    The variant used to carry its own copy of the four accent values, which was fine while the accent was
+    the property of one control - and stopped being fine the moment a screen needed the accent to MOVE,
+    to Choose while there is no target and to Start once there is. Two copies of one look drift the first
+    time either is touched, so there is now one, in PartState.IsSuggested's trigger above.
+
+    What is left here is the part that really is the variant: it is bigger.
+  -->
+  <Style x:Key="PartPrimaryAction" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+    <Setter Property="app:PartState.IsSuggested" Value="True" />
+    <Setter Property="MinWidth" Value="{StaticResource PrimaryActionMinWidth}" />
+  </Style>
+
+  <!--
+    ============================ Text field ============================
+
+    🔴 A field shows its ring on ANY focus, where a button shows it on keyboard focus only. That is not
+    an inconsistency in the language, it is the language being about meaning: on a field the ring says
+    "your typing lands here", which is true however the caret arrived. On a button the same mark would
+    say the same thing and be a lie.
+
+    The error state moves the EDGE, not the fill. A tinted fill would change the surface the typed text
+    is read on, which is the one thing a field must not do while somebody is fixing a mistake on it.
+  -->
+  <Style TargetType="TextBox">
+    <Setter Property="Background" Value="{DynamicResource BrushControlRest}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource BrushControlBorder}" />
+    <Setter Property="Foreground" Value="{DynamicResource BrushTextPrimary}" />
+    <Setter Property="CaretBrush" Value="{DynamicResource BrushTextPrimary}" />
+    <Setter Property="SelectionBrush" Value="{DynamicResource BrushAccent}" />
+    <Setter Property="FontSize" Value="{StaticResource FontSizeBody}" />
+    <Setter Property="Height" Value="{StaticResource ControlHeight}" />
+    <Setter Property="Padding" Value="{StaticResource ControlPadding}" />
+    <Setter Property="VerticalContentAlignment" Value="Center" />
+    <Setter Property="SnapsToDevicePixels" Value="True" />
+    <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="TextBox">
+          <Grid>
+            <Border Background="{TemplateBinding Background}"
+                    BorderBrush="{TemplateBinding BorderBrush}"
+                    BorderThickness="{StaticResource StrokeThinEdge}"
+                    CornerRadius="{StaticResource RadiusSm}"
+                    SnapsToDevicePixels="True">
+              <Grid>
+                <!-- 🔴 UNDER the text host, not instead of it, and inset by the SAME padding: the hint
+                     has to start on the exact x the caret will, or it reads as a value already in the
+                     field. It never takes the mouse, so a click lands on the field beneath it. -->
+                <TextBlock x:Name="Placeholder"
+                           Text="{Binding Path=(app:PartState.Placeholder), RelativeSource={RelativeSource TemplatedParent}}"
+                           Margin="{TemplateBinding Padding}"
+                           VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
+                           Foreground="{DynamicResource BrushTextSecondary}"
+                           TextTrimming="CharacterEllipsis"
+                           IsHitTestVisible="False"
+                           Visibility="Collapsed" />
+                <ScrollViewer x:Name="PART_ContentHost"
+                              Padding="{TemplateBinding Padding}"
+                              VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
+                              Focusable="False"
+                              HorizontalScrollBarVisibility="Hidden"
+                              VerticalScrollBarVisibility="Hidden" />
+              </Grid>
+            </Border>
+          </Grid>
+          <ControlTemplate.Triggers>
+            <!-- Empty is the whole condition, focus is not part of it. See PartState.Placeholder. -->
+            <Trigger Property="Text" Value="">
+              <Setter TargetName="Placeholder" Property="Visibility" Value="Visible" />
+            </Trigger>
+          </ControlTemplate.Triggers>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+    <Style.Triggers>
+      <Trigger Property="IsMouseOver" Value="True">
+        <Setter Property="Background" Value="{DynamicResource BrushControlHover}" />
+      </Trigger>
+      <!-- Focus recolours the field's OWN border, tight against the edge, not a ring floating outside with
+           a gap. Before the error trigger, so a field that is focused AND wrong shows the error colour
+           rather than the focus one. -->
+      <Trigger Property="IsFocused" Value="True">
+        <Setter Property="BorderBrush" Value="{DynamicResource BrushFocusRing}" />
+      </Trigger>
+      <Trigger Property="app:PartState.HasError" Value="True">
+        <Setter Property="BorderBrush" Value="{DynamicResource BrushError}" />
+      </Trigger>
+      <Trigger Property="IsEnabled" Value="False">
+        <Setter Property="BorderBrush" Value="{DynamicResource BrushDivider}" />
+        <Setter Property="Foreground" Value="{DynamicResource BrushTextSecondary}" />
+      </Trigger>
+    </Style.Triggers>
+  </Style>
+
+  <!--
+    ============================ Check ============================
+
+    The box carries the state, the label never moves and never changes colour. Checked is the accent
+    fill with a dark tick on it, which is the same pairing the primary action uses - one accent meaning
+    one thing across the whole interface.
+  -->
+  <Style TargetType="CheckBox">
+    <Setter Property="Foreground" Value="{DynamicResource BrushTextPrimary}" />
+    <Setter Property="FontSize" Value="{StaticResource FontSizeBody}" />
+    <Setter Property="VerticalContentAlignment" Value="Center" />
+    <Setter Property="SnapsToDevicePixels" Value="True" />
+    <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="CheckBox">
+          <StackPanel Orientation="Horizontal" Background="Transparent">
+            <Grid VerticalAlignment="Center">
+              <Border x:Name="Box"
+                      Width="{StaticResource CheckBoxSize}" Height="{StaticResource CheckBoxSize}"
+                      Background="{DynamicResource BrushControlRest}"
+                      BorderBrush="{DynamicResource BrushControlBorder}"
+                      BorderThickness="{StaticResource StrokeThinEdge}"
+                      CornerRadius="{StaticResource RadiusSm}"
+                      SnapsToDevicePixels="True">
+                <Path x:Name="Tick"
+                      Width="{StaticResource CheckTickSize}" Height="{StaticResource CheckTickSize}"
+                      Stretch="Uniform"
+                      Data="M 0,5 L 4,9 L 11,1"
+                      Stroke="{DynamicResource BrushOnAccent}"
+                      StrokeThickness="{StaticResource CheckTickStroke}"
+                      StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"
+                      Visibility="Collapsed" />
+              </Border>
+            </Grid>
+            <ContentPresenter x:Name="Label"
+                              Margin="{StaticResource CheckLabelGap}"
+                              VerticalAlignment="Center"
+                              RecognizesAccessKey="True" />
+          </StackPanel>
+          <ControlTemplate.Triggers>
+            <Trigger Property="IsChecked" Value="True">
+              <Setter TargetName="Box" Property="Background" Value="{DynamicResource BrushAccent}" />
+              <Setter TargetName="Box" Property="BorderBrush" Value="{DynamicResource BrushAccent}" />
+              <Setter TargetName="Tick" Property="Visibility" Value="Visible" />
+            </Trigger>
+            <Trigger Property="IsMouseOver" Value="True">
+              <Setter TargetName="Box" Property="BorderBrush" Value="{DynamicResource BrushGlyphMuted}" />
+            </Trigger>
+            <!-- Focus recolours the box's OWN border, tight, not a ring floating outside it. -->
+            <Trigger Property="IsKeyboardFocused" Value="True">
+              <Setter TargetName="Box" Property="BorderBrush" Value="{DynamicResource BrushFocusRing}" />
+            </Trigger>
+            <Trigger Property="IsEnabled" Value="False">
+              <Setter TargetName="Box" Property="BorderBrush" Value="{DynamicResource BrushDivider}" />
+              <Setter Property="Foreground" Value="{DynamicResource BrushTextSecondary}" />
+            </Trigger>
+            <!-- Checked AND disabled: the fill has to dim too, or a dead control still shouts in the
+                 accent colour and reads as the most important thing on the screen. -->
+            <MultiTrigger>
+              <MultiTrigger.Conditions>
+                <Condition Property="IsChecked" Value="True" />
+                <Condition Property="IsEnabled" Value="False" />
+              </MultiTrigger.Conditions>
+              <Setter TargetName="Box" Property="Background" Value="{DynamicResource BrushControlPressed}" />
+              <Setter TargetName="Tick" Property="Stroke" Value="{DynamicResource BrushTextSecondary}" />
+            </MultiTrigger>
+          </ControlTemplate.Triggers>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+
+  <!--
+    ============================ Drop-down ============================
+
+    The hardest part to draw, because it is three things at once: a face that shows the current choice,
+    a button that opens, and a floating list. All three answer in the same language as everything else.
+
+    🔴 The toggle inside it carries NO look of its own. It is a transparent hit area over the face, so
+    the control has one edge and one fill rather than a control with a button sitting in it - which is
+    what a toolkit drop-down looks like, and one of the things that makes a screen look assembled from
+    parts rather than designed.
+  -->
+  <Style x:Key="PartDropDownToggle" TargetType="ToggleButton">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderThickness" Value="0" />
+    <Setter Property="Focusable" Value="False" />
+    <Setter Property="ClickMode" Value="Press" />
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="ToggleButton">
+          <Border Background="{TemplateBinding Background}" SnapsToDevicePixels="True" />
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+
+  <Style TargetType="ComboBox">
+    <!-- Type-to-select matches the label a reader sees. The items are records carrying a translation key, so
+         WPF's built-in typeahead would otherwise compare typed letters against the record's ToString() and
+         never jump to the row. DisplayText resolves the key; an item without that property (a bare string,
+         like the +/- sign picker) simply gets no typeahead, which is harmless. -->
+    <Setter Property="TextSearch.TextPath" Value="DisplayText" />
+    <Setter Property="Background" Value="{DynamicResource BrushControlRest}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource BrushControlBorder}" />
+    <Setter Property="Foreground" Value="{DynamicResource BrushTextPrimary}" />
+    <Setter Property="FontSize" Value="{StaticResource FontSizeBody}" />
+    <Setter Property="Height" Value="{StaticResource ControlHeight}" />
+    <Setter Property="Padding" Value="{StaticResource ControlPadding}" />
+    <Setter Property="VerticalContentAlignment" Value="Center" />
+    <Setter Property="SnapsToDevicePixels" Value="True" />
+    <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="ComboBox">
+          <Grid>
+            <Border x:Name="Face"
+                    Background="{TemplateBinding Background}"
+                    BorderBrush="{TemplateBinding BorderBrush}"
+                    BorderThickness="{StaticResource StrokeThinEdge}"
+                    CornerRadius="{StaticResource RadiusSm}"
+                    SnapsToDevicePixels="True">
+              <Grid>
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="*" />
+                  <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <ContentPresenter Grid.Column="0"
+                                  Margin="{TemplateBinding Padding}"
+                                  Content="{TemplateBinding SelectionBoxItem}"
+                                  ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}"
+                                  VerticalAlignment="Center"
+                                  HorizontalAlignment="Left"
+                                  IsHitTestVisible="False" />
+
+                <Path x:Name="Chevron" Grid.Column="1"
+                      Width="{StaticResource ChevronSize}" Height="{StaticResource ChevronSize}"
+                      Margin="{StaticResource ChevronGap}"
+                      Stretch="Uniform"
+                      Data="M 1,1 L 6,6 L 11,1"
+                      Stroke="{DynamicResource BrushGlyphMuted}"
+                      StrokeThickness="{StaticResource CheckTickStroke}"
+                      StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"
+                      VerticalAlignment="Center"
+                      IsHitTestVisible="False" />
+
+                <ToggleButton Grid.Column="0" Grid.ColumnSpan="2"
+                              Style="{StaticResource PartDropDownToggle}"
+                              IsChecked="{Binding IsDropDownOpen, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}" />
+              </Grid>
+            </Border>
+
+            <!-- The list floats above everything, so it needs its own surface and its own edge: it is
+                 the one place where a border does not mean "you can act on this" but "this is not part
+                 of the screen behind it". -->
+            <Popup x:Name="PART_Popup"
+                   AllowsTransparency="True"
+                   Placement="Bottom"
+                   Focusable="False"
+                   PopupAnimation="None"
+                   IsOpen="{Binding IsDropDownOpen, RelativeSource={RelativeSource TemplatedParent}}">
+              <Border Background="{DynamicResource BrushBgSurface}"
+                      BorderBrush="{DynamicResource BrushControlBorder}"
+                      BorderThickness="{StaticResource StrokeThinEdge}"
+                      CornerRadius="{StaticResource RadiusSm}"
+                      Margin="{StaticResource PopupGap}"
+                      Padding="{StaticResource SpaceXs}"
+                      MinWidth="{TemplateBinding ActualWidth}"
+                      MaxHeight="{StaticResource DropDownMaxHeight}"
+                      SnapsToDevicePixels="True">
+                <!-- CanContentScroll=False: pixel scrolling, so the bottom of a scrolled-open list aligns
+                     exactly with the well instead of snapping to a whole item and leaving a strip of empty
+                     space under the last row. These lists are short (units, zones, modes), so the
+                     virtualisation that item scrolling buys is not needed here. -->
+                <ScrollViewer VerticalScrollBarVisibility="Auto" CanContentScroll="False">
+                  <ItemsPresenter />
+                </ScrollViewer>
+              </Border>
+            </Popup>
+          </Grid>
+          <ControlTemplate.Triggers>
+            <Trigger Property="IsMouseOver" Value="True">
+              <Setter TargetName="Face" Property="Background" Value="{DynamicResource BrushControlHover}" />
+            </Trigger>
+            <!-- Open is a state and has to look like one, or the only way to tell an open drop-down
+                 from a closed one is the list underneath it. -->
+            <Trigger Property="IsDropDownOpen" Value="True">
+              <Setter TargetName="Face" Property="Background" Value="{DynamicResource BrushControlPressed}" />
+              <Setter TargetName="Chevron" Property="Stroke" Value="{DynamicResource BrushTextPrimary}" />
+            </Trigger>
+            <!-- Focus recolours the face's OWN border, tight, not a ring floating outside it. -->
+            <Trigger Property="IsKeyboardFocused" Value="True">
+              <Setter TargetName="Face" Property="BorderBrush" Value="{DynamicResource BrushFocusRing}" />
+            </Trigger>
+            <Trigger Property="IsEnabled" Value="False">
+              <Setter TargetName="Face" Property="BorderBrush" Value="{DynamicResource BrushDivider}" />
+              <Setter TargetName="Chevron" Property="Stroke" Value="{DynamicResource BrushTextSecondary}" />
+              <Setter Property="Foreground" Value="{DynamicResource BrushTextSecondary}" />
+            </Trigger>
+          </ControlTemplate.Triggers>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+
+  <!--
+    ============================ Choice list ============================
+
+    The well a list of choices is read in, with a search field above it doing the finding. The catalogue
+    it holds is meant to grow well past what a row of chips can carry, which is why it is a list at all.
+
+    🔴 IT IS RECESSED: the fill goes DOWN to the base neutral, one step BELOW the card holding it. The
+    first version of this part had no fill at all, on arithmetic that was half right - BrushBgSurfaceAlt
+    and BrushControlRest are the SAME neutral (both Neutral03), so filling the well with the alt surface
+    would have erased the selected row it exists to show. The conclusion was the wrong way out. Going
+    down instead of up avoids that collision and improves every reading, measured on the render:
+
+        selected row against the ground   1.13 -> 1.29
+        hovered row against the ground    1.42 -> 1.62
+        row text against the ground       7.32 -> 8.35
+
+    Against the card it sits in this is 1.14 - the SAME step the card already takes against the window,
+    which the card comment defends as what every dark interface uses for one level. With no fill the well
+    was exactly 1.00 against its card, so a container and its contents were one surface and the screen
+    lost a level it needed. The edge still says "you can act on this", as the card comment promises.
+
+    🔴 THE THREE VIRTUALISATION SETTERS ARE LOAD-BEARING, not ceremony. A hand-written template drops
+    what the toolkit's own ListBox style sets, and the loss is silent: a list of forty scenarios looks
+    identical to a virtualised one and builds forty containers to do it. They are written here so the
+    part keeps its manners at the size this catalogue is heading for.
+
+    No focus ring on the well. The ROW carries keyboard focus and already shows it, and a second mark for
+    one fact is the thing this library is trying not to do.
+  -->
+  <Style TargetType="ListBox">
+    <Setter Property="Background" Value="{DynamicResource BrushBgBase}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource BrushControlBorder}" />
+    <Setter Property="Foreground" Value="{DynamicResource BrushTextPrimary}" />
+    <Setter Property="FontSize" Value="{StaticResource FontSizeBody}" />
+    <Setter Property="Height" Value="{StaticResource ChoiceListHeight}" />
+    <Setter Property="Padding" Value="{StaticResource SpaceXs}" />
+    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+    <Setter Property="SnapsToDevicePixels" Value="True" />
+    <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+    <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled" />
+    <Setter Property="ScrollViewer.CanContentScroll" Value="True" />
+    <Setter Property="VirtualizingStackPanel.IsVirtualizing" Value="True" />
+    <Setter Property="VirtualizingStackPanel.VirtualizationMode" Value="Recycling" />
+    <Setter Property="ItemsPanel">
+      <Setter.Value>
+        <ItemsPanelTemplate>
+          <VirtualizingStackPanel />
+        </ItemsPanelTemplate>
+      </Setter.Value>
+    </Setter>
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="ListBox">
+          <Border Background="{TemplateBinding Background}"
+                  BorderBrush="{TemplateBinding BorderBrush}"
+                  BorderThickness="{StaticResource StrokeThinEdge}"
+                  CornerRadius="{StaticResource RadiusSm}"
+                  SnapsToDevicePixels="True">
+            <ScrollViewer Focusable="False" Padding="{TemplateBinding Padding}">
+              <ItemsPresenter SnapsToDevicePixels="True" />
+            </ScrollViewer>
+          </Border>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+    <Style.Triggers>
+      <Trigger Property="IsEnabled" Value="False">
+        <Setter Property="BorderBrush" Value="{DynamicResource BrushDivider}" />
+        <Setter Property="Foreground" Value="{DynamicResource BrushTextSecondary}" />
+      </Trigger>
+    </Style.Triggers>
+  </Style>
+
+  <!--
+    ============================ Choice row ============================
+
+    One row of a list that is chosen from. Selection is a FILL plus an accent bar down the leading edge:
+    colour alone would be the only thing saying "this one", and it is the one signal a reader may not
+    have. The bar is also what survives the row being hovered while another row is selected.
+  -->
+  <Style TargetType="ListBoxItem">
+    <Setter Property="Foreground" Value="{DynamicResource BrushTextPrimary}" />
+    <Setter Property="FontSize" Value="{StaticResource FontSizeBody}" />
+    <Setter Property="Padding" Value="{StaticResource ChipPadding}" />
+    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+    <Setter Property="SnapsToDevicePixels" Value="True" />
+    <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="ListBoxItem">
+          <Border x:Name="Face"
+                  Background="Transparent"
+                  CornerRadius="{StaticResource RadiusSm}"
+                  SnapsToDevicePixels="True">
+            <Grid>
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+              </Grid.ColumnDefinitions>
+              <Border x:Name="Marker" Grid.Column="0"
+                      Width="{StaticResource SelectionBarWidth}"
+                      Background="{DynamicResource BrushAccent}"
+                      CornerRadius="{StaticResource RadiusSm}"
+                      Visibility="Hidden" />
+              <ContentPresenter Grid.Column="1" Margin="{TemplateBinding Padding}" />
+            </Grid>
+          </Border>
+          <ControlTemplate.Triggers>
+            <Trigger Property="IsMouseOver" Value="True">
+              <Setter TargetName="Face" Property="Background" Value="{DynamicResource BrushControlHover}" />
+            </Trigger>
+            <Trigger Property="IsSelected" Value="True">
+              <Setter TargetName="Face" Property="Background" Value="{DynamicResource BrushControlRest}" />
+              <Setter TargetName="Marker" Property="Visibility" Value="Visible" />
+            </Trigger>
+            <Trigger Property="IsKeyboardFocused" Value="True">
+              <Setter TargetName="Face" Property="Background" Value="{DynamicResource BrushControlHover}" />
+            </Trigger>
+            <Trigger Property="IsEnabled" Value="False">
+              <Setter Property="Foreground" Value="{DynamicResource BrushTextSecondary}" />
+            </Trigger>
+            <!-- 🔴 Selected AND disabled, the same lesson the check control already carries one part up:
+                 a dead row still shouting in the accent colour is the loudest thing on a list nobody can
+                 use. Caught on the render, where a fully disabled list kept a full-strength bar. -->
+            <MultiTrigger>
+              <MultiTrigger.Conditions>
+                <Condition Property="IsSelected" Value="True" />
+                <Condition Property="IsEnabled" Value="False" />
+              </MultiTrigger.Conditions>
+              <Setter TargetName="Marker" Property="Background" Value="{DynamicResource BrushGlyphMuted}" />
+            </MultiTrigger>
+          </ControlTemplate.Triggers>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+
+  <!--
+    🔴 AND THE SAME ROW INSIDE A DROP-DOWN, which was missing and left every open list still wearing the
+    toolkit's own item while the closed field beside it was ours. ComboBoxItem derives from ListBoxItem, so
+    the drawing above applies to it unchanged - one line rather than a second copy of the same template,
+    which is the difference between one thing to keep in step and two that drift.
+
+    An implicit style keys on the exact type and does not reach a derived one, which is why this has to be
+    written at all: without it the popup silently falls back past this dictionary to the toolkit's.
+  -->
+  <Style TargetType="ComboBoxItem" BasedOn="{StaticResource {x:Type ListBoxItem}}" />
+
+  <!--
+    One row of a "ready-made date" list: its name, and under it what that date tests. SHARED by two lists
+    that were drawn two different ways - the scenario list in the setup phase and the preset list in the
+    calculator - because both hold items with a DisplayName and a DisplayExplains and both fill a form when
+    clicked (GUI rules 2 and 5). It lived inline in the setup phase; a second user made it a part.
+
+    🔴 THE SECOND LINE IS THE POINT OF THE LIST. With one line a reader has to choose an item to find out
+    what it is for, which means choosing several to compare them - and choosing one is not free, it fills
+    the form. Two lines make the list browsable. The second line WRAPS to its full text rather than being
+    trimmed to an ellipsis: a description cut to "Does the app apply the age-of..." says nothing, and the
+    tooltip that carried the rest needed a hover to reach. The row grows to fit its text and the list
+    scrolls. The name still trims, because a name is short and a wrapped one would read as a second
+    sentence.
+  -->
+  <Style x:Key="ScenarioRowContainer" TargetType="ListBoxItem" BasedOn="{StaticResource {x:Type ListBoxItem}}">
+    <Setter Property="AutomationProperties.Name" Value="{Binding DisplayName}" />
+  </Style>
+
+  <DataTemplate x:Key="ScenarioRow">
+    <StackPanel ToolTip="{Binding DisplayExplains}">
+      <TextBlock Text="{Binding DisplayName}" TextTrimming="CharacterEllipsis" />
+      <TextBlock Style="{StaticResource PartNote}" Text="{Binding DisplayExplains}" />
+    </StackPanel>
+  </DataTemplate>
+
+  <!--
+    ============================ Form row ============================
+
+    🔴 THE PART THAT FIXES "EVERYTHING LOOKS RANDOMLY PLACED". A form is a grid with a label column, not
+    a stack of centred rows: when every row centres itself, the control beside a short label and the
+    control beside a long one start at different x, and the eye looks for a vertical line that is not
+    there. Measured on the shipped panel: 33 separate centrings, and three checkboxes whose boxes sit at
+    three different x for no reason other than their labels being different lengths.
+
+    HeaderedContentControl is used because a form row IS a header and a content: the toolkit already has
+    the shape, so this is a drawing rather than a new control with its own lifetime.
+
+    🔴 The label column has no chosen width. It is Auto with a SHARED size group, so every row on a
+    screen computes one width together - as wide as the widest label that is actually there. A fixed
+    width would be a number measured off today's text, and it would be wrong at the first translation.
+    The screen holding the rows has to set Grid.IsSharedSizeScope="True", which is the one thing a
+    caller must remember; without it the rows still work and simply stop agreeing with each other.
+
+    The message line under the control keeps its height whether it is occupied or not, so a message
+    appearing does not shove the form - but only on rows that were GIVEN one. See the trigger below.
+  -->
+  <Style x:Key="PartFormRow" TargetType="HeaderedContentControl">
+    <Setter Property="HorizontalContentAlignment" Value="Left" />
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="HeaderedContentControl">
+          <Grid Margin="{StaticResource StackGapSm}">
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="Auto" SharedSizeGroup="FormLabel" />
+              <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <Grid.RowDefinitions>
+              <RowDefinition Height="Auto" />
+              <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+
+            <ContentPresenter Grid.Row="0" Grid.Column="0"
+                              ContentSource="Header"
+                              Margin="{StaticResource FormLabelGap}"
+                              VerticalAlignment="Center"
+                              HorizontalAlignment="Left" />
+            <ContentPresenter Grid.Row="0" Grid.Column="1"
+                              HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                              VerticalAlignment="Center" />
+            <ContentPresenter x:Name="MessageSlot" Grid.Row="1" Grid.Column="1"
+                              Content="{Binding Tag, RelativeSource={RelativeSource TemplatedParent}}"
+                              MinHeight="{StaticResource FieldMessageHeight}"
+                              VerticalAlignment="Center" />
+          </Grid>
+          <ControlTemplate.Triggers>
+            <!-- 🔴 THE FLOOR IS FOR ROWS THAT CAN SPEAK, not for every row. It exists so a field whose
+                 message comes and goes does not change height underneath the reader - but a row given no
+                 Tag at all has no message to wait for, and reserving a line for it spent 18 px per row on
+                 nothing. Measured on the setup phase: the time-zone row, the mode row and both launch
+                 rows, 72 px of reserved blank for messages that cannot exist. The predicate is exactly
+                 "was this row given a message slot", which is Tag being there. -->
+            <Trigger Property="Tag" Value="{x:Null}">
+              <Setter TargetName="MessageSlot" Property="Visibility" Value="Collapsed" />
+            </Trigger>
+          </ControlTemplate.Triggers>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+
+  <!-- The message under a field. Quiet by default, the error colour when the field is wrong - and it
+       always says what to do about it, never just that something is wrong. -->
+  <Style x:Key="PartFieldMessage" TargetType="TextBlock" BasedOn="{StaticResource PartCaption}">
+    <Setter Property="Foreground" Value="{DynamicResource BrushError}" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+  </Style>
+
+  <!-- 🔴 A FAILURE EXPLAINED IN A SENTENCE is prose, and a field message is not. PartFieldMessage is a
+       caption in the error colour, which is right for a short line under the field it belongs to. The
+       footer of a running session explains a command that failed mid-flight in a whole sentence, and at
+       caption size that sentence took the two reductions PartNote exists to undo. The colour was never
+       the problem: the error ink reads 6.02 to 1 on the footer. -->
+  <Style x:Key="PartErrorNote" TargetType="TextBlock" BasedOn="{StaticResource PartNote}">
+    <Setter Property="Foreground" Value="{DynamicResource BrushError}" />
+  </Style>
+
+  <!--
+    ============================ Collapsible section ============================
+
+    A card that can be folded away, carrying a SUMMARY of what is inside it in its own header.
+
+    🔴 The summary is the whole point, and it is what separates this from an ordinary expander. A folded
+    section that says only "Speed" hides its setting and forces a click to find out; one that says
+    "Speed - x60, duration scaled" answers the question without opening. That is what makes folding
+    honest: nothing is hidden, only moved out of the way.
+
+    It also answers the first-contact fault on the substitution panel, where twelve blocks all looked
+    equally required and exactly one of them was.
+
+    The header is a toggle across the full width, because a target the size of a word is a target people
+    miss. The chevron turns rather than swapping glyph, so there is one drawing instead of two.
+  -->
+
+  <!-- The section header IS the control the reader operates, so unlike the drop-down toggle (where the
+       ComboBox itself takes focus and answers the keyboard) this one takes the tab stop and the keys: Space
+       and Enter fold and unfold the section. It shows keyboard focus on the chevron, since it has no border
+       of its own to recolour. -->
+  <Style x:Key="PartSectionToggle" TargetType="ToggleButton" BasedOn="{StaticResource PartDropDownToggle}">
+    <Setter Property="Focusable" Value="True" />
+  </Style>
+
+  <Style x:Key="PartSection" TargetType="Expander">
+    <Setter Property="Foreground" Value="{DynamicResource BrushTextPrimary}" />
+    <Setter Property="FontSize" Value="{StaticResource FontSizeBody}" />
+    <Setter Property="SnapsToDevicePixels" Value="True" />
+    <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+    <!-- The header toggle carries the tab stop and the keys, so the Expander itself must not also take one -
+         a second stop on the Expander would be a dead tab stop that shows nothing and does nothing. -->
+    <Setter Property="IsTabStop" Value="False" />
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="Expander">
+          <!-- 🔴 The card's own padding, NOT a tighter one of its own. A section and a card are peers on
+               the screen, and a peer with 12 px of padding beside one with 16 starts its content at a
+               different x - so the left edges of the groups did not line up, and they read as unrelated
+               blocks instead of one column. One padding, one left edge. -->
+          <Border Style="{StaticResource PartCard}">
+            <Grid>
+              <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+              </Grid.RowDefinitions>
+
+              <!-- No focus box around the whole section: a child field carries its own focus, and a second
+                   box around the section would be the double-marking this library avoids (see the choice well
+                   above). The header toggle itself IS the section's control - it takes the tab stop and
+                   answers Space and Enter to fold and unfold, and shows keyboard focus on the chevron below,
+                   which is why it uses PartSectionToggle (focusable) rather than the drop-down toggle. -->
+              <Grid Grid.Row="0">
+                <ToggleButton x:Name="HeaderToggle"
+                              Style="{StaticResource PartSectionToggle}"
+                              IsChecked="{Binding IsExpanded, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}" />
+                <Grid IsHitTestVisible="False">
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                  </Grid.ColumnDefinitions>
+
+                  <Path x:Name="Chevron" Grid.Column="0"
+                        Width="{StaticResource ChevronSize}" Height="{StaticResource ChevronSize}"
+                        Margin="{StaticResource SectionChevronGap}"
+                        Stretch="Uniform"
+                        Data="M 1,1 L 6,6 L 11,1"
+                        Stroke="{DynamicResource BrushGlyphMuted}"
+                        StrokeThickness="{StaticResource CheckTickStroke}"
+                        StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"
+                        VerticalAlignment="Center"
+                        RenderTransformOrigin="0.5,0.5" />
+
+                  <ContentPresenter Grid.Column="1" ContentSource="Header" VerticalAlignment="Center" />
+
+                  <!-- The summary of what is folded away. Quiet, and on the far side of the header, so
+                       the eye reads the section name first and the setting second.
+
+                       🔴 IT SHOWS ONLY WHILE THE SECTION IS FOLDED, which is the whole of what it is for:
+                       an open section already says all of this in its body, and printing it twice put the
+                       same row on one screen twice over. Measured on the first render of the setup phase,
+                       where the moment appeared in this header and again in the sentence above Start. -->
+                  <ContentPresenter x:Name="Summary" Grid.Column="2"
+                                    Content="{Binding Tag, RelativeSource={RelativeSource TemplatedParent}}"
+                                    HorizontalAlignment="Right"
+                                    VerticalAlignment="Center" />
+                </Grid>
+              </Grid>
+
+              <ContentPresenter x:Name="Body" Grid.Row="1" Margin="{StaticResource SectionBodyGap}" />
+            </Grid>
+          </Border>
+          <ControlTemplate.Triggers>
+            <Trigger Property="IsExpanded" Value="False">
+              <Setter TargetName="Body" Property="Visibility" Value="Collapsed" />
+            </Trigger>
+            <!-- One drawing, turned, rather than two glyphs swapped: a second glyph is a second thing
+                 to keep in step, and they drift the first time one of them is resized. -->
+            <Trigger Property="IsExpanded" Value="True">
+              <Setter TargetName="Chevron" Property="RenderTransform">
+                <Setter.Value>
+                  <RotateTransform Angle="180" />
+                </Setter.Value>
+              </Setter>
+              <Setter TargetName="Summary" Property="Visibility" Value="Collapsed" />
+            </Trigger>
+            <Trigger SourceName="HeaderToggle" Property="IsMouseOver" Value="True">
+              <Setter TargetName="Chevron" Property="Stroke" Value="{DynamicResource BrushTextPrimary}" />
+            </Trigger>
+            <!-- Keyboard focus lands on the header toggle: mark it on the chevron, the section's one glyph,
+                 since the toggle has no border of its own to recolour the way other parts do. -->
+            <Trigger SourceName="HeaderToggle" Property="IsKeyboardFocused" Value="True">
+              <Setter TargetName="Chevron" Property="Stroke" Value="{DynamicResource BrushFocusRing}" />
+            </Trigger>
+          </ControlTemplate.Triggers>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+
+  <!--
+    ============================ Verdict badge ============================
+
+    The one place the meaning palette is allowed on something other than plain text. Colour never
+    carries the meaning alone: the badge always holds a word, and the caller pairs it with a glyph.
+  -->
+  <Style x:Key="PartBadge" TargetType="Border">
+    <Setter Property="Background" Value="{DynamicResource BrushBgSurfaceAlt}" />
+    <Setter Property="CornerRadius" Value="{StaticResource RadiusPill}" />
+    <Setter Property="Padding" Value="{StaticResource ChipPadding}" />
+    <Setter Property="HorizontalAlignment" Value="Left" />
+    <Setter Property="SnapsToDevicePixels" Value="True" />
+  </Style>
+
+  <!--
+    ============================ Side by side ============================
+
+    Two peers in one row: equal width, apart by the channel between groups, and flush with whatever the
+    row stands in. Header is the left one and Content the right one - the control's two slots, used as
+    two slots.
+
+    🔴 THE CHANNEL IS A COLUMN, NOT A MARGIN ON EACH SIDE. The first clock pair gave both clocks a 4 px
+    margin all round, which was two faults at once: the gap between them came to 8 px against the 16 px
+    of padding inside each card, and both outer edges stood 4 px inside the card underneath, so the page
+    had two left edges. A column gives the gap once and leaves the outer edges where the container puts
+    them.
+  -->
+  <Style x:Key="PartSideBySide" TargetType="HeaderedContentControl">
+    <!-- A layout, so never a stop on the keyboard path. -->
+    <Setter Property="Focusable" Value="False" />
+    <Setter Property="IsTabStop" Value="False" />
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="HeaderedContentControl">
+          <Grid>
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="*" />
+              <ColumnDefinition Width="{StaticResource GroupChannelWidth}" />
+              <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <ContentPresenter Grid.Column="0" ContentSource="Header" />
+            <ContentPresenter Grid.Column="2" />
+          </Grid>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+
+  <!--
+    ============================ Clock ============================
+
+    One clock, drawn once and used for both of them. The fake clock and the real one are the same drawing
+    with different data, so they cannot be allowed to drift apart - and the session phase shows them side
+    by side, where a difference of one pixel between them reads as a difference in meaning.
+
+    Its DataContext is a ClockView, so the template names that shape's four members and nothing else.
+
+    🔴 THE TIME IS MONOSPACED and the shipped tile's is not. A clock at this size in a proportional face
+    re-lays itself out on every tick, because a 1 is narrower than a 0 - so the digits creep sideways
+    while somebody is watching them, and two clocks side by side stop lining up with each other. The date
+    stays proportional: it is read once, not watched.
+
+    🔴 Meaning comes from the role LABEL and the explicit zone, never from colour (zasady/13 section 9),
+    and the zone is spelled out on every clock because untouchable rule 2 says a bare time is exactly the
+    ambiguity we exist to remove.
+  -->
+  <ControlTemplate x:Key="PartClock">
+    <Border Style="{StaticResource PartCard}">
+      <StackPanel>
+        <TextBlock Style="{StaticResource PartCaption}"
+                   Text="{Binding RoleKey, Converter={StaticResource KeyToText}}" />
+        <TextBlock Style="{StaticResource PartHeading}" Margin="{StaticResource StackGapSm}"
+                   HorizontalAlignment="Left"
+                   Text="{Binding Date}" />
+        <TextBlock Style="{StaticResource PartLabel}"
+                   FontFamily="{StaticResource FontFamilyMono}"
+                   FontSize="{StaticResource FontSizeClock}"
+                   FontWeight="{StaticResource FontWeightHeading}"
+                   HorizontalAlignment="Left"
+                   Text="{Binding Time}" />
+        <TextBlock Style="{StaticResource PartCaption}" Margin="{StaticResource StackGapSm}"
+                   Text="{Binding Zone}" />
+        <!-- 🔴 HOW MUCH TIME PASSED ON THIS CLOCK, which is the multiplier stated as a fact. Two clocks
+             showing different dates prove a substitution happened; two durations beside them - two
+             minutes here, two days there - are what make the rate something a reader can see rather than
+             a number they have to trust. It disappears until the first heartbeat rather than reading
+             zero, because a zero beside a clock looks like a measurement. -->
+        <WrapPanel Margin="{StaticResource StackGapSm}"
+                   Visibility="{Binding HasElapsed, Converter={StaticResource BoolToVis}}">
+          <TextBlock Style="{StaticResource PartCaption}" TextWrapping="NoWrap"
+                     VerticalAlignment="Center"
+                     Text="{DynamicResource clock.elapsed}" />
+          <TextBlock Style="{StaticResource PartCaption}" TextWrapping="NoWrap"
+                     Margin="{StaticResource SpaceXs}"
+                     FontFamily="{StaticResource FontFamilyMono}"
+                     Text="{Binding Elapsed}" />
+        </WrapPanel>
+      </StackPanel>
+    </Border>
+  </ControlTemplate>
+
+  <!--
+    ============================ Fact list ============================
+
+    A named list of facts the session measured - covered channels and their call counts, the ones left
+    real on purpose, the ones nothing was hooked in, the warnings. Read-only: there is nothing to choose
+    here, which is what separates it from the choice well above. No border and no fill for the same
+    reason - an edge means "you can act on this", and acting on this is not a thing.
+
+    🔴 THE COUNT IS PART OF THE NAME, and the template composes it rather than the caller. Five of these
+    appear on one screen, and a caller composing "name (n)" five times over is five chances for one of
+    them to disagree with its own list. It reads the count off Items, so the number and the rows it
+    describes cannot come apart.
+
+    🔴 THE ROWS ARE MONOSPACED because they are data, not prose: an API name and a call count line up
+    into columns that can be scanned, and "GetTickCount64  x44910" in a proportional face is a ragged
+    edge down the middle of the list. Capped in height and scrolling, because a family session can
+    produce forty channels and this is a detail inside a folded section, not the subject of the screen.
+  -->
+  <!-- The row for a covered or observed channel - a name and a read count folded into a sentence
+       (coverage.reads) so the count does not read as a speed. The same TextBlock as the fact list's own row,
+       so the two line up - only the converter differs, turning a CoveredChannel into text where the fact list
+       turns a key into text. -->
+  <DataTemplate x:Key="CoverageRowTemplate">
+    <TextBlock Style="{StaticResource PartCaption}" TextWrapping="NoWrap"
+               TextTrimming="CharacterEllipsis"
+               FontFamily="{StaticResource FontFamilyMono}"
+               Text="{Binding Converter={StaticResource CoverageRow}}" />
+  </DataTemplate>
+
+  <Style x:Key="PartFactList" TargetType="HeaderedItemsControl">
+    <Setter Property="Margin" Value="{StaticResource StackGapLg}" />
+    <Setter Property="ItemTemplate">
+      <Setter.Value>
+        <DataTemplate>
+          <!-- 🔴 THE ROWS GO THROUGH THE TRANSLATOR, and the first build of this part did not do it. The
+               warning lists hold translation KEYS, so the audit rendered "wait.timeout_collapsed" on
+               screen where a sentence belongs - caught on the render, after I had read past it once.
+
+               One template for both kinds of list, because the resolver is defined to hand back a string
+               it does not know (an honest "translation missing", never a blank). A covered-channel row is
+               already rendered data - "GetTickCount64  ×44910" - and passes through untouched. Keys all
+               carry dots and API names do not, so the two cannot be mistaken for each other. -->
+          <TextBlock Style="{StaticResource PartCaption}" TextWrapping="NoWrap"
+                     TextTrimming="CharacterEllipsis"
+                     FontFamily="{StaticResource FontFamilyMono}"
+                     Text="{Binding Converter={StaticResource KeyToText}}" />
+        </DataTemplate>
+      </Setter.Value>
+    </Setter>
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="HeaderedItemsControl">
+          <StackPanel>
+            <TextBlock Style="{StaticResource PartLabel}" TextWrapping="NoWrap"
+                       TextTrimming="CharacterEllipsis">
+              <TextBlock.Text>
+                <MultiBinding StringFormat="{}{0} ({1})">
+                  <Binding Path="Header" RelativeSource="{RelativeSource TemplatedParent}" />
+                  <Binding Path="Items.Count" RelativeSource="{RelativeSource TemplatedParent}" />
+                </MultiBinding>
+              </TextBlock.Text>
+            </TextBlock>
+            <ScrollViewer VerticalScrollBarVisibility="Auto"
+                          HorizontalScrollBarVisibility="Disabled"
+                          MaxHeight="{StaticResource CoverageMaxHeight}"
+                          Margin="{StaticResource StackGapSm}"
+                          Focusable="False">
+              <ItemsPresenter />
+            </ScrollViewer>
+          </StackPanel>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+
+  <!--
+    ============================ Note list ============================
+
+    The same named list, for rows that are PROSE rather than data - the warnings a session raises.
+
+    🔴 ONE OVERRIDDEN TEMPLATE, NOT A SECOND LIST. Everything about it is the fact list: the header, the
+    composed count, the cap, the scrolling. What changes is the row, and it changes because the content is
+    a different kind. A channel row is "GetTickCount64  ×44910" - data in two columns, which monospace
+    lines up and a clipped tail costs nothing. A warning is a sentence, and a sentence clipped to
+    "...ran at the shortest step this tool uses (1 ms) inste…" is one the reader cannot act on, which is
+    the whole point of having raised it.
+
+    Measured on the session-audit render: both warnings ran past the card and lost their ends.
+  -->
+  <Style x:Key="PartNoteList" TargetType="HeaderedItemsControl"
+         BasedOn="{StaticResource PartFactList}">
+    <Setter Property="ItemTemplate">
+      <Setter.Value>
+        <DataTemplate>
+          <TextBlock Style="{StaticResource PartNote}"
+                     Margin="{StaticResource StackGapSm}"
+                     Text="{Binding Converter={StaticResource KeyToText}}" />
+        </DataTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+
+</ResourceDictionary>

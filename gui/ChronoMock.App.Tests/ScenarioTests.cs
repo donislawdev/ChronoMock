@@ -50,9 +50,9 @@ public class ScenarioTests
     {
         var vm = new SessionViewModel();
 
-        Assert.Empty(vm.Scenarios);
-        Assert.False(vm.HasScenarios);
-        Assert.False(vm.HasScenariosNeedingParameters);
+        Assert.Empty(vm.ScenarioPicker.Visible);
+        Assert.False(vm.ScenarioPicker.HasScenarios);
+        Assert.False(vm.ScenarioPicker.HasNeedingParameters);
     }
 
     [Fact]
@@ -60,7 +60,7 @@ public class ScenarioTests
     {
         // Otherwise the panel would keep naming a scenario whose moment is no longer in the field.
         var vm = new SessionViewModel(new InMemorySessionHistoryStore(), presetsDir: PresetsDir());
-        var scenario = vm.Scenarios.First(s => s.Id == "year-rollover");
+        var scenario = vm.ScenarioPicker.Visible.First(s => s.Id == "year-rollover");
 
         vm.SelectedScenario = scenario;
         Assert.NotNull(vm.SelectedScenario);
@@ -72,13 +72,42 @@ public class ScenarioTests
         Assert.Equal(string.Empty, vm.ScenarioExplains);
     }
 
+    /// <summary>
+    /// The folded catalogue's header shows the chosen scenario or the number on offer, and the two share
+    /// one cell - so the state has to say both halves out loud. A header that went blank would be the one
+    /// thing a folded section may not do.
+    /// </summary>
+    [Fact]
+    public void The_scenario_selection_says_both_halves_and_announces_both()
+    {
+        var vm = new SessionViewModel(new InMemorySessionHistoryStore(), presetsDir: PresetsDir());
+        var announced = new List<string>();
+        vm.PropertyChanged += (_, e) => announced.Add(e.PropertyName ?? string.Empty);
+
+        Assert.False(vm.HasSelectedScenario);
+        Assert.True(vm.HasNoSelectedScenario);
+
+        vm.SelectedScenario = vm.ScenarioPicker.Visible.First(s => s.Id == "year-rollover");
+
+        Assert.True(vm.HasSelectedScenario);
+        Assert.False(vm.HasNoSelectedScenario);
+        Assert.Contains(nameof(SessionViewModel.HasNoSelectedScenario), announced);
+
+        // And back, through the path that clears it rather than the setter.
+        announced.Clear();
+        vm.Moment.LoadCanonical("2030-01-01T00:00:00");
+
+        Assert.True(vm.HasNoSelectedScenario);
+        Assert.Contains(nameof(SessionViewModel.HasNoSelectedScenario), announced);
+    }
+
     [Fact]
     public void A_scenario_says_so_when_the_engine_is_not_available()
     {
         // No CalcClient injected: the panel reports it instead of leaving the old date and going quiet.
         var vm = new SessionViewModel(new InMemorySessionHistoryStore(), presetsDir: PresetsDir());
 
-        vm.SelectedScenario = vm.Scenarios.First();
+        vm.SelectedScenario = vm.ScenarioPicker.Visible.First();
 
         Assert.True(vm.HasScenarioError);
         Assert.Equal("scenario.engine_missing", vm.ScenarioErrorKey);
@@ -90,10 +119,61 @@ public class ScenarioTests
         var vm = new SessionViewModel(new InMemorySessionHistoryStore(), presetsDir: PresetsDir());
         var mode = vm.SelectedMode;
 
-        vm.SelectedScenario = vm.Scenarios.First();
+        vm.SelectedScenario = vm.ScenarioPicker.Visible.First();
 
         Assert.Equal(SessionStatusKind.Idle, vm.StatusKind); // rule 7: fills the form, never starts
         Assert.Same(mode, vm.SelectedMode); // "when" and "how fast" are separate axes
+    }
+
+    [Fact]
+    public void Pressing_enter_in_the_filter_chooses_the_first_scenario_it_left_standing()
+    {
+        var vm = new SessionViewModel(new InMemorySessionHistoryStore(), presetsDir: PresetsDir());
+        var wholeCatalogueFirst = vm.ScenarioPicker.Visible[0];
+
+        // Narrow so the first STANDING hit is not the first of the whole list, or the test could not tell
+        // the behaviour from "always pick index 0 of the catalogue". The guard makes a bad narrowing loud
+        // rather than a false pass.
+        var narrowed = vm.ScenarioPicker.Visible[^1];
+        vm.ScenarioPicker.Filter = narrowed.DisplayName;
+        Assert.NotSame(wholeCatalogueFirst, vm.ScenarioPicker.Visible[0]);
+
+        vm.ChooseFirstScenario();
+
+        Assert.Same(vm.ScenarioPicker.Visible[0], vm.SelectedScenario);
+    }
+
+    [Fact]
+    public void Choosing_the_first_hit_takes_the_same_path_a_click_does()
+    {
+        // It goes through SelectedScenario, so it fills the explanation line and starts nothing (rule 7) -
+        // the keyboard and the mouse must not be two different ways of choosing.
+        var vm = new SessionViewModel(new InMemorySessionHistoryStore(), presetsDir: PresetsDir());
+        var first = vm.ScenarioPicker.Visible[0];
+
+        vm.ChooseFirstScenario();
+
+        Assert.Same(first, vm.SelectedScenario);
+        Assert.Equal(first.DisplayExplains, vm.ScenarioExplains);
+        Assert.Equal(SessionStatusKind.Idle, vm.StatusKind);
+    }
+
+    [Fact]
+    public void Pressing_enter_on_an_empty_result_leaves_a_chosen_scenario_standing()
+    {
+        // The filter is deliberately allowed to leave a choice standing (ScenarioPicker), so Enter on a
+        // list showing nothing must not undo it - a search box that silently changed what the target is
+        // about to see would be the exact fault the picker's design avoids.
+        var vm = new SessionViewModel(new InMemorySessionHistoryStore(), presetsDir: PresetsDir());
+        vm.SelectedScenario = vm.ScenarioPicker.Visible.First(s => s.Id == "year-rollover");
+        var chosen = vm.SelectedScenario;
+
+        vm.ScenarioPicker.Filter = "no scenario is called this";
+        Assert.Empty(vm.ScenarioPicker.Visible);
+
+        vm.ChooseFirstScenario();
+
+        Assert.Same(chosen, vm.SelectedScenario);
     }
 
     [Fact]

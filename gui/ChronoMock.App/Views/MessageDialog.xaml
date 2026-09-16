@@ -79,9 +79,11 @@
                 Margin="{StaticResource SpaceXs}" />
         <!-- Its label is set in code-behind, because it says Cancel next to a question and Close on a
              notice, and the two shapes are one window. -->
+        <!-- No Padding override: a uniform one on the fixed-height parts Button eats the vertical room and
+             clips the label, the same fault the About dialog's buttons had. The horizontal control padding
+             comes from the style. -->
         <Button x:Name="CancelButton" Click="OnCancelClick" IsCancel="True"
                 MinWidth="{StaticResource DialogButtonMinWidth}"
-                Padding="{StaticResource SpaceMd}"
                 Margin="{StaticResource SpaceXs}" />
       </StackPanel>
     </Border>

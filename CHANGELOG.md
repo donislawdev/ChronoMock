@@ -6,6 +6,106 @@ Notable changes to Chrono Mock, newest first. The format follows
 
 ## [Unreleased]
 
+The window was rebuilt so it can be changed one place at a time. Most of the work is a new
+structure a user never sees, but a good deal of it is visible the moment the tool opens, and
+the notes below say what a user sees rather than how the parts were rearranged.
+
+### Added
+
+- **A search field over the scenario list.** The ready-made scenarios are meant to grow into
+  a long list, and a drop-down or a wall of chips stops working well before that. The filter
+  narrows the list as you type, clears with one button, and Enter takes the first match.
+- **A jump to a date you type, while a session runs.** The running session could already jump
+  by a relative amount. It can now jump to an absolute date, next to the relative jump and told
+  apart from it by name - "Jump" moves by an amount, "Jump to" moves to a moment. The duration
+  clock still never goes backwards, so a jump moves the wall clock and leaves elapsed time alone.
+- **The elapsed time on each session clock.** A session at sixty times speed shows 1:01:00
+  against 0:01:01 - the multiplier as something you can see rather than a number to trust. It
+  used to reach only the copied report. It counts the time that passed, so changing the speed
+  mid-session does not distort it and a jump does not inflate it.
+- **A hidden component catalogue, opened with `--catalogue`.** It shows every interface part in
+  every state, with its longest text and its extreme values, so a change to a part can be seen
+  in one place. It is for whoever works on the window and never opens on its own.
+- **Type-to-select in the drop-downs.** Typing a letter jumps to the matching entry - the offset,
+  the unit, the zone - the way a native list does, so a long list is reached from the keyboard and
+  not only the mouse.
+
+### Changed
+
+- **The window now moves through three phases instead of one panel.** Setup, then the running
+  Session, then the Result, each replacing the last and showing only what that step needs. The
+  single panel stacked the form, the clocks, the verdict and the audit on one screen, so during
+  a session the clocks sat below the fold and the verdict lower still. Each screen is now in the
+  order of the questions it answers.
+- **Setup was rewritten for somebody opening the tool for the first time.** A line at the top
+  says what the tool does and that it does not change the system clock. There is one path to the
+  moment - the date and time field is the answer, and the scenario list and the "starts at"
+  offset only fill it in - so the field comes first and the two fillers follow it. The labels
+  say what they mean to a reader rather than to the mechanism: Application, Date and time,
+  Starts at, Time zone, Speed. Start gives a reason for every refusal rather than the first one
+  it meets, the footer that carries it is pinned so it cannot fall below the fold, and the accent
+  leads to the next thing to do rather than sitting on a button that cannot be pressed yet.
+- **A session starts at real speed.** The first run used to start sixty times faster than real
+  time, shown as `×60`. The tool's first promise is the date it starts an application on, and
+  speeding time up is the second thing, so an unasked-for sixty times on a first run was a
+  surprise that every first run paid. It starts at real speed now, shown as `×1` beside `×10`,
+  `×60` and `×1440`.
+- **The default time zone is UTC.** The panel used to start in a local summer-time offset, which
+  reads like somebody's own clock without saying whose, from a zone list that covers only two
+  markets - so an arbitrary local default is worse than a neutral one. The default moment is the
+  signed 32-bit time limit, which is a moment in UTC, so the default date and its own reason now
+  agree instead of being two hours apart.
+- **The audit reads in the reader's words.** The block is called "What the application read" now,
+  and its lines say "Read from the fake clock", "Read from the real clock", "Left on the real
+  clock on purpose" and "Could not be watched" in place of the mechanism's terms. On a result
+  worse than a clean pass it opens on its own, because a reader with a bad verdict has one
+  question - which clocks read the real time - and the audit is the answer.
+- **The result is led by the verdict.** The result screen puts the verdict at the top in the
+  colour of its meaning, with the reason the core gives even when the answer is a clean pass, how
+  the session ended, the application's exit code, buttons to copy the summary or the diagnostics,
+  what the application saw, the audit, and the history of past sessions. History rows read as
+  dates now rather than as raw machine time with a T and a Z.
+- **The calculator was repainted to match.** The two modules sat on slightly different
+  backgrounds, with the seam visible under the module switch. They are drawn from the same parts
+  now, so the two look like one program.
+- **The controls and the explaining text were made legible.** Field and list borders were below
+  the contrast at which an edge is visible, so a control read as a shapeless patch - the borders
+  sit at the visible threshold now, on cards. The prose that explains the tool was taking two
+  reductions at once, smaller and dimmer, and is now at reading size in the quieter ink, so the
+  text that teaches the tool is no longer the hardest thing on the screen to read.
+- **The substitution panel is called "Run an app".** The screen's own name spoke of the mechanism
+  rather than the task - a reader wants to run an application on another date, and the tab says so
+  now. "Substitution" and the other mechanism words stay in the command line and the reports.
+- **Keyboard focus is a tight border rather than a ring floating outside the control.** The ring
+  stood off the edge with a gap and read as a heavy halo - focus recolours the control's own edge
+  now, and a section no longer draws a box around itself when a field inside it is being edited.
+- **The calculator carries both ways of naming a moment in one column.** The reverse analysis moved
+  up beside the builder, the three columns fill the height, the scenario descriptions read in full
+  rather than trailing off into an ellipsis, and the copy buttons confirm with "Copied".
+- **The footer's primary action is sized to its word, and Stop is red.** Start and New session were
+  a banner far wider than their text and are sized to it now. Stop wears the failure red, because it
+  ends the session, and red is not the accent the rest of the tool keeps for the next step.
+
+### Fixed
+
+- **A second session in the same window kept the first session's channels in the audit.** The
+  list of what could not be watched is a running union, and the reset before a new session did
+  not clear it, so the second session listed channels from the first.
+- **The warning for a channel hooked late named a count it did not have.** It read "One time
+  function" whether one function or several came under the fake clock late, and a module loaded
+  after start usually brings several. It names the channels now.
+- **The release signing check compares the signature states against the list it signed.** The
+  step that reads the certificate back out of every signed file checked it against the wrong
+  list, so a mismatch could have passed unnoticed.
+- **The date calculator's scrollbar sat over the values and the copy buttons.** Each column keeps a
+  lane for it now, so it no longer covers what it scrolls past.
+- **The start point's time field was clipped in the calculator.** The moment shared one row with the
+  kind picker in the narrow middle column and ran off the edge - it has its own full-width row now.
+- **Dialog buttons clipped their own labels.** A uniform padding on a fixed-height button ate the
+  vertical room the label needed.
+- **The RFC 1123 output is labelled GMT.** Its value has always ended in GMT, and the row says so
+  now, so a reader is not left guessing which zone it is in.
+
 ## [0.2.0] - 2026-09-10
 
 ### Added

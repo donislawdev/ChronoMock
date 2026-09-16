@@ -18,11 +18,19 @@
         <ResourceDictionary Source="Themes/Values.xaml" />
         <ResourceDictionary Source="Themes/Colours.xaml" />
         <ResourceDictionary Source="Themes/Controls.xaml" />
+        <!-- The parts library, merged application-wide as of the product transition (P3b), so the calculator
+             and the dialogs take their controls from it through implicit styles. It comes after Values and
+             Colours because its StaticResource sizes resolve as the file is read. The phase views, the audit
+             and the catalogue ALSO merge it locally and MUST keep doing so - a {StaticResource PartX} inside a
+             UserControl is resolved as that control's BAML loads, a lookup that never reaches
+             Application.Resources (only implicit styles and DynamicResource reach it, at tree time). -->
+        <ResourceDictionary Source="Themes/Parts.xaml" />
       </ResourceDictionary.MergedDictionaries>
 
       <!-- App-wide so both the window and the clock tiles resolve it. Renders a translation key (as the
            core and the VM emit) to text in the current language (untouchable rules 15/16). -->
       <local:TranslationKeyConverter x:Key="KeyToText" />
+      <local:CoverageRowConverter x:Key="CoverageRow" />
 
       <!-- Verdict indicator: the glyph and colour come from the verdict kind, colour from the named palette. -->
       <local:VerdictGlyphConverter x:Key="VerdictGlyph" />
@@ -55,59 +63,8 @@
         </Setter>
       </Style>
 
-      <!-- Recent-target items: the accessible name is the FULL path, because the file name alone does not
-           identify a build (an x64 and an x86 output are both app.exe) and assistive tech would otherwise
-           hear the record's ToString(). Same reason the row shows the directory beside the name. -->
-      <Style x:Key="RecentTargetComboItem" TargetType="ComboBoxItem" BasedOn="{StaticResource {x:Type ComboBoxItem}}">
-        <Setter Property="AutomationProperties.Name" Value="{Binding FullPath}" />
-      </Style>
-
-      <!-- Scenario chips: the accessible name is the scenario's own name, which the template shows - without
-           this the peer would read the record's ToString(), as it would for any templated item. -->
-      <!-- 🔴 A REAL CHIP, not text that happens to be clickable. Under the stock item template these read
-           as eight loose phrases with wide gaps and no edges, so nothing said they could be pressed and
-           nothing showed which one was chosen - the selected state only appeared on hover. A drawn border
-           plus a filled selected state is the cheapest thing that turns a list of words into a control.
-           Selection is carried by the border and the text weight as well as by colour (zasady/13 9), so it
-           survives a monochrome screenshot and a colour-blind reader. -->
-      <Style x:Key="ScenarioListItem" TargetType="ListBoxItem" BasedOn="{StaticResource {x:Type ListBoxItem}}">
-        <Setter Property="AutomationProperties.Name" Value="{Binding DisplayName}" />
-        <Setter Property="Margin" Value="{StaticResource SpaceXs}" />
-        <Setter Property="Padding" Value="10,6" />
-        <Setter Property="Foreground" Value="{DynamicResource BrushTextPrimary}" />
-        <Setter Property="Template">
-          <Setter.Value>
-            <ControlTemplate TargetType="ListBoxItem">
-              <Border x:Name="Chip"
-                      Background="{DynamicResource BrushBgSurfaceAlt}"
-                      BorderBrush="{DynamicResource BrushStroke}"
-                      BorderThickness="{StaticResource StrokeThinEdge}"
-                      CornerRadius="{StaticResource RadiusSm}"
-                      Padding="{TemplateBinding Padding}"
-                      SnapsToDevicePixels="True">
-                <ContentPresenter VerticalAlignment="Center" />
-              </Border>
-              <ControlTemplate.Triggers>
-                <Trigger Property="IsMouseOver" Value="True">
-                  <Setter TargetName="Chip" Property="BorderBrush" Value="{DynamicResource BrushAccent}" />
-                </Trigger>
-                <Trigger Property="IsSelected" Value="True">
-                  <Setter TargetName="Chip" Property="Background" Value="{DynamicResource BrushAccent}" />
-                  <Setter TargetName="Chip" Property="BorderBrush" Value="{DynamicResource BrushAccent}" />
-                  <Setter Property="Foreground" Value="{DynamicResource BrushBgBase}" />
-                  <Setter Property="FontWeight" Value="SemiBold" />
-                </Trigger>
-                <Trigger Property="IsKeyboardFocused" Value="True">
-                  <Setter TargetName="Chip" Property="BorderBrush" Value="{DynamicResource BrushFocusRing}" />
-                </Trigger>
-                <Trigger Property="IsEnabled" Value="False">
-                  <Setter Property="Foreground" Value="{DynamicResource BrushTextSecondary}" />
-                </Trigger>
-              </ControlTemplate.Triggers>
-            </ControlTemplate>
-          </Setter.Value>
-        </Setter>
-      </Style>
+      <!-- RecentTargetComboItem and ScenarioListItem lived here, keyed item styles the shipped monolith
+           bound - they went with it when the product moved to the phases (the phases carry their own). -->
     </ResourceDictionary>
   </Application.Resources>
 </Application>

@@ -32,25 +32,45 @@ public enum StepKind
 
 /// <summary>A base option for the dropdown: the kind plus its translation key (rule 15/16 - the view
 /// renders the key, the view model stays language-agnostic).</summary>
-public sealed record BaseKindOption(BaseKind Kind, string LabelKey);
+public sealed record BaseKindOption(BaseKind Kind, string LabelKey)
+{
+    // Resolved label for type-to-select: a drop-down's TextSearch.TextPath points here, because the built-in
+    // typeahead reads a property on the item, not the record's ToString() or the text the item template draws.
+    public string DisplayText => TranslationKeyConverter.Resolve(LabelKey);
+}
 
 /// <summary>A step-kind option for a row's kind dropdown: the kind plus its translation key.</summary>
-public sealed record StepKindOption(StepKind Kind, string LabelKey);
+public sealed record StepKindOption(StepKind Kind, string LabelKey)
+{
+    public string DisplayText => TranslationKeyConverter.Resolve(LabelKey);
+}
 
 /// <summary>A shift unit option: the CLI token (<c>y</c>, <c>mo</c>, <c>bd</c>, ...) plus its translation key.</summary>
-public sealed record UnitOption(string Token, string LabelKey);
+public sealed record UnitOption(string Token, string LabelKey)
+{
+    public string DisplayText => TranslationKeyConverter.Resolve(LabelKey);
+}
 
 /// <summary>A snap-target option: the CLI token (<c>som</c>/<c>eom</c>/<c>soq</c>/<c>eoq</c>/<c>soy</c>/<c>eoy</c>)
 /// plus its translation key (mirrors <c>parse_snap</c>).</summary>
-public sealed record SnapTargetOption(string Token, string LabelKey);
+public sealed record SnapTargetOption(string Token, string LabelKey)
+{
+    public string DisplayText => TranslationKeyConverter.Resolve(LabelKey);
+}
 
 /// <summary>A nearest-target option: the CLI token (<c>nbd</c>/<c>pbd</c>/<c>next-leap-day</c>) plus its
 /// translation key (mirrors <c>parse_nearest</c>). The business-day targets need a calendar (without one the
 /// engine returns a calendar error) - the leap-day target is pure arithmetic and needs none.</summary>
-public sealed record NearestTargetOption(string Token, string LabelKey);
+public sealed record NearestTargetOption(string Token, string LabelKey)
+{
+    public string DisplayText => TranslationKeyConverter.Resolve(LabelKey);
+}
 
 /// <summary>A calendar option: the id passed to <c>--calendar</c> (null = omit it) plus its translation key.</summary>
-public sealed record CalendarOption(string? Id, string LabelKey);
+public sealed record CalendarOption(string? Id, string LabelKey)
+{
+    public string DisplayText => TranslationKeyConverter.Resolve(LabelKey);
+}
 
 /// <summary>One output-format row: a technical format label (not translated, like the coverage channel
 /// names) and the value the engine produced (or the out-of-range marker).</summary>
@@ -188,7 +208,10 @@ public sealed class PresetItemViewModel(PresetInfo info, string culture)
 /// parameter is a text box (a bare date is midnight) - a <c>duration</c> is an amount plus a unit, seeded
 /// from the file default. The label is the parameter id as a technical name (like the format labels) - the
 /// preset schema carries no localized label. Editing raises PropertyChanged so the parent re-resolves.</summary>
-public sealed record VariantOption(string Token, string LabelKey);
+public sealed record VariantOption(string Token, string LabelKey)
+{
+    public string DisplayText => TranslationKeyConverter.Resolve(LabelKey);
+}
 
 public sealed class ParamInputViewModel : ObservableObject
 {
@@ -321,6 +344,7 @@ public sealed class CalculatorViewModel : ObservableObject
     private readonly CalcClient _client;
     private readonly string? _presetsDir;
     private IReadOnlyList<PresetItemViewModel> _allPresets = [];
+    private PresetItemViewModel? _selectedPreset;
     private string _presetFilter = string.Empty;
     private bool _unpacking;
     private bool _hasActivePreset;
@@ -461,6 +485,23 @@ public sealed class CalculatorViewModel : ObservableObject
 
     /// <summary>The calculator presets, filtered to this module and the current text filter (7.3).</summary>
     public ObservableCollection<PresetItemViewModel> Presets { get; } = [];
+
+    /// <summary>The preset chosen in the list. Setting it to a real item fills the builder from that preset
+    /// (fill-on-select), which is now the only way a preset reaches the builder, so the list reads like the
+    /// scenario list in the setup phase (GUI rule 2). A null - the list deselecting when the filter hides the
+    /// chosen row - does not clear the builder, the same way the scenario list leaves its fill in place.
+    /// Filling while unpacking is exempt from the by-hand-edit clear, so this does not fight itself.</summary>
+    public PresetItemViewModel? SelectedPreset
+    {
+        get => _selectedPreset;
+        set
+        {
+            if (Set(ref _selectedPreset, value) && value is not null)
+            {
+                ApplyPreset(value.Info);
+            }
+        }
+    }
 
     /// <summary>Whether a preset is currently the source of the builder (its name and framing show, and it
     /// clears the moment a field is edited by hand).</summary>
@@ -1055,6 +1096,15 @@ public sealed class CalculatorViewModel : ObservableObject
         ActivePresetExplains = string.Empty;
         _activePreset = null;
         ClearParamInputsOnly();
+
+        // The list must stop showing a row as the source of a builder that is no longer it. A highlighted row
+        // already equal to the selection cannot be re-chosen (the setter sees the same reference and does
+        // nothing), so without this the reader has no way back to the preset they just edited away from.
+        if (_selectedPreset is not null)
+        {
+            _selectedPreset = null;
+            RaisePropertyChanged(nameof(SelectedPreset));
+        }
     }
 
     /// <summary>Build the calc arguments for the current builder state (pure - unit-tested). Each step

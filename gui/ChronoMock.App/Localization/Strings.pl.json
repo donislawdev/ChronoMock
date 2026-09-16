@@ -14,6 +14,10 @@
   // Clock roles.
   "clock.fake": "Zegar fałszywy",
   "clock.real": "Zegar rzeczywisty",
+  // 🔴 How much time PASSED on that clock, which is the multiplier as a fact rather than a number to
+  // trust. A label, because a bare duration beside a wall reading is two numbers and no way to tell
+  // them apart.
+  "clock.elapsed": "upłynęło",
 
   // Target selection (chrono-mock 7.1). The dialog strings are keyed too (rule 15).
   "target.label": "Cel:",
@@ -24,10 +28,153 @@
 
   // Scenarios (chrono-mock 7.1 pt 2): named moments from the shared preset catalogue. The scenario NAMES and their "what this date tests" lines come from the catalogue files (data locales), not from here.
   "scenario.label": "Scenariusz",
-  "scenario.needs_parameters": "kolejne scenariusze wymagają parametrów - zbuduj taki w kalkulatorze, potem użyj „Use in substitution”.",
+  "scenario.needs_parameters": "kolejne scenariusze wymagają parametrów - zbuduj taki w kalkulatorze, potem użyj „Użyj tej daty”.",
   "scenario.failed": "Nie udało się policzyć daty dla tego scenariusza.",
   "scenario.unsupported": "Plik presetu tego scenariusza ma kształt, którego ta wersja nie czyta.",
   "scenario.engine_missing": "Nie udało się uruchomić silnika kalkulatora, więc scenariuszy nie da się policzyć.",
+
+  // The list is searched rather than scanned, because the catalogue is meant to grow. Nothing matched and
+  // nothing installed are opposite problems, so they get different sentences - and the first one says what
+  // to do about it, never only that something is wrong.
+  "scenario.filter_placeholder": "Szukaj scenariuszy",
+  "scenario.no_matches": "Żaden scenariusz nie pasuje. Wyczyść pole, żeby zobaczyć wszystkie.",
+  "scenario.clear_filter": "Wyczyść wyszukiwanie",
+
+  // The rebuilt setup screen: one thing always visible and the rest folded away behind a header that keeps
+  // saying what is set inside it. The chips are deliberately short - they sit in a section header beside a
+  // speed, where a full sentence would push the speed off the end.
+  // 🔴 One line saying what the screen does and what it will not do, because somebody opening this for
+  // the first time has no way of knowing either. The second half is the product's whole promise
+  // (untouchable rule 1) and the question a stranger actually has: is this going to change my computer.
+  "setup.intro": "Uruchamia aplikację tak, jakby był inny moment w czasie. Zegar systemowy pozostaje nietknięty.",
+
+  // "Moment" is our word, not the reader's.
+  "setup.section_moment": "Data i godzina",
+  "setup.section_speed": "Tempo i opcje",
+  // 🔴 The catalogue is its own group now, and folded. Measured at the window's real height: the moment
+  // section was 603 px of a 671 px viewport because the catalogue lived inside it, so the two groups
+  // under it were not merely below the fold - they were invisible on a first run, which is the fault this
+  // rework exists to remove, in a new shape.
+  "setup.section_scenario": "Scenariusze",
+  // A label and a value, so the count is grammatical whatever it is. "16 ready-made dates" reads well
+  // and "1 ready-made dates" does not, and a summary is not the place to start pluralising in two
+  // languages.
+  "setup.scenario_available": "gotowych dat:",
+  "setup.needs_target": "Wybierz aplikację, zanim wystartujesz.",
+  // 🔴 The other two refusals, which the footer had no words for. It said why Start was disabled only
+  // when no application had been chosen - so a picked application plus an unreadable date left a dead
+  // button with no account of itself, and at the window's floor the field's own message is off-screen.
+  // These point at the field rather than repeating its message: the field says WHAT is wrong, this says
+  // where to go and that it is what is holding Start.
+  "setup.needs_moment": "Popraw datę i godzinę powyżej, zanim wystartujesz.",
+  // 🔴 The session phase's own keys, in its own namespace, for the same reason the setup phase has its:
+  // every key shared with the shipped panel moves that panel's pixels, and these go with the old screen
+  // when the product adopts the parts library.
+  // 🔴 The question, not our word for asking it. "Audit" is the mechanism's name for this block and
+  // the reader has one question it answers - the same reason the four headers inside it stopped
+  // saying "covered channel".
+  "session.section_audit": "Co aplikacja odczytała",
+  "session.label_jump": "Skok",
+  "session.jump_note": "Zegar trwania nigdy nie cofa się, także przy skoku wstecz.",
+  "session.label_jump_to": "Skok do",
+  "session.action_jump_to": "Skocz",
+  "session.rate_placeholder": "dowolne tempo",
+  // 🔴 Application, not Running. The line outlives the run - the same screen shows a session that has
+  // ended - and "Running:" stood above "Session ended" there.
+  "session.application_label": "Aplikacja:",
+  "session.stop_note": "Zatrzymanie przywraca aplikacji prawdziwy zegar. Nie zamyka jej.",
+  // Without "audit" and "core", the two mechanism words this screen stopped using everywhere else.
+  "session.audit_pending": "Zegary, które odczytuje ta aplikacja, pojawią się tutaj, gdy narzędzie to sprawdzi.",
+  // When the session is over and no report came, the sentence above would be a promise nobody keeps.
+  "session.audit_never_arrived": "Sesja skończyła się, zanim narzędzie zdążyło sprawdzić, które zegary odczytuje ta aplikacja.",
+  // And when there was no session at all - a start that failed before the first heartbeat. The sentence
+  // above says "the session ended", which is false of a session that never began.
+  "session.audit_never_started": "Aplikacja nigdy nie wystartowała pod fałszywym zegarem, więc nie było czego sprawdzać.",
+  // A label and a number, for the reason setup.scenario_available gives: "1 warnings" was on this header.
+  "session.chip_covered": "fałszywy zegar:",
+  "session.chip_uncovered": "prawdziwy zegar:",
+  "session.chip_unobserved": "nie dało się obserwować:",
+  "session.chip_warnings": "ostrzeżenia:",
+  "setup.already_running": "Sesja już działa.",
+  "setup.chip_duration": "trwanie skalowane",
+  "setup.chip_qpc": "QPC skalowane",
+  "setup.chip_force": "start wymuszony",
+  // The launch fields moved into this section, so its folded header says they are set without printing
+  // values that have no length limit.
+  "setup.chip_args": "argumenty ustawione",
+  "setup.chip_cwd": "folder ustawiony",
+  // The contract sentence above Start names the CLOCK - the instant and the rate. The options are how the
+  // rate is delivered rather than what the application sees, so they stay in the section header and the
+  // sentence does not repeat them.
+  // 🔴 A label, not a preposition. "running at ×60" reads well and "running at Flowing" does not, and the
+  // mode list holds both kinds of value - a rate and a manner. A label and a value is grammatical
+  // whatever the list is asked to hold next.
+  "setup.contract_speed": "tempo:",
+
+  // 🔴 The form labels again, without their trailing colons. A colon separates a label from a value on
+  // one line; in a label column the alignment already does that, and the colons only made a ragged right
+  // edge down the column. They are new keys rather than edits to the shipped ones because the old panel
+  // still binds those, and the rework measures itself on its renders not moving. The pair goes when the
+  // old panel does.
+  // 🔴 "Application", not "Target". The screen already said "application" in three places - the drop
+  // hint, the Choose tooltip and the sentence above Start - and "Target" in exactly one, so this removes
+  // an inconsistency rather than inventing a vocabulary. Target stays the word in the CLI, the docs and
+  // the wire, where it names an argument rather than addressing a person seeing the tool for the first
+  // time.
+  "setup.label_target": "Aplikacja",
+  // "At" never said at WHAT. This one says the fake clock STARTS here, which is the fact a first run
+  // needs and the reason the multiplier below makes sense.
+  "setup.label_at": "Start od",
+  "setup.label_zone": "Strefa czasowa",
+  // Short on purpose. A shared label column is as wide as its longest entry, so "Relative to now" pushed
+  // At and Zone a third of the way across the card away from their own fields. The controls beside it say
+  // the rest: "From now  + 1 days [Set]".
+  "setup.label_shift": "Od teraz",
+  "setup.label_mode": "Tempo",
+  "setup.label_args": "Argumenty",
+  "setup.label_cwd": "Katalog roboczy",
+
+  // 🔴 The three options, said in words rather than in ours. The shipped panel labels them "Scale
+  // duration too", "Scale QPC too" and "Run even if it does not work" - the first two are our vocabulary
+  // and an acronym only a Windows developer knows, and the third never says what "it" is. Every one of
+  // these sentences was already written correctly, in the tooltip nobody reads first.
+  "setup.opt_duration": "Przyspiesz też liczniki i odliczanie wewnątrz aplikacji",
+  "setup.opt_qpc": "Przyspiesz też zegary wysokiej rozdzielczości (Stopwatch, nanoTime, monotonic)",
+  "setup.opt_force": "Uruchom nawet wtedy, gdy podmiana zegara okaże się nieskuteczna",
+
+  // Fits after a number, like the shipped one. It names the button to press rather than quoting it in
+  // passing, because a reader who has never opened the calculator cannot tell a quotation from a label.
+  "setup.scenario_parametric": "kolejnych wymaga wartości, którą wybierasz. Zbuduj taki w kalkulatorze, potem naciśnij tam „Użyj tej daty”.",
+
+  // The shipped tooltip says the ready-made moments are in the list ABOVE, which stopped being true when
+  // the field moved to the top of its section. Same text, one word honest again, and shorter.
+  "setup.tip_shift": "Wypełnia datę powyżej momentem „teraz” przesuniętym o tyle - w wierszu poleceń to --at +30d. Miesiące, kwartały i lata trafiają w datę kalendarzową, nie w stałą liczbę godzin. Jedno przesunięcie i nic więcej: dni robocze są nieobecne, bo sesja nie nosi kalendarza świąt, a gotowe momenty w rodzaju końca miesiąca stoją na liście niżej.",
+
+  // The two ways of filling the moment, both of them shortcuts to the field above rather than settings of
+  // their own. Said out loud, because a list that just sits there does not explain what choosing from it
+  // will do.
+  // 🔴 It TEACHES the word rather than avoiding it. Calling this a "ready-made date" here while the box
+  // under it says "Search scenarios" gave one thing two names on one screen, which is worse for a first
+  // run than one unfamiliar word explained in the same breath. Scenario is the product's word, in the
+  // calculator and on the site, so the reader meets it once and knows it everywhere.
+  "setup.or_pick_scenario": "Albo wybierz scenariusz - gotową datę, która wypełni pola powyżej. Wybór niczego nie uruchamia.",
+
+  // The two options that can cost something. The tooltip carries the full story; these carry the part a
+  // reader has to weigh BEFORE ticking, where the decision is made rather than a hover away from it.
+  "setup.opt_qpc_note": "Animacja i wideo wewnątrz aplikacji mogą wyglądać źle.",
+  "setup.opt_force_note": "Sesja jest wtedy wszędzie oznaczona jako niewiarygodna.",
+
+  // Both of these say "target" in the shipped panel, which is the word this screen stopped using.
+  "setup.tip_recent": "Aplikacje uruchamiane wcześniej. „Wybierz…” wskazuje taką, której ta maszyna jeszcze nie uruchamiała.",
+  "setup.tip_start": "Uruchamia aplikację pod podmienionym zegarem. Wymaga aplikacji i poprawnej daty.",
+
+  // Shown only while the date field still holds the one this build ships with. A pre-filled date in 2038
+  // looks arbitrary to a first reader, and an unexplained value is a value nobody trusts.
+  "setup.default_moment_note": "Granica czasu 32-bitowego - częsty pierwszy test. Zmień ją albo wybierz scenariusz niżej.",
+
+  // "Set" reads as already set, which is exactly what this row is not: it holds numbers nobody has
+  // applied yet. The button says what pressing it does.
+  "setup.action_fill": "Wypełnij datę",
 
   // Marks a recent target whose file is gone (a wiped build output, an uninstalled app). Shown rather than the entry being dropped, so the list never goes quiet about why a shortcut will not work (rule 6).
   "target.missing": "(brak pliku)",
@@ -35,7 +182,7 @@
   // Shown only while no target is chosen: dropping a file on the window is not discoverable on its own, and once there is a target the hint would be noise on every later run (chrono-mock 7.1 pt 1).
   "target.drop_hint": "…albo przeciągnij aplikację na to okno",
   "target.drop_rejected_title": "Ten plik nie może być celem",
-  "target.drop_rejected": "Uruchomić można tylko pliki .exe - tego wymaga i hook, i wykrywanie Chromium.",
+  "target.drop_rejected": "Uruchomić można tylko pliki .exe - do skrótu ani skryptu nie da się podłączyć zegara.",
 
   // Arguments and working folder (chrono-mock 7.1 pt 1). Collapsed by default: most sessions need neither. The wire and the mechanism have carried both since the protocol was written; only the surfaces did not offer them.
   "launch.header": "Argumenty i katalog roboczy",
@@ -76,8 +223,18 @@
   "zone.us_mountain": "USA górski",
   "zone.us_pacific": "USA pacyficzny",
   "mode.label": "Tryb:",
-  "mode.flow": "Płynący",
+  // 🔴 THE RATE, NOT A WORD FOR IT. This said the Polish word for "flowing", which named the mechanism rather than answering
+  // "how fast" - and it sat in a list whose other four entries answer that question in one glyph. A
+  // reader met it with no way to tell whether it was faster or slower than ×10. The key still names the
+  // MODE, because that is its identity, and the wire value "flow" is untouched.
+  //
+  // Written ×1 rather than 1x to match the four beside it. A list mixing both notations would be a new
+  // inconsistency traded for the one being removed.
+  "mode.flow": "×1",
   "mode.frozen": "Zamrożony",
+  // The same rate as mode.flow and deliberately the same text: this one is the in-session button that
+  // sets the multiplier to 1, that one is the mode list's entry for starting at real speed. Two keys
+  // because they are two controls in two phases, one reading because it is one rate.
   "mode.x1": "×1",
   "mode.x10": "×10",
   "mode.x60": "×60",
@@ -106,23 +263,23 @@
 
   // Session status. Meaning is carried by this label, never by colour alone.
   "status.idle": "Nie uruchomiono",
-  "status.connecting": "Uruchamianie rdzenia",
+  "status.connecting": "Uruchamianie sesji",
   "status.running": "Działa",
   "status.ended": "Sesja zakończona",
-  "status.did_not_take_effect": "Nie zadziałało - cel zniknął",
-  "status.core_stopped": "Rdzeń zatrzymany - czas celu zamrożony",
-  "status.stopping": "Zatrzymywanie - cel wraca do czasu realnego",
-  "status.refused": "Odmowa - podmiana nie zadziałała, więc cel został zatrzymany",
-  "status.stopped": "Sesja zatrzymana - cel wrócił do realnego czasu",
-  "status.core_unresponsive": "Rdzeń nie odpowiada - zatrzymany, cel wrócił do realnego czasu",
-  "status.core_missing": "Nie udało się uruchomić rdzenia Chrono Mock - instalacja może być niekompletna",
+  "status.did_not_take_effect": "Nie zadziałało - aplikacja zniknęła",
+  "status.core_stopped": "Zatrzymano - zegar aplikacji zamrożony",
+  "status.stopping": "Zatrzymywanie - aplikacja wraca do realnego zegara",
+  "status.refused": "Odmowa - podmiana nie zadziałała, więc aplikacja została zatrzymana",
+  "status.stopped": "Sesja zatrzymana - aplikacja wróciła do realnego zegara",
+  "status.core_unresponsive": "Chrono Mock przestał odpowiadać - aplikacja wróciła do realnego zegara",
+  "status.core_missing": "Nie udało się uruchomić Chrono Mock - instalacja może być niekompletna",
   "status.target_unsupported": "To nie jest wspierany plik wykonywalny - wybierz aplikację .exe",
-  "status.target_unreadable": "Nie udało się odczytać celu - mógł zostać przeniesiony albo jest niedostępny",
-  "status.no_ready": "Brak uzgodnienia z rdzeniem",
+  "status.target_unreadable": "Nie udało się odczytać aplikacji - mogła zostać przeniesiona albo jest niedostępna",
+  "status.no_ready": "Chrono Mock nie uruchomił się poprawnie",
   "status.error": "Błąd sesji",
 
   // Core failure reasons (RELEASE-001). When a start/fatal error ends a session, its specific reason becomes the status headline, so a failed start never reads as "Session ended". Phrased as failure statements because they ARE the status line. Emitted by the core (crates/cli, crates/mech).
-  "core.hook_dll_missing": "Brak haka czasu - aplikacja nie została uruchomiona z fałszywym zegarem (zainstaluj Chrono Mock ponownie).",
+  "core.hook_dll_missing": "Brakuje części Chrono Mocka, więc aplikacja nie została uruchomiona z fałszywym zegarem (zainstaluj Chrono Mock ponownie).",
   "protocol.version_mismatch": "Aplikacja i rdzeń mówią różnymi wersjami protokołu - zainstaluj Chrono Mock ponownie, żeby oba pochodziły z tej samej kompilacji.",
   "time.bad_mode": "Nieobsługiwany tryb czasu - sesja nie wystartowała.",
   // Rejected rather than applied: past the bound the fake clock leaves the representable date range
@@ -130,18 +287,25 @@
   // continuously backward - which the time model has as a jump, never as a speed.
   "time.bad_multiplier": "Prędkość poza zakresem - musi mieścić się między 0 (zamrożenie) a 1,000,000. Sesja nie wystartowała.",
   "moment.invalid": "Nieprawidłowy moment (luka czasu letniego, 29 lutego w roku nieprzestępnym albo poza zakresem) - sesja nie wystartowała.",
+  // 🔴 THE SAME TWO REASONS, FOR A COMMAND REJECTED MID-SESSION. The core sends one key whether a bad
+  // moment arrives with the start command or with a jump, so the panel printed "the session did not
+  // start" under a status line reading "Running" - a screen contradicting itself. These say what actually
+  // did not happen. Which one is used is decided by the surface, not by the core (SessionViewModel.
+  // InFlightKey), because only the surface knows which command the error answered.
+  "moment.invalid_in_flight": "Nieprawidłowy moment (luka czasu letniego, 29 lutego w roku nieprzestępnym albo poza zakresem) - zegar nie drgnął.",
+  "time.bad_multiplier_in_flight": "Prędkość poza zakresem - musi mieścić się między 0 (zamrożenie) a 1,000,000. Tempo się nie zmieniło.",
   "moment.needs_calendar": "Ten skok liczy dni robocze, a trwająca sesja nie ma kalendarza - skocz do konkretnej daty albo policz ją najpierw w kalkulatorze.",
   "moment.unsupported_kind": "Rdzeń nie rozpoznał tego rodzaju celu skoku.",
-  "session.control_failed": "Nie udało się utworzyć kanału sterowania sesji - podmiana nie zadziałała.",
+  "session.control_failed": "Nie udało się ustawić łącza, którym steruje się sesją - podmiana nie zadziałała.",
   "target.launch_failed": "Nie udało się uruchomić celu - podmiana nie zadziałała.",
   // Checked in the core before either mechanism starts. Without it the failure arrives as target.launch_failed, which blames the application for a folder that is simply not there.
   "target.cwd_missing": "Katalog roboczy nie istnieje - sesja nie wystartowała. Wskaż istniejący katalog albo zostaw pole puste, żeby aplikacja wystartowała tam, gdzie normalnie.",
-  "target.inject_failed": "Nie udało się wstrzyknąć haka czasu - podmiana nie zadziałała (mógł ją zablokować antywirus albo utwardzony cel).",
+  "target.inject_failed": "Nie udało się podłączyć fałszywego zegara do tej aplikacji - podmiana nie zadziałała (mógł ją zablokować antywirus albo utwardzona aplikacja).",
   "target.attach_failed": "Nie udało się podłączyć do aplikacji Chromium/Electron - podmiana nie zadziałała.",
   // R2-S1. The GUI normally catches this itself (HandshakeGate, from the target's PE), so this is the
   // core's own second line of defence - reachable for a target whose real bitness differs from what its
   // file header declares, such as a .NET AnyCPU executable.
-  "target.bitness_mismatch": "Cel działa w innej bitowości niż ten rdzeń - hak czasu nie przechodzi przez granicę bitowości.",
+  "target.bitness_mismatch": "Bitowość tej aplikacji nie zgadza się z bitowością tego rdzenia - fałszywy zegar nie przechodzi między 32 a 64 bitami.",
   "session.already_active": "Inna sesja Chrono Mock już działa - tylko jedna naraz.",
   "protocol.no_command": "Rdzeń nie otrzymał komendy - sesja nie wystartowała.",
   "protocol.bad_command": "Rdzeń otrzymał błędną komendę - sesja nie wystartowała.",
@@ -165,48 +329,62 @@
   "verdict.unknown": "Nieznany",
 
   // One-sentence "what this means for the test" for a non-works verdict.
-  "verdict.partial.meaning": "Część kanałów czasu nie została objęta - ich odczyty są prawdziwe, więc test może być niewiarygodny.",
-  "verdict.fails.meaning": "Podmiana nie objęła kluczowych kanałów - sesja odrzucona jako niewiarygodna.",
+  "verdict.partial.meaning": "Część czasu aplikacja odczytała z prawdziwego zegara, więc test może być niewiarygodny.",
+  "verdict.fails.meaning": "Aplikacja czytała prawdziwy zegar tam, gdzie to istotne, więc sesja została odrzucona jako niewiarygodna.",
   "verdict.undetermined.meaning": "Nie dało się ustalić pokrycia - traktowane jako niepotwierdzone, nigdy jako działające.",
 
   // Verdict reason keys the core sends over the wire (VerdictEvent / SessionVerdict reason_key), shown under a non-works verdict. The family variants (session.family_*) mirror the per-process ones and are emitted for the family aggregate at end. Wording mirrors the CLI report (describe_reason). RELEASE-002.
-  "coverage.time_channels_covered": "Każdy proces, który odczytał czas, widział zegar sesji.",
-  "coverage.time_channels_partial": "Część kanałów czasu objęto, część odpytano ale nie objęto.",
-  "coverage.time_channels_uncovered": "Czas był odpytywany, ale nie objęto żadnego kanału.",
-  "coverage.undetermined": "Żaden proces nie odczytał objętego kanału czasu.",
-  "session.family_covered": "Każdy proces, który odczytał czas, widział zegar sesji.",
-  "session.family_partial": "Część kanałów czasu objęto, część odpytano ale nie objęto.",
-  "session.family_uncovered": "Czas był odpytywany, ale nie objęto żadnego kanału.",
-  "session.family_undetermined": "Żaden proces nie odczytał objętego kanału czasu.",
+  "coverage.time_channels_covered": "Każdy proces, który odczytał czas, widział fałszywy zegar.",
+  "coverage.time_channels_partial": "Część odczytów czasu pochodziła z fałszywego zegara, część z prawdziwego.",
+  "coverage.time_channels_uncovered": "Aplikacja pytała o czas i zawsze dostawała prawdziwy zegar.",
+  "coverage.undetermined": "Nic nie odczytało fałszywego zegara, więc nie ma czego oceniać.",
+  "session.family_covered": "Każdy proces, który odczytał czas, widział fałszywy zegar.",
+  "session.family_partial": "Część odczytów czasu pochodziła z fałszywego zegara, część z prawdziwego.",
+  "session.family_uncovered": "Aplikacja pytała o czas i zawsze dostawała prawdziwy zegar.",
+  "session.family_undetermined": "Nic nie odczytało fałszywego zegara, więc nie ma czego oceniać.",
 
   // Coverage / audit preview (chrono-mock 7.2). Channel names are raw API identifiers, not translated.
-  "coverage.covered": "Objęte kanały",
-  "coverage.observed": "Obserwowane (podpięte, pozostawione realne)",
-  "coverage.uncovered": "Nieobjęte kanały",
-  // Not the same thing as uncovered, and the wording has to keep them apart: an uncovered channel is
-  // time the target asked for and did not get, this one is a watch we promised and did not start.
-  "coverage.unobserved": "Mieliśmy obserwować, nie udało się podpiąć",
+  //
+  // 🔴 WHICH CLOCK THE APPLICATION READ, in those words. These four headers were written in the
+  // mechanism's vocabulary - "covered", "channel", "hooked" - and the last two carried it in a
+  // parenthesis, which is where jargon goes when nobody can think of the plain word. A reader of this
+  // audit has one question, and untouchable rule 4 makes answering it honestly the product's promise:
+  // did the application see the fake clock or the real one. The rows underneath are the API names, so
+  // the header does not have to name the unit as well.
+  "coverage.covered": "Czytane z fałszywego zegara",
+  "coverage.uncovered": "Czytane z prawdziwego zegara",
+  // Read from the real clock too, and the difference is INTENT - QPC-based timing is left alone on
+  // purpose (ADR-2), and the reader has to be able to tell "we chose this" from "we missed it".
+  "coverage.observed": "Świadomie zostawione na prawdziwym zegarze",
+  // Not the same thing as either, and the wording has to keep them apart: the two above are time the
+  // application asked for, this one is a watch we promised and never started.
+  "coverage.unobserved": "Nie dało się obserwować",
+  // Every row here is also in one of the lists above with its count. This names which of those counts are
+  // floors - which the late-hook warning needs, and could not say on its own.
+  "coverage.installed_late": "Pod fałszywy zegar trafiły później",
   "coverage.warnings": "Ostrzeżenia",
-  "coverage.family_note": "Sesja rodziny - liczniki wywołań z procesu rodzica, ostrzeżenia i nieobjęte kanały ze wszystkich procesów.",
-  "coverage.contexts_note": "Sesja Chromium - pokazano każdy kontekst JS (stronę i workery), nigdy sumowane.",
+  "coverage.reads": "{0} - odczytano {1} razy",
+  "coverage.reads_one": "{0} - odczytano raz",
+  "coverage.family_note": "Uruchomiło się kilka procesów - liczniki wywołań są z pierwszego, a ostrzeżenia i wszystko czytane z prawdziwego zegara dotyczą wszystkich.",
+  "coverage.contexts_note": "Aplikacja Chromium - każdy kontekst JS jest wypisany osobno (strona i jej workery), nigdy sumowane.",
 
   // Coverage warning keys the core raises (CoverageEvent warning_keys), and the vanish reason (VanishedEvent reason_key, shown inside report.vanish_detail). Wording mirrors the CLI report (describe_warning). The Chromium (CDP) warnings live in the section below. RELEASE-002.
-  "source.network_at_start": "Cel otworzył połączenie sieciowe - może czytać czas z serwera, którego żaden lokalny hak nie obejmie.",
-  "wait.object_waits_not_scaled": "Oczekiwania na obiekty są podpięte, ale pozostawione realne - limit czasu I/O lub sprzętu nie jest skracany.",
+  "source.network_at_start": "Aplikacja otworzyła połączenie sieciowe - może czytać czas z serwera, na który żaden lokalny zegar nie ma wpływu.",
+  "wait.object_waits_not_scaled": "Oczekiwania na obiekty systemowe są świadomie zostawione na prawdziwym zegarze - limit czasu I/O albo sprzętu nie jest skracany.",
   "wait.timeout_collapsed": "Część oczekiwań tej aplikacji była za krótka, żeby podzielić je przez pełny mnożnik, więc przebiegły w najkrótszym kroku, jakiego to narzędzie używa (1 ms). Ta część aplikacji nie przyspieszyła - mniejsza prędkość sprawi, że będzie dokładnie.",
   "timer.multimedia_not_scaled": "Timer multimedialny (timeSetEvent) jest obserwowany, ale nie skalowany.",
   "clock.timegettime_scaled_audio_may_shift": "Zegar winmm timeGetTime jest skalowany razem z resztą osi trwania, więc cel odmierzający z niego własne tempo podąża za sesją - ale aplikacja multimedialna pozycjonująca dźwięk z tego zegara może dryfować.",
-  "coverage.channel_installed_late": "Kanał czasu został podpięty dopiero po załadowaniu jego modułu, więc wywołania sprzed tego momentu nie zostały policzone - a jeśli kanał jest skalowany, jego zegar wykonał jednorazowy skok w chwili dołączenia do sesji.",
-  "inheritance.ntcreateuserprocess_child_maybe_uncovered": "Dziecko utworzone bezpośrednio przez NtCreateUserProcess może nie być objęte.",
+  "coverage.channel_installed_late": "Funkcje z listy „Pod fałszywy zegar trafiły później” zostały podpięte dopiero po załadowaniu swojego modułu, więc wywołań sprzed tego momentu nie ma w ich licznikach - a zegar funkcji skalowanej wykonał przy dołączeniu jednorazowy skok.",
+  "inheritance.ntcreateuserprocess_child_maybe_uncovered": "Proces potomny utworzony niższym wywołaniem systemu mógł działać na prawdziwym zegarze.",
   // R2-S2. Distinct from the NtCreateUserProcess warning above it: there we choose not to inject,
   // here we tried and it did not take, so a process of this family really did run on the real clock.
-  "inheritance.child_not_injected": "Proces potomny nie został objęty i działał na realnym zegarze - zwykle dziecko o innej bitowości. Liczba procesów jest o tyle zaniżona.",
+  "inheritance.child_not_injected": "Procesowi potomnemu nie udało się podać fałszywego zegara i działał na prawdziwym - zwykle dziecko o innej bitowości. Liczba procesów jest o tyle zaniżona.",
   // R2-S9. Session-level, not per-process: it is about processes that never got a coverage slot,
   // so it arrives on session_verdict rather than on any one coverage event.
-  "coverage.pid_registry_full": "Ta sesja uruchomiła więcej procesów, niż audyt potrafi śledzić (256). Część działała bez pokrycia i nie ma jej w liczbie procesów ani na listach kanałów.",
+  "coverage.pid_registry_full": "Ta sesja uruchomiła więcej procesów, niż audyt potrafi śledzić (256). Część działała całkiem bez fałszywego zegara i nie ma jej w liczbie procesów ani na listach powyżej.",
   "time.fake_clock_clamped": "Fałszywy zegar doszedł do ostatniej daty, jaką ta wersja potrafi wyrazić (rok 30828), i stanął tam do końca sesji. Późniejsze odczyty nie są momentami, które dałaby wybrana prędkość.",
   "time.duration_axis_clamped": "Liczniki monotoniczne (licznik tyknięć, nieobciążony czas przerwań oraz QPC, gdy skalowany) doszły do końca swojego zakresu i stanęły, więc czas, jaki upłynął wewnątrz aplikacji, przestał rosnąć, mimo że sesja trwała dalej. Mniejsza prędkość albo krótsza sesja tego unika.",
-  "target.single_instance_suspected": "zakończył się zaraz po injekcji, zanim podmianę dało się potwierdzić",
+  "target.single_instance_suspected": "zakończył się zaraz po uruchomieniu, zanim podmianę dało się potwierdzić",
 
   // Runtime detected statically from the target's files (B1): its monotonic/elapsed clocks stand on QueryPerformanceCounter, which stays real (ADR-2), so a timer built on them does not scale even though the wall clock does. Wording mirrors the CLI describe_warning.
   "runtime.python_monotonic_qpc": "Ta aplikacja Python mierzy czas przez perf_counter i monotonic - oba używają QueryPerformanceCounter w Pythonie 3.13+, który zostaje realny, więc licznik na nich oparty nie skaluje (time.time i zegar ścienny tak).",
@@ -268,13 +446,38 @@
   "history.load_mode_missing": "Ta sesja użyła prędkości, której ta wersja już nie oferuje, więc pole prędkości trzyma Twój poprzedni wybór - ustaw je przed startem.",
   "history.load_zone_and_mode_missing": "Ta sesja użyła strefy i prędkości, których ta wersja już nie oferuje, więc oba pola trzymają Twoje poprzednie wybory - ustaw je przed startem.",
 
+  // The result phase, the third of the rebuilt phases: what a finished session says about itself. The headline is the verdict word when there is one - these three stand in for the outcomes that never produced a verdict. Under it the facts the summary carries, then the way on.
+  "result.headline_did_not_take_effect": "Nie zadziałało",
+  "result.headline_did_not_start": "Nie wystartowało",
+  "result.headline_no_verdict": "Brak werdyktu",
+  // The target's own exit code, in the reader's words (the summary keeps report.target_exit). The number follows this prefix.
+  "result.exit_code": "Aplikacja zakończyła się sama, z kodem wyjścia",
+  // Around the milliseconds a vanished application lived: "The application ran for 180 ms and then vanished."
+  "result.lived_before": "Aplikacja działała przez",
+  "result.lived_after": "i zniknęła.",
+  "result.section_facts": "Co widziała aplikacja",
+  "result.fact_started": "Start o",
+  "result.fact_speed": "Tempo",
+  "result.fact_reached": "Fałszywy zegar doszedł do",
+  "result.fact_elapsed_fake": "Minęło na fałszywym zegarze",
+  "result.fact_elapsed_real": "Minęło naprawdę",
+  "result.section_history": "Poprzednie sesje",
+  "result.chip_history": "sesji:",
+  "result.history_ended": "zakończona",
+  "result.history_note": "Wybierz sesję, żeby ustawić ją ponownie. Nic nie startuje, dopóki nie naciśniesz Start.",
+  "result.action_repeat": "Ustaw ponownie",
+  "result.action_forget": "Zapomnij tę sesję",
+  "result.action_clear_history": "Wyczyść historię",
+  "result.action_new_session": "Nowa sesja",
+  "result.new_session_note": "Formularz zachowuje to, co wpisano. Zapis tej sesji zostaje w historii - jeśli potrzebujesz podsumowania, skopiuj je najpierw.",
+
   // Module switch: the two halves of the product (chrono-mock 6.1/7).
   // Dialog answers. The app labels its own buttons, unlike a native message box, whose Yes and No come
   // from Windows in the system language whatever language the interface is in (rule 15).
   "dialog.cancel": "Anuluj",
   "dialog.close": "Zamknij",
 
-  "nav.substitution": "Podmiana",
+  "nav.substitution": "Uruchom aplikację",
   "nav.calculator": "Kalkulator",
 
   // The support link in the title bar. The tooltip names the destination and repeats the offline promise
@@ -310,11 +513,11 @@
   "about.components_unavailable": "Nie udało się zapytać rdzenia, więc nic tu nie jest wypisane - lepsze to niż lista, która mogłaby być niepełna. Plik not wymieniony wyżej niesie tę samą informację.",
 
   // Date calculator (chrono-mock 7.3). Slice G1 is the layout shell; more keys arrive with the wiring.
-  "calc.presets_header": "Presety",
-  "calc.filter_placeholder": "Filtruj scenariusze…",
-  "calc.preset_note": "Preset to punkt startowy - nie certyfikat kompletności testu.",
+  "calc.presets_header": "Scenariusze",
+  "calc.filter_placeholder": "Szukaj scenariuszy",
+  "calc.preset_note": "Scenariusz to punkt startowy - nie certyfikat kompletności testu.",
   "calc.preset_params_header": "Parametry",
-  "calc.preset_needs_params": "Uzupełnij parametry poniżej, aby policzyć ten preset.",
+  "calc.preset_needs_params": "Uzupełnij parametry poniżej, aby policzyć ten scenariusz.",
   "calc.build_header": "Zbuduj moment",
   "calc.start_point": "Punkt startowy",
   "calc.base_zone": "w strefie",
@@ -332,10 +535,11 @@
   "calc.sig_calendar": "Markery weekendu i świąt pochodzą z kalendarza {0}.",
   "calc.all_formats": "Wszystkie formaty - kopiuj jednym klikiem",
   "calc.copy": "Kopiuj",
+  "calc.copied": "Skopiowano",
   "calc.custom_format": "Format własny",
   "calc.custom_format_hint": "np. yyyy-MM-dd HH:mm:ss",
   "calc.metadata": "Metadane",
-  "calc.use_in_substitution": "Użyj w podmianie →",
+  "calc.use_in_substitution": "Użyj tej daty →",
   "calc.reverse_header": "Analiza wklejonej daty",
   "calc.analyze_ambiguous": "Niejednoznaczne - pokazane obie interpretacje",
   "calc.reading.iso": "ISO 8601 (jednoznaczne)",
@@ -378,7 +582,7 @@
   "calc.err.base_overflow": "Punkt startowy w UTC wskazuje moment spoza zakresu, jaki ta wersja potrafi wyrazić.",
   "calc.err.base_not_a_date": "Punkt startowy nie jest prawdziwą datą - sprawdź w nim miesiąc i dzień.",
   "calc.err.analyze_unrecognized": "To nie jest format daty, który analiza rozpoznaje. Czyta ISO (2026-01-31), daty liczbowe z czterocyfrowym rokiem (31.01.2026) oraz samą liczbę jako znacznik czasu uniksowego.",
-  "calc.err.preset_not_for_calculator": "Ten preset opisuje sesję podmiany czasu, a nie datę do policzenia.",
+  "calc.err.preset_not_for_calculator": "Ten scenariusz opisuje sesję uruchomienia aplikacji, a nie datę do policzenia.",
   // Two failures that are not the engine's: its answer arrived and was not usable. Rare, and worth saying
   // plainly rather than showing the reader a blank result they cannot explain.
   "calc.err.no_readings": "Analiza nie zwróciła żadnego odczytu dla tego wejścia.",
@@ -429,7 +633,7 @@
   "calc.fmt.epoch_s": "epoch (s)",
   "calc.fmt.epoch_ms": "epoch (ms)",
   "calc.fmt.filetime": "FILETIME",
-  "calc.fmt.rfc1123": "RFC 1123",
+  "calc.fmt.rfc1123": "RFC 1123 (GMT)",
   "calc.fmt.unknown_tokens": "To nie są tokeny formatu, pokazane jako tekst: {0}. Tekst dosłowny ujmij w apostrofy, jak 'ten'.",
   "calc.clamped_step": "Krok {0}: dzień {1} nie istnieje w tym miesiącu, więc został przycięty do {2}.",
   "calc.out_of_range": "(poza zakresem)",
@@ -453,15 +657,15 @@
   "tip.now": "Wstaw bieżącą datę i godzinę (strefa sesji).",
   "tip.zone": "Strefa czasowa sesji - stały offset bez zmiany czasu. Moment jest w niej liczony.",
   "tip.relative_moment": "Wypełnia moment powyżej czasem teraz, przesuniętym o tę wartość - w wierszu poleceń to --at +30d. Miesiące, kwartały i lata trafiają na datę kalendarzową, nie na stałą liczbę godzin. Ten wiersz robi jedno przesunięcie i nic więcej, dlatego ma mniej opcji niż kalkulator: dni roboczych nie ma, bo sesja nie niesie kalendarza świąt, a gotowe momenty w rodzaju końca miesiąca stoją na liście scenariuszy powyżej.",
-  "tip.mode": "Jak szybko idzie podmieniony zegar: płynnie, zamrożony, albo N razy szybciej.",
+  "tip.mode": "Jak szybko idzie podmieniony zegar: ×1 to zwykłe tempo, zamrożony go zatrzymuje, reszta idzie tyle razy szybciej.",
   "tip.scale_duration": "Przyśpiesz też liczniki, uśpienia i odliczania w aplikacji - nie tylko zegar ścienny.",
   "tip.scale_qpc": "Przyśpiesz też zegary na QPC (Python monotonic, .NET Stopwatch, Java nanoTime). Może zniekształcić aplikację liczącą render z QPC.",
-  "tip.force": "Domyślnie wyłączone. Gdy werdykt otwierający mówi, że podmiana nie zadziałała, cel jest zatrzymywany zamiast oddany do pracy - jego dowód dotyczyłby realnego zegara. Zaznacz, aby mimo to uruchomić; sesja jest wtedy wszędzie oznaczona jako nierzetelna.",
+  "tip.force": "Domyślnie wyłączone. Gdy werdykt otwierający mówi, że podmiana nie zadziałała, cel jest zatrzymywany zamiast oddany do pracy - jego dowód dotyczyłby realnego zegara. Zaznacz, aby mimo to uruchomić - sesja jest wtedy wszędzie oznaczona jako nierzetelna.",
   "tip.start": "Uruchom cel z podmienionym zegarem. Wymaga celu i poprawnego momentu.",
-  "tip.jump_to": "W trakcie sesji: przeskocz podmieniony zegar do momentu po lewej.",
   "tip.freeze": "Zamroź podmieniony zegar, by przestał iść.",
   "tip.set_speed": "Ustaw dowolną prędkość, np. 500.",
   "tip.stop": "Zatrzymaj sesję. Aplikacja wraca do prawdziwego czasu - nie jest zamykana.",
+  "tip.jump_to": "Przesuń fałszywy zegar na tę datę i godzinę, czytaną w strefie sesji.",
   "tip.copy_summary": "Skopiuj gotowe podsumowanie sesji do zgłoszenia.",
   "tip.copy_diagnostics": "Skopiuj diagnostykę rdzenia (jego stderr), by dołączyć do zgłoszenia.",
   "tip.base_kind": "Od czego zaczyna się obliczenie: dziś, teraz, albo konkretna data.",
@@ -470,5 +674,5 @@
   "tip.calc_calendar": "Kalendarz świąt i dni roboczych używany przez kroki dni roboczych i najbliższy.",
   "tip.custom_format": "Sformatuj wynik własną maską (tokeny .NET/Java).",
   "tip.analyze": "Wklej datę, by zobaczyć jak się czyta - obie interpretacje, gdy niejednoznaczna.",
-  "tip.use_in_substitution": "Wyślij ten moment do panelu podmiany. Dostępne tylko, gdy jego strefa jest jedną z oferowanych stref sesji."
+  "tip.use_in_substitution": "Wyślij ten moment do ekranu uruchamiania i wypełnij jego datę. Dostępne tylko, gdy jego strefa jest jedną z oferowanych stref sesji."
 }

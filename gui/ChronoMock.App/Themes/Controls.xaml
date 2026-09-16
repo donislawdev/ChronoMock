@@ -46,42 +46,30 @@
     </Setter>
   </Style>
 
-  <!-- Checkbox: a clear 20px box with an accent fill and a dark tick when checked, on the dark base -
-       replaces the low-contrast wpfui default. Two-state (the app has no tri-state checkbox). The label
-       keeps whatever Foreground/FontSize the usage sets (inherited by the ContentPresenter). -->
-  <Style TargetType="CheckBox">
-    <Setter Property="Foreground" Value="{DynamicResource BrushTextPrimary}" />
-    <Setter Property="Background" Value="{DynamicResource BrushBgSurfaceAlt}" />
-    <Setter Property="BorderBrush" Value="{DynamicResource BrushStroke}" />
+  <!-- The clear affordance inside a search field: the Segoe MDL2 cancel glyph laid over the right end of a
+       field, quiet until there is something to clear. It is the sibling of the calendar toggle above - a
+       small glyph button that lives in a field - and it takes its chrome from the same tokens so the two
+       read as one family. Its visibility and its click belong to the consumer (the SearchBox control). This
+       is only the look. The chevron and the check tick are drawn rather than set in a glyph, but an X is one
+       character the toolkit ships on the TFM floor, and drawing it would add a geometry to keep for nothing. -->
+  <Style x:Key="ClearFieldButton" TargetType="Button">
+    <Setter Property="Foreground" Value="{DynamicResource BrushTextSecondary}" />
     <Setter Property="Cursor" Value="Hand" />
-    <Setter Property="VerticalContentAlignment" Value="Center" />
     <Setter Property="Template">
       <Setter.Value>
-        <ControlTemplate TargetType="CheckBox">
-          <StackPanel Orientation="Horizontal" Background="Transparent">
-            <Border x:Name="Box" Width="20" Height="20" CornerRadius="4"
-                    Background="{TemplateBinding Background}"
-                    BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1"
-                    SnapsToDevicePixels="True">
-              <Path x:Name="Tick" Width="12" Height="12" Stretch="Uniform"
-                    Data="M 3,8 L 6.5,11.5 L 13,4"
-                    Stroke="{DynamicResource BrushBgBase}" StrokeThickness="2"
-                    StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"
-                    Visibility="Collapsed" />
-            </Border>
-            <ContentPresenter Margin="8,0,0,0" VerticalAlignment="Center" RecognizesAccessKey="True" />
-          </StackPanel>
+        <ControlTemplate TargetType="Button">
+          <Border x:Name="Bd" Background="Transparent" BorderBrush="Transparent"
+                  BorderThickness="{StaticResource StrokeThinEdge}" CornerRadius="{StaticResource RadiusSm}"
+                  Padding="{StaticResource SpaceXs}" SnapsToDevicePixels="True">
+            <TextBlock Text="&#xE711;" FontFamily="Segoe MDL2 Assets"
+                       FontSize="{StaticResource FontSizeCaption}"
+                       Foreground="{TemplateBinding Foreground}"
+                       HorizontalAlignment="Center" VerticalAlignment="Center" />
+          </Border>
           <ControlTemplate.Triggers>
-            <Trigger Property="IsChecked" Value="True">
-              <Setter TargetName="Box" Property="Background" Value="{DynamicResource BrushAccent}" />
-              <Setter TargetName="Box" Property="BorderBrush" Value="{DynamicResource BrushAccent}" />
-              <Setter TargetName="Tick" Property="Visibility" Value="Visible" />
-            </Trigger>
             <Trigger Property="IsMouseOver" Value="True">
-              <Setter TargetName="Box" Property="BorderBrush" Value="{DynamicResource BrushAccent}" />
-            </Trigger>
-            <Trigger Property="IsKeyboardFocused" Value="True">
-              <Setter TargetName="Box" Property="BorderBrush" Value="{DynamicResource BrushFocusRing}" />
+              <Setter TargetName="Bd" Property="Background" Value="{DynamicResource BrushBgSurfaceAlt}" />
+              <Setter Property="Foreground" Value="{DynamicResource BrushTextPrimary}" />
             </Trigger>
             <Trigger Property="IsEnabled" Value="False">
               <Setter Property="Opacity" Value="0.5" />
@@ -91,6 +79,9 @@
       </Setter.Value>
     </Setter>
   </Style>
+
+  <!-- The dark CheckBox style lived here - it now lives in Parts.xaml (the implicit CheckBox, merged
+       application-wide), so this file no longer defines one and there is no collision to resolve. -->
 
   <!-- 🔴 THE PRIMARY ACTION, templated because the stock one CANNOT hold a colour. The panel's main
        button carried its accent as a local Background, and the wpfui template repaints a NAMED PART of

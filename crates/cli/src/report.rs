@@ -16,6 +16,7 @@ pub(crate) struct ProcessCoverage {
     pub(crate) observed: Vec<chrono_proto::CoveredChannel>,
     pub(crate) uncovered: Vec<String>,
     pub(crate) unobserved: Vec<String>,
+    pub(crate) installed_late: Vec<String>,
 }
 
 /// The captured outcome of a `chrono run` session, rendered as a human report in the
@@ -45,6 +46,10 @@ pub(crate) struct SessionReport {
     /// `uncovered` because it is not a verdict input: a watch that did not start says nothing about
     /// whether the substitution took effect. It is here because the alternative was no line at all.
     pub(crate) unobserved: Vec<(u32, String)>,
+    /// Channels hooked only once their module loaded, tagged with the pid. Every one is also listed
+    /// above with its count, and this is what says that count is a floor - named, because the warning
+    /// alone said "a time channel" and left the reader to guess which.
+    pub(crate) installed_late: Vec<(u32, String)>,
     /// Channels covered (substituted), tagged with the pid and the call count. Per-pid, never
     /// summed across processes (untouchable rule 4).
     pub(crate) covered: Vec<(u32, String, u64)>,
@@ -187,10 +192,12 @@ pub(crate) fn describe_warning(key: &str) -> String {
         "source.network_at_start" => {
             "the target opened a network connection - it may read time from a server, which no local hook can cover"
         }
-        // Says what it costs the READER, not what happened inside. The channel is covered and listed
-        // like any other, so without this line its call count reads as a total when it is a floor.
+        // Says what it costs the READER, not what happened inside. The channels are covered and listed
+        // like any other, so without this line their call counts read as totals when they are floors.
+        // They are named in their own list above, because a runtime that loads winmm or ws2_32 brings
+        // several at once and the old "a time channel" left the reader to guess which.
         "coverage.channel_installed_late" => {
-            "a time channel was only hooked once its module loaded, so calls made before that are not in the count below - and a scaled channel made a single jump when it joined the session clock"
+            "the channels listed above as hooked only once their module loaded miss the calls made before that, so their counts are floors - and a scaled one made a single jump when it joined the session clock"
         }
         // Says what the port MEANS, not just that there is one. Chromium's debugging port listens on
         // loopback with no authentication, so for as long as the session runs, any other process on
@@ -552,6 +559,13 @@ pub(crate) fn render_report(r: &SessionReport) -> String {
         &r.unobserved,
         unit,
     ));
+    // Named, and above the warning that explains them: each is also listed with its count, and this is
+    // the line that says which of those counts are floors.
+    out.push_str(&render_channel_names(
+        "  channels hooked only once their module loaded (their counts are floors):",
+        &r.installed_late,
+        unit,
+    ));
 
     if !r.warnings.is_empty() {
         out.push_str("  warnings:\n");
@@ -642,6 +656,7 @@ mod tests {
             warnings: vec![],
             uncovered: vec![],
             unobserved: vec![],
+            installed_late: vec![],
             covered: vec![],
             observed: vec![],
             timing: None,
@@ -889,6 +904,28 @@ mod tests {
         );
         assert!(text.contains("WORKS"), "the verdict is untouched by it, got:\n{text}");
         assert!(session_is_reliable(&r), "a failed watch is not an unreliable session");
+    }
+
+    #[test]
+    fn channels_hooked_late_are_named_above_the_warning_that_explains_them() {
+        // What this closes: the warning said "a time channel was only hooked once its module loaded" and
+        // named none, while a runtime that loads winmm or ws2_32 brings several channels at once - so the
+        // reader had every row of the report to guess from. The names come from the core, and the report
+        // prints them under their own heading, before the warning that says what they cost.
+        let r = SessionReport {
+            session_verdict: Some(("works".into(), "session.family_covered".into(), 1)),
+            covered: vec![(7, "timeGetTime".into(), 12)],
+            installed_late: vec![(7, "timeGetTime".into())],
+            warnings: vec!["coverage.channel_installed_late".into()],
+            ..empty_report()
+        };
+
+        let text = render_report(&r);
+        let heading = text.find("hooked only once their module loaded").expect("the heading must be printed");
+        let named = text[heading..].find("timeGetTime").expect("and the channel named under it");
+        let warning = text.find("(coverage.channel_installed_late)").expect("and the warning itself");
+        assert!(heading + named < warning, "the names come before the warning that explains them, got:\n{text}");
+        assert!(text.contains("floors"), "and say what they cost, got:\n{text}");
     }
 
     #[test]

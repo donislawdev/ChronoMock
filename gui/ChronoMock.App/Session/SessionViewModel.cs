@@ -50,14 +50,28 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     private RecentTarget? _selectedTarget;
     private readonly CalcClient? _calcClient;
     private readonly string? _presetsDir;
-    private ScenarioCatalogue _scenarios = ScenarioCatalogue.Empty;
+    private readonly ScenarioPicker _scenarios = new();
     private ScenarioItem? _selectedScenario;
     private string _scenarioExplains = string.Empty;
     private string _scenarioErrorKey = string.Empty;
     private bool _applyingScenario; // guard: filling the moment from a scenario must not clear the selection
+    private bool _momentIsDefault = true;
     /// <summary>The editable moment (a date and optional time in the session zone, rule 2). The shared
     /// MomentInput control binds to it, and MomentParse composes it culture-invariantly (locale-safe).</summary>
     public MomentField Moment { get; } = new();
+    /// <summary>
+    /// The moment to jump the running clock to - a SEPARATE field from the start <see cref="Moment"/>.
+    /// </summary>
+    /// <remarks>
+    /// 🔴 SEPARATE ON PURPOSE, and the re-analysis that split it named three faults in sharing the start
+    /// field. An in-flight jump would rewrite where the session started, and <c>ResetSession</c> keeps the
+    /// form filled, so "New session" would carry the jump target into the next run's Starts-at. The start
+    /// field pre-fills with the start moment while the clock has moved on, so a jump without an edit would
+    /// send the clock backwards to the start. And the start field's setter drives the setup form
+    /// (CanStart, the default-moment note, the scenario selection), none of which a jump has any business
+    /// touching. This field starts empty and drives nothing but its own Jump button.
+    /// </remarks>
+    public MomentField JumpMoment { get; } = new();
     private ZoneOption _selectedZone;
     private ModeOption _selectedMode;
     private bool _scaleDuration;
@@ -71,6 +85,7 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     private bool _stopRequested;
     private string _historyError = string.Empty;
     private string _historyNoteKey = string.Empty;
+    private SessionRecord? _selectedRecord;
     // Snapshot of the start setup, taken at Start, so history and the summary record what was REQUESTED
     // even after the form is changed (rule 4 - the record is the start).
     //
@@ -121,9 +136,22 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
         _calcClient = calcClient;
         _presetsDir = presetsDir;
 
-        // Defaults match the moment/mode the panel shipped with before these inputs existed.
-        _selectedZone = TimeInputs.Zones.First(z => z.BiasMinutes == -120); // UTC+02:00
-        _selectedMode = TimeInputs.Modes.First(m => m.Multiplier == 60);    // x60
+        // 🔴 UTC, changed 2026-09-12, and UTC+02:00 before that. The old default was one market's summer
+        // time and read on a first run as somebody's local clock without saying whose - while the list it
+        // comes from covers Poland and the United States only, so for most of the world nothing in it is
+        // right and an arbitrary default is worse than a neutral one. UTC is deterministic, universally
+        // understood, and does not pretend to be anybody's.
+        //
+        // It also makes the default MOMENT true: 2038-01-19T03:14:07 is the 32-bit boundary in UTC, and at
+        // +02:00 it was two hours past it. The two defaults now agree with each other.
+        _selectedZone = TimeInputs.Zones.First(z => z.BiasMinutes == 0);
+
+        // 🔴 FLOWING, not x60, changed 2026-09-12 on the owner's decision. This tool's promise is that an
+        // application sees a different DATE - running it sixty times faster as well is the second feature,
+        // and defaulting to it meant a first run got an effect it never asked for. It was never hidden:
+        // the sentence above Start has always named the rate. It was simply a surprise, and a surprise on
+        // a first run is a cost paid by everyone once.
+        _selectedMode = TimeInputs.Modes.First(m => m.Mode == "flow");
 
         // The relative line fills the same field the At row edits, and reads the zone at the moment of use,
         // so changing the zone changes what "now plus one day" means without any wiring between the two.
@@ -134,7 +162,17 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
         Moment.Changed += (_, _) =>
         {
             RaisePropertyChanged(nameof(CanStart));
+            RaiseStartRefusalChanged();
             RaiseMomentPreviewChanged();
+
+            // 🔴 The shipped date stops explaining itself the moment it is no longer the shipped date.
+            // Unconditional, unlike the scenario clearing below: a moment filled FROM a scenario is not
+            // the default either, it is that scenario's.
+            if (_momentIsDefault)
+            {
+                _momentIsDefault = false;
+                RaisePropertyChanged(nameof(MomentIsDefault));
+            }
 
             // A hand-edited moment is no longer the scenario's moment, so the selection stops claiming it
             // is (the calculator's active-preset banner clears the same way). Guarded, because filling the
@@ -159,8 +197,14 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
         // must start nothing).
         if (_presetsDir is not null)
         {
-            _scenarios = ScenarioCatalog.Load(_presetsDir);
+            _scenarios.Load(_presetsDir);
         }
+
+        // The panel's actions, lifted off this view model so it holds state and they hold behaviour (GUI
+        // rule 15). Built last, once Relative and the scenario picker exist for the commands to reach. The
+        // window that hosts the phases attaches a shell to these later (SessionCommands.AttachShell) - this
+        // view model never sees it (rule 16).
+        Commands = new SessionCommands(this);
     }
     private bool _verdictKnown;
     private VerdictKind _verdictKind = VerdictKind.Unknown;
@@ -175,10 +219,11 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     /// which is the parent. Later events for it replace its counts - other pids never do (R2-X8).</summary>
     private uint? _parentPid;
     private bool _isCdp;
-    private IReadOnlyList<string> _covered = [];
-    private IReadOnlyList<string> _observed = [];
+    private IReadOnlyList<CoveredChannel> _covered = [];
+    private IReadOnlyList<CoveredChannel> _observed = [];
     private IReadOnlyList<string> _uncovered = [];
     private IReadOnlyList<string> _unobserved = [];
+    private IReadOnlyList<string> _installedLate = [];
     private IReadOnlyList<string> _warnings = [];
 
     private bool _hasTiming;
@@ -199,6 +244,11 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     private string _diagnosticsSavedPath = string.Empty;
     private string _copyFeedbackKey = string.Empty;
 
+    /// <summary>The panel's actions as bindable commands, so the phase views bind <c>Command</c> and carry
+    /// no Click handler of their own (GUI rules 11 and 15). The window-dependent actions (pickers, clipboard,
+    /// confirm, the support link) join them in the next slice through a shell service.</summary>
+    public SessionCommands Commands { get; }
+
     public ClockView Fake { get; } = new("clock.fake");
 
     public ClockView Real { get; } = new("clock.real");
@@ -216,12 +266,65 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
                 RaisePropertyChanged(nameof(IsRunning));
                 RaisePropertyChanged(nameof(CanCopySummary));
                 RaisePropertyChanged(nameof(CanEditTime));
+                RaisePropertyChanged(nameof(ShowsSessionControls));
+                RaisePropertyChanged(nameof(ShowsInFlightError));
+                RaisePropertyChanged(nameof(IsAuditPending));
+                RaisePropertyChanged(nameof(AuditNeverArrived));
+                RaisePropertyChanged(nameof(AuditNeverStarted));
+                RaiseResultChanged();
+                RaisePropertyChanged(nameof(HasVanishReason));
+                RaisePropertyChanged(nameof(ShowsSetupPhase));
+                RaisePropertyChanged(nameof(ShowsSessionPhase));
+                RaisePropertyChanged(nameof(ShowsResultPhase));
             }
         }
     }
 
+    /// <summary>The result phase's headline and what hangs under it follow the status and the verdict alike.</summary>
+    private void RaiseResultChanged()
+    {
+        RaisePropertyChanged(nameof(ResultHeadlineKey));
+        RaisePropertyChanged(nameof(ResultKind));
+        RaisePropertyChanged(nameof(ResultHasReason));
+        RaisePropertyChanged(nameof(ResultHasMeaning));
+        RaisePropertyChanged(nameof(ResultHasEnding));
+        RaisePropertyChanged(nameof(AuditExplainsVerdict));
+        RaisePropertyChanged(nameof(AuditExplainsMeaning));
+        RaisePropertyChanged(nameof(AuditStartsOpen));
+    }
+
     /// <summary>True while the session is live - the in-flight controls bind their visibility to this.</summary>
     public bool IsRunning => _statusKind == SessionStatusKind.Running;
+
+    /// <summary>
+    /// The session phase's controls are still worth showing: the session is live, or on its way in or out.
+    /// </summary>
+    /// <remarks>
+    /// 🔴 NOT <see cref="IsRunning"/>. An ended session kept the whole control card on screen, disabled, with a
+    /// Stop that could stop nothing - nine buttons offered to a reader who could press none of them. They go
+    /// once the session is over. Stopping is not over: the reader has just pressed Stop, and the card stays,
+    /// disabled, until the core confirms, rather than vanishing under the pointer.
+    /// </remarks>
+    public bool ShowsSessionControls => !IsTerminal(_statusKind);
+
+    /// <summary>
+    /// Which of the three phases the window shows. Exactly one is true for any status, and the three are
+    /// defined against each other so a status added later still lands somewhere rather than showing nothing.
+    /// </summary>
+    /// <remarks>
+    /// 🔴 THE PHASE IS THE STATUS, NOT <see cref="IsIdle"/>. A finished session sets <see cref="IsIdle"/>
+    /// true again - the setup form unlocks so the tester can edit and re-run - so a selector reading IsIdle
+    /// would throw the reader back to the setup screen the instant a session ended, losing the verdict the
+    /// session was run to produce. The status stays terminal until a new session starts, which is what the
+    /// result phase is keyed to.
+    /// </remarks>
+    public bool ShowsSetupPhase => _statusKind == SessionStatusKind.Idle;
+
+    /// <summary>See <see cref="ShowsSetupPhase"/> - the result phase owns every terminal status.</summary>
+    public bool ShowsResultPhase => IsTerminal(_statusKind);
+
+    /// <summary>See <see cref="ShowsSetupPhase"/> - a session on its way in, live, or shutting down.</summary>
+    public bool ShowsSessionPhase => !ShowsSetupPhase && !ShowsResultPhase;
 
     /// <summary>True once a session has started (running or finished) - there is then something to copy.
     /// The Copy summary button binds its visibility to this (chrono-mock 7.2, 8.8).</summary>
@@ -231,7 +334,11 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     public string MultiplierText { get => _multiplierText; private set => Set(ref _multiplierText, value); }
 
     /// <summary>The raw failure detail when something went wrong - shown verbatim so a failure is never silent.</summary>
-    public string LastError { get => _lastError; private set => Set(ref _lastError, value); }
+    public string LastError
+    {
+        get => _lastError;
+        private set { if (Set(ref _lastError, value)) { RaisePropertyChanged(nameof(HasLastError)); } }
+    }
 
     /// <summary>Translation key for a per-command in-flight error (e.g. an invalid jump moment), empty when
     /// none. Unlike a fatal error it does NOT end the session - the core rejected one command and kept
@@ -239,15 +346,35 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     public string InFlightErrorKey
     {
         get => _inFlightErrorKey;
-        private set { if (Set(ref _inFlightErrorKey, value)) { RaisePropertyChanged(nameof(HasInFlightError)); } }
+        private set
+        {
+            if (Set(ref _inFlightErrorKey, value))
+            {
+                RaisePropertyChanged(nameof(HasInFlightError));
+                RaisePropertyChanged(nameof(ShowsInFlightError));
+            }
+        }
     }
 
     /// <summary>True when a per-command in-flight error is being shown.</summary>
     public bool HasInFlightError => _inFlightErrorKey.Length > 0;
 
+    /// <summary>The in-flight error, for as long as the session it is about can still act on it.</summary>
+    /// <remarks>A refused command from a session that has since ended explains nothing on the session phase,
+    /// where it would sit under "Session ended" saying the clock did not move. The shipped panel binds
+    /// <see cref="HasInFlightError"/> and keeps its own behaviour.</remarks>
+    public bool ShowsInFlightError => HasInFlightError && !IsTerminal(_statusKind);
+
     /// <summary>Translation key for the copy-summary feedback ("copy.done" / "copy.failed"), empty until a
     /// copy is attempted. A clipboard failure is surfaced, never swallowed (rule 6).</summary>
-    public string CopyFeedbackKey { get => _copyFeedbackKey; private set => Set(ref _copyFeedbackKey, value); }
+    public string CopyFeedbackKey
+    {
+        get => _copyFeedbackKey;
+        private set { if (Set(ref _copyFeedbackKey, value)) { RaisePropertyChanged(nameof(HasCopyFeedback)); } }
+    }
+
+    /// <summary>True while a copy outcome is on show - the line is absent, not blank, until a copy is attempted.</summary>
+    public bool HasCopyFeedback => _copyFeedbackKey.Length > 0;
 
     /// <summary>Record the outcome of a clipboard copy so the panel can confirm it or report a failure.</summary>
     public void NoteCopy(bool ok) => CopyFeedbackKey = ok ? "copy.done" : "copy.failed";
@@ -282,6 +409,18 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     /// <summary>True when the last history load left a field it could not fill.</summary>
     public bool HasHistoryNote => _historyNoteKey.Length > 0;
 
+    /// <summary>The recorded session chosen in the history well, or null. Choosing one does nothing by itself
+    /// (untouchable rule 7) - the actions under the well act on it, and setting it up again fills the form and
+    /// never starts a session.</summary>
+    public SessionRecord? SelectedRecord
+    {
+        get => _selectedRecord;
+        set { if (Set(ref _selectedRecord, value)) { RaisePropertyChanged(nameof(HasSelectedRecord)); } }
+    }
+
+    /// <summary>True while a recorded session is chosen - the actions that need one bind their IsEnabled here.</summary>
+    public bool HasSelectedRecord => _selectedRecord is not null;
+
     /// <summary>Path to the target executable to run, chosen by the user (or a bundled default in dev).</summary>
     public string? TargetPath
     {
@@ -295,6 +434,7 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
                 RaisePropertyChanged(nameof(HasTarget));
                 RaisePropertyChanged(nameof(ShowsDropHint));
                 RaisePropertyChanged(nameof(CanStart));
+                RaiseStartRefusalChanged();
             }
         }
     }
@@ -357,25 +497,21 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     /// </para>
     /// </summary>
     public string MomentPreview
-    {
-        get
-        {
-            if (!Moment.IsValid
-                || !DateTime.TryParseExact(
-                    Moment.Canonical,
-                    "yyyy-MM-dd'T'HH:mm:ss",
-                    CultureInfo.InvariantCulture,
-                    DateTimeStyles.None,
-                    out var moment))
-            {
-                return string.Empty;
-            }
+        => Moment.IsValid ? ClockView.FormatMoment(Moment.Canonical, _selectedZone.Label) : string.Empty;
 
-            return string.Create(
-                LocalizationService.CurrentFormatCulture,
-                $"{moment:dddd, d MMMM yyyy, HH:mm:ss} ({_selectedZone.Label})");
-        }
-    }
+    /// <summary>
+    /// True while the date field still holds the moment this build ships with, and nobody has touched it.
+    /// </summary>
+    /// <remarks>
+    /// 🔴 It exists so the screen can SAY where that date came from. A field pre-filled with a date in
+    /// 2038 looks arbitrary to somebody opening the tool for the first time, and an unexplained value is
+    /// a value nobody trusts. It is the 32-bit time boundary and worth suggesting - it just has to admit
+    /// as much, and only for as long as it is still true.
+    ///
+    /// A bool rather than a type: this class sits near its coupling ceiling, and a bool costs nothing
+    /// there (gui/CodeMetricsConfig.txt).
+    /// </remarks>
+    public bool MomentIsDefault => _momentIsDefault;
 
     /// <summary>Whether the preview line has something to say. False for a moment that does not parse -
     /// the validation message takes that line instead, so the two never appear together and the row
@@ -386,6 +522,8 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     {
         RaisePropertyChanged(nameof(MomentPreview));
         RaisePropertyChanged(nameof(HasMomentPreview));
+        // The started-at fact falls back to the form until a session has captured its snapshot.
+        RaisePropertyChanged(nameof(StartedAtPreview));
     }
 
 
@@ -454,16 +592,83 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     /// Split into the wire's argument list by <see cref="TargetArguments"/>, which mirrors the CLI's own
     /// rule so <c>--args</c> and this field cannot launch the same application two different ways.
     /// Start-only: arguments are fixed once the process exists.</summary>
-    public string TargetArgs { get => _targetArgs; set => Set(ref _targetArgs, value); }
+    public string TargetArgs
+    {
+        get => _targetArgs;
+        set
+        {
+            if (Set(ref _targetArgs, value))
+            {
+                RaisePropertyChanged(nameof(HasTargetArgs));
+            }
+        }
+    }
+
+    /// <summary>Whether anything was typed in the arguments field.</summary>
+    /// <remarks>
+    /// 🔴 It exists because the launch fields now live INSIDE the speed section, and a folded section has
+    /// to say what is set inside it or folding becomes hiding. The header shows a chip rather than the
+    /// text: an argument list is as long as somebody makes it, and a summary that grew with it would push
+    /// the rate and the option chips off the right-hand side. A bool, not a type - this class stands on
+    /// its coupling ceiling (gui/CodeMetricsConfig.txt).
+    /// </remarks>
+    public bool HasTargetArgs => _targetArgs.Length > 0;
 
     /// <summary>Working folder for the target (chrono-mock 7.1 pt 1). Empty means "do not ask for one", and
     /// the target then inherits ours - the behaviour every session had before this field existed. The wire
     /// and the mechanism have carried <c>cwd</c> since the protocol was written - only the two surfaces
     /// never offered it. Start-only.</summary>
-    public string WorkingFolder { get => _workingFolder; set => Set(ref _workingFolder, value); }
+    public string WorkingFolder
+    {
+        get => _workingFolder;
+        set
+        {
+            if (Set(ref _workingFolder, value))
+            {
+                RaisePropertyChanged(nameof(HasWorkingFolder));
+            }
+        }
+    }
+
+    /// <summary>Whether a working folder was named. See <see cref="HasTargetArgs"/> for why it is a chip
+    /// in the folded header rather than the path itself - a path is even longer than an argument list.</summary>
+    public bool HasWorkingFolder => _workingFolder.Length > 0;
 
     /// <summary>True when a session may be started: nothing is running, a target is chosen, moment is valid.</summary>
     public bool CanStart => _idle && HasTarget && Moment.IsValid;
+
+    /// <summary>
+    /// Why Start is refusing, as a translation key, or empty when it is not refusing.
+    /// </summary>
+    /// <remarks>
+    /// 🔴 ONE REASON FOR EVERY REFUSAL, because the screen used to have one for exactly one of the three.
+    /// The sentence above Start was bound to "no application chosen", so with an application picked and an
+    /// unreadable date the footer lost the contract line as well (there is no moment to promise) and
+    /// printed nothing at all: a disabled button with no account of itself, which is the one thing this
+    /// phase is not allowed. At the window's floor the field's own red message is off-screen, so the
+    /// footer was the only place left to say it and it was silent.
+    ///
+    /// Total by construction - every term of <see cref="CanStart"/> has a branch here, in the order the
+    /// reader meets them. A gap would put the hole straight back.
+    ///
+    /// A string rather than a type: this class stands on its coupling ceiling (gui/CodeMetricsConfig.txt).
+    /// </remarks>
+    public string StartRefusalKey =>
+        !_idle ? "setup.already_running"
+        : !HasTarget ? "setup.needs_target"
+        : !Moment.IsValid ? "setup.needs_moment"
+        : string.Empty;
+
+    /// <summary>Whether <see cref="StartRefusalKey"/> has something to say. Exactly the negation of
+    /// <see cref="CanStart"/>, and asserted to be so - the two are read by one footer and must never
+    /// disagree about whether a session can begin.</summary>
+    public bool HasStartRefusal => StartRefusalKey.Length > 0;
+
+    private void RaiseStartRefusalChanged()
+    {
+        RaisePropertyChanged(nameof(StartRefusalKey));
+        RaisePropertyChanged(nameof(HasStartRefusal));
+    }
 
     /// <summary>Choose the target executable to run (from the picker, the recent list, or the dev default).</summary>
     public void SetTarget(string path) => TargetPath = path;
@@ -566,20 +771,15 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
         }
     }
 
-    /// <summary>The scenarios this panel offers (chrono-mock 7.1 pt 2): named moments from the shared
-    /// preset catalogue that fill the date with one click, so a tester never has to type one.</summary>
-    public IReadOnlyList<ScenarioItem> Scenarios => _scenarios.Ready;
-
-    /// <summary>True when the catalogue offered at least one scenario - the list hides itself otherwise
-    /// rather than showing an empty box (a portable install with no presets/ folder).</summary>
-    public bool HasScenarios => _scenarios.Ready.Count > 0;
-
-    /// <summary>How many substitution presets this list does NOT offer because they take parameters. Said
-    /// out loud in the panel rather than hidden (rule 6) - the calculator can build those and hand the
-    /// moment back over the "Use in substitution" bridge.</summary>
-    public int ScenariosNeedingParameters => _scenarios.NeedingParameters;
-
-    public bool HasScenariosNeedingParameters => _scenarios.NeedingParameters > 0;
+    /// <summary>
+    /// The scenario list this session offers, and the text that narrows it (chrono-mock 7.1 pt 2).
+    /// </summary>
+    /// <remarks>
+    /// A type of its own so the filter has somewhere to live: this class stood exactly on its coupling
+    /// ceiling, and the catalogue leaving took more types out than the picker brought in. See
+    /// <see cref="ScenarioPicker"/> for why the SELECTION stayed behind here.
+    /// </remarks>
+    public ScenarioPicker ScenarioPicker => _scenarios;
 
     /// <summary>The chosen scenario. Setting it computes its moment and fills the date - and nothing else:
     /// it never starts a session (untouchable rule 7) and never touches the time mode, which is a separate
@@ -592,6 +792,7 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
             if (Set(ref _selectedScenario, value))
             {
                 RaisePropertyChanged(nameof(HasSelectedScenario));
+                RaisePropertyChanged(nameof(HasNoSelectedScenario));
                 ScenarioExplains = value?.DisplayExplains ?? string.Empty;
                 if (value is not null)
                 {
@@ -602,6 +803,35 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     }
 
     public bool HasSelectedScenario => _selectedScenario is not null;
+
+    /// <summary>
+    /// The other half of <see cref="HasSelectedScenario"/>, for a slot that must never be empty.
+    /// </summary>
+    /// <remarks>
+    /// The folded catalogue's header shows the chosen scenario OR the number on offer, and those two
+    /// TextBlocks share one cell. WPF has no negating converter here and a second one would be a second
+    /// thing to keep in step, so the state says both halves out loud. A bool costs nothing at this
+    /// class's coupling ceiling (gui/CodeMetricsConfig.txt) - a type would have.
+    /// </remarks>
+    public bool HasNoSelectedScenario => _selectedScenario is null;
+
+    /// <summary>
+    /// Choose the first scenario the filter left standing - the keyboard equivalent of clicking the top row,
+    /// which <see cref="Controls.SearchBox"/> binds to Enter.
+    /// </summary>
+    /// <remarks>
+    /// No-op when nothing matched, and deliberately so it never CLEARS a choice: Enter on an empty result
+    /// must not undo the scenario already picked, which the filter is allowed to leave standing (see
+    /// <see cref="ScenarioPicker"/>). Setting <see cref="SelectedScenario"/> is the same path a click takes,
+    /// so the moment is computed once, here as there.
+    /// </remarks>
+    public void ChooseFirstScenario()
+    {
+        if (ScenarioPicker.Visible.FirstOrDefault() is { } first)
+        {
+            SelectedScenario = first;
+        }
+    }
 
     /// <summary>The chosen scenario's "what this date tests" line, straight from the catalogue (DATA
     /// locales, not interface keys - the author wrote it, we do not translate it).</summary>
@@ -668,6 +898,7 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
         ScenarioErrorKey = string.Empty;
         RaisePropertyChanged(nameof(SelectedScenario));
         RaisePropertyChanged(nameof(HasSelectedScenario));
+        RaisePropertyChanged(nameof(HasNoSelectedScenario));
     }
 
     /// <summary>
@@ -764,13 +995,13 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
         });
     }
 
-    /// <summary>Jump the wall to the moment currently in the At field, in the session zone (rule 2). No-op
-    /// if the moment is malformed (the Jump button is disabled then) or no session is running.</summary>
+    /// <summary>Jump the wall to the moment typed in the session's jump field, in the session zone (rule 2).
+    /// No-op if that moment is malformed (the Jump button is disabled then) or no session is running.</summary>
     public void JumpToEnteredMoment()
     {
-        if (Moment.IsValid)
+        if (JumpMoment.IsValid)
         {
-            SendJumpAbsolute(Moment.Canonical, SelectedZone.BiasMinutes);
+            SendJumpAbsolute(JumpMoment.Canonical, SelectedZone.BiasMinutes);
         }
     }
 
@@ -784,6 +1015,29 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     /// (zone cannot re-render in flight, scale-duration has no in-flight command).</summary>
     public bool CanEditTime => _idle || IsRunning;
 
+    /// <summary>True once the session has ended, so a finished result can be returned to a fresh setup form
+    /// (New session). Only the terminal states qualify - a live or a still-closing session is not a result
+    /// to leave yet. Tracks the same set as <see cref="ShowsSessionControls"/>, from the other side.</summary>
+    public bool CanBeginNewSession => IsTerminal(_statusKind);
+
+    /// <summary>
+    /// Return a finished session to a fresh setup form: clear the result (verdict, coverage, diagnostics)
+    /// and go back to idle, KEEPING the target, the moment and the history, so the tester can run again at
+    /// once. It never starts a session (rule 7) - it lands on the filled setup form and waits for Start.
+    /// A no-op unless the session has ended, so a stray call while one is live cannot wipe a live result.
+    /// </summary>
+    public void BeginNewSession()
+    {
+        if (!CanBeginNewSession)
+        {
+            return;
+        }
+
+        ResetSession();
+        Idle = true;
+        SetStatus("status.idle", SessionStatusKind.Idle);
+    }
+
     /// <summary>Backs <see cref="CanStart"/> and <see cref="IsIdle"/>: true when no session is running.</summary>
     private bool Idle
     {
@@ -793,6 +1047,7 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
             if (Set(ref _idle, value))
             {
                 RaisePropertyChanged(nameof(CanStart));
+                RaiseStartRefusalChanged();
                 RaisePropertyChanged(nameof(IsIdle));
                 RaisePropertyChanged(nameof(CanEditTime));
             }
@@ -818,6 +1073,125 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
 
     public bool VerdictHasMeaning { get => _verdictHasMeaning; private set => Set(ref _verdictHasMeaning, value); }
 
+    /// <summary>
+    /// Translation key for the one word the result phase leads with: the verdict when the session produced
+    /// one, and otherwise what stopped it from producing one.
+    /// </summary>
+    /// <remarks>
+    /// 🔴 THE VERDICT IS NOT THE WHOLE ANSWER. A session that vanished right after injection may carry a
+    /// "works" verdict from its first blink, and a start that failed carries none at all - the summary
+    /// already leads with DID NOT TAKE EFFECT over any verdict for the first case, and this is the same rule
+    /// on screen. An error before the first heartbeat is "did not start": the application never ran under
+    /// the fake clock, whatever the core managed to say about it. An error after one keeps the verdict, because
+    /// the substitution did work for as long as the session lasted and the status line says how it ended.
+    ///
+    /// Strings and an enum this class already couples to, so the coupling ceiling is not touched
+    /// (gui/CodeMetricsConfig.txt).
+    /// </remarks>
+    public string ResultHeadlineKey => _statusKind switch
+    {
+        SessionStatusKind.DidNotTakeEffect => "result.headline_did_not_take_effect",
+        SessionStatusKind.Error when !_hasTiming => "result.headline_did_not_start",
+        _ => _verdictKnown ? _verdictLabelKey : "result.headline_no_verdict",
+    };
+
+    /// <summary>The kind behind <see cref="ResultHeadlineKey"/>, driving its glyph and colour: an outcome
+    /// without a verdict word is drawn as a failure when the substitution never took effect and as
+    /// undetermined when nothing was judged.</summary>
+    public VerdictKind ResultKind => _statusKind switch
+    {
+        SessionStatusKind.DidNotTakeEffect => VerdictKind.Fails,
+        SessionStatusKind.Error when !_hasTiming => VerdictKind.Fails,
+        _ => _verdictKnown ? _verdictKind : VerdictKind.Undetermined,
+    };
+
+    /// <summary>The headline is the verdict word itself, so the verdict's own reason and meaning belong under it.
+    /// Under any other headline they would explain a word that is not on the screen.</summary>
+    private bool ResultIsVerdict
+        => _verdictKnown && ResultHeadlineKey == _verdictLabelKey;
+
+    /// <summary>
+    /// The core's reason for the verdict, for EVERY verdict the result phase leads with.
+    /// </summary>
+    /// <remarks>
+    /// 🔴 UNLIKE <see cref="VerdictHasReason"/>, which hides the reason under a clean "works" because a badge
+    /// in a footer needs no caveat. The result phase exists to explain, and to somebody on their first run
+    /// "Works" alone says nothing about what worked - the core's sentence ("every process that read the time
+    /// saw the fake clock") is the explanation, and it arrives for works as for the rest.
+    /// </remarks>
+    public bool ResultHasReason => ResultIsVerdict && _verdictReasonKey.Length > 0;
+
+    /// <summary>The plain-language meaning, under the headline it is about (see <see cref="ResultHasReason"/>).</summary>
+    public bool ResultHasMeaning => ResultIsVerdict && _verdictHasMeaning;
+
+    /// <summary>The status line tells how the session ended, unless the headline already did: a target that
+    /// vanished has "did not take effect" as its headline and how long it lived under it, and the status
+    /// sentence would say the same thing a third time.</summary>
+    public bool ResultHasEnding => _statusKind != SessionStatusKind.DidNotTakeEffect;
+
+    /// <summary>
+    /// The audit block prints the verdict's reason beside its evidence only while the session runs.
+    /// </summary>
+    /// <remarks>
+    /// While a session is live the verdict word is a chip in the footer and its reasoning belongs with the
+    /// lists that produced it. Once the session is over the result phase leads with the word and prints the
+    /// reason under it, and the same sentence inside the audit as well would put one line on the screen
+    /// twice. The block is one component on both screens, so the choice is made here, where the phase is
+    /// known, rather than by a switch on the drawing. The shipped panel keeps <see cref="VerdictHasReason"/>.
+    /// </remarks>
+    public bool AuditExplainsVerdict => _verdictHasReason && !IsTerminal(_statusKind);
+
+    /// <summary>The meaning line of the audit block, on the same terms as <see cref="AuditExplainsVerdict"/>.</summary>
+    public bool AuditExplainsMeaning => _verdictHasMeaning && !IsTerminal(_statusKind);
+
+    /// <summary>
+    /// The audit section is drawn open when the verdict is worse than a clean works.
+    /// </summary>
+    /// <remarks>
+    /// 🔴 THE EVIDENCE IS THE ANSWER TO A BAD VERDICT. A reader who sees "Partial" or "Fails" has exactly
+    /// one question - which clocks went to the real one - and the audit is where it is answered. Folded, they
+    /// would have to know to open it - open, the answer is already on the screen. A clean works has nothing to
+    /// worry the reader, so it stays folded. A vanish and a failed start carry no verdict at all
+    /// (<see cref="VerdictKnown"/> is false), so they keep the section folded and let their own sentence stand.
+    /// OneWay in the view, so the reader can still fold it and it stays folded.
+    /// </remarks>
+    public bool AuditStartsOpen => _coverageKnown && _verdictKnown && _verdictKind != VerdictKind.Works;
+
+    /// <summary>The core's reason key for a target that vanished, shown with <see cref="LivedMs"/>. On screen only
+    /// for a session that did not take effect - the summary composes the same two into one line.</summary>
+    public string VanishReasonKey => _vanishReasonKey;
+
+    public bool HasVanishReason
+        => _statusKind == SessionStatusKind.DidNotTakeEffect && _vanishReasonKey.Length > 0;
+
+    /// <summary>How long the vanished target lived, in milliseconds - what tells a single-instance hand-off
+    /// (gone within a blink) from an application that ran and then quit.</summary>
+    public long LivedMs => _livedMs;
+
+    /// <summary>True once a heartbeat or the end timing arrived: the facts block of the result phase has
+    /// something to say. A start that failed or was refused has no timing and shows no facts.</summary>
+    public bool HasTiming => _hasTiming;
+
+    /// <summary>The moment the session STARTED at, formatted like <see cref="MomentPreview"/>, from the start
+    /// snapshot rather than the form - the form is unlocked once the session is over.</summary>
+    public string StartedAtPreview => ClockView.FormatMoment(RequestedMoment, RequestedZone.Label);
+
+    /// <summary>
+    /// Where the fake clock stopped, formatted like <see cref="MomentPreview"/>.
+    /// </summary>
+    /// <remarks>
+    /// 🔴 THE END TIMING FROM <c>ended</c>, NOT THE LAST HEARTBEAT. The heartbeat is up to a second old when
+    /// the session ends, which at ×1440 is up to a day of fake time - the summary already prefers the
+    /// authoritative end wall for the same reason, and a screen that named a different moment from the
+    /// summary copied off it would be two answers to one question. The heartbeat is the fallback for a
+    /// session that ended without one (a vanished target).
+    /// </remarks>
+    public string FakeEndPreview
+        => ClockView.FormatMoment(_fakeEndWall.Length > 0 ? _fakeEndWall : Fake.Wall, Fake.Zone);
+
+    /// <summary>True when a raw failure detail is being shown (see <see cref="LastError"/>).</summary>
+    public bool HasLastError => _lastError.Length > 0;
+
     /// <summary>Size of the process family the session verdict covers (parent plus children).</summary>
     public int ProcessCount
     {
@@ -839,8 +1213,55 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     public bool CoverageKnown
     {
         get => _coverageKnown;
-        private set { if (Set(ref _coverageKnown, value)) { RaisePropertyChanged(nameof(HasCoverageNote)); } }
+        private set
+        {
+            if (Set(ref _coverageKnown, value))
+            {
+                RaisePropertyChanged(nameof(HasCoverageNote));
+                RaisePropertyChanged(nameof(IsAuditPending));
+                RaisePropertyChanged(nameof(AuditNeverArrived));
+                RaisePropertyChanged(nameof(AuditNeverStarted));
+                RaisePropertyChanged(nameof(AuditStartsOpen));
+            }
+        }
     }
+
+    /// <summary>
+    /// The audit has not arrived and still can, so the place for it says the report is on its way.
+    /// </summary>
+    /// <remarks>
+    /// 🔴 A PLACE THAT IS EMPTY HAS TO SAY WHY. The session phase hides the audit until a report arrives,
+    /// which left 300 px of nothing between the controls and the footer on the first render - a screen
+    /// that looks unfinished rather than one that is waiting. This is the state behind the sentence that
+    /// fills it. WPF has no negating visibility converter here and a second converter would be a second
+    /// thing to keep in step, so the model says each case out loud, as it does for the scenario selection.
+    /// A bool costs nothing at this class's coupling ceiling.
+    ///
+    /// It used to be "coverage not known" alone, which kept promising the report after the session was over.
+    /// </remarks>
+    public bool IsAuditPending => !_coverageKnown && !IsTerminal(_statusKind);
+
+    /// <summary>
+    /// The session is over and no audit ever arrived, so the place for it has to say that it will not.
+    /// </summary>
+    /// <remarks>
+    /// 🔴 A PROMISE THE TOOL CANNOT KEEP. The session phase told an ended session with no report that the list
+    /// would appear once the tool had checked - after the application had vanished, with nothing left to
+    /// check.
+    /// </remarks>
+    public bool AuditNeverArrived => !_coverageKnown && IsTerminal(_statusKind) && !AuditNeverStarted;
+
+    /// <summary>
+    /// The application was never started under the fake clock, so there was nothing to check.
+    /// </summary>
+    /// <remarks>
+    /// 🔴 "THE SESSION ENDED BEFORE THE TOOL COULD CHECK" IS FALSE FOR A START THAT FAILED. There was no
+    /// session to end: the core could not attach, or refused the handshake, and the application never ran
+    /// under the fake clock at all. The result phase put that sentence under a "did not start" headline on
+    /// its first render. A failure before the first heartbeat is this case, and it gets its own sentence.
+    /// </remarks>
+    public bool AuditNeverStarted
+        => !_coverageKnown && _statusKind == SessionStatusKind.Error && !_hasTiming;
 
     /// <summary>True when this session is driven over CDP (a Chromium/Electron target, ADR-9). The coverage
     /// unit is then a JS context, not an OS process, so the audit accumulates every context and the note
@@ -872,14 +1293,14 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     public bool HasCoverageNote => _isCdp ? _coverageKnown : IsFamily;
 
     /// <summary>Covered channels, formatted "channel  xN", from the parent process (never summed, rule 4).</summary>
-    public IReadOnlyList<string> Covered
+    public IReadOnlyList<CoveredChannel> Covered
     {
         get => _covered;
         private set { if (Set(ref _covered, value)) { RaisePropertyChanged(nameof(HasCovered)); } }
     }
 
     /// <summary>Channels hooked but deliberately left real (e.g. QPC-based waits, ADR-2), formatted "channel  xN".</summary>
-    public IReadOnlyList<string> Observed
+    public IReadOnlyList<CoveredChannel> Observed
     {
         get => _observed;
         private set { if (Set(ref _observed, value)) { RaisePropertyChanged(nameof(HasObserved)); } }
@@ -900,6 +1321,15 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     {
         get => _unobserved;
         private set { if (Set(ref _unobserved, value)) { RaisePropertyChanged(nameof(HasUnobserved)); } }
+    }
+
+    /// <summary>Channels that came under the fake clock only once their module loaded, unioned over the
+    /// family. Every one is also in <see cref="Covered"/> or <see cref="Observed"/> with its count - this
+    /// names which of those counts are floors, which the late-hook warning needs and cannot say itself.</summary>
+    public IReadOnlyList<string> InstalledLate
+    {
+        get => _installedLate;
+        private set { if (Set(ref _installedLate, value)) { RaisePropertyChanged(nameof(HasInstalledLate)); } }
     }
 
     /// <summary>Warning translation keys the core raised (rendered in the current language), unioned over
@@ -962,6 +1392,8 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
 
     public bool HasUnobserved => _unobserved.Count > 0;
 
+    public bool HasInstalledLate => _installedLate.Count > 0;
+
     public bool HasWarnings => _warnings.Count > 0;
 
     /// <summary>
@@ -978,16 +1410,23 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
                 Fake.Zone = ZoneLabel.FromBiasMinutes(s.Fake.ZoneBiasMin);
                 Real.Wall = s.Real.Wall;
                 Real.Zone = ZoneLabel.FromBiasMinutes(s.Real.ZoneBiasMin);
-                MultiplierText = $"x{s.Multiplier}";
+                // 🔴 The same multiplication sign the rate BUTTONS wear. This read "x60" beside a control
+                // labelled "×60" - one rate written two ways on one screen, and the session phase puts
+                // them within a hundred pixels of each other. The number is the core's, the notation is
+                // ours, and there is only one of it.
+                MultiplierText = $"×{s.Multiplier}";
                 SyncModeToMultiplier(s.Multiplier);
                 _elapsedRealMs = s.ElapsedRealMs;
                 _elapsedFakeMs = s.ElapsedFakeMs;
                 _hasTiming = true;
+                PublishElapsed();
                 SetStatus("status.running", SessionStatusKind.Running);
                 break;
             case VanishedEvent vd:
                 _vanishReasonKey = vd.ReasonKey;
                 _livedMs = vd.LivedMs;
+                RaisePropertyChanged(nameof(VanishReasonKey));
+                RaisePropertyChanged(nameof(LivedMs));
                 SetStatus("status.did_not_take_effect", SessionStatusKind.DidNotTakeEffect);
                 break;
             // Guarded on the terminal state like `state` above (M-9): a late `ended`/`error` after a
@@ -1001,6 +1440,7 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
                     _elapsedRealMs = e.ElapsedRealMs;
                     _elapsedFakeMs = e.ElapsedFakeMs;
                     _hasTiming = true;
+                    PublishElapsed();
                 }
 
                 // Surface the target's own exit code and any cleanup residue the core reported, rather than
@@ -1014,7 +1454,7 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
                 // A per-command error (e.g. an invalid in-flight jump moment): the core rejects the one
                 // command WE sent - its id echoes our command's - and keeps running, so surface it and STAY
                 // live, never end the session (rule 6).
-                InFlightErrorKey = err.Key;
+                InFlightErrorKey = InFlightKey(err.Key);
                 break;
             case ErrorEvent err when !IsTerminal(StatusKind):
                 // A start-time or fatal error (bad start moment, hook DLL missing, launch/inject/attach
@@ -1051,14 +1491,15 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
             case CoverageEvent c when _isCdp:
                 // CDP emits one coverage per JS context - accumulate them all (each context's counts stay
                 // its own, never summed across contexts, rule 4) - union the warnings and uncovered lists.
-                // 🔴 Each row carries its CONTEXT, because the channel name carries only the context TYPE:
-                // two pages both produce "page Date.now", and two identical rows with different counts
-                // cannot be explained by the reader. The comment here used to say the name told them
-                // apart, which was true of the kind and not of the context.
-                Covered = [.. _covered, .. c.Covered.Select(ch => FormatCdpChannel(c.Pid, ch))];
-                Observed = [.. _observed, .. c.Observed.Select(ch => FormatCdpChannel(c.Pid, ch))];
+                // Two pages both produce "page Date.now", so two contexts reading one channel become two
+                // rows that tell apart only by their read count (rule 4 keeps each context's count its own,
+                // never summed). The raw context id used to prefix each row - dropped in P6 as a number that
+                // named nothing to the reader.
+                Covered = [.. _covered, .. c.Covered];
+                Observed = [.. _observed, .. c.Observed];
                 Uncovered = [.. _uncovered, .. c.Uncovered.Where(u => !_uncovered.Contains(u))];
                 Unobserved = [.. _unobserved, .. c.Unobserved.Where(u => !_unobserved.Contains(u))];
+                InstalledLate = [.. _installedLate, .. c.InstalledLate.Where(u => !_installedLate.Contains(u))];
                 Warnings = [.. _warnings, .. c.WarningKeys.Where(w => !_warnings.Contains(w))];
                 CoverageKnown = true;
                 break;
@@ -1073,8 +1514,8 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
                 _parentPid ??= c.Pid;
                 if (c.Pid == _parentPid)
                 {
-                    Covered = c.Covered.Select(FormatChannel).ToList();
-                    Observed = c.Observed.Select(FormatChannel).ToList();
+                    Covered = c.Covered.ToList();
+                    Observed = c.Observed.ToList();
                 }
 
                 // Warnings and uncovered channels are not counts - they are the REASON behind the family
@@ -1087,6 +1528,7 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
                 // the family verdict is partial (Verdict::combine).
                 Uncovered = [.. _uncovered, .. c.Uncovered.Where(u => !_uncovered.Contains(u))];
                 Unobserved = [.. _unobserved, .. c.Unobserved.Where(u => !_unobserved.Contains(u))];
+                InstalledLate = [.. _installedLate, .. c.InstalledLate.Where(u => !_installedLate.Contains(u))];
                 Warnings = [.. _warnings, .. c.WarningKeys.Where(w => !_warnings.Contains(w))];
                 CoverageKnown = true;
                 break;
@@ -1131,6 +1573,7 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
             _startScaleQpc = _scaleQpc;
             _startForce = _forceStart;
             _startCaptured = true;
+            RaisePropertyChanged(nameof(StartedAtPreview));
 
             // Build the plan by reading the target's PE header. Classify a TARGET problem here (RELEASE-007)
             // so it is not reported as a broken core install: a non-PE file yields InvalidOperationException
@@ -1307,11 +1750,20 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
         Covered = [];
         Observed = [];
         Uncovered = [];
+        // 🔴 Unobserved was missing from this list, so a second session in the same window kept listing the
+        // first session's channels under "Could not be watched" - both lists are unions, and a union with the
+        // previous session is the audit describing a session that is not this one (untouchable rule 4).
+        Unobserved = [];
+        InstalledLate = [];
         Warnings = [];
 
         _hasTiming = false;
         _elapsedRealMs = 0;
         _elapsedFakeMs = 0;
+        // 🔴 Cleared, not zeroed on screen: "0:00:00" beside a clock is a measurement, and a session that
+        // has not reported yet has not measured anything. The tile drops the line instead.
+        Fake.Elapsed = string.Empty;
+        Real.Elapsed = string.Empty;
         _fakeEndWall = string.Empty;
         _vanishReasonKey = string.Empty;
         _livedMs = 0;
@@ -1326,25 +1778,19 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
         HistoryNoteKey = string.Empty;
     }
 
-    private static string FormatChannel(CoveredChannel channel) => $"{channel.Channel}  ×{channel.Calls}";
-
     /// <summary>
-    /// A CDP channel, tagged with the context it belongs to.
-    ///
-    /// <para>
-    /// The core names a Chromium channel by context TYPE plus API - "page Date.now" - and emits one
-    /// coverage event per context. An application with two pages therefore produced two identical rows
-    /// with different counts, and nothing on the panel said which was which. A comment here claimed the
-    /// name told them apart, which was true of the KIND of context and not of the context.
-    /// </para>
-    /// <para>
-    /// Tagged on every row rather than only when there are several, because the list is built as the
-    /// events arrive - the second context is not known when the first is rendered. The CLI does the
-    /// same with pids, for the same reason.
-    /// </para>
+    /// A covered or observed channel as one line for the copy-summary, its read count folded in as prose so
+    /// it does not read as a speed. The view renders the same row through CoverageRowConverter - two
+    /// surfaces, one wording (coverage.reads). InvariantCulture keeps the count stable across machines, and
+    /// CDP no longer prefixes a raw context id (P6): two contexts reading one channel differ by their count.
     /// </summary>
-    private static string FormatCdpChannel(uint context, CoveredChannel channel)
-        => $"context {context.ToString(CultureInfo.InvariantCulture)}: {FormatChannel(channel)}";
+    private static string FormatReadRow(CoveredChannel channel, Func<string, string> translate)
+    {
+        var format = translate(channel.Calls == 1 ? "coverage.reads_one" : "coverage.reads");
+        // Guarded like every other translated template here: a loose file with a bad placeholder degrades to
+        // the raw template instead of throwing out of the summary being built (rule 6).
+        return Fmt(format, channel.Channel, channel.Calls);
+    }
 
     /// <summary>Build the wire time from the inputs. The moment is the local time in the session zone
     /// (rule 2, chrono-mock 9.5) - the core turns it into UTC and validates it (docs/08 section 5).</summary>
@@ -1455,9 +1901,12 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
         }
 
         // Channel names are raw API identifiers (not translated) - warnings are keys the core raised.
-        AppendList(sb, translate, "coverage.covered", _covered, translateItems: false);
-        AppendList(sb, translate, "coverage.observed", _observed, translateItems: false);
+        AppendList(sb, translate, "coverage.covered", _covered.Select(ch => FormatReadRow(ch, translate)).ToList(), translateItems: false);
+        AppendList(sb, translate, "coverage.observed", _observed.Select(ch => FormatReadRow(ch, translate)).ToList(), translateItems: false);
         AppendList(sb, translate, "coverage.uncovered", _uncovered, translateItems: false);
+        // The channels hooked only after their module loaded - shown in the in-app audit, so the copied
+        // report must carry them too, or the warning below references a list the reader cannot see (rule 4).
+        AppendList(sb, translate, "coverage.installed_late", _installedLate, translateItems: false);
         AppendList(sb, translate, "coverage.warnings", _warnings, translateItems: true);
         // Cleanup residue the core could not remove (ended.residue_keys) - reported, never hidden (rule 6).
         AppendList(sb, translate, "report.cleanup", _residueKeys, translateItems: true);
@@ -1765,6 +2214,7 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
         VerdictMeaningKey = VerdictKinds.MeaningKey(kind);
         VerdictHasMeaning = VerdictMeaningKey.Length > 0;
         VerdictKnown = true;
+        RaiseResultChanged();
     }
 
     private static bool IsTerminal(SessionStatusKind kind) => kind
@@ -1795,4 +2245,51 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     /// whose ids run from <see cref="FirstInFlightCommandId"/> up. A start/fatal error instead carries the
     /// start command's id (1) or none, so it is never treated as an in-flight rejection (RELEASE-001).</summary>
     private static bool IsInFlightError(ErrorEvent err) => err.Id is >= FirstInFlightCommandId;
+
+    /// <summary>
+    /// Put the two durations on their own clocks.
+    /// </summary>
+    /// <remarks>
+    /// One place rather than three: the timing arrives from a heartbeat and again from the core's
+    /// authoritative end report, and a third site resets it. Formatting it at each of them would be three
+    /// chances for the fake clock's duration and the real one's to end up written differently.
+    /// </remarks>
+    private void PublishElapsed()
+    {
+        Fake.Elapsed = ClockView.FormatDuration(_elapsedFakeMs);
+        Real.Elapsed = ClockView.FormatDuration(_elapsedRealMs);
+        // The timing facts of the result phase move with the elapsed values, and the headline with the first
+        // heartbeat: an error before it is "did not start", after it the verdict stands.
+        RaisePropertyChanged(nameof(HasTiming));
+        RaisePropertyChanged(nameof(FakeEndPreview));
+        RaisePropertyChanged(nameof(AuditNeverArrived));
+        RaisePropertyChanged(nameof(AuditNeverStarted));
+        RaiseResultChanged();
+    }
+
+    /// <summary>
+    /// The reason a rejected IN-FLIGHT command gets, where the core's key has a start-time tail on it.
+    /// </summary>
+    /// <remarks>
+    /// 🔴 THE SCREEN CONTRADICTED ITSELF. The core sends one key for a bad moment whether it arrives with
+    /// the start command or with a jump, and the same for a rate out of range - and both of its texts end
+    /// "the session did not start". In flight that is false twice over: the core's own comment on the rate
+    /// path says "the session keeps running at the rate it had", and the panel printed the denial directly
+    /// under a status line reading "Running". Measured on the session-error render.
+    ///
+    /// So the key is mapped, not the text rewritten: at START those two sentences are correct and they are
+    /// the whole headline there. The CLI never had this problem - its own wording for the same keys names
+    /// the reason and stops ("the requested speed is outside the range this core accepts"), which is the
+    /// shape these two now follow in flight.
+    ///
+    /// Two entries rather than a table over every key: these are the only two of the seven texts that
+    /// mention starting AND can answer an in-flight command. The guard in SessionViewModelTests holds that
+    /// pairing from both ends.
+    /// </remarks>
+    private static string InFlightKey(string coreKey) => coreKey switch
+    {
+        "moment.invalid" => "moment.invalid_in_flight",
+        "time.bad_multiplier" => "time.bad_multiplier_in_flight",
+        _ => coreKey,
+    };
 }

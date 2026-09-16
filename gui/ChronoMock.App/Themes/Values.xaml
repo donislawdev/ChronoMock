@@ -28,9 +28,138 @@
   <sys:Double x:Key="FontSizeTitle">24</sys:Double>
   <sys:Double x:Key="FontSizeClock">34</sys:Double>
 
-  <!-- Radii and stroke. -->
+  <!-- 🔴 WEIGHT, which the part library did not have at all - measured: zero FontWeight in the whole of
+       Parts.xaml. Size alone had to carry every level of the screen, and two adjacent steps of a
+       five-step scale are a weak signal when the colour and the face are identical. One emphasis weight,
+       not an axis: a second one would start a competition between levels rather than name them. -->
+  <FontWeight x:Key="FontWeightHeading">SemiBold</FontWeight>
+
+  <!-- Radii and stroke. Three radii with three jobs, not a free axis: control, card, pill. The pill
+       radius is half the control height, which is what makes a pill a pill at any height. -->
   <CornerRadius x:Key="RadiusSm">4</CornerRadius>
   <CornerRadius x:Key="RadiusMd">8</CornerRadius>
+  <CornerRadius x:Key="RadiusPill">16</CornerRadius>
+
+  <!--
+    Control metrics. A template that writes its own numbers is the same failure as a view that does,
+    and it is worse there, because no render-side guard measures inside a template (see the note in
+    XamlLiteralGuard). So the shapes of the parts library are named here like everything else.
+
+    32 is the control height: two 16s, on the spacing scale, and the height at which a 14 px label has
+    room to breathe without the control dominating a form row. The pill radius above is half of it.
+  -->
+  <sys:Double x:Key="ControlHeight">32</sys:Double>
+  <!-- A control is never narrower than it is tall. Rendered without this, a button labelled "+" came out
+       a fifth of its own height and was a worse target than the text it held. -->
+  <sys:Double x:Key="ControlMinWidth">32</sys:Double>
+  <Thickness x:Key="ControlPadding">12,0,12,0</Thickness>
+  <Thickness x:Key="CardPadding">16</Thickness>
+  <Thickness x:Key="ChipPadding">12,8,12,8</Thickness>
+
+  <!-- A card whose content scrolls keeps its padding on three sides but drops it to zero on the right, so
+       the overlay scrollbar (wpfui draws it over content, thin at rest and wider on hover) gets a lane of
+       its own at the card edge. ScrollGutter then insets the content back by the same amount, so the
+       content reads symmetric with the left while nothing sits under the scrollbar. Two spellings of one
+       decision, because a card's padding and its content's inset live on different elements. -->
+  <Thickness x:Key="CardPaddingScrolled">16,16,0,16</Thickness>
+  <Thickness x:Key="ScrollGutter">0,0,16,0</Thickness>
+
+  <!-- 🔴 The label column of a form has NO width here, on purpose, and that is the correction to a first
+       draft which gave it 150. A number wide enough for today's longest label is a number measured off
+       the content, and it stops being right at the first translation or font change. The rows share one
+       computed width instead, through SharedSizeGroup: the column is as wide as the widest label there
+       actually is, every row agrees, and nobody picked a number. -->
+
+  <!-- 🔴 The gap between the label column and the control. Rendered without it, the shared column comes
+       out exactly as wide as the longest label, so THAT row's label touched its field while every
+       shorter one looked fine - the fault appears only on the row that sets the width, which is why it
+       survived reading the markup and did not survive one look at the picture. -->
+  <Thickness x:Key="FormLabelGap">0,0,16,0</Thickness>
+
+  <!-- Room kept for a field's message whether or not there is one. Reserved, not conditional: a message
+       that appears and pushes everything below it down makes the reader lose their place at the exact
+       moment they are being told they got something wrong. -->
+  <sys:Double x:Key="FieldMessageHeight">18</sys:Double>
+
+  <!-- Check control. The box is bigger than the tick inside it, and the tick is drawn rather than set in
+       a glyph font, so it scales with the box instead of with whatever the system font does. -->
+  <sys:Double x:Key="CheckBoxSize">20</sys:Double>
+  <sys:Double x:Key="CheckTickSize">12</sys:Double>
+  <sys:Double x:Key="CheckTickStroke">2</sys:Double>
+  <!-- Directional: a uniform margin here would indent the label from the top and bottom as well, and a
+       column of checkboxes would stop lining up with the rows above it. -->
+  <Thickness x:Key="CheckLabelGap">8,0,0,0</Thickness>
+
+  <!-- Controls in a row that wraps. The gap goes AFTER each control and never before it, so the first
+       control starts exactly where its column does and a line under the row lines up with it. The top
+       and bottom halves keep wrapped lines apart without moving a control off the middle of its row. -->
+  <Thickness x:Key="ControlRowGap">0,4,8,4</Thickness>
+
+  <!-- The bar that marks the selected row. Narrow enough to read as a marker rather than a second
+       column, wide enough to survive a non-integer display scale. -->
+  <sys:Double x:Key="SelectionBarWidth">3</sys:Double>
+
+  <!-- The drop-down chevron, drawn rather than taken from a glyph font. A glyph is sized in the font's
+       own units and a 12 px one sits beside a 16 px one looking like two different icon sets; a drawn
+       one keeps its stroke on screen whatever size it is asked for. -->
+  <sys:Double x:Key="ChevronSize">12</sys:Double>
+  <Thickness x:Key="ChevronGap">0,0,12,0</Thickness>
+
+  <!-- The floating list stands off the control it belongs to, so the two edges do not merge into one
+       thick line and the list reads as being above the screen rather than glued to the field. -->
+  <Thickness x:Key="PopupGap">0,4,0,0</Thickness>
+
+  <!-- A folded section: the chevron leads the title, and the body stands off the header enough to read
+       as contained by it rather than as the next thing down the page. -->
+  <Thickness x:Key="SectionChevronGap">0,0,8,0</Thickness>
+  <Thickness x:Key="SectionBodyGap">0,12,0,0</Thickness>
+
+  <!--
+    A list of choices that is searched rather than scanned. The height keeps a growing catalogue from
+    taking the screen: the list scrolls inside it, and the filter box above it does the finding.
+
+    🔴 IT IS A FIXED HEIGHT, NOT A CAP, and the search box is the entire reason. A well that sized to its
+    contents changed height on every keystroke - measured at 144 px between the full catalogue and a
+    filter that matched nothing - so the screen moved under the hands of somebody who was reading it. A
+    cap plus a floor was tried first and only made the movement smaller, which is the same fault quieter.
+    The cost is a partly empty well on an install with three presets, and that is the cheaper half: a
+    blank strip is untidy, while a button that walks away as you type is a mistake waiting to be made.
+  -->
+  <sys:Double x:Key="ChoiceListHeight">240</sys:Double>
+
+  <!-- The floating list of a drop-down, which is a CAP rather than a height: nothing searches it, so it
+       may be as short as its contents and only needs stopping before it runs off the screen. Same number
+       as the well above and a different decision, which is why it is a different name - the day one of
+       them moves, the other must not follow by accident. -->
+  <sys:Double x:Key="DropDownMaxHeight">240</sys:Double>
+
+  <!-- The line along the top of a pinned footer, and only the top: a footer is not a box, it is where the
+       scrolling stops. Without it the content underneath slides away with nothing to say it went. -->
+  <Thickness x:Key="FooterEdge">0,1,0,0</Thickness>
+
+  <!-- The consequence line under a check, indented to start where its LABEL starts rather than where the
+       box does: 20 for the box plus 8 for the gap beside it, both from the two values above. A note that
+       began under the box would read as a second option rather than as a footnote to the first.
+
+       🔴 4 below, the smallest step of the scale. It was 2, off the scale, and nothing noticed until the
+       spacing guard read the setup phase - the literal guard accepts any value that has a name. -->
+  <Thickness x:Key="OptionNoteGap">28,4,0,0</Thickness>
+
+  <!-- The three fields of the "relative to now" shift, which is one idea spread over three controls and
+       therefore needs its widths named together rather than each guessed where it stands. The sign holds
+       one character and a chevron, the amount holds a number nobody will type four digits into, and the
+       unit holds the longest word in the unit list plus its chevron. -->
+  <sys:Double x:Key="ShiftSignWidth">64</sys:Double>
+  <sys:Double x:Key="ShiftAmountWidth">72</sys:Double>
+  <sys:Double x:Key="ShiftUnitWidth">128</sys:Double>
+
+  <!-- The shared moment input's two fields (MomentInput), named together because they set one moment and
+       sized so the DEFAULT value fits with room. The time holds "HH:MM:SS" - EIGHT characters, not five:
+       the 2038 boundary default is 03:14:07, and a box measured for "HH:MM" clipped its own seconds to
+       "03:14:0" on the first screen a reader sees. The date holds "YYYY-MM-DD". -->
+  <sys:Double x:Key="MomentDateFieldWidth">148</sys:Double>
+  <sys:Double x:Key="MomentTimeFieldWidth">120</sys:Double>
+
   <sys:Double x:Key="StrokeThin">1</sys:Double>
   <!-- The same one-pixel edge as a Thickness, for a BorderThickness. WPF does not convert a Double to a
        Thickness through a resource reference, so the two spellings of one decision both have to exist. -->
@@ -52,6 +181,27 @@
   <Thickness x:Key="StackGapSm">0,8,0,0</Thickness>
   <Thickness x:Key="StackGapLg">0,16,0,0</Thickness>
 
+  <!-- 🔴 THE CHANNEL BETWEEN TWO GROUPS, and it has to be WIDER than the padding inside one. Measured on
+       the first setup render: 8 px between the cards and 16 px of padding within them, so the gap inside
+       a group was twice the gap between groups and the eye read four cards as one slab. Proximity is the
+       strongest grouping cue there is, and it was pointing the wrong way. This step is the only gap on
+       the screen that separates GROUPS - everything smaller belongs inside one. -->
+  <Thickness x:Key="StackGapXl">0,24,0,0</Thickness>
+
+  <!-- 🔴 THE SAME CHANNEL ACROSS, for groups that stand side by side instead of stacked (PartSideBySide).
+       A column width is a GridLength, and a resource reference hands the object over as it is, so the
+       Thickness above cannot serve - two spellings of one decision, like StrokeThin and its edge. The
+       first clock pair made this gap from a 4 px margin on each clock and came to 8 px, against 16 inside
+       each card. -->
+  <GridLength x:Key="GroupChannelWidth">24</GridLength>
+
+  <!-- 🔴 A SCROLLING FORM UNDER A PINNED FOOTER, and its bottom gap is the FOOTER'S. The form used a
+       uniform 24 px inset, so the blank between the last group and the footer came to 24 plus the
+       footer's own 16 - forty, against a 24 px channel between the groups themselves. The largest gap on
+       the screen was the one carrying no meaning, which is the same fault as the 8-px channel in the
+       other direction. The three sides that face nothing keep the inset. -->
+  <Thickness x:Key="ScrollFormInset">24,24,24,0</Thickness>
+
   <!-- The component register scrolls inside this height once the About window's expander is opened. The
        cap is what keeps that window a window: the list runs to some forty components, and a dialog that
        sizes to its content would otherwise grow taller than the screen the moment somebody opened it. -->
@@ -63,15 +213,21 @@
 
   <!-- The target box caps here so a deeply nested path cannot stretch the centred setup row across the
        window; the name is what identifies the target, and the full path is in the tooltip. -->
-  <!-- The primary action is wider than the buttons around it, because size is half of what makes an
-       action look primary - the accent fill alone reads as decoration on a control the same size as its
-       neighbours. Named here rather than written into the view, like every other design value. -->
-  <sys:Double x:Key="PrimaryActionMinWidth">220</sys:Double>
+  <!-- A floor for the primary action, not a banner. 220 made "Start" a bar three times the width of its own
+       word - and in a footer the action stands alone, so the accent fill and the position already carry the
+       prominence, and the width only has to keep the button from shrinking to nothing. Named here, like
+       every other design value. -->
+  <sys:Double x:Key="PrimaryActionMinWidth">120</sys:Double>
 
   <!-- Dialog answers are the same width as each other whatever they say, so the pair does not shuffle
        sideways between one dialog and the next, or between English and Polish. Narrower than the panel's
        primary action, which is sized to be findable on a full screen rather than inside a 440 px box. -->
   <sys:Double x:Key="DialogButtonMinWidth">120</sys:Double>
+
+  <!-- The calculator's copy button holds one word and swaps to the copied confirmation for a moment after
+       a click. A fixed floor so the button does not grow into the value beside it when the word gets
+       longer - an Auto column overlapped the value the moment it said "Copied". -->
+  <sys:Double x:Key="CopyButtonMinWidth">72</sys:Double>
 
   <sys:Double x:Key="TargetBoxMaxWidth">320</sys:Double>
 

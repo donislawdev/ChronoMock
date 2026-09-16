@@ -1,0 +1,507 @@
+<UserControl x:Class="ChronoMock.App.Views.ComponentCatalogue"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:app="clr-namespace:ChronoMock.App"
+             xmlns:controls="clr-namespace:ChronoMock.App.Controls"
+             xmlns:sys="clr-namespace:System;assembly=System.Runtime"
+             Background="{DynamicResource BrushBgBase}">
+
+  <!--
+    THE COMPONENT CATALOGUE. Every part of the interface, in every state it can be in, on one screen.
+
+    🔴 It merges the parts library LOCALLY, and keeps doing so even though App.xaml now merges Parts
+    application-wide. A {StaticResource PartX} here is resolved as this control's BAML loads, a lookup that
+    never reaches Application.Resources - so the app-wide merge cannot feed it. The app-wide merge is what
+    gives the calculator its Parts look, through implicit styles applied at tree time.
+
+    🔴 THIS FILE MAY NOT CONTAIN A SINGLE VALUE OF ITS OWN. Not a colour, not a size, not a gap. If
+    something here cannot be built out of the library, that is the finding - it means a part is missing,
+    and the answer is to add it there rather than to draw it here. That rule is what keeps the catalogue
+    a test of the library instead of a picture of one.
+
+    WHAT IT SHOWS AND WHAT IT DOES NOT. Rest, disabled, the variants, and the extremes (a very long
+    label, a very short one). It does NOT show hover, press or keyboard focus: those need real input, and
+    a control cannot be put into them declaratively. Drawing them by hand here would be the worse answer -
+    it would show a hand-made picture of a state rather than the state, and the two drift apart silently.
+    They are measured on the live window instead, by tools/gui/hover-sheet.ps1 and focus-sheet.ps1.
+  -->
+
+  <UserControl.Resources>
+    <ResourceDictionary>
+      <ResourceDictionary.MergedDictionaries>
+        <ResourceDictionary Source="../Themes/Parts.xaml" />
+      </ResourceDictionary.MergedDictionaries>
+
+      <!-- The message a form row carries under its control. It is content rather than a string property
+           so a row can hold anything there - a sentence, a link, a value - without the part having to
+           know which. -->
+      <TextBlock x:Key="CatalogueFieldMessage" Style="{StaticResource PartFieldMessage}"
+                 Text="That folder does not exist - pick one, or leave it empty to use the target's own." />
+
+      <TextBlock x:Key="CatalogueSectionSummary" Style="{StaticResource PartCaption}"
+                 Text="x60, duration scaled" />
+      <TextBlock x:Key="CatalogueSectionSummaryOpen" Style="{StaticResource PartCaption}"
+                 Text="19 January 2038, 03:14:07 (UTC+02:00)" />
+    </ResourceDictionary>
+  </UserControl.Resources>
+
+  <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="{StaticResource SpaceXl}">
+    <StackPanel>
+
+      <TextBlock Text="Component catalogue" Style="{StaticResource PartHeading}" />
+      <TextBlock Style="{StaticResource PartCaption}" Margin="{StaticResource StackGapSm}"
+                 Text="Every part, in every state that can be shown without input. Hover, press and keyboard focus are measured on the live window - see hover-sheet.ps1 and focus-sheet.ps1." />
+
+      <!-- ============ Button ============ -->
+      <TextBlock Text="Button" Style="{StaticResource PartHeading}" Margin="{StaticResource StackGapLg}" />
+
+      <Border Style="{StaticResource PartCard}" Margin="{StaticResource StackGapSm}">
+        <StackPanel>
+          <TextBlock Text="Default" Style="{StaticResource PartCaption}" />
+          <WrapPanel Margin="{StaticResource StackGapSm}">
+            <Button Content="Start" Margin="{StaticResource SpaceXs}" />
+            <Button Content="Choose..." Margin="{StaticResource SpaceXs}" />
+            <Button Content="Disabled" IsEnabled="False" Margin="{StaticResource SpaceXs}" />
+            <Button Content="x1" Margin="{StaticResource SpaceXs}" />
+          </WrapPanel>
+
+          <TextBlock Text="Extremes: the longest label a translation can produce, and the shortest"
+                     Style="{StaticResource PartCaption}" Margin="{StaticResource StackGapLg}" />
+          <WrapPanel Margin="{StaticResource StackGapSm}">
+            <Button Margin="{StaticResource SpaceXs}"
+                    Content="Run even if the opening verdict says the substitution did not take effect" />
+            <Button Content="+" Margin="{StaticResource SpaceXs}" />
+          </WrapPanel>
+        </StackPanel>
+      </Border>
+
+      <!-- ============ Primary action ============ -->
+      <TextBlock Text="Primary action" Style="{StaticResource PartHeading}" Margin="{StaticResource StackGapLg}" />
+
+      <Border Style="{StaticResource PartCard}" Margin="{StaticResource StackGapSm}">
+        <StackPanel>
+          <TextBlock Style="{StaticResource PartCaption}"
+                     Text="One per screen. A width floor keeps it from shrinking to nothing, and the accent fill carries the prominence when it stands alone in a footer. Its label is dark: this accent carries dark ink at 8.56 and white ink at 2.01." />
+          <WrapPanel Margin="{StaticResource StackGapSm}">
+            <Button Content="Start" Style="{StaticResource PartPrimaryAction}" Margin="{StaticResource SpaceXs}" />
+            <Button Content="Start" Style="{StaticResource PartPrimaryAction}" IsEnabled="False" Margin="{StaticResource SpaceXs}" />
+          </WrapPanel>
+
+          <TextBlock Style="{StaticResource PartCaption}" Margin="{StaticResource StackGapLg}"
+                     Text="The accent itself is a STATE, so it can move to whatever is the next step. An ordinary button wears it while it is the thing to do, and a disabled one drops it - otherwise a suggestion nobody can act on would be the loudest thing on the screen." />
+          <WrapPanel Margin="{StaticResource StackGapSm}">
+            <Button Content="Choose..." app:PartState.IsSuggested="True" Margin="{StaticResource SpaceXs}" />
+            <Button Content="Choose..." Margin="{StaticResource SpaceXs}" />
+            <Button Content="Suggested and disabled" app:PartState.IsSuggested="True" IsEnabled="False"
+                    Margin="{StaticResource SpaceXs}" />
+          </WrapPanel>
+
+          <TextBlock Style="{StaticResource PartCaption}" Margin="{StaticResource StackGapLg}"
+                     Text="The same drawing in the failure red, for an action that ends something - the session Stop and the destructive answer in a dialog. Not the accent, because the accent marks the next step and this ends one." />
+          <WrapPanel Margin="{StaticResource StackGapSm}">
+            <Button Content="Stop session" Style="{DynamicResource PrimaryActionButton}"
+                    Background="{DynamicResource BrushStatusFails}" Margin="{StaticResource SpaceXs}" />
+            <Button Content="Stop session" Style="{DynamicResource PrimaryActionButton}"
+                    Background="{DynamicResource BrushStatusFails}" IsEnabled="False" Margin="{StaticResource SpaceXs}" />
+          </WrapPanel>
+        </StackPanel>
+      </Border>
+
+      <!-- ============ Card ============ -->
+      <TextBlock Text="Card" Style="{StaticResource PartHeading}" Margin="{StaticResource StackGapLg}" />
+
+      <Border Style="{StaticResource PartCard}" Margin="{StaticResource StackGapSm}">
+        <StackPanel>
+          <TextBlock Text="A card has no border. It is told apart from the window by its fill alone."
+                     Style="{StaticResource PartLabel}" />
+          <TextBlock Style="{StaticResource PartCaption}" Margin="{StaticResource StackGapSm}"
+                     Text="That distance is 1.14, which is what every dark interface uses here - GitHub 1.09, VS Code 1.08. Borders are reserved for controls, so a rectangle with an edge always means you can act on it." />
+        </StackPanel>
+      </Border>
+
+      <Border Style="{StaticResource PartCard}" Margin="{StaticResource StackGapSm}">
+        <TextBlock Text="An empty card, for the case where a section has nothing in it yet."
+                   Style="{StaticResource PartCaption}" />
+      </Border>
+
+      <!-- ============ Pinned footer ============ -->
+      <TextBlock Text="Pinned footer" Style="{StaticResource PartHeading}" Margin="{StaticResource StackGapLg}" />
+
+      <Border Style="{StaticResource PartFooter}" Margin="{StaticResource StackGapSm}">
+        <StackPanel>
+          <TextBlock Style="{StaticResource PartCaption}"
+                     Text="Where a screen's action lives while everything above it scrolls. One edge, along the top, because a footer is not a box - it is where the scrolling stopped. It carries the base background so content disappears under it rather than through it." />
+          <Button Content="Start" Style="{StaticResource PartPrimaryAction}"
+                  HorizontalAlignment="Left" Margin="{StaticResource StackGapSm}" />
+        </StackPanel>
+      </Border>
+
+      <!-- ============ Text field ============ -->
+      <TextBlock Text="Text field" Style="{StaticResource PartHeading}" Margin="{StaticResource StackGapLg}" />
+
+      <Border Style="{StaticResource PartCard}" Margin="{StaticResource StackGapSm}">
+        <StackPanel>
+          <TextBlock Style="{StaticResource PartCaption}"
+                     Text="A field shows its ring on any focus, not only keyboard focus: the ring says your typing lands here, which is true however the caret arrived. The error state moves the EDGE, never the fill - a tinted fill would change the surface the text is read on while somebody is fixing it." />
+          <WrapPanel Margin="{StaticResource StackGapSm}">
+            <TextBox Text="2038-01-19" Width="{StaticResource LaunchFieldWidth}" Margin="{StaticResource SpaceXs}" />
+            <TextBox Text="" Width="{StaticResource TargetBoxMaxWidth}" Margin="{StaticResource SpaceXs}" />
+          </WrapPanel>
+          <WrapPanel>
+            <TextBox Text="2038-13-45" Width="{StaticResource LaunchFieldWidth}" Margin="{StaticResource SpaceXs}"
+                     app:PartState.HasError="True" />
+            <TextBox Text="Disabled" Width="{StaticResource TargetBoxMaxWidth}" Margin="{StaticResource SpaceXs}"
+                     IsEnabled="False" />
+          </WrapPanel>
+          <TextBlock Style="{StaticResource PartFieldMessage}" Margin="{StaticResource SpaceXs}"
+                     Text="Month must be 1 to 12 and day must exist in that month." />
+
+          <TextBlock Style="{StaticResource PartCaption}" Margin="{StaticResource StackGapLg}"
+                     Text="With a hint. It sits on the exact x the caret will, it never takes the mouse, and it goes when there is text - not when the field is focused. A search box somebody has clicked into and is still thinking about is precisely when the hint is worth reading." />
+          <WrapPanel Margin="{StaticResource StackGapSm}">
+            <TextBox Text="" Width="{StaticResource TargetBoxMaxWidth}" Margin="{StaticResource SpaceXs}"
+                     app:PartState.Placeholder="Search scenarios" />
+            <TextBox Text="leap" Width="{StaticResource LaunchFieldWidth}" Margin="{StaticResource SpaceXs}"
+                     app:PartState.Placeholder="Search scenarios" />
+          </WrapPanel>
+          <WrapPanel>
+            <TextBox Text="" Width="{StaticResource TargetBoxMaxWidth}" Margin="{StaticResource SpaceXs}"
+                     IsEnabled="False" app:PartState.Placeholder="Search scenarios" />
+            <TextBox Text="" Width="{StaticResource LaunchFieldWidth}" Margin="{StaticResource SpaceXs}"
+                     app:PartState.Placeholder="A hint written at a length no field on this screen could hold, so the ellipsis is shown rather than promised" />
+          </WrapPanel>
+        </StackPanel>
+      </Border>
+
+      <!-- ============ Check ============ -->
+      <TextBlock Text="Check" Style="{StaticResource PartHeading}" Margin="{StaticResource StackGapLg}" />
+
+      <Border Style="{StaticResource PartCard}" Margin="{StaticResource StackGapSm}">
+        <StackPanel>
+          <CheckBox Content="Scale duration too" Margin="{StaticResource SpaceXs}" />
+          <CheckBox Content="Scale QPC too" IsChecked="True" Margin="{StaticResource SpaceXs}" />
+          <CheckBox Content="Run even if it does not work" IsEnabled="False" Margin="{StaticResource SpaceXs}" />
+          <CheckBox Content="Checked and disabled - the fill dims too, or a dead control shouts in the accent colour"
+                    IsChecked="True" IsEnabled="False" Margin="{StaticResource SpaceXs}" />
+        </StackPanel>
+      </Border>
+
+      <!-- ============ Drop-down ============ -->
+      <TextBlock Text="Drop-down" Style="{StaticResource PartHeading}" Margin="{StaticResource StackGapLg}" />
+
+      <Border Style="{StaticResource PartCard}" Margin="{StaticResource StackGapSm}">
+        <StackPanel>
+          <TextBlock Style="{StaticResource PartCaption}"
+                     Text="One edge and one fill, not a control with a button sitting inside it. The chevron is drawn, not a glyph, so its stroke stays constant on screen at any size." />
+          <WrapPanel Margin="{StaticResource StackGapSm}">
+            <ComboBox Width="{StaticResource LaunchFieldWidth}" Margin="{StaticResource SpaceXs}" SelectedIndex="0">
+              <ComboBoxItem Content="UTC+02:00 - Poland (summer)" />
+              <ComboBoxItem Content="UTC-05:00 - New York" />
+            </ComboBox>
+            <ComboBox Width="{StaticResource TargetBoxMaxWidth}" Margin="{StaticResource SpaceXs}"
+                      IsEnabled="False" SelectedIndex="0">
+              <ComboBoxItem Content="Disabled" />
+            </ComboBox>
+          </WrapPanel>
+        </StackPanel>
+      </Border>
+
+      <!-- ============ Search field ============ -->
+      <TextBlock Text="Search field" Style="{StaticResource PartHeading}" Margin="{StaticResource StackGapLg}" />
+
+      <Border Style="{StaticResource PartCard}" Margin="{StaticResource StackGapSm}">
+        <StackPanel>
+          <TextBlock Style="{StaticResource PartCaption}"
+                     Text="A field that filters a list, with a clear glyph that shows only once there is something to clear. It also submits its first hit on Enter and takes the caret when its section opens - both need real input, so they are measured on the live window, not drawn here. The drawing is the ordinary field with the glyph laid over its right end, the same shape the moment input lays a calendar toggle in." />
+          <WrapPanel Margin="{StaticResource StackGapSm}">
+            <controls:SearchBox Width="{StaticResource TargetBoxMaxWidth}" Margin="{StaticResource SpaceXs}"
+                                Placeholder="Search scenarios" ClearHint="Clear search" />
+            <controls:SearchBox Width="{StaticResource TargetBoxMaxWidth}" Margin="{StaticResource SpaceXs}"
+                                Text="february" Placeholder="Search scenarios" ClearHint="Clear search" />
+          </WrapPanel>
+          <WrapPanel>
+            <controls:SearchBox Width="{StaticResource TargetBoxMaxWidth}" Margin="{StaticResource SpaceXs}"
+                                IsEnabled="False" Text="disabled" Placeholder="Search scenarios"
+                                ClearHint="Clear search" />
+            <controls:SearchBox Width="{StaticResource LaunchFieldWidth}" Margin="{StaticResource SpaceXs}"
+                                Text="a filter typed far longer than the field it sits in, so the text runs under the clear glyph the way a system search box lets it"
+                                Placeholder="Search scenarios" ClearHint="Clear search" />
+          </WrapPanel>
+        </StackPanel>
+      </Border>
+
+      <!-- ============ Choice list ============ -->
+      <TextBlock Text="Choice list" Style="{StaticResource PartHeading}" Margin="{StaticResource StackGapLg}" />
+
+      <Border Style="{StaticResource PartCard}" Margin="{StaticResource StackGapSm}">
+        <StackPanel>
+          <TextBlock Style="{StaticResource PartCaption}"
+                     Text="Searched rather than scanned, because this catalogue is meant to grow well past what fits on a screen. Selection is a fill AND an accent bar: colour alone would be the only thing saying which one, and it is the one signal a reader may not have. The well has an edge and no fill - a fill would be the same neutral a selected row paints itself with, and would erase the selection." />
+          <controls:SearchBox Margin="{StaticResource StackGapSm}"
+                              Placeholder="Search scenarios" ClearHint="Clear search" />
+          <ListBox Margin="{StaticResource StackGapSm}" SelectedIndex="1">
+            <ListBoxItem Content="2038 boundary" />
+            <ListBoxItem Content="29 February" />
+            <ListBoxItem Content="Licence expired a year ago" />
+            <ListBoxItem Content="A scenario carrying a name far longer than any well it will ever be read in, because a catalogue anybody can add to will eventually contain one and the row has to decide what to do about it rather than be surprised" />
+          </ListBox>
+
+          <TextBlock Style="{StaticResource PartCaption}" Margin="{StaticResource StackGapLg}"
+                     Text="Longer than its own cap, so it scrolls inside the well instead of pushing the screen down. The cap is a named value, not geometry chosen by eye." />
+          <ListBox Margin="{StaticResource StackGapSm}">
+            <ListBoxItem Content="29 February" />
+            <ListBoxItem Content="31 December, 23:59" />
+            <ListBoxItem Content="2038 boundary" />
+            <ListBoxItem Content="Daylight saving, spring forward" />
+            <ListBoxItem Content="Daylight saving, fall back" />
+            <ListBoxItem Content="Licence expired a year ago" />
+            <ListBoxItem Content="Licence expires tomorrow" />
+            <ListBoxItem Content="Leap second, 30 June" />
+            <ListBoxItem Content="Year rollover" />
+            <ListBoxItem Content="End of the quarter" />
+          </ListBox>
+
+          <TextBlock Style="{StaticResource PartCaption}" Margin="{StaticResource StackGapLg}"
+                     Text="Empty. It keeps a floor rather than collapsing to a rule, so a filter that matches nothing does not drag everything under it up the screen - the first render of this part did exactly that, which is what the floor is for. What the emptiness MEANS is a sentence the screen puts inside it, because nothing installed and nothing matched are opposite problems." />
+          <ListBox Margin="{StaticResource StackGapSm}" />
+
+          <TextBlock Style="{StaticResource PartCaption}" Margin="{StaticResource StackGapLg}"
+                     Text="One row disabled while the list is live, and then the whole list disabled. A dead control has to look dead without becoming unreadable - including its selection mark, which the first render of this part left at full accent strength on a list nobody could use. A row here holds bare text and simply runs out of room - what a screen does about a name that long is the screen's row template, and it arrives with the first one." />
+          <ListBox Margin="{StaticResource StackGapSm}" SelectedIndex="1">
+            <ListBoxItem Content="Disabled row, still readable" IsEnabled="False" />
+            <ListBoxItem Content="Selected row" />
+          </ListBox>
+          <ListBox Margin="{StaticResource StackGapSm}" IsEnabled="False" SelectedIndex="0">
+            <ListBoxItem Content="The whole list is disabled" />
+            <ListBoxItem Content="Nothing here can be chosen" />
+          </ListBox>
+        </StackPanel>
+      </Border>
+
+      <!-- ============ Form row ============ -->
+      <TextBlock Text="Form row" Style="{StaticResource PartHeading}" Margin="{StaticResource StackGapLg}" />
+
+      <Border Style="{StaticResource PartCard}" Margin="{StaticResource StackGapSm}">
+        <!-- 🔴 Grid.IsSharedSizeScope is what makes the label column agree across rows. Without it each
+             row sizes its own label and the controls start at different x - which is the fault this part
+             exists to fix. -->
+        <StackPanel Grid.IsSharedSizeScope="True">
+          <TextBlock Style="{StaticResource PartCaption}"
+                     Text="The labels line up and the controls start at one x, whatever the label says. The column width is computed from the widest label present, not chosen - so it still holds after a translation. The first two rows were given no message slot and reserve no line for one. The third was given one, so it holds that line's height whether the message is showing or not." />
+
+          <HeaderedContentControl Style="{StaticResource PartFormRow}" Margin="{StaticResource StackGapSm}">
+            <HeaderedContentControl.Header>
+              <TextBlock Text="Target" Style="{StaticResource PartLabel}" />
+            </HeaderedContentControl.Header>
+            <ComboBox Width="{StaticResource LaunchFieldWidth}" SelectedIndex="0">
+              <ComboBoxItem Content="the application under test" />
+            </ComboBox>
+          </HeaderedContentControl>
+
+          <HeaderedContentControl Style="{StaticResource PartFormRow}">
+            <HeaderedContentControl.Header>
+              <TextBlock Text="At" Style="{StaticResource PartLabel}" />
+            </HeaderedContentControl.Header>
+            <TextBox Text="2038-01-19" Width="{StaticResource LaunchFieldWidth}" />
+          </HeaderedContentControl>
+
+          <HeaderedContentControl Style="{StaticResource PartFormRow}"
+                                  Tag="{StaticResource CatalogueFieldMessage}">
+            <HeaderedContentControl.Header>
+              <TextBlock Text="Working folder" Style="{StaticResource PartLabel}" />
+            </HeaderedContentControl.Header>
+            <TextBox Text="C:\nowhere" Width="{StaticResource LaunchFieldWidth}"
+                     app:PartState.HasError="True" />
+          </HeaderedContentControl>
+        </StackPanel>
+      </Border>
+
+      <!-- ============ Collapsible section ============ -->
+      <TextBlock Text="Section" Style="{StaticResource PartHeading}" Margin="{StaticResource StackGapLg}" />
+
+      <TextBlock Style="{StaticResource PartCaption}" Margin="{StaticResource StackGapSm}"
+                 Text="Folded, it still says what is set inside it. That is what makes folding honest - nothing is hidden, only moved out of the way. A section that said only 'Speed' would force a click to find out." />
+
+      <Expander Style="{StaticResource PartSection}" Margin="{StaticResource StackGapSm}" IsExpanded="False"
+                Tag="{StaticResource CatalogueSectionSummary}">
+        <Expander.Header>
+          <TextBlock Text="Speed and options" Style="{StaticResource PartLabel}" />
+        </Expander.Header>
+        <StackPanel>
+          <CheckBox Content="Scale duration too" IsChecked="True" />
+        </StackPanel>
+      </Expander>
+
+      <Expander Style="{StaticResource PartSection}" Margin="{StaticResource StackGapSm}" IsExpanded="True"
+                Tag="{StaticResource CatalogueSectionSummaryOpen}">
+        <Expander.Header>
+          <TextBlock Text="Moment" Style="{StaticResource PartLabel}" />
+        </Expander.Header>
+        <StackPanel Grid.IsSharedSizeScope="True">
+          <HeaderedContentControl Style="{StaticResource PartFormRow}">
+            <HeaderedContentControl.Header>
+              <TextBlock Text="Zone" Style="{StaticResource PartLabel}" />
+            </HeaderedContentControl.Header>
+            <ComboBox Width="{StaticResource LaunchFieldWidth}" SelectedIndex="0">
+              <ComboBoxItem Content="UTC+02:00 - Poland (summer)" />
+            </ComboBox>
+          </HeaderedContentControl>
+        </StackPanel>
+      </Expander>
+
+      <!-- ============ Verdict badge ============ -->
+      <TextBlock Text="Verdict badge" Style="{StaticResource PartHeading}" Margin="{StaticResource StackGapLg}" />
+
+      <Border Style="{StaticResource PartCard}" Margin="{StaticResource StackGapSm}">
+        <StackPanel>
+          <TextBlock Style="{StaticResource PartCaption}"
+                     Text="The one place the meaning palette goes on something other than plain text. Colour never carries the meaning alone - the badge always holds a word." />
+          <WrapPanel Margin="{StaticResource StackGapSm}">
+            <Border Style="{StaticResource PartBadge}" Margin="{StaticResource SpaceXs}">
+              <TextBlock Text="Works" Foreground="{DynamicResource BrushStatusWorks}"
+                         FontSize="{StaticResource FontSizeBody}" />
+            </Border>
+            <Border Style="{StaticResource PartBadge}" Margin="{StaticResource SpaceXs}">
+              <TextBlock Text="Partial" Foreground="{DynamicResource BrushStatusPartial}"
+                         FontSize="{StaticResource FontSizeBody}" />
+            </Border>
+            <Border Style="{StaticResource PartBadge}" Margin="{StaticResource SpaceXs}">
+              <TextBlock Text="Does not work" Foreground="{DynamicResource BrushStatusFails}"
+                         FontSize="{StaticResource FontSizeBody}" />
+            </Border>
+            <Border Style="{StaticResource PartBadge}" Margin="{StaticResource SpaceXs}">
+              <TextBlock Text="Undetermined" Foreground="{DynamicResource BrushStatusUndetermined}"
+                         FontSize="{StaticResource FontSizeBody}" />
+            </Border>
+          </WrapPanel>
+        </StackPanel>
+      </Border>
+
+      <!-- ============ Verdict headline ============ -->
+      <TextBlock Text="Verdict headline" Style="{StaticResource PartHeading}" Margin="{StaticResource StackGapLg}" />
+
+      <Border Style="{StaticResource PartCard}" Margin="{StaticResource StackGapSm}">
+        <StackPanel>
+          <TextBlock Style="{StaticResource PartCaption}"
+                     Text="The one word a finished session leads with, a step above the heading: the peak of the result screen, which has no clocks to compete with it. A glyph and the word in the meaning colour - the same four inks as the badge, and the same rule that colour never carries the meaning alone. The last one is the extreme: a headline long enough to wrap." />
+          <TextBlock Style="{StaticResource PartVerdictHeadline}" Margin="{StaticResource StackGapSm}"
+                     Foreground="{DynamicResource BrushStatusWorks}" Text="✓ Works" />
+          <TextBlock Style="{StaticResource PartVerdictHeadline}" Margin="{StaticResource StackGapSm}"
+                     Foreground="{DynamicResource BrushStatusPartial}" Text="⚠ Partial" />
+          <TextBlock Style="{StaticResource PartVerdictHeadline}" Margin="{StaticResource StackGapSm}"
+                     Foreground="{DynamicResource BrushStatusFails}" Text="✕ Did not take effect" />
+          <TextBlock Style="{StaticResource PartVerdictHeadline}" Margin="{StaticResource StackGapSm}"
+                     Foreground="{DynamicResource BrushStatusUndetermined}" Text="? Undetermined" />
+          <TextBlock Style="{StaticResource PartVerdictHeadline}" Margin="{StaticResource StackGapSm}"
+                     Foreground="{DynamicResource BrushStatusFails}"
+                     Text="✕ Did not take effect because a translation somewhere decided that a headline is the right place for a whole paragraph of explanation" />
+        </StackPanel>
+      </Border>
+
+      <!-- ============ Clock ============ -->
+      <TextBlock Text="Clock" Style="{StaticResource PartHeading}" Margin="{StaticResource StackGapLg}" />
+
+      <TextBlock Style="{StaticResource PartCaption}" Margin="{StaticResource StackGapSm}"
+                 Text="One drawing, both clocks. They stand next to each other here for the same reason they do on the session screen - side by side is the only way a difference of one pixel between them shows. The time is monospaced so the digits do not creep sideways while somebody watches them tick." />
+
+      <!-- The pair is PartSideBySide, the part the session screen draws it with, so the channel between the
+           clocks and their outer edges here are the ones a user sees there. -->
+      <HeaderedContentControl Style="{StaticResource PartSideBySide}" Margin="{StaticResource StackGapSm}">
+        <HeaderedContentControl.Header>
+          <ContentControl Template="{StaticResource PartClock}"
+                          Content="{Binding SampleFakeClock, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                          DataContext="{Binding SampleFakeClock, RelativeSource={RelativeSource AncestorType=UserControl}}" />
+        </HeaderedContentControl.Header>
+        <ContentControl Template="{StaticResource PartClock}"
+                        Content="{Binding SampleRealClock, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                        DataContext="{Binding SampleRealClock, RelativeSource={RelativeSource AncestorType=UserControl}}" />
+      </HeaderedContentControl>
+
+      <TextBlock Style="{StaticResource PartCaption}" Margin="{StaticResource StackGapLg}"
+                 Text="The extreme: a zone label far longer than any real one." />
+
+      <ContentControl Template="{StaticResource PartClock}"
+                      Content="{Binding SampleExtremeClock, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                      DataContext="{Binding SampleExtremeClock, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                      Margin="{StaticResource StackGapSm}" />
+
+      <!-- ============ Fact list ============ -->
+      <TextBlock Text="Fact list" Style="{StaticResource PartHeading}" Margin="{StaticResource StackGapLg}" />
+
+      <TextBlock Style="{StaticResource PartCaption}" Margin="{StaticResource StackGapSm}"
+                 Text="Read-only, so no edge and no fill - an edge means you can act on something. The count comes from the list itself rather than from the caller, so a name and the rows under it cannot disagree. Rows are monospaced because they are data in columns, not prose." />
+
+      <Border Style="{StaticResource PartCard}" Margin="{StaticResource StackGapSm}">
+        <StackPanel>
+          <HeaderedItemsControl Style="{StaticResource PartFactList}" Header="Covered channels">
+            <HeaderedItemsControl.ItemsSource>
+              <x:Array Type="sys:String">
+                <sys:String>GetSystemTimeAsFileTime  x128004</sys:String>
+                <sys:String>GetTickCount64  x44910</sys:String>
+                <sys:String>GetLocalTime  x3517</sys:String>
+              </x:Array>
+            </HeaderedItemsControl.ItemsSource>
+          </HeaderedItemsControl>
+
+          <!-- Empty, which is a state and not a mistake: a session can cover nothing, and the count has
+               to say zero rather than the list vanishing and leaving the reader to guess. -->
+          <HeaderedItemsControl Style="{StaticResource PartFactList}" Header="Uncovered channels">
+            <HeaderedItemsControl.ItemsSource>
+              <x:Array Type="sys:String" />
+            </HeaderedItemsControl.ItemsSource>
+          </HeaderedItemsControl>
+
+          <!-- The NOTE variant: same list, prose rows. The extremes together - more rows than the cap
+               allows, and sentences far longer than the card, which is what the wrapping is for. -->
+          <HeaderedItemsControl Style="{StaticResource PartNoteList}" Header="Warnings">
+            <HeaderedItemsControl.ItemsSource>
+              <x:Array Type="sys:String">
+                <sys:String>coverage.channel_installed_late</sys:String>
+                <sys:String>wait.timeout_collapsed</sys:String>
+                <sys:String>cleanup.chromium_profile_left</sys:String>
+                <sys:String>coverage.family_note</sys:String>
+                <sys:String>coverage.contexts_note</sys:String>
+                <sys:String>runtime.python_monotonic_qpc</sys:String>
+                <sys:String>runtime.java_nanotime_qpc</sys:String>
+                <sys:String>chromium.interval_queued_before_change</sys:String>
+                <!-- 🔴 These six exist to make the cap ENGAGE. The first render of this block had eight
+                     rows, which fitted inside the 140 px the part allows, so the catalogue claimed to be
+                     showing a scrolling list and was showing a short one - promising a state it did not
+                     have. Fourteen rows overflow it, and the scrollbar in the picture is the proof.
+
+                     They are real warning KEYS, which is the second thing this block now shows: the part
+                     puts every row through the translator, so a key arrives here as a sentence. The last
+                     one is deliberately not a key at all - that is what a missing translation looks like,
+                     and seeing it is better than discovering it. -->
+                <sys:String>time.duration_axis_clamped</sys:String>
+                <sys:String>source.network_at_start</sys:String>
+                <sys:String>wait.object_waits_not_scaled</sys:String>
+                <sys:String>timer.multimedia_not_scaled</sys:String>
+                <sys:String>runtime.dotnet_stopwatch_qpc</sys:String>
+                <sys:String>warning.no.such.key.exists</sys:String>
+              </x:Array>
+            </HeaderedItemsControl.ItemsSource>
+          </HeaderedItemsControl>
+        </StackPanel>
+      </Border>
+
+      <!-- ============ Type roles ============ -->
+      <TextBlock Text="Type" Style="{StaticResource PartHeading}" Margin="{StaticResource StackGapLg}" />
+
+      <Border Style="{StaticResource PartCard}" Margin="{StaticResource StackGapSm}">
+        <StackPanel>
+          <TextBlock Text="Section heading" Style="{StaticResource PartHeading}" />
+          <TextBlock Text="Label - what a form row is called" Style="{StaticResource PartLabel}"
+                     Margin="{StaticResource StackGapSm}" />
+          <TextBlock Style="{StaticResource PartNote}" Margin="{StaticResource StackGapSm}"
+                     Text="Note - the prose that explains the tool: why a date is suggested, what an option costs, what a warning means. Quieter than a label and exactly as large, because that text used to take two reductions at once and reading it was work." />
+          <TextBlock Style="{StaticResource PartErrorNote}" Margin="{StaticResource StackGapSm}"
+                     Text="Error note - a failure explained in a sentence, such as a command that failed while a session runs. The size of a note in the error ink: set as a caption, the one line in the footer that says something went wrong read as the least important line in it." />
+          <TextBlock Style="{StaticResource PartCaption}" Margin="{StaticResource StackGapSm}"
+                     Text="Caption - metadata standing beside a value: a chip, a unit, the zone under a clock. Small because it is not read, it is glanced at. Measured: 5.15 or better on every fill it can land on." />
+        </StackPanel>
+      </Border>
+
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

@@ -56,6 +56,18 @@ internal static class StateSheet
         SavePng(root, width, height, Path.Combine(OutputDirectory, name + ".png"));
         File.WriteAllText(Path.Combine(OutputDirectory, name + ".txt"), LayoutReport.Describe(elements));
         File.WriteAllLines(Path.Combine(OutputDirectory, name + ".names.tsv"), NamedRows(elements));
+
+        // A render at the window's own size shows only what fits without scrolling, which on this product is
+        // a little over half of the tallest screen. The other half is where a change hides from the frame
+        // that never looks at it, so a window-size render also gets a companion holding the WHOLE panel, laid
+        // out at the same width with nothing below a fold. The .txt above already carries every element's
+        // coordinates past the fold - this is the same evidence for the eye. Only the window's real size gets
+        // one, so a sweep at some other viewport stays the single cropped picture its size experiment is for.
+        if (width == LayoutProbe.WindowWidth && height == LayoutProbe.WindowHeight)
+        {
+            SaveTallIfBelowFold(root, width, Path.Combine(OutputDirectory, name + ".full.png"));
+        }
+
         return elements;
     }
 
@@ -80,6 +92,33 @@ internal static class StateSheet
         using var file = File.Create(path);
         encoder.Save(file);
     }
+
+    /// <summary>
+    /// Render the whole content at its natural height, so nothing sits below a fold, or do nothing when the
+    /// content already fits the window.
+    /// </summary>
+    /// <remarks>
+    /// The height is MEASURED at an unbounded height and the view is then arranged at exactly that, so a
+    /// pinned footer sits directly under the form rather than at the bottom of an oversized canvas. Capped,
+    /// because a runaway state should still produce a big picture rather than an unbounded allocation - the
+    /// cap sits far above the tallest real screen, and a state that reaches it is a bug worth seeing clipped.
+    /// </remarks>
+    private static void SaveTallIfBelowFold(FrameworkElement root, int width, string path)
+    {
+        root.Measure(new Size(width, double.PositiveInfinity));
+        var full = (int)Math.Ceiling(root.DesiredSize.Height);
+        if (full <= LayoutProbe.WindowHeight)
+        {
+            return;
+        }
+
+        var height = Math.Min(full, TallCap);
+        LayoutProbe.Settle(root, width, height);
+        SavePng(root, width, height, path);
+    }
+
+    /// <summary>Far above the tallest real screen, the fixed catalogue sheet aside.</summary>
+    private const int TallCap = 4096;
 
     /// <summary>96 keeps one rendered pixel equal to one WPF unit, so a measured number matches the XAML.</summary>
     private const int Dpi = 96;

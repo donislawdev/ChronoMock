@@ -8,10 +8,26 @@ namespace ChronoMock.App;
 /// Kept as a flag rather than a magic bias, because the point is the ABSENCE of <c>--zone</c> on the
 /// command line, not a particular offset - an explicit pick that happens to equal the host's offset is
 /// still an explicit pick.</param>
-public sealed record ZoneOption(int BiasMinutes, string Label, string HintKey, bool IsHost = false);
+public sealed record ZoneOption(int BiasMinutes, string Label, string HintKey, bool IsHost = false)
+{
+    // Type-to-select on the market rather than the offset - every zone's offset starts "UTC", so typing
+    // against it never narrows, while the hint lets "P" reach Poland and "U" the US zones.
+    public string DisplayText => TranslationKeyConverter.Resolve(HintKey);
+}
 
-/// <summary>A time-mode option: flowing, frozen, or an xN multiplier, named by a translation key.</summary>
-public sealed record ModeOption(string LabelKey, string Mode, long? Multiplier);
+/// <summary>A time-mode option: real speed, frozen, or an xN multiplier, named by a translation key.</summary>
+public sealed record ModeOption(string LabelKey, string Mode, long? Multiplier)
+{
+    public string DisplayText => TranslationKeyConverter.Resolve(LabelKey);
+}
+
+/// <summary>One relative jump a running session can take, named by a translation key. The delta is the
+/// core's own spelling of it ("-1d", "+1h"), carried rather than recomputed so the label and what is sent
+/// cannot disagree.</summary>
+public sealed record JumpOption(string LabelKey, string Delta)
+{
+    public string DisplayText => TranslationKeyConverter.Resolve(LabelKey);
+}
 
 /// <summary>
 /// The fixed input catalogs - closed lists, not free axes (zasady/13 section 2.3). Zones cover the MVP
@@ -65,4 +81,42 @@ public static class TimeInputs
 
     private static ZoneOption Zone(int biasMinutes, string hintKey) =>
         new(biasMinutes, ZoneLabel.FromBiasMinutes(biasMinutes), hintKey);
+
+    /// <summary>
+    /// The rates a running session can be switched to with one press.
+    /// </summary>
+    /// <remarks>
+    /// 🔴 A COLLECTION, because the shipped panel writes these out as five separate buttons carrying
+    /// their multiplier in a Tag - five copies of one drawing differing only by a value, which is the
+    /// shape that has to be a list. Adding a sixth rate today means editing markup in two places.
+    ///
+    /// It reuses <see cref="ModeOption"/> rather than introducing a rate type of its own: the members are
+    /// the same three, and the session view model already carries that type, so a new one would buy
+    /// nothing and cost a step of coupling on a class that has none to spare
+    /// (gui/CodeMetricsConfig.txt). Freeze is a rate of zero, which is what the core is told.
+    /// </remarks>
+    public static IReadOnlyList<ModeOption> SessionSpeeds { get; } =
+    [
+        new("mode.x1", "multiplier", 1),
+        new("mode.x10", "multiplier", 10),
+        new("mode.x60", "multiplier", 60),
+        new("mode.x1440", "multiplier", 1440),
+        new("action.freeze", "frozen", 0),
+    ];
+
+    /// <summary>
+    /// The relative jumps a running session can take with one press.
+    /// </summary>
+    /// <remarks>
+    /// Ordered as a timeline reads, earliest on the left, so the row is not a list of options but a line
+    /// with a direction. The delta keeps the shipped panel's spelling ("-1d", "+1h") so the wiring is a
+    /// port rather than a translation - the one thing worse than two catalogues is two notations.
+    /// </remarks>
+    public static IReadOnlyList<JumpOption> SessionJumps { get; } =
+    [
+        new("jump.minus_day", "-1d"),
+        new("jump.minus_hour", "-1h"),
+        new("jump.plus_hour", "+1h"),
+        new("jump.plus_day", "+1d"),
+    ];
 }

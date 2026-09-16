@@ -2,28 +2,152 @@
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
 
   <!--
-    Dark palette. One theme only (7.4), but the colours live here as named brushes so a second theme
-    would be a new file, not a rewrite of views (zasady/13 section 7). Colours are chosen to hold
-    contrast on the dark base - the accessibility floor holds even though we ship dark only. Meaning
-    never rides on colour alone: a shape or label always accompanies a status colour (section 9).
+    Dark palette, in two layers.
+
+    LAYER ONE is the SCALE: twelve neutral steps, each with one job. A view never names a step.
+    LAYER TWO is the ROLE tokens below it: every brush a view can name points at a step.
+
+    Why two layers. A palette of six flat names cannot answer "may this colour go here" - it only says
+    what the colour is. A scale answers it, because each step carries an assignment, and a contrast
+    failure is then almost always a WRONG STEP rather than a wrong value. Measured on this palette
+    before the rebuild: the single stroke colour was doing three different jobs at once (divider,
+    control border, focus-adjacent edge) and failed the border one at 1.34 against a card.
+
+    One theme only, but the split means a second theme would be a new set of step values, not a rewrite
+    of views (zasady/13 section 7). Meaning never rides on colour alone: a shape or label always
+    accompanies a status colour (section 9).
   -->
 
-  <!-- Surfaces and text. -->
-  <SolidColorBrush x:Key="BrushBgBase" Color="#FF1B1B1F" />
-  <SolidColorBrush x:Key="BrushBgSurface" Color="#FF26262B" />
-  <SolidColorBrush x:Key="BrushBgSurfaceAlt" Color="#FF2F2F35" />
-  <SolidColorBrush x:Key="BrushStroke" Color="#FF3A3A42" />
-  <SolidColorBrush x:Key="BrushTextPrimary" Color="#FFF2F2F4" />
-  <SolidColorBrush x:Key="BrushTextSecondary" Color="#FFB4B4BE" />
+  <!--
+    ============================ LAYER ONE: the neutral scale ============================
+
+    Steps are declared as Color, not Brush, so a role token can point at one by name. Views must not
+    name a step directly - they name a role below.
+
+    The axis is the one this product already had: R equals G, B a touch higher, which reads slightly
+    cool rather than dead grey. Steps 1 to 3 and 11 to 12 keep the exact values the shipped build uses,
+    so adopting the scale changes nothing that is already on screen. Steps 4 to 8 are new and fill the
+    gaps the contrast measurement exposed.
+
+    Every threshold below is MEASURED, not asserted. Numbers are WCAG relative-luminance ratios.
+  -->
+
+  <!-- 1-2: application background, and the other surface (card, chrome strip). 1.14 apart - the same
+       distance GitHub dark (1.09) and VS Code dark (1.08) use between editor and sidebar. A card needs
+       no border to read as a card at this distance, which is why cards here carry none. -->
+  <Color x:Key="Neutral01">#FF1B1B1F</Color>
+  <Color x:Key="Neutral02">#FF26262B</Color>
+
+  <!-- 3-5: control fill, by state. The mouse answers on FILL, the keyboard answers on EDGE (step 7),
+       so a control that is hovered AND focused still says both things (guide section 10.9).
+
+       🔴 Pressed is DARKER than rest, not lighter, and that is deliberate. The first draft had it
+       lighter and the arithmetic closed against itself: a fill bright enough to read as "pressed"
+       pushed secondary text on it down to 4.12 against a floor of 4.5. Pressed as a RECESS - the
+       WinUI behaviour - solves it without touching the ink: secondary text lands at 7.61 instead.
+       Do not "fix" this back to a lighter pressed fill without redoing that measurement. -->
+  <Color x:Key="Neutral03">#FF2F2F35</Color>
+  <Color x:Key="Neutral04">#FF3E3E46</Color>
+  <Color x:Key="Neutral05">#FF232328</Color>
+
+  <!-- 6-8: lines and edges, three separate jobs that used to share one value.
+       6 divider   - a quiet rule between sections. No threshold: it separates, it does not identify.
+       7 border    - the edge that says "this is a control". 3.90 on the window, 3.42 on a card,
+                     3.02 on its own rest fill. WCAG 1.4.11 asks 3.0 against ADJACENT background, so
+                     those three are the pairs that matter. The ratio against the control's own HOVER
+                     fill is 2.41 and is deliberately not a gate: that edge is interior to one control,
+                     not the boundary that identifies it, and a hovered control is more visible, not
+                     less. Widening the gate to that pair reddens on nothing a user can see.
+       8 muted glyph - chevrons, separators, a highlighted edge. 6.13 on the window, 5.38 on a card. -->
+  <Color x:Key="Neutral06">#FF3A3A42</Color>
+  <Color x:Key="Neutral07">#FF777787</Color>
+  <Color x:Key="Neutral08">#FF9999AB</Color>
+
+  <!-- 9-10 are the accent fill and its hover, and they are not neutral - see the accent block below. -->
+
+  <!-- 11-12: ink. Secondary holds 5.15 or better on every fill it is painted on, primary 9.48 or
+       better. Both were already right and are carried over unchanged. -->
+  <Color x:Key="Neutral11">#FFB4B4BE</Color>
+  <Color x:Key="Neutral12">#FFF2F2F4</Color>
+
+  <!--
+    Accent. One accent, on the primary action and on the focus ring, and nowhere else - an accent on
+    three elements reads as a decision, on twelve as decoration.
+
+    🔴 This accent carries a DARK label, never a white one. Measured: dark ink on it is 8.56, white ink
+    is 2.01 against a floor of 4.5. That is a property of the hue, not a preference, and it closes the
+    white-on-accent option for the whole application. A later session that "fixes" a dark button label
+    to white will drop it under the floor with no visible symptom.
+  -->
+  <Color x:Key="AccentBase">#FF4CC2FF</Color>
+  <Color x:Key="AccentRing">#FF7CD0FF</Color>
+
+  <!-- 9-10: the accent fill under the cursor and under the press. Lighter on hover, darker on press,
+       the WinUI direction. The dark label holds on all three: 8.56 at rest, 9.93 hovered, 7.19 pressed.
+
+       🔴 These sit close to the focus colour by necessity - they are the same hue - and the hover step is
+       1.02 away from it. Keyboard focus recolours each control's OWN 1 px border to BrushFocusRing (AccentRing),
+       tight against the edge, rather than drawing a separate ring outside with a gap of background. AccentRing
+       is a lighter blue than the fill, so the recoloured border stays visible even on a suggested button, which
+       is why the old outside-ring reason (that a same-hue ring would vanish into the fill) no longer holds.
+       Measured against the surfaces the border sits on: 10.08 on the window, 8.84 on a card. -->
+  <Color x:Key="AccentHover">#FF6FD0FF</Color>
+  <Color x:Key="AccentPressed">#FF3BB2EE</Color>
+
+  <!--
+    ============================ LAYER TWO: role tokens ============================
+
+    These are the only names a view may use. Each points at a step above.
+  -->
+
+  <!-- Surfaces. -->
+  <SolidColorBrush x:Key="BrushBgBase" Color="{StaticResource Neutral01}" />
+  <SolidColorBrush x:Key="BrushBgSurface" Color="{StaticResource Neutral02}" />
+  <SolidColorBrush x:Key="BrushBgSurfaceAlt" Color="{StaticResource Neutral03}" />
+
+  <!-- Control fill by state. Parts.xaml names these in the Button, TextBox, CheckBox, ComboBox and
+       ListBoxItem styles. -->
+  <SolidColorBrush x:Key="BrushControlRest" Color="{StaticResource Neutral03}" />
+  <SolidColorBrush x:Key="BrushControlHover" Color="{StaticResource Neutral04}" />
+  <SolidColorBrush x:Key="BrushControlPressed" Color="{StaticResource Neutral05}" />
+
+  <!-- Lines and edges. BrushStroke is the OLD single name and still points at the divider step, so
+       today's views keep the exact pixels they have. It goes when the last view stops naming it. -->
+  <SolidColorBrush x:Key="BrushStroke" Color="{StaticResource Neutral06}" />
+  <SolidColorBrush x:Key="BrushDivider" Color="{StaticResource Neutral06}" />
+  <SolidColorBrush x:Key="BrushControlBorder" Color="{StaticResource Neutral07}" />
+  <SolidColorBrush x:Key="BrushGlyphMuted" Color="{StaticResource Neutral08}" />
+
+  <!-- Ink. -->
+  <SolidColorBrush x:Key="BrushTextPrimary" Color="{StaticResource Neutral12}" />
+  <SolidColorBrush x:Key="BrushTextSecondary" Color="{StaticResource Neutral11}" />
 
   <!-- Accent and keyboard focus (focus ring must be visibly high-contrast, section 9). -->
-  <SolidColorBrush x:Key="BrushAccent" Color="#FF4CC2FF" />
-  <SolidColorBrush x:Key="BrushFocusRing" Color="#FF7CD0FF" />
+  <SolidColorBrush x:Key="BrushAccent" Color="{StaticResource AccentBase}" />
+  <SolidColorBrush x:Key="BrushAccentHover" Color="{StaticResource AccentHover}" />
+  <SolidColorBrush x:Key="BrushAccentPressed" Color="{StaticResource AccentPressed}" />
+  <SolidColorBrush x:Key="BrushFocusRing" Color="{StaticResource AccentRing}" />
 
-  <!-- Verdict status colours. Always paired with a shape and a label, never colour alone. -->
-  <SolidColorBrush x:Key="BrushStatusWorks" Color="#FF4EC9A8" />
-  <SolidColorBrush x:Key="BrushStatusPartial" Color="#FFE5C07B" />
-  <SolidColorBrush x:Key="BrushStatusFails" Color="#FFF0736A" />
-  <SolidColorBrush x:Key="BrushStatusUndetermined" Color="#FF9AA0A6" />
+  <!-- The label that sits ON the accent fill. Named so the pairing is one decision in one place,
+       rather than a colour chosen again at every primary button. See the accent note above. -->
+  <SolidColorBrush x:Key="BrushOnAccent" Color="{StaticResource Neutral01}" />
+
+  <!-- Verdict status colours. Always paired with a shape and a label, never colour alone. Each holds
+       5.28 or better against both the window and a card. -->
+  <Color x:Key="StatusWorks">#FF4EC9A8</Color>
+  <Color x:Key="StatusPartial">#FFE5C07B</Color>
+  <Color x:Key="StatusFails">#FFF0736A</Color>
+  <Color x:Key="StatusUndetermined">#FF9AA0A6</Color>
+
+  <SolidColorBrush x:Key="BrushStatusWorks" Color="{StaticResource StatusWorks}" />
+  <SolidColorBrush x:Key="BrushStatusPartial" Color="{StaticResource StatusPartial}" />
+  <SolidColorBrush x:Key="BrushStatusFails" Color="{StaticResource StatusFails}" />
+  <SolidColorBrush x:Key="BrushStatusUndetermined" Color="{StaticResource StatusUndetermined}" />
+
+  <!-- A field holding something unusable. Its own role rather than a second name for the failure
+       verdict: they are the same colour today and answer different questions, so if one ever has to
+       move, there is somewhere for it to move to. Measured as an edge: 5.28 against a card, against
+       a floor of 3.0 for a non-text boundary. -->
+  <SolidColorBrush x:Key="BrushError" Color="{StaticResource StatusFails}" />
 
 </ResourceDictionary>

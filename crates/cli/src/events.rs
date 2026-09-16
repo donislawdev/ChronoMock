@@ -53,6 +53,7 @@ pub(crate) fn emit_coverage(pid: u32, cov: &chrono_core::Coverage, extra_warning
         observed: to_wire(&cov.observed),
         uncovered: cov.uncovered.clone(),
         unobserved: cov.unobserved.clone(),
+        installed_late: cov.installed_late.clone(),
         warning_keys,
     });
 }

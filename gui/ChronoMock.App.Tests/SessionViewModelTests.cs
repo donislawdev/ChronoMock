@@ -42,6 +42,16 @@ public class SessionViewModelTests
             ["cleanup.chromium_profile_left"] = "temp profile left behind",
             ["report.requested"] = "requested: {0} (zone {1}, mode {2})",
             ["mode.x60"] = "×60",
+            // The shipped reading, so a test that prints a mode prints what a reader would see. It said
+            // "Flowing" until 2026-09-12, and nothing here reddened when the label changed - this stub is
+            // its own dictionary, which is right for the test and worth saying out loud: the label itself
+            // is guarded by XamlResourceKeyTests and by the renders, not from in here.
+            ["mode.flow"] = "×1",
+            // The covered/observed rows fold their read count in through this, the same key the view's
+            // CoverageRowConverter resolves - without it a summary test would read the key back and pass or
+            // fail for the wrong reason.
+            ["coverage.reads"] = "{0} - read {1} times",
+            ["coverage.reads_one"] = "{0} - read once",
         };
         return key => map.TryGetValue(key, out var value) ? value : key;
     }
@@ -96,7 +106,11 @@ public class SessionViewModelTests
         Assert.Equal("2026-08-24", vm.Real.Date);
         Assert.Equal("20:30:00", vm.Real.Time);
         Assert.Equal("UTC+02:00", vm.Real.Zone);
-        Assert.Equal("x60", vm.MultiplierText);
+        // 🔴 The multiplication sign, since 2026-09-12, so the rate reads the same here as on the buttons
+        // that set it. This assertion is also the ONLY thing that caught the change: the status line it
+        // renders into sits below the 800 px the panel baselines capture, so the 22 renders stayed
+        // identical to the byte while a user-visible string changed.
+        Assert.Equal("×60", vm.MultiplierText);
         Assert.Equal(SessionStatusKind.Running, vm.StatusKind);
     }
 
@@ -129,7 +143,10 @@ public class SessionViewModelTests
 
         // The one command is rejected, but the session stays live and the error is shown (rule 6).
         Assert.Equal(SessionStatusKind.Running, vm.StatusKind);
-        Assert.Equal("moment.invalid", vm.InFlightErrorKey);
+        // 🔴 The IN-FLIGHT wording of that reason, since 2026-09-12. The core's own text for this key ends
+        // "the session did not start", which the line above proves is false here - the panel was printing
+        // that denial under a status reading "Running".
+        Assert.Equal("moment.invalid_in_flight", vm.InFlightErrorKey);
         Assert.True(vm.HasInFlightError);
     }
 
@@ -218,10 +235,43 @@ public class SessionViewModelTests
         Assert.Equal("status.target_unreadable", vm.StatusKey);
     }
 
+    /// <summary>
+    /// A new session starts with an empty audit, not with the previous session's lists.
+    /// </summary>
+    /// <remarks>
+    /// 🔴 THIS GUARD EXISTS BECAUSE THE FAULT WAS MADE. The reset cleared the covered, observed, uncovered and
+    /// warning lists and not the one saying what could not be watched, and those lists are unions - so a second
+    /// session in the same window went on listing the first one's channels (untouchable rule 4). The start is
+    /// aimed at a missing file, which fails after the reset and before any core is launched.
+    /// </remarks>
+    [Fact]
+    public async Task A_new_session_does_not_inherit_the_previous_sessions_audit_lists()
+    {
+        var vm = new SessionViewModel();
+        vm.Apply(new CoverageEvent
+        {
+            V = ProtocolJson.ProtocolVersion,
+            Pid = 100,
+            Covered = [new CoveredChannel { Channel = "timeGetTime", Calls = 12 }],
+            Unobserved = ["NtQuerySystemTime"],
+            InstalledLate = ["timeGetTime"],
+            WarningKeys = ["coverage.channel_installed_late"],
+        });
+        Assert.True(vm.HasUnobserved && vm.HasInstalledLate, "the fixture no longer carries a previous session");
+
+        vm.SetTarget(Path.Combine(Path.GetTempPath(), $"chrono-missing-{Guid.NewGuid():N}.exe"));
+        await vm.StartAsync();
+
+        Assert.Equal("status.target_unreadable", vm.StatusKey);
+        Assert.Empty(vm.Covered);
+        Assert.Empty(vm.Unobserved);
+        Assert.Empty(vm.InstalledLate);
+    }
+
     [Fact]
     public void State_syncs_the_mode_dropdown_to_the_live_multiplier()
     {
-        var vm = new SessionViewModel(); // default mode is x60
+        var vm = new SessionViewModel(); // default mode is flow
 
         vm.Apply(State("2038-01-19T03:14:07", "2026-08-24T20:30:00", bias: 0, multiplier: 1440));
 
@@ -314,9 +364,18 @@ public class SessionViewModelTests
     {
         var vm = new SessionViewModel();
 
-        Assert.Equal(-120, vm.SelectedZone.BiasMinutes); // UTC+02:00
-        Assert.Equal("multiplier", vm.SelectedMode.Mode);
-        Assert.Equal(60, vm.SelectedMode.Multiplier);
+        // 🔴 UTC since 2026-09-12, and UTC+02:00 before it. The old default was one market's summer time,
+        // read on a first run as somebody's local clock without saying whose, out of a list that covers
+        // Poland and the United States only. It also makes the shipped MOMENT true: 2038-01-19T03:14:07 is
+        // the 32-bit boundary in UTC and was two hours past it at +02:00.
+        Assert.Equal(0, vm.SelectedZone.BiasMinutes);
+
+        // 🔴 Real speed since 2026-09-12, and x60 before that. The tool's promise is that an application sees
+        // a different DATE - running it sixty times faster as well is the second feature, and a first run
+        // used to get it without asking. The null multiplier is asserted as well as the mode, because
+        // "flow" with a number attached would send a rate the panel is not showing.
+        Assert.Equal("flow", vm.SelectedMode.Mode);
+        Assert.Null(vm.SelectedMode.Multiplier);
         Assert.True(vm.Moment.IsValid);
     }
 
@@ -472,12 +531,72 @@ public class SessionViewModelTests
 
         Assert.True(vm.CoverageKnown);
         Assert.True(vm.HasCovered);
-        Assert.Contains("GetSystemTimeAsFileTime", vm.Covered[0], StringComparison.Ordinal);
-        Assert.Contains("842", vm.Covered[0], StringComparison.Ordinal);
+        Assert.Equal("GetSystemTimeAsFileTime", vm.Covered[0].Channel);
+        Assert.Equal(842L, vm.Covered[0].Calls);
         Assert.True(vm.HasObserved);
-        Assert.Contains("QueryPerformanceCounter", vm.Observed[0], StringComparison.Ordinal);
+        Assert.Equal("QueryPerformanceCounter", vm.Observed[0].Channel);
         Assert.Equal("KUSER_SHARED_DATA", Assert.Single(vm.Uncovered));
         Assert.Equal("source.network_at_start", Assert.Single(vm.Warnings));
+    }
+
+    /// <summary>
+    /// The channels hooked late are named, unioned over the family like the other reasons behind a verdict.
+    /// </summary>
+    [Fact]
+    public void Channels_hooked_late_are_named_and_unioned_over_the_family()
+    {
+        var vm = new SessionViewModel();
+
+        vm.Apply(new CoverageEvent
+        {
+            V = ProtocolJson.ProtocolVersion,
+            Pid = 100,
+            Covered = [new CoveredChannel { Channel = "timeGetTime", Calls = 12 }],
+            InstalledLate = ["timeGetTime"],
+            WarningKeys = ["coverage.channel_installed_late"],
+        });
+        vm.Apply(new CoverageEvent
+        {
+            V = ProtocolJson.ProtocolVersion,
+            Pid = 200,
+            InstalledLate = ["timeGetTime", "WSAWaitForMultipleEvents"],
+            WarningKeys = ["coverage.channel_installed_late"],
+        });
+
+        Assert.True(vm.HasInstalledLate);
+        Assert.Equal(["timeGetTime", "WSAWaitForMultipleEvents"], vm.InstalledLate);
+    }
+
+    /// <summary>
+    /// A session that is over stops offering on the session phase what only a live session can use: its
+    /// controls, a refused command's error, and the promise of an audit that will not come.
+    /// </summary>
+    [Fact]
+    public void A_session_that_is_over_stops_offering_what_only_a_live_session_can_use()
+    {
+        var vm = SessionStates.InFlightError();
+        Assert.True(vm.ShowsSessionControls);
+        Assert.True(vm.ShowsInFlightError);
+        Assert.True(vm.IsAuditPending);
+        Assert.False(vm.AuditNeverArrived);
+
+        vm.Apply(new VanishedEvent
+        {
+            V = ProtocolJson.ProtocolVersion,
+            Pid = 4242,
+            ReasonKey = "target.single_instance_handoff",
+            LivedMs = 180,
+        });
+
+        Assert.False(vm.ShowsSessionControls);
+        Assert.True(vm.HasInFlightError, "the shipped panel keeps the error it had");
+        Assert.False(vm.ShowsInFlightError, "the session phase does not show it under a session that is over");
+        Assert.False(vm.IsAuditPending);
+        Assert.True(vm.AuditNeverArrived);
+
+        var ended = SessionStates.Ended();
+        Assert.False(ended.ShowsSessionControls);
+        Assert.False(ended.AuditNeverArrived, "an ended session that did report has nothing missing to announce");
     }
 
     /// <summary>
@@ -522,7 +641,9 @@ public class SessionViewModelTests
         vm.Apply(Coverage(pid: 200, "GetSystemTimeAsFileTime", 5));   // a child - never summed in here
 
         // Still the parent's single channel and its own count (untouchable rule 4: never sum processes).
-        Assert.Equal("GetSystemTimeAsFileTime  ×842", Assert.Single(vm.Covered));
+        var covered = Assert.Single(vm.Covered);
+        Assert.Equal("GetSystemTimeAsFileTime", covered.Channel);
+        Assert.Equal(842L, covered.Calls);
     }
 
     /// <summary>
@@ -554,7 +675,9 @@ public class SessionViewModelTests
         });
 
         // Counts: the parent's, unchanged and unsummed (rule 4).
-        Assert.Equal("GetSystemTimeAsFileTime  ×842", Assert.Single(vm.Covered));
+        var covered = Assert.Single(vm.Covered);
+        Assert.Equal("GetSystemTimeAsFileTime", covered.Channel);
+        Assert.Equal(842L, covered.Calls);
         // Reasons: the child's, which used to vanish entirely.
         Assert.Equal("source.network_at_start", Assert.Single(vm.Warnings));
         Assert.Equal("NtQuerySystemInformation", Assert.Single(vm.Uncovered));
@@ -566,7 +689,7 @@ public class SessionViewModelTests
     /// R2-X8. The core reports a process twice - once when it is discovered, once when the session
     /// ends - because the first snapshot is taken inside the ADR-4 guard window and its call counts
     /// are the session's first blink. Measured: a probe that read the clock 25 times was shown here
-    /// as "×2". The panel has to move to the later snapshot for that pid, and to no other.
+    /// as "read 2 times". The panel has to move to the later snapshot for that pid, and to no other.
     /// </summary>
     [Fact]
     public void A_later_snapshot_of_the_parent_replaces_its_counts_but_a_child_never_does()
@@ -577,7 +700,9 @@ public class SessionViewModelTests
         vm.Apply(Coverage(pid: 200, "GetSystemTime", 900)); // a child - never becomes the headline
         vm.Apply(Coverage(pid: 100, "GetSystemTime", 25));  // the parent again, at the end
 
-        Assert.Equal("GetSystemTime  ×25", Assert.Single(vm.Covered));
+        var row = Assert.Single(vm.Covered);
+        Assert.Equal("GetSystemTime", row.Channel);
+        Assert.Equal(25L, row.Calls);
     }
 
     [Fact]
@@ -685,12 +810,12 @@ public class SessionViewModelTests
 
     /// <summary>
     /// A Chromium channel is named by context TYPE plus API - "page Date.now" - and the core emits one
-    /// coverage event per context. An application with two pages therefore produced two identical rows
-    /// with different counts, and nothing said which was which. A row a reader cannot attribute is a
-    /// result they cannot explain, which is the defect this project treats as a defect.
+    /// coverage event per context. Each context's count stays its own and is never summed (rule 4), so two
+    /// pages reading the same channel become two rows that tell apart by their count. The raw context id that
+    /// once prefixed each row was dropped in P6 as a number that named nothing to the reader.
     /// </summary>
     [Fact]
-    public void Cdp_coverage_rows_say_which_context_they_came_from()
+    public void Cdp_keeps_each_contexts_count_separate_and_never_sums_them()
     {
         var vm = new SessionViewModel { IsCdp = true };
 
@@ -708,24 +833,26 @@ public class SessionViewModelTests
         });
 
         Assert.Equal(2, vm.Covered.Count);
-        Assert.Contains(vm.Covered, r => r.Contains("context 0", StringComparison.Ordinal)
-                                      && r.Contains("×5", StringComparison.Ordinal));
-        Assert.Contains(vm.Covered, r => r.Contains("context 1", StringComparison.Ordinal)
-                                      && r.Contains("×9", StringComparison.Ordinal));
+        // The raw context id is gone (P6), so the two contexts' rows tell apart by their read count.
+        Assert.Contains(vm.Covered, r => r.Calls == 5);
+        Assert.Contains(vm.Covered, r => r.Calls == 9);
         // Still never summed across contexts (rule 4) - two rows, each with its own count.
-        Assert.DoesNotContain(vm.Covered, r => r.Contains("×14", StringComparison.Ordinal));
+        Assert.DoesNotContain(vm.Covered, r => r.Calls == 14);
     }
 
-    /// <summary>The native branch is unchanged: an OS process is already named by its pid in the panel's
-    /// own layout, and prefixing there would be noise the CDP case needs and this one does not.</summary>
+    /// <summary>A covered row keeps the channel and its raw read count apart: the display folds the count
+    /// into a sentence and the copy-summary builds the same line, but the model holds the two as data so a
+    /// test - or a later per-process breakdown - can read either without parsing a string.</summary>
     [Fact]
-    public void Native_coverage_rows_are_not_tagged_with_a_context()
+    public void A_covered_row_keeps_the_channel_and_its_read_count_as_data()
     {
         var vm = new SessionViewModel();
 
         vm.Apply(Coverage(pid: 4242, "GetSystemTimeAsFileTime", 7));
 
-        Assert.DoesNotContain(vm.Covered, r => r.Contains("context", StringComparison.Ordinal));
+        var row = Assert.Single(vm.Covered);
+        Assert.Equal("GetSystemTimeAsFileTime", row.Channel);
+        Assert.Equal(7L, row.Calls);
     }
 
     [Fact]
@@ -1127,15 +1254,15 @@ public class SessionViewModelTests
     [Fact]
     public void The_diagnostics_block_names_the_requested_moment_zone_and_mode()
     {
-        // Defaults: moment 2038-01-19T03:14:07, zone UTC+02:00, mode x60.
+        // Defaults: moment 2038-01-19T03:14:07, zone UTC, mode flow.
         var vm = new SessionViewModel();
         vm.SetTarget(@"C:\apps\Foo.exe");
 
         var block = vm.BuildDiagnosticsBlock(new[] { "core stderr: hi" });
 
         Assert.Contains("2038-01-19T03:14:07", block, StringComparison.Ordinal);
-        Assert.Contains("zone UTC+02:00", block, StringComparison.Ordinal);
-        Assert.Contains("mode x60", block, StringComparison.Ordinal);
+        Assert.Contains("zone UTC+00:00", block, StringComparison.Ordinal);
+        Assert.Contains("mode flow", block, StringComparison.Ordinal);
         Assert.Contains("core stderr: hi", block, StringComparison.Ordinal);
     }
 
@@ -1187,7 +1314,7 @@ public class SessionViewModelTests
     [Fact]
     public void The_summary_echoes_the_requested_moment_zone_and_mode()
     {
-        // Defaults: moment 2038-01-19T03:14:07, zone UTC+02:00, mode ×60.
+        // Defaults: moment 2038-01-19T03:14:07, zone UTC, mode flow (shown as ×1).
         var vm = new SessionViewModel();
         vm.SetTarget(@"C:\apps\Ledger.exe");
         vm.Apply(Verdict("works", "verdict.works.covered"));
@@ -1195,8 +1322,8 @@ public class SessionViewModelTests
         var summary = vm.BuildSummary(T());
 
         Assert.Contains("2038-01-19T03:14:07", summary, StringComparison.Ordinal);
-        Assert.Contains("UTC+02:00", summary, StringComparison.Ordinal);
-        Assert.Contains("×60", summary, StringComparison.Ordinal);
+        Assert.Contains("UTC+00:00", summary, StringComparison.Ordinal);
+        Assert.Contains("×1", summary, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -1311,6 +1438,183 @@ public class SessionViewModelTests
         Assert.True(vm.ScaleQpc);
         Assert.True(vm.ForceStart);
         Assert.False(vm.HasHistoryNote, "everything was on offer, so there is nothing to report");
+    }
+
+    /// <summary>
+    /// A command the core rejects mid-session says what did not happen, not that nothing started.
+    /// </summary>
+    /// <remarks>
+    /// 🔴 The core sends one key whether a bad moment arrives with the start command or with a jump, and
+    /// both of its texts ended "the session did not start" - so the panel printed that denial directly
+    /// under a status line reading "Running". The core's own comment on the rate path says "the session
+    /// keeps running at the rate it had". Only the surface knows which command an error answered, so only
+    /// the surface can pick the wording.
+    /// </remarks>
+    [Fact]
+    public void A_rejected_in_flight_command_says_what_did_not_happen()
+    {
+        var vm = SessionStates.Running();
+
+        vm.Apply(InFlightRejection("moment.invalid"));
+
+        Assert.True(vm.IsRunning, "an in-flight rejection never ends the session");
+        Assert.True(vm.HasInFlightError);
+        Assert.Equal("moment.invalid_in_flight", vm.InFlightErrorKey);
+
+        vm.Apply(InFlightRejection("time.bad_multiplier"));
+
+        Assert.True(vm.IsRunning);
+        Assert.Equal("time.bad_multiplier_in_flight", vm.InFlightErrorKey);
+
+        // A reason with no start-time tail on it passes through untouched - the mapping is two entries,
+        // not a translation layer over every key the core can send.
+        vm.Apply(InFlightRejection("moment.unsupported_kind"));
+
+        Assert.Equal("moment.unsupported_kind", vm.InFlightErrorKey);
+    }
+
+    /// <summary>
+    /// The pairing held from BOTH ends, in both languages: the start reason keeps the tail that is true
+    /// there, and the in-flight reason does not have it. Without the second half a new key could quietly
+    /// be written as a copy of the old one and the contradiction would be back with a longer name.
+    /// </summary>
+    [Fact]
+    public void The_in_flight_reasons_drop_the_start_tail_and_the_start_reasons_keep_it()
+    {
+        (string Culture, string Tail)[] languages =
+        [
+            ("en", "did not start"),
+            ("pl", "nie wystartowa"),
+        ];
+
+        (string Start, string InFlight)[] pairs =
+        [
+            ("moment.invalid", "moment.invalid_in_flight"),
+            ("time.bad_multiplier", "time.bad_multiplier_in_flight"),
+        ];
+
+        foreach (var (culture, tail) in languages)
+        {
+            var strings = WpfTestHost.Invoke(
+                () => ChronoMock.App.Localization.LocalizationService.Load(culture));
+
+            foreach (var (start, inFlight) in pairs)
+            {
+                var startText = Assert.IsType<string>(strings[start]);
+                var inFlightText = Assert.IsType<string>(strings[inFlight]);
+
+                Assert.Contains(tail, startText, StringComparison.OrdinalIgnoreCase);
+                Assert.DoesNotContain(tail, inFlightText, StringComparison.OrdinalIgnoreCase);
+                Assert.NotEqual(startText, inFlightText);
+            }
+        }
+    }
+
+    private static ErrorEvent InFlightRejection(string key) => new()
+    {
+        V = ProtocolJson.ProtocolVersion,
+        Id = 11,
+        Code = 1,
+        Key = key,
+        Origin = "core",
+    };
+
+    /// <summary>
+    /// Every refusal has words, and they are exactly the refusals.
+    /// </summary>
+    /// <remarks>
+    /// 🔴 The footer used to name one of the three: with an application chosen and a date that does not
+    /// parse it printed nothing at all, because the contract line has no moment to show either. A disabled
+    /// button and no account of itself. The pairing with CanStart is asserted at every step rather than
+    /// once, because the two are read by one footer and a screen where they disagree either refuses
+    /// silently or explains a refusal that is not happening.
+    /// </remarks>
+    [Fact]
+    public void Start_has_a_reason_for_every_refusal_and_none_when_it_is_not_refusing()
+    {
+        var vm = new SessionViewModel();
+
+        Assert.False(vm.CanStart);
+        Assert.True(vm.HasStartRefusal);
+        Assert.Equal("setup.needs_target", vm.StartRefusalKey);
+
+        vm.SetTarget(@"C:\apps\Ledger.exe");
+
+        Assert.True(vm.CanStart);
+        Assert.False(vm.HasStartRefusal);
+        Assert.Equal(string.Empty, vm.StartRefusalKey);
+
+        // The case the footer used to meet in silence.
+        vm.Moment.DateText = "2038-02-31";
+
+        Assert.False(vm.Moment.IsValid);
+        Assert.False(vm.CanStart);
+        Assert.True(vm.HasStartRefusal);
+        Assert.Equal("setup.needs_moment", vm.StartRefusalKey);
+
+        vm.Moment.DateText = "2038-01-19";
+
+        Assert.True(vm.CanStart);
+        Assert.False(vm.HasStartRefusal);
+    }
+
+    /// <summary>
+    /// A reason that arrives after the button is already grey is a reason nobody reads.
+    /// </summary>
+    [Fact]
+    public void The_refusal_reason_is_announced_wherever_the_button_state_is()
+    {
+        var vm = new SessionViewModel();
+        var announced = new List<string>();
+        vm.PropertyChanged += (_, e) => announced.Add(e.PropertyName ?? string.Empty);
+
+        vm.SetTarget(@"C:\apps\Ledger.exe");
+
+        Assert.Contains(nameof(SessionViewModel.CanStart), announced);
+        Assert.Contains(nameof(SessionViewModel.StartRefusalKey), announced);
+        Assert.Contains(nameof(SessionViewModel.HasStartRefusal), announced);
+
+        announced.Clear();
+        vm.Moment.DateText = "2038-02-31";
+
+        Assert.Contains(nameof(SessionViewModel.CanStart), announced);
+        Assert.Contains(nameof(SessionViewModel.StartRefusalKey), announced);
+        Assert.Contains(nameof(SessionViewModel.HasStartRefusal), announced);
+    }
+
+    /// <summary>
+    /// The launch fields live inside the speed section now, so its folded header has to say they are set.
+    /// A header that went on reading "×1" over a session carrying arguments would be folding turned into
+    /// hiding, which is the one thing a summary may not do.
+    /// </summary>
+    [Fact]
+    public void Setting_an_argument_or_a_folder_announces_it_for_the_folded_header()
+    {
+        var vm = new SessionViewModel();
+
+        Assert.False(vm.HasTargetArgs);
+        Assert.False(vm.HasWorkingFolder);
+
+        var announced = new List<string>();
+        vm.PropertyChanged += (_, e) => announced.Add(e.PropertyName ?? string.Empty);
+
+        vm.TargetArgs = "--seed 7";
+        vm.WorkingFolder = @"C:\apps\data";
+
+        Assert.True(vm.HasTargetArgs);
+        Assert.True(vm.HasWorkingFolder);
+        Assert.Contains(nameof(SessionViewModel.HasTargetArgs), announced);
+        Assert.Contains(nameof(SessionViewModel.HasWorkingFolder), announced);
+
+        // And back, because a chip that appears and never leaves is worse than no chip.
+        announced.Clear();
+        vm.TargetArgs = string.Empty;
+        vm.WorkingFolder = string.Empty;
+
+        Assert.False(vm.HasTargetArgs);
+        Assert.False(vm.HasWorkingFolder);
+        Assert.Contains(nameof(SessionViewModel.HasTargetArgs), announced);
+        Assert.Contains(nameof(SessionViewModel.HasWorkingFolder), announced);
     }
 
     /// <summary>The other half: what BuildRecord writes, or the load above has nothing to restore from.</summary>

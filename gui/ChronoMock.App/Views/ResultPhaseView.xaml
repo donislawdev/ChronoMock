@@ -1,0 +1,345 @@
+<UserControl x:Class="ChronoMock.App.Views.ResultPhaseView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:views="clr-namespace:ChronoMock.App.Views"
+             Background="{DynamicResource BrushBgBase}">
+
+  <!--
+    THE THIRD OF THE THREE PHASES: a session that is over.
+
+    🔴 WHAT THIS SCREEN ANSWERS. The session phase's ended state showed two stopped clocks, a folded audit
+    and three hundred pixels of nothing above a footer saying "Session ended" with a chip beside it - the
+    one word the whole session was run to produce, at the size of a form label, at the bottom. Here the
+    verdict is the subject: the largest text on the screen, first, in the meaning colour, with the core's
+    own sentence for it under it. Everything else on the screen is what the summary carries, in the order
+    the summary carries it, so what a reader sees and what they paste into a ticket are one report.
+
+    🔴 THE ORDER IS THE ORDER THE QUESTIONS ARRIVE IN. Did the fake clock take (the headline, its reason,
+    what that means for the test). How did it end (the status, the application's own exit code, what the
+    teardown could not clean). What did the application actually live through (the facts: where it started,
+    where the fake clock stopped, how much time passed on each clock). What exactly was read (the audit,
+    folded, because it is evidence and not the answer). What ran before (the history, folded). And the way
+    on, pinned.
+
+    🔴 A SESSION WITHOUT A VERDICT STILL HAS A HEADLINE. A target that vanished, a start that failed and a
+    core that stopped all produce a screen, and the model gives each its own word rather than leaving the
+    reader to work out from a status line that no verdict is coming. Colour never carries it alone: a glyph
+    and the word, always (zasady/13 section 9).
+
+    🔴 THE ACCENT IS THE WAY ON, NOT THE COPY. New session is the one action that moves the work forward, so
+    it is the primary action and it is pinned. Copying the summary acts on the answer and stands beside it,
+    an ordinary button - a session run to see whether a screen renders on the right day needs no ticket.
+
+    🔴 WIRED to the session's commands (the product transition wired the phases). New session and the copy
+    buttons bind Commands.X.
+
+    🔴 IT MERGES THE PARTS LIBRARY LOCALLY, and keeps doing so despite App.xaml now merging Parts
+    application-wide: a {StaticResource PartX} is resolved as this control's BAML loads, and that lookup never
+    reaches Application.Resources.
+  -->
+
+  <UserControl.Resources>
+    <ResourceDictionary>
+      <!-- The local Parts merge STAYS despite App.xaml merging Parts application-wide: a {StaticResource
+           PartX} is resolved as this control's BAML loads, and that lookup never reaches Application.Resources
+           (see SetupPhaseView for the measured revert). The app-wide merge is for the calculator's implicit
+           styles, which are applied at tree time. -->
+      <ResourceDictionary.MergedDictionaries>
+        <ResourceDictionary Source="../Themes/Parts.xaml" />
+      </ResourceDictionary.MergedDictionaries>
+      <!-- What the folded history says without being opened: how many sessions it holds. A label and a
+           number, for the reason setup.scenario_available gives. -->
+      <ControlTemplate x:Key="HistorySummary">
+        <Border x:Name="HistoryChip" Style="{StaticResource PartBadge}" Margin="{StaticResource SpaceXs}">
+          <TextBlock Style="{StaticResource PartCaption}" TextWrapping="NoWrap">
+            <Run Text="{DynamicResource result.chip_history}" /><Run Text=" " /><Run Text="{Binding History.Count, Mode=OneWay}" />
+          </TextBlock>
+        </Border>
+      </ControlTemplate>
+
+      <!-- The row's accessible name is the application, not the record's ToString() - the guard that
+           caught every list in the shipped panel doing that reads this file too. -->
+      <Style x:Key="HistoryRowContainer" TargetType="ListBoxItem" BasedOn="{StaticResource {x:Type ListBoxItem}}">
+        <Setter Property="AutomationProperties.Name" Value="{Binding TargetName}" />
+      </Style>
+
+      <!--
+        One recorded session: the verdict glyph in its colour and the application on the first line, the
+        moment it lived at and when it ended on the second, both stated the way every moment on this
+        interface is stated in full. Two lines for the reason the scenario row has two - one line would make
+        the reader open rows to tell them apart.
+
+        🔴 BOTH MOMENTS CARRY THEIR ZONE. A recorded 03:14:07 without one is exactly the ambiguity
+        untouchable rule 2 exists to remove, and the file only keeps the bias.
+      -->
+      <DataTemplate x:Key="HistoryRow">
+        <StackPanel>
+          <TextBlock TextTrimming="CharacterEllipsis">
+            <Run Text="{Binding VerdictKind, Converter={StaticResource VerdictGlyph}, Mode=OneWay}"
+                 Foreground="{Binding VerdictKind, Converter={StaticResource VerdictBrush}, Mode=OneWay}" /><Run Text=" " /><Run Text="{Binding TargetName, Mode=OneWay}" />
+          </TextBlock>
+          <TextBlock Style="{StaticResource PartNote}" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis">
+            <Run Text="{Binding MomentText, Mode=OneWay}" /><Run Text=" · " /><Run Text="{DynamicResource result.history_ended}" /><Run Text=" " /><Run Text="{Binding EndedText, Mode=OneWay}" />
+          </TextBlock>
+        </StackPanel>
+      </DataTemplate>
+    </ResourceDictionary>
+  </UserControl.Resources>
+
+  <!-- The report scrolls, the way on does not - the same division the other two phases make, for the same
+       reason: at the window's floor of 360 px everything else goes under the fold. -->
+  <Grid>
+    <Grid.RowDefinitions>
+      <RowDefinition Height="*" />
+      <RowDefinition Height="Auto" />
+    </Grid.RowDefinitions>
+
+    <ScrollViewer x:Name="FormScroll" Grid.Row="0"
+                  VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+      <StackPanel Margin="{StaticResource ScrollFormInset}">
+
+        <!-- Which application this is, first, for the reason the session phase gives: somebody who comes
+             back to the window later has nothing else to tell them which session this was. -->
+        <WrapPanel Visibility="{Binding HasTarget, Converter={StaticResource BoolToVis}}">
+          <TextBlock Style="{StaticResource PartCaption}" TextWrapping="NoWrap"
+                     VerticalAlignment="Center"
+                     Text="{DynamicResource session.application_label}" />
+          <TextBlock Style="{StaticResource PartLabel}" Margin="{StaticResource SpaceXs}"
+                     TextTrimming="CharacterEllipsis"
+                     Text="{Binding TargetName}" />
+        </WrapPanel>
+
+        <!--
+          THE ANSWER. The headline, the core's reason for it and what it means for the test, then how the
+          session ended, then the actions that act on this answer.
+        -->
+        <Border x:Name="ResultCard" Style="{StaticResource PartCard}" Margin="{StaticResource StackGapSm}">
+          <StackPanel>
+            <!-- 🔴 THE ONE PEAK OF THIS SCREEN. A glyph and a word, in the meaning colour, a step above every
+                 heading - the result phase has no clocks, so nothing else here is this size, and the layout
+                 guard holds it to that. Named, so the guard can find it. -->
+            <TextBlock x:Name="ResultHeadline" Style="{StaticResource PartVerdictHeadline}"
+                       Foreground="{Binding ResultKind, Converter={StaticResource VerdictBrush}}">
+              <Run Text="{Binding ResultKind, Converter={StaticResource VerdictGlyph}, Mode=OneWay}" /><Run Text=" " /><Run Text="{Binding ResultHeadlineKey, Converter={StaticResource KeyToText}, Mode=OneWay}" />
+            </TextBlock>
+
+            <!-- The core's reason, for EVERY verdict - "Works" on its own tells a first run nothing about
+                 what worked. Then the plain-language meaning for the test, which only a non-works verdict
+                 has. -->
+            <TextBlock x:Name="ResultReason" Style="{StaticResource PartLabel}" TextWrapping="Wrap"
+                       Margin="{StaticResource StackGapSm}"
+                       Text="{Binding VerdictReasonKey, Converter={StaticResource KeyToText}}"
+                       Visibility="{Binding ResultHasReason, Converter={StaticResource BoolToVis}}" />
+            <TextBlock x:Name="ResultMeaning" Style="{StaticResource PartNote}"
+                       Margin="{StaticResource StackGapSm}"
+                       Text="{Binding VerdictMeaningKey, Converter={StaticResource KeyToText}}"
+                       Visibility="{Binding ResultHasMeaning, Converter={StaticResource BoolToVis}}" />
+
+            <!--
+              HOW IT ENDED. The status sentence, and under it the two facts from the end that a status
+              cannot carry: the application's own exit code, which tells "it closed itself" from "the session
+              was stopped", and whatever a teardown could not remove. Both surfaced rather than dropped
+              (rule 6). For a target that vanished the headline already is the status, so the sentence gives
+              way to how long the application lived - what tells a single-instance hand-off from an
+              application that ran and quit - and the core's reason under it.
+            -->
+            <TextBlock x:Name="ResultStatus" Style="{StaticResource PartLabel}" TextWrapping="Wrap"
+                       Margin="{StaticResource StackGapLg}"
+                       Text="{Binding StatusKey, Converter={StaticResource KeyToText}}"
+                       Visibility="{Binding ResultHasEnding, Converter={StaticResource BoolToVis}}" />
+            <TextBlock x:Name="VanishDetail" Style="{StaticResource PartLabel}" TextWrapping="Wrap"
+                       Margin="{StaticResource StackGapLg}"
+                       Visibility="{Binding HasVanishReason, Converter={StaticResource BoolToVis}}">
+              <Run Text="{DynamicResource result.lived_before}" /><Run Text="{Binding LivedMs, StringFormat=' {0} ms ', Mode=OneWay}" /><Run Text="{DynamicResource result.lived_after}" />
+            </TextBlock>
+            <TextBlock x:Name="VanishReason" Style="{StaticResource PartNote}"
+                       Margin="{StaticResource StackGapSm}"
+                       Text="{Binding VanishReasonKey, Converter={StaticResource KeyToText}}"
+                       Visibility="{Binding HasVanishReason, Converter={StaticResource BoolToVis}}" />
+            <TextBlock x:Name="ExitCode" Style="{StaticResource PartNote}"
+                       Margin="{StaticResource StackGapSm}"
+                       Visibility="{Binding HasTargetExit, Converter={StaticResource BoolToVis}}">
+              <Run Text="{DynamicResource result.exit_code}" /><Run Text="{Binding TargetExitCode, StringFormat=' {0}.', Mode=OneWay}" />
+            </TextBlock>
+            <!-- The raw failure detail, verbatim, so a failure is never silent - in the error ink, at the size
+                 of prose, because it is a sentence somebody has to act on. -->
+            <TextBlock x:Name="LastErrorNote" Style="{StaticResource PartErrorNote}"
+                       Margin="{StaticResource StackGapSm}"
+                       Text="{Binding LastError}"
+                       Visibility="{Binding HasLastError, Converter={StaticResource BoolToVis}}" />
+            <HeaderedItemsControl Style="{StaticResource PartNoteList}"
+                                  Header="{DynamicResource report.cleanup}"
+                                  ItemsSource="{Binding ResidueKeys}"
+                                  Visibility="{Binding HasResidue, Converter={StaticResource BoolToVis}}" />
+
+            <!--
+              THE ACTIONS ON THE ANSWER. Copy the paste-ready summary, and for a session that did not cleanly
+              succeed, copy the core's diagnostics for a support ticket. Ordinary buttons, beside the answer
+              they act on. The copy outcome lands on the same row, so the reader's eye does not have to go
+              looking for it.
+            -->
+            <WrapPanel x:Name="CopyRow" Margin="{StaticResource StackGapLg}">
+              <Button x:Name="CopySummary" Content="{DynamicResource action.copy_summary}"
+                      ToolTip="{DynamicResource tip.copy_summary}"
+                      Command="{Binding Commands.CopySummary}"
+                      Margin="{StaticResource ControlRowGap}"
+                      Visibility="{Binding CanCopySummary, Converter={StaticResource BoolToVis}}" />
+              <Button x:Name="CopyDiagnostics" Content="{DynamicResource action.copy_diagnostics}"
+                      ToolTip="{DynamicResource tip.copy_diagnostics}"
+                      Command="{Binding Commands.CopyDiagnostics}"
+                      Margin="{StaticResource ControlRowGap}"
+                      Visibility="{Binding HasDiagnostics, Converter={StaticResource BoolToVis}}" />
+              <TextBlock x:Name="CopyFeedback" Style="{StaticResource PartCaption}" TextWrapping="NoWrap"
+                         VerticalAlignment="Center"
+                         Text="{Binding CopyFeedbackKey, Converter={StaticResource KeyToText}}"
+                         Visibility="{Binding HasCopyFeedback, Converter={StaticResource BoolToVis}}" />
+            </WrapPanel>
+            <!-- Where the diagnostics log was written, so the reader knows which file to attach. Only when a
+                 file was actually saved - on a read-only medium the button above is the path. -->
+            <TextBlock x:Name="DiagnosticsSaved" Style="{StaticResource PartCaption}"
+                       Margin="{StaticResource StackGapSm}"
+                       Visibility="{Binding HasDiagnosticsSaved, Converter={StaticResource BoolToVis}}">
+              <Run Text="{DynamicResource diagnostics.saved}" /><Run Text="{Binding DiagnosticsSavedPath, StringFormat=' {0}', Mode=OneWay}" />
+            </TextBlock>
+          </StackPanel>
+        </Border>
+
+        <!--
+          THE FACTS. What the application lived through, as the summary states it: where it started, where
+          the fake clock stopped, and how much time passed on each clock - the two durations side by side are
+          the speed stated as a fact, which is the same argument the clocks made while the session ran.
+
+          🔴 NOT THE TWO CLOCKS. The session phase shows them at the size of a headline because they are its
+          subject, and a clock that size on a screen whose subject is the verdict is a second peak - and a
+          stopped clock at that size reads as a display that has hung. A finished session is a report, and a
+          report states its numbers in a list.
+
+          A form row with nothing to edit: a label column and a value, one grid per row, which is the shape
+          that keeps every value on one vertical line. Absent entirely when there is no timing - a start that
+          failed or was refused has nothing to say here, and saying nothing is the honest state.
+        -->
+        <Border x:Name="FactsCard" Style="{StaticResource PartCard}" Margin="{StaticResource StackGapXl}"
+                Grid.IsSharedSizeScope="True"
+                Visibility="{Binding HasTiming, Converter={StaticResource BoolToVis}}">
+          <StackPanel>
+            <TextBlock Style="{StaticResource PartHeading}" Text="{DynamicResource result.section_facts}" />
+
+            <HeaderedContentControl Style="{StaticResource PartFormRow}" Margin="{StaticResource StackGapSm}">
+              <HeaderedContentControl.Header>
+                <TextBlock Style="{StaticResource PartNote}" Text="{DynamicResource result.fact_started}" />
+              </HeaderedContentControl.Header>
+              <TextBlock x:Name="FactStarted" Style="{StaticResource PartLabel}" TextWrapping="Wrap"
+                         Text="{Binding StartedAtPreview}" />
+            </HeaderedContentControl>
+            <HeaderedContentControl Style="{StaticResource PartFormRow}">
+              <HeaderedContentControl.Header>
+                <TextBlock Style="{StaticResource PartNote}" Text="{DynamicResource result.fact_speed}" />
+              </HeaderedContentControl.Header>
+              <TextBlock x:Name="FactSpeed" Style="{StaticResource PartLabel}"
+                         Text="{Binding MultiplierText}" />
+            </HeaderedContentControl>
+            <HeaderedContentControl Style="{StaticResource PartFormRow}">
+              <HeaderedContentControl.Header>
+                <TextBlock Style="{StaticResource PartNote}" Text="{DynamicResource result.fact_reached}" />
+              </HeaderedContentControl.Header>
+              <TextBlock x:Name="FactReached" Style="{StaticResource PartLabel}" TextWrapping="Wrap"
+                         Text="{Binding FakeEndPreview}" />
+            </HeaderedContentControl>
+            <!-- Monospaced like the elapsed line on the clocks: the two durations are read against each
+                 other, and digits that line up are what makes that a glance rather than a sum. -->
+            <HeaderedContentControl Style="{StaticResource PartFormRow}">
+              <HeaderedContentControl.Header>
+                <TextBlock Style="{StaticResource PartNote}" Text="{DynamicResource result.fact_elapsed_fake}" />
+              </HeaderedContentControl.Header>
+              <TextBlock x:Name="FactElapsedFake" Style="{StaticResource PartLabel}"
+                         FontFamily="{StaticResource FontFamilyMono}"
+                         Text="{Binding Fake.Elapsed}" />
+            </HeaderedContentControl>
+            <HeaderedContentControl Style="{StaticResource PartFormRow}">
+              <HeaderedContentControl.Header>
+                <TextBlock Style="{StaticResource PartNote}" Text="{DynamicResource result.fact_elapsed_real}" />
+              </HeaderedContentControl.Header>
+              <TextBlock x:Name="FactElapsedReal" Style="{StaticResource PartLabel}"
+                         FontFamily="{StaticResource FontFamilyMono}"
+                         Text="{Binding Real.Elapsed}" />
+            </HeaderedContentControl>
+          </StackPanel>
+        </Border>
+
+        <!-- THE AUDIT, the same component the session phase shows, in whichever of its states applies: a
+             session that ended before any report says so, one that reported folds it with its counts. -->
+        <views:AuditSectionView />
+
+        <!--
+          THE HISTORY, folded, and absent until there is a recorded session. Every past session, newest
+          first, in a choice well: choosing one does nothing by itself (untouchable rule 7) - the actions
+          under the well act on the chosen row, and setting a session up again fills the setup form and
+          never starts anything.
+        -->
+        <Expander x:Name="HistorySection" Style="{StaticResource PartSection}"
+                  Margin="{StaticResource StackGapXl}"
+                  Visibility="{Binding HasHistory, Converter={StaticResource BoolToVis}}">
+          <Expander.Header>
+            <TextBlock Style="{StaticResource PartHeading}" Text="{DynamicResource result.section_history}" />
+          </Expander.Header>
+          <Expander.Tag>
+            <ContentControl Template="{StaticResource HistorySummary}" />
+          </Expander.Tag>
+
+          <StackPanel>
+            <!-- A history that could not be written, and a load that could not fill a field: both said out
+                 loud, above the list they are about (rule 6). -->
+            <TextBlock x:Name="HistoryError" Style="{StaticResource PartErrorNote}"
+                       Visibility="{Binding HasHistoryError, Converter={StaticResource BoolToVis}}">
+              <Run Text="{DynamicResource history.save_failed}" /><Run Text="{Binding HistoryError, StringFormat=' {0}', Mode=OneWay}" />
+            </TextBlock>
+            <TextBlock x:Name="HistoryNote" Style="{StaticResource PartNote}"
+                       Text="{Binding HistoryNoteKey, Converter={StaticResource KeyToText}}"
+                       Visibility="{Binding HasHistoryNote, Converter={StaticResource BoolToVis}}" />
+
+            <ListBox x:Name="HistoryList"
+                     ItemsSource="{Binding History}"
+                     SelectedItem="{Binding SelectedRecord}"
+                     ItemTemplate="{StaticResource HistoryRow}"
+                     ItemContainerStyle="{StaticResource HistoryRowContainer}" />
+
+            <TextBlock x:Name="HistoryHint" Style="{StaticResource PartNote}" Margin="{StaticResource StackGapSm}"
+                       Text="{DynamicResource result.history_note}" />
+
+            <!-- The two that need a chosen row are disabled without one, the third acts on the whole list
+                 and asks first when it is wired. A row of controls starts on the column's edge and the gap
+                 comes after each control (ControlRowGap). -->
+            <WrapPanel x:Name="HistoryActions" Margin="{StaticResource StackGapSm}">
+              <Button x:Name="RepeatSession" Content="{DynamicResource result.action_repeat}"
+                      Margin="{StaticResource ControlRowGap}"
+                      Command="{Binding Commands.Repeat}" />
+              <Button x:Name="ForgetSession" Content="{DynamicResource result.action_forget}"
+                      Margin="{StaticResource ControlRowGap}"
+                      Command="{Binding Commands.Forget}" />
+              <Button x:Name="ClearHistory" Content="{DynamicResource result.action_clear_history}"
+                      Command="{Binding Commands.ClearHistory}"
+                      Margin="{StaticResource ControlRowGap}" />
+            </WrapPanel>
+          </StackPanel>
+        </Expander>
+      </StackPanel>
+    </ScrollViewer>
+
+    <!--
+      THE WAY ON, pinned, where every phase keeps its action. The accent means "the next step" on this
+      library, and after a session the next step is the next session. The note answers the two things a
+      reader wonders before pressing it: what happens to what they typed, and what happens to this answer.
+    -->
+    <Border Grid.Row="1" Style="{StaticResource PartFooter}">
+      <StackPanel>
+        <Button x:Name="NewSession" Style="{StaticResource PartPrimaryAction}"
+                Content="{DynamicResource result.action_new_session}"
+                Command="{Binding Commands.NewSession}"
+                HorizontalAlignment="Left" />
+        <TextBlock x:Name="NewSessionNote" Style="{StaticResource PartNote}"
+                   Margin="{StaticResource StackGapSm}"
+                   Text="{DynamicResource result.new_session_note}" />
+      </StackPanel>
+    </Border>
+  </Grid>
+</UserControl>

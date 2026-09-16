@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Documents;
 using System.Windows.Media;
 
 namespace ChronoMock.App.Tests;
@@ -46,6 +47,34 @@ internal static class LayoutProbe
     }
 
     /// <summary>
+    /// The named element anywhere under the root, across the name scopes of nested user controls.
+    /// </summary>
+    /// <remarks>
+    /// 🔴 FindName STOPS AT A USER CONTROL. It reads one XAML file's name scope, so once the audit block
+    /// became a control of its own, <c>view.FindName("AuditSection")</c> on the phase hosting it returned
+    /// null - and the sheet's opener took a null for "no section asked for" and drew the state folded, while
+    /// saying it was open. The logical tree crosses that boundary, and it exists before any layout pass, so
+    /// a section can be opened before the first render.
+    /// </remarks>
+    public static FrameworkElement? FindNamed(FrameworkElement root, string name)
+    {
+        if (root.Name == name)
+        {
+            return root;
+        }
+
+        foreach (var child in LogicalTreeHelper.GetChildren(root))
+        {
+            if (child is FrameworkElement element && FindNamed(element, name) is { } found)
+            {
+                return found;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
     /// Every framework element below the root, with bounds in the root's coordinates.
     /// </summary>
     public static IReadOnlyList<LaidOutElement> Walk(FrameworkElement root)
@@ -69,7 +98,11 @@ internal static class LayoutProbe
             if (step.Node is FrameworkElement described && bounds.HasValue)
             {
                 index = found.Count;
-                found.Add(Describe(described, bounds.Value, step, visible));
+                found.Add(Describe(described, bounds.Value, step, visible) with
+                {
+                    Slot = SlotWithin(described, root),
+                    Margin = described.Margin,
+                });
             }
 
             if (step.Node is Visual)
@@ -79,6 +112,38 @@ internal static class LayoutProbe
         }
 
         return found;
+    }
+
+    /// <summary>
+    /// The partition the element's parent reserved for it, moved into the root's coordinates, or null for the
+    /// root itself and for an element no longer connected to it.
+    /// </summary>
+    /// <remarks>
+    /// The slot is taken to be in the PARENT's coordinates, so it goes through the parent's transform rather
+    /// than the element's own. The two spacing canaries in LayoutGuardTests hold that to account: a wrong
+    /// space would move every gap they measure.
+    /// </remarks>
+    private static Rect? SlotWithin(FrameworkElement element, FrameworkElement root)
+    {
+        if (ReferenceEquals(element, root) || VisualTreeHelper.GetParent(element) is not Visual parent)
+        {
+            return null;
+        }
+
+        var slot = System.Windows.Controls.Primitives.LayoutInformation.GetLayoutSlot(element);
+        if (ReferenceEquals(parent, root))
+        {
+            return slot;
+        }
+
+        try
+        {
+            return parent.TransformToAncestor(root).TransformBounds(slot);
+        }
+        catch (InvalidOperationException)
+        {
+            return null;
+        }
     }
 
     /// <summary>
@@ -155,7 +220,7 @@ internal static class LayoutProbe
     {
         var copy = new TextBlock
         {
-            Text = source.Text,
+            Text = ShownText(source),
             FontFamily = source.FontFamily,
             FontSize = source.FontSize,
             FontStyle = source.FontStyle,
@@ -170,9 +235,37 @@ internal static class LayoutProbe
     /// <summary>Whatever the element shows as text, which is what a reader would call its content.</summary>
     private static string TextOf(FrameworkElement element) => element switch
     {
-        TextBlock block => block.Text ?? string.Empty,
+        TextBlock block => ShownText(block),
         TextBox box => box.Text ?? string.Empty,
         ContentControl { Content: string content } => content,
+        _ => string.Empty,
+    };
+
+    /// <summary>
+    /// The text a TextBlock shows, whether it came from its Text property or from runs inside it.
+    /// </summary>
+    /// <remarks>
+    /// 🔴 A TEXTBLOCK BUILT FROM RUNS HAS AN EMPTY Text PROPERTY, and this walk used to read only that. So
+    /// every line composed of runs - a label and a bound number, a count beside its name - reached the
+    /// contrast rule, the type-scale rule, the squeezed-to-nothing rule and the truncation rule as a line
+    /// with no text, and each of them skips a line with no text. It surfaced when the first guard to assert
+    /// the words of such a line - the chips of the folded audit - read an empty string.
+    ///
+    /// Measured across the fix, on the renders: visible text blocks with no text went from 8 to 7 on the
+    /// startup panel, 16 to 14 on the calculator and 4 to 0 on the ended session. The ones that remain
+    /// hold no run of text at all, so the blind spot on the shipped screens was three lines, and none of
+    /// the rules reddens now that it can see them.
+    ///
+    /// The property wins when it is set, so a block written with Text reads exactly as it did.
+    /// </remarks>
+    private static string ShownText(TextBlock block) =>
+        string.IsNullOrEmpty(block.Text) ? string.Concat(block.Inlines.Select(ShownText)) : block.Text;
+
+    private static string ShownText(Inline inline) => inline switch
+    {
+        Run run => run.Text ?? string.Empty,
+        Span span => string.Concat(span.Inlines.Select(ShownText)),
+        LineBreak => "\n",
         _ => string.Empty,
     };
 

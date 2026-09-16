@@ -19,6 +19,280 @@ namespace ChronoMock.App.Tests;
 [Trait("Category", "Integration")]
 public class StateSheetTests
 {
+    /// <summary>
+    /// The component catalogue, which is where the parts library is looked at.
+    /// </summary>
+    /// <remarks>
+    /// It renders taller than any window, on purpose: it is a sheet to read, not a screen to fit.
+    ///
+    /// 🔴 The height is a fixed number, and the test asserts the catalogue FITS in it. Without that
+    /// assertion, adding a part would quietly push the newest one out of frame - and the newest part is
+    /// exactly the one somebody wanted to look at. When this reddens, raise the number rather than crop.
+    /// </remarks>
+    [Fact]
+    public void The_component_catalogue_renders_and_fits_in_the_sheet()
+    {
+        var (elements, needed) = WpfTestHost.InvokeSettled(() =>
+        {
+            var catalogue = new ComponentCatalogue();
+            catalogue.Measure(new Size(CatalogueWidth, double.PositiveInfinity));
+            var wanted = catalogue.DesiredSize.Height;
+            return (StateSheet.Write("catalogue", catalogue, CatalogueWidth, CatalogueHeight), wanted);
+        });
+
+        Assert.NotEmpty(elements);
+        Assert.True(
+            needed <= CatalogueHeight,
+            $"the catalogue needs {needed:F0} px and the sheet is {CatalogueHeight} px - "
+                + "raise CatalogueHeight so the part you just added is actually in the picture");
+    }
+
+    private const int CatalogueWidth = 900;
+
+    /// <summary>
+    /// Tall enough for every part in every state it can be shown in. A canvas is not a ratchet: it exists
+    /// to hold the picture, and a figure sitting exactly on today's content would have to move for every
+    /// part added after it.
+    /// </summary>
+    /// <remarks>
+    /// 🔴 THE SCALE IS WRITTEN DOWN NOW, because "one step of the same scale" was not enough to act on -
+    /// 4 096 is both a power of two and a multiple of 1 024, and the two readings part company above it.
+    /// The grid is 1 024. The clock and the fact list took the content to 4 851 px, so this went to 5 120:
+    /// one step, not the measurement. Doubling to 8 192 would have doubled the cost of every render of it
+    /// for 269 px of content. The verdict headline took it to 5 397, so one more step: 6 144.
+    /// </remarks>
+    private const int CatalogueHeight = 6144;
+
+    /// <summary>
+    /// The rebuilt setup phase, in the three states that decide whether it works.
+    /// </summary>
+    /// <remarks>
+    /// First contact is the one that matters: the shipped panel's measured fault was that twelve blocks
+    /// looked equally required, so the state where nothing has been chosen yet is the state the rework is
+    /// answering. The other two exist because a filter that finds nothing and a session that is fully
+    /// configured are the two ends this screen has to hold without moving anything under them.
+    ///
+    /// The view is not wired to the window yet and MainWindow is untouched, which is what keeps the 22
+    /// product renders identical while this one is designed.
+    /// </remarks>
+    [Fact]
+    public void The_setup_phase_renders_in_the_states_that_decide_whether_it_works()
+    {
+        var written = WpfTestHost.InvokeSettled(() =>
+        {
+            var total = 0;
+
+            total += RenderSetup("setup-startup", PhaseStates.SetupStartup()).Count;
+
+            // The catalogue open, which is the only render showing the well, its rows and the sentence
+            // saying what choosing from it will do.
+            total += RenderSetup("setup-scenarios", PhaseStates.SetupStartup(), "ScenarioSection").Count;
+
+            total += RenderSetup("setup-no-matches", PhaseStates.SetupSearchingForNothing(), "ScenarioSection").Count;
+
+            // 🔴 The merged group open, with everything in it turned on. The speed section absorbed the
+            // launch fields when five groups would not fit the window, and without this render the merge
+            // is a thing nobody looked at - the two halves meeting, the chips in the header, and the label
+            // column agreeing across a boundary that used to be two separate scopes.
+            total += RenderSetup("setup-options", PhaseStates.SetupWithEveryOption(), "SpeedSection").Count;
+
+            // 🔴 AN APPLICATION CHOSEN AND A DATE THAT DOES NOT PARSE, which is the state the footer used
+            // to meet in silence: the contract line has no moment to print, Start is disabled, and the
+            // only sentence the footer knew was "choose an application" - which had been done. Nothing in
+            // the sheet had ever rendered a refusal other than the first one.
+            total += RenderSetup("setup-bad-date", PhaseStates.SetupWithBadDate()).Count;
+
+            total += RenderSetup("setup-configured", PhaseStates.SetupConfigured()).Count;
+
+            // 🔴 The window's own floor, which is the whole reason the footer is pinned. At 360 px the
+            // form is far taller than the frame, so this is the sheet that shows whether the action and
+            // the sentence explaining it survived - or whether they went below the fold with everything
+            // else, which is what they used to do.
+            total += RenderedFloor(
+                "setup-floor",
+                new SetupPhaseView { DataContext = PhaseStates.SetupStartup() }).Count;
+
+            return total;
+        });
+
+        Assert.True(written > 0);
+    }
+
+    /// <summary>
+    /// The rebuilt session phase, in the states that decide whether it works.
+    /// </summary>
+    /// <remarks>
+    /// The FIXTURES ARE THE PANEL'S OWN - SessionStates drives the same model into the same shapes the
+    /// shipped renders use. That is the point: the two screens are then pictures of one state, and any
+    /// difference between them is a difference in the drawing rather than in the data.
+    ///
+    /// The audit state is rendered with its section OPEN and scrolled to, because a folded section's
+    /// contents are the half of this screen that carries untouchable rule 4 - the lists that say what was
+    /// covered and, more importantly, what was not.
+    /// </remarks>
+    [Fact]
+    public void The_session_phase_renders_in_the_states_that_decide_whether_it_works()
+    {
+        var written = WpfTestHost.InvokeSettled(() =>
+        {
+            var total = 0;
+
+            total += RenderSession("session-running", SessionStates.Running()).Count;
+            total += RenderSession(
+                "session-audit",
+                SessionStates.RunningWithCoverageWarnings(),
+                "AuditSection").Count;
+            total += RenderSession("session-error", SessionStates.InFlightError()).Count;
+            total += RenderSession("session-ended", SessionStates.Ended()).Count;
+            // A session over before any report: no controls, and a sentence saying the report will not come.
+            total += RenderSession("session-vanished", SessionStates.TargetVanished()).Count;
+
+            // The window's floor, where the clocks and the action have to survive together. Its model
+            // goes through the same helper, so it carries a target like every other session state.
+            total += RenderedFloor(
+                "session-floor",
+                new SessionPhaseView { DataContext = PhaseStates.WithTarget(SessionStates.Running()) }).Count;
+
+            return total;
+        });
+
+        Assert.True(written > 0);
+    }
+
+    private static IReadOnlyList<LaidOutElement> RenderSession(
+        string name,
+        SessionViewModel model,
+        string? openSection = null)
+    {
+        // A session has an application and the shared fixtures do not set one - PhaseStates.WithTarget says
+        // why it is added there rather than in SessionStates.
+        var view = new SessionPhaseView { DataContext = PhaseStates.WithTarget(model) };
+        OpenAndScrollTo(view, openSection);
+        var rendered = StateSheet.Write(name, view);
+        Assert.NotEmpty(rendered); // an empty render must fail here, not vanish into a positive total
+        return rendered;
+    }
+
+    /// <summary>
+    /// The rebuilt result phase, in the outcomes a session can end in.
+    /// </summary>
+    /// <remarks>
+    /// One render per kind of ending, because the headline changes with it: a verdict word for a session
+    /// that ran, and a word of its own for the three endings that never produced one. The history state is
+    /// rendered with its section open and a row chosen, because the row actions have no other state to be
+    /// seen in.
+    /// </remarks>
+    [Fact]
+    public void The_result_phase_renders_in_the_outcomes_a_session_can_end_in()
+    {
+        var written = WpfTestHost.InvokeSettled(() =>
+        {
+            var total = 0;
+
+            total += RenderResult("result-works", PhaseStates.ResultWorks()).Count;
+            total += RenderResult("result-partial", PhaseStates.ResultPartial()).Count;
+            total += RenderResult("result-refused", PhaseStates.ResultRefused()).Count;
+            total += RenderResult("result-vanished", PhaseStates.ResultVanished()).Count;
+            total += RenderResult("result-not-started", PhaseStates.ResultNotStarted()).Count;
+            total += RenderResult("result-history", PhaseStates.ResultWithHistoryChosen(), "HistorySection").Count;
+
+            total += RenderedFloor(
+                "result-floor",
+                new ResultPhaseView { DataContext = PhaseStates.ResultWorks() }).Count;
+
+            return total;
+        });
+
+        Assert.True(written > 0);
+    }
+
+    private static IReadOnlyList<LaidOutElement> RenderResult(
+        string name,
+        SessionViewModel model,
+        string? openSection = null)
+    {
+        var view = new ResultPhaseView { DataContext = model };
+        OpenAndScrollTo(view, openSection);
+        var rendered = StateSheet.Write(name, view);
+        Assert.NotEmpty(rendered); // an empty render must fail here, not vanish into a positive total
+        return rendered;
+    }
+
+    /// <summary>
+    /// Opens the named section and scrolls the form to its end, or does nothing when no section was asked for.
+    /// </summary>
+    /// <remarks>
+    /// 🔴 A SECTION THAT IS NOT THERE IS A FAILURE, never a folded render. The first opener took a null from
+    /// FindName as "nothing to open" and drew the state closed while the file said it was open - and FindName
+    /// returns null for every section that lives inside a nested control, which the audit block now does.
+    /// Fully qualified: Wpf.Ui.Controls has an Expander too, and the one in the views is the stock WPF
+    /// control (the toolkit's does not appear anywhere in this project).
+    /// </remarks>
+    private static void OpenAndScrollTo(FrameworkElement view, string? openSection)
+    {
+        if (openSection is null)
+        {
+            return;
+        }
+
+        var section = LayoutProbe.FindNamed(view, openSection) as System.Windows.Controls.Expander
+            ?? throw new InvalidOperationException($"{view.GetType().Name} has no section called {openSection}");
+        section.IsExpanded = true;
+
+        // 🔴 AND SCROLLED TO IT, because opening it is not enough. The window is 800 px and the two groups
+        // above the setup catalogue come to 446, so an opened 240 px well starts below the fold: the first
+        // attempt at that render wrote a picture of a search box with an empty box under it and the sentence
+        // explaining the emptiness out of frame. A sheet that writes a file showing nothing is worse than no
+        // sheet. This is the screen as somebody who opened the section and scrolled down sees it.
+        LayoutProbe.Settle(view);
+        if (view.FindName("FormScroll") is System.Windows.Controls.ScrollViewer scroll)
+        {
+            scroll.ScrollToEnd();
+            LayoutProbe.Settle(view);
+        }
+    }
+
+    /// <summary>
+    /// The phase at the window's REAL size, which is the only size worth judging it at.
+    /// </summary>
+    /// <remarks>
+    /// 🔴 THIS USED TO RENDER AT 1 000 px, 200 TALLER THAN THE WINDOW, on the reasoning that a shorter
+    /// sheet would crop the contract sentence and the button. That reasoning was wrong about its own
+    /// screen: the footer is PINNED, in its own grid row outside the scroll area, so it cannot go below
+    /// any fold - being pinned is the whole point of it. What the extra 200 px actually did was hide how
+    /// much of the form is below the fold at the size a user gets, and every judgement made on those
+    /// renders was made on a window nobody has.
+    ///
+    /// The size comes from LayoutProbe rather than a second copy of the numbers, so the sheet cannot
+    /// drift away from MainWindow's declared size the way this constant did.
+    /// </remarks>
+    private static IReadOnlyList<LaidOutElement> RenderSetup(
+        string name,
+        SessionViewModel model,
+        string? openSection = null)
+    {
+        var view = new SetupPhaseView { DataContext = model };
+
+        // 🔴 A FOLDED SECTION'S CONTENTS ARE A STATE, and this is the only way to reach it from here. The
+        // catalogue moved into a section that starts closed, and for one render that turned the empty-list
+        // state into a copy of the startup one - the sheet kept writing a file and stopped showing the
+        // thing the file was for. Opening it is a user action, so it belongs to the sheet and not to a
+        // flag on the model.
+        OpenAndScrollTo(view, openSection);
+        var rendered = StateSheet.Write(name, view);
+        Assert.NotEmpty(rendered); // an empty render must fail here, not vanish into a positive total
+        return rendered;
+    }
+
+    /// <summary>Render a phase at the window's minimum size and assert it produced something - a floor that
+    /// laid out to nothing would otherwise hide inside a positive total (rule 6).</summary>
+    private static IReadOnlyList<LaidOutElement> RenderedFloor(string name, FrameworkElement view)
+    {
+        var rendered = StateSheet.Write(name, view, MinimumWidth, MinimumHeight);
+        Assert.NotEmpty(rendered);
+        return rendered;
+    }
+
     [Fact]
     public void The_substitution_panel_renders_in_its_startup_state()
     {

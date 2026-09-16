@@ -1,0 +1,44 @@
+<UserControl x:Class="ChronoMock.App.Controls.SearchBox"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:app="clr-namespace:ChronoMock.App"
+             x:Name="Root">
+  <!-- A search field over a list: a filter box that clears itself, submits its first hit on Enter, and
+       takes the caret the moment it is revealed. One control so the three behaviours travel together and a
+       still catalogue can show them - none of them can be a style, they are behaviour. The drawing is the
+       parts library's TextBox (implicit style) with the clear glyph laid over its right end, the same shape
+       MomentInput lays a calendar toggle in, and it resolves ClearFieldButton from Controls.xaml the same
+       way that control resolves CalendarToggleStyle (app-merged, no local dictionary). It knows nothing
+       about what it is searching: the consumer binds Text, Placeholder and SubmitCommand. -->
+  <Grid>
+    <!-- The field fills the control. The glyph sits over its right end rather than beside it, so the box
+         stays one shape and the affordance reads as part of it. A short filter never reaches under the
+         glyph, and a long one scrolls under it exactly as a system search box does. -->
+    <TextBox x:Name="Field"
+             Text="{Binding Text, ElementName=Root, UpdateSourceTrigger=PropertyChanged}"
+             app:PartState.Placeholder="{Binding Placeholder, ElementName=Root}"
+             PreviewKeyDown="OnFieldKeyDown" />
+
+    <!-- Not a tab stop and not focusable: the caret belongs in the field and then in the list, and a stop
+         between them for a shortcut the keyboard already has (select all, delete) would be one tab too many.
+         Collapsed while the field is empty, because a clear button with nothing to clear is a control that
+         does not do anything. -->
+    <Button x:Name="Clear"
+            HorizontalAlignment="Right" VerticalAlignment="Center"
+            Margin="{StaticResource SpaceXs}"
+            Focusable="False" IsTabStop="False"
+            Click="OnClear"
+            ToolTip="{Binding ClearHint, ElementName=Root}"
+            AutomationProperties.Name="{Binding ClearHint, ElementName=Root}">
+      <Button.Style>
+        <Style TargetType="Button" BasedOn="{StaticResource ClearFieldButton}">
+          <Style.Triggers>
+            <DataTrigger Binding="{Binding Text, ElementName=Field}" Value="">
+              <Setter Property="Visibility" Value="Collapsed" />
+            </DataTrigger>
+          </Style.Triggers>
+        </Style>
+      </Button.Style>
+    </Button>
+  </Grid>
+</UserControl>

@@ -53,6 +53,19 @@ public class ParserTests
     }
 
     [Fact]
+    public void Coverage_reads_the_channels_installed_late_and_defaults_them_to_empty()
+    {
+        // The wire name is snake_case, and a typo in the attribute would read as an always-empty list - the
+        // warning would stand with nothing named beside it, which is the fault this field exists to close.
+        var line = """{"type":"coverage","v":1,"pid":42,"covered":[],"uncovered":[],"installed_late":["timeGetTime"],"warning_keys":["coverage.channel_installed_late"]}""";
+        var evt = Assert.IsType<CoverageEvent>(EventParser.Parse(line));
+        Assert.Equal(["timeGetTime"], evt.InstalledLate);
+
+        var old = """{"type":"coverage","v":1,"pid":42,"covered":[],"uncovered":[],"warning_keys":[]}""";
+        Assert.Empty(Assert.IsType<CoverageEvent>(EventParser.Parse(old)).InstalledLate);
+    }
+
+    [Fact]
     public void A_high_process_id_parses_instead_of_dropping_the_whole_event()
     {
         // R2-N20: the core sends a Windows pid as u32, and this side read it as int - so a pid above
