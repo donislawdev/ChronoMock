@@ -24,11 +24,6 @@
     type come from Themes, never literals (zasady/13); text chrome is translation keys (rule 15).
   -->
   <Grid Background="{DynamicResource BrushBgBase}">
-    <Grid.RowDefinitions>
-      <RowDefinition Height="*" />
-      <RowDefinition Height="Auto" />
-    </Grid.RowDefinitions>
-
     <!--
       🔴 EACH COLUMN SCROLLS ON ITS OWN, and the outer viewer no longer scrolls vertically. One
       shared scroller for three columns of very different heights meant the tallest one decided for
@@ -53,7 +48,7 @@
       a MinWidth that matches these three. That is an honest constraint rather than a scrollbar
       apologising for a layout that cannot fit.
     -->
-    <Grid Grid.Row="0" Margin="{StaticResource SpaceMd}">
+    <Grid Margin="{StaticResource SpaceMd}">
       <Grid.ColumnDefinitions>
         <ColumnDefinition Width="1*" MinWidth="240" />
         <ColumnDefinition Width="1.15*" MinWidth="380" />
@@ -64,28 +59,39 @@
            name and what the date tests. Clicking a row to fill the builder is wired in slice G4-1b. -->
       <Border Grid.Column="0" Margin="{StaticResource SpaceSm}" Padding="{StaticResource SpaceLg}"
               Background="{DynamicResource BrushBgSurface}" CornerRadius="{StaticResource RadiusMd}">
-        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-          <StackPanel>
-            <TextBlock Text="{DynamicResource calc.presets_header}"
-                       FontSize="{StaticResource FontSizeCaption}" FontWeight="SemiBold"
-                       Foreground="{DynamicResource BrushTextSecondary}" Margin="{StaticResource SpaceXs}" />
-            <TextBox x:Name="PresetFilterBox" Margin="{StaticResource SpaceXs}"
-                     Text="{Binding PresetFilter, UpdateSourceTrigger=PropertyChanged}"
-                     app:PartState.Placeholder="{DynamicResource calc.filter_placeholder}" />
-            <!-- 🔴 A ListBox with the SHARED ScenarioRow, so the preset list reads exactly like the
-                 scenario list in the setup phase (GUI rules 2 and 5) - it used to be a stack of heavy
-                 buttons. Selecting a row fills the builder through SelectedPreset (fill-on-select is safe:
-                 unpacking a preset is exempt from the by-hand-edit clear, guarded in the view model). -->
-            <ListBox x:Name="PresetList" ItemsSource="{Binding Presets}"
-                     SelectedItem="{Binding SelectedPreset}"
-                     ItemTemplate="{StaticResource ScenarioRow}"
-                     ItemContainerStyle="{StaticResource ScenarioRowContainer}"
-                     Margin="{StaticResource SpaceXs}" />
-            <TextBlock Text="{DynamicResource calc.preset_note}" TextWrapping="Wrap"
-                       Margin="{StaticResource SpaceXs}"
-                       FontSize="{StaticResource FontSizeCaption}" Foreground="{DynamicResource BrushTextSecondary}" />
-          </StackPanel>
-        </ScrollViewer>
+        <!-- 🔴 THE LIST FILLS THE COLUMN, it is not the fixed choice well of the setup phase. The implicit
+             ListBox height is 240 (ChoiceListHeight) so a searched well sitting in a STACK does not change
+             height on every keystroke - but here the list owns a whole column, so 240 left the card mostly
+             empty and the list itself a tiny box. In a * row the list is as tall as the column, which is a
+             STABLE height that filtering does not change either, so the well's own reason is met better this
+             way. The filter heads it and the note sits under it, both Auto, so neither is ever scrolled off. -->
+        <Grid>
+          <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+          </Grid.RowDefinitions>
+          <TextBlock Grid.Row="0" Text="{DynamicResource calc.presets_header}"
+                     FontSize="{StaticResource FontSizeCaption}" FontWeight="SemiBold"
+                     Foreground="{DynamicResource BrushTextSecondary}" Margin="{StaticResource SpaceXs}" />
+          <TextBox Grid.Row="1" x:Name="PresetFilterBox" Margin="{StaticResource SpaceXs}"
+                   Text="{Binding PresetFilter, UpdateSourceTrigger=PropertyChanged}"
+                   app:PartState.Placeholder="{DynamicResource calc.filter_placeholder}" />
+          <!-- 🔴 A ListBox with the SHARED ScenarioRow, so the preset list reads exactly like the
+               scenario list in the setup phase (GUI rules 2 and 5) - it used to be a stack of heavy
+               buttons. Selecting a row fills the builder through SelectedPreset (fill-on-select is safe:
+               unpacking a preset is exempt from the by-hand-edit clear, guarded in the view model).
+               Height Auto overrides the implicit well height so the list stretches into the * row. -->
+          <ListBox Grid.Row="2" x:Name="PresetList" ItemsSource="{Binding Presets}"
+                   SelectedItem="{Binding SelectedPreset}"
+                   ItemTemplate="{StaticResource ScenarioRow}"
+                   ItemContainerStyle="{StaticResource ScenarioRowContainer}"
+                   Height="Auto" Margin="{StaticResource SpaceXs}" />
+          <TextBlock Grid.Row="3" Text="{DynamicResource calc.preset_note}" TextWrapping="Wrap"
+                     Margin="{StaticResource SpaceXs}"
+                     FontSize="{StaticResource FontSizeCaption}" Foreground="{DynamicResource BrushTextSecondary}" />
+        </Grid>
       </Border>
 
       <!-- MIDDLE: the live expression builder (base, shift steps, calendar). -->
@@ -323,6 +329,56 @@
                 </ComboBox>
               </Border>
             </StackPanel>
+
+            <!-- The reverse tool lives here now, under the builder, so the middle column carries both ways
+                 of naming a moment - build one up, or read a pasted one - instead of a short form standing
+                 over a long void. Paste a date and see how it reads, with both interpretations when the
+                 numeric order is ambiguous (04/08 is April 8 in the US, August 4 in Poland). The readings
+                 stack the label over the value rather than sitting beside it: this column is narrower than
+                 the old full-width strip, and "US reading (MM/DD/YYYY)" beside its value would run past the
+                 column edge - the very fault the builder rows above already had to fix. -->
+            <StackPanel Margin="{StaticResource StackGapXl}">
+              <TextBlock Text="{DynamicResource calc.reverse_header}"
+                         FontSize="{StaticResource FontSizeCaption}" FontWeight="SemiBold"
+                         Foreground="{DynamicResource BrushTextSecondary}" Margin="{StaticResource SpaceXs}" />
+              <TextBox x:Name="AnalyzeBox" Text="{Binding AnalyzeText, UpdateSourceTrigger=LostFocus}"
+                       Width="160" HorizontalAlignment="Left" Margin="{StaticResource SpaceXs}"
+                       FontFamily="{StaticResource FontFamilyMono}" ToolTip="{DynamicResource tip.analyze}"
+                       AutomationProperties.Name="{DynamicResource calc.reverse_header}" />
+              <TextBlock Text="{DynamicResource calc.analyze_ambiguous}" TextWrapping="Wrap" Margin="{StaticResource SpaceXs}"
+                         FontSize="{StaticResource FontSizeCaption}" Foreground="{DynamicResource BrushStatusPartial}"
+                         Visibility="{Binding AnalyzeAmbiguous, Converter={StaticResource BoolToVis}}" />
+              <TextBlock Text="{Binding AnalyzeError}" TextWrapping="Wrap" Margin="{StaticResource SpaceXs}"
+                         FontSize="{StaticResource FontSizeCaption}" Foreground="{DynamicResource BrushStatusFails}"
+                         Visibility="{Binding AnalyzeHasError, Converter={StaticResource BoolToVis}}" />
+              <ItemsControl ItemsSource="{Binding Readings}" Margin="{StaticResource SpaceXs}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate>
+                    <StackPanel Margin="{StaticResource SpaceXs}">
+                      <TextBlock Text="{Binding ReadingLabelKey, Converter={StaticResource KeyToText}}" TextWrapping="Wrap"
+                                 FontSize="{StaticResource FontSizeCaption}" Foreground="{DynamicResource BrushTextSecondary}" />
+                      <StackPanel Orientation="Horizontal">
+                        <TextBlock VerticalAlignment="Center"
+                                   FontSize="{StaticResource FontSizeBody}" Foreground="{DynamicResource BrushTextPrimary}"><Run Text="{Binding WeekdayKey, Converter={StaticResource KeyToText}, Mode=OneWay}" /><Run Text="  " /><Run Text="{Binding Date, Mode=OneWay}" /></TextBlock>
+                        <ItemsControl ItemsSource="{Binding Significance}" VerticalAlignment="Center" Margin="{StaticResource SpaceSm}">
+                          <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                              <StackPanel Orientation="Horizontal" />
+                            </ItemsPanelTemplate>
+                          </ItemsControl.ItemsPanel>
+                          <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                              <TextBlock Text="{Binding Converter={StaticResource KeyToText}}" Margin="{StaticResource SpaceXs}"
+                                         FontSize="{StaticResource FontSizeCaption}" Foreground="{DynamicResource BrushAccent}" />
+                            </DataTemplate>
+                          </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                      </StackPanel>
+                    </StackPanel>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </StackPanel>
           </StackPanel>
         </ScrollViewer>
       </Border>
@@ -538,52 +594,5 @@
         </ScrollViewer>
       </Border>
     </Grid>
-
-    <!-- BOTTOM: reverse analysis (7.3) - paste a date, see how it reads, both interpretations when the
-         numeric order is ambiguous (04/08 is April 8 in the US, August 4 in Poland). -->
-    <Border Grid.Row="1" Margin="{StaticResource SpaceMd}" Padding="{StaticResource SpaceLg}"
-            Background="{DynamicResource BrushBgSurface}" CornerRadius="{StaticResource RadiusMd}">
-      <StackPanel>
-        <TextBlock Text="{DynamicResource calc.reverse_header}"
-                   FontSize="{StaticResource FontSizeCaption}" FontWeight="SemiBold"
-                   Foreground="{DynamicResource BrushTextSecondary}" Margin="{StaticResource SpaceXs}" />
-        <StackPanel Orientation="Horizontal" Margin="{StaticResource SpaceXs}">
-          <TextBox x:Name="AnalyzeBox" Text="{Binding AnalyzeText, UpdateSourceTrigger=LostFocus}" Width="160" VerticalAlignment="Center"
-                   FontFamily="{StaticResource FontFamilyMono}" ToolTip="{DynamicResource tip.analyze}"
-                   AutomationProperties.Name="{DynamicResource calc.reverse_header}" />
-          <TextBlock Text="{DynamicResource calc.analyze_ambiguous}" VerticalAlignment="Center" Margin="{StaticResource SpaceSm}"
-                     FontSize="{StaticResource FontSizeCaption}" Foreground="{DynamicResource BrushStatusPartial}"
-                     Visibility="{Binding AnalyzeAmbiguous, Converter={StaticResource BoolToVis}}" />
-          <TextBlock Text="{Binding AnalyzeError}" VerticalAlignment="Center" TextWrapping="Wrap" Margin="{StaticResource SpaceSm}"
-                     FontSize="{StaticResource FontSizeCaption}" Foreground="{DynamicResource BrushStatusFails}"
-                     Visibility="{Binding AnalyzeHasError, Converter={StaticResource BoolToVis}}" />
-        </StackPanel>
-        <ItemsControl ItemsSource="{Binding Readings}" Margin="{StaticResource SpaceXs}">
-          <ItemsControl.ItemTemplate>
-            <DataTemplate>
-              <StackPanel Orientation="Horizontal" Margin="{StaticResource SpaceXs}">
-                <TextBlock Text="{Binding ReadingLabelKey, Converter={StaticResource KeyToText}}" VerticalAlignment="Center" MinWidth="160"
-                           FontSize="{StaticResource FontSizeCaption}" Foreground="{DynamicResource BrushTextSecondary}" />
-                <TextBlock VerticalAlignment="Center" Margin="{StaticResource SpaceSm}"
-                           FontSize="{StaticResource FontSizeBody}" Foreground="{DynamicResource BrushTextPrimary}"><Run Text="{Binding WeekdayKey, Converter={StaticResource KeyToText}, Mode=OneWay}" /><Run Text="  " /><Run Text="{Binding Date, Mode=OneWay}" /></TextBlock>
-                <ItemsControl ItemsSource="{Binding Significance}" VerticalAlignment="Center" Margin="{StaticResource SpaceSm}">
-                  <ItemsControl.ItemsPanel>
-                    <ItemsPanelTemplate>
-                      <StackPanel Orientation="Horizontal" />
-                    </ItemsPanelTemplate>
-                  </ItemsControl.ItemsPanel>
-                  <ItemsControl.ItemTemplate>
-                    <DataTemplate>
-                      <TextBlock Text="{Binding Converter={StaticResource KeyToText}}" Margin="{StaticResource SpaceXs}"
-                                 FontSize="{StaticResource FontSizeCaption}" Foreground="{DynamicResource BrushAccent}" />
-                    </DataTemplate>
-                  </ItemsControl.ItemTemplate>
-                </ItemsControl>
-              </StackPanel>
-            </DataTemplate>
-          </ItemsControl.ItemTemplate>
-        </ItemsControl>
-      </StackPanel>
-    </Border>
   </Grid>
 </UserControl>
