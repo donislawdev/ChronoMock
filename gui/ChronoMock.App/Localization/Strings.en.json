@@ -27,7 +27,7 @@
 
   // Scenarios (chrono-mock 7.1 pt 2): named moments from the shared preset catalogue. The scenario NAMES and their "what this date tests" lines come from the catalogue files (data locales), not from here.
   "scenario.label": "Scenario",
-  "scenario.needs_parameters": "more scenarios take parameters - build one in the calculator, then use “Use in substitution”.",
+  "scenario.needs_parameters": "more scenarios take parameters - build one in the calculator, then use “Use this date”.",
   "scenario.failed": "That scenario could not be turned into a date.",
   "scenario.unsupported": "That scenario's preset file is in a shape this build cannot read.",
   "scenario.engine_missing": "The calculator engine could not be run, so scenarios cannot be computed.",
@@ -144,7 +144,7 @@
 
   // Fits after a number, like the shipped one. It names the button to press rather than quoting it in
   // passing, because a reader who has never opened the calculator cannot tell a quotation from a label.
-  "setup.scenario_parametric": "more need a value you choose. Build one in the calculator, then press “Use in substitution” there.",
+  "setup.scenario_parametric": "more need a value you choose. Build one in the calculator, then press “Use this date” there.",
 
   // The shipped tooltip says the ready-made moments are in the list ABOVE, which stopped being true when
   // the field moved to the top of its section. Same text, one word honest again, and shorter.
@@ -486,7 +486,7 @@
   "dialog.cancel": "Cancel",
   "dialog.close": "Close",
 
-  "nav.substitution": "Substitution",
+  "nav.substitution": "Run an app",
   "nav.calculator": "Calculator",
 
   // The support link in the title bar. The tooltip names the destination and repeats the offline promise
@@ -547,7 +547,7 @@
   "calc.custom_format": "Custom format",
   "calc.custom_format_hint": "e.g. yyyy-MM-dd HH:mm:ss",
   "calc.metadata": "Metadata",
-  "calc.use_in_substitution": "Use in substitution →",
+  "calc.use_in_substitution": "Use this date →",
   "calc.reverse_header": "Analyze a pasted date",
   "calc.analyze_ambiguous": "Ambiguous - both interpretations shown",
   "calc.reading.iso": "ISO 8601 (unambiguous)",
@@ -590,7 +590,7 @@
   "calc.err.base_overflow": "The UTC start point names an instant outside the range this version can represent.",
   "calc.err.base_not_a_date": "The start point is not a real date - check its month and day.",
   "calc.err.analyze_unrecognized": "This is not a date format the analyser recognises. It reads ISO (2026-01-31), numeric dates with a four-digit year (01/31/2026), and a bare number as a Unix timestamp.",
-  "calc.err.preset_not_for_calculator": "This preset describes a substitution session, not a date to compute.",
+  "calc.err.preset_not_for_calculator": "This scenario describes a session to run, not a date to compute.",
   // Two failures that are not the engine's: its answer arrived and was not usable. Rare, and worth saying
   // plainly rather than showing the reader a blank result they cannot explain.
   "calc.err.no_readings": "The analyser returned no readings for this input.",
@@ -641,7 +641,7 @@
   "calc.fmt.epoch_s": "epoch (s)",
   "calc.fmt.epoch_ms": "epoch (ms)",
   "calc.fmt.filetime": "FILETIME",
-  "calc.fmt.rfc1123": "RFC 1123",
+  "calc.fmt.rfc1123": "RFC 1123 (GMT)",
   "calc.fmt.unknown_tokens": "Not format tokens, shown as text: {0}. Put literal text in quotes, like 'this'.",
   "calc.clamped_step": "Step {0}: day {1} does not exist in that month, so it became {2}.",
   "calc.out_of_range": "(out of range)",
@@ -683,5 +683,5 @@
   "tip.calc_calendar": "The holiday and business-day calendar used by business-day and nearest steps.",
   "tip.custom_format": "Render the result with your own format mask (.NET/Java tokens).",
   "tip.analyze": "Paste a date to see how it reads - both interpretations when it is ambiguous.",
-  "tip.use_in_substitution": "Send this moment to the substitution panel. Available only when its zone is one of the offered session zones."
+  "tip.use_in_substitution": "Send this moment over to Run an app and fill its date. Available only when its zone is one of the offered session zones."
 }

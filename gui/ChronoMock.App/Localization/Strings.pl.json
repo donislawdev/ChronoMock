@@ -28,7 +28,7 @@
 
   // Scenarios (chrono-mock 7.1 pt 2): named moments from the shared preset catalogue. The scenario NAMES and their "what this date tests" lines come from the catalogue files (data locales), not from here.
   "scenario.label": "Scenariusz",
-  "scenario.needs_parameters": "kolejne scenariusze wymagają parametrów - zbuduj taki w kalkulatorze, potem użyj „Use in substitution”.",
+  "scenario.needs_parameters": "kolejne scenariusze wymagają parametrów - zbuduj taki w kalkulatorze, potem użyj „Użyj tej daty”.",
   "scenario.failed": "Nie udało się policzyć daty dla tego scenariusza.",
   "scenario.unsupported": "Plik presetu tego scenariusza ma kształt, którego ta wersja nie czyta.",
   "scenario.engine_missing": "Nie udało się uruchomić silnika kalkulatora, więc scenariuszy nie da się policzyć.",
@@ -144,7 +144,7 @@
 
   // Fits after a number, like the shipped one. It names the button to press rather than quoting it in
   // passing, because a reader who has never opened the calculator cannot tell a quotation from a label.
-  "setup.scenario_parametric": "kolejnych wymaga wartości, którą wybierasz. Zbuduj taki w kalkulatorze, potem naciśnij tam „Use in substitution”.",
+  "setup.scenario_parametric": "kolejnych wymaga wartości, którą wybierasz. Zbuduj taki w kalkulatorze, potem naciśnij tam „Użyj tej daty”.",
 
   // The shipped tooltip says the ready-made moments are in the list ABOVE, which stopped being true when
   // the field moved to the top of its section. Same text, one word honest again, and shorter.
@@ -477,7 +477,7 @@
   "dialog.cancel": "Anuluj",
   "dialog.close": "Zamknij",
 
-  "nav.substitution": "Podmiana",
+  "nav.substitution": "Uruchom aplikację",
   "nav.calculator": "Kalkulator",
 
   // The support link in the title bar. The tooltip names the destination and repeats the offline promise
@@ -538,7 +538,7 @@
   "calc.custom_format": "Format własny",
   "calc.custom_format_hint": "np. yyyy-MM-dd HH:mm:ss",
   "calc.metadata": "Metadane",
-  "calc.use_in_substitution": "Użyj w podmianie →",
+  "calc.use_in_substitution": "Użyj tej daty →",
   "calc.reverse_header": "Analiza wklejonej daty",
   "calc.analyze_ambiguous": "Niejednoznaczne - pokazane obie interpretacje",
   "calc.reading.iso": "ISO 8601 (jednoznaczne)",
@@ -581,7 +581,7 @@
   "calc.err.base_overflow": "Punkt startowy w UTC wskazuje moment spoza zakresu, jaki ta wersja potrafi wyrazić.",
   "calc.err.base_not_a_date": "Punkt startowy nie jest prawdziwą datą - sprawdź w nim miesiąc i dzień.",
   "calc.err.analyze_unrecognized": "To nie jest format daty, który analiza rozpoznaje. Czyta ISO (2026-01-31), daty liczbowe z czterocyfrowym rokiem (31.01.2026) oraz samą liczbę jako znacznik czasu uniksowego.",
-  "calc.err.preset_not_for_calculator": "Ten preset opisuje sesję podmiany czasu, a nie datę do policzenia.",
+  "calc.err.preset_not_for_calculator": "Ten scenariusz opisuje sesję uruchomienia aplikacji, a nie datę do policzenia.",
   // Two failures that are not the engine's: its answer arrived and was not usable. Rare, and worth saying
   // plainly rather than showing the reader a blank result they cannot explain.
   "calc.err.no_readings": "Analiza nie zwróciła żadnego odczytu dla tego wejścia.",
@@ -632,7 +632,7 @@
   "calc.fmt.epoch_s": "epoch (s)",
   "calc.fmt.epoch_ms": "epoch (ms)",
   "calc.fmt.filetime": "FILETIME",
-  "calc.fmt.rfc1123": "RFC 1123",
+  "calc.fmt.rfc1123": "RFC 1123 (GMT)",
   "calc.fmt.unknown_tokens": "To nie są tokeny formatu, pokazane jako tekst: {0}. Tekst dosłowny ujmij w apostrofy, jak 'ten'.",
   "calc.clamped_step": "Krok {0}: dzień {1} nie istnieje w tym miesiącu, więc został przycięty do {2}.",
   "calc.out_of_range": "(poza zakresem)",
@@ -674,5 +674,5 @@
   "tip.calc_calendar": "Kalendarz świąt i dni roboczych używany przez kroki dni roboczych i najbliższy.",
   "tip.custom_format": "Sformatuj wynik własną maską (tokeny .NET/Java).",
   "tip.analyze": "Wklej datę, by zobaczyć jak się czyta - obie interpretacje, gdy niejednoznaczna.",
-  "tip.use_in_substitution": "Wyślij ten moment do panelu podmiany. Dostępne tylko, gdy jego strefa jest jedną z oferowanych stref sesji."
+  "tip.use_in_substitution": "Wyślij ten moment do ekranu uruchamiania i wypełnij jego datę. Dostępne tylko, gdy jego strefa jest jedną z oferowanych stref sesji."
 }
