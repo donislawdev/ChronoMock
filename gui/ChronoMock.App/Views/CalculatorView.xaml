@@ -466,7 +466,7 @@
                 <DataTemplate>
                   <Grid Margin="{StaticResource SpaceXs}">
                     <Grid.ColumnDefinitions>
-                      <ColumnDefinition Width="86" />
+                      <ColumnDefinition Width="104" />
                       <ColumnDefinition Width="*" />
                       <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
