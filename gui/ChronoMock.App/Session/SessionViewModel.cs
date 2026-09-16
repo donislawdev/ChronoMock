@@ -1787,7 +1787,9 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     private static string FormatReadRow(CoveredChannel channel, Func<string, string> translate)
     {
         var format = translate(channel.Calls == 1 ? "coverage.reads_one" : "coverage.reads");
-        return string.Format(CultureInfo.InvariantCulture, format, channel.Channel, channel.Calls);
+        // Guarded like every other translated template here: a loose file with a bad placeholder degrades to
+        // the raw template instead of throwing out of the summary being built (rule 6).
+        return Fmt(format, channel.Channel, channel.Calls);
     }
 
     /// <summary>Build the wire time from the inputs. The moment is the local time in the session zone
@@ -1902,6 +1904,9 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
         AppendList(sb, translate, "coverage.covered", _covered.Select(ch => FormatReadRow(ch, translate)).ToList(), translateItems: false);
         AppendList(sb, translate, "coverage.observed", _observed.Select(ch => FormatReadRow(ch, translate)).ToList(), translateItems: false);
         AppendList(sb, translate, "coverage.uncovered", _uncovered, translateItems: false);
+        // The channels hooked only after their module loaded - shown in the in-app audit, so the copied
+        // report must carry them too, or the warning below references a list the reader cannot see (rule 4).
+        AppendList(sb, translate, "coverage.installed_late", _installedLate, translateItems: false);
         AppendList(sb, translate, "coverage.warnings", _warnings, translateItems: true);
         // Cleanup residue the core could not remove (ended.residue_keys) - reported, never hidden (rule 6).
         AppendList(sb, translate, "report.cleanup", _residueKeys, translateItems: true);

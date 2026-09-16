@@ -20,14 +20,25 @@ public sealed class CoverageRowConverter : IValueConverter
 {
     public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture) => value switch
     {
-        CoveredChannel channel => string.Format(
-            CultureInfo.InvariantCulture,
-            TranslationKeyConverter.Resolve(channel.Calls == 1 ? "coverage.reads_one" : "coverage.reads"),
-            channel.Channel,
-            channel.Calls),
+        CoveredChannel channel => FormatChannel(channel),
         string text => text,
         _ => string.Empty,
     };
+
+    // A malformed placeholder in a loose translation file must not throw out of a binding conversion and
+    // blank the row - degrade to the raw template, matching SessionViewModel.Fmt on the copy-summary side.
+    private static string FormatChannel(CoveredChannel channel)
+    {
+        var format = TranslationKeyConverter.Resolve(channel.Calls == 1 ? "coverage.reads_one" : "coverage.reads");
+        try
+        {
+            return string.Format(CultureInfo.InvariantCulture, format, channel.Channel, channel.Calls);
+        }
+        catch (FormatException)
+        {
+            return format;
+        }
+    }
 
     public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
         => throw new NotSupportedException();
