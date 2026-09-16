@@ -321,6 +321,7 @@ public sealed class CalculatorViewModel : ObservableObject
     private readonly CalcClient _client;
     private readonly string? _presetsDir;
     private IReadOnlyList<PresetItemViewModel> _allPresets = [];
+    private PresetItemViewModel? _selectedPreset;
     private string _presetFilter = string.Empty;
     private bool _unpacking;
     private bool _hasActivePreset;
@@ -461,6 +462,23 @@ public sealed class CalculatorViewModel : ObservableObject
 
     /// <summary>The calculator presets, filtered to this module and the current text filter (7.3).</summary>
     public ObservableCollection<PresetItemViewModel> Presets { get; } = [];
+
+    /// <summary>The preset chosen in the list. Setting it to a real item fills the builder from that preset
+    /// (fill-on-select), which is now the only way a preset reaches the builder, so the list reads like the
+    /// scenario list in the setup phase (GUI rule 2). A null - the list deselecting when the filter hides the
+    /// chosen row - does not clear the builder, the same way the scenario list leaves its fill in place.
+    /// Filling while unpacking is exempt from the by-hand-edit clear, so this does not fight itself.</summary>
+    public PresetItemViewModel? SelectedPreset
+    {
+        get => _selectedPreset;
+        set
+        {
+            if (Set(ref _selectedPreset, value) && value is not null)
+            {
+                ApplyPreset(value.Info);
+            }
+        }
+    }
 
     /// <summary>Whether a preset is currently the source of the builder (its name and framing show, and it
     /// clears the moment a field is edited by hand).</summary>

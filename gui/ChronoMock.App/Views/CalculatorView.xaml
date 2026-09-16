@@ -6,6 +6,16 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              mc:Ignorable="d">
+  <UserControl.Resources>
+    <ResourceDictionary>
+      <ResourceDictionary.MergedDictionaries>
+        <!-- Local merge so a {StaticResource ScenarioRow} resolves at this control's BAML load: a keyed
+             StaticResource never reaches Application.Resources, only implicit styles and DynamicResource do
+             (see App.xaml). The phase views merge Parts.xaml the same way and must. -->
+        <ResourceDictionary Source="../Themes/Parts.xaml" />
+      </ResourceDictionary.MergedDictionaries>
+    </ResourceDictionary>
+  </UserControl.Resources>
   <!--
     Date-calculator screen (chrono-mock 7.3). Slice G3b: the builder (base, shift steps, calendar) and
     the result column are LIVE, evaluated through the calc engine via the calc client (ADR-6, one engine).
@@ -62,23 +72,15 @@
             <TextBox x:Name="PresetFilterBox" Margin="{StaticResource SpaceXs}"
                      Text="{Binding PresetFilter, UpdateSourceTrigger=PropertyChanged}"
                      app:PartState.Placeholder="{DynamicResource calc.filter_placeholder}" />
-            <ItemsControl x:Name="PresetList" ItemsSource="{Binding Presets}" Margin="{StaticResource SpaceXs}">
-              <ItemsControl.ItemTemplate>
-                <DataTemplate>
-                  <Button Click="OnPresetClick" Tag="{Binding}"
-                          Margin="{StaticResource SpaceXs}" Padding="{StaticResource SpaceSm}"
-                          HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
-                          AutomationProperties.Name="{Binding DisplayName}">
-                    <StackPanel>
-                      <TextBlock Text="{Binding DisplayName}" TextWrapping="Wrap"
-                                 FontSize="{StaticResource FontSizeBody}" Foreground="{DynamicResource BrushTextPrimary}" />
-                      <TextBlock Text="{Binding DisplayExplains}" TextWrapping="Wrap"
-                                 FontSize="{StaticResource FontSizeCaption}" Foreground="{DynamicResource BrushTextSecondary}" />
-                    </StackPanel>
-                  </Button>
-                </DataTemplate>
-              </ItemsControl.ItemTemplate>
-            </ItemsControl>
+            <!-- 🔴 A ListBox with the SHARED ScenarioRow, so the preset list reads exactly like the
+                 scenario list in the setup phase (GUI rules 2 and 5) - it used to be a stack of heavy
+                 buttons. Selecting a row fills the builder through SelectedPreset (fill-on-select is safe:
+                 unpacking a preset is exempt from the by-hand-edit clear, guarded in the view model). -->
+            <ListBox x:Name="PresetList" ItemsSource="{Binding Presets}"
+                     SelectedItem="{Binding SelectedPreset}"
+                     ItemTemplate="{StaticResource ScenarioRow}"
+                     ItemContainerStyle="{StaticResource ScenarioRowContainer}"
+                     Margin="{StaticResource SpaceXs}" />
             <TextBlock Text="{DynamicResource calc.preset_note}" TextWrapping="Wrap"
                        Margin="{StaticResource SpaceXs}"
                        FontSize="{StaticResource FontSizeCaption}" Foreground="{DynamicResource BrushTextSecondary}" />

@@ -121,30 +121,6 @@
           </Setter.Value>
         </Setter>
       </Style>
-
-      <Style x:Key="ScenarioRowContainer" TargetType="ListBoxItem" BasedOn="{StaticResource {x:Type ListBoxItem}}">
-        <Setter Property="AutomationProperties.Name" Value="{Binding DisplayName}" />
-      </Style>
-
-      <!--
-        One scenario row: its name, and under it what that date actually tests.
-
-        🔴 THE SECOND LINE IS THE POINT OF THE CATALOGUE. With one line a reader has to choose a scenario
-        to find out what it is for, which means choosing several to compare them - and choosing one is not
-        free, it computes a date and fills the field. Two lines make the list browsable instead of a
-        guessing game, at the cost of showing four rows in the well rather than seven.
-
-        Both lines trim rather than clipping mid-word, and the full explanation is on the tooltip for the
-        ones the catalogue author wrote at length.
-      -->
-      <DataTemplate x:Key="ScenarioRow">
-        <StackPanel ToolTip="{Binding DisplayExplains}">
-          <TextBlock Text="{Binding DisplayName}" TextTrimming="CharacterEllipsis" />
-          <TextBlock Style="{StaticResource PartNote}" TextWrapping="NoWrap"
-                     TextTrimming="CharacterEllipsis"
-                     Text="{Binding DisplayExplains}" />
-        </StackPanel>
-      </DataTemplate>
     </ResourceDictionary>
   </UserControl.Resources>
 

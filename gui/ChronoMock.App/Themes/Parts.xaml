@@ -731,6 +731,30 @@
   <Style TargetType="ComboBoxItem" BasedOn="{StaticResource {x:Type ListBoxItem}}" />
 
   <!--
+    One row of a "ready-made date" list: its name, and under it what that date tests. SHARED by two lists
+    that were drawn two different ways - the scenario list in the setup phase and the preset list in the
+    calculator - because both hold items with a DisplayName and a DisplayExplains and both fill a form when
+    clicked (GUI rules 2 and 5). It lived inline in the setup phase; a second user made it a part.
+
+    🔴 THE SECOND LINE IS THE POINT OF THE LIST. With one line a reader has to choose an item to find out
+    what it is for, which means choosing several to compare them - and choosing one is not free, it fills
+    the form. Two lines make the list browsable. Both trim rather than clip mid-word, and the full text is
+    on the tooltip for the ones an author wrote at length.
+  -->
+  <Style x:Key="ScenarioRowContainer" TargetType="ListBoxItem" BasedOn="{StaticResource {x:Type ListBoxItem}}">
+    <Setter Property="AutomationProperties.Name" Value="{Binding DisplayName}" />
+  </Style>
+
+  <DataTemplate x:Key="ScenarioRow">
+    <StackPanel ToolTip="{Binding DisplayExplains}">
+      <TextBlock Text="{Binding DisplayName}" TextTrimming="CharacterEllipsis" />
+      <TextBlock Style="{StaticResource PartNote}" TextWrapping="NoWrap"
+                 TextTrimming="CharacterEllipsis"
+                 Text="{Binding DisplayExplains}" />
+    </StackPanel>
+  </DataTemplate>
+
+  <!--
     ============================ Form row ============================
 
     🔴 THE PART THAT FIXES "EVERYTHING LOOKS RANDOMLY PLACED". A form is a grid with a label column, not
