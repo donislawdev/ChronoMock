@@ -107,9 +107,10 @@
 
            Each phase inherits this window's SessionViewModel as its DataContext and binds Commands.X; the
            window hands those commands a shell (WindowShellInteraction) in code-behind for the picker,
-           clipboard and confirm actions. The phases merge the parts library locally for now - merging it
-           application-wide is the next slice and would repaint the calculator too, which the rework has
-           not reviewed. -->
+           clipboard and confirm actions. Each phase also merges the parts library locally, and keeps doing
+           so even though App.xaml now merges Parts application-wide: a {StaticResource PartX} resolves as the
+           phase's BAML loads and never reaches Application.Resources. The application-wide merge is what
+           gives the whole app the Parts look. -->
       <Grid x:Name="SubstitutionContainer">
         <views:SetupPhaseView Visibility="{Binding ShowsSetupPhase, Converter={StaticResource BoolToVis}}" />
         <views:SessionPhaseView Visibility="{Binding ShowsSessionPhase, Converter={StaticResource BoolToVis}}" />

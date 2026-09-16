@@ -94,9 +94,9 @@
         guard in ItemNameGuardTests caught all five of these on the first build of this screen, which is
         what a rule written in comments three times and enforced once looks like when it works.
 
-        They repeat App.xaml's four for one reason and not for long: those are based on the toolkit's item,
-        because App.xaml does not merge the parts library yet. When it does, App.xaml's own BasedOn will
-        resolve to the parts row instead and these go with the old panel.
+        They repeat the technique App.xaml uses for the old panel's lists: a templated list otherwise reads
+        its data item's ToString() aloud, so each list that binds records needs a container style that sets an
+        accessible name. These stay local because the ItemContainerStyle is named and applied on the list here.
       -->
       <Style x:Key="RecentTargetRow" TargetType="ComboBoxItem" BasedOn="{StaticResource {x:Type ComboBoxItem}}">
         <!-- The FULL path: a file name alone does not identify a build, since an x64 and an x86 output are

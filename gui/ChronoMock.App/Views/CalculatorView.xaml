@@ -19,7 +19,8 @@
   <!--
     Date-calculator screen (chrono-mock 7.3). Slice G3b: the builder (base, shift steps, calendar) and
     the result column are LIVE, evaluated through the calc engine via the calc client (ADR-6, one engine).
-    The presets column and the reverse-analysis strip are still a static preview, wired in slices G4/G5.
+    The presets column and the reverse-analysis strip are LIVE too: selecting a preset fills the builder,
+    and a pasted date resolves through reverse analysis.
     Only shift steps have an editor yet (snap / nearest / set-time / zone follow). Colours, spacing and
     type come from Themes, never literals (zasady/13); text chrome is translation keys (rule 15).
   -->
@@ -59,12 +60,8 @@
            name and what the date tests. Clicking a row to fill the builder is wired in slice G4-1b. -->
       <Border Grid.Column="0" Margin="{StaticResource SpaceSm}" Padding="{StaticResource SpaceLg}"
               Background="{DynamicResource BrushBgSurface}" CornerRadius="{StaticResource RadiusMd}">
-        <!-- 🔴 THE LIST FILLS THE COLUMN, it is not the fixed choice well of the setup phase. The implicit
-             ListBox height is 240 (ChoiceListHeight) so a searched well sitting in a STACK does not change
-             height on every keystroke - but here the list owns a whole column, so 240 left the card mostly
-             empty and the list itself a tiny box. In a * row the list is as tall as the column, which is a
-             STABLE height that filtering does not change either, so the well's own reason is met better this
-             way. The filter heads it and the note sits under it, both Auto, so neither is ever scrolled off. -->
+        <!-- The filter heads the list and the note sits under it, both Auto, so neither is ever scrolled off.
+             The list height itself is explained above the ListBox below. -->
         <Grid>
           <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
@@ -81,8 +78,7 @@
           <!-- 🔴 A ListBox with the SHARED ScenarioRow, so the preset list reads exactly like the
                scenario list in the setup phase (GUI rules 2 and 5) - it used to be a stack of heavy
                buttons. Selecting a row fills the builder through SelectedPreset (fill-on-select is safe:
-               unpacking a preset is exempt from the by-hand-edit clear, guarded in the view model).
-               Height Auto overrides the implicit well height so the list stretches into the * row. -->
+               unpacking a preset is exempt from the by-hand-edit clear, guarded in the view model). -->
           <!-- 🔴 THE WELL FITS ITS CONTENT, capped at the column, rather than always filling it. A * row made
                the bordered well as tall as the column, so a short catalogue sat in a large box of empty dark
                - the fault this replaces. Height Auto overrides the fixed well height and sizes it to its

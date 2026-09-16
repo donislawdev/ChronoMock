@@ -85,11 +85,12 @@
   <!-- 9-10: the accent fill under the cursor and under the press. Lighter on hover, darker on press,
        the WinUI direction. The dark label holds on all three: 8.56 at rest, 9.93 hovered, 7.19 pressed.
 
-       🔴 These sit close to the focus ring by necessity - they are the same hue - and the hover step is
-       1.02 away from it. That is why the ring is drawn OUTSIDE the control with a gap of background
-       between them, rather than on its edge: a ring touching this fill would vanish into it, and no
-       choice of shade fixes that while both stay this hue. Measured against the surfaces the ring
-       actually sits on instead: 10.08 on the window, 8.84 on a card. -->
+       🔴 These sit close to the focus colour by necessity - they are the same hue - and the hover step is
+       1.02 away from it. Keyboard focus recolours each control's OWN 1 px border to BrushFocusRing (AccentRing),
+       tight against the edge, rather than drawing a separate ring outside with a gap of background. AccentRing
+       is a lighter blue than the fill, so the recoloured border stays visible even on a suggested button, which
+       is why the old outside-ring reason (that a same-hue ring would vanish into the fill) no longer holds.
+       Measured against the surfaces the border sits on: 10.08 on the window, 8.84 on a card. -->
   <Color x:Key="AccentHover">#FF6FD0FF</Color>
   <Color x:Key="AccentPressed">#FF3BB2EE</Color>
 
@@ -104,7 +105,8 @@
   <SolidColorBrush x:Key="BrushBgSurface" Color="{StaticResource Neutral02}" />
   <SolidColorBrush x:Key="BrushBgSurfaceAlt" Color="{StaticResource Neutral03}" />
 
-  <!-- Control fill by state. New roles: nothing names them until the parts library lands. -->
+  <!-- Control fill by state. Parts.xaml names these in the Button, TextBox, CheckBox, ComboBox and
+       ListBoxItem styles. -->
   <SolidColorBrush x:Key="BrushControlRest" Color="{StaticResource Neutral03}" />
   <SolidColorBrush x:Key="BrushControlHover" Color="{StaticResource Neutral04}" />
   <SolidColorBrush x:Key="BrushControlPressed" Color="{StaticResource Neutral05}" />

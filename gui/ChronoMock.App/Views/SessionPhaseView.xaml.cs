@@ -7,9 +7,8 @@ namespace ChronoMock.App.Views;
 /// audit behind the verdict.
 /// </summary>
 /// <remarks>
-/// No behaviour, like the setup phase and for the same reason: this is a drawing under review. The buttons
-/// are inert until the slice that moves the product onto the parts library, where they get the handlers
-/// the shipped panel already has.
+/// No code-behind, like the setup phase and for the same reason (GUI rule 11): the in-flight controls act
+/// through Commands.X bindings (Speed, Jump, SetCustomSpeed, JumpToEntered, Stop), not event handlers.
 /// </remarks>
 public partial class SessionPhaseView : UserControl
 {
