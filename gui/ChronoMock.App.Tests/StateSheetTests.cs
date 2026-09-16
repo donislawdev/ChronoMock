@@ -108,9 +108,9 @@ public class StateSheetTests
             // form is far taller than the frame, so this is the sheet that shows whether the action and
             // the sentence explaining it survived - or whether they went below the fold with everything
             // else, which is what they used to do.
-            total += StateSheet
-                .Write("setup-floor", new SetupPhaseView { DataContext = PhaseStates.SetupStartup() }, MinimumWidth, MinimumHeight)
-                .Count;
+            total += RenderedFloor(
+                "setup-floor",
+                new SetupPhaseView { DataContext = PhaseStates.SetupStartup() }).Count;
 
             return total;
         });
@@ -149,11 +149,9 @@ public class StateSheetTests
 
             // The window's floor, where the clocks and the action have to survive together. Its model
             // goes through the same helper, so it carries a target like every other session state.
-            total += StateSheet.Write(
+            total += RenderedFloor(
                 "session-floor",
-                new SessionPhaseView { DataContext = PhaseStates.WithTarget(SessionStates.Running()) },
-                MinimumWidth,
-                MinimumHeight).Count;
+                new SessionPhaseView { DataContext = PhaseStates.WithTarget(SessionStates.Running()) }).Count;
 
             return total;
         });
@@ -170,7 +168,9 @@ public class StateSheetTests
         // why it is added there rather than in SessionStates.
         var view = new SessionPhaseView { DataContext = PhaseStates.WithTarget(model) };
         OpenAndScrollTo(view, openSection);
-        return StateSheet.Write(name, view);
+        var rendered = StateSheet.Write(name, view);
+        Assert.NotEmpty(rendered); // an empty render must fail here, not vanish into a positive total
+        return rendered;
     }
 
     /// <summary>
@@ -196,11 +196,9 @@ public class StateSheetTests
             total += RenderResult("result-not-started", PhaseStates.ResultNotStarted()).Count;
             total += RenderResult("result-history", PhaseStates.ResultWithHistoryChosen(), "HistorySection").Count;
 
-            total += StateSheet.Write(
+            total += RenderedFloor(
                 "result-floor",
-                new ResultPhaseView { DataContext = PhaseStates.ResultWorks() },
-                MinimumWidth,
-                MinimumHeight).Count;
+                new ResultPhaseView { DataContext = PhaseStates.ResultWorks() }).Count;
 
             return total;
         });
@@ -215,7 +213,9 @@ public class StateSheetTests
     {
         var view = new ResultPhaseView { DataContext = model };
         OpenAndScrollTo(view, openSection);
-        return StateSheet.Write(name, view);
+        var rendered = StateSheet.Write(name, view);
+        Assert.NotEmpty(rendered); // an empty render must fail here, not vanish into a positive total
+        return rendered;
     }
 
     /// <summary>
@@ -279,7 +279,18 @@ public class StateSheetTests
         // thing the file was for. Opening it is a user action, so it belongs to the sheet and not to a
         // flag on the model.
         OpenAndScrollTo(view, openSection);
-        return StateSheet.Write(name, view);
+        var rendered = StateSheet.Write(name, view);
+        Assert.NotEmpty(rendered); // an empty render must fail here, not vanish into a positive total
+        return rendered;
+    }
+
+    /// <summary>Render a phase at the window's minimum size and assert it produced something - a floor that
+    /// laid out to nothing would otherwise hide inside a positive total (rule 6).</summary>
+    private static IReadOnlyList<LaidOutElement> RenderedFloor(string name, FrameworkElement view)
+    {
+        var rendered = StateSheet.Write(name, view, MinimumWidth, MinimumHeight);
+        Assert.NotEmpty(rendered);
+        return rendered;
     }
 
     [Fact]

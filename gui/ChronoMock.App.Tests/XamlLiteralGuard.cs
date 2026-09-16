@@ -42,6 +42,11 @@ internal static class XamlLiteralGuard
         ("font-size", new Regex("""(?i)\bFontSize\s*=\s*"[0-9]""", RegexOptions.Compiled)),
         // A literal spacing/thickness/radius. "0" is allowed - it is not a design token worth naming.
         ("spacing", new Regex("""(?i)\b(Margin|Padding|BorderThickness|CornerRadius)\s*=\s*"(?!0")[0-9.\-]""", RegexOptions.Compiled)),
+        // The same decisions written in a Setter: Property names the target, Value carries the literal. The
+        // attribute rules above miss these because the value is in Value=, not in the property attribute. The
+        // Value lookaheads keep the same exemptions - a markup extension, Transparent, a bare 0.
+        ("setter-colour", new Regex("""(?i)<Setter\b(?=[^>]*\bProperty\s*=\s*"(?:\w+\.)?(Foreground|Background|Fill|Stroke|BorderBrush|Color)")(?=[^>]*\bValue\s*=\s*"(?!\{|Transparent"))""", RegexOptions.Compiled)),
+        ("setter-spacing", new Regex("""(?i)<Setter\b(?=[^>]*\bProperty\s*=\s*"(?:\w+\.)?(Margin|Padding|BorderThickness|CornerRadius|FontSize)")(?=[^>]*\bValue\s*=\s*"(?!0")[0-9.\-])""", RegexOptions.Compiled)),
     ];
 
     /// <summary>

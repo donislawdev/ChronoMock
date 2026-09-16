@@ -72,6 +72,34 @@ public class LiteralGuardTests
     }
 
     /// <summary>
+    /// 🔴 THE SAME LITERAL WRITTEN IN A SETTER. A style dictionary sets the same properties through
+    /// &lt;Setter Property="..." Value="..." /&gt;, where the value is in Value= rather than in the property
+    /// attribute - so the attribute rules above miss it entirely. Both the colour and the spacing/font-size
+    /// forms are probed, because they are two separate rules and a typo in one would leave that half open.
+    /// </summary>
+    [Fact]
+    public void Guard_reddens_on_a_literal_in_a_setter()
+    {
+        Assert.NotEmpty(XamlLiteralGuard.FindViolations("x.xaml", """<Setter Property="Background" Value="White" />"""));
+        Assert.NotEmpty(XamlLiteralGuard.FindViolations("x.xaml", """<Setter Property="Foreground" Value="#FF00FF00" />"""));
+        Assert.NotEmpty(XamlLiteralGuard.FindViolations("x.xaml", """<Setter Property="Margin" Value="7" />"""));
+        Assert.NotEmpty(XamlLiteralGuard.FindViolations("x.xaml", """<Setter Property="FontSize" Value="16" />"""));
+
+        // The property is often qualified (Grid.Row-style), so a dotted owner must not slip past.
+        Assert.NotEmpty(XamlLiteralGuard.FindViolations("x.xaml", """<Setter Property="Border.BorderBrush" Value="Gray" />"""));
+    }
+
+    /// <summary>The Setter rules keep the same exemptions the attribute rules do: a markup extension, the
+    /// word Transparent, and a bare zero are all legitimate and must not redden.</summary>
+    [Fact]
+    public void Guard_allows_a_setter_that_binds_or_paints_nothing()
+    {
+        Assert.Empty(XamlLiteralGuard.FindViolations("x.xaml", """<Setter Property="Background" Value="{DynamicResource BrushControlRest}" />"""));
+        Assert.Empty(XamlLiteralGuard.FindViolations("x.xaml", """<Setter Property="Background" Value="Transparent" />"""));
+        Assert.Empty(XamlLiteralGuard.FindViolations("x.xaml", """<Setter Property="BorderThickness" Value="0" />"""));
+    }
+
+    /// <summary>
     /// 🔴 The guard walks the style dictionary, where control templates live. Asserting the VISITED set
     /// rather than the empty result is the point: a guard that quietly stops visiting Controls.xaml
     /// returns zero violations and is indistinguishable from a clean one.

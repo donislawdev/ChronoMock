@@ -249,12 +249,16 @@ public class SessionCommandsTests
         var store = new InMemorySessionHistoryStore();
         store.Append(Record());
 
-        var refused = WithShell(new FakeShell { ConfirmResult = false }, store);
+        var refusing = new FakeShell { ConfirmResult = false };
+        var refused = WithShell(refusing, store);
         refused.Commands.ClearHistory.Execute(null);
+        Assert.True(refusing.WasAsked); // it asked before keeping - not a silent no-op
         Assert.True(refused.HasHistory); // asked, said no, kept
 
-        var confirmed = WithShell(new FakeShell { ConfirmResult = true }, store);
+        var confirming = new FakeShell { ConfirmResult = true };
+        var confirmed = WithShell(confirming, store);
         confirmed.Commands.ClearHistory.Execute(null);
+        Assert.True(confirming.WasAsked); // it asked before clearing
         Assert.False(confirmed.HasHistory); // asked, said yes, cleared
     }
 
