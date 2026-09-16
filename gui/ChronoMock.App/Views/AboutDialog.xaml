@@ -107,12 +107,14 @@
       <!-- Read the licence online. A fallback rather than the plan - the file above is the real copy when
            it is there - and the only control in this window that leads off the machine, which is why it
            says so in its tooltip exactly as the support button does. -->
+      <!-- No Padding override here: the parts Button already carries a horizontal control padding, and a
+           uniform one on a fixed-height button eats 24 px of the 32 and clips the label to a sliver, which
+           is exactly what left both buttons in this window looking empty. -->
       <Button x:Name="ReadLicenceButton" Click="OnReadLicenceClick"
               Content="{DynamicResource about.read_licence}"
               ToolTip="{DynamicResource about.read_licence_tip}"
               HorizontalAlignment="Left"
-              Margin="{StaticResource StackGapLg}"
-              Padding="{StaticResource SpaceMd}" />
+              Margin="{StaticResource StackGapLg}" />
 
       <!-- Collapsed on open, and the query behind it does not run until it is opened: nobody should pay
            for a process start to read a copyright line. The list scrolls inside a named cap so opening
@@ -137,8 +139,7 @@
       <Button x:Name="CloseButton" Click="OnCloseClick" IsCancel="True"
               Content="{DynamicResource dialog.close}"
               HorizontalAlignment="Right"
-              MinWidth="{StaticResource DialogButtonMinWidth}"
-              Padding="{StaticResource SpaceMd}" />
+              MinWidth="{StaticResource DialogButtonMinWidth}" />
     </Border>
   </Grid>
 </ui:FluentWindow>
