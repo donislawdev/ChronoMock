@@ -5,11 +5,11 @@
   <!--
     THE PARTS LIBRARY. Everything a screen is built from, drawn by us rather than by the toolkit.
 
-    🔴 THIS DICTIONARY IS NOT MERGED INTO App.xaml YET, and that is deliberate. The styles here are
-    implicit (keyed by type), so merging them application-wide would restyle every existing screen the
-    moment the file exists. Until the screens are rebuilt, only the component catalogue loads this,
-    which keeps the shipped views pixel-identical while the parts are designed. Adopting it later is
-    ONE line in App.xaml, for the whole application at once.
+    🔴 THIS DICTIONARY IS MERGED INTO App.xaml application-wide (App.xaml). The styles here are implicit
+    (keyed by type), so that one merge gives every screen the same parts look at once - the adopted design,
+    not a hazard to avoid. What the merge does NOT carry is the keyed parts: a {StaticResource PartCard},
+    ScenarioRow or PartClock is resolved as a view's BAML loads and does not reach Application.Resources, so
+    a view that names one of those must ALSO merge this file locally.
 
     WHY DRAW THEM AT ALL. A toolkit control renders itself its own way and no amount of theming changes
     the drawing - same colour, same height, same font, different shape. That is a decision with a real
@@ -18,7 +18,7 @@
     THE LANGUAGE OF STATES, and it is one language across every part here:
       the cursor is here       -> the FILL moves one step
       it is being pressed      -> the fill moves the other way, a recess
-      the keyboard is here     -> a RING appears outside the control
+      the keyboard is here     -> the control's OWN border recolours, tight against the edge
       it cannot be used        -> the edge goes, the ink dims
     Cursor and keyboard answer on different axes on purpose, so a control that is hovered AND focused
     still says both things at once.
@@ -851,11 +851,23 @@
     The header is a toggle across the full width, because a target the size of a word is a target people
     miss. The chevron turns rather than swapping glyph, so there is one drawing instead of two.
   -->
+
+  <!-- The section header IS the control the reader operates, so unlike the drop-down toggle (where the
+       ComboBox itself takes focus and answers the keyboard) this one takes the tab stop and the keys: Space
+       and Enter fold and unfold the section. It shows keyboard focus on the chevron, since it has no border
+       of its own to recolour. -->
+  <Style x:Key="PartSectionToggle" TargetType="ToggleButton" BasedOn="{StaticResource PartDropDownToggle}">
+    <Setter Property="Focusable" Value="True" />
+  </Style>
+
   <Style x:Key="PartSection" TargetType="Expander">
     <Setter Property="Foreground" Value="{DynamicResource BrushTextPrimary}" />
     <Setter Property="FontSize" Value="{StaticResource FontSizeBody}" />
     <Setter Property="SnapsToDevicePixels" Value="True" />
     <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+    <!-- The header toggle carries the tab stop and the keys, so the Expander itself must not also take one -
+         a second stop on the Expander would be a dead tab stop that shows nothing and does nothing. -->
+    <Setter Property="IsTabStop" Value="False" />
     <Setter Property="Template">
       <Setter.Value>
         <ControlTemplate TargetType="Expander">
@@ -870,15 +882,14 @@
                 <RowDefinition Height="Auto" />
               </Grid.RowDefinitions>
 
-              <!-- No focus ring on the section itself. The control the reader is editing carries keyboard
-                   focus and shows its own ring, so a second box around the whole section is the
-                   double-marking this library avoids (see the choice well above). The header toggle is not
-                   a tab stop (PartDropDownToggle is Focusable=False), so the ring only ever answered a
-                   CHILD field's focus - which reads as the section lighting up while you edit a field
-                   inside it, and is exactly what it was asked to stop doing. -->
+              <!-- No focus box around the whole section: a child field carries its own focus, and a second
+                   box around the section would be the double-marking this library avoids (see the choice well
+                   above). The header toggle itself IS the section's control - it takes the tab stop and
+                   answers Space and Enter to fold and unfold, and shows keyboard focus on the chevron below,
+                   which is why it uses PartSectionToggle (focusable) rather than the drop-down toggle. -->
               <Grid Grid.Row="0">
                 <ToggleButton x:Name="HeaderToggle"
-                              Style="{StaticResource PartDropDownToggle}"
+                              Style="{StaticResource PartSectionToggle}"
                               IsChecked="{Binding IsExpanded, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}" />
                 <Grid IsHitTestVisible="False">
                   <Grid.ColumnDefinitions>
@@ -933,6 +944,11 @@
             </Trigger>
             <Trigger SourceName="HeaderToggle" Property="IsMouseOver" Value="True">
               <Setter TargetName="Chevron" Property="Stroke" Value="{DynamicResource BrushTextPrimary}" />
+            </Trigger>
+            <!-- Keyboard focus lands on the header toggle: mark it on the chevron, the section's one glyph,
+                 since the toggle has no border of its own to recolour the way other parts do. -->
+            <Trigger SourceName="HeaderToggle" Property="IsKeyboardFocused" Value="True">
+              <Setter TargetName="Chevron" Property="Stroke" Value="{DynamicResource BrushFocusRing}" />
             </Trigger>
           </ControlTemplate.Triggers>
         </ControlTemplate>
