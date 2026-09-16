@@ -14,7 +14,7 @@
     <TextBox Text="{Binding DateText, UpdateSourceTrigger=PropertyChanged}"
              app:PartState.Placeholder="{DynamicResource moment.date_placeholder}"
              ToolTip="{DynamicResource tip.date_field}"
-             Width="148" FontFamily="{StaticResource FontFamilyMono}"
+             Width="{StaticResource MomentDateFieldWidth}" FontFamily="{StaticResource FontFamilyMono}"
              VerticalAlignment="Center" />
 
     <ToggleButton x:Name="CalendarToggle" Style="{StaticResource CalendarToggleStyle}"
@@ -32,7 +32,7 @@
     <TextBox Text="{Binding TimeText, UpdateSourceTrigger=PropertyChanged}"
              app:PartState.Placeholder="{DynamicResource moment.time_placeholder}"
              ToolTip="{DynamicResource tip.time_field}"
-             Width="84" FontFamily="{StaticResource FontFamilyMono}"
+             Width="{StaticResource MomentTimeFieldWidth}" FontFamily="{StaticResource FontFamilyMono}"
              Margin="{StaticResource SpaceXs}" VerticalAlignment="Center" />
   </StackPanel>
 </UserControl>

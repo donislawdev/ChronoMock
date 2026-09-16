@@ -152,6 +152,14 @@
   <sys:Double x:Key="ShiftSignWidth">64</sys:Double>
   <sys:Double x:Key="ShiftAmountWidth">72</sys:Double>
   <sys:Double x:Key="ShiftUnitWidth">128</sys:Double>
+
+  <!-- The shared moment input's two fields (MomentInput), named together because they set one moment and
+       sized so the DEFAULT value fits with room. The time holds "HH:MM:SS" - EIGHT characters, not five:
+       the 2038 boundary default is 03:14:07, and a box measured for "HH:MM" clipped its own seconds to
+       "03:14:0" on the first screen a reader sees. The date holds "YYYY-MM-DD". -->
+  <sys:Double x:Key="MomentDateFieldWidth">148</sys:Double>
+  <sys:Double x:Key="MomentTimeFieldWidth">120</sys:Double>
+
   <sys:Double x:Key="StrokeThin">1</sys:Double>
   <!-- The same one-pixel edge as a Thickness, for a BorderThickness. WPF does not convert a Double to a
        Thickness through a resource reference, so the two spellings of one decision both have to exist. -->
