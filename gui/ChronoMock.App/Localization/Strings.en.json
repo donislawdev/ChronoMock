@@ -76,7 +76,7 @@
   "session.label_jump": "Jump",
   "session.jump_note": "The duration clock never goes backwards, even on a backward jump.",
   "session.label_jump_to": "Jump to",
-  "session.action_jump_to": "Go",
+  "session.action_jump_to": "Jump",
   // One word for one idea: the row says Speed and so does the tooltip, so the box does too.
   "session.rate_placeholder": "any speed",
   // 🔴 Application, not Running. The line outlives the run - the same screen shows a session that has
@@ -139,7 +139,7 @@
   // and an acronym only a Windows developer knows, and the third never says what "it" is. Every one of
   // these sentences was already written correctly, in the tooltip nobody reads first.
   "setup.opt_duration": "Also speed up timers and countdowns inside the application",
-  "setup.opt_qpc": "Also speed up high-precision timers (Stopwatch, nanoTime, monotonic)",
+  "setup.opt_qpc": "Also speed up timers that measure elapsed time (Stopwatch, nanoTime, monotonic)",
   "setup.opt_force": "Start even if the fake clock turns out not to work",
 
   // Fits after a number, like the shipped one. It names the button to press rather than quoting it in
@@ -148,16 +148,8 @@
 
   // The shipped tooltip says the ready-made moments are in the list ABOVE, which stopped being true when
   // the field moved to the top of its section. Same text, one word honest again, and shorter.
-  "setup.tip_shift": "Fills the date above with now, shifted by this much - the command line spells it --at +30d. Months, quarters and years land on the calendar date, not on a fixed number of hours. One shift and no more: business days are absent because a session carries no holiday calendar, and ready-made moments such as a month end are in the list below.",
+  "setup.tip_shift": "Fills the date above with now, shifted by this much - the command line spells it --at +30d. Months, quarters and years land on the calendar date, not on a fixed number of hours. One shift and no more: business days are absent because a session carries no holiday calendar, and ready-made dates such as a month end are in the list below.",
 
-  // The two ways of filling the moment, both of them shortcuts to the field above rather than settings of
-  // their own. Said out loud, because a list that just sits there does not explain what choosing from it
-  // will do.
-  // 🔴 It TEACHES the word rather than avoiding it. Calling this a "ready-made date" here while the box
-  // under it says "Search scenarios" gave one thing two names on one screen, which is worse for a first
-  // run than one unfamiliar word explained in the same breath. Scenario is the product's word, in the
-  // calculator and on the site, so the reader meets it once and knows it everywhere.
-  "setup.or_pick_scenario": "Or pick a scenario - a ready-made date that fills the fields above. Choosing one starts nothing.",
 
   // The two options that can cost something. The tooltip carries the full story; these carry the part a
   // reader has to weigh BEFORE ticking, where the decision is made rather than a hover away from it.
@@ -188,7 +180,6 @@
   "launch.header": "Arguments and working folder",
   "launch.args_label": "Arguments:",
   "launch.cwd_label": "Working folder:",
-  "launch.cwd_note": "Leave the folder empty to let the application start where it normally would. Quote an argument that contains spaces, exactly as on the command line.",
 
   // Time inputs (chrono-mock 7.1). The moment is the local time in the session zone (rule 2).
   "moment.label": "At:",
@@ -206,7 +197,7 @@
   "moment.relative_amount": "Amount",
   "moment.relative_unit": "Unit",
   "moment.relative_bad_amount": "Enter a whole number above zero, e.g. 30.",
-  "moment.relative_failed": "That delta could not be turned into a date - it may land outside the range this build computes on.",
+  "moment.relative_failed": "That shift could not be turned into a date - it may land outside the range this build computes on.",
   "action.pick_date": "Pick a date",
   "action.today": "Today",
   "action.now": "Now",
@@ -291,13 +282,13 @@
   // 🔴 "29 February in a year that is not a leap year", not "Feb 29 in a common year". The abbreviation
   // was the only one in the interface - every other date is spelled out - and "common year" is the
   // correct term for what almost nobody calls it.
-  "moment.invalid": "That moment is not valid (a daylight-saving gap, 29 February in a year that is not a leap year, or out of range) - the session did not start.",
+  "moment.invalid": "That date and time is not valid (a daylight-saving gap, 29 February in a year that is not a leap year, or out of range) - the session did not start.",
   // 🔴 THE SAME TWO REASONS, FOR A COMMAND REJECTED MID-SESSION. The core sends one key whether a bad
   // moment arrives with the start command or with a jump, so the panel printed "the session did not
   // start" under a status line reading "Running" - a screen contradicting itself. These say what actually
   // did not happen. Which one is used is decided by the surface, not by the core (SessionViewModel.
   // InFlightKey), because only the surface knows which command the error answered.
-  "moment.invalid_in_flight": "That moment is not valid (a daylight-saving gap, 29 February in a year that is not a leap year, or out of range) - the clock did not move.",
+  "moment.invalid_in_flight": "That date and time is not valid (a daylight-saving gap, 29 February in a year that is not a leap year, or out of range) - the clock did not move.",
   "time.bad_multiplier_in_flight": "Speed out of range - it must be between 0 (freeze) and 1,000,000. The rate did not change.",
   "moment.needs_calendar": "That jump counts business days, and a running session has no calendar - jump to a date instead, or work the date out in the calculator first.",
   "moment.unsupported_kind": "The core did not recognise that kind of jump target.",
@@ -527,16 +518,16 @@
   "calc.preset_note": "A scenario is a starting point - not a certificate that your test is complete.",
   "calc.preset_params_header": "Parameters",
   "calc.preset_needs_params": "Fill in the parameters below to compute this scenario.",
-  "calc.build_header": "Build the moment",
-  "calc.start_point": "Start point",
-  "calc.base_zone": "in zone",
+  "calc.build_header": "Build a date",
+  "calc.start_point": "Start from",
+  "calc.base_zone": "in time zone",
   "calc.steps_header": "Steps",
   "calc.add_step": "+ Add step",
   "calc.kind_shift": "Shift ±",
-  "calc.kind_snap": "Snap to",
-  "calc.kind_nearest": "Nearest",
+  "calc.kind_snap": "Jump to",
+  "calc.kind_nearest": "Nearest business day",
   "calc.kind_settime": "Set time",
-  "calc.kind_zone": "Change zone",
+  "calc.kind_zone": "Change time zone",
   "calc.result_header": "Result",
   // NOT "what this date tests". A preset says what its date tests in its own words, right above this
   // block, and this block says what the arithmetic LANDED ON, which is often incidental to it.
@@ -547,7 +538,7 @@
   "calc.copied": "Copied",
   "calc.custom_format": "Custom format",
   "calc.custom_format_hint": "e.g. yyyy-MM-dd HH:mm:ss",
-  "calc.metadata": "Metadata",
+  "calc.metadata": "Details",
   "calc.use_in_substitution": "Use this date →",
   "calc.reverse_header": "Analyze a pasted date",
   "calc.analyze_ambiguous": "Ambiguous - both interpretations shown",
@@ -665,7 +656,7 @@
   "tip.today": "Fill in today's date (session zone), at midnight.",
   "tip.now": "Fill in the current date and time (session zone).",
   "tip.zone": "The session time zone - a fixed offset with no daylight saving. The moment is read in it.",
-  "tip.relative_moment": "Fill the moment above with now, shifted by this much - the command line spells it --at +30d. Months, quarters and years land on the calendar date, not on a fixed number of hours. This row makes one shift and no more, which is why it offers fewer choices than the calculator: business days are absent because a session carries no holiday calendar, and ready-made moments such as a month end are in the Scenario list above.",
+  "tip.relative_moment": "Fill the date above with now, shifted by this much - the command line spells it --at +30d. Months, quarters and years land on the calendar date, not on a fixed number of hours. This row makes one shift and no more, which is why it offers fewer choices than the calculator: business days are absent because a session carries no holiday calendar, and ready-made dates such as a month end are in the Scenario list above.",
   "tip.mode": "How fast the fake clock runs: ×1 is real speed, frozen stops it, and the rest run that many times faster.",
   "tip.scale_duration": "Also speed up timers, sleeps and countdowns inside the app - not just the wall clock.",
   "tip.scale_qpc": "Also speed up QPC-based clocks (Python monotonic, .NET Stopwatch, Java nanoTime). May distort an app that times its rendering off QPC.",

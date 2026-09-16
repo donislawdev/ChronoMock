@@ -499,6 +499,11 @@
                      Text="Error note - a failure explained in a sentence, such as a command that failed while a session runs. The size of a note in the error ink: set as a caption, the one line in the footer that says something went wrong read as the least important line in it." />
           <TextBlock Style="{StaticResource PartCaption}" Margin="{StaticResource StackGapSm}"
                      Text="Caption - metadata standing beside a value: a chip, a unit, the zone under a clock. Small because it is not read, it is glanced at. Measured: 5.15 or better on every fill it can land on." />
+          <StackPanel Orientation="Horizontal" Margin="{StaticResource StackGapSm}">
+            <TextBlock Text="Info hint - hover the glyph" Style="{StaticResource PartLabel}" />
+            <TextBlock Style="{StaticResource PartInfoHint}"
+                       ToolTip="The explanation an info glyph carries, moved off the body onto a hover so a section can lead with its one answer. This tooltip is deliberately long, to show a multi-sentence explanation staying readable rather than clipping. The glyph is muted at rest, brightens on hover, and takes the help cursor." />
+          </StackPanel>
         </StackPanel>
       </Border>
 

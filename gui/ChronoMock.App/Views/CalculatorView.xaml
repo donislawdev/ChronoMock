@@ -90,6 +90,7 @@
                      SelectedItem="{Binding SelectedPreset}"
                      ItemTemplate="{StaticResource ScenarioRow}"
                      ItemContainerStyle="{StaticResource ScenarioRowContainer}"
+                     ScrollViewer.CanContentScroll="False"
                      VerticalAlignment="Top" Height="Auto"
                      MaxHeight="{Binding ActualHeight, ElementName=ListArea}"
                      Margin="{StaticResource SpaceXs}" />
@@ -148,21 +149,18 @@
                    same item template as the substitution panel, so one idea has one idiom. The first entry
                    is the host, which sends no flag at all: that is what this panel always did, so the
                    default changes no result, it only says out loud which zone it was (rule 2). -->
-              <!-- The label and the zone share a row of their own. Left in the outer grid, the label
-                   would inherit the width of the start-point box above it and push the zone another
-                   140 px to the right, which is what left it reading "UTC+02:00 - this m". -->
-              <Grid Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="2">
-                <Grid.ColumnDefinitions>
-                  <ColumnDefinition Width="Auto" />
-                  <ColumnDefinition Width="*" />
-                </Grid.ColumnDefinitions>
-                <TextBlock Grid.Column="0" Text="{DynamicResource calc.base_zone}" Margin="{StaticResource SpaceSm}"
-                           VerticalAlignment="Center"
+              <!-- 🔴 The label sits ABOVE the combo, not beside it, so the combo spans the whole row. Beside
+                   it the label ate the left of the row and left the combo about 255 px, where the longest zone
+                   gloss - "UTC+00:00 · Coordinated Universal Time" - clipped in the closed box and in the
+                   drop-down that borrows its width. On its own row still (never sharing the start-point box's
+                   width), just stacked, so the combo gets the full width the card can give it. -->
+              <StackPanel Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="2" Margin="{StaticResource SpaceXs}">
+                <TextBlock Text="{DynamicResource calc.base_zone}" Margin="{StaticResource SpaceXs}"
                            FontSize="{StaticResource FontSizeBody}" Foreground="{DynamicResource BrushTextSecondary}" />
-                <ComboBox Grid.Column="1" x:Name="BaseZoneBox" ItemsSource="{Binding BaseZones}" SelectedItem="{Binding SelectedBaseZone}"
-                        ToolTip="{DynamicResource tip.base_zone}"
-                        ItemContainerStyle="{StaticResource ZoneComboItem}"
-                          Margin="{StaticResource SpaceXs}" VerticalAlignment="Center"
+                <ComboBox x:Name="BaseZoneBox" ItemsSource="{Binding BaseZones}" SelectedItem="{Binding SelectedBaseZone}"
+                          ToolTip="{DynamicResource tip.base_zone}"
+                          ItemContainerStyle="{StaticResource ZoneComboItem}"
+                          Margin="{StaticResource SpaceXs}"
                           HorizontalAlignment="Stretch">
                   <ComboBox.ItemTemplate>
                     <DataTemplate>
@@ -170,7 +168,7 @@
                     </DataTemplate>
                   </ComboBox.ItemTemplate>
                 </ComboBox>
-              </Grid>
+              </StackPanel>
             </Grid>
             <!-- Validation message BELOW the start-point row (only for a malformed Specific base), so it never
                  shifts the row - mirrors the substitution At row. -->
@@ -540,6 +538,7 @@
                     <TextBlock Grid.Column="0" Text="{Binding Label}"
                                FontSize="{StaticResource FontSizeCaption}" Foreground="{DynamicResource BrushTextSecondary}" />
                     <TextBlock Grid.Column="1" Text="{Binding Value}" TextWrapping="Wrap"
+                               Margin="{StaticResource CopyValueGap}"
                                FontFamily="{StaticResource FontFamilyMono}"
                                FontSize="{StaticResource FontSizeCaption}" Foreground="{DynamicResource BrushTextPrimary}" />
                     <Button Grid.Column="2" Content="{DynamicResource calc.copy}" Click="OnCopyFormatClick"
@@ -576,6 +575,7 @@
                 <ColumnDefinition Width="Auto" />
               </Grid.ColumnDefinitions>
               <TextBlock Grid.Column="0" Text="{Binding CustomFormatResult}" TextWrapping="Wrap"
+                         Margin="{StaticResource CopyValueGap}"
                          FontFamily="{StaticResource FontFamilyMono}"
                          FontSize="{StaticResource FontSizeCaption}" Foreground="{DynamicResource BrushTextPrimary}" />
               <Button Grid.Column="1" Content="{DynamicResource calc.copy}" Click="OnCopyFormatClick"

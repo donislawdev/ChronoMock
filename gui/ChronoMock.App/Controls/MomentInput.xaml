@@ -3,12 +3,16 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:app="clr-namespace:ChronoMock.App">
   <!-- Shared moment input (chrono-mock 7.1): an ISO date field plus a calendar popup and an optional 24h
-       time field - ONE horizontal line, so it stays level with the buttons and zone beside it. The value is
-       composed culture-invariantly by MomentField, so a Polish box and a US VM read a typed date identically
-       (rule 2) - that is why this is NOT a WPF DatePicker, whose text parsing follows the OS locale. The
-       validation message is shown by the consumer BELOW the whole row (MomentField.ActiveErrorKey), never
-       inside this control, so an error never changes the row height. Bound to a MomentField DataContext. -->
-  <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+       time field. The value is composed culture-invariantly by MomentField, so a Polish box and a US VM read
+       a typed date identically (rule 2) - that is why this is NOT a WPF DatePicker, whose text parsing follows
+       the OS locale. The validation message is shown by the consumer BELOW the whole row
+       (MomentField.ActiveErrorKey), never inside this control, so an error never changes the row height.
+       Bound to a MomentField DataContext.
+       🔴 A WrapPanel, not a horizontal stack. Given the room it lays date, calendar and time on one line and
+       stays level with the buttons beside it - a horizontal parent measures it at infinite width, so it never
+       wraps there. In a narrow column, the calculator's builder, the time field drops to the next line
+       instead of being clipped off the right edge, which a fixed-width stack did. -->
+  <WrapPanel Orientation="Horizontal" VerticalAlignment="Center">
     <!-- Wide enough for YYYY-MM-DD with room to spare. The box takes the parts library's TextBox style
          (implicit) and its placeholder, so it reads as the same field the rest of the interface uses. -->
     <TextBox Text="{Binding DateText, UpdateSourceTrigger=PropertyChanged}"
@@ -34,5 +38,5 @@
              ToolTip="{DynamicResource tip.time_field}"
              Width="{StaticResource MomentTimeFieldWidth}" FontFamily="{StaticResource FontFamilyMono}"
              Margin="{StaticResource SpaceXs}" VerticalAlignment="Center" />
-  </StackPanel>
+  </WrapPanel>
 </UserControl>
