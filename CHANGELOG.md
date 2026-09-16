@@ -26,6 +26,9 @@ the notes below say what a user sees rather than how the parts were rearranged.
 - **A hidden component catalogue, opened with `--catalogue`.** It shows every interface part in
   every state, with its longest text and its extreme values, so a change to a part can be seen
   in one place. It is for whoever works on the window and never opens on its own.
+- **Type-to-select in the drop-downs.** Typing a letter jumps to the matching entry - the offset,
+  the unit, the zone - the way a native list does, so a long list is reached from the keyboard and
+  not only the mouse.
 
 ### Changed
 
@@ -70,6 +73,18 @@ the notes below say what a user sees rather than how the parts were rearranged.
   sit at the visible threshold now, on cards. The prose that explains the tool was taking two
   reductions at once, smaller and dimmer, and is now at reading size in the quieter ink, so the
   text that teaches the tool is no longer the hardest thing on the screen to read.
+- **The substitution panel is called "Run an app".** The screen's own name spoke of the mechanism
+  rather than the task - a reader wants to run an application on another date, and the tab says so
+  now. "Substitution" and the other mechanism words stay in the command line and the reports.
+- **Keyboard focus is a tight border rather than a ring floating outside the control.** The ring
+  stood off the edge with a gap and read as a heavy halo - focus recolours the control's own edge
+  now, and a section no longer draws a box around itself when a field inside it is being edited.
+- **The calculator carries both ways of naming a moment in one column.** The reverse analysis moved
+  up beside the builder, the three columns fill the height, the scenario descriptions read in full
+  rather than trailing off into an ellipsis, and the copy buttons confirm with "Copied".
+- **The footer's primary action is sized to its word, and Stop is red.** Start and New session were
+  a banner far wider than their text and are sized to it now. Stop wears the failure red, because it
+  ends the session, and red is not the accent the rest of the tool keeps for the next step.
 
 ### Fixed
 
@@ -82,6 +97,14 @@ the notes below say what a user sees rather than how the parts were rearranged.
 - **The release signing check compares the signature states against the list it signed.** The
   step that reads the certificate back out of every signed file checked it against the wrong
   list, so a mismatch could have passed unnoticed.
+- **The date calculator's scrollbar sat over the values and the copy buttons.** Each column keeps a
+  lane for it now, so it no longer covers what it scrolls past.
+- **The start point's time field was clipped in the calculator.** The moment shared one row with the
+  kind picker in the narrow middle column and ran off the edge - it has its own full-width row now.
+- **Dialog buttons clipped their own labels.** A uniform padding on a fixed-height button ate the
+  vertical room the label needed.
+- **The RFC 1123 output is labelled GMT.** Its value has always ended in GMT, and the row says so
+  now, so a reader is not left guessing which zone it is in.
 
 ## [0.2.0] - 2026-09-10
 
