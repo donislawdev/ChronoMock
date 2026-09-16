@@ -1,14 +1,13 @@
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
-using System.Windows.Threading;
 
 namespace ChronoMock.App.Controls;
 
 /// <summary>
-/// A search field over a list: it clears itself with a glyph in its right end, submits its first hit when
-/// Enter is pressed, and takes the caret the moment it is revealed. One control so the three behaviours
-/// travel together and the catalogue can show them - none of them is expressible as a style. The drawing is
+/// A search field over a list: it clears itself with a glyph in its right end and submits its first hit when
+/// Enter is pressed. One control so the two behaviours travel together and the catalogue can show them -
+/// neither is expressible as a style. The drawing is
 /// the parts library's TextBox (implicit style) with a clear glyph laid over it, the same shape MomentInput
 /// lays a calendar toggle in. It knows nothing about what it is searching: the consumer binds
 /// <see cref="Text"/>, <see cref="Placeholder"/> and <see cref="SubmitCommand"/>.
@@ -18,10 +17,6 @@ public partial class SearchBox : UserControl
     public SearchBox()
     {
         InitializeComponent();
-
-        // The caret follows the field into view. Wired here rather than in markup because a phase view is
-        // not allowed a handler (GUI rule 11), and this is a reusable control, not a screen.
-        IsVisibleChanged += OnVisibleChanged;
     }
 
     /// <summary>What the person has typed. Two-way by default, so a consumer binds a filter straight to it.</summary>
@@ -90,17 +85,6 @@ public partial class SearchBox : UserControl
         {
             command.Execute(null);
             e.Handled = true;
-        }
-    }
-
-    // When the section holding the field opens, the person can type at once. Posted at input priority so
-    // the focus lands after the reveal has laid the field out - a straight Focus() in this handler is lost
-    // while the element is still being made visible. Never on the way out, and never when it is not shown.
-    private void OnVisibleChanged(object sender, DependencyPropertyChangedEventArgs e)
-    {
-        if (e.NewValue is true)
-        {
-            _ = Dispatcher.BeginInvoke(DispatcherPriority.Input, new Action(() => Field.Focus()));
         }
     }
 }
