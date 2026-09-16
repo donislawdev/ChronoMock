@@ -56,14 +56,6 @@
   <Thickness x:Key="CardPadding">16</Thickness>
   <Thickness x:Key="ChipPadding">12,8,12,8</Thickness>
 
-  <!-- The keyboard focus ring sits OUTSIDE the control edge, so a focused control does not change size
-       and its neighbours do not shift. Two pixels: one is invisible next to a one pixel border. -->
-  <Thickness x:Key="FocusRingThickness">2</Thickness>
-  <!-- Four out, two of which the ring itself occupies, leaves two pixels of background between the ring
-       and the control edge. That gap is not decoration: the ring and the accent fill are the same hue,
-       so without background showing between them a focused primary button is one solid blue shape. -->
-  <Thickness x:Key="FocusRingMargin">-4</Thickness>
-
   <!-- 🔴 The label column of a form has NO width here, on purpose, and that is the correction to a first
        draft which gave it 150. A number wide enough for today's longest label is a number measured off
        the content, and it stops being right at the first translation or font change. The rows share one

@@ -32,26 +32,16 @@
   -->
 
   <!--
-    ============================ Focus ring ============================
+    ============================ Focus ============================
 
-    One ring, drawn OUTSIDE the control with a gap of background between them, reused by every part.
-
-    🔴 Why outside rather than on the edge. The accent fill and the ring are the same hue by design, and
-    the hovered accent fill sits 1.02 from the ring - a ring drawn on that edge disappears into it, and
-    no shade fixes it while both stay this hue. Outside, the ring is measured against the surface behind
-    the control instead: 10.08 on the window, 8.84 on a card.
-
-    It is also why the ring carries a negative margin rather than padding the control: a focused control
-    must not change size, or every neighbour shifts when the keyboard arrives.
+    There is no shared focus ring. Keyboard focus recolours each control's OWN 1 px border to
+    BrushFocusRing, tight against the edge, inside that control's own template - a separate ring floating
+    outside the control with a gap of background between them read as a detached halo. AccentRing is a
+    lighter blue than the accent fill, so the tight border stays visible even on a suggested button, which
+    is why the old shared ring's reason for sitting outside (that it would vanish into a same-hue fill) no
+    longer holds. A recoloured border does not change the control's size either, so nothing shifts when
+    the keyboard arrives.
   -->
-  <Style x:Key="PartFocusRing" TargetType="Border">
-    <Setter Property="BorderBrush" Value="{DynamicResource BrushFocusRing}" />
-    <Setter Property="BorderThickness" Value="{StaticResource FocusRingThickness}" />
-    <Setter Property="CornerRadius" Value="{StaticResource RadiusMd}" />
-    <Setter Property="Margin" Value="{StaticResource FocusRingMargin}" />
-    <Setter Property="IsHitTestVisible" Value="False" />
-    <Setter Property="SnapsToDevicePixels" Value="True" />
-  </Style>
 
   <!--
     ============================ Card ============================
@@ -183,29 +173,18 @@
     <Setter Property="Template">
       <Setter.Value>
         <ControlTemplate TargetType="Button">
-          <Grid>
-            <Border x:Name="Ring" Style="{StaticResource PartFocusRing}" Visibility="Collapsed" />
-            <Border x:Name="Face"
-                    Background="{TemplateBinding Background}"
-                    BorderBrush="{TemplateBinding BorderBrush}"
-                    BorderThickness="{StaticResource StrokeThinEdge}"
-                    CornerRadius="{StaticResource RadiusSm}"
-                    Padding="{TemplateBinding Padding}"
-                    SnapsToDevicePixels="True">
-              <ContentPresenter x:Name="Label"
-                                HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
-                                VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
-                                RecognizesAccessKey="True" />
-            </Border>
-          </Grid>
-          <ControlTemplate.Triggers>
-            <!-- The keyboard answers on the ring, and only the keyboard: a ring that also appeared on
-                 mouse focus would say "you can type here" after every click. The ring is identical for
-                 every variant, so it is the one state that belongs to the drawing rather than the style. -->
-            <Trigger Property="IsKeyboardFocused" Value="True">
-              <Setter TargetName="Ring" Property="Visibility" Value="Visible" />
-            </Trigger>
-          </ControlTemplate.Triggers>
+          <Border x:Name="Face"
+                  Background="{TemplateBinding Background}"
+                  BorderBrush="{TemplateBinding BorderBrush}"
+                  BorderThickness="{StaticResource StrokeThinEdge}"
+                  CornerRadius="{StaticResource RadiusSm}"
+                  Padding="{TemplateBinding Padding}"
+                  SnapsToDevicePixels="True">
+            <ContentPresenter x:Name="Label"
+                              HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                              VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
+                              RecognizesAccessKey="True" />
+          </Border>
         </ControlTemplate>
       </Setter.Value>
     </Setter>
@@ -260,6 +239,15 @@
         <Setter Property="Background" Value="{DynamicResource BrushAccentPressed}" />
         <Setter Property="BorderBrush" Value="{DynamicResource BrushAccentPressed}" />
       </MultiTrigger>
+
+      <!-- Keyboard focus recolours the control's OWN border, tight against the edge, rather than a ring
+           floating outside with a gap - the gap read as a detached halo. Only the keyboard, because a
+           focus mark on mouse click would say "you can type here" after every press. Placed after the
+           suggested state so a focused suggested button shows the ring colour, a lighter blue than the
+           accent fill that stays visible on it. -->
+      <Trigger Property="IsKeyboardFocused" Value="True">
+        <Setter Property="BorderBrush" Value="{DynamicResource BrushFocusRing}" />
+      </Trigger>
 
       <!--
         No invitation, but still a control.
@@ -331,7 +319,6 @@
       <Setter.Value>
         <ControlTemplate TargetType="TextBox">
           <Grid>
-            <Border x:Name="Ring" Style="{StaticResource PartFocusRing}" Visibility="Collapsed" />
             <Border Background="{TemplateBinding Background}"
                     BorderBrush="{TemplateBinding BorderBrush}"
                     BorderThickness="{StaticResource StrokeThinEdge}"
@@ -359,9 +346,6 @@
             </Border>
           </Grid>
           <ControlTemplate.Triggers>
-            <Trigger Property="IsFocused" Value="True">
-              <Setter TargetName="Ring" Property="Visibility" Value="Visible" />
-            </Trigger>
             <!-- Empty is the whole condition, focus is not part of it. See PartState.Placeholder. -->
             <Trigger Property="Text" Value="">
               <Setter TargetName="Placeholder" Property="Visibility" Value="Visible" />
@@ -373,6 +357,12 @@
     <Style.Triggers>
       <Trigger Property="IsMouseOver" Value="True">
         <Setter Property="Background" Value="{DynamicResource BrushControlHover}" />
+      </Trigger>
+      <!-- Focus recolours the field's OWN border, tight against the edge, not a ring floating outside with
+           a gap. Before the error trigger, so a field that is focused AND wrong shows the error colour
+           rather than the focus one. -->
+      <Trigger Property="IsFocused" Value="True">
+        <Setter Property="BorderBrush" Value="{DynamicResource BrushFocusRing}" />
       </Trigger>
       <Trigger Property="app:PartState.HasError" Value="True">
         <Setter Property="BorderBrush" Value="{DynamicResource BrushError}" />
@@ -402,7 +392,6 @@
         <ControlTemplate TargetType="CheckBox">
           <StackPanel Orientation="Horizontal" Background="Transparent">
             <Grid VerticalAlignment="Center">
-              <Border x:Name="Ring" Style="{StaticResource PartFocusRing}" Visibility="Collapsed" />
               <Border x:Name="Box"
                       Width="{StaticResource CheckBoxSize}" Height="{StaticResource CheckBoxSize}"
                       Background="{DynamicResource BrushControlRest}"
@@ -434,8 +423,9 @@
             <Trigger Property="IsMouseOver" Value="True">
               <Setter TargetName="Box" Property="BorderBrush" Value="{DynamicResource BrushGlyphMuted}" />
             </Trigger>
+            <!-- Focus recolours the box's OWN border, tight, not a ring floating outside it. -->
             <Trigger Property="IsKeyboardFocused" Value="True">
-              <Setter TargetName="Ring" Property="Visibility" Value="Visible" />
+              <Setter TargetName="Box" Property="BorderBrush" Value="{DynamicResource BrushFocusRing}" />
             </Trigger>
             <Trigger Property="IsEnabled" Value="False">
               <Setter TargetName="Box" Property="BorderBrush" Value="{DynamicResource BrushDivider}" />
@@ -501,7 +491,6 @@
       <Setter.Value>
         <ControlTemplate TargetType="ComboBox">
           <Grid>
-            <Border x:Name="Ring" Style="{StaticResource PartFocusRing}" Visibility="Collapsed" />
             <Border x:Name="Face"
                     Background="{TemplateBinding Background}"
                     BorderBrush="{TemplateBinding BorderBrush}"
@@ -577,8 +566,9 @@
               <Setter TargetName="Face" Property="Background" Value="{DynamicResource BrushControlPressed}" />
               <Setter TargetName="Chevron" Property="Stroke" Value="{DynamicResource BrushTextPrimary}" />
             </Trigger>
+            <!-- Focus recolours the face's OWN border, tight, not a ring floating outside it. -->
             <Trigger Property="IsKeyboardFocused" Value="True">
-              <Setter TargetName="Ring" Property="Visibility" Value="Visible" />
+              <Setter TargetName="Face" Property="BorderBrush" Value="{DynamicResource BrushFocusRing}" />
             </Trigger>
             <Trigger Property="IsEnabled" Value="False">
               <Setter TargetName="Face" Property="BorderBrush" Value="{DynamicResource BrushDivider}" />
@@ -879,8 +869,13 @@
                 <RowDefinition Height="Auto" />
               </Grid.RowDefinitions>
 
+              <!-- No focus ring on the section itself. The control the reader is editing carries keyboard
+                   focus and shows its own ring, so a second box around the whole section is the
+                   double-marking this library avoids (see the choice well above). The header toggle is not
+                   a tab stop (PartDropDownToggle is Focusable=False), so the ring only ever answered a
+                   CHILD field's focus - which reads as the section lighting up while you edit a field
+                   inside it, and is exactly what it was asked to stop doing. -->
               <Grid Grid.Row="0">
-                <Border x:Name="Ring" Style="{StaticResource PartFocusRing}" Visibility="Collapsed" />
                 <ToggleButton x:Name="HeaderToggle"
                               Style="{StaticResource PartDropDownToggle}"
                               IsChecked="{Binding IsExpanded, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}" />
@@ -937,9 +932,6 @@
             </Trigger>
             <Trigger SourceName="HeaderToggle" Property="IsMouseOver" Value="True">
               <Setter TargetName="Chevron" Property="Stroke" Value="{DynamicResource BrushTextPrimary}" />
-            </Trigger>
-            <Trigger Property="IsKeyboardFocusWithin" Value="True">
-              <Setter TargetName="Ring" Property="Visibility" Value="Visible" />
             </Trigger>
           </ControlTemplate.Triggers>
         </ControlTemplate>
