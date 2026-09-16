@@ -137,15 +137,6 @@
                 VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
     <StackPanel Margin="{StaticResource ScrollFormInset}">
 
-      <!-- 🔴 What this screen does, and what it will not do, for somebody who has no way of knowing
-           either. The second half is the product's whole promise and the question a stranger actually
-           arrives with: is this going to change my computer. -->
-      <!-- The primary ink, not the caption's. On a first run this is the most important sentence on the
-           screen, and it was the quietest. -->
-      <TextBlock Style="{StaticResource PartLabel}" TextWrapping="Wrap"
-                 Margin="{StaticResource StackGapSm}"
-                 Text="{DynamicResource setup.intro}" />
-
       <!--
         THE APPLICATION, and it never folds away. It is the one answer without which nothing else on this
         screen means anything, and the only one whose absence stops Start.
@@ -157,7 +148,13 @@
            Four groups, four titles, one left edge. -->
       <Border Style="{StaticResource PartCard}" Margin="{StaticResource StackGapXl}">
         <StackPanel IsEnabled="{Binding IsIdle}">
-          <TextBlock Style="{StaticResource PartHeading}" Text="{DynamicResource setup.label_target}" />
+          <!-- The info glyph carries what this screen does and, in its second half, the product's whole
+               promise (the real clock is never touched) - moved off the body onto a hover so the form starts
+               at the one answer that matters. -->
+          <StackPanel Orientation="Horizontal">
+            <TextBlock Style="{StaticResource PartHeading}" Text="{DynamicResource setup.label_target}" />
+            <TextBlock Style="{StaticResource PartInfoHint}" ToolTip="{DynamicResource setup.intro}" />
+          </StackPanel>
           <StackPanel Orientation="Horizontal" Margin="{StaticResource StackGapSm}">
             <ComboBox ItemsSource="{Binding RecentTargets}" SelectedItem="{Binding SelectedTarget}"
                       ItemContainerStyle="{StaticResource RecentTargetRow}"
@@ -185,17 +182,15 @@
                     app:PartState.IsSuggested="{Binding ShowsDropHint}"
                     Command="{Binding Commands.ChooseTarget}"
                     Margin="{StaticResource SpaceXs}" />
-          </StackPanel>
-          <!-- 🔴 The floor is the point, not the hint. This line empties out the moment an application is
-               chosen, and without a reserved height the card would shrink by one line at that instant and
-               drag the whole form up under the reader's cursor. Same height, occupied or not - which is
-               what PartFormRow does for a field message, and what this has to do by hand now that the
-               card is a titled group rather than a row. -->
-          <Grid Margin="{StaticResource StackGapSm}" MinHeight="{StaticResource FieldMessageHeight}">
-            <TextBlock Style="{StaticResource PartNote}"
+            <!-- 🔴 Beside the button, not on a reserved row under it. It empties out the moment an
+                 application is chosen, and sitting on this horizontal row means its leaving costs no vertical
+                 gap to reserve against - the card keeps its height either way, with none of the reserved
+                 blank line the titled group used to carry. -->
+            <TextBlock Style="{StaticResource PartNote}" VerticalAlignment="Center"
+                       Margin="{StaticResource SpaceMd}"
                        Text="{DynamicResource target.drop_hint}"
                        Visibility="{Binding ShowsDropHint, Converter={StaticResource BoolToVis}}" />
-          </Grid>
+          </StackPanel>
         </StackPanel>
       </Border>
 
@@ -312,12 +307,18 @@
                       Command="{Binding DataContext.Commands.RelativeApply, RelativeSource={RelativeSource AncestorType=UserControl}}"
                       Margin="{StaticResource SpaceXs}" />
             </StackPanel>
-            <HeaderedContentControl.Tag>
-              <TextBlock Style="{StaticResource PartFieldMessage}"
-                         Text="{Binding ErrorKey, Converter={StaticResource KeyToText}}"
-                         Visibility="{Binding HasError, Converter={StaticResource BoolToVis}}" />
-            </HeaderedContentControl.Tag>
           </HeaderedContentControl>
+
+          <!-- 🔴 The shift error sits BELOW the row, not in a slot the row always reserves. This is the last
+               row in the section, so a reserved message line here was 18 px of blank at the section's foot on
+               every screen that had no error - which is every screen until someone mistypes the amount. It
+               shows here only when there is one, and growing the folded sections below by a line when it does
+               is the cheaper cost. The binding is Relative.* because this sibling reads the view's data
+               context, not the row's (the row rebinds itself to Relative). -->
+          <TextBlock Style="{StaticResource PartFieldMessage}"
+                     Margin="{StaticResource StackGapSm}"
+                     Text="{Binding Relative.ErrorKey, Converter={StaticResource KeyToText}}"
+                     Visibility="{Binding Relative.HasError, Converter={StaticResource BoolToVis}}" />
         </StackPanel>
       </Expander>
 
@@ -359,11 +360,9 @@
           </Grid>
         </Expander.Tag>
 
-        <!-- A list that just sits there does not explain what choosing from it will do (untouchable
-             rule 7 - it fills the date and starts nothing), so it says so in a sentence. -->
+        <!-- What choosing from the list does - it fills the date and starts nothing (untouchable rule 7) -
+             lives on the list's own tooltip now (tip.scenario), rather than as a paragraph standing over it. -->
         <StackPanel>
-          <TextBlock Style="{StaticResource PartNote}"
-                     Text="{DynamicResource setup.or_pick_scenario}" />
           <controls:SearchBox Margin="{StaticResource StackGapSm}"
                               Text="{Binding ScenarioPicker.Filter, UpdateSourceTrigger=PropertyChanged}"
                               Placeholder="{DynamicResource scenario.filter_placeholder}"
@@ -374,6 +373,7 @@
                      SelectedItem="{Binding SelectedScenario}"
                      ItemTemplate="{StaticResource ScenarioRow}"
                      ItemContainerStyle="{StaticResource ScenarioRowContainer}"
+                     ScrollViewer.CanContentScroll="False"
                      ToolTip="{DynamicResource tip.scenario}" />
             <!-- Inside the well, not under it: the sentence explaining an empty list has to appear
                  where the list was, or the screen answers by moving rather than by speaking. -->
@@ -497,10 +497,9 @@
                         Margin="{StaticResource SpaceXs}" />
               </StackPanel>
             </HeaderedContentControl>
-
-            <TextBlock Style="{StaticResource PartNote}" Margin="{StaticResource StackGapSm}"
-                       MaxWidth="{StaticResource LaunchNoteMaxWidth}" HorizontalAlignment="Left"
-                       Text="{DynamicResource launch.cwd_note}" />
+            <!-- No note under these two fields: "leave the folder empty" and "quote an argument with
+                 spaces" are the fields' own tooltips (tip.working_folder, tip.target_args), so a paragraph
+                 repeating them was the same fact in two places. -->
           </StackPanel>
         </StackPanel>
       </Expander>

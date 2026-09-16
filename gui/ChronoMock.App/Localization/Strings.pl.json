@@ -150,14 +150,6 @@
   // the field moved to the top of its section. Same text, one word honest again, and shorter.
   "setup.tip_shift": "Wypełnia datę powyżej momentem „teraz” przesuniętym o tyle - w wierszu poleceń to --at +30d. Miesiące, kwartały i lata trafiają w datę kalendarzową, nie w stałą liczbę godzin. Jedno przesunięcie i nic więcej: dni robocze są nieobecne, bo sesja nie nosi kalendarza świąt, a gotowe momenty w rodzaju końca miesiąca stoją na liście niżej.",
 
-  // The two ways of filling the moment, both of them shortcuts to the field above rather than settings of
-  // their own. Said out loud, because a list that just sits there does not explain what choosing from it
-  // will do.
-  // 🔴 It TEACHES the word rather than avoiding it. Calling this a "ready-made date" here while the box
-  // under it says "Search scenarios" gave one thing two names on one screen, which is worse for a first
-  // run than one unfamiliar word explained in the same breath. Scenario is the product's word, in the
-  // calculator and on the site, so the reader meets it once and knows it everywhere.
-  "setup.or_pick_scenario": "Albo wybierz scenariusz - gotową datę, która wypełni pola powyżej. Wybór niczego nie uruchamia.",
 
   // The two options that can cost something. The tooltip carries the full story; these carry the part a
   // reader has to weigh BEFORE ticking, where the decision is made rather than a hover away from it.
@@ -188,7 +180,6 @@
   "launch.header": "Argumenty i katalog roboczy",
   "launch.args_label": "Argumenty:",
   "launch.cwd_label": "Katalog roboczy:",
-  "launch.cwd_note": "Zostaw katalog pusty, żeby aplikacja wystartowała tam, gdzie normalnie. Argument ze spacjami ujmij w cudzysłów, dokładnie jak w wierszu poleceń.",
 
   // Time inputs (chrono-mock 7.1). The moment is the local time in the session zone (rule 2).
   "moment.label": "Moment:",

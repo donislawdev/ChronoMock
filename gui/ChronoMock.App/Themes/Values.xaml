@@ -229,6 +229,11 @@
        longer - an Auto column overlapped the value the moment it said "Copied". -->
   <sys:Double x:Key="CopyButtonMinWidth">72</sys:Double>
 
+  <!-- Directional right gap between a value and the copy button trailing it. Right-only: a uniform margin
+       would drop the value below the button beside it, and the value and its button read as one row. It
+       keeps a long value (a full ISO datetime) from butting straight against the button when it wraps. -->
+  <Thickness x:Key="CopyValueGap">0,0,8,0</Thickness>
+
   <sys:Double x:Key="TargetBoxMaxWidth">320</sys:Double>
 
   <!-- The scenario chips wrap inside this width. A cap is what MAKES them wrap: a WrapPanel measured with
@@ -241,6 +246,5 @@
        English. Named, because a hand-tuned margin per row drifts apart the first time a label changes. -->
   <sys:Double x:Key="LaunchLabelWidth">128</sys:Double>
   <sys:Double x:Key="LaunchFieldWidth">340</sys:Double>
-  <sys:Double x:Key="LaunchNoteMaxWidth">480</sys:Double>
 
 </ResourceDictionary>

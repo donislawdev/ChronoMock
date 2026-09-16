@@ -136,6 +136,26 @@
   </Style>
 
   <!--
+    A small info glyph placed beside a header. It carries an explanation as its ToolTip, so prose that would
+    otherwise stand in the body as a paragraph moves out of the way and stays one hover from reach. The
+    caller sets ToolTip to the translation key - the glyph, its ink and its hover come from here. The glyph
+    is an icon, not translated text, the same way the chevron and the remove cross are.
+  -->
+  <Style x:Key="PartInfoHint" TargetType="TextBlock">
+    <Setter Property="Text" Value="ⓘ" />
+    <Setter Property="FontSize" Value="{StaticResource FontSizeBody}" />
+    <Setter Property="Foreground" Value="{DynamicResource BrushGlyphMuted}" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+    <Setter Property="Margin" Value="{StaticResource SpaceXs}" />
+    <Setter Property="Cursor" Value="Help" />
+    <Style.Triggers>
+      <Trigger Property="IsMouseOver" Value="True">
+        <Setter Property="Foreground" Value="{DynamicResource BrushTextPrimary}" />
+      </Trigger>
+    </Style.Triggers>
+  </Style>
+
+  <!--
     🔴 THE ONE WORD A FINISHED SESSION LEADS WITH, a step above the heading because it is the peak of its
     screen: the result phase has no clocks, so nothing else on it may be this size. The caller sets the
     ink from the meaning palette and pairs the word with a glyph - colour never carries the meaning alone

@@ -150,14 +150,6 @@
   // the field moved to the top of its section. Same text, one word honest again, and shorter.
   "setup.tip_shift": "Fills the date above with now, shifted by this much - the command line spells it --at +30d. Months, quarters and years land on the calendar date, not on a fixed number of hours. One shift and no more: business days are absent because a session carries no holiday calendar, and ready-made moments such as a month end are in the list below.",
 
-  // The two ways of filling the moment, both of them shortcuts to the field above rather than settings of
-  // their own. Said out loud, because a list that just sits there does not explain what choosing from it
-  // will do.
-  // 🔴 It TEACHES the word rather than avoiding it. Calling this a "ready-made date" here while the box
-  // under it says "Search scenarios" gave one thing two names on one screen, which is worse for a first
-  // run than one unfamiliar word explained in the same breath. Scenario is the product's word, in the
-  // calculator and on the site, so the reader meets it once and knows it everywhere.
-  "setup.or_pick_scenario": "Or pick a scenario - a ready-made date that fills the fields above. Choosing one starts nothing.",
 
   // The two options that can cost something. The tooltip carries the full story; these carry the part a
   // reader has to weigh BEFORE ticking, where the decision is made rather than a hover away from it.
@@ -188,7 +180,6 @@
   "launch.header": "Arguments and working folder",
   "launch.args_label": "Arguments:",
   "launch.cwd_label": "Working folder:",
-  "launch.cwd_note": "Leave the folder empty to let the application start where it normally would. Quote an argument that contains spaces, exactly as on the command line.",
 
   // Time inputs (chrono-mock 7.1). The moment is the local time in the session zone (rule 2).
   "moment.label": "At:",
