@@ -83,11 +83,21 @@
                buttons. Selecting a row fills the builder through SelectedPreset (fill-on-select is safe:
                unpacking a preset is exempt from the by-hand-edit clear, guarded in the view model).
                Height Auto overrides the implicit well height so the list stretches into the * row. -->
-          <ListBox Grid.Row="2" x:Name="PresetList" ItemsSource="{Binding Presets}"
-                   SelectedItem="{Binding SelectedPreset}"
-                   ItemTemplate="{StaticResource ScenarioRow}"
-                   ItemContainerStyle="{StaticResource ScenarioRowContainer}"
-                   Height="Auto" Margin="{StaticResource SpaceXs}" />
+          <!-- 🔴 THE WELL FITS ITS CONTENT, capped at the column, rather than always filling it. A * row made
+               the bordered well as tall as the column, so a short catalogue sat in a large box of empty dark
+               - the fault this replaces. Height Auto overrides the fixed well height and sizes it to its
+               rows, VerticalAlignment Top holds it at the top, and MaxHeight bound to this cell caps it at
+               the column so a long catalogue scrolls inside instead of overflowing. The filter above stays
+               put, and the space under a short list is plain card, not a bordered empty box. -->
+          <Grid Grid.Row="2" x:Name="ListArea">
+            <ListBox x:Name="PresetList" ItemsSource="{Binding Presets}"
+                     SelectedItem="{Binding SelectedPreset}"
+                     ItemTemplate="{StaticResource ScenarioRow}"
+                     ItemContainerStyle="{StaticResource ScenarioRowContainer}"
+                     VerticalAlignment="Top" Height="Auto"
+                     MaxHeight="{Binding ActualHeight, ElementName=ListArea}"
+                     Margin="{StaticResource SpaceXs}" />
+          </Grid>
           <TextBlock Grid.Row="3" Text="{DynamicResource calc.preset_note}" TextWrapping="Wrap"
                      Margin="{StaticResource SpaceXs}"
                      FontSize="{StaticResource FontSizeCaption}" Foreground="{DynamicResource BrushTextSecondary}" />
@@ -95,9 +105,10 @@
       </Border>
 
       <!-- MIDDLE: the live expression builder (base, shift steps, calendar). -->
-      <Border Grid.Column="1" Margin="{StaticResource SpaceSm}" Padding="{StaticResource SpaceLg}"
+      <Border Grid.Column="1" Margin="{StaticResource SpaceSm}" Padding="{StaticResource CardPaddingScrolled}"
               Background="{DynamicResource BrushBgSurface}" CornerRadius="{StaticResource RadiusMd}">
-        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
+                      Padding="{StaticResource ScrollGutter}">
           <StackPanel>
             <TextBlock Text="{DynamicResource calc.build_header}"
                        FontSize="{StaticResource FontSizeCaption}" FontWeight="SemiBold"
@@ -118,6 +129,7 @@
               <Grid.RowDefinitions>
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
               </Grid.RowDefinitions>
               <ComboBox Grid.Row="0" Grid.Column="0" x:Name="BaseKindBox" ItemsSource="{Binding BaseKinds}" SelectedItem="{Binding SelectedBase}"
                         ItemContainerStyle="{StaticResource LabelKeyComboItem}" MinWidth="140" VerticalAlignment="Center"
@@ -131,7 +143,7 @@
               <!-- Specific date: the shared moment input (ISO box plus a calendar popup, locale-safe, rule 2),
                    the same control the substitution panel uses. Its DataContext is the base MomentField, so
                    Visibility binds to the view model through the CalculatorView, not the field. -->
-              <controls:MomentInput Grid.Row="0" Grid.Column="1" x:Name="BaseMoment" DataContext="{Binding Base}"
+              <controls:MomentInput Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2" x:Name="BaseMoment" DataContext="{Binding Base}"
                                     Margin="{StaticResource SpaceSm}" VerticalAlignment="Center"
                                     Visibility="{Binding DataContext.IsSpecificBase, RelativeSource={RelativeSource AncestorType={x:Type UserControl}}, Converter={StaticResource BoolToVis}}" />
               <!-- The SESSION zone the start point is read in (engine flag: zone). Worded "in zone" rather
@@ -143,7 +155,7 @@
               <!-- The label and the zone share a row of their own. Left in the outer grid, the label
                    would inherit the width of the start-point box above it and push the zone another
                    140 px to the right, which is what left it reading "UTC+02:00 - this m". -->
-              <Grid Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2">
+              <Grid Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="2">
                 <Grid.ColumnDefinitions>
                   <ColumnDefinition Width="Auto" />
                   <ColumnDefinition Width="*" />
@@ -384,9 +396,10 @@
       </Border>
 
       <!-- RIGHT: the live result of evaluating the builder. -->
-      <Border Grid.Column="2" Margin="{StaticResource SpaceSm}" Padding="{StaticResource SpaceLg}"
+      <Border Grid.Column="2" Margin="{StaticResource SpaceSm}" Padding="{StaticResource CardPaddingScrolled}"
               Background="{DynamicResource BrushBgSurface}" CornerRadius="{StaticResource RadiusMd}">
-        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
+                      Padding="{StaticResource ScrollGutter}">
           <StackPanel>
             <TextBlock Text="{DynamicResource calc.result_header}"
                        FontSize="{StaticResource FontSizeCaption}" FontWeight="SemiBold"
@@ -534,7 +547,8 @@
                                FontFamily="{StaticResource FontFamilyMono}"
                                FontSize="{StaticResource FontSizeCaption}" Foreground="{DynamicResource BrushTextPrimary}" />
                     <Button Grid.Column="2" Content="{DynamicResource calc.copy}" Click="OnCopyFormatClick"
-                            Tag="{Binding Value}" FontSize="{StaticResource FontSizeCaption}" />
+                            Tag="{Binding Value}" MinWidth="{StaticResource CopyButtonMinWidth}"
+                            FontSize="{StaticResource FontSizeCaption}" />
                   </Grid>
                 </DataTemplate>
               </ItemsControl.ItemTemplate>
@@ -569,7 +583,8 @@
                          FontFamily="{StaticResource FontFamilyMono}"
                          FontSize="{StaticResource FontSizeCaption}" Foreground="{DynamicResource BrushTextPrimary}" />
               <Button Grid.Column="1" Content="{DynamicResource calc.copy}" Click="OnCopyFormatClick"
-                      Tag="{Binding CustomFormatResult}" FontSize="{StaticResource FontSizeCaption}" />
+                      Tag="{Binding CustomFormatResult}" MinWidth="{StaticResource CopyButtonMinWidth}"
+                      FontSize="{StaticResource FontSizeCaption}" />
             </Grid>
             <!-- Why the line above may not be what the reader expects: letter runs the engine does not
                  know are passed through as text, so the result LOOKS formatted while carrying raw mask

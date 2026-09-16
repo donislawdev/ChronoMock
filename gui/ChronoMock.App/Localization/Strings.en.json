@@ -544,6 +544,7 @@
   "calc.sig_calendar": "Weekend and holiday marks follow the {0} calendar.",
   "calc.all_formats": "All formats - one click to copy",
   "calc.copy": "Copy",
+  "calc.copied": "Copied",
   "calc.custom_format": "Custom format",
   "calc.custom_format_hint": "e.g. yyyy-MM-dd HH:mm:ss",
   "calc.metadata": "Metadata",

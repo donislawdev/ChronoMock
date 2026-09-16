@@ -737,8 +737,11 @@
 
     🔴 THE SECOND LINE IS THE POINT OF THE LIST. With one line a reader has to choose an item to find out
     what it is for, which means choosing several to compare them - and choosing one is not free, it fills
-    the form. Two lines make the list browsable. Both trim rather than clip mid-word, and the full text is
-    on the tooltip for the ones an author wrote at length.
+    the form. Two lines make the list browsable. The second line WRAPS to its full text rather than being
+    trimmed to an ellipsis: a description cut to "Does the app apply the age-of..." says nothing, and the
+    tooltip that carried the rest needed a hover to reach. The row grows to fit its text and the list
+    scrolls. The name still trims, because a name is short and a wrapped one would read as a second
+    sentence.
   -->
   <Style x:Key="ScenarioRowContainer" TargetType="ListBoxItem" BasedOn="{StaticResource {x:Type ListBoxItem}}">
     <Setter Property="AutomationProperties.Name" Value="{Binding DisplayName}" />
@@ -747,9 +750,7 @@
   <DataTemplate x:Key="ScenarioRow">
     <StackPanel ToolTip="{Binding DisplayExplains}">
       <TextBlock Text="{Binding DisplayName}" TextTrimming="CharacterEllipsis" />
-      <TextBlock Style="{StaticResource PartNote}" TextWrapping="NoWrap"
-                 TextTrimming="CharacterEllipsis"
-                 Text="{Binding DisplayExplains}" />
+      <TextBlock Style="{StaticResource PartNote}" Text="{Binding DisplayExplains}" />
     </StackPanel>
   </DataTemplate>
 

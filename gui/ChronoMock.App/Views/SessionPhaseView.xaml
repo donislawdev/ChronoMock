@@ -269,10 +269,15 @@
                    Text="{Binding InFlightErrorKey, Converter={StaticResource KeyToText}}"
                    Visibility="{Binding ShowsInFlightError, Converter={StaticResource BoolToVis}}" />
 
-        <!-- 🔴 STOP IS NOT THE ACCENT. The accent on this library means "the next step", and while a
-             session runs there is no next step - the reader is watching. An accented Stop would be the
-             screen asking to be ended. It is an ordinary button, and it says what it does in a word. -->
+        <!-- 🔴 STOP IS RED, NOT THE ACCENT. The accent means "the next step", and while a session runs there
+             is no next step - so an accented Stop would read as the screen asking to be ended. Stop ends the
+             session, which is what the failure red says on the destructive dialog too, so it wears the same
+             red here. Red is not the accent, so the rule that the accent marks the next step still holds.
+             The style comes by DynamicResource because a phase view merges Parts, not Controls, so a
+             StaticResource to the veil template would not resolve here. -->
         <Button x:Name="StopButton" Content="{DynamicResource control.stop}"
+                Style="{DynamicResource PrimaryActionButton}"
+                Background="{DynamicResource BrushStatusFails}"
                 ToolTip="{DynamicResource tip.stop}"
                 Command="{Binding Commands.Stop}"
                 Visibility="{Binding ShowsSessionControls, Converter={StaticResource BoolToVis}}"

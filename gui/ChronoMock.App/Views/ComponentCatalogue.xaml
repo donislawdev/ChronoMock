@@ -81,7 +81,7 @@
       <Border Style="{StaticResource PartCard}" Margin="{StaticResource StackGapSm}">
         <StackPanel>
           <TextBlock Style="{StaticResource PartCaption}"
-                     Text="One per screen. Wider than its neighbours, because an accent fill alone reads as decoration on a control shaped like everything around it. Its label is dark: this accent carries dark ink at 8.56 and white ink at 2.01." />
+                     Text="One per screen. A width floor keeps it from shrinking to nothing, and the accent fill carries the prominence when it stands alone in a footer. Its label is dark: this accent carries dark ink at 8.56 and white ink at 2.01." />
           <WrapPanel Margin="{StaticResource StackGapSm}">
             <Button Content="Start" Style="{StaticResource PartPrimaryAction}" Margin="{StaticResource SpaceXs}" />
             <Button Content="Start" Style="{StaticResource PartPrimaryAction}" IsEnabled="False" Margin="{StaticResource SpaceXs}" />
@@ -94,6 +94,15 @@
             <Button Content="Choose..." Margin="{StaticResource SpaceXs}" />
             <Button Content="Suggested and disabled" app:PartState.IsSuggested="True" IsEnabled="False"
                     Margin="{StaticResource SpaceXs}" />
+          </WrapPanel>
+
+          <TextBlock Style="{StaticResource PartCaption}" Margin="{StaticResource StackGapLg}"
+                     Text="The same drawing in the failure red, for an action that ends something - the session Stop and the destructive answer in a dialog. Not the accent, because the accent marks the next step and this ends one." />
+          <WrapPanel Margin="{StaticResource StackGapSm}">
+            <Button Content="Stop session" Style="{DynamicResource PrimaryActionButton}"
+                    Background="{DynamicResource BrushStatusFails}" Margin="{StaticResource SpaceXs}" />
+            <Button Content="Stop session" Style="{DynamicResource PrimaryActionButton}"
+                    Background="{DynamicResource BrushStatusFails}" IsEnabled="False" Margin="{StaticResource SpaceXs}" />
           </WrapPanel>
         </StackPanel>
       </Border>

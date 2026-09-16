@@ -56,6 +56,14 @@
   <Thickness x:Key="CardPadding">16</Thickness>
   <Thickness x:Key="ChipPadding">12,8,12,8</Thickness>
 
+  <!-- A card whose content scrolls keeps its padding on three sides but drops it to zero on the right, so
+       the overlay scrollbar (wpfui draws it over content, thin at rest and wider on hover) gets a lane of
+       its own at the card edge. ScrollGutter then insets the content back by the same amount, so the
+       content reads symmetric with the left while nothing sits under the scrollbar. Two spellings of one
+       decision, because a card's padding and its content's inset live on different elements. -->
+  <Thickness x:Key="CardPaddingScrolled">16,16,0,16</Thickness>
+  <Thickness x:Key="ScrollGutter">0,0,16,0</Thickness>
+
   <!-- 🔴 The label column of a form has NO width here, on purpose, and that is the correction to a first
        draft which gave it 150. A number wide enough for today's longest label is a number measured off
        the content, and it stops being right at the first translation or font change. The rows share one
@@ -205,15 +213,21 @@
 
   <!-- The target box caps here so a deeply nested path cannot stretch the centred setup row across the
        window; the name is what identifies the target, and the full path is in the tooltip. -->
-  <!-- The primary action is wider than the buttons around it, because size is half of what makes an
-       action look primary - the accent fill alone reads as decoration on a control the same size as its
-       neighbours. Named here rather than written into the view, like every other design value. -->
-  <sys:Double x:Key="PrimaryActionMinWidth">220</sys:Double>
+  <!-- A floor for the primary action, not a banner. 220 made "Start" a bar three times the width of its own
+       word - and in a footer the action stands alone, so the accent fill and the position already carry the
+       prominence, and the width only has to keep the button from shrinking to nothing. Named here, like
+       every other design value. -->
+  <sys:Double x:Key="PrimaryActionMinWidth">120</sys:Double>
 
   <!-- Dialog answers are the same width as each other whatever they say, so the pair does not shuffle
        sideways between one dialog and the next, or between English and Polish. Narrower than the panel's
        primary action, which is sized to be findable on a full screen rather than inside a 440 px box. -->
   <sys:Double x:Key="DialogButtonMinWidth">120</sys:Double>
+
+  <!-- The calculator's copy button holds one word and swaps to the copied confirmation for a moment after
+       a click. A fixed floor so the button does not grow into the value beside it when the word gets
+       longer - an Auto column overlapped the value the moment it said "Copied". -->
+  <sys:Double x:Key="CopyButtonMinWidth">72</sys:Double>
 
   <sys:Double x:Key="TargetBoxMaxWidth">320</sys:Double>
 

@@ -535,6 +535,7 @@
   "calc.sig_calendar": "Markery weekendu i świąt pochodzą z kalendarza {0}.",
   "calc.all_formats": "Wszystkie formaty - kopiuj jednym klikiem",
   "calc.copy": "Kopiuj",
+  "calc.copied": "Skopiowano",
   "calc.custom_format": "Format własny",
   "calc.custom_format_hint": "np. yyyy-MM-dd HH:mm:ss",
   "calc.metadata": "Metadane",
