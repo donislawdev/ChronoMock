@@ -513,11 +513,11 @@
   "about.components_unavailable": "Nie udało się zapytać rdzenia, więc nic tu nie jest wypisane - lepsze to niż lista, która mogłaby być niepełna. Plik not wymieniony wyżej niesie tę samą informację.",
 
   // Date calculator (chrono-mock 7.3). Slice G1 is the layout shell; more keys arrive with the wiring.
-  "calc.presets_header": "Presety",
-  "calc.filter_placeholder": "Filtruj scenariusze…",
-  "calc.preset_note": "Preset to punkt startowy - nie certyfikat kompletności testu.",
+  "calc.presets_header": "Scenariusze",
+  "calc.filter_placeholder": "Szukaj scenariuszy",
+  "calc.preset_note": "Scenariusz to punkt startowy - nie certyfikat kompletności testu.",
   "calc.preset_params_header": "Parametry",
-  "calc.preset_needs_params": "Uzupełnij parametry poniżej, aby policzyć ten preset.",
+  "calc.preset_needs_params": "Uzupełnij parametry poniżej, aby policzyć ten scenariusz.",
   "calc.build_header": "Zbuduj moment",
   "calc.start_point": "Punkt startowy",
   "calc.base_zone": "w strefie",
