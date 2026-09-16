@@ -671,7 +671,6 @@
   "tip.scale_qpc": "Also speed up QPC-based clocks (Python monotonic, .NET Stopwatch, Java nanoTime). May distort an app that times its rendering off QPC.",
   "tip.force": "Off by default. When the opening verdict says the substitution did not take effect, the target is stopped rather than handed to you, because its evidence would be about the real clock. Tick this to run anyway - the session is then marked unreliable everywhere it appears.",
   "tip.start": "Launch the target under the fake clock. Needs a target and a valid moment.",
-  "tip.jump_to": "While running: jump the fake clock to the moment on the left.",
   "tip.freeze": "Freeze the fake clock so it stops advancing.",
   "tip.set_speed": "Set any custom speed, e.g. 500.",
   "tip.stop": "Stop the session. The app returns to real time - it is not closed.",

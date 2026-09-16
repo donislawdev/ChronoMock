@@ -165,7 +165,7 @@
   "setup.opt_force_note": "Sesja jest wtedy wszędzie oznaczona jako niewiarygodna.",
 
   // Both of these say "target" in the shipped panel, which is the word this screen stopped using.
-  "setup.tip_recent": "Aplikacje uruchamiane wcześniej. Choose… wybiera taką, której ta maszyna jeszcze nie uruchamiała.",
+  "setup.tip_recent": "Aplikacje uruchamiane wcześniej. „Wybierz…” wskazuje taką, której ta maszyna jeszcze nie uruchamiała.",
   "setup.tip_start": "Uruchamia aplikację pod podmienionym zegarem. Wymaga aplikacji i poprawnej daty.",
 
   // Shown only while the date field still holds the one this build ships with. A pre-filled date in 2038
@@ -662,7 +662,6 @@
   "tip.scale_qpc": "Przyśpiesz też zegary na QPC (Python monotonic, .NET Stopwatch, Java nanoTime). Może zniekształcić aplikację liczącą render z QPC.",
   "tip.force": "Domyślnie wyłączone. Gdy werdykt otwierający mówi, że podmiana nie zadziałała, cel jest zatrzymywany zamiast oddany do pracy - jego dowód dotyczyłby realnego zegara. Zaznacz, aby mimo to uruchomić - sesja jest wtedy wszędzie oznaczona jako nierzetelna.",
   "tip.start": "Uruchom cel z podmienionym zegarem. Wymaga celu i poprawnego momentu.",
-  "tip.jump_to": "W trakcie sesji: przeskocz podmieniony zegar do momentu po lewej.",
   "tip.freeze": "Zamroź podmieniony zegar, by przestał iść.",
   "tip.set_speed": "Ustaw dowolną prędkość, np. 500.",
   "tip.stop": "Zatrzymaj sesję. Aplikacja wraca do prawdziwego czasu - nie jest zamykana.",
