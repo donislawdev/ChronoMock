@@ -1,6 +1,7 @@
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Media;
 using ChronoMock.App.Calc;
 using ChronoMock.App.Views;
 using ChronoMock.Protocol;
@@ -75,22 +76,33 @@ public class CalculatorViewBindingTests
     {
         // The other half of the missing-calendar fix. CalculatorErrorTests proves the sentence, this
         // proves the mark, and the two are bound to the same name below so neither can drift alone.
-        var (quiet, marked, fails) = WpfTestHost.InvokeSettled(() =>
+        // The mark is the drop-down's own edge (the shared error state, the one a text field shows), so
+        // the measurement is the rendered border of the template's face, not a wrapper around it.
+        var (quiet, marked, error) = WpfTestHost.InvokeSettled(() =>
         {
             var view = new CalculatorView { DataContext = new CalendarMissingStub { CalendarMissing = false } };
             Layout(view);
-            var quietBrush = ((Border)view.FindName("CalendarMark")).BorderBrush;
+            var quietBrush = CalendarEdge(view);
 
             view.DataContext = new CalendarMissingStub { CalendarMissing = true };
             Layout(view);
-            var markedBrush = ((Border)view.FindName("CalendarMark")).BorderBrush;
+            var markedBrush = CalendarEdge(view);
 
-            return (quietBrush, markedBrush, view.TryFindResource("BrushStatusFails"));
+            return (quietBrush, markedBrush, view.TryFindResource("BrushError"));
         });
 
-        Assert.NotNull(fails);
-        Assert.Same(fails, marked);
-        Assert.NotSame(fails, quiet);
+        Assert.NotNull(error);
+        Assert.Same(error, marked);
+        Assert.NotSame(error, quiet);
+    }
+
+    /// <summary>The border brush the calendar drop-down is actually drawn with: the "Face" element of the
+    /// shared ComboBox template, found through the template on the laid-out control.</summary>
+    private static Brush CalendarEdge(CalculatorView view)
+    {
+        var box = (ComboBox)view.FindName("CalendarBox");
+        box.ApplyTemplate();
+        return ((Border)box.Template.FindName("Face", box)).BorderBrush;
     }
 
     /// <summary>Stands in for the view model so the trigger can be driven without running the engine. The

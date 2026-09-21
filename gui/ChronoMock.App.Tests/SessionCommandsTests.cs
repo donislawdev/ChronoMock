@@ -143,6 +143,83 @@ public class SessionCommandsTests
     }
 
     [Fact]
+    public void Repeat_from_a_finished_session_returns_to_the_setup_form_it_filled()
+    {
+        // The history well lives on the result screen, so Repeat used to fill the setup form BEHIND that
+        // screen: every field changed and nothing visible did. Reversal probe: drop BeginNewSession() from
+        // LoadFromHistory and the phase assertion fails while the field assertions still pass.
+        var vm = SessionStates.Ended();
+        Assert.True(vm.ShowsResultPhase);
+        vm.SelectedRecord = Record() with { TargetPath = "ledger.exe", MomentLocal = "2040-06-15T08:30:00" };
+
+        vm.Commands.Repeat.Execute(null);
+
+        Assert.True(vm.ShowsSetupPhase);
+        Assert.Equal("ledger.exe", vm.TargetPath);
+        Assert.Equal("2040-06-15T08:30:00", vm.Moment.Canonical);
+        Assert.False(vm.IsRunning); // filled, not started (rule 7)
+    }
+
+    [Fact]
+    public void Repeat_keeps_the_note_about_what_it_could_not_fill()
+    {
+        // Leaving the result screen resets the note along with the result, so the fill has to set it AFTER
+        // that - a record with a zone this version no longer offers must still say so on the setup form.
+        var vm = SessionStates.Ended();
+        vm.SelectedRecord = Record() with { TzBiasMin = 999 };
+
+        vm.Commands.Repeat.Execute(null);
+
+        Assert.True(vm.ShowsSetupPhase);
+        Assert.Equal("history.load_zone_missing", vm.HistoryNoteKey);
+    }
+
+    [Fact]
+    public void A_calculator_moment_adopted_after_a_session_ended_lands_on_the_setup_form()
+    {
+        // "Use this date" after a session had ended filled the setup form under the result screen, then
+        // showed that screen: the same verdict as before, the new date invisible behind it.
+        var vm = SessionStates.Ended();
+
+        Assert.True(vm.AdoptMoment("2040-06-15T08:30:00", 300));
+
+        Assert.True(vm.ShowsSetupPhase);
+        Assert.Equal("2040-06-15T08:30:00", vm.Moment.Canonical);
+        Assert.Equal(300, vm.SelectedZone.BiasMinutes);
+    }
+
+    [Fact]
+    public void A_press_that_adopts_nothing_says_so_instead_of_switching_to_an_empty_form()
+    {
+        // The window switches modules only when a field took the moment. A running session handed a text
+        // the jump field cannot re-express adopts nothing - and used to land the reader on the session
+        // screen with an empty Jump to field, the same "nothing happened" this fix was for.
+        var vm = SessionStates.Running();
+
+        Assert.False(vm.AdoptMoment("not a moment", 0));
+        Assert.Equal(string.Empty, vm.JumpMoment.DateText);
+    }
+
+    [Fact]
+    public void A_calculator_moment_during_a_running_session_becomes_the_jump_target_in_the_sessions_zone()
+    {
+        // A live run's START moment is not up for editing, so the press leaves it as it was - and fills the
+        // Jump to field instead, which used to stay empty so the press read as doing nothing. The field is
+        // read in the session's zone, so a moment built in another zone is re-expressed: 08:30 at UTC-05:00
+        // is the same instant as 13:30 at the session's UTC+00:00. Reversal probe: load the text as it came
+        // and the time assertion fails by five hours.
+        var vm = SessionStates.Running();
+        Assert.Equal(0, vm.SelectedZone.BiasMinutes);
+        var startBefore = vm.Moment.Canonical;
+
+        Assert.True(vm.AdoptMoment("2040-06-15T08:30:00", 300));
+
+        Assert.Equal(startBefore, vm.Moment.Canonical);
+        Assert.Equal("2040-06-15T13:30:00", vm.JumpMoment.Canonical);
+        Assert.True(vm.Commands.JumpToEntered.CanExecute(null)); // filled and ready, not jumped (rule 7)
+    }
+
+    [Fact]
     public void Today_fills_the_moment_off_the_shipped_default()
     {
         var vm = new SessionViewModel();

@@ -85,6 +85,35 @@ public class ParamInputTests
     }
 
     [Fact]
+    public void A_picked_calendar_day_writes_the_iso_date_text()
+    {
+        // The shared date input's calendar binds SelectedDate, the way it does on a MomentField. Culture
+        // invariant: the text is ISO whatever the OS date format says (rule 2).
+        var input = new ParamInputViewModel(new PresetParameter("start_date", "date", null, null, null), Units());
+
+        input.SelectedDate = new DateTime(2040, 6, 15);
+
+        Assert.Equal("2040-06-15", input.DateText);
+        Assert.Equal(new DateTime(2040, 6, 15), input.SelectedDate);
+    }
+
+    [Fact]
+    public void A_date_still_being_typed_is_not_a_value_yet()
+    {
+        // The field updates on every keystroke now, so "2040-0" must not reach the engine as a base and
+        // flash an error mid-word. A full shape that is no date still goes through - the engine's own
+        // reason is the honest message for it. Reversal probe: return DateValue for any non-blank text and
+        // the first assertion fails.
+        var input = new ParamInputViewModel(new PresetParameter("start_date", "date", null, null, null), Units());
+
+        input.DateText = "2040-0";
+        Assert.Null(input.ToValue());
+
+        input.DateText = "2040-02-31";
+        Assert.Equal(new DateValue("2040-02-31"), input.ToValue());
+    }
+
+    [Fact]
     public void The_label_humanizes_the_parameter_id()
         => Assert.Equal(
             "install date",

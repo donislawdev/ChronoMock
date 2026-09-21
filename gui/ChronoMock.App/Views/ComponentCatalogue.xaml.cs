@@ -34,6 +34,33 @@ public partial class ComponentCatalogue : UserControl
         Zone = "UTC+00:00",
     };
 
+    /// <summary>Every status the audit fold can produce, in the order the table lists them, plus the extremes:
+    /// a function name longer than any real one and a count past six digits. Rows, not lists, because the
+    /// fold is the converter's and the catalogue shows the drawing.</summary>
+    public IReadOnlyList<AuditRow> SampleAuditRows { get; } =
+    [
+        new("GetLocalTime", "audit.status_real", AuditStatus.Real, null),
+        new("QueryPerformanceCounter", "audit.status_by_design", AuditStatus.ByDesign, 3),
+        new("QueryPerformanceFrequency", "audit.status_by_design_late", AuditStatus.ByDesignLate, 2),
+        new("NtQuerySystemTime", "audit.status_unwatched", AuditStatus.Unwatched, null),
+        new("timeGetTime", "audit.status_late", AuditStatus.Late, 7),
+        new("GetSystemTimeAsFileTime", "audit.status_fake", AuditStatus.Fake, 128004),
+        new("GetSystemTimePreciseAsFileTimeWithAnImpossiblyLongName", "audit.status_fake", AuditStatus.Fake, 9876543210),
+    ];
+
+    /// <summary>The date input with nothing typed yet, so the hint shows and the calendar has no selection.
+    /// A MomentField rather than a stub, so the catalogue draws the part over the same object the
+    /// screens bind it to.</summary>
+    public MomentField SampleEmptyDate { get; } = new();
+
+    /// <summary>The date input with the shipped default moment in it - and the moment input's time beside it
+    /// in the second row, which is what the setup and the builder show.</summary>
+    public MomentField SampleFilledDate { get; } = new()
+    {
+        DateText = "2038-01-19",
+        TimeText = "03:14:07",
+    };
+
     /// <summary>See <see cref="SampleFakeClock"/>.</summary>
     public ClockView SampleRealClock { get; } = new("clock.real")
     {

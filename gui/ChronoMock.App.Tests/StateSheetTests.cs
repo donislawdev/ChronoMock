@@ -104,6 +104,12 @@ public class StateSheetTests
 
             total += RenderSetup("setup-configured", PhaseStates.SetupConfigured()).Count;
 
+            // The form Set up again lands on, with the note about the one field it could not fill. The
+            // note used to live on the result screen only, and Set up again now leaves that screen. The
+            // note itself is held to account in LayoutGuardTests, which runs in the gate - this sheet only
+            // draws it.
+            total += RenderSetup("setup-after-repeat", PhaseStates.SetupAfterRepeatWithMissingZone()).Count;
+
             // 🔴 The window's own floor, which is the whole reason the footer is pinned. At 360 px the
             // form is far taller than the frame, so this is the sheet that shows whether the action and
             // the sentence explaining it survived - or whether they went below the fold with everything

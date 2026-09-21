@@ -111,6 +111,46 @@ public class MomentFieldTests
         Assert.Equal("05:06:07", now.TimeText);
     }
 
+    [Theory]
+    [InlineData("2040-06-15T08:30:00", 300, -120, "2040-06-15T15:30:00")] // US Eastern into Poland summer: +7 h
+    [InlineData("2040-06-15T23:30:00", -120, 0, "2040-06-15T21:30:00")]  // Poland summer into UTC: -2 h
+    [InlineData("2040-06-15T23:30:00", 0, -120, "2040-06-16T01:30:00")]  // UTC into Poland summer: across midnight
+    [InlineData("2040-06-15T08:30:00", 300, 300, "2040-06-15T08:30:00")] // the same zone: unchanged
+    public void Load_in_zone_re_expresses_the_same_instant_in_the_fields_zone(
+        string canonical, int fromBias, int toBias, string expected)
+    {
+        // UTC = local + bias, so the same instant in another zone is local + (bias - bias'). Reversal
+        // probe: drop the shift and every row but the last fails.
+        var field = new MomentField();
+
+        Assert.True(field.LoadInZone(canonical, fromBias, toBias));
+
+        Assert.Equal(expected, field.Canonical);
+    }
+
+    [Fact]
+    public void Load_in_zone_leaves_the_field_alone_for_a_text_that_is_not_a_moment()
+    {
+        // A moment it cannot convert is not loaded as it came: that would put a moment in the wrong zone
+        // under a label naming the field's zone (rule 2). Untouched is the honest state.
+        var field = new MomentField();
+        field.LoadCanonical("2038-01-19T03:14:07");
+
+        Assert.False(field.LoadInZone("not a moment", 300, 0));
+
+        Assert.Equal("2038-01-19T03:14:07", field.Canonical);
+    }
+
+    [Fact]
+    public void Load_in_zone_leaves_the_field_alone_when_the_shift_leaves_the_representable_range()
+    {
+        var field = new MomentField();
+
+        Assert.False(field.LoadInZone("9999-12-31T23:30:00", 0, -120)); // two hours past the last representable instant
+
+        Assert.Equal(string.Empty, field.DateText);
+    }
+
     private static (MomentField Today, MomentField Now) InCulture(string culture, DateTime utcNow)
     {
         var prevCulture = CultureInfo.CurrentCulture;

@@ -51,9 +51,9 @@
     -->
     <Grid Margin="{StaticResource SpaceMd}">
       <Grid.ColumnDefinitions>
-        <ColumnDefinition Width="1*" MinWidth="240" />
-        <ColumnDefinition Width="1.15*" MinWidth="380" />
-        <ColumnDefinition Width="1.1*" MinWidth="340" />
+        <ColumnDefinition Width="1*" MinWidth="{StaticResource CalcScenariosColumnMinWidth}" />
+        <ColumnDefinition Width="1.15*" MinWidth="{StaticResource CalcBuilderColumnMinWidth}" />
+        <ColumnDefinition Width="1.1*" MinWidth="{StaticResource CalcResultColumnMinWidth}" />
       </Grid.ColumnDefinitions>
 
       <!-- LEFT: tester presets from the shared catalogue (7.3). Filterable - each row shows the localized
@@ -69,9 +69,7 @@
             <RowDefinition Height="*" />
             <RowDefinition Height="Auto" />
           </Grid.RowDefinitions>
-          <TextBlock Grid.Row="0" Text="{DynamicResource calc.presets_header}"
-                     FontSize="{StaticResource FontSizeCaption}" FontWeight="SemiBold"
-                     Foreground="{DynamicResource BrushTextSecondary}" Margin="{StaticResource SpaceXs}" />
+          <TextBlock Style="{StaticResource PartGroupHeading}" Grid.Row="0" Text="{DynamicResource calc.presets_header}" Margin="{StaticResource SpaceXs}" />
           <TextBox Grid.Row="1" x:Name="PresetFilterBox" Margin="{StaticResource SpaceXs}"
                    Text="{Binding PresetFilter, UpdateSourceTrigger=PropertyChanged}"
                    app:PartState.Placeholder="{DynamicResource calc.filter_placeholder}" />
@@ -106,98 +104,71 @@
         <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
                       Padding="{StaticResource ScrollGutter}">
           <StackPanel>
-            <TextBlock Text="{DynamicResource calc.build_header}"
-                       FontSize="{StaticResource FontSizeCaption}" FontWeight="SemiBold"
-                       Foreground="{DynamicResource BrushTextSecondary}" Margin="{StaticResource SpaceXs}" />
+            <TextBlock Style="{StaticResource PartGroupHeading}" Text="{DynamicResource calc.build_header}" />
 
-            <TextBlock Text="{DynamicResource calc.start_point}" Margin="{StaticResource SpaceXs}"
-                       FontSize="{StaticResource FontSizeCaption}" Foreground="{DynamicResource BrushTextSecondary}" />
-            <!-- A grid rather than a horizontal stack: a stack hands every child its full desired
-                 width and clips whatever does not fit, which is how the zone list used to end mid
-                 word. The zone sits on its own row because sharing one with the start point left it
-                 about 180 px, and "UTC+02:00 - this machine" needs more than that to be readable -
-                 a control that shows "UTC+02:00 - t" is not a control anybody can trust. -->
-            <Grid Margin="{StaticResource SpaceXs}">
-              <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="Auto" />
-                <ColumnDefinition Width="*" MinWidth="150" />
-              </Grid.ColumnDefinitions>
-              <Grid.RowDefinitions>
-                <RowDefinition Height="Auto" />
-                <RowDefinition Height="Auto" />
-                <RowDefinition Height="Auto" />
-              </Grid.RowDefinitions>
-              <ComboBox Grid.Row="0" Grid.Column="0" x:Name="BaseKindBox" ItemsSource="{Binding BaseKinds}" SelectedItem="{Binding SelectedBase}"
-                        ItemContainerStyle="{StaticResource LabelKeyComboItem}" MinWidth="140" VerticalAlignment="Center"
-                        ToolTip="{DynamicResource tip.base_kind}">
-                <ComboBox.ItemTemplate>
-                  <DataTemplate>
-                    <TextBlock Text="{Binding LabelKey, Converter={StaticResource KeyToText}}" />
-                  </DataTemplate>
-                </ComboBox.ItemTemplate>
-              </ComboBox>
-              <!-- Specific date: the shared moment input (ISO box plus a calendar popup, locale-safe, rule 2),
-                   the same control the substitution panel uses. Its DataContext is the base MomentField, so
-                   Visibility binds to the view model through the CalculatorView, not the field. -->
-              <controls:MomentInput Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2" x:Name="BaseMoment" DataContext="{Binding Base}"
-                                    Margin="{StaticResource SpaceSm}" VerticalAlignment="Center"
-                                    Visibility="{Binding DataContext.IsSpecificBase, RelativeSource={RelativeSource AncestorType={x:Type UserControl}}, Converter={StaticResource BoolToVis}}" />
-              <!-- The SESSION zone the start point is read in (engine flag: zone). Worded "in zone" rather
-                   than "zone", because the step list below already offers a "to zone" step that means the
-                   opposite direction - re-express the ANSWER, not read the base. Same closed catalogue and
-                   same item template as the substitution panel, so one idea has one idiom. The first entry
-                   is the host, which sends no flag at all: that is what this panel always did, so the
-                   default changes no result, it only says out loud which zone it was (rule 2). -->
-              <!-- 🔴 The label sits ABOVE the combo, not beside it, so the combo spans the whole row. Beside
-                   it the label ate the left of the row and left the combo about 255 px, where the longest zone
-                   gloss - "UTC+00:00 · Coordinated Universal Time" - clipped in the closed box and in the
-                   drop-down that borrows its width. On its own row still (never sharing the start-point box's
-                   width), just stacked, so the combo gets the full width the card can give it. -->
-              <StackPanel Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="2" Margin="{StaticResource SpaceXs}">
-                <TextBlock Text="{DynamicResource calc.base_zone}" Margin="{StaticResource SpaceXs}"
-                           FontSize="{StaticResource FontSizeBody}" Foreground="{DynamicResource BrushTextSecondary}" />
-                <ComboBox x:Name="BaseZoneBox" ItemsSource="{Binding BaseZones}" SelectedItem="{Binding SelectedBaseZone}"
-                          ToolTip="{DynamicResource tip.base_zone}"
-                          ItemContainerStyle="{StaticResource ZoneComboItem}"
-                          Margin="{StaticResource SpaceXs}"
-                          HorizontalAlignment="Stretch">
-                  <ComboBox.ItemTemplate>
-                    <DataTemplate>
-                      <TextBlock><Run Text="{Binding Label, Mode=OneWay}" /><Run Text="  ·  " /><Run Text="{Binding HintKey, Converter={StaticResource KeyToText}, Mode=OneWay}" /></TextBlock>
-                    </DataTemplate>
-                  </ComboBox.ItemTemplate>
-                </ComboBox>
-              </StackPanel>
-            </Grid>
+            <!-- 🔴 ONE LEFT EDGE. Every field in this column stacks under its own label and starts on
+                 the column's edge: no label column, no per-control margins. The column is too narrow
+                 for a label beside a date-and-time row (the row alone is wider than what a label column
+                 leaves it), and a mix of "label beside" and "label above" gave the owner's review of the
+                 shipped build a builder whose fields looked randomly placed - three different x for four
+                 controls, measured on the render (2026-09-21). Stacking is the layout RULE here, and the
+                 column's minimum width is derived from the widest row it holds (CalcBuilderColumnMinWidth),
+                 so the date and the time stay on one line rather than being fitted by hand. -->
+            <TextBlock Style="{StaticResource PartFieldLabel}" Text="{DynamicResource calc.start_point}" />
+            <ComboBox x:Name="BaseKindBox" ItemsSource="{Binding BaseKinds}" SelectedItem="{Binding SelectedBase}"
+                      ItemContainerStyle="{StaticResource LabelKeyComboItem}"
+                      ToolTip="{DynamicResource tip.base_kind}">
+              <ComboBox.ItemTemplate>
+                <DataTemplate>
+                  <TextBlock Text="{Binding LabelKey, Converter={StaticResource KeyToText}}" />
+                </DataTemplate>
+              </ComboBox.ItemTemplate>
+            </ComboBox>
+            <!-- Specific date: the shared moment input (ISO box plus a calendar popup, locale-safe, rule 2),
+                 the same control the substitution panel uses. Its DataContext is the base MomentField, so
+                 Visibility binds to the view model through the CalculatorView, not the field. -->
+            <controls:MomentInput x:Name="BaseMoment" DataContext="{Binding Base}"
+                                  Margin="{StaticResource StackGapSm}" HorizontalAlignment="Left"
+                                  Visibility="{Binding DataContext.IsSpecificBase, RelativeSource={RelativeSource AncestorType={x:Type UserControl}}, Converter={StaticResource BoolToVis}}" />
             <!-- Validation message BELOW the start-point row (only for a malformed Specific base), so it never
                  shifts the row - mirrors the substitution At row. -->
-            <TextBlock Text="{Binding Base.ActiveErrorKey, Converter={StaticResource KeyToText}}"
-                       Visibility="{Binding ShowBaseError, Converter={StaticResource BoolToVis}}"
-                       Margin="{StaticResource SpaceXs}" TextWrapping="Wrap"
-                       FontSize="{StaticResource FontSizeCaption}" Foreground="{DynamicResource BrushStatusPartial}" />
+            <TextBlock Style="{StaticResource PartFieldMessage}" Margin="{StaticResource StackGapSm}"
+                       Text="{Binding Base.ActiveErrorKey, Converter={StaticResource KeyToText}}"
+                       Visibility="{Binding ShowBaseError, Converter={StaticResource BoolToVis}}" />
 
-            <TextBlock Text="{DynamicResource calc.steps_header}" Margin="{StaticResource SpaceXs}"
-                       FontSize="{StaticResource FontSizeCaption}" Foreground="{DynamicResource BrushTextSecondary}" />
-            <ItemsControl ItemsSource="{Binding Steps}" Margin="{StaticResource SpaceXs}">
+            <!-- The SESSION zone the start point is read in (engine flag: zone). The step list below offers
+                 a "to zone" step that means the opposite direction - re-express the ANSWER, not read the
+                 base. Same closed catalogue and same item template as the substitution panel, so one idea
+                 has one idiom. The first entry is the host, which sends no flag at all: that is what this
+                 panel always did, so the default changes no result, it only says out loud which zone it was
+                 (rule 2). Full width, because the longest gloss - "UTC+00:00 · Coordinated Universal Time" -
+                 clipped in anything narrower, in the closed box and in the drop-down that borrows its width. -->
+            <TextBlock Style="{StaticResource PartFieldLabel}" Text="{DynamicResource calc.base_zone}" />
+            <ComboBox x:Name="BaseZoneBox" ItemsSource="{Binding BaseZones}" SelectedItem="{Binding SelectedBaseZone}"
+                      ToolTip="{DynamicResource tip.base_zone}"
+                      ItemContainerStyle="{StaticResource ZoneComboItem}"
+                      ItemTemplate="{StaticResource ZoneRow}" />
+
+            <TextBlock Style="{StaticResource PartFieldLabel}" Text="{DynamicResource calc.steps_header}" />
+            <ItemsControl ItemsSource="{Binding Steps}">
               <ItemsControl.ItemTemplate>
                 <DataTemplate>
-                  <Border Margin="{StaticResource SpaceXs}" Padding="{StaticResource SpaceSm}"
+                  <Border Margin="{StaticResource StackGapSm}" Padding="{StaticResource SpaceSm}"
                           Background="{DynamicResource BrushBgSurfaceAlt}" CornerRadius="{StaticResource RadiusSm}">
-                    <!-- 🔴 TWO ROWS AND A GRID, not one horizontal stack, and for the reason already written
-                         above the start-point row: a horizontal stack hands every child its full desired
-                         width and lets the overflow run past its container. Measured here before the change,
-                         on the default 1040 window: the row wanted 439 px where the column had 331, so the
-                         unit list ended mid word and the remove button was laid out 108 px past the column,
-                         UNDER the opaque result panel. It was not merely ugly - a step could be added and
-                         then not removed, since the only control that removes one was never painted.
+                    <!-- 🔴 TWO ROWS AND A GRID, not one horizontal stack: a horizontal stack hands every
+                         child its full desired width and lets the overflow run past its container.
+                         Measured before the change, on the default 1040 window: the row wanted 439 px
+                         where the column had 331, so the unit list ended mid word and the remove button
+                         was laid out 108 px past the column, UNDER the opaque result panel. It was not
+                         merely ugly - a step could be added and then not removed, since the only control
+                         that removes one was never painted.
 
-                         A grid alone does not fix that. After the kind picker (120) and the remove button
-                         (51) there are about 160 px left for an editor that needs 277, so one row cannot
-                         hold this whatever the panel. The kind picker heads the step and the editor sits
-                         under it, which fits at the window's own minimum and leaves the editors room to
-                         grow. The remove button spans both rows because it removes the STEP, not the row
-                         it happens to sit on. The editors keep a WrapPanel as the floor: a longer label in
-                         another language then wraps instead of clipping. -->
+                         The kind picker heads the step and the editor sits under it, which fits at the
+                         window's own minimum and leaves the editors room to grow. The remove button spans
+                         both rows because it removes the STEP, not the row it happens to sit on. The
+                         multi-control editors keep a WrapPanel as the floor: a longer label in another
+                         language then wraps instead of clipping. Widths are the tokens the setup's "From
+                         now" row uses for the same three controls, so the two shift editors are one drawing. -->
                     <Grid>
                       <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*" />
@@ -210,8 +181,7 @@
 
                       <!-- Kind picker: swaps which editor below it is visible. -->
                       <ComboBox Grid.Row="0" Grid.Column="0" ItemsSource="{Binding Kinds}" SelectedItem="{Binding SelectedKind}"
-                                ItemContainerStyle="{StaticResource LabelKeyComboItem}"
-                                HorizontalAlignment="Left" VerticalAlignment="Center" MinWidth="120">
+                                ItemContainerStyle="{StaticResource LabelKeyComboItem}" Margin="{StaticResource CopyValueGap}">
                         <ComboBox.ItemTemplate>
                           <DataTemplate>
                             <TextBlock Text="{Binding LabelKey, Converter={StaticResource KeyToText}}" />
@@ -220,21 +190,21 @@
                       </ComboBox>
 
                       <Button Grid.Row="0" Grid.Column="1" Content="✕" Click="OnRemoveStepClick" Tag="{Binding}"
-                              Margin="{StaticResource SpaceSm}" VerticalAlignment="Center"
+                              VerticalAlignment="Center"
                               AutomationProperties.Name="{DynamicResource calc.remove_step}"
                               FontSize="{StaticResource FontSizeCaption}" />
 
                       <!-- Shift editor: sign, amount, unit. -->
-                      <WrapPanel Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2" Orientation="Horizontal" Margin="{StaticResource SpaceXs}"
+                      <WrapPanel Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2" Orientation="Horizontal" Margin="{StaticResource StackGapSm}"
                                  Visibility="{Binding IsShift, Converter={StaticResource BoolToVis}}">
                         <ComboBox ItemsSource="{Binding Signs}" SelectedItem="{Binding Sign}"
-                                  Margin="{StaticResource SpaceXs}" VerticalAlignment="Center" MinWidth="48" />
+                                  Width="{StaticResource ShiftSignWidth}" Margin="{StaticResource ControlRowGap}" VerticalAlignment="Center" />
                         <TextBox Text="{Binding Amount, UpdateSourceTrigger=LostFocus}"
-                                 Width="64" Margin="{StaticResource SpaceXs}" VerticalAlignment="Center"
+                                 Width="{StaticResource ShiftAmountWidth}" Margin="{StaticResource ControlRowGap}" VerticalAlignment="Center"
                                  FontFamily="{StaticResource FontFamilyMono}" />
                         <ComboBox ItemsSource="{Binding Units}" SelectedItem="{Binding Unit}"
                                   ItemContainerStyle="{StaticResource LabelKeyComboItem}"
-                                  Margin="{StaticResource SpaceXs}" VerticalAlignment="Center" MinWidth="120">
+                                  Width="{StaticResource ShiftUnitWidth}" Margin="{StaticResource ControlRowGap}" VerticalAlignment="Center">
                           <ComboBox.ItemTemplate>
                             <DataTemplate>
                               <TextBlock Text="{Binding LabelKey, Converter={StaticResource KeyToText}}" />
@@ -243,54 +213,49 @@
                         </ComboBox>
                       </WrapPanel>
 
-                      <!-- Snap editor: a period boundary target. -->
-                      <WrapPanel Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2" Orientation="Horizontal" Margin="{StaticResource SpaceXs}"
-                                 Visibility="{Binding IsSnap, Converter={StaticResource BoolToVis}}">
-                        <ComboBox ItemsSource="{Binding SnapTargets}" SelectedItem="{Binding SnapTarget}"
-                                  ItemContainerStyle="{StaticResource LabelKeyComboItem}"
-                                  Margin="{StaticResource SpaceXs}" VerticalAlignment="Center" MinWidth="180">
-                          <ComboBox.ItemTemplate>
-                            <DataTemplate>
-                              <TextBlock Text="{Binding LabelKey, Converter={StaticResource KeyToText}}" />
-                            </DataTemplate>
-                          </ComboBox.ItemTemplate>
-                        </ComboBox>
-                      </WrapPanel>
+                      <!-- Snap editor: a period boundary target. One control, so it takes the row. -->
+                      <ComboBox Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2" Margin="{StaticResource StackGapSm}"
+                                ItemsSource="{Binding SnapTargets}" SelectedItem="{Binding SnapTarget}"
+                                ItemContainerStyle="{StaticResource LabelKeyComboItem}"
+                                Visibility="{Binding IsSnap, Converter={StaticResource BoolToVis}}">
+                        <ComboBox.ItemTemplate>
+                          <DataTemplate>
+                            <TextBlock Text="{Binding LabelKey, Converter={StaticResource KeyToText}}" />
+                          </DataTemplate>
+                        </ComboBox.ItemTemplate>
+                      </ComboBox>
 
                       <!-- Nearest editor: roll to the nearest business day in a direction (needs a calendar -
                            without one the engine returns an honest calendar error, surfaced as the result error). -->
-                      <WrapPanel Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2" Orientation="Horizontal" Margin="{StaticResource SpaceXs}"
-                                 Visibility="{Binding IsNearest, Converter={StaticResource BoolToVis}}">
-                        <ComboBox ItemsSource="{Binding NearestTargets}" SelectedItem="{Binding NearestTarget}"
-                                  ItemContainerStyle="{StaticResource LabelKeyComboItem}"
-                                  Margin="{StaticResource SpaceXs}" VerticalAlignment="Center" MinWidth="180">
-                          <ComboBox.ItemTemplate>
-                            <DataTemplate>
-                              <TextBlock Text="{Binding LabelKey, Converter={StaticResource KeyToText}}" />
-                            </DataTemplate>
-                          </ComboBox.ItemTemplate>
-                        </ComboBox>
-                      </WrapPanel>
+                      <ComboBox Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2" Margin="{StaticResource StackGapSm}"
+                                ItemsSource="{Binding NearestTargets}" SelectedItem="{Binding NearestTarget}"
+                                ItemContainerStyle="{StaticResource LabelKeyComboItem}"
+                                Visibility="{Binding IsNearest, Converter={StaticResource BoolToVis}}">
+                        <ComboBox.ItemTemplate>
+                          <DataTemplate>
+                            <TextBlock Text="{Binding LabelKey, Converter={StaticResource KeyToText}}" />
+                          </DataTemplate>
+                        </ComboBox.ItemTemplate>
+                      </ComboBox>
 
-                      <!-- Set-time editor: a wall-clock HH:MM:SS. The engine validates the range, so a bad
-                           time surfaces as an honest result error rather than being clamped in the view. -->
-                      <WrapPanel Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2" Orientation="Horizontal" Margin="{StaticResource SpaceXs}"
-                                 Visibility="{Binding IsSetTime, Converter={StaticResource BoolToVis}}">
-                        <TextBox Text="{Binding SetTimeText, UpdateSourceTrigger=LostFocus}"
-                                 Width="96" Margin="{StaticResource SpaceXs}" VerticalAlignment="Center"
-                                 FontFamily="{StaticResource FontFamilyMono}"
-                                 AutomationProperties.Name="{DynamicResource calc.kind_settime}" />
-                      </WrapPanel>
+                      <!-- Set-time editor: a wall-clock HH:MM:SS, the width the time field has everywhere
+                           else. The engine validates the range, so a bad time surfaces as an honest result
+                           error rather than being clamped in the view. -->
+                      <TextBox Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2" Margin="{StaticResource StackGapSm}"
+                               Text="{Binding SetTimeText, UpdateSourceTrigger=LostFocus}"
+                               Width="{StaticResource MomentTimeFieldWidth}" HorizontalAlignment="Left"
+                               FontFamily="{StaticResource FontFamilyMono}"
+                               AutomationProperties.Name="{DynamicResource calc.kind_settime}"
+                               Visibility="{Binding IsSetTime, Converter={StaticResource BoolToVis}}" />
 
                       <!-- Zone editor: a fixed offset +HH:MM for the to-zone step - the same instant
                            re-expressed in another zone, NOT the session zone. Engine validates the shape. -->
-                      <WrapPanel Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2" Orientation="Horizontal" Margin="{StaticResource SpaceXs}"
-                                 Visibility="{Binding IsZone, Converter={StaticResource BoolToVis}}">
-                        <TextBox Text="{Binding ZoneText, UpdateSourceTrigger=LostFocus}"
-                                 Width="80" Margin="{StaticResource SpaceXs}" VerticalAlignment="Center"
-                                 FontFamily="{StaticResource FontFamilyMono}"
-                                 AutomationProperties.Name="{DynamicResource calc.kind_zone}" />
-                      </WrapPanel>
+                      <TextBox Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2" Margin="{StaticResource StackGapSm}"
+                               Text="{Binding ZoneText, UpdateSourceTrigger=LostFocus}"
+                               Width="{StaticResource OffsetFieldWidth}" HorizontalAlignment="Left"
+                               FontFamily="{StaticResource FontFamilyMono}"
+                               AutomationProperties.Name="{DynamicResource calc.kind_zone}"
+                               Visibility="{Binding IsZone, Converter={StaticResource BoolToVis}}" />
                     </Grid>
                   </Border>
                 </DataTemplate>
@@ -298,42 +263,24 @@
             </ItemsControl>
             <Button x:Name="AddStepButton" Content="{DynamicResource calc.add_step}" Click="OnAddStepClick"
                     ToolTip="{DynamicResource tip.add_step}"
-                    Margin="{StaticResource SpaceXs}" HorizontalAlignment="Left" />
+                    Margin="{StaticResource StackGapSm}" HorizontalAlignment="Left" />
 
-            <StackPanel Orientation="Horizontal" Margin="{StaticResource SpaceMd}">
-              <TextBlock Text="{DynamicResource calc.field_calendar}" VerticalAlignment="Center"
-                         FontSize="{StaticResource FontSizeCaption}"
-                         Foreground="{DynamicResource BrushTextSecondary}" />
-              <!-- The mark that goes with the sentence in the result column. The engine refuses a
-                   business-day step when no calendar is picked, and the picker is in this column while
-                   the refusal is read in the other one, so the field says so itself. The halo is always
-                   in the tree and only changes colour, so turning it on never moves the row. -->
-              <Border x:Name="CalendarMark" Margin="{StaticResource SpaceSm}" Padding="{StaticResource SpaceXs}"
-                      CornerRadius="{StaticResource RadiusMd}"
-                      BorderThickness="{StaticResource StrokeThinEdge}">
-                <Border.Style>
-                  <Style TargetType="Border">
-                    <!-- Not a colour decision: the absence of one, so there is no token to name. -->
-                    <Setter Property="BorderBrush" Value="Transparent" />
-                    <Style.Triggers>
-                      <DataTrigger Binding="{Binding CalendarMissing}" Value="True">
-                        <Setter Property="BorderBrush" Value="{DynamicResource BrushStatusFails}" />
-                      </DataTrigger>
-                    </Style.Triggers>
-                  </Style>
-                </Border.Style>
-                <ComboBox x:Name="CalendarBox" ItemsSource="{Binding Calendars}" SelectedItem="{Binding SelectedCalendar}"
-                          ItemContainerStyle="{StaticResource LabelKeyComboItem}" ToolTip="{DynamicResource tip.calc_calendar}"
-                          VerticalAlignment="Center" MinWidth="140"
-                          AutomationProperties.Name="{DynamicResource calc.field_calendar}">
-                  <ComboBox.ItemTemplate>
-                    <DataTemplate>
-                      <TextBlock Text="{Binding LabelKey, Converter={StaticResource KeyToText}}" />
-                    </DataTemplate>
-                  </ComboBox.ItemTemplate>
-                </ComboBox>
-              </Border>
-            </StackPanel>
+            <!-- The calendar that judges business days. The engine refuses a business-day step when no
+                 calendar is picked, and the picker is in this column while the refusal is read in the
+                 other one, so the field says so itself: the shared error edge, the same one a text field
+                 shows, bound to the flag the result sentence is bound to. The edge only changes colour, so
+                 turning it on never moves the row. -->
+            <TextBlock Style="{StaticResource PartFieldLabel}" Text="{DynamicResource calc.field_calendar}" />
+            <ComboBox x:Name="CalendarBox" ItemsSource="{Binding Calendars}" SelectedItem="{Binding SelectedCalendar}"
+                      ItemContainerStyle="{StaticResource LabelKeyComboItem}" ToolTip="{DynamicResource tip.calc_calendar}"
+                      app:PartState.HasError="{Binding CalendarMissing}"
+                      AutomationProperties.Name="{DynamicResource calc.field_calendar}">
+              <ComboBox.ItemTemplate>
+                <DataTemplate>
+                  <TextBlock Text="{Binding LabelKey, Converter={StaticResource KeyToText}}" />
+                </DataTemplate>
+              </ComboBox.ItemTemplate>
+            </ComboBox>
 
             <!-- The reverse tool lives here now, under the builder, so the middle column carries both ways
                  of naming a moment - build one up, or read a pasted one - instead of a short form standing
@@ -343,23 +290,25 @@
                  the old full-width strip, and "US reading (MM/DD/YYYY)" beside its value would run past the
                  column edge - the very fault the builder rows above already had to fix. -->
             <StackPanel Margin="{StaticResource StackGapXl}">
-              <TextBlock Text="{DynamicResource calc.reverse_header}"
-                         FontSize="{StaticResource FontSizeCaption}" FontWeight="SemiBold"
-                         Foreground="{DynamicResource BrushTextSecondary}" Margin="{StaticResource SpaceXs}" />
+              <TextBlock Style="{StaticResource PartGroupHeading}" Text="{DynamicResource calc.reverse_header}" />
+              <!-- Full width and on the column's edge, like every field above it: it stood 4 px in from
+                   the builder's fields at a width of its own, which is the "randomly placed" the owner's
+                   review named. A pasted date is short, but a field narrower than its column has no
+                   reason to be, and the same edge is the point. -->
               <TextBox x:Name="AnalyzeBox" Text="{Binding AnalyzeText, UpdateSourceTrigger=LostFocus}"
-                       Width="160" HorizontalAlignment="Left" Margin="{StaticResource SpaceXs}"
+                       Margin="{StaticResource StackGapSm}"
                        FontFamily="{StaticResource FontFamilyMono}" ToolTip="{DynamicResource tip.analyze}"
                        AutomationProperties.Name="{DynamicResource calc.reverse_header}" />
-              <TextBlock Text="{DynamicResource calc.analyze_ambiguous}" TextWrapping="Wrap" Margin="{StaticResource SpaceXs}"
+              <TextBlock Text="{DynamicResource calc.analyze_ambiguous}" TextWrapping="Wrap" Margin="{StaticResource StackGapSm}"
                          FontSize="{StaticResource FontSizeCaption}" Foreground="{DynamicResource BrushStatusPartial}"
                          Visibility="{Binding AnalyzeAmbiguous, Converter={StaticResource BoolToVis}}" />
-              <TextBlock Text="{Binding AnalyzeError}" TextWrapping="Wrap" Margin="{StaticResource SpaceXs}"
+              <TextBlock Text="{Binding AnalyzeError}" TextWrapping="Wrap" Margin="{StaticResource StackGapSm}"
                          FontSize="{StaticResource FontSizeCaption}" Foreground="{DynamicResource BrushStatusFails}"
                          Visibility="{Binding AnalyzeHasError, Converter={StaticResource BoolToVis}}" />
-              <ItemsControl ItemsSource="{Binding Readings}" Margin="{StaticResource SpaceXs}">
+              <ItemsControl ItemsSource="{Binding Readings}" Margin="{StaticResource StackGapSm}">
                 <ItemsControl.ItemTemplate>
                   <DataTemplate>
-                    <StackPanel Margin="{StaticResource SpaceXs}">
+                    <StackPanel Margin="{StaticResource StackGapSm}">
                       <TextBlock Text="{Binding ReadingLabelKey, Converter={StaticResource KeyToText}}" TextWrapping="Wrap"
                                  FontSize="{StaticResource FontSizeCaption}" Foreground="{DynamicResource BrushTextSecondary}" />
                       <StackPanel Orientation="Horizontal">
@@ -394,9 +343,7 @@
         <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
                       Padding="{StaticResource ScrollGutter}">
           <StackPanel>
-            <TextBlock Text="{DynamicResource calc.result_header}"
-                       FontSize="{StaticResource FontSizeCaption}" FontWeight="SemiBold"
-                       Foreground="{DynamicResource BrushTextSecondary}" Margin="{StaticResource SpaceXs}" />
+            <TextBlock Style="{StaticResource PartGroupHeading}" Text="{DynamicResource calc.result_header}" Margin="{StaticResource SpaceXs}" />
 
             <!-- Active preset provenance (7.3): the authored name and "what it tests", plus an honest note
                  when the preset needs parameters (it does not fill the builder then). Cleared on a by-hand edit. -->
@@ -414,19 +361,19 @@
                      the file defaults. Filling a required date recomputes the result. -->
                 <StackPanel Margin="{StaticResource SpaceXs}"
                             Visibility="{Binding HasParamInputs, Converter={StaticResource BoolToVis}}">
-                  <TextBlock Text="{DynamicResource calc.preset_params_header}"
-                             FontSize="{StaticResource FontSizeCaption}" FontWeight="SemiBold"
-                             Foreground="{DynamicResource BrushTextSecondary}" />
+                  <TextBlock Style="{StaticResource PartGroupHeading}" Text="{DynamicResource calc.preset_params_header}" />
                   <ItemsControl ItemsSource="{Binding ParamInputs}">
                     <ItemsControl.ItemTemplate>
                       <DataTemplate>
                         <StackPanel Orientation="Horizontal" Margin="{StaticResource SpaceXs}">
                           <TextBlock Text="{Binding Label}" VerticalAlignment="Center" MinWidth="90"
                                      FontSize="{StaticResource FontSizeCaption}" Foreground="{DynamicResource BrushTextSecondary}" />
-                          <TextBox Text="{Binding DateText, UpdateSourceTrigger=LostFocus}"
-                                   Width="150" VerticalAlignment="Center" FontFamily="{StaticResource FontFamilyMono}"
-                                   AutomationProperties.Name="{Binding Label}"
-                                   Visibility="{Binding IsDate, Converter={StaticResource BoolToVis}}" />
+                          <!-- The shared date input, calendar included: a date the setup and the builder let
+                               the tester pick was typed by hand here, and a first run read the missing
+                               calendar as this one being broken (owner's review, 2026-09-21). -->
+                          <controls:DateInput VerticalAlignment="Center"
+                                              AccessibleName="{Binding Label}"
+                                              Visibility="{Binding IsDate, Converter={StaticResource BoolToVis}}" />
                           <StackPanel Orientation="Horizontal"
                                       Visibility="{Binding IsDuration, Converter={StaticResource BoolToVis}}">
                             <TextBox Text="{Binding Amount, UpdateSourceTrigger=LostFocus}"
@@ -522,9 +469,7 @@
                        Margin="{StaticResource SpaceXs}"
                        FontSize="{StaticResource FontSizeCaption}" Foreground="{DynamicResource BrushStatusPartial}" />
 
-            <TextBlock Text="{DynamicResource calc.all_formats}" Margin="{StaticResource SpaceXs}"
-                       FontSize="{StaticResource FontSizeCaption}" FontWeight="SemiBold"
-                       Foreground="{DynamicResource BrushTextSecondary}" />
+            <TextBlock Style="{StaticResource PartGroupHeading}" Text="{DynamicResource calc.all_formats}" Margin="{StaticResource SpaceXs}" />
             <ItemsControl x:Name="FormatList" ItemsSource="{Binding Formats}" Margin="{StaticResource SpaceXs}">
               <ItemsControl.ItemTemplate>
                 <DataTemplate>
@@ -551,9 +496,7 @@
             <!-- Custom output format (7.3): a .NET/Java-token mask so the tester can hit the exact string the
                  tested app's field expects. Built from the civil date, so it renders even when epoch/FILETIME
                  are out of range. An empty mask hides the result row (no format flag is sent). -->
-            <TextBlock Text="{DynamicResource calc.custom_format}" Margin="{StaticResource SpaceXs}"
-                       FontSize="{StaticResource FontSizeCaption}" FontWeight="SemiBold"
-                       Foreground="{DynamicResource BrushTextSecondary}" />
+            <TextBlock Style="{StaticResource PartGroupHeading}" Text="{DynamicResource calc.custom_format}" Margin="{StaticResource SpaceXs}" />
             <!-- PropertyChanged, unlike every other text field here, and the reason is this field's
                  position: it is the last control in the result column, so there is nothing to move on
                  to, and on LostFocus the mask reached the view model only if the tester happened to
@@ -589,13 +532,14 @@
                        Margin="{StaticResource SpaceXs}" TextWrapping="Wrap"
                        FontSize="{StaticResource FontSizeCaption}" Foreground="{DynamicResource BrushStatusPartial}" />
 
-            <TextBlock Text="{DynamicResource calc.metadata}" Margin="{StaticResource SpaceXs}"
-                       FontSize="{StaticResource FontSizeCaption}" FontWeight="SemiBold"
-                       Foreground="{DynamicResource BrushTextSecondary}" />
+            <TextBlock Style="{StaticResource PartGroupHeading}" Text="{DynamicResource calc.metadata}" Margin="{StaticResource SpaceXs}" />
             <TextBlock Text="{Binding MetadataLine}" TextWrapping="Wrap" Margin="{StaticResource SpaceXs}"
                        FontSize="{StaticResource FontSizeCaption}" Foreground="{DynamicResource BrushTextPrimary}" />
 
-            <Button x:Name="UseInSubstitutionButton" Content="{DynamicResource calc.use_in_substitution}" Margin="{StaticResource SpaceMd}"
+            <!-- The one action this module ends in, styled as the setup's Start is: it read as any other
+                 button, and the owner's review of the shipped build could not find it (2026-09-21). -->
+            <Button x:Name="UseInSubstitutionButton" Style="{StaticResource PartPrimaryAction}"
+                    Content="{DynamicResource calc.use_in_substitution}" Margin="{StaticResource SpaceMd}"
                     HorizontalAlignment="Stretch" Click="OnUseInSubstitutionClick"
                     ToolTip="{DynamicResource tip.use_in_substitution}"
                     ToolTipService.ShowOnDisabled="True"

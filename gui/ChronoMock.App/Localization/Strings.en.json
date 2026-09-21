@@ -185,6 +185,9 @@
   "moment.label": "At:",
   "moment.date_placeholder": "YYYY-MM-DD",
   "moment.time_placeholder": "HH:MM",
+  // What a screen reader calls the two fields of a moment input - the placeholder is a hint, not a name.
+  "moment.date_name": "Date",
+  "moment.time_name": "Time",
   "moment.date_empty": "Enter a date.",
   "moment.date_format": "Use the form YYYY-MM-DD.",
   "moment.date_invalid": "That date does not exist.",
@@ -361,6 +364,18 @@
   // floors - which the late-hook warning needs, and could not say on its own.
   "coverage.installed_late": "Came under the fake clock late",
   "coverage.warnings": "Warnings",
+  // The audit table: one row per function the session saw, with where it read its time from. The status
+  // words are short because they sit in a column, and each is also the row's colour - a word first, so the
+  // colour never carries the meaning alone.
+  "audit.col_function": "Function",
+  "audit.col_source": "Read from",
+  "audit.col_reads": "Reads",
+  "audit.status_fake": "fake clock",
+  "audit.status_real": "real clock",
+  "audit.status_by_design": "real clock, by design",
+  "audit.status_by_design_late": "real clock, by design, hooked late",
+  "audit.status_unwatched": "not watched",
+  "audit.status_late": "fake clock, late",
   // The read count on a covered or observed channel, in prose so it does not read like the speed multiplier
   // the raw count sat beside - built in code (SessionViewModel.FormatChannel), P6.
   "coverage.reads": "{0} - read {1} times",
@@ -524,7 +539,7 @@
   "calc.preset_needs_params": "Fill in the parameters below to compute this scenario.",
   "calc.build_header": "Build a date",
   "calc.start_point": "Start from",
-  "calc.base_zone": "in time zone",
+  "calc.base_zone": "Time zone",
   "calc.steps_header": "Steps",
   "calc.add_step": "+ Add step",
   "calc.kind_shift": "Shift ±",
@@ -554,8 +569,7 @@
   "calc.base.today": "Today",
   "calc.base.now": "Now",
   "calc.base.specific": "Specific date",
-  "calc.base.specific_utc": "Specific instant (UTC)",
-  "calc.field_calendar": "Calendar:",
+  "calc.field_calendar": "Calendar",
   "calc.remove_step": "Remove step",
   "calc.unit.seconds": "seconds",
   "calc.unit.minutes": "minutes",

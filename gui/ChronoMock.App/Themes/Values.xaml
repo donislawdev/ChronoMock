@@ -137,6 +137,11 @@
        scrolling stops. Without it the content underneath slides away with nothing to say it went. -->
   <Thickness x:Key="FooterEdge">0,1,0,0</Thickness>
 
+  <!-- The gap between the footer's action and the sentence beside it saying why the action is refusing.
+       The sentence is read as an answer to the button, so it stands one medium step from it - closer
+       than a new row, further than a label from its field. -->
+  <Thickness x:Key="FooterReasonGap">12,0,0,0</Thickness>
+
   <!-- The consequence line under a check, indented to start where its LABEL starts rather than where the
        box does: 20 for the box plus 8 for the gap beside it, both from the two values above. A note that
        began under the box would read as a second option rather than as a footnote to the first.
@@ -160,6 +165,23 @@
   <sys:Double x:Key="MomentDateFieldWidth">148</sys:Double>
   <sys:Double x:Key="MomentTimeFieldWidth">120</sys:Double>
 
+  <!-- A fixed UTC offset typed by hand, "+HH:MM": six monospaced characters and the field's padding. The
+       calculator's to-zone step is the one place a reader types an offset rather than picking a zone. -->
+  <sys:Double x:Key="OffsetFieldWidth">80</sys:Double>
+
+  <!-- 🔴 THE CALCULATOR'S THREE COLUMNS, as floors under their star shares. The builder's floor is DERIVED,
+       not chosen: the widest row it holds is the date-and-time input, 316 from the tokens above and the
+       calendar button (148 + 4 + 32 + 4, then 4 + 120 + 4), and the card around it spends 8 of margin a
+       side, 16 of padding and 16 of scroll gutter - 364 in all, plus one smallest step of slack so a
+       rounding never wraps the row. Below that floor the time field drops under the date, which is the
+       layout this floor exists to forbid. It was 380, picked by eye, and the row still wrapped at it
+       because the margins around the row ate what the number had spared. The other two are the widths
+       their content needs: a scenario row with its second line, a FILETIME without breaking mid digit.
+       Their sum with the card margins has to fit the window's own MinWidth. -->
+  <sys:Double x:Key="CalcScenariosColumnMinWidth">240</sys:Double>
+  <sys:Double x:Key="CalcBuilderColumnMinWidth">368</sys:Double>
+  <sys:Double x:Key="CalcResultColumnMinWidth">340</sys:Double>
+
   <sys:Double x:Key="StrokeThin">1</sys:Double>
   <!-- The same one-pixel edge as a Thickness, for a BorderThickness. WPF does not convert a Double to a
        Thickness through a resource reference, so the two spellings of one decision both have to exist. -->
@@ -169,6 +191,21 @@
        controls off-screen. A named cap, not free geometry (zasady/13 2.1); the whole panel also scrolls,
        so nothing is ever clipped. -->
   <sys:Double x:Key="CoverageMaxHeight">140</sys:Double>
+
+  <!-- The audit table's cap. One table where there were five capped lists, so it may be taller than any
+       one of them was and still shorter than the five together: a family session's forty channels scroll
+       inside it, a plain session's six do not scroll at all. -->
+  <sys:Double x:Key="AuditTableMaxHeight">280</sys:Double>
+
+  <!-- The audit table's columns. The function column is as wide as the longest name on screen (shared
+       size, computed, never a number), the status column likewise - only the count column takes a fixed
+       width, so the digits sit under one right edge whatever the names beside them do. Eight digits of
+       monospaced caption text and the row gap. -->
+  <GridLength x:Key="AuditCountColumnWidth">88</GridLength>
+  <Thickness x:Key="AuditCellGap">0,2,16,2</Thickness>
+  <!-- The rule under a table's header, and only under it: the head's one edge, the way FooterEdge is
+       the footer's. -->
+  <Thickness x:Key="TableHeaderEdge">0,0,0,1</Thickness>
 
   <!-- The history list scrolls inside this height so a long history never dominates the panel. Named cap,
        not free geometry (zasady/13 2.1); the whole panel also scrolls. -->
@@ -180,6 +217,11 @@
        the first About render, which had three. -->
   <Thickness x:Key="StackGapSm">0,8,0,0</Thickness>
   <Thickness x:Key="StackGapLg">0,16,0,0</Thickness>
+
+  <!-- A field label stacked ABOVE its field (PartFieldLabel): a group step down from what came before,
+       the smallest step to the field it names, so the label reads as belonging to the field under it and
+       not to the control above it. -->
+  <Thickness x:Key="StackedLabelGap">0,12,0,4</Thickness>
 
   <!-- 🔴 THE CHANNEL BETWEEN TWO GROUPS, and it has to be WIDER than the padding inside one. Measured on
        the first setup render: 8 px between the cards and 16 px of padding within them, so the gap inside

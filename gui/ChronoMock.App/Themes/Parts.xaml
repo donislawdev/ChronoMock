@@ -107,6 +107,26 @@
     <Setter Property="VerticalAlignment" Value="Center" />
   </Style>
 
+  <!-- A small heading over a group inside a card - the calculator's column and result groups. Named
+       because the same three attributes were written out ten times in one view (rule 7: the second
+       repetition is a missing name). Caption size in the heading weight and the secondary ink: it
+       labels a group, it does not compete with the values in it. -->
+  <Style x:Key="PartGroupHeading" TargetType="TextBlock">
+    <Setter Property="FontSize" Value="{StaticResource FontSizeCaption}" />
+    <Setter Property="FontWeight" Value="{StaticResource FontWeightHeading}" />
+    <Setter Property="Foreground" Value="{DynamicResource BrushTextSecondary}" />
+  </Style>
+
+  <!-- A field's label ABOVE the field, for a column too narrow to hold a label column beside its
+       widest row (the calculator's builder). The form-row part is the label-beside shape and the two are
+       not to be mixed on one screen: the mix is what reads as randomly placed. The gap under the label
+       is the token, so every stacked field on a screen keeps the same rhythm. -->
+  <Style x:Key="PartFieldLabel" TargetType="TextBlock">
+    <Setter Property="FontSize" Value="{StaticResource FontSizeCaption}" />
+    <Setter Property="Foreground" Value="{DynamicResource BrushTextSecondary}" />
+    <Setter Property="Margin" Value="{StaticResource StackedLabelGap}" />
+  </Style>
+
   <Style x:Key="PartCaption" TargetType="TextBlock">
     <Setter Property="FontSize" Value="{StaticResource FontSizeCaption}" />
     <Setter Property="Foreground" Value="{DynamicResource BrushTextSecondary}" />
@@ -608,6 +628,14 @@
             <Trigger Property="IsKeyboardFocused" Value="True">
               <Setter TargetName="Face" Property="BorderBrush" Value="{DynamicResource BrushFocusRing}" />
             </Trigger>
+            <!-- The error state the text field has, on the same edge: a drop-down whose pick the engine
+                 refuses (a business-day step with no calendar) says so itself, the way a field with a bad
+                 date does. After the focus trigger, so a drop-down that is focused AND wrong shows the
+                 error colour. It used to be a halo drawn by a Border wrapped around the one drop-down that
+                 needed it, which put that drop-down 5 px in from every other control in its column. -->
+            <Trigger Property="app:PartState.HasError" Value="True">
+              <Setter TargetName="Face" Property="BorderBrush" Value="{DynamicResource BrushError}" />
+            </Trigger>
             <Trigger Property="IsEnabled" Value="False">
               <Setter TargetName="Face" Property="BorderBrush" Value="{DynamicResource BrushDivider}" />
               <Setter TargetName="Chevron" Property="Stroke" Value="{DynamicResource BrushTextSecondary}" />
@@ -802,6 +830,38 @@
       <TextBlock Text="{Binding DisplayName}" TextTrimming="CharacterEllipsis" />
       <TextBlock Style="{StaticResource PartNote}" Text="{Binding DisplayExplains}" />
     </StackPanel>
+  </DataTemplate>
+
+  <!--
+    ============================ Zone row ============================
+
+    A zone in a drop-down, the same drawing wherever a zone is picked: the offset and the name it goes
+    by, in that order, because the offset is the fact and the name is the gloss - a bare "US Pacific"
+    would not say what the session will run on, and a bare "UTC+02:00" does not say whose clock that is.
+
+    🔴 ONE DRAWING FOR BOTH PICKERS. The setup showed the offset alone in its closed box while the
+    calculator showed offset and name, so the two read as different facts about the same zone: "UTC+00:00"
+    on one screen and "UTC+02:00 · this machine" on the other, with nothing saying that the first is the
+    neutral default and the second is this computer's clock (owner's review, 2026-09-21). With the name in
+    both boxes the difference explains itself.
+
+    The container style names the item for assistive tech from the same two facts. WPF names a container
+    from the data item's ToString(), never from the template's TextBlock, and a ZoneOption carries a
+    computed offset beside its translation key, so the label-key style cannot name it.
+  -->
+  <Style x:Key="ZoneComboItem" TargetType="ComboBoxItem" BasedOn="{StaticResource {x:Type ComboBoxItem}}">
+    <Setter Property="AutomationProperties.Name">
+      <Setter.Value>
+        <MultiBinding StringFormat="{}{0}, {1}">
+          <Binding Path="Label" />
+          <Binding Path="HintKey" Converter="{StaticResource KeyToText}" />
+        </MultiBinding>
+      </Setter.Value>
+    </Setter>
+  </Style>
+
+  <DataTemplate x:Key="ZoneRow">
+    <TextBlock><Run Text="{Binding Label, Mode=OneWay}" /><Run Text="  ·  " /><Run Text="{Binding HintKey, Converter={StaticResource KeyToText}, Mode=OneWay}" /></TextBlock>
   </DataTemplate>
 
   <!--
@@ -1125,17 +1185,6 @@
     edge down the middle of the list. Capped in height and scrolling, because a family session can
     produce forty channels and this is a detail inside a folded section, not the subject of the screen.
   -->
-  <!-- The row for a covered or observed channel - a name and a read count folded into a sentence
-       (coverage.reads) so the count does not read as a speed. The same TextBlock as the fact list's own row,
-       so the two line up - only the converter differs, turning a CoveredChannel into text where the fact list
-       turns a key into text. -->
-  <DataTemplate x:Key="CoverageRowTemplate">
-    <TextBlock Style="{StaticResource PartCaption}" TextWrapping="NoWrap"
-               TextTrimming="CharacterEllipsis"
-               FontFamily="{StaticResource FontFamilyMono}"
-               Text="{Binding Converter={StaticResource CoverageRow}}" />
-  </DataTemplate>
-
   <Style x:Key="PartFactList" TargetType="HeaderedItemsControl">
     <Setter Property="Margin" Value="{StaticResource StackGapLg}" />
     <Setter Property="ItemTemplate">
@@ -1208,5 +1257,113 @@
       </Setter.Value>
     </Setter>
   </Style>
+
+  <!--
+    ============================ Audit table ============================
+
+    The functions a session saw, one per row, with WHERE each one read its time and how many times. It
+    replaces five separate lists (fake clock, real clock, by design, not watched, late), each with its
+    own heading and its own scrolling well, which the owner's review of the shipped build read as a wall
+    of text (2026-09-21): the eye had to find five headings to learn where one function had read from.
+    A row per function answers that in the row.
+
+    🔴 THE STATUS IS A WORD IN COLOUR, never colour alone. The word is what the row says, the colour is
+    what makes a column of forty scannable: the readings that fail a verdict in the failure ink, the
+    ones nobody could judge in the undetermined ink, the good news in the works ink. A late row is fake
+    clock with a floor under its count, so it takes the partial ink. "By design" is a real-clock reading
+    the session chose, so it carries no alarm at all - the secondary ink, like any other fact.
+
+    The columns share their widths across rows (shared size groups, computed off the content), so the
+    caller sets Grid.IsSharedSizeScope on the list. The count column alone has a fixed width, so the
+    digits keep one right edge whatever the names beside them do.
+  -->
+  <DataTemplate x:Key="AuditRowTemplate">
+    <Grid>
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="Auto" SharedSizeGroup="AuditFunction" />
+        <ColumnDefinition Width="Auto" SharedSizeGroup="AuditStatus" />
+        <ColumnDefinition Width="{StaticResource AuditCountColumnWidth}" />
+      </Grid.ColumnDefinitions>
+      <TextBlock Grid.Column="0" Style="{StaticResource PartCaption}" TextWrapping="NoWrap"
+                 FontFamily="{StaticResource FontFamilyMono}" Foreground="{DynamicResource BrushTextPrimary}"
+                 VerticalAlignment="Center"
+                 Margin="{StaticResource AuditCellGap}" Text="{Binding Channel}" />
+      <TextBlock Grid.Column="1" TextWrapping="NoWrap" FontSize="{StaticResource FontSizeCaption}"
+                 VerticalAlignment="Center"
+                 Margin="{StaticResource AuditCellGap}"
+                 Text="{Binding StatusKey, Converter={StaticResource KeyToText}}">
+        <TextBlock.Style>
+          <Style TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{DynamicResource BrushTextSecondary}" />
+            <Style.Triggers>
+              <DataTrigger Binding="{Binding Status}" Value="real">
+                <Setter Property="Foreground" Value="{DynamicResource BrushStatusFails}" />
+              </DataTrigger>
+              <DataTrigger Binding="{Binding Status}" Value="unwatched">
+                <Setter Property="Foreground" Value="{DynamicResource BrushStatusUndetermined}" />
+              </DataTrigger>
+              <DataTrigger Binding="{Binding Status}" Value="late">
+                <Setter Property="Foreground" Value="{DynamicResource BrushStatusPartial}" />
+              </DataTrigger>
+              <DataTrigger Binding="{Binding Status}" Value="fake">
+                <Setter Property="Foreground" Value="{DynamicResource BrushStatusWorks}" />
+              </DataTrigger>
+            </Style.Triggers>
+          </Style>
+        </TextBlock.Style>
+      </TextBlock>
+      <TextBlock Grid.Column="2" Style="{StaticResource PartCaption}" TextWrapping="NoWrap"
+                 FontFamily="{StaticResource FontFamilyMono}" HorizontalAlignment="Right"
+                 VerticalAlignment="Center"
+                 Margin="{StaticResource AuditCellGap}" Text="{Binding CallsText}" />
+    </Grid>
+  </DataTemplate>
+
+  <!-- The table's header row: the same three columns in the same groups, so the words stand over the
+       values they name. A caption, not a label - it names columns, it is not content. -->
+  <ControlTemplate x:Key="AuditTableHeader">
+    <!-- A rule under the header, on the header's width only: it is what makes three captions over
+         three columns read as a table's head rather than a fourth row. -->
+    <Border BorderBrush="{DynamicResource BrushDivider}" BorderThickness="{StaticResource TableHeaderEdge}"
+            HorizontalAlignment="Left">
+      <Grid>
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="Auto" SharedSizeGroup="AuditFunction" />
+          <ColumnDefinition Width="Auto" SharedSizeGroup="AuditStatus" />
+          <ColumnDefinition Width="{StaticResource AuditCountColumnWidth}" />
+        </Grid.ColumnDefinitions>
+        <TextBlock Grid.Column="0" Style="{StaticResource PartCaption}" TextWrapping="NoWrap"
+                   Margin="{StaticResource AuditCellGap}" Text="{DynamicResource audit.col_function}" />
+        <TextBlock Grid.Column="1" Style="{StaticResource PartCaption}" TextWrapping="NoWrap"
+                   Margin="{StaticResource AuditCellGap}" Text="{DynamicResource audit.col_source}" />
+        <TextBlock Grid.Column="2" Style="{StaticResource PartCaption}" TextWrapping="NoWrap"
+                   HorizontalAlignment="Right"
+                   Margin="{StaticResource AuditCellGap}" Text="{DynamicResource audit.col_reads}" />
+      </Grid>
+    </Border>
+  </ControlTemplate>
+
+  <!--
+    ============================ Callout ============================
+
+    A sentence the reader has to act on, set apart from the prose around it: a warning the session
+    raised. A filled box on the alternate surface, so a run of them reads as a list of separate things
+    rather than one paragraph, and the text wraps to its full length - a warning clipped at the edge is
+    one the reader cannot act on, which is the whole point of having raised it. Padded like a control,
+    not like a card: it is an item in a list, not a section of the screen.
+  -->
+  <Style x:Key="PartCallout" TargetType="Border">
+    <Setter Property="Background" Value="{DynamicResource BrushBgSurfaceAlt}" />
+    <Setter Property="CornerRadius" Value="{StaticResource RadiusSm}" />
+    <Setter Property="Padding" Value="{StaticResource ChipPadding}" />
+    <Setter Property="Margin" Value="{StaticResource StackGapSm}" />
+    <Setter Property="SnapsToDevicePixels" Value="True" />
+  </Style>
+
+  <DataTemplate x:Key="CalloutRow">
+    <Border Style="{StaticResource PartCallout}">
+      <TextBlock Style="{StaticResource PartNote}" Text="{Binding Converter={StaticResource KeyToText}}" />
+    </Border>
+  </DataTemplate>
 
 </ResourceDictionary>

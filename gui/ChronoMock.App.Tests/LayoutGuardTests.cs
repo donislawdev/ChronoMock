@@ -768,6 +768,31 @@ public class LayoutGuardTests
         Assert.True(pendingWhenLive, "a running session no longer says its report is on the way");
     }
 
+    /// <summary>
+    /// The form "Set up again" lands on says which field it could not fill. The note used to live on the
+    /// result screen only, and Set up again now leaves that screen for the form - so the sentence has to be
+    /// on the form, visible, in the reader's words.
+    /// </summary>
+    /// <remarks>
+    /// Measured on the render, because a count of rendered elements stays positive with the note removed or
+    /// either of its bindings broken (a review of the sheet test said as much). Reversal probe: drop
+    /// HistoryLoadNote from the setup footer, or bind its Text to a key that does not exist, and this reddens.
+    /// </remarks>
+    [Fact]
+    public void The_form_set_up_again_lands_on_names_the_field_it_could_not_fill()
+    {
+        var (visible, text) = WpfTestHost.InvokeSettled(() =>
+        {
+            var view = new SetupPhaseView { DataContext = PhaseStates.SetupAfterRepeatWithMissingZone() };
+            LayoutProbe.Settle(view);
+            var note = LayoutProbe.Walk(view).Single(e => e.Name == "HistoryLoadNote");
+            return (note.IsVisible, note.Text);
+        });
+
+        Assert.True(visible, "the note about the zone the load could not fill is not on the form");
+        Assert.Equal(TranslationKeyConverter.Resolve("history.load_zone_missing"), text);
+    }
+
     /// <summary>The rebuilt phases in every state the sheet draws, with the section that holds the state opened.</summary>
     /// <remarks>Lazy on purpose: every view is created inside the caller's dispatcher call.</remarks>
     private static IEnumerable<(string Name, FrameworkElement View)> PhaseStatesOnCanvas()

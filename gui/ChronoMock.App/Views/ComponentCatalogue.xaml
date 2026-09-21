@@ -173,6 +173,28 @@
         </StackPanel>
       </Border>
 
+      <!-- ============ Date input ============ -->
+      <TextBlock Text="Date input" Style="{StaticResource PartHeading}" Margin="{StaticResource StackGapLg}" />
+
+      <Border Style="{StaticResource PartCard}" Margin="{StaticResource StackGapSm}">
+        <StackPanel>
+          <TextBlock Style="{StaticResource PartCaption}"
+                     Text="Every date on a screen is typed and picked the same way: an ISO field and a calendar behind it. The moment input is this part plus a time field. A picked day writes the text, a typed date moves the calendar, and the message for a bad date is the consumer's, under the row." />
+          <WrapPanel Margin="{StaticResource StackGapSm}">
+            <controls:DateInput Margin="{StaticResource SpaceXs}" AccessibleName="{DynamicResource moment.date_name}"
+                                DataContext="{Binding SampleEmptyDate, RelativeSource={RelativeSource AncestorType=UserControl}}" />
+            <controls:DateInput Margin="{StaticResource SpaceXs}" AccessibleName="{DynamicResource moment.date_name}"
+                                DataContext="{Binding SampleFilledDate, RelativeSource={RelativeSource AncestorType=UserControl}}" />
+            <controls:DateInput Margin="{StaticResource SpaceXs}" AccessibleName="{DynamicResource moment.date_name}" IsEnabled="False"
+                                DataContext="{Binding SampleFilledDate, RelativeSource={RelativeSource AncestorType=UserControl}}" />
+          </WrapPanel>
+          <WrapPanel>
+            <controls:MomentInput Margin="{StaticResource SpaceXs}"
+                                  DataContext="{Binding SampleFilledDate, RelativeSource={RelativeSource AncestorType=UserControl}}" />
+          </WrapPanel>
+        </StackPanel>
+      </Border>
+
       <!-- ============ Check ============ -->
       <TextBlock Text="Check" Style="{StaticResource PartHeading}" Margin="{StaticResource StackGapLg}" />
 
@@ -425,35 +447,48 @@
                       DataContext="{Binding SampleExtremeClock, RelativeSource={RelativeSource AncestorType=UserControl}}"
                       Margin="{StaticResource StackGapSm}" />
 
-      <!-- ============ Fact list ============ -->
-      <TextBlock Text="Fact list" Style="{StaticResource PartHeading}" Margin="{StaticResource StackGapLg}" />
+      <!-- ============ Audit table ============ -->
+      <TextBlock Text="Audit table" Style="{StaticResource PartHeading}" Margin="{StaticResource StackGapLg}" />
 
       <TextBlock Style="{StaticResource PartCaption}" Margin="{StaticResource StackGapSm}"
-                 Text="Read-only, so no edge and no fill - an edge means you can act on something. The count comes from the list itself rather than from the caller, so a name and the rows under it cannot disagree. Rows are monospaced because they are data in columns, not prose." />
+                 Text="One row per function the session saw: the name, where it read its time from as a word in the meaning ink, and how many times. Every status the fold can produce, a name longer than any real one, a count past six digits, and rows with no count at all - the columns share their widths, so the header and the rows agree wherever a column starts." />
+
+      <Border Style="{StaticResource PartCard}" Margin="{StaticResource StackGapSm}">
+        <StackPanel Grid.IsSharedSizeScope="True">
+          <ContentControl Template="{StaticResource AuditTableHeader}" Focusable="False" IsTabStop="False" />
+          <ItemsControl ItemTemplate="{StaticResource AuditRowTemplate}"
+                        ItemsSource="{Binding SampleAuditRows, RelativeSource={RelativeSource AncestorType=UserControl}}" />
+        </StackPanel>
+      </Border>
+
+      <!-- ============ Note list ============ -->
+      <TextBlock Text="Note list" Style="{StaticResource PartHeading}" Margin="{StaticResource StackGapLg}" />
+
+      <TextBlock Style="{StaticResource PartCaption}" Margin="{StaticResource StackGapSm}"
+                 Text="A named list of sentences, counted by the list itself so a name and the rows under it cannot disagree. Read-only, so no edge and no fill. Two rows: the plain prose row the cleanup list uses, and the callout row the warnings use - each sentence in its own box, so a run of them reads as separate things to act on." />
 
       <Border Style="{StaticResource PartCard}" Margin="{StaticResource StackGapSm}">
         <StackPanel>
-          <HeaderedItemsControl Style="{StaticResource PartFactList}" Header="Covered channels">
-            <HeaderedItemsControl.ItemsSource>
-              <x:Array Type="sys:String">
-                <sys:String>GetSystemTimeAsFileTime  x128004</sys:String>
-                <sys:String>GetTickCount64  x44910</sys:String>
-                <sys:String>GetLocalTime  x3517</sys:String>
-              </x:Array>
-            </HeaderedItemsControl.ItemsSource>
-          </HeaderedItemsControl>
-
-          <!-- Empty, which is a state and not a mistake: a session can cover nothing, and the count has
-               to say zero rather than the list vanishing and leaving the reader to guess. -->
-          <HeaderedItemsControl Style="{StaticResource PartFactList}" Header="Uncovered channels">
+          <!-- Empty, which is a state and not a mistake: a session can leave nothing behind, and the count
+               has to say zero rather than the list vanishing and leaving the reader to guess. -->
+          <HeaderedItemsControl Style="{StaticResource PartNoteList}" Header="Cleanup">
             <HeaderedItemsControl.ItemsSource>
               <x:Array Type="sys:String" />
             </HeaderedItemsControl.ItemsSource>
           </HeaderedItemsControl>
 
+          <HeaderedItemsControl Style="{StaticResource PartNoteList}" Header="Cleanup">
+            <HeaderedItemsControl.ItemsSource>
+              <x:Array Type="sys:String">
+                <sys:String>cleanup.chromium_profile_left</sys:String>
+              </x:Array>
+            </HeaderedItemsControl.ItemsSource>
+          </HeaderedItemsControl>
+
           <!-- The NOTE variant: same list, prose rows. The extremes together - more rows than the cap
                allows, and sentences far longer than the card, which is what the wrapping is for. -->
-          <HeaderedItemsControl Style="{StaticResource PartNoteList}" Header="Warnings">
+          <HeaderedItemsControl Style="{StaticResource PartNoteList}" Header="Warnings"
+                                ItemTemplate="{StaticResource CalloutRow}">
             <HeaderedItemsControl.ItemsSource>
               <x:Array Type="sys:String">
                 <sys:String>coverage.channel_installed_late</sys:String>

@@ -15,7 +15,10 @@ public enum BaseKind
     /// <summary>A specific moment read in UTC rather than in the session zone. For a base whose
     /// meaning is an instant - Unix epoch zero, the 32-bit time_t limit - which must not move with
     /// the tester's zone. The conversion belongs to the core, so this kind travels to it as
-    /// <c>--base-utc</c> rather than being converted here (one arithmetic, one place).</summary>
+    /// <c>--base-utc</c> rather than being converted here (one arithmetic, one place).
+    /// <para>The unpacker's spelling of a preset's <c>absolute_utc</c>, not a choice on the screen: the
+    /// picker offers three kinds, and a UTC instant is shown as <see cref="Specific"/> with the zone
+    /// picker on UTC, so the one control that names zones is the one that says it.</para></summary>
     SpecificUtc,
 }
 
@@ -223,6 +226,10 @@ public sealed class ParamInputViewModel : ObservableObject
         new VariantOption("day_after", "calc.variant.day_after"),
     ];
 
+    // The shape of a complete ISO date, not its validity - the engine judges the calendar.
+    private static readonly System.Text.RegularExpressions.Regex DateShape =
+        new(@"^\d{4}-\d{2}-\d{2}$", System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+
     private string _dateText = string.Empty;
     private string _amount;
     private UnitOption _unit;
@@ -249,7 +256,38 @@ public sealed class ParamInputViewModel : ObservableObject
     public bool IsVariant { get; }
     public IReadOnlyList<VariantOption> VariantOptions => VariantChoices;
 
-    public string DateText { get => _dateText; set => Set(ref _dateText, value); }
+    public string DateText
+    {
+        get => _dateText;
+        set
+        {
+            if (Set(ref _dateText, value))
+            {
+                RaisePropertyChanged(nameof(SelectedDate));
+            }
+        }
+    }
+
+    /// <summary>The calendar popup of the shared date input binds here, the way it does on a MomentField:
+    /// a picked day writes the ISO date text, a typed valid ISO date moves the calendar. Culture-invariant
+    /// either way (rule 2). Null while the text is not a date - the calendar then shows no selection
+    /// rather than a guess.</summary>
+    public DateTime? SelectedDate
+    {
+        get => DateTime.TryParseExact(
+            _dateText, "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture,
+            System.Globalization.DateTimeStyles.None, out var d)
+            ? d
+            : null;
+        set
+        {
+            if (value is { } picked)
+            {
+                DateText = picked.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
+            }
+        }
+    }
+
     public string Amount { get => _amount; set => Set(ref _amount, value); }
     public UnitOption Unit { get => _unit; set => Set(ref _unit, value); }
     public VariantOption Variant { get => _variant; set => Set(ref _variant, value); }
@@ -274,7 +312,12 @@ public sealed class ParamInputViewModel : ObservableObject
 
         if (IsDate)
         {
-            return string.IsNullOrWhiteSpace(_dateText) ? null : new DateValue(_dateText.Trim());
+            // Only a date-shaped text is a value. The field updates on every keystroke now that it is the
+            // shared date input (the calendar needs the live text), so "2026-0" on the way to a date must
+            // count as not entered yet rather than reach the engine and flash an error mid-word. A full
+            // shape that is no date (2026-02-31) still goes through, so the engine's own reason shows.
+            var text = _dateText.Trim();
+            return DateShape.IsMatch(text) ? new DateValue(text) : null;
         }
 
         // A parameter type this build does not resolve, where the engine answers an honest "not built" and
@@ -403,12 +446,18 @@ public sealed class CalculatorViewModel : ObservableObject
         _client = client ?? throw new ArgumentNullException(nameof(client));
         _presetsDir = presetsDir;
 
+        // 🔴 Three kinds on screen, not four. "Specific instant (UTC)" was a fourth entry that meant
+        // "Specific date, read in UTC" - a zone folded into the base kind, from before the zone picker
+        // existed. Beside that picker it was one idea in two places, and it left the picker LYING: a
+        // preset that carried a UTC instant set this kind while the picker went on saying "this machine".
+        // A UTC instant now arrives as a Specific date with the picker on UTC, which says the same thing
+        // in the one place that says zones. The engine reads --base X --zone +00:00 as the same instant
+        // as --base-utc X (verified on the CLI: epoch 2147570047 both ways, 2026-09-21).
         BaseKinds =
         [
             new BaseKindOption(BaseKind.Today, "calc.base.today"),
             new BaseKindOption(BaseKind.Now, "calc.base.now"),
             new BaseKindOption(BaseKind.Specific, "calc.base.specific"),
-            new BaseKindOption(BaseKind.SpecificUtc, "calc.base.specific_utc"),
         ];
         _baseKind = BaseKinds[0];
 
@@ -988,7 +1037,15 @@ public sealed class CalculatorViewModel : ObservableObject
                     RemoveStep(Steps[0]);
                 }
 
-                SelectedBase = BaseKinds.First(b => b.Kind == unpacked.Base);
+                // A scenario defines its moment whole, zone included: a UTC instant (epoch zero, the 2038
+                // boundary) is a Specific date read in UTC, and every other base is read in the host's
+                // zone, the way the calculator always read it. Set on every apply, so a UTC scenario's
+                // zone does not linger under the next one and quietly turn its "Today" into the UTC day.
+                var isUtcInstant = unpacked.Base == BaseKind.SpecificUtc;
+                SelectedBase = BaseKinds.First(b => b.Kind == (isUtcInstant ? BaseKind.Specific : unpacked.Base));
+                SelectedBaseZone = isUtcInstant
+                    ? BaseZones.First(z => !z.IsHost && z.BiasMinutes == 0)
+                    : BaseZones.First(z => z.IsHost);
                 if (unpacked.Base is BaseKind.Specific or BaseKind.SpecificUtc)
                 {
                     Base.LoadCanonical(unpacked.BaseText);
