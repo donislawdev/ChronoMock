@@ -360,15 +360,7 @@ pub(crate) fn cdp_session(target: TargetSpec, time: TimeSpec, reader: BufReader<
         emit(&event);
     }
 
-    emit(&Event::SessionVerdict {
-        v: PROTOCOL_VERSION,
-        verdict: token.to_string(),
-        reason_key: reason.to_string(),
-        process_count: seen.len() as u32,
-        // No PID registry on this path: a CDP session tracks JS contexts, not injected processes, and
-        // its per-context warnings already travel on the coverage events above.
-        warning_keys: Vec::new(),
-    });
+    emit_cdp_session_verdict(token, reason, seen.len() as u32);
 
     // Session timing from the live clock (correct across any in-flight rate changes and jumps): real is
     // the whole session, fake is the elapsed duration, and the end wall is where the fake clock landed.
@@ -396,6 +388,21 @@ pub(crate) fn cdp_session(target: TargetSpec, time: TimeSpec, reader: BufReader<
 
 /// Evaluate a JS expression in every attached context (best-effort: a context that just closed errors
 /// and is skipped, so an in-flight update stays honest for the rest).
+/// The family verdict of a CDP session. No PID registry on this path: a CDP session tracks JS
+/// contexts, not injected processes, so its per-context warnings already travel on the coverage
+/// events, and it spawns nothing the hook could fail to follow - the two child fields stay empty.
+fn emit_cdp_session_verdict(token: &str, reason: &str, contexts: u32) {
+    emit(&Event::SessionVerdict {
+        v: PROTOCOL_VERSION,
+        verdict: token.to_string(),
+        reason_key: reason.to_string(),
+        process_count: contexts,
+        warning_keys: Vec::new(),
+        uncovered_children: Vec::new(),
+        uncovered_children_total: 0,
+    });
+}
+
 pub(crate) fn cdp_broadcast(client: &mut cdp::CdpClient, contexts: &[CdpContext], expr: &str) {
     for ctx in contexts {
         let _ = client.call(

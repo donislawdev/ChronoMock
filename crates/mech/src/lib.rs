@@ -20,15 +20,15 @@ use chrono_core::{ChannelCoverage, Coverage, SessionSpec, TimeMode};
 use chrono_ctl::{
     cov_at, ctl_size, freeze_dur, freeze_qpc, header_is_ours, read_anchor, read_calls,
     read_core_pid, read_dur, read_installed, read_late_installed, read_pid, read_pid_count, read_qpc,
-    read_uninjected_children, read_waits_at_floor,
+    read_uncovered_child, read_uncovered_children_count, read_uninjected_children, read_waits_at_floor,
     write_anchor, write_anchor_full, write_header,
     write_core_pid, write_scale_dur, write_scale_qpc, write_tz_bias, ChannelCategory, ChannelModule,
     Cov, Ctl, CHANNELS, IDX_TIMEGETTIME, MAX_COV_PIDS,
 };
 use windows::core::{s, PCWSTR, PWSTR};
 use windows::Win32::Foundation::{
-    CloseHandle, GetLastError, ERROR_ALREADY_EXISTS, HANDLE, INVALID_HANDLE_VALUE, WAIT_ABANDONED,
-    WAIT_OBJECT_0, WAIT_TIMEOUT,
+    CloseHandle, GetLastError, ERROR_ALREADY_EXISTS, HANDLE, INVALID_HANDLE_VALUE, UNICODE_STRING,
+    WAIT_ABANDONED, WAIT_OBJECT_0, WAIT_TIMEOUT,
 };
 use windows::Win32::System::Diagnostics::Debug::WriteProcessMemory;
 use windows::Win32::System::LibraryLoader::{GetModuleHandleA, GetProcAddress};
@@ -44,9 +44,10 @@ use windows::Win32::System::SystemInformation::{
 use windows::Win32::System::Time::{GetTimeZoneInformation, TIME_ZONE_INFORMATION};
 use windows::Win32::System::Threading::{
     CreateMutexW, CreateProcessW, CreateRemoteThread, GetCurrentProcess, GetCurrentProcessId,
-    GetExitCodeProcess, GetExitCodeThread, IsWow64Process2, OpenProcess, ResumeThread,
-    TerminateProcess, WaitForSingleObject, CREATE_SUSPENDED, LPTHREAD_START_ROUTINE,
-    PROCESS_INFORMATION, PROCESS_SYNCHRONIZE, STARTUPINFOW,
+    GetExitCodeProcess, GetExitCodeThread, IsWow64Process2, OpenProcess, QueryFullProcessImageNameW,
+    ResumeThread, TerminateProcess, WaitForSingleObject, CREATE_SUSPENDED, LPTHREAD_START_ROUTINE,
+    PROCESS_INFORMATION, PROCESS_NAME_FORMAT, PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_SYNCHRONIZE,
+    STARTUPINFOW,
 };
 use windows::Win32::System::Performance::QueryPerformanceCounter;
 use windows::Win32::System::WindowsProgramming::QueryUnbiasedInterruptTime;
@@ -125,10 +126,109 @@ pub struct Session {
     /// as a duplicate. The coverage itself needs no bookkeeping here, since it lives in the control
     /// block this session already holds mapped and so outlives every process that writes it (S-9).
     reported_slots: Vec<bool>,
+    /// How many entries of each slot's `uncovered_children` ring have been handed out already, so
+    /// `poll_uncovered_children` names each child exactly once. Indexed by SLOT like `reported_slots`,
+    /// and for the same reason. An entry claimed but not yet written (pid 0) stops the walk for that
+    /// slot until the next poll - the writer fills it within a few instructions of claiming it.
+    consumed_children: Vec<u32>,
     /// The session lock, held for as long as the session lives. Dropped last, so a second core
     /// cannot start until this one has released the control block it was using.
     _lock: SessionLock,
 }
+
+/// A process this session's family spawned and the hook did not follow into: it ran on the real
+/// clock for as long as it lived, whatever it read. `image` is the executable's file name and
+/// `command_line` what it was started with, both when the child was still there to ask and `None`
+/// when it had already gone. The command line is raw text from the target's world - the core reads
+/// the one token it needs out of it and never forwards the rest.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UncoveredChild {
+    pub pid: u32,
+    pub parent_pid: u32,
+    pub image: Option<String>,
+    pub command_line: Option<String>,
+}
+
+/// The file name of a running process's executable and its command line, or `(None, None)` when
+/// the process cannot be opened - which is the ordinary outcome for a child that has already exited,
+/// and the honest one for a process this user's token may not query. Limited-information access is
+/// enough for both and is granted for a lower-integrity child (a sandboxed renderer) by a
+/// medium-integrity parent. One open for the two questions, because the answers describe the same
+/// instant: a child found alive for its name is asked for its command line in the same breath.
+fn describe_process(pid: u32) -> (Option<String>, Option<String>) {
+    unsafe {
+        let Ok(h) = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid) else {
+            return (None, None);
+        };
+        let image = image_name_of(h);
+        let command_line = command_line_of(h);
+        let _ = CloseHandle(h);
+        (image, command_line)
+    }
+}
+
+/// # Safety
+/// `h` must be an open process handle with at least limited query access.
+unsafe fn image_name_of(h: HANDLE) -> Option<String> { unsafe {
+    let mut buf = [0u16; 1024];
+    let mut len = buf.len() as u32;
+    QueryFullProcessImageNameW(h, PROCESS_NAME_FORMAT(0), PWSTR(buf.as_mut_ptr()), &mut len).ok()?;
+    let full = String::from_utf16_lossy(&buf[..len as usize]);
+    let name = full.rsplit(['\\', '/']).next().unwrap_or(&full);
+    Some(name.to_string())
+}}
+
+/// `NtQueryInformationProcess` as ntdll exports it. Resolved by name at the call, like the hook
+/// resolves the Nt entry points it detours: the function is documented, the information class used
+/// below is not, and a build must not fail on either.
+type NtQueryInformationProcessFn =
+    unsafe extern "system" fn(HANDLE, u32, *mut c_void, u32, *mut u32) -> i32;
+
+/// `ProcessCommandLineInformation`: the information class that answers with the process's command
+/// line as a `UNICODE_STRING` whose buffer follows it in the same block. Not on the documented list
+/// for `NtQueryInformationProcess` - it is the phnt / ReactOS number, an assessment rather than a
+/// source (zasady/03 section 4), chosen over the documented road because that road reads the PEB
+/// of another process and a 32-bit core cannot read a 64-bit PEB. The failure mode of a wrong number
+/// is a status the kernel returns, never a fault: an unknown class is `STATUS_INVALID_INFO_CLASS`,
+/// a short buffer `STATUS_INFO_LENGTH_MISMATCH`, and both read here as "no command line".
+const PROCESS_COMMAND_LINE_INFORMATION: u32 = 60;
+
+/// The command line the process was started with, or `None` when the system will not say (an
+/// unknown class, a command line longer than the buffer, a process that is gone). The buffer is
+/// sized for the longest command line Windows allows plus the string header, so the second case is
+/// a hard ceiling rather than an ordinary one.
+///
+/// # Safety
+/// `h` must be an open process handle with at least limited query access.
+unsafe fn command_line_of(h: HANDLE) -> Option<String> { unsafe {
+    let ntdll = GetModuleHandleA(s!("ntdll.dll")).ok()?;
+    let entry = GetProcAddress(ntdll, s!("NtQueryInformationProcess"))?;
+    let query: NtQueryInformationProcessFn = std::mem::transmute(entry);
+    // The longest command line Windows accepts is 32 767 UTF-16 units. The header is the
+    // UNICODE_STRING, then the characters. Aligned to the header by being a Vec of u64.
+    const HEADER: usize = std::mem::size_of::<UNICODE_STRING>();
+    let bytes = HEADER + 32_768 * 2;
+    let mut block: Vec<u64> = vec![0; bytes.div_ceil(8)];
+    let base = block.as_mut_ptr() as *mut u8;
+    let mut returned: u32 = 0;
+    let status = query(h, PROCESS_COMMAND_LINE_INFORMATION, base as *mut c_void, bytes as u32, &mut returned);
+    if status < 0 {
+        return None;
+    }
+    let header = std::ptr::read_unaligned(base as *const UNICODE_STRING);
+    let start = header.Buffer.0 as *const u8;
+    let len = header.Length as usize;
+    // The string buffer has to lie inside the block the kernel filled - anything else is not a
+    // command line we read, whatever the header claims.
+    let first = base.add(HEADER) as usize;
+    let end = base.add(bytes) as usize;
+    let s = start as usize;
+    if s < first || s.checked_add(len)? > end {
+        return None;
+    }
+    let units: Vec<u16> = (0..len / 2).map(|i| std::ptr::read_unaligned((start as *const u16).add(i))).collect();
+    Some(String::from_utf16_lossy(&units))
+}}
 
 /// Both clocks at one instant, in raw UTC FILETIME ticks. The core formats them.
 pub struct SessionState {
@@ -340,6 +440,59 @@ impl Session {
             }
         }
         out
+    }
+
+    /// Children that hooked processes spawned and the hook did not follow into, not seen before -
+    /// each named once, with the image name resolved NOW, while the child is most likely still alive.
+    ///
+    /// The pid comes from the parent's slot (the hook wrote it at the spawn, see
+    /// `chrono_ctl::record_uncovered_child`), and only the pid: a detour must not allocate, so naming
+    /// happens here, on the mechanism side, from a snapshot the OS still holds. A child that has
+    /// already exited keeps its pid and loses its name - the report says so rather than guessing.
+    ///
+    /// Called at the child poll cadence (about every 100 ms) so a short-lived child is usually still
+    /// there to be named, and once more at the end so a late spawn is not lost. A parent whose ring
+    /// overflowed still reports every pid it managed to record, and `uncovered_children_total` (the
+    /// sum of the counters) carries the ones it could not.
+    pub fn poll_uncovered_children(&mut self) -> Vec<UncoveredChild> {
+        let mut out = Vec::new();
+        unsafe {
+            for i in 0..MAX_COV_PIDS {
+                let parent = read_pid(self.ctl(), i);
+                if parent == 0 {
+                    continue;
+                }
+                let cov = cov_at(self.ctl(), i);
+                let count = read_uncovered_children_count(cov) as usize;
+                let named = count.min(chrono_ctl::UNCOVERED_CHILDREN_MAX);
+                while (self.consumed_children[i] as usize) < named {
+                    let index = self.consumed_children[i] as usize;
+                    let pid = read_uncovered_child(cov, index);
+                    if pid == 0 {
+                        break; // claimed, not written yet - the next poll will see it
+                    }
+                    self.consumed_children[i] += 1;
+                    let (image, command_line) = describe_process(pid);
+                    out.push(UncoveredChild { pid, parent_pid: parent, image, command_line });
+                }
+            }
+        }
+        out
+    }
+
+    /// Every uncovered child every hooked process reported, ring overflow included - the number the
+    /// audit owes when the named list is shorter than the truth.
+    pub fn uncovered_children_total(&self) -> u32 {
+        let mut total: u32 = 0;
+        unsafe {
+            for i in 0..MAX_COV_PIDS {
+                if read_pid(self.ctl(), i) == 0 {
+                    continue;
+                }
+                total = total.saturating_add(read_uncovered_children_count(cov_at(self.ctl(), i)));
+            }
+        }
+        total
     }
 
     /// Every published process's coverage as it stands NOW, reported or not.
@@ -991,6 +1144,7 @@ pub fn prepare(spec: &SessionSpec, target: &Target, hook_dll: &Path) -> Result<P
             scale_duration: spec.scale_duration,
             scale_qpc: spec.scale_qpc,
             reported_slots,
+            consumed_children: vec![0; MAX_COV_PIDS],
             _lock: lock,
         };
         Ok(Prepared { coverage, session, vanished_lived_ms, orphan_reclaimed })

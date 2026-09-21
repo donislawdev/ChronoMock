@@ -176,5 +176,30 @@ public class ParserTests
 
         var ev = Assert.IsType<SessionVerdictEvent>(EventParser.Parse(line));
         Assert.Empty(ev.WarningKeys);
+        // The same rule for the two fields added after it: absent is empty, not a failure.
+        Assert.Empty(ev.UncoveredChildren);
+        Assert.Equal(0, ev.UncoveredChildrenTotal);
+    }
+
+    /// <summary>The children the hook never got into arrive named on the family verdict, an unnamed
+    /// one without an image key at all, and the total may exceed the named list (the core caps it).</summary>
+    [Fact]
+    public void Session_verdict_names_uncovered_children_and_carries_their_total()
+    {
+        const string line = "{\"type\":\"session_verdict\",\"v\":1,\"verdict\":\"partial\"," +
+            "\"reason_key\":\"session.family_partial_children\",\"process_count\":3," +
+            "\"warning_keys\":[\"inheritance.children_uncovered\"]," +
+            "\"uncovered_children\":[{\"pid\":8072,\"parent_pid\":28016,\"image\":\"helper.exe\",\"role\":\"renderer\"}," +
+            "{\"pid\":8073,\"parent_pid\":28016}],\"uncovered_children_total\":5}";
+
+        var ev = Assert.IsType<SessionVerdictEvent>(EventParser.Parse(line));
+        Assert.Equal(2, ev.UncoveredChildren.Count);
+        Assert.Equal(8072u, ev.UncoveredChildren[0].Pid);
+        Assert.Equal(28016u, ev.UncoveredChildren[0].ParentPid);
+        Assert.Equal("helper.exe", ev.UncoveredChildren[0].Image);
+        Assert.Equal("renderer", ev.UncoveredChildren[0].Role);
+        Assert.Null(ev.UncoveredChildren[1].Image);
+        Assert.Null(ev.UncoveredChildren[1].Role);
+        Assert.Equal(5, ev.UncoveredChildrenTotal);
     }
 }

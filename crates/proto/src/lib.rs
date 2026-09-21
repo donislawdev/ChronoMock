@@ -61,6 +61,27 @@ pub struct CoveredChannel {
     pub calls: u64,
 }
 
+/// A process the family spawned without the hook inside it - it ran on the real clock. `image` is
+/// the executable's file name when the child was still alive to be asked, absent otherwise.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct UncoveredChild {
+    pub pid: u32,
+    pub parent_pid: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub image: Option<String>,
+    /// The `--type=` role a Chromium-based engine gives each subprocess (`renderer`, `gpu-process`,
+    /// `utility`), read off the child's command line while it was alive. Absent for a child without
+    /// one, or one that was gone before it could be asked. A renderer here is the process the
+    /// application's pages run in - the one that decides what those pages read.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub role: Option<String>,
+}
+
+/// The most uncovered children one `session_verdict` names. A parent's ring holds 32 and the
+/// registry has 256 slots, so the unbounded list could be thousands of entries in one NDJSON line
+/// for a family that fans out - the total still travels, the names past this point do not.
+pub const UNCOVERED_CHILDREN_WIRE_MAX: usize = 64;
+
 /// One clock reading: the wall-clock text plus the session zone it is expressed in.
 /// Both the fake and the real clock in a `state` event carry their zone (two legal
 /// views of the same fact).
@@ -196,6 +217,16 @@ pub enum Event {
         /// (additive evolution, zasady/15).
         #[serde(default)]
         warning_keys: Vec<String>,
+        /// Processes this family spawned and the hook did not follow into (docs/zasady/SLOWNIK
+        /// `uncoveredChild`). Named here, on the one event that speaks for the whole family, because
+        /// none of them has a `coverage` event of its own - that is what being uncovered means. The
+        /// list is capped at [`UNCOVERED_CHILDREN_WIRE_MAX`] entries so one line stays a line a client
+        /// can read, and `uncovered_children_total` is the true number regardless. Additive like
+        /// `warning_keys`: absent in older messages, which deserialize to empty and zero.
+        #[serde(default)]
+        uncovered_children: Vec<UncoveredChild>,
+        #[serde(default)]
+        uncovered_children_total: u32,
     },
     Ended {
         v: u32,
@@ -394,14 +425,39 @@ mod tests {
             reason_key: "session.family_covered".into(),
             process_count: 2,
             warning_keys: vec!["coverage.pid_registry_full".into()],
+            uncovered_children: vec![
+                UncoveredChild {
+                    pid: 4242,
+                    parent_pid: 100,
+                    image: Some("helper.exe".into()),
+                    role: Some("renderer".into()),
+                },
+                UncoveredChild { pid: 4243, parent_pid: 100, image: None, role: None },
+            ],
+            uncovered_children_total: 3,
         };
         let line = ev.to_ndjson();
         assert!(line.starts_with(r#"{"type":"session_verdict""#), "got {line}");
+        // An unnamed child carries no `image` key at all, rather than a null the panel would render.
+        assert!(line.contains(r#"{"pid":4243,"parent_pid":100}"#), "got {line}");
         match parse_event(&line).unwrap() {
-            Event::SessionVerdict { verdict, process_count, warning_keys, .. } => {
+            Event::SessionVerdict {
+                verdict,
+                process_count,
+                warning_keys,
+                uncovered_children,
+                uncovered_children_total,
+                ..
+            } => {
                 assert_eq!(verdict, "works");
                 assert_eq!(process_count, 2);
                 assert_eq!(warning_keys, vec!["coverage.pid_registry_full".to_string()]);
+                assert_eq!(uncovered_children.len(), 2);
+                assert_eq!(uncovered_children[0].image.as_deref(), Some("helper.exe"));
+                assert_eq!(uncovered_children[0].role.as_deref(), Some("renderer"));
+                assert_eq!(uncovered_children[1].image, None);
+                assert_eq!(uncovered_children[1].role, None);
+                assert_eq!(uncovered_children_total, 3);
             }
             _ => panic!("wrong event variant"),
         }
@@ -413,9 +469,14 @@ mod tests {
     fn a_session_verdict_without_warning_keys_still_parses() {
         let line = r#"{"type":"session_verdict","v":1,"verdict":"works","reason_key":"session.family_covered","process_count":1}"#;
         match parse_event(line).expect("an older core's message must still parse") {
-            Event::SessionVerdict { warning_keys, process_count, .. } => {
+            Event::SessionVerdict {
+                warning_keys, process_count, uncovered_children, uncovered_children_total, ..
+            } => {
                 assert!(warning_keys.is_empty(), "absent means no warnings, never a parse failure");
                 assert_eq!(process_count, 1);
+                // The same rule for the two fields added after it: absent is empty, not a failure.
+                assert!(uncovered_children.is_empty());
+                assert_eq!(uncovered_children_total, 0);
             }
             _ => panic!("wrong event variant"),
         }

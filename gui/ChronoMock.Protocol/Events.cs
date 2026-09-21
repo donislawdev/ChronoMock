@@ -88,6 +88,16 @@ public sealed record SessionVerdictEvent : ChronoEvent
     /// core built before the field existed, which deserializes to the empty default.
     /// </summary>
     [JsonPropertyName("warning_keys")] public IReadOnlyList<string> WarningKeys { get; init; } = [];
+
+    /// <summary>
+    /// Processes the family spawned and the hook did not follow into - each ran on the real clock
+    /// (SLOWNIK <c>uncoveredChild</c>). Named on this event because none of them has a <c>coverage</c>
+    /// event of its own. The core names at most 64 and carries the true total beside them, so the
+    /// two can differ and the total is the number to show. Absent in messages from an older core,
+    /// which deserializes to empty and zero.
+    /// </summary>
+    [JsonPropertyName("uncovered_children")] public IReadOnlyList<UncoveredChild> UncoveredChildren { get; init; } = [];
+    [JsonPropertyName("uncovered_children_total")] public int UncoveredChildrenTotal { get; init; }
 }
 
 public sealed record EndedEvent : ChronoEvent

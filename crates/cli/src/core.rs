@@ -16,13 +16,16 @@ use std::time::{Duration, Instant};
 use chrono_core::{
     filetime_utc_to_wall, verdict_from_coverage, Moment, SessionSpec, TimeMode, Verdict,
 };
+use chrono_mech::UncoveredChild;
 use chrono_proto::{
     parse_command, Command, Event, MomentSpec, TargetSpec, TimeSpec, PROTOCOL_VERSION,
+    UNCOVERED_CHILDREN_WIRE_MAX,
 };
 
 use crate::cdp;
 use crate::cdp_session::cdp_session;
 use crate::cli::{this_bitness, CORE_VERSION};
+use crate::embedded::{is_renderer_role, is_web_engine_subprocess, role_from_command_line};
 use crate::events::{
     command_id, emit, emit_coverage, ended_clean, jump_error_key, state_event,
     state_event_from, unsupported_command,
@@ -284,7 +287,12 @@ pub(crate) fn run_session(
     // Did the fake clock ever stand on the last instant this build can represent (R2-X2)?
     let mut clock_clamped = false;
     let mut duration_clamped = false;
+    // Children the hook did NOT follow into, named as they are spawned (SLOWNIK `uncoveredChild`).
+    // Polled at the child cadence for the same reason children are: a short-lived one has to be
+    // asked its name while it is still there.
+    let mut uncovered_children: Vec<UncoveredChild> = Vec::new();
     fold_children(&mut session, &mut family, &mut family_pids);
+    uncovered_children.extend(session.poll_uncovered_children());
 
     let heartbeat = Duration::from_secs(1);
     // Children are polled faster than the heartbeat. A child publishes its evidence in a section
@@ -313,6 +321,7 @@ pub(crate) fn run_session(
         let now = Instant::now();
         if now >= child_deadline {
             fold_children(&mut session, &mut family, &mut family_pids);
+            uncovered_children.extend(session.poll_uncovered_children());
             child_deadline = now + child_poll;
         }
         // The heartbeat keeps its own once-a-second cadence: `state` and the liveness check stay
@@ -336,7 +345,15 @@ pub(crate) fn run_session(
         }
     }
 
-    close_session(session, family, family_pids, clock_clamped, duration_clamped, target_exit)
+    close_session(
+        session,
+        family,
+        family_pids,
+        uncovered_children,
+        clock_clamped,
+        duration_clamped,
+        target_exit,
+    )
 }
 
 /// Act on one command that arrived mid-session.
@@ -444,12 +461,23 @@ pub(crate) fn close_session(
     mut session: chrono_mech::Session,
     mut family: Verdict,
     mut family_pids: HashSet<u32>,
+    mut uncovered_children: Vec<UncoveredChild>,
     clock_clamped: bool,
     duration_clamped: bool,
     target_exit: Option<i32>,
 ) -> i32 {
     // Final fold so a child that joined since the last heartbeat still counts in the family.
     fold_children(&mut session, &mut family, &mut family_pids);
+    uncovered_children.extend(session.poll_uncovered_children());
+    let uncovered_children_total = session.uncovered_children_total();
+    // A process nobody reached ran on the real clock: that is "something uncovered" for the family,
+    // so the family cannot be `works` (untouchable rule 4 at the session level - the verdict model
+    // already says so, this is the fact it was never fed). Folded as a verdict rather than a flag so
+    // the same `combine` rule that rolls up channels rolls up processes.
+    let any_uncovered_children = uncovered_children_total > 0 || !uncovered_children.is_empty();
+    if any_uncovered_children {
+        family = family.combine(Verdict::Fails);
+    }
     // Capture the session clocks before ending so `ended` can state the duration and the fake wall
     // clock reached - reliably, even for a session too short to have emitted a heartbeat.
     let final_state = session.state();
@@ -471,17 +499,33 @@ pub(crate) fn close_session(
     session.end();
     // The sticky flag OR the final sample, so a session too short to have emitted a heartbeat still
     // reports a clamped clock.
-    let session_warnings = native_session_warnings(
+    let mut session_warnings = native_session_warnings(
         uncovered_processes,
         clock_clamped || final_state.clock_at_range_end(),
         duration_clamped || final_state.duration_at_range_end(),
     );
+    session_warnings.extend(uncovered_children_warnings(&uncovered_children, uncovered_children_total));
+    // The wire names the first UNCOVERED_CHILDREN_WIRE_MAX and carries the true total beside them.
+    // The image name is text from the target's world, so it passes the same sieve as everything
+    // else the target writes before it reaches a terminal or the panel.
+    let named: Vec<chrono_proto::UncoveredChild> = uncovered_children
+        .iter()
+        .take(UNCOVERED_CHILDREN_WIRE_MAX)
+        .map(|c| chrono_proto::UncoveredChild {
+            pid: c.pid,
+            parent_pid: c.parent_pid,
+            image: c.image.as_deref().map(crate::cdp::sanitise_target_text),
+            role: c.command_line.as_deref().and_then(role_from_command_line),
+        })
+        .collect();
     emit(&Event::SessionVerdict {
         v: PROTOCOL_VERSION,
         verdict: family.wire().into(),
-        reason_key: session_reason_key(family).into(),
+        reason_key: session_reason_key(family, any_uncovered_children).into(),
         process_count: 1 + family_pids.len() as u32,
         warning_keys: session_warnings,
+        uncovered_children: named,
+        uncovered_children_total,
     });
     emit(&Event::Ended {
         v: PROTOCOL_VERSION,
@@ -513,13 +557,50 @@ pub(crate) fn fold_children(
 }
 
 /// Stable reason key for the family (session) verdict, scoped to the whole family.
-pub(crate) fn session_reason_key(v: Verdict) -> &'static str {
-    match v {
-        Verdict::Works => "session.family_covered",
-        Verdict::Partial => "session.family_partial",
-        Verdict::Fails => "session.family_uncovered",
-        Verdict::Undetermined => "session.family_undetermined",
+///
+/// With uncovered children the family is `partial` or `fails` by construction (`close_session`
+/// folds a `Fails` in), and the reason has to say WHY in words a tester can act on: not "some
+/// channels were queried but not covered" - which is about what a hooked process read - but that a
+/// process of this application ran with no hook in it at all.
+pub(crate) fn session_reason_key(v: Verdict, uncovered_children: bool) -> &'static str {
+    match (v, uncovered_children) {
+        (Verdict::Works | Verdict::Partial, true) => "session.family_partial_children",
+        (Verdict::Fails | Verdict::Undetermined, true) => "session.family_uncovered_children",
+        (Verdict::Works, false) => "session.family_covered",
+        (Verdict::Partial, false) => "session.family_partial",
+        (Verdict::Fails, false) => "session.family_uncovered",
+        (Verdict::Undetermined, false) => "session.family_undetermined",
     }
+}
+
+/// The session-level warnings that uncovered children raise, each said only when it happened and
+/// each claiming exactly what the evidence supports:
+/// - that some were spawned at all (`total` rather than the list's length, because a parent's ring
+///   can overflow and the count is the number the audit owes),
+/// - that one of them is a Chromium RENDERER, by the role on its command line - the process the
+///   application's pages run in, so every page read the real clock (the strong claim),
+/// - or, failing that, that an embedded web engine's processes are among them by image name - an
+///   engine is in this application and part of it ran real, but what its pages read is not
+///   established, because the same image name belongs to the GPU and utility processes and a
+///   renderer that exited before it could be asked leaves no role behind (the weak claim).
+///
+/// The strong claim subsumes the weak one. Both are floors: a child gone before the poll has no name
+/// and no role.
+pub(crate) fn uncovered_children_warnings(children: &[UncoveredChild], total: u32) -> Vec<String> {
+    let mut warnings = Vec::new();
+    if total > 0 || !children.is_empty() {
+        warnings.push("inheritance.children_uncovered".to_string());
+    }
+    let renderer = children.iter().any(|c| {
+        c.command_line.as_deref().and_then(role_from_command_line).is_some_and(|r| is_renderer_role(&r))
+    });
+    let engine = children.iter().any(|c| c.image.as_deref().is_some_and(is_web_engine_subprocess));
+    if renderer {
+        warnings.push("embedded.web_engine_uncovered".to_string());
+    } else if engine {
+        warnings.push("embedded.web_engine_processes_uncovered".to_string());
+    }
+    warnings
 }
 
 /// Resolve a `MomentSpec` to a UTC FILETIME for a jump. Absolute moments only here
@@ -818,5 +899,64 @@ mod tests {
             vec!["time.fake_clock_clamped", "time.duration_axis_clamped"],
             "and both can be true at once"
         );
+    }
+
+    fn child(pid: u32, image: Option<&str>, command_line: Option<&str>) -> UncoveredChild {
+        UncoveredChild {
+            pid,
+            parent_pid: 1,
+            image: image.map(str::to_string),
+            command_line: command_line.map(str::to_string),
+        }
+    }
+
+    /// The strong claim - every page read the real clock - needs a renderer, and the renderer is
+    /// known by its role, not by the image name the GPU and utility processes share with it. An
+    /// engine image without a renderer among the named children gets the weak claim, and a plain
+    /// helper gets neither. The count alone (a ring that overflowed with nothing named) still says
+    /// that children were uncovered.
+    #[test]
+    fn a_web_engine_warning_claims_only_what_the_role_proves() {
+        assert!(uncovered_children_warnings(&[], 0).is_empty());
+        assert_eq!(uncovered_children_warnings(&[], 3), vec!["inheritance.children_uncovered"]);
+        let helper = child(10, Some("helper.exe"), Some("helper.exe --quiet"));
+        assert_eq!(uncovered_children_warnings(&[helper], 1), vec!["inheritance.children_uncovered"]);
+
+        let gpu = child(11, Some("msedgewebview2.exe"), Some("x.exe --type=gpu-process"));
+        assert_eq!(
+            uncovered_children_warnings(std::slice::from_ref(&gpu), 1),
+            vec!["inheritance.children_uncovered", "embedded.web_engine_processes_uncovered"],
+            "an engine image without a renderer is the weak claim"
+        );
+        let nameless = child(12, Some("QtWebEngineProcess.exe"), None);
+        assert_eq!(
+            uncovered_children_warnings(&[nameless], 1),
+            vec!["inheritance.children_uncovered", "embedded.web_engine_processes_uncovered"],
+            "a command line that could not be read leaves the weak claim"
+        );
+
+        let renderer = child(13, Some("msedgewebview2.exe"), Some("x.exe --type=renderer --lang=en"));
+        assert_eq!(
+            uncovered_children_warnings(&[gpu, renderer], 2),
+            vec!["inheritance.children_uncovered", "embedded.web_engine_uncovered"],
+            "a renderer makes the strong claim, and it subsumes the weak one"
+        );
+        // The role decides, not the image: a CEF subprocess is the application's own executable.
+        let cef = child(14, Some("someapp.exe"), Some("someapp.exe --type=renderer"));
+        assert_eq!(
+            uncovered_children_warnings(&[cef], 1),
+            vec!["inheritance.children_uncovered", "embedded.web_engine_uncovered"]
+        );
+    }
+
+    /// The reason key names processes when children were uncovered, in the verdict the fold makes
+    /// unreachable otherwise: a family with such a child is partial or fails, never works.
+    #[test]
+    fn the_family_reason_names_the_uncovered_children() {
+        assert_eq!(session_reason_key(Verdict::Works, false), "session.family_covered");
+        assert_eq!(session_reason_key(Verdict::Partial, true), "session.family_partial_children");
+        assert_eq!(session_reason_key(Verdict::Fails, true), "session.family_uncovered_children");
+        assert_eq!(Verdict::Works.combine(Verdict::Fails), Verdict::Partial);
+        assert_eq!(Verdict::Undetermined.combine(Verdict::Fails), Verdict::Fails);
     }
 }

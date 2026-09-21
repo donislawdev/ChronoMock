@@ -64,7 +64,7 @@ use std::sync::OnceLock;
 
 use chrono_ctl::{
     bump_calls, bump_uninjected_children, cov_at_mut, dur_qpc_at, dur_quit_at, dur_tick_at,
-    header_is_ours,
+    header_is_ours, record_uncovered_child,
     publish_pid, read_anchor, read_core_pid, read_dur, read_qpc, read_scale_dur, read_scale_qpc,
     bump_waits_at_floor, delay_hit_floor, read_installed, read_late_installed, read_tz_bias, reserve_cov_slot,
     scale_delay_interval, scale_timer_due, scale_timer_elapse, scale_timer_period,
@@ -94,7 +94,7 @@ use windows::Win32::System::Memory::{
 };
 use windows::Win32::System::SystemServices::DLL_PROCESS_ATTACH;
 use windows::Win32::System::Threading::{
-    CreateRemoteThread, CreateThread, GetCurrentProcessId, GetExitCodeThread, OpenProcess,
+    CreateRemoteThread, CreateThread, GetCurrentProcessId, GetExitCodeThread, GetProcessId, OpenProcess,
     ResumeThread, WaitForSingleObject, CREATE_SUSPENDED, INFINITE, LPTHREAD_START_ROUTINE,
     PROCESS_INFORMATION, PROCESS_SYNCHRONIZE, THREAD_CREATION_FLAGS,
 };
@@ -1818,10 +1818,11 @@ unsafe extern "system" fn h_ntcup(
         None => return STATUS_UNSUCCESSFUL,
     };
     // Count only a direct call, not the CreateProcess* funnel (already inherited). Never inject.
-    if !SPAWNING.get() {
+    let direct = !SPAWNING.get();
+    if direct {
         bump(IDX_NTCUP);
     }
-    o(
+    let status = o(
         process_handle,
         thread_handle,
         process_access,
@@ -1833,7 +1834,22 @@ unsafe extern "system" fn h_ntcup(
         process_params,
         create_info,
         attr_list,
-    )
+    );
+    // A direct spawn that succeeded is a child nobody will inject into - name it in our own slot so
+    // the family verdict can count a process that runs on the real clock (rule 4). This is the ONE
+    // place this detour looks through a parameter: the first one is the out `PHANDLE` in every
+    // published layout of this call (phnt, ReactOS, and the kernel's own prototype agree on it), and
+    // the original has just written it. Read only on NT_SUCCESS (status >= 0) and only when non-null,
+    // so a failed create never dereferences anything. A bad handle makes `GetProcessId` return 0,
+    // which `record_uncovered_child` ignores - the failure mode is an unnamed child, not a fault.
+    if direct && status >= 0 && !process_handle.is_null() {
+        let child = HANDLE(*(process_handle as *const *mut c_void));
+        let pid = GetProcessId(child);
+        if let Some(c) = cov_ptr() {
+            record_uncovered_child(c, pid);
+        }
+    }
+    status
 }}
 
 // --- Child inheritance (ADR-3) --------------------------------------------------
@@ -1965,9 +1981,11 @@ unsafe fn inherit_into_child(r: i32, pi: *mut PROCESS_INFORMATION, want_suspende
         if !inject_self(info.hProcess) {
             // Record it in OUR slot: the child never reserved one and never will, so without this the
             // process simply would not appear anywhere in the audit (R2-S2). The mechanism turns a
-            // non-zero count into `inheritance.child_not_injected`.
+            // non-zero count into `inheritance.child_not_injected`, and the pid lets it NAME the
+            // process that ran on the real clock (the 32-bit child of a 64-bit parent, typically).
             if let Some(c) = cov_ptr() {
                 bump_uninjected_children(c);
+                record_uncovered_child(c, info.dwProcessId);
             }
         }
         // Resume regardless. The parent is the application under test and it asked for this child -

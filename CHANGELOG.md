@@ -108,6 +108,18 @@ the notes below say what a user sees rather than how the parts were rearranged.
   starts from a UTC instant, such as the 2038 boundary, now arrives as a specific date with the
   zone picker on UTC, so the one control that names zones is the one that says it.
 - **"Use this date" stands out as the calculator's main action**, in the same style as Start.
+- **A process the hook never got into now changes the verdict, and is named.** An application
+  that starts a process the native mechanism cannot follow into - the renderer of an embedded
+  Chromium web engine such as WebView2 or Qt WebEngine, spawned through the Chromium sandbox, or a
+  child of the other bitness - used to be reported as WORKS with "every process that read time
+  saw the session clock", while the pages inside that application showed the real date. The
+  verdict is now PARTIAL (or DID NOT TAKE EFFECT when nothing read the fake clock at all), the
+  exit code 10 or 11 instead of 0, and the report lists each such process by image name and
+  parent, under "processes this app spawned that the hook could not follow". When they belong to
+  a web engine, a warning says so in one sentence: every page inside this application read the
+  real clock. The machine protocol carries the list on `session_verdict` as `uncovered_children`
+  with a total, both additive. A pipeline that branched on exit code 0 for such an application was
+  branching on a claim the tool could not back.
 
 ### Fixed
 

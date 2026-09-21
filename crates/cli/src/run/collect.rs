@@ -21,6 +21,9 @@ pub(super) struct Collector {
     vanished: Option<(String, u64)>,  // (reason_key, lived_ms)
     errors: Vec<(String, String)>,  // (key, origin) - why a session did not start
     warnings: Vec<String>,
+    // Children the family spawned without the hook, from `session_verdict` (SLOWNIK `uncoveredChild`).
+    uncovered_children: Vec<chrono_proto::UncoveredChild>,
+    uncovered_children_total: u32,
     // Coverage per process, LATEST snapshot wins. The core emits one event per process as it is
     // discovered and a final one for every process at the end, because the first is sampled inside
     // the guard window and its call counts never move again (R2-X8). Appending every event instead
@@ -47,9 +50,19 @@ impl Collector {
             Event::Verdict { verdict, reason_key, .. } => {
                 self.verdict_line = Some((verdict, reason_key));
             }
-            Event::SessionVerdict { verdict, reason_key, process_count, warning_keys, .. } => {
+            Event::SessionVerdict {
+                verdict,
+                reason_key,
+                process_count,
+                warning_keys,
+                uncovered_children,
+                uncovered_children_total,
+                ..
+            } => {
                 self.session_line = Some((verdict, reason_key, process_count));
                 self.warn(warning_keys);
+                self.uncovered_children = uncovered_children;
+                self.uncovered_children_total = uncovered_children_total;
             }
             Event::Vanished { reason_key, lived_ms, .. } => {
                 self.vanished = Some((reason_key, lived_ms));
@@ -166,6 +179,8 @@ impl Collector {
             timing: self.timing,
             target_exit: self.target_exit,
             residue: self.residue,
+            uncovered_children: self.uncovered_children,
+            uncovered_children_total: self.uncovered_children_total,
             cdp,
             stopped_early,
         }
@@ -234,6 +249,8 @@ mod tests {
             reason_key: "verdict.works".into(),
             process_count: 1,
             warning_keys: vec!["runtime.qpc_elapsed".into(), "session.pid_registry_full".into()],
+            uncovered_children: Vec::new(),
+            uncovered_children_total: 0,
         });
 
         let report = c.into_report("app.exe".into(), false, None);

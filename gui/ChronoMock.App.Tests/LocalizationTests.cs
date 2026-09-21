@@ -39,6 +39,7 @@ public class LocalizationTests
         "coverage.time_channels_uncovered", "coverage.undetermined",
         "session.family_covered", "session.family_partial",
         "session.family_uncovered", "session.family_undetermined",
+        "session.family_partial_children", "session.family_uncovered_children",
         "chromium.contexts_covered", "chromium.contexts_partial",
         "chromium.no_time_calls", "chromium.no_contexts",
         // Coverage warning keys (CoverageEvent warning_keys).
@@ -49,6 +50,8 @@ public class LocalizationTests
         "inheritance.child_not_injected",
         // Session-level warning keys (SessionVerdict warning_keys).
         "coverage.pid_registry_full",
+        "inheritance.children_uncovered", "embedded.web_engine_uncovered",
+        "embedded.web_engine_processes_uncovered",
         "time.fake_clock_clamped", "time.duration_axis_clamped",
         "chromium.launched_with_debug_port", "chromium.app_closed_before_audit",
         "chromium.rate_change_affects_running_timers",

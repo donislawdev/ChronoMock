@@ -68,6 +68,10 @@ pub(crate) struct SessionReport {
     /// What teardown could not remove, from `ended.residue_keys`. Empty on a native session (its
     /// hooks unhook themselves) - today the only key is a Chromium temp profile that stayed locked.
     pub(crate) residue: Vec<String>,
+    /// Processes the family spawned and the hook did not follow into - each ran on the real clock
+    /// (SLOWNIK `uncoveredChild`). Named up to the wire cap, with the true total beside them.
+    pub(crate) uncovered_children: Vec<chrono_proto::UncoveredChild>,
+    pub(crate) uncovered_children_total: u32,
     /// Set when the driver stopped the core instead of the session ending: `"timeout"` for the
     /// `--timeout` ceiling, `"idle"` for a core that went quiet. Everything else in this report is
     /// then the LAST SNAPSHOT the core managed to send, not a final account, and the difference is
@@ -87,7 +91,7 @@ pub(crate) fn verdict_headline(verdict: &str) -> &'static str {
     match verdict {
         "works" => "WORKS - time substitution took effect",
         "partial" => "PARTIAL - time substitution took effect only in part",
-        "fails" => "DID NOT TAKE EFFECT - time was queried but no channel was covered",
+        "fails" => "DID NOT TAKE EFFECT - nothing this app read came from the session clock",
         "undetermined" => "UNDETERMINED - coverage could not be established",
         _ => "UNKNOWN",
     }
@@ -108,6 +112,12 @@ pub(crate) fn describe_reason(key: &str) -> &'static str {
         }
         "session.family_undetermined" | "coverage.undetermined" => {
             "no process read a covered time channel"
+        }
+        "session.family_partial_children" => {
+            "the session clock reached the processes listed as covered - the ones this app spawned without the hook ran on the real clock"
+        }
+        "session.family_uncovered_children" => {
+            "no process read a covered time channel, and the ones this app spawned without the hook ran on the real clock"
         }
         "chromium.contexts_covered" => "every JS context ran on the session clock",
         "chromium.contexts_partial" => "some JS contexts ran on the session clock, some could not be reached",
@@ -173,6 +183,15 @@ pub(crate) fn describe_warning(key: &str) -> String {
         }
         "inheritance.ntcreateuserprocess_child_maybe_uncovered" => {
             "a child spawned directly via NtCreateUserProcess may not be covered"
+        }
+        "inheritance.children_uncovered" => {
+            "processes this app spawned ran on the REAL clock - the hook never got into them; they are listed above by name"
+        }
+        "embedded.web_engine_uncovered" => {
+            "one of those is a Chromium renderer - the process web pages run in - so the pages hosted by that renderer read the real clock: a native session cannot reach a sandboxed renderer"
+        }
+        "embedded.web_engine_processes_uncovered" => {
+            "those include processes of an embedded web engine (WebView2 or Qt WebEngine), so part of that engine ran on the real clock - whether its pages did could not be established, because no renderer was among the ones named"
         }
         "coverage.pid_registry_full" => {
             "this session ran more processes than the audit can track (256), so some ran uncovered and are missing from the process count and the channel lists below"
@@ -433,6 +452,40 @@ fn render_cut_short(stopped_early: Option<&'static str>) -> String {
 /// One heading plus its pid-tagged channel names, or nothing when the list is empty. Shared by the
 /// two name-only buckets so `render_report` stays under its pinned complexity ceiling - the ceiling
 /// asked for this, and lifting a repeated shape out is the cheaper of its two answers.
+/// What the headline adds after the covered count when some of the family was never reached:
+/// ", plus N not covered". Empty when there is nothing to add, so the headline of a clean session
+/// reads exactly as it always did.
+fn uncovered_children_suffix(total: u32) -> String {
+    if total == 0 {
+        String::new()
+    } else {
+        format!(", plus {total} not covered")
+    }
+}
+
+/// The processes the family spawned and the hook did not follow into, one line each with the
+/// image name when the child was still alive to be asked, and the parent that spawned it - so a
+/// reader can see WHICH part of the application ran on the real clock, not just that some did.
+/// Empty when there were none. A total above the named list is said in words rather than left as
+/// a mismatch for the reader to notice.
+fn render_uncovered_children(children: &[chrono_proto::UncoveredChild], total: u32) -> String {
+    if children.is_empty() && total == 0 {
+        return String::new();
+    }
+    let mut out = String::new();
+    out.push_str("  processes this app spawned that the hook could not follow (they ran on the REAL clock):\n");
+    for c in children {
+        let image = c.image.as_deref().unwrap_or("(exited before it could be named)");
+        let role = c.role.as_deref().map(|r| format!("{r}, ")).unwrap_or_default();
+        out.push_str(&format!("            - pid {} {image} ({role}spawned by pid {})\n", c.pid, c.parent_pid));
+    }
+    let named = children.len() as u32;
+    if total > named {
+        out.push_str(&format!("            - and {} more not named\n", total - named));
+    }
+    out
+}
+
 fn render_channel_names(heading: &str, rows: &[(u32, String)], unit: &str) -> String {
     if rows.is_empty() {
         return String::new();
@@ -465,8 +518,9 @@ pub(crate) fn render_report(r: &SessionReport) -> String {
         ));
     } else if let Some((verdict, reason_key, count)) = &r.session_verdict {
         out.push_str(&format!(
-            "  verdict:  {}  ({units}: {count})\n",
-            verdict_headline(verdict)
+            "  verdict:  {}  ({units}: {count}{})\n",
+            verdict_headline(verdict),
+            uncovered_children_suffix(r.uncovered_children_total)
         ));
         let why = describe_reason(reason_key);
         if why.is_empty() {
@@ -566,6 +620,7 @@ pub(crate) fn render_report(r: &SessionReport) -> String {
         &r.installed_late,
         unit,
     ));
+    out.push_str(&render_uncovered_children(&r.uncovered_children, r.uncovered_children_total));
 
     if !r.warnings.is_empty() {
         out.push_str("  warnings:\n");
@@ -662,9 +717,42 @@ mod tests {
             timing: None,
             target_exit: None,
             residue: vec![],
+            uncovered_children: vec![],
+            uncovered_children_total: 0,
             cdp: false,
             stopped_early: None,
         }
+    }
+
+    /// The processes the hook never got into have their own heading, each named with its role when
+    /// the command line gave one, its parent, and a stated absence of a name when the child was gone
+    /// before it could be asked. The headline carries the count beside the covered one, and a total
+    /// above the named list is said in words.
+    #[test]
+    fn uncovered_children_are_listed_by_name_role_and_parent() {
+        let r = SessionReport {
+            session_verdict: Some(("partial".into(), "session.family_partial_children".into(), 3)),
+            uncovered_children: vec![
+                chrono_proto::UncoveredChild {
+                    pid: 8072,
+                    parent_pid: 28016,
+                    image: Some("engine.exe".into()),
+                    role: Some("renderer".into()),
+                },
+                chrono_proto::UncoveredChild { pid: 8073, parent_pid: 28016, image: None, role: None },
+            ],
+            uncovered_children_total: 5,
+            ..empty_report()
+        };
+        let text = render_report(&r);
+        assert!(text.contains("PARTIAL - time substitution took effect only in part  (processes: 3, plus 5 not covered)"), "{text}");
+        assert!(text.contains("processes this app spawned that the hook could not follow (they ran on the REAL clock):"), "{text}");
+        assert!(text.contains("- pid 8072 engine.exe (renderer, spawned by pid 28016)"), "{text}");
+        assert!(text.contains("- pid 8073 (exited before it could be named) (spawned by pid 28016)"), "{text}");
+        assert!(text.contains("- and 3 more not named"), "{text}");
+
+        let clean = render_report(&empty_report());
+        assert!(!clean.contains("could not follow"), "a clean session has no such heading");
     }
 
     #[test]
