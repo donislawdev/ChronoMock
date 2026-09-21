@@ -540,14 +540,6 @@
                    Text="{Binding SelectedMode.LabelKey, Converter={StaticResource KeyToText}}" />
       </WrapPanel>
 
-      <!-- 🔴 EVERY REFUSAL, not just the first one. This was bound to "no application chosen", so with an
-           application picked and an unreadable date the footer printed nothing: the contract line above is
-           gone too (there is no moment to promise), leaving a disabled button and no account of itself.
-           The key comes from the state now, which has a branch for each term of CanStart.
-
-           The caption colour, not the error colour. Nothing has gone WRONG on a screen somebody has just
-           opened - a step is outstanding, and red would tell a first run it had already made a mistake.
-           When something IS wrong the field itself says so in red, and this sentence points at it. -->
       <!-- What "Set up again" could NOT fill in: a zone or a speed this version no longer offers, so the
            field above still holds the previous choice. It used to be said only on the result screen, and
            Set up again now leaves that screen for this one - the sentence has to follow the form it is
@@ -556,17 +548,32 @@
                  Text="{Binding HistoryNoteKey, Converter={StaticResource KeyToText}}"
                  Visibility="{Binding HasHistoryNote, Converter={StaticResource BoolToVis}}" />
 
-      <TextBlock Style="{StaticResource PartNote}" Margin="{StaticResource StackGapSm}"
-                 Text="{Binding StartRefusalKey, Converter={StaticResource KeyToText}}"
-                 Visibility="{Binding HasStartRefusal, Converter={StaticResource BoolToVis}}" />
+      <!-- 🔴 EVERY REFUSAL, not just the first one. This was bound to "no application chosen", so with an
+           application picked and an unreadable date the footer printed nothing: the contract line above is
+           gone too (there is no moment to promise), leaving a disabled button and no account of itself.
+           The key comes from the state now, which has a branch for each term of CanStart.
 
-      <Button Style="{StaticResource PartPrimaryAction}"
-              Content="{DynamicResource action.start}"
-              ToolTip="{DynamicResource setup.tip_start}"
-              ToolTipService.ShowOnDisabled="True"
-              Command="{Binding Commands.Start}"
-              HorizontalAlignment="Left"
-              Margin="{StaticResource StackGapSm}" />
+           BESIDE the button and in the error ink, on the owner's review of the shipped build (2026-09-21).
+           It stood above the button in the caption colour, on the reasoning that nothing has gone wrong on
+           a first run - and read as one more grey line of help. When Start does not respond it is the one
+           sentence the screen exists to say, so it takes the button's row, where the eye goes when the
+           button does nothing, and the colour that says "this is why". -->
+      <Grid Margin="{StaticResource StackGapSm}">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="Auto" />
+          <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
+        <Button Grid.Column="0" Style="{StaticResource PartPrimaryAction}"
+                Content="{DynamicResource action.start}"
+                ToolTip="{DynamicResource setup.tip_start}"
+                ToolTipService.ShowOnDisabled="True"
+                Command="{Binding Commands.Start}"
+                HorizontalAlignment="Left" />
+        <TextBlock Grid.Column="1" x:Name="StartRefusal" Style="{StaticResource PartErrorNote}"
+                   Margin="{StaticResource FooterReasonGap}" VerticalAlignment="Center"
+                   Text="{Binding StartRefusalKey, Converter={StaticResource KeyToText}}"
+                   Visibility="{Binding HasStartRefusal, Converter={StaticResource BoolToVis}}" />
+      </Grid>
     </StackPanel>
   </Border>
 

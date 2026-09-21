@@ -137,6 +137,11 @@
        scrolling stops. Without it the content underneath slides away with nothing to say it went. -->
   <Thickness x:Key="FooterEdge">0,1,0,0</Thickness>
 
+  <!-- The gap between the footer's action and the sentence beside it saying why the action is refusing.
+       The sentence is read as an answer to the button, so it stands one medium step from it - closer
+       than a new row, further than a label from its field. -->
+  <Thickness x:Key="FooterReasonGap">12,0,0,0</Thickness>
+
   <!-- The consequence line under a check, indented to start where its LABEL starts rather than where the
        box does: 20 for the box plus 8 for the gap beside it, both from the two values above. A note that
        began under the box would read as a second option rather than as a footnote to the first.

@@ -595,7 +595,10 @@
             <TextBlock Text="{Binding MetadataLine}" TextWrapping="Wrap" Margin="{StaticResource SpaceXs}"
                        FontSize="{StaticResource FontSizeCaption}" Foreground="{DynamicResource BrushTextPrimary}" />
 
-            <Button x:Name="UseInSubstitutionButton" Content="{DynamicResource calc.use_in_substitution}" Margin="{StaticResource SpaceMd}"
+            <!-- The one action this module ends in, styled as the setup's Start is: it read as any other
+                 button, and the owner's review of the shipped build could not find it (2026-09-21). -->
+            <Button x:Name="UseInSubstitutionButton" Style="{StaticResource PartPrimaryAction}"
+                    Content="{DynamicResource calc.use_in_substitution}" Margin="{StaticResource SpaceMd}"
                     HorizontalAlignment="Stretch" Click="OnUseInSubstitutionClick"
                     ToolTip="{DynamicResource tip.use_in_substitution}"
                     ToolTipService.ShowOnDisabled="True"
