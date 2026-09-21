@@ -139,7 +139,7 @@
   // and an acronym only a Windows developer knows, and the third never says what "it" is. Every one of
   // these sentences was already written correctly, in the tooltip nobody reads first.
   "setup.opt_duration": "Przyspiesz też liczniki i odliczanie wewnątrz aplikacji",
-  "setup.opt_qpc": "Przyspiesz też zegary wysokiej rozdzielczości (Stopwatch, nanoTime, monotonic)",
+  "setup.opt_qpc": "Przyspiesz też liczniki mierzące upływ czasu (Stopwatch, nanoTime, monotonic)",
   "setup.opt_force": "Uruchom nawet wtedy, gdy podmiana zegara okaże się nieskuteczna",
 
   // Fits after a number, like the shipped one. It names the button to press rather than quoting it in
@@ -148,16 +148,8 @@
 
   // The shipped tooltip says the ready-made moments are in the list ABOVE, which stopped being true when
   // the field moved to the top of its section. Same text, one word honest again, and shorter.
-  "setup.tip_shift": "Wypełnia datę powyżej momentem „teraz” przesuniętym o tyle - w wierszu poleceń to --at +30d. Miesiące, kwartały i lata trafiają w datę kalendarzową, nie w stałą liczbę godzin. Jedno przesunięcie i nic więcej: dni robocze są nieobecne, bo sesja nie nosi kalendarza świąt, a gotowe momenty w rodzaju końca miesiąca stoją na liście niżej.",
+  "setup.tip_shift": "Wypełnia datę powyżej czasem „teraz” przesuniętym o tyle - w wierszu poleceń to --at +30d. Miesiące, kwartały i lata trafiają w datę kalendarzową, nie w stałą liczbę godzin. Jedno przesunięcie i nic więcej: dni robocze są nieobecne, bo sesja nie nosi kalendarza świąt, a gotowe daty w rodzaju końca miesiąca stoją na liście niżej.",
 
-  // The two ways of filling the moment, both of them shortcuts to the field above rather than settings of
-  // their own. Said out loud, because a list that just sits there does not explain what choosing from it
-  // will do.
-  // 🔴 It TEACHES the word rather than avoiding it. Calling this a "ready-made date" here while the box
-  // under it says "Search scenarios" gave one thing two names on one screen, which is worse for a first
-  // run than one unfamiliar word explained in the same breath. Scenario is the product's word, in the
-  // calculator and on the site, so the reader meets it once and knows it everywhere.
-  "setup.or_pick_scenario": "Albo wybierz scenariusz - gotową datę, która wypełni pola powyżej. Wybór niczego nie uruchamia.",
 
   // The two options that can cost something. The tooltip carries the full story; these carry the part a
   // reader has to weigh BEFORE ticking, where the decision is made rather than a hover away from it.
@@ -188,7 +180,6 @@
   "launch.header": "Argumenty i katalog roboczy",
   "launch.args_label": "Argumenty:",
   "launch.cwd_label": "Katalog roboczy:",
-  "launch.cwd_note": "Zostaw katalog pusty, żeby aplikacja wystartowała tam, gdzie normalnie. Argument ze spacjami ujmij w cudzysłów, dokładnie jak w wierszu poleceń.",
 
   // Time inputs (chrono-mock 7.1). The moment is the local time in the session zone (rule 2).
   "moment.label": "Moment:",
@@ -206,7 +197,7 @@
   "moment.relative_amount": "Liczba",
   "moment.relative_unit": "Jednostka",
   "moment.relative_bad_amount": "Podaj liczbę całkowitą większą od zera, np. 30.",
-  "moment.relative_failed": "Nie udało się zamienić tej delty na datę - może wypadać poza zakresem, w którym ta kompilacja liczy.",
+  "moment.relative_failed": "Nie udało się zamienić tego przesunięcia na datę - może wypadać poza zakresem, w którym ta kompilacja liczy.",
   "action.pick_date": "Wybierz datę",
   "action.today": "Dziś",
   "action.now": "Teraz",
@@ -286,13 +277,13 @@
   // mid-session and the time channels start disagreeing, and a negative rate would run the clock
   // continuously backward - which the time model has as a jump, never as a speed.
   "time.bad_multiplier": "Prędkość poza zakresem - musi mieścić się między 0 (zamrożenie) a 1,000,000. Sesja nie wystartowała.",
-  "moment.invalid": "Nieprawidłowy moment (luka czasu letniego, 29 lutego w roku nieprzestępnym albo poza zakresem) - sesja nie wystartowała.",
+  "moment.invalid": "Nieprawidłowa data i godzina (luka czasu letniego, 29 lutego w roku nieprzestępnym albo poza zakresem) - sesja nie wystartowała.",
   // 🔴 THE SAME TWO REASONS, FOR A COMMAND REJECTED MID-SESSION. The core sends one key whether a bad
   // moment arrives with the start command or with a jump, so the panel printed "the session did not
   // start" under a status line reading "Running" - a screen contradicting itself. These say what actually
   // did not happen. Which one is used is decided by the surface, not by the core (SessionViewModel.
   // InFlightKey), because only the surface knows which command the error answered.
-  "moment.invalid_in_flight": "Nieprawidłowy moment (luka czasu letniego, 29 lutego w roku nieprzestępnym albo poza zakresem) - zegar nie drgnął.",
+  "moment.invalid_in_flight": "Nieprawidłowa data i godzina (luka czasu letniego, 29 lutego w roku nieprzestępnym albo poza zakresem) - zegar nie drgnął.",
   "time.bad_multiplier_in_flight": "Prędkość poza zakresem - musi mieścić się między 0 (zamrożenie) a 1,000,000. Tempo się nie zmieniło.",
   "moment.needs_calendar": "Ten skok liczy dni robocze, a trwająca sesja nie ma kalendarza - skocz do konkretnej daty albo policz ją najpierw w kalkulatorze.",
   "moment.unsupported_kind": "Rdzeń nie rozpoznał tego rodzaju celu skoku.",
@@ -480,6 +471,10 @@
   "nav.substitution": "Uruchom aplikację",
   "nav.calculator": "Kalkulator",
 
+  // The accessible name of an info glyph (PartInfoHint). Sighted readers see the glyph and hover it, a
+  // screen reader needs a word for what it landed on before it reads the explanation the glyph carries.
+  "part.info_hint": "Więcej informacji",
+
   // The support link in the title bar. The tooltip names the destination and repeats the offline promise
   // in the same breath, because this is the one control in the application that leads to the internet and
   // a QA tool that swears it never connects has to be the one to raise that, not the user.
@@ -518,16 +513,16 @@
   "calc.preset_note": "Scenariusz to punkt startowy - nie certyfikat kompletności testu.",
   "calc.preset_params_header": "Parametry",
   "calc.preset_needs_params": "Uzupełnij parametry poniżej, aby policzyć ten scenariusz.",
-  "calc.build_header": "Zbuduj moment",
-  "calc.start_point": "Punkt startowy",
-  "calc.base_zone": "w strefie",
+  "calc.build_header": "Zbuduj datę",
+  "calc.start_point": "Zacznij od",
+  "calc.base_zone": "w strefie czasowej",
   "calc.steps_header": "Kroki",
   "calc.add_step": "+ Dodaj krok",
   "calc.kind_shift": "Przesuń ±",
   "calc.kind_snap": "Przeskocz do",
-  "calc.kind_nearest": "Najbliższy",
+  "calc.kind_nearest": "Najbliższy dzień roboczy",
   "calc.kind_settime": "Ustaw godzinę",
-  "calc.kind_zone": "Zmień strefę",
+  "calc.kind_zone": "Zmień strefę czasową",
   "calc.result_header": "Wynik",
   // NOT "what this date tests". A preset says what its date tests in its own words, right above this
   // block, and this block says what the arithmetic LANDED ON, which is often incidental to it.
@@ -538,7 +533,7 @@
   "calc.copied": "Skopiowano",
   "calc.custom_format": "Format własny",
   "calc.custom_format_hint": "np. yyyy-MM-dd HH:mm:ss",
-  "calc.metadata": "Metadane",
+  "calc.metadata": "Szczegóły",
   "calc.use_in_substitution": "Użyj tej daty →",
   "calc.reverse_header": "Analiza wklejonej daty",
   "calc.analyze_ambiguous": "Niejednoznaczne - pokazane obie interpretacje",
@@ -656,7 +651,7 @@
   "tip.today": "Wstaw dzisiejszą datę (strefa sesji), o północy.",
   "tip.now": "Wstaw bieżącą datę i godzinę (strefa sesji).",
   "tip.zone": "Strefa czasowa sesji - stały offset bez zmiany czasu. Moment jest w niej liczony.",
-  "tip.relative_moment": "Wypełnia moment powyżej czasem teraz, przesuniętym o tę wartość - w wierszu poleceń to --at +30d. Miesiące, kwartały i lata trafiają na datę kalendarzową, nie na stałą liczbę godzin. Ten wiersz robi jedno przesunięcie i nic więcej, dlatego ma mniej opcji niż kalkulator: dni roboczych nie ma, bo sesja nie niesie kalendarza świąt, a gotowe momenty w rodzaju końca miesiąca stoją na liście scenariuszy powyżej.",
+  "tip.relative_moment": "Wypełnia datę powyżej czasem teraz, przesuniętym o tę wartość - w wierszu poleceń to --at +30d. Miesiące, kwartały i lata trafiają na datę kalendarzową, nie na stałą liczbę godzin. Ten wiersz robi jedno przesunięcie i nic więcej, dlatego ma mniej opcji niż kalkulator: dni roboczych nie ma, bo sesja nie niesie kalendarza świąt, a gotowe daty w rodzaju końca miesiąca stoją na liście scenariuszy powyżej.",
   "tip.mode": "Jak szybko idzie podmieniony zegar: ×1 to zwykłe tempo, zamrożony go zatrzymuje, reszta idzie tyle razy szybciej.",
   "tip.scale_duration": "Przyśpiesz też liczniki, uśpienia i odliczania w aplikacji - nie tylko zegar ścienny.",
   "tip.scale_qpc": "Przyśpiesz też zegary na QPC (Python monotonic, .NET Stopwatch, Java nanoTime). Może zniekształcić aplikację liczącą render z QPC.",
