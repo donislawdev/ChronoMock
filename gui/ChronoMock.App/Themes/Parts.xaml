@@ -140,6 +140,15 @@
     otherwise stand in the body as a paragraph moves out of the way and stays one hover from reach. The
     caller sets ToolTip to the translation key - the glyph, its ink and its hover come from here. The glyph
     is an icon, not translated text, the same way the chevron and the remove cross are.
+
+    🔴 REACHABLE WITHOUT A MOUSE, or the explanation it carries exists for half the readers. A hover is
+    the only way to open a tooltip on a plain TextBlock, so the first version of this part put the
+    product's whole promise (the real clock is never touched) where Tab could not go and a screen reader
+    could not find it. So the glyph takes the tab stop and shows the tooltip when keyboard focus lands on
+    it, marks that focus by its ink (the section chevron's manner - no border of its own to recolour), and
+    tells assistive technology what it is and what it says: a name of its own, and the ToolTip repeated
+    as HelpText so the caller still sets one thing. Not a Button: a button that does nothing when pressed
+    is a control that lies, and the tooltip on focus is the entire behaviour.
   -->
   <Style x:Key="PartInfoHint" TargetType="TextBlock">
     <Setter Property="Text" Value="ⓘ" />
@@ -148,9 +157,18 @@
     <Setter Property="VerticalAlignment" Value="Center" />
     <Setter Property="Margin" Value="{StaticResource SpaceXs}" />
     <Setter Property="Cursor" Value="Help" />
+    <Setter Property="Focusable" Value="True" />
+    <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+    <Setter Property="ToolTipService.ShowsToolTipOnKeyboardFocus" Value="True" />
+    <Setter Property="AutomationProperties.Name" Value="{DynamicResource part.info_hint}" />
+    <Setter Property="AutomationProperties.HelpText" Value="{Binding ToolTip, RelativeSource={RelativeSource Self}}" />
     <Style.Triggers>
       <Trigger Property="IsMouseOver" Value="True">
         <Setter Property="Foreground" Value="{DynamicResource BrushTextPrimary}" />
+      </Trigger>
+      <!-- After the hover, so a focused glyph under the pointer still shows the focus ink. -->
+      <Trigger Property="IsKeyboardFocused" Value="True">
+        <Setter Property="Foreground" Value="{DynamicResource BrushFocusRing}" />
       </Trigger>
     </Style.Triggers>
   </Style>
@@ -627,6 +645,17 @@
     identical to a virtualised one and builds forty containers to do it. They are written here so the
     part keeps its manners at the size this catalogue is heading for.
 
+    🔴 PIXEL SCROLL UNIT, NOT PHYSICAL SCROLLING, and the difference is the whole virtualisation above.
+    Item scrolling (the toolkit default) counts the offset in rows, so with rows of differing height the
+    last row could be scrolled to the top of the well and leave a strip of empty dark under it - measured
+    at 68 px on 200 scenario rows in a 240 px well. The first fix set ScrollViewer.CanContentScroll to
+    False on the two lists using this part, which fixed the tail and silently built all 200 containers:
+    physical scrolling takes the ScrollViewer off the panel, and a VirtualizingStackPanel that is not the
+    scrolling panel does not virtualise. ScrollUnit=Pixel keeps the panel in charge and counts the offset
+    in pixels - measured on the same list: 4 containers before scrolling, 8 after scrolling to the end,
+    and the last row flush with the bottom of the well. ListWellScrollTests guards both halves. A view
+    must not set CanContentScroll on a list of this part.
+
     No focus ring on the well. The ROW carries keyboard focus and already shows it, and a second mark for
     one fact is the thing this library is trying not to do.
   -->
@@ -644,6 +673,7 @@
     <Setter Property="ScrollViewer.CanContentScroll" Value="True" />
     <Setter Property="VirtualizingStackPanel.IsVirtualizing" Value="True" />
     <Setter Property="VirtualizingStackPanel.VirtualizationMode" Value="Recycling" />
+    <Setter Property="VirtualizingPanel.ScrollUnit" Value="Pixel" />
     <Setter Property="ItemsPanel">
       <Setter.Value>
         <ItemsPanelTemplate>

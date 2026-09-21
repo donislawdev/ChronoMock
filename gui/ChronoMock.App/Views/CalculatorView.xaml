@@ -90,7 +90,6 @@
                      SelectedItem="{Binding SelectedPreset}"
                      ItemTemplate="{StaticResource ScenarioRow}"
                      ItemContainerStyle="{StaticResource ScenarioRowContainer}"
-                     ScrollViewer.CanContentScroll="False"
                      VerticalAlignment="Top" Height="Auto"
                      MaxHeight="{Binding ActualHeight, ElementName=ListArea}"
                      Margin="{StaticResource SpaceXs}" />

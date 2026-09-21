@@ -373,7 +373,6 @@
                      SelectedItem="{Binding SelectedScenario}"
                      ItemTemplate="{StaticResource ScenarioRow}"
                      ItemContainerStyle="{StaticResource ScenarioRowContainer}"
-                     ScrollViewer.CanContentScroll="False"
                      ToolTip="{DynamicResource tip.scenario}" />
             <!-- Inside the well, not under it: the sentence explaining an empty list has to appear
                  where the list was, or the screen answers by moving rather than by speaking. -->
