@@ -226,6 +226,10 @@ public sealed class ParamInputViewModel : ObservableObject
         new VariantOption("day_after", "calc.variant.day_after"),
     ];
 
+    // The shape of a complete ISO date, not its validity - the engine judges the calendar.
+    private static readonly System.Text.RegularExpressions.Regex DateShape =
+        new(@"^\d{4}-\d{2}-\d{2}$", System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+
     private string _dateText = string.Empty;
     private string _amount;
     private UnitOption _unit;
@@ -252,7 +256,38 @@ public sealed class ParamInputViewModel : ObservableObject
     public bool IsVariant { get; }
     public IReadOnlyList<VariantOption> VariantOptions => VariantChoices;
 
-    public string DateText { get => _dateText; set => Set(ref _dateText, value); }
+    public string DateText
+    {
+        get => _dateText;
+        set
+        {
+            if (Set(ref _dateText, value))
+            {
+                RaisePropertyChanged(nameof(SelectedDate));
+            }
+        }
+    }
+
+    /// <summary>The calendar popup of the shared date input binds here, the way it does on a MomentField:
+    /// a picked day writes the ISO date text, a typed valid ISO date moves the calendar. Culture-invariant
+    /// either way (rule 2). Null while the text is not a date - the calendar then shows no selection
+    /// rather than a guess.</summary>
+    public DateTime? SelectedDate
+    {
+        get => DateTime.TryParseExact(
+            _dateText, "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture,
+            System.Globalization.DateTimeStyles.None, out var d)
+            ? d
+            : null;
+        set
+        {
+            if (value is { } picked)
+            {
+                DateText = picked.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
+            }
+        }
+    }
+
     public string Amount { get => _amount; set => Set(ref _amount, value); }
     public UnitOption Unit { get => _unit; set => Set(ref _unit, value); }
     public VariantOption Variant { get => _variant; set => Set(ref _variant, value); }
@@ -277,7 +312,12 @@ public sealed class ParamInputViewModel : ObservableObject
 
         if (IsDate)
         {
-            return string.IsNullOrWhiteSpace(_dateText) ? null : new DateValue(_dateText.Trim());
+            // Only a date-shaped text is a value. The field updates on every keystroke now that it is the
+            // shared date input (the calendar needs the live text), so "2026-0" on the way to a date must
+            // count as not entered yet rather than reach the engine and flash an error mid-word. A full
+            // shape that is no date (2026-02-31) still goes through, so the engine's own reason shows.
+            var text = _dateText.Trim();
+            return DateShape.IsMatch(text) ? new DateValue(text) : null;
         }
 
         // A parameter type this build does not resolve, where the engine answers an honest "not built" and

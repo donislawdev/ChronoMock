@@ -423,10 +423,12 @@
                         <StackPanel Orientation="Horizontal" Margin="{StaticResource SpaceXs}">
                           <TextBlock Text="{Binding Label}" VerticalAlignment="Center" MinWidth="90"
                                      FontSize="{StaticResource FontSizeCaption}" Foreground="{DynamicResource BrushTextSecondary}" />
-                          <TextBox Text="{Binding DateText, UpdateSourceTrigger=LostFocus}"
-                                   Width="150" VerticalAlignment="Center" FontFamily="{StaticResource FontFamilyMono}"
-                                   AutomationProperties.Name="{Binding Label}"
-                                   Visibility="{Binding IsDate, Converter={StaticResource BoolToVis}}" />
+                          <!-- The shared date input, calendar included: a date the setup and the builder let
+                               the tester pick was typed by hand here, and a first run read the missing
+                               calendar as this one being broken (owner's review, 2026-09-21). -->
+                          <controls:DateInput VerticalAlignment="Center"
+                                              AccessibleName="{Binding Label}"
+                                              Visibility="{Binding IsDate, Converter={StaticResource BoolToVis}}" />
                           <StackPanel Orientation="Horizontal"
                                       Visibility="{Binding IsDuration, Converter={StaticResource BoolToVis}}">
                             <TextBox Text="{Binding Amount, UpdateSourceTrigger=LostFocus}"

@@ -173,6 +173,28 @@
         </StackPanel>
       </Border>
 
+      <!-- ============ Date input ============ -->
+      <TextBlock Text="Date input" Style="{StaticResource PartHeading}" Margin="{StaticResource StackGapLg}" />
+
+      <Border Style="{StaticResource PartCard}" Margin="{StaticResource StackGapSm}">
+        <StackPanel>
+          <TextBlock Style="{StaticResource PartCaption}"
+                     Text="Every date on a screen is typed and picked the same way: an ISO field and a calendar behind it. The moment input is this part plus a time field. A picked day writes the text, a typed date moves the calendar, and the message for a bad date is the consumer's, under the row." />
+          <WrapPanel Margin="{StaticResource StackGapSm}">
+            <controls:DateInput Margin="{StaticResource SpaceXs}"
+                                DataContext="{Binding SampleEmptyDate, RelativeSource={RelativeSource AncestorType=UserControl}}" />
+            <controls:DateInput Margin="{StaticResource SpaceXs}"
+                                DataContext="{Binding SampleFilledDate, RelativeSource={RelativeSource AncestorType=UserControl}}" />
+            <controls:DateInput Margin="{StaticResource SpaceXs}" IsEnabled="False"
+                                DataContext="{Binding SampleFilledDate, RelativeSource={RelativeSource AncestorType=UserControl}}" />
+          </WrapPanel>
+          <WrapPanel>
+            <controls:MomentInput Margin="{StaticResource SpaceXs}"
+                                  DataContext="{Binding SampleFilledDate, RelativeSource={RelativeSource AncestorType=UserControl}}" />
+          </WrapPanel>
+        </StackPanel>
+      </Border>
+
       <!-- ============ Check ============ -->
       <TextBlock Text="Check" Style="{StaticResource PartHeading}" Margin="{StaticResource StackGapLg}" />
 
