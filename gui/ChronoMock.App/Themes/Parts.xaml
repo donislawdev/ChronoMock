@@ -833,6 +833,38 @@
   </DataTemplate>
 
   <!--
+    ============================ Zone row ============================
+
+    A zone in a drop-down, the same drawing wherever a zone is picked: the offset and the name it goes
+    by, in that order, because the offset is the fact and the name is the gloss - a bare "US Pacific"
+    would not say what the session will run on, and a bare "UTC+02:00" does not say whose clock that is.
+
+    🔴 ONE DRAWING FOR BOTH PICKERS. The setup showed the offset alone in its closed box while the
+    calculator showed offset and name, so the two read as different facts about the same zone: "UTC+00:00"
+    on one screen and "UTC+02:00 · this machine" on the other, with nothing saying that the first is the
+    neutral default and the second is this computer's clock (owner's review, 2026-09-21). With the name in
+    both boxes the difference explains itself.
+
+    The container style names the item for assistive tech from the same two facts. WPF names a container
+    from the data item's ToString(), never from the template's TextBlock, and a ZoneOption carries a
+    computed offset beside its translation key, so the label-key style cannot name it.
+  -->
+  <Style x:Key="ZoneComboItem" TargetType="ComboBoxItem" BasedOn="{StaticResource {x:Type ComboBoxItem}}">
+    <Setter Property="AutomationProperties.Name">
+      <Setter.Value>
+        <MultiBinding StringFormat="{}{0}, {1}">
+          <Binding Path="Label" />
+          <Binding Path="HintKey" Converter="{StaticResource KeyToText}" />
+        </MultiBinding>
+      </Setter.Value>
+    </Setter>
+  </Style>
+
+  <DataTemplate x:Key="ZoneRow">
+    <TextBlock><Run Text="{Binding Label, Mode=OneWay}" /><Run Text="  ·  " /><Run Text="{Binding HintKey, Converter={StaticResource KeyToText}, Mode=OneWay}" /></TextBlock>
+  </DataTemplate>
+
+  <!--
     ============================ Form row ============================
 
     🔴 THE PART THAT FIXES "EVERYTHING LOOKS RANDOMLY PLACED". A form is a grid with a label column, not

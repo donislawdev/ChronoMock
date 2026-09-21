@@ -109,18 +109,8 @@
                 Value="{Binding LabelKey, Converter={StaticResource KeyToText}}" />
       </Style>
 
-      <Style x:Key="ZoneRow" TargetType="ComboBoxItem" BasedOn="{StaticResource {x:Type ComboBoxItem}}">
-        <!-- The offset first and the market second, because the offset is the fact and the market is the
-             gloss - a bare "US Pacific" would not say what the session will actually run on. -->
-        <Setter Property="AutomationProperties.Name">
-          <Setter.Value>
-            <MultiBinding StringFormat="{}{0}, {1}">
-              <Binding Path="Label" />
-              <Binding Path="HintKey" Converter="{StaticResource KeyToText}" />
-            </MultiBinding>
-          </Setter.Value>
-        </Setter>
-      </Style>
+      <!-- The zone list's container style and row (ZoneComboItem, ZoneRow) are shared parts, so this
+           picker and the calculator's draw and name a zone from one definition. -->
     </ResourceDictionary>
   </UserControl.Resources>
 
@@ -265,15 +255,10 @@
               <TextBlock Style="{StaticResource PartLabel}" Text="{DynamicResource setup.label_zone}" />
             </HeaderedContentControl.Header>
             <ComboBox ItemsSource="{Binding Zones}" SelectedItem="{Binding SelectedZone}"
-                      ItemContainerStyle="{StaticResource ZoneRow}"
+                      ItemContainerStyle="{StaticResource ZoneComboItem}"
+                      ItemTemplate="{StaticResource ZoneRow}"
                       IsEnabled="{Binding IsIdle}" ToolTip="{DynamicResource tip.zone}"
-                      HorizontalAlignment="Left" MaxWidth="{StaticResource TargetBoxMaxWidth}">
-              <ComboBox.ItemTemplate>
-                <DataTemplate>
-                  <TextBlock Text="{Binding Label, Mode=OneWay}" />
-                </DataTemplate>
-              </ComboBox.ItemTemplate>
-            </ComboBox>
+                      HorizontalAlignment="Left" MaxWidth="{StaticResource TargetBoxMaxWidth}" />
           </HeaderedContentControl>
 
           <HeaderedContentControl x:Name="ShiftRow" Style="{StaticResource PartFormRow}"

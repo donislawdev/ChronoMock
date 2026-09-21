@@ -146,13 +146,8 @@
             <TextBlock Style="{StaticResource PartFieldLabel}" Text="{DynamicResource calc.base_zone}" />
             <ComboBox x:Name="BaseZoneBox" ItemsSource="{Binding BaseZones}" SelectedItem="{Binding SelectedBaseZone}"
                       ToolTip="{DynamicResource tip.base_zone}"
-                      ItemContainerStyle="{StaticResource ZoneComboItem}">
-              <ComboBox.ItemTemplate>
-                <DataTemplate>
-                  <TextBlock><Run Text="{Binding Label, Mode=OneWay}" /><Run Text="  ·  " /><Run Text="{Binding HintKey, Converter={StaticResource KeyToText}, Mode=OneWay}" /></TextBlock>
-                </DataTemplate>
-              </ComboBox.ItemTemplate>
-            </ComboBox>
+                      ItemContainerStyle="{StaticResource ZoneComboItem}"
+                      ItemTemplate="{StaticResource ZoneRow}" />
 
             <TextBlock Style="{StaticResource PartFieldLabel}" Text="{DynamicResource calc.steps_header}" />
             <ItemsControl ItemsSource="{Binding Steps}">
