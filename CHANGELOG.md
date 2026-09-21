@@ -85,6 +85,29 @@ the notes below say what a user sees rather than how the parts were rearranged.
 - **The footer's primary action is sized to its word, and Stop is red.** Start and New session were
   a banner far wider than their text and are sized to it now. Stop wears the failure red, because it
   ends the session, and red is not the accent the rest of the tool keeps for the next step.
+- **The reason Start is disabled stands beside the button, in red.** It used to be a grey line
+  above the button, one more line of help to skim past. When Start does not respond, that
+  sentence is the one thing to read, so it took the button's row and the colour that says why.
+- **"What the application read" is one table.** Every function the application asked the time
+  from is a row: its name, where it read from - fake clock, real clock, not watched, or hooked
+  late - as a word in the colour that says so, and how many times. It was five separate lists
+  with five headings, and finding one function meant finding the heading it sat under. Warnings
+  sit under the table, each in its own box.
+- **Every date on the screen is typed and picked the same way.** A scenario that takes a date -
+  a trial's start, a birth date - offered a bare text box where the rest of the window offers a
+  calendar. It has the calendar now.
+- **The calculator's builder has one left edge.** Its fields sat at different indents, some under
+  a label and some beside one, and the time field wrapped under the date. Every field now stands
+  under its own label on the column's edge, and the date and the time share a line.
+- **The time zone reads the same way in both pickers.** Setup showed the offset alone while the
+  calculator showed the offset and the name, so "UTC+00:00" and "UTC+02:00 · this machine" looked
+  like two different facts. Both show the offset and the name now, which is what tells the neutral
+  default apart from this computer's clock.
+- **"Specific instant (UTC)" is gone from the calculator's start points.** It was a time zone
+  hidden inside a kind of date, from before the calculator had a zone picker. A scenario that
+  starts from a UTC instant, such as the 2038 boundary, now arrives as a specific date with the
+  zone picker on UTC, so the one control that names zones is the one that says it.
+- **"Use this date" stands out as the calculator's main action**, in the same style as Start.
 
 ### Fixed
 
@@ -105,6 +128,15 @@ the notes below say what a user sees rather than how the parts were rearranged.
   vertical room the label needed.
 - **The RFC 1123 output is labelled GMT.** Its value has always ended in GMT, and the row says so
   now, so a reader is not left guessing which zone it is in.
+- **"Set up again" on a finished session did nothing visible.** It filled the setup form behind
+  the result screen and left the result on top. It returns to the filled form now, with a note
+  when a zone or speed from the old session is no longer offered. Nothing starts until Start.
+- **"Use this date" did nothing visible once a session had run.** After a session ended it filled
+  the hidden form the same way, and while a session ran it only switched screens. It now returns
+  a finished session to the setup form with the date in it, and during a running session it
+  fills the "Jump to" field with the date in the session's zone, ready for Jump.
+- **The copied report left out the channels that could not be watched.** The window listed them,
+  the report did not, so a report could claim a watch that was not running.
 
 ## [0.2.0] - 2026-09-10
 
