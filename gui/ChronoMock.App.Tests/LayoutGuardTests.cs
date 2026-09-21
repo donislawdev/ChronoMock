@@ -1019,6 +1019,54 @@ public class LayoutGuardTests
         Assert.Contains(" 3 ", more.Text, StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// An executable name longer than the name column trims to the column's ceiling, and the count beside
+    /// it stays on the card.
+    /// </summary>
+    /// <remarks>
+    /// The table's well does not scroll sideways and the core lets two hundred characters of a name
+    /// through, so an uncapped shared column would grow to the name and carry the role and the count off
+    /// the card with no ellipsis anywhere. Measured on the render, not read off the attribute: a MaxWidth on
+    /// a shared-size column is the kind of property a toolkit can ignore quietly (GUI rule 10).
+    ///
+    /// The first build of the fix put the ceiling on the shared-size COLUMN, and this guard read the name
+    /// cell at 1 346 px under a 268 px ceiling: WPF ignores MaxWidth there. The ceiling lives on the cell.
+    ///
+    /// Reversal probe: drop MaxWidth from the name cell in ProcessRowTemplate and this reddens on the name
+    /// cell's width, and again on the count cell's right edge.
+    /// </remarks>
+    [Fact]
+    public void A_process_name_longer_than_its_column_trims_and_keeps_the_count_on_the_card()
+    {
+        var (ceiling, nameWidth, countRight, tableRight) = WpfTestHost.InvokeSettled(() =>
+        {
+            // A finished session given the verdict again, now naming one process with a two-hundred
+            // character name - the longest the core lets through.
+            var model = PhaseStates.WithUncoveredProcesses(PhaseStates.ResultPartial(), total: 1, image: new string('x', 200) + ".exe");
+            var view = ResultView(model);
+            LayoutProbe.Settle(view);
+            var elements = LayoutProbe.Walk(view);
+            var table = elements.Single(e => e.Name == "ProcessTable");
+            // Found by their text and their row, NOT by lying inside the table: a cell that overflowed the
+            // table is exactly the failure this guard reads for, and a filter on containment would turn
+            // that failure into "no such element".
+            var cells = elements
+                .Where(e => e.Kind == nameof(TextBlock) && e.IsVisible
+                    && e.Bounds.Top >= table.Bounds.Top && e.Bounds.Bottom <= table.Bounds.Bottom)
+                .ToList();
+            var name = cells.Single(e => e.Text.StartsWith("xxxx", StringComparison.Ordinal));
+            var count = cells.Single(e => e.Text == "1");
+            return (
+                (double)view.FindResource("ProcessImageColumnMaxWidth"),
+                name.Bounds.Width,
+                count.Bounds.Right,
+                table.Bounds.Right);
+        });
+
+        Assert.True(nameWidth <= ceiling, $"the name cell is {nameWidth:F0} px wide against a ceiling of {ceiling:F0}");
+        Assert.True(countRight <= tableRight + 0.5, $"the count ends at {countRight:F0}, past the table's edge at {tableRight:F0}");
+    }
+
     /// <summary>A session whose family spawned nothing the hook missed shows no process table at all - an
     /// empty table under a heading with a zero would be a question nobody asked.</summary>
     [Fact]

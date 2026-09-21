@@ -163,9 +163,10 @@ internal static class PhaseStates
     /// <summary>
     /// The family verdict naming <paramref name="total"/> processes the hook never got into, applied to
     /// a model in whatever state it is - for a guard that reads a count off the screen and wants that
-    /// count to be one no other list shares.
+    /// count to be one no other list shares - or, with an <paramref name="image"/>, for a guard that
+    /// reads how the table treats one particular name.
     /// </summary>
-    public static SessionViewModel WithUncoveredProcesses(SessionViewModel model, int total)
+    public static SessionViewModel WithUncoveredProcesses(SessionViewModel model, int total, string image = "helper.exe")
     {
         model.Apply(new SessionVerdictEvent
         {
@@ -175,7 +176,7 @@ internal static class PhaseStates
             ProcessCount = 2,
             WarningKeys = ["inheritance.children_uncovered"],
             UncoveredChildren = Enumerable.Range(0, total)
-                .Select(i => new UncoveredChild { Pid = (uint)(7000 + i), ParentPid = 4242, Image = "helper.exe" })
+                .Select(i => new UncoveredChild { Pid = (uint)(7000 + i), ParentPid = 4242, Image = image })
                 .ToList(),
             UncoveredChildrenTotal = total,
         });

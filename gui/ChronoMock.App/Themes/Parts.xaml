@@ -1387,6 +1387,11 @@
     other role is a fact in the secondary ink - a GPU or crash-handler process on the real clock changes
     no answer. The processes that were gone before they could be named are one row in the secondary
     ink, in words rather than a blank: an empty name cell would read as a table with a hole in it.
+
+    The name cell has a ceiling (ProcessImageColumnMaxWidth) and the name trims to an ellipsis under
+    it, because the well does not scroll sideways and a file name can be two hundred characters long -
+    without the ceiling a shared Auto column grows to the name and carries the role and the count off
+    the card. The role needs none: the core admits a role token of at most thirty-two characters.
   -->
   <DataTemplate x:Key="ProcessRowTemplate">
     <Grid>
@@ -1395,7 +1400,11 @@
         <ColumnDefinition Width="Auto" SharedSizeGroup="ProcessRole" />
         <ColumnDefinition Width="{StaticResource AuditCountColumnWidth}" />
       </Grid.ColumnDefinitions>
+      <!-- The ceiling is on the CELL, not the column: a MaxWidth on a shared-size column is ignored -
+           measured, the cell came out 1 346 px wide under a 268 px column ceiling. Constraining the text
+           itself is what makes it trim, and the shared column follows the widest cell it is given. -->
       <TextBlock Grid.Column="0" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis"
+                 MaxWidth="{StaticResource ProcessImageColumnMaxWidth}"
                  FontSize="{StaticResource FontSizeCaption}" FontFamily="{StaticResource FontFamilyMono}"
                  VerticalAlignment="Center"
                  Margin="{StaticResource AuditCellGap}">

@@ -129,14 +129,19 @@ public class FamilyVerdictTests
             InstalledLate = ["timeGetTime"],
             WarningKeys = ["wait.timeout_collapsed"],
         });
-        vm.Apply(Verdict([Child(10, "engine.exe", "renderer"), Child(11, "helper.exe"), Child(12, null)], total: 5));
+        vm.Apply(Verdict(
+            [Child(10, "engine.exe", "renderer"), Child(11, "helper.exe"), Child(12, null), Child(13, string.Empty)],
+            total: 6));
 
         var summary = vm.BuildSummary(T);
 
-        Assert.Contains("report.processes_uncovered (5):\n", summary, StringComparison.Ordinal);
+        Assert.Contains("report.processes_uncovered (6):\n", summary, StringComparison.Ordinal);
         Assert.Contains("    - pid 10: engine.exe (renderer), spawned by pid 4242\n", summary, StringComparison.Ordinal);
         Assert.Contains("    - pid 11: helper.exe, spawned by pid 4242\n", summary, StringComparison.Ordinal);
         Assert.Contains("    - pid 12: audit.process_unnamed, spawned by pid 4242\n", summary, StringComparison.Ordinal);
+        // An empty name is no name: the path a runtime reports can end in a separator, the table already
+        // reads it as the unnamed row, and the clipboard says the same words rather than printing a blank.
+        Assert.Contains("    - pid 13: audit.process_unnamed, spawned by pid 4242\n", summary, StringComparison.Ordinal);
         Assert.Contains("    - and 2 more this report could not name\n", summary, StringComparison.Ordinal);
         // Where the CLI report puts it: after the channel lists, before the warnings that talk about it.
         Assert.True(

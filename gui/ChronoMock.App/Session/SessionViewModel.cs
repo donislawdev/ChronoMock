@@ -2147,7 +2147,9 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
           .Append(" (").Append(_uncoveredChildrenTotal).Append("):\n");
         foreach (var child in _uncoveredChildren)
         {
-            var image = child.Image ?? translate("audit.process_unnamed");
+            // Empty like null: a path that ends in a separator names nothing, and the table already reads
+            // an empty name as the unnamed row - the clipboard must not print a blank where it prints words.
+            var image = string.IsNullOrEmpty(child.Image) ? translate("audit.process_unnamed") : child.Image;
             var line = child.Role is { Length: > 0 } role
                 ? Fmt(translate("report.process_line_role"), child.Pid, image, role, child.ParentPid)
                 : Fmt(translate("report.process_line"), child.Pid, image, child.ParentPid);
