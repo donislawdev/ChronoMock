@@ -189,7 +189,7 @@ public class ParserTests
         const string line = "{\"type\":\"session_verdict\",\"v\":1,\"verdict\":\"partial\"," +
             "\"reason_key\":\"session.family_partial_children\",\"process_count\":3," +
             "\"warning_keys\":[\"inheritance.children_uncovered\"]," +
-            "\"uncovered_children\":[{\"pid\":8072,\"parent_pid\":28016,\"image\":\"helper.exe\"}," +
+            "\"uncovered_children\":[{\"pid\":8072,\"parent_pid\":28016,\"image\":\"helper.exe\",\"role\":\"renderer\"}," +
             "{\"pid\":8073,\"parent_pid\":28016}],\"uncovered_children_total\":5}";
 
         var ev = Assert.IsType<SessionVerdictEvent>(EventParser.Parse(line));
@@ -197,7 +197,9 @@ public class ParserTests
         Assert.Equal(8072u, ev.UncoveredChildren[0].Pid);
         Assert.Equal(28016u, ev.UncoveredChildren[0].ParentPid);
         Assert.Equal("helper.exe", ev.UncoveredChildren[0].Image);
+        Assert.Equal("renderer", ev.UncoveredChildren[0].Role);
         Assert.Null(ev.UncoveredChildren[1].Image);
+        Assert.Null(ev.UncoveredChildren[1].Role);
         Assert.Equal(5, ev.UncoveredChildrenTotal);
     }
 }

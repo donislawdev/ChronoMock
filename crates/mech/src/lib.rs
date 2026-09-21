@@ -27,8 +27,8 @@ use chrono_ctl::{
 };
 use windows::core::{s, PCWSTR, PWSTR};
 use windows::Win32::Foundation::{
-    CloseHandle, GetLastError, ERROR_ALREADY_EXISTS, HANDLE, INVALID_HANDLE_VALUE, WAIT_ABANDONED,
-    WAIT_OBJECT_0, WAIT_TIMEOUT,
+    CloseHandle, GetLastError, ERROR_ALREADY_EXISTS, HANDLE, INVALID_HANDLE_VALUE, UNICODE_STRING,
+    WAIT_ABANDONED, WAIT_OBJECT_0, WAIT_TIMEOUT,
 };
 use windows::Win32::System::Diagnostics::Debug::WriteProcessMemory;
 use windows::Win32::System::LibraryLoader::{GetModuleHandleA, GetProcAddress};
@@ -137,34 +137,98 @@ pub struct Session {
 }
 
 /// A process this session's family spawned and the hook did not follow into: it ran on the real
-/// clock for as long as it lived, whatever it read. `image` is the executable's file name when the
-/// child was still there to ask, `None` when it had already gone.
+/// clock for as long as it lived, whatever it read. `image` is the executable's file name and
+/// `command_line` what it was started with, both when the child was still there to ask and `None`
+/// when it had already gone. The command line is raw text from the target's world - the core reads
+/// the one token it needs out of it and never forwards the rest.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UncoveredChild {
     pub pid: u32,
     pub parent_pid: u32,
     pub image: Option<String>,
+    pub command_line: Option<String>,
 }
 
-/// The file name of a running process's executable, or `None` when the process cannot be opened -
-/// which is the ordinary outcome for a child that has already exited, and the honest one for a
-/// process this user's token may not query. Limited-information access is enough for the name and
-/// is granted for a lower-integrity child (a sandboxed renderer) by a medium-integrity parent.
-fn image_name_of(pid: u32) -> Option<String> {
+/// The file name of a running process's executable and its command line, or `(None, None)` when
+/// the process cannot be opened - which is the ordinary outcome for a child that has already exited,
+/// and the honest one for a process this user's token may not query. Limited-information access is
+/// enough for both and is granted for a lower-integrity child (a sandboxed renderer) by a
+/// medium-integrity parent. One open for the two questions, because the answers describe the same
+/// instant: a child found alive for its name is asked for its command line in the same breath.
+fn describe_process(pid: u32) -> (Option<String>, Option<String>) {
     unsafe {
-        let h = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid).ok()?;
-        let mut buf = [0u16; 1024];
-        let mut len = buf.len() as u32;
-        let ok = QueryFullProcessImageNameW(h, PROCESS_NAME_FORMAT(0), PWSTR(buf.as_mut_ptr()), &mut len).is_ok();
+        let Ok(h) = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid) else {
+            return (None, None);
+        };
+        let image = image_name_of(h);
+        let command_line = command_line_of(h);
         let _ = CloseHandle(h);
-        if !ok {
-            return None;
-        }
-        let full = String::from_utf16_lossy(&buf[..len as usize]);
-        let name = full.rsplit(['\\', '/']).next().unwrap_or(&full);
-        Some(name.to_string())
+        (image, command_line)
     }
 }
+
+/// # Safety
+/// `h` must be an open process handle with at least limited query access.
+unsafe fn image_name_of(h: HANDLE) -> Option<String> { unsafe {
+    let mut buf = [0u16; 1024];
+    let mut len = buf.len() as u32;
+    QueryFullProcessImageNameW(h, PROCESS_NAME_FORMAT(0), PWSTR(buf.as_mut_ptr()), &mut len).ok()?;
+    let full = String::from_utf16_lossy(&buf[..len as usize]);
+    let name = full.rsplit(['\\', '/']).next().unwrap_or(&full);
+    Some(name.to_string())
+}}
+
+/// `NtQueryInformationProcess` as ntdll exports it. Resolved by name at the call, like the hook
+/// resolves the Nt entry points it detours: the function is documented, the information class used
+/// below is not, and a build must not fail on either.
+type NtQueryInformationProcessFn =
+    unsafe extern "system" fn(HANDLE, u32, *mut c_void, u32, *mut u32) -> i32;
+
+/// `ProcessCommandLineInformation`: the information class that answers with the process's command
+/// line as a `UNICODE_STRING` whose buffer follows it in the same block. Not on the documented list
+/// for `NtQueryInformationProcess` - it is the phnt / ReactOS number, an assessment rather than a
+/// source (zasady/03 section 4), chosen over the documented road because that road reads the PEB
+/// of another process and a 32-bit core cannot read a 64-bit PEB. The failure mode of a wrong number
+/// is a status the kernel returns, never a fault: an unknown class is `STATUS_INVALID_INFO_CLASS`,
+/// a short buffer `STATUS_INFO_LENGTH_MISMATCH`, and both read here as "no command line".
+const PROCESS_COMMAND_LINE_INFORMATION: u32 = 60;
+
+/// The command line the process was started with, or `None` when the system will not say (an
+/// unknown class, a command line longer than the buffer, a process that is gone). The buffer is
+/// sized for the longest command line Windows allows plus the string header, so the second case is
+/// a hard ceiling rather than an ordinary one.
+///
+/// # Safety
+/// `h` must be an open process handle with at least limited query access.
+unsafe fn command_line_of(h: HANDLE) -> Option<String> { unsafe {
+    let ntdll = GetModuleHandleA(s!("ntdll.dll")).ok()?;
+    let entry = GetProcAddress(ntdll, s!("NtQueryInformationProcess"))?;
+    let query: NtQueryInformationProcessFn = std::mem::transmute(entry);
+    // The longest command line Windows accepts is 32 767 UTF-16 units. The header is the
+    // UNICODE_STRING, then the characters. Aligned to the header by being a Vec of u64.
+    const HEADER: usize = std::mem::size_of::<UNICODE_STRING>();
+    let bytes = HEADER + 32_768 * 2;
+    let mut block: Vec<u64> = vec![0; bytes.div_ceil(8)];
+    let base = block.as_mut_ptr() as *mut u8;
+    let mut returned: u32 = 0;
+    let status = query(h, PROCESS_COMMAND_LINE_INFORMATION, base as *mut c_void, bytes as u32, &mut returned);
+    if status < 0 {
+        return None;
+    }
+    let header = std::ptr::read_unaligned(base as *const UNICODE_STRING);
+    let start = header.Buffer.0 as *const u8;
+    let len = header.Length as usize;
+    // The string buffer has to lie inside the block the kernel filled - anything else is not a
+    // command line we read, whatever the header claims.
+    let first = base.add(HEADER) as usize;
+    let end = base.add(bytes) as usize;
+    let s = start as usize;
+    if s < first || s.checked_add(len)? > end {
+        return None;
+    }
+    let units: Vec<u16> = (0..len / 2).map(|i| std::ptr::read_unaligned((start as *const u16).add(i))).collect();
+    Some(String::from_utf16_lossy(&units))
+}}
 
 /// Both clocks at one instant, in raw UTC FILETIME ticks. The core formats them.
 pub struct SessionState {
@@ -408,7 +472,8 @@ impl Session {
                         break; // claimed, not written yet - the next poll will see it
                     }
                     self.consumed_children[i] += 1;
-                    out.push(UncoveredChild { pid, parent_pid: parent, image: image_name_of(pid) });
+                    let (image, command_line) = describe_process(pid);
+                    out.push(UncoveredChild { pid, parent_pid: parent, image, command_line });
                 }
             }
         }

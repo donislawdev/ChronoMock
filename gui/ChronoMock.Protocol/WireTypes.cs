@@ -53,6 +53,9 @@ public sealed record UncoveredChild
     [JsonPropertyName("pid")] public uint Pid { get; init; }
     [JsonPropertyName("parent_pid")] public uint ParentPid { get; init; }
     [JsonPropertyName("image")] public string? Image { get; init; }
+    /// <summary>The <c>--type=</c> role a Chromium-based engine gives each subprocess (renderer,
+    /// gpu-process, utility), read off the command line while the child was alive. Null without one.</summary>
+    [JsonPropertyName("role")] public string? Role { get; init; }
 }
 
 /// <summary>One channel's coverage and how many times the target has called it so far.</summary>

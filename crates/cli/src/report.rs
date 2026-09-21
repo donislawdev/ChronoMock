@@ -188,7 +188,10 @@ pub(crate) fn describe_warning(key: &str) -> String {
             "processes this app spawned ran on the REAL clock - the hook never got into them; they are listed above by name"
         }
         "embedded.web_engine_uncovered" => {
-            "those include a Chromium web engine's own processes (WebView2 or Qt WebEngine): every page inside this app read the real clock, because a native session cannot reach a sandboxed renderer"
+            "one of those is a Chromium renderer - the process this app's pages run in - so every page inside this app read the real clock: a native session cannot reach a sandboxed renderer"
+        }
+        "embedded.web_engine_processes_uncovered" => {
+            "those include processes of an embedded web engine (WebView2 or Qt WebEngine), so part of the app's web content ran on the real clock - whether its pages did could not be established, because no renderer was among the ones named"
         }
         "coverage.pid_registry_full" => {
             "this session ran more processes than the audit can track (256), so some ran uncovered and are missing from the process count and the channel lists below"
@@ -473,7 +476,8 @@ fn render_uncovered_children(children: &[chrono_proto::UncoveredChild], total: u
     out.push_str("  processes this app spawned that the hook could not follow (they ran on the REAL clock):\n");
     for c in children {
         let image = c.image.as_deref().unwrap_or("(exited before it could be named)");
-        out.push_str(&format!("            - pid {} {image} (spawned by pid {})\n", c.pid, c.parent_pid));
+        let role = c.role.as_deref().map(|r| format!("{r}, ")).unwrap_or_default();
+        out.push_str(&format!("            - pid {} {image} ({role}spawned by pid {})\n", c.pid, c.parent_pid));
     }
     let named = children.len() as u32;
     if total > named {
@@ -718,6 +722,37 @@ mod tests {
             cdp: false,
             stopped_early: None,
         }
+    }
+
+    /// The processes the hook never got into have their own heading, each named with its role when
+    /// the command line gave one, its parent, and a stated absence of a name when the child was gone
+    /// before it could be asked. The headline carries the count beside the covered one, and a total
+    /// above the named list is said in words.
+    #[test]
+    fn uncovered_children_are_listed_by_name_role_and_parent() {
+        let r = SessionReport {
+            session_verdict: Some(("partial".into(), "session.family_partial_children".into(), 3)),
+            uncovered_children: vec![
+                chrono_proto::UncoveredChild {
+                    pid: 8072,
+                    parent_pid: 28016,
+                    image: Some("engine.exe".into()),
+                    role: Some("renderer".into()),
+                },
+                chrono_proto::UncoveredChild { pid: 8073, parent_pid: 28016, image: None, role: None },
+            ],
+            uncovered_children_total: 5,
+            ..empty_report()
+        };
+        let text = render_report(&r);
+        assert!(text.contains("PARTIAL - time substitution took effect only in part  (processes: 3, plus 5 not covered)"), "{text}");
+        assert!(text.contains("processes this app spawned that the hook could not follow (they ran on the REAL clock):"), "{text}");
+        assert!(text.contains("- pid 8072 engine.exe (renderer, spawned by pid 28016)"), "{text}");
+        assert!(text.contains("- pid 8073 (exited before it could be named) (spawned by pid 28016)"), "{text}");
+        assert!(text.contains("- and 3 more not named"), "{text}");
+
+        let clean = render_report(&empty_report());
+        assert!(!clean.contains("could not follow"), "a clean session has no such heading");
     }
 
     #[test]

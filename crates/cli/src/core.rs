@@ -25,7 +25,7 @@ use chrono_proto::{
 use crate::cdp;
 use crate::cdp_session::cdp_session;
 use crate::cli::{this_bitness, CORE_VERSION};
-use crate::embedded::is_web_engine_subprocess;
+use crate::embedded::{is_renderer_role, is_web_engine_subprocess, role_from_command_line};
 use crate::events::{
     command_id, emit, emit_coverage, ended_clean, jump_error_key, state_event,
     state_event_from, unsupported_command,
@@ -515,6 +515,7 @@ pub(crate) fn close_session(
             pid: c.pid,
             parent_pid: c.parent_pid,
             image: c.image.as_deref().map(crate::cdp::sanitise_target_text),
+            role: c.command_line.as_deref().and_then(role_from_command_line),
         })
         .collect();
     emit(&Event::SessionVerdict {
@@ -572,20 +573,32 @@ pub(crate) fn session_reason_key(v: Verdict, uncovered_children: bool) -> &'stat
     }
 }
 
-/// The session-level warnings that uncovered children raise, each said only when it happened:
-/// that some were spawned at all, and that they include an embedded web engine's subprocesses -
-/// the case where "a helper ran on the real clock" means "every page inside this app did".
+/// The session-level warnings that uncovered children raise, each said only when it happened and
+/// each claiming exactly what the evidence supports:
+/// - that some were spawned at all (`total` rather than the list's length, because a parent's ring
+///   can overflow and the count is the number the audit owes),
+/// - that one of them is a Chromium RENDERER, by the role on its command line - the process the
+///   application's pages run in, so every page read the real clock (the strong claim),
+/// - or, failing that, that an embedded web engine's processes are among them by image name - an
+///   engine is in this application and part of it ran real, but what its pages read is not
+///   established, because the same image name belongs to the GPU and utility processes and a
+///   renderer that exited before it could be asked leaves no role behind (the weak claim).
 ///
-/// `total` rather than the list's length decides the first, because a parent's ring can overflow
-/// and the count is the number the audit owes. The second looks at the names it has, which is a
-/// floor: an engine subprocess that exited before it could be named is not recognised.
+/// The strong claim subsumes the weak one. Both are floors: a child gone before the poll has no name
+/// and no role.
 pub(crate) fn uncovered_children_warnings(children: &[UncoveredChild], total: u32) -> Vec<String> {
     let mut warnings = Vec::new();
     if total > 0 || !children.is_empty() {
         warnings.push("inheritance.children_uncovered".to_string());
     }
-    if children.iter().any(|c| c.image.as_deref().is_some_and(is_web_engine_subprocess)) {
+    let renderer = children.iter().any(|c| {
+        c.command_line.as_deref().and_then(role_from_command_line).is_some_and(|r| is_renderer_role(&r))
+    });
+    let engine = children.iter().any(|c| c.image.as_deref().is_some_and(is_web_engine_subprocess));
+    if renderer {
         warnings.push("embedded.web_engine_uncovered".to_string());
+    } else if engine {
+        warnings.push("embedded.web_engine_processes_uncovered".to_string());
     }
     warnings
 }
@@ -886,5 +899,64 @@ mod tests {
             vec!["time.fake_clock_clamped", "time.duration_axis_clamped"],
             "and both can be true at once"
         );
+    }
+
+    fn child(pid: u32, image: Option<&str>, command_line: Option<&str>) -> UncoveredChild {
+        UncoveredChild {
+            pid,
+            parent_pid: 1,
+            image: image.map(str::to_string),
+            command_line: command_line.map(str::to_string),
+        }
+    }
+
+    /// The strong claim - every page read the real clock - needs a renderer, and the renderer is
+    /// known by its role, not by the image name the GPU and utility processes share with it. An
+    /// engine image without a renderer among the named children gets the weak claim, and a plain
+    /// helper gets neither. The count alone (a ring that overflowed with nothing named) still says
+    /// that children were uncovered.
+    #[test]
+    fn a_web_engine_warning_claims_only_what_the_role_proves() {
+        assert!(uncovered_children_warnings(&[], 0).is_empty());
+        assert_eq!(uncovered_children_warnings(&[], 3), vec!["inheritance.children_uncovered"]);
+        let helper = child(10, Some("helper.exe"), Some("helper.exe --quiet"));
+        assert_eq!(uncovered_children_warnings(&[helper], 1), vec!["inheritance.children_uncovered"]);
+
+        let gpu = child(11, Some("msedgewebview2.exe"), Some("x.exe --type=gpu-process"));
+        assert_eq!(
+            uncovered_children_warnings(std::slice::from_ref(&gpu), 1),
+            vec!["inheritance.children_uncovered", "embedded.web_engine_processes_uncovered"],
+            "an engine image without a renderer is the weak claim"
+        );
+        let nameless = child(12, Some("QtWebEngineProcess.exe"), None);
+        assert_eq!(
+            uncovered_children_warnings(&[nameless], 1),
+            vec!["inheritance.children_uncovered", "embedded.web_engine_processes_uncovered"],
+            "a command line that could not be read leaves the weak claim"
+        );
+
+        let renderer = child(13, Some("msedgewebview2.exe"), Some("x.exe --type=renderer --lang=en"));
+        assert_eq!(
+            uncovered_children_warnings(&[gpu, renderer], 2),
+            vec!["inheritance.children_uncovered", "embedded.web_engine_uncovered"],
+            "a renderer makes the strong claim, and it subsumes the weak one"
+        );
+        // The role decides, not the image: a CEF subprocess is the application's own executable.
+        let cef = child(14, Some("someapp.exe"), Some("someapp.exe --type=renderer"));
+        assert_eq!(
+            uncovered_children_warnings(&[cef], 1),
+            vec!["inheritance.children_uncovered", "embedded.web_engine_uncovered"]
+        );
+    }
+
+    /// The reason key names processes when children were uncovered, in the verdict the fold makes
+    /// unreachable otherwise: a family with such a child is partial or fails, never works.
+    #[test]
+    fn the_family_reason_names_the_uncovered_children() {
+        assert_eq!(session_reason_key(Verdict::Works, false), "session.family_covered");
+        assert_eq!(session_reason_key(Verdict::Partial, true), "session.family_partial_children");
+        assert_eq!(session_reason_key(Verdict::Fails, true), "session.family_uncovered_children");
+        assert_eq!(Verdict::Works.combine(Verdict::Fails), Verdict::Partial);
+        assert_eq!(Verdict::Undetermined.combine(Verdict::Fails), Verdict::Fails);
     }
 }

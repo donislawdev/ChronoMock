@@ -51,6 +51,7 @@ public class LocalizationTests
         // Session-level warning keys (SessionVerdict warning_keys).
         "coverage.pid_registry_full",
         "inheritance.children_uncovered", "embedded.web_engine_uncovered",
+        "embedded.web_engine_processes_uncovered",
         "time.fake_clock_clamped", "time.duration_axis_clamped",
         "chromium.launched_with_debug_port", "chromium.app_closed_before_audit",
         "chromium.rate_change_affects_running_timers",

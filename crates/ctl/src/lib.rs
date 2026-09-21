@@ -1258,9 +1258,15 @@ pub unsafe fn read_uninjected_children(p: *const Cov) -> u64 { unsafe {
 /// but the counter still says how many there were. The pid is written AFTER the claim, so a reader
 /// can see a claimed entry still holding 0 - it treats that as "not yet" and comes back.
 ///
+/// Every access to the ring and its counter is an atomic on the shared word, not a volatile one:
+/// the writer is a thread in the target and the reader a thread in the core, and a volatile store
+/// racing a volatile load is a data race in the language's model even where the hardware makes it
+/// look fine. Release on the store, acquire on the loads - the same pairing `publish_pid` does with
+/// fences - so a reader that sees a pid sees it whole.
+///
 /// A pid of 0 is never a child (that is the idle process), so 0 is safe as the "empty" mark.
 ///
-/// Called from a detour: no allocation, no panic - one atomic and one volatile store.
+/// Called from a detour: no allocation, no panic - two atomics.
 ///
 /// # Safety
 /// `p` must point to a live, correctly aligned `Cov`.
@@ -1271,8 +1277,8 @@ pub unsafe fn record_uncovered_child(p: *mut Cov, pid: u32) { unsafe {
     let counter = &*(addr_of!((*p).uncovered_children_count) as *const AtomicU32);
     let index = counter.fetch_add(1, Ordering::SeqCst) as usize;
     if index < UNCOVERED_CHILDREN_MAX {
-        let entry = (addr_of_mut!((*p).uncovered_children) as *mut u32).add(index);
-        write_volatile(entry, pid);
+        let entry = &*((addr_of!((*p).uncovered_children) as *const u32).add(index) as *const AtomicU32);
+        entry.store(pid, Ordering::Release);
     }
 }}
 
@@ -1282,7 +1288,8 @@ pub unsafe fn record_uncovered_child(p: *mut Cov, pid: u32) { unsafe {
 /// # Safety
 /// `p` must point to a live, correctly aligned `Cov`.
 pub unsafe fn read_uncovered_children_count(p: *const Cov) -> u32 { unsafe {
-    read_volatile(addr_of!((*p).uncovered_children_count))
+    let counter = &*(addr_of!((*p).uncovered_children_count) as *const AtomicU32);
+    counter.load(Ordering::Acquire)
 }}
 
 /// The pid in ring entry `index`, or 0 while the entry is claimed but not yet written (or never
@@ -1295,7 +1302,8 @@ pub unsafe fn read_uncovered_child(p: *const Cov, index: usize) -> u32 { unsafe 
     if index >= UNCOVERED_CHILDREN_MAX {
         return 0;
     }
-    read_volatile((addr_of!((*p).uncovered_children) as *const u32).add(index))
+    let entry = &*((addr_of!((*p).uncovered_children) as *const u32).add(index) as *const AtomicU32);
+    entry.load(Ordering::Acquire)
 }}
 
 /// Count one wait held at the scaling floor (hook side, this process's own `Cov`).

@@ -69,6 +69,12 @@ pub struct UncoveredChild {
     pub parent_pid: u32,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub image: Option<String>,
+    /// The `--type=` role a Chromium-based engine gives each subprocess (`renderer`, `gpu-process`,
+    /// `utility`), read off the child's command line while it was alive. Absent for a child without
+    /// one, or one that was gone before it could be asked. A renderer here is the process the
+    /// application's pages run in - the one that decides what those pages read.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub role: Option<String>,
 }
 
 /// The most uncovered children one `session_verdict` names. A parent's ring holds 32 and the
@@ -420,8 +426,13 @@ mod tests {
             process_count: 2,
             warning_keys: vec!["coverage.pid_registry_full".into()],
             uncovered_children: vec![
-                UncoveredChild { pid: 4242, parent_pid: 100, image: Some("helper.exe".into()) },
-                UncoveredChild { pid: 4243, parent_pid: 100, image: None },
+                UncoveredChild {
+                    pid: 4242,
+                    parent_pid: 100,
+                    image: Some("helper.exe".into()),
+                    role: Some("renderer".into()),
+                },
+                UncoveredChild { pid: 4243, parent_pid: 100, image: None, role: None },
             ],
             uncovered_children_total: 3,
         };
@@ -443,7 +454,9 @@ mod tests {
                 assert_eq!(warning_keys, vec!["coverage.pid_registry_full".to_string()]);
                 assert_eq!(uncovered_children.len(), 2);
                 assert_eq!(uncovered_children[0].image.as_deref(), Some("helper.exe"));
+                assert_eq!(uncovered_children[0].role.as_deref(), Some("renderer"));
                 assert_eq!(uncovered_children[1].image, None);
+                assert_eq!(uncovered_children[1].role, None);
                 assert_eq!(uncovered_children_total, 3);
             }
             _ => panic!("wrong event variant"),
