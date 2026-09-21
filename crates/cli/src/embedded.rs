@@ -16,18 +16,18 @@
 /// subprocess is usually the application's own executable relaunched, so its image name says
 /// nothing and this is all there is.
 ///
-/// Returns the value as the target wrote it, capped and reduced to the characters a Chromium role
-/// uses: the command line is text from the target's world, and the value goes on the wire and into
-/// the report as a word. A token inside quotes is not matched - Chromium never quotes this one.
+/// Returns the value only when the whole of it is a word a Chromium role is made of - ASCII
+/// letters, digits, `-` and `_`, at most 32 of them. Anything else is NOT a role and reads as none:
+/// the command line is text from the target's world, the value goes on the wire and into the report
+/// as a word, and a token that had to be cleaned up to look like `renderer` must not be taken for
+/// one (a stripped-down `ren|derer` would have made the strong claim on no evidence). A token inside
+/// quotes is not matched - Chromium never quotes this one.
 pub(crate) fn role_from_command_line(command_line: &str) -> Option<String> {
     const MAX_ROLE_CHARS: usize = 32;
     let value = command_line.split_whitespace().find_map(|token| token.strip_prefix("--type="))?;
-    let role: String = value
-        .chars()
-        .take(MAX_ROLE_CHARS)
-        .filter(|c| c.is_ascii_alphanumeric() || *c == '-' || *c == '_')
-        .collect();
-    (!role.is_empty()).then_some(role)
+    let is_role_char = |c: char| c.is_ascii_alphanumeric() || c == '-' || c == '_';
+    let valid = !value.is_empty() && value.len() <= MAX_ROLE_CHARS && value.chars().all(is_role_char);
+    valid.then(|| value.to_string())
 }
 
 /// Whether a role read by [`role_from_command_line`] is the renderer - the process the page's
@@ -89,15 +89,19 @@ mod tests {
         assert_eq!(role_from_command_line(""), None);
     }
 
-    /// The value is the target's text: capped, and stripped to the characters a role is made of, so
-    /// nothing the target writes there can reach the report as anything but a word.
+    /// The value is the target's text: a token that is not wholly a word is not a role, so nothing
+    /// the target writes there can reach the report as anything but a word - and nothing it writes
+    /// can be cleaned up INTO the one word that makes the strong claim.
     #[test]
-    fn a_role_is_capped_and_reduced_to_a_word() {
+    fn a_role_is_a_whole_word_or_nothing() {
         let long = format!("app.exe --type={}", "x".repeat(100));
-        assert_eq!(role_from_command_line(&long).unwrap().len(), 32);
-        assert_eq!(role_from_command_line("app.exe --type=ren|derer\"rm").as_deref(), Some("rendererrm"));
-        // A Unicode line separator is white space to the tokenizer, so it ends the token there.
-        assert_eq!(role_from_command_line("app.exe --type=ren\u{2028}derer").as_deref(), Some("ren"));
+        assert_eq!(role_from_command_line(&long), None, "too long is not a role");
+        assert_eq!(role_from_command_line("app.exe --type=ren|derer\"rm"), None, "never stripped into one");
+        // A Unicode line separator is white space to the tokenizer: it ends the token, it is never
+        // part of one, so the value before it is the whole role and the value after it is another token.
+        assert_eq!(role_from_command_line("app.exe --type=renderer\u{2028}x").as_deref(), Some("renderer"));
         assert_eq!(role_from_command_line("app.exe --type=\u{2028}"), None);
+        assert_eq!(role_from_command_line("app.exe --type=crashpad-handler").as_deref(), Some("crashpad-handler"));
+        assert_eq!(role_from_command_line("app.exe --type=ppapi_broker").as_deref(), Some("ppapi_broker"));
     }
 }

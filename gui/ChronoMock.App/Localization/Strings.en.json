@@ -404,8 +404,8 @@
   // command line) - that is the process the pages run in. An engine image without a renderer named
   // gets the weak claim, because the GPU and utility processes carry the same image name.
   "inheritance.children_uncovered": "This application started processes that never got the fake clock - they ran on the real one the whole time.",
-  "embedded.web_engine_uncovered": "One of them is a web engine's renderer - the process this application's pages run in. Every page inside this application read the real clock: a renderer running in a sandbox is out of reach for the native mechanism.",
-  "embedded.web_engine_processes_uncovered": "They include processes of an embedded web engine (WebView2 or Qt WebEngine), so part of this application's web content ran on the real clock. Whether its pages did could not be established: no renderer was among the processes named.",
+  "embedded.web_engine_uncovered": "One of them is a web engine's renderer - the process web pages run in. The pages hosted by that renderer read the real clock: a renderer running in a sandbox is out of reach for the native mechanism.",
+  "embedded.web_engine_processes_uncovered": "They include processes of an embedded web engine (WebView2 or Qt WebEngine), so part of that engine ran on the real clock. Whether its pages did could not be established: no renderer was among the processes named.",
   // R2-S9. Session-level, not per-process: it is about processes that never got a coverage slot,
   // so it arrives on session_verdict rather than on any one coverage event.
   "coverage.pid_registry_full": "This session ran more processes than the audit can track (256). Some ran with no fake clock at all and are missing from the process count and the lists above.",

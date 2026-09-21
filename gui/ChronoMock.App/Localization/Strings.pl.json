@@ -392,8 +392,8 @@
   // command line) - that is the process the pages run in. An engine image without a renderer named
   // gets the weak claim, because the GPU and utility processes carry the same image name.
   "inheritance.children_uncovered": "Ta aplikacja uruchomiła procesy, które nigdy nie dostały fałszywego zegara - przez cały czas działały na prawdziwym.",
-  "embedded.web_engine_uncovered": "Jeden z nich to renderer silnika web - proces, w którym działają strony tej aplikacji. Każda strona wewnątrz tej aplikacji odczytywała prawdziwy zegar: renderer uruchomiony w piaskownicy jest poza zasięgiem mechanizmu natywnego.",
-  "embedded.web_engine_processes_uncovered": "Są wśród nich procesy osadzonego silnika web (WebView2 albo Qt WebEngine), więc część treści web tej aplikacji działała na prawdziwym zegarze. Czy jej strony też - nie da się ustalić: wśród nazwanych procesów nie było renderera.",
+  "embedded.web_engine_uncovered": "Jeden z nich to renderer silnika web - proces, w którym działają strony. Strony obsługiwane przez ten renderer odczytywały prawdziwy zegar: renderer uruchomiony w piaskownicy jest poza zasięgiem mechanizmu natywnego.",
+  "embedded.web_engine_processes_uncovered": "Są wśród nich procesy osadzonego silnika web (WebView2 albo Qt WebEngine), więc część tego silnika działała na prawdziwym zegarze. Czy jego strony też - nie da się ustalić: wśród nazwanych procesów nie było renderera.",
   // R2-S9. Session-level, not per-process: it is about processes that never got a coverage slot,
   // so it arrives on session_verdict rather than on any one coverage event.
   "coverage.pid_registry_full": "Ta sesja uruchomiła więcej procesów, niż audyt potrafi śledzić (256). Część działała całkiem bez fałszywego zegara i nie ma jej w liczbie procesów ani na listach powyżej.",

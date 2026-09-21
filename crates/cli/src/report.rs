@@ -188,10 +188,10 @@ pub(crate) fn describe_warning(key: &str) -> String {
             "processes this app spawned ran on the REAL clock - the hook never got into them; they are listed above by name"
         }
         "embedded.web_engine_uncovered" => {
-            "one of those is a Chromium renderer - the process this app's pages run in - so every page inside this app read the real clock: a native session cannot reach a sandboxed renderer"
+            "one of those is a Chromium renderer - the process web pages run in - so the pages hosted by that renderer read the real clock: a native session cannot reach a sandboxed renderer"
         }
         "embedded.web_engine_processes_uncovered" => {
-            "those include processes of an embedded web engine (WebView2 or Qt WebEngine), so part of the app's web content ran on the real clock - whether its pages did could not be established, because no renderer was among the ones named"
+            "those include processes of an embedded web engine (WebView2 or Qt WebEngine), so part of that engine ran on the real clock - whether its pages did could not be established, because no renderer was among the ones named"
         }
         "coverage.pid_registry_full" => {
             "this session ran more processes than the audit can track (256), so some ran uncovered and are missing from the process count and the channel lists below"
