@@ -107,6 +107,26 @@
     <Setter Property="VerticalAlignment" Value="Center" />
   </Style>
 
+  <!-- A small heading over a group inside a card - the calculator's column and result groups. Named
+       because the same three attributes were written out ten times in one view (rule 7: the second
+       repetition is a missing name). Caption size in the heading weight and the secondary ink: it
+       labels a group, it does not compete with the values in it. -->
+  <Style x:Key="PartGroupHeading" TargetType="TextBlock">
+    <Setter Property="FontSize" Value="{StaticResource FontSizeCaption}" />
+    <Setter Property="FontWeight" Value="{StaticResource FontWeightHeading}" />
+    <Setter Property="Foreground" Value="{DynamicResource BrushTextSecondary}" />
+  </Style>
+
+  <!-- A field's label ABOVE the field, for a column too narrow to hold a label column beside its
+       widest row (the calculator's builder). The form-row part is the label-beside shape and the two are
+       not to be mixed on one screen: the mix is what reads as randomly placed. The gap under the label
+       is the token, so every stacked field on a screen keeps the same rhythm. -->
+  <Style x:Key="PartFieldLabel" TargetType="TextBlock">
+    <Setter Property="FontSize" Value="{StaticResource FontSizeCaption}" />
+    <Setter Property="Foreground" Value="{DynamicResource BrushTextSecondary}" />
+    <Setter Property="Margin" Value="{StaticResource StackedLabelGap}" />
+  </Style>
+
   <Style x:Key="PartCaption" TargetType="TextBlock">
     <Setter Property="FontSize" Value="{StaticResource FontSizeCaption}" />
     <Setter Property="Foreground" Value="{DynamicResource BrushTextSecondary}" />
@@ -607,6 +627,14 @@
             <!-- Focus recolours the face's OWN border, tight, not a ring floating outside it. -->
             <Trigger Property="IsKeyboardFocused" Value="True">
               <Setter TargetName="Face" Property="BorderBrush" Value="{DynamicResource BrushFocusRing}" />
+            </Trigger>
+            <!-- The error state the text field has, on the same edge: a drop-down whose pick the engine
+                 refuses (a business-day step with no calendar) says so itself, the way a field with a bad
+                 date does. After the focus trigger, so a drop-down that is focused AND wrong shows the
+                 error colour. It used to be a halo drawn by a Border wrapped around the one drop-down that
+                 needed it, which put that drop-down 5 px in from every other control in its column. -->
+            <Trigger Property="app:PartState.HasError" Value="True">
+              <Setter TargetName="Face" Property="BorderBrush" Value="{DynamicResource BrushError}" />
             </Trigger>
             <Trigger Property="IsEnabled" Value="False">
               <Setter TargetName="Face" Property="BorderBrush" Value="{DynamicResource BrushDivider}" />
