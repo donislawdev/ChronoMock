@@ -88,18 +88,12 @@ public partial class MainWindow : FluentWindow
         }
     }
 
-    // Bridge from the calculator (chrono-mock 6.3): fill the substitution setup with the moment and its
-    // zone (rule 2 - the moment travels with its zone, never a bare date), then show the substitution
-    // module. Only when idle - a running session's moment is left alone.
+    // Bridge from the calculator (chrono-mock 6.3): hand the moment and its zone to the session (rule 2 -
+    // the moment travels with its zone, never a bare date), then show the substitution module. What the
+    // session does with it depends on its phase and is decided there, not here.
     private void OnUseInSubstitution(string momentLocal, int zoneBias)
     {
-        if (_session.IsIdle)
-        {
-            _session.Moment.LoadCanonical(momentLocal);
-            _session.SelectedZone =
-                _session.Zones.FirstOrDefault(z => z.BiasMinutes == zoneBias) ?? _session.SelectedZone;
-        }
-
+        _session.AdoptMoment(momentLocal, zoneBias);
         ModeSubstitution.IsChecked = true; // OnModeChanged swaps the visible module
     }
 

@@ -143,6 +143,64 @@ public class SessionCommandsTests
     }
 
     [Fact]
+    public void Repeat_from_a_finished_session_returns_to_the_setup_form_it_filled()
+    {
+        // The history well lives on the result screen, so Repeat used to fill the setup form BEHIND that
+        // screen: every field changed and nothing visible did. Reversal probe: drop BeginNewSession() from
+        // LoadFromHistory and the phase assertion fails while the field assertions still pass.
+        var vm = SessionStates.Ended();
+        Assert.True(vm.ShowsResultPhase);
+        vm.SelectedRecord = Record() with { TargetPath = "ledger.exe", MomentLocal = "2040-06-15T08:30:00" };
+
+        vm.Commands.Repeat.Execute(null);
+
+        Assert.True(vm.ShowsSetupPhase);
+        Assert.Equal("ledger.exe", vm.TargetPath);
+        Assert.Equal("2040-06-15T08:30:00", vm.Moment.Canonical);
+        Assert.False(vm.IsRunning); // filled, not started (rule 7)
+    }
+
+    [Fact]
+    public void Repeat_keeps_the_note_about_what_it_could_not_fill()
+    {
+        // Leaving the result screen resets the note along with the result, so the fill has to set it AFTER
+        // that - a record with a zone this version no longer offers must still say so on the setup form.
+        var vm = SessionStates.Ended();
+        vm.SelectedRecord = Record() with { TzBiasMin = 999 };
+
+        vm.Commands.Repeat.Execute(null);
+
+        Assert.True(vm.ShowsSetupPhase);
+        Assert.Equal("history.load_zone_missing", vm.HistoryNoteKey);
+    }
+
+    [Fact]
+    public void A_calculator_moment_adopted_after_a_session_ended_lands_on_the_setup_form()
+    {
+        // "Use this date" after a session had ended filled the setup form under the result screen, then
+        // showed that screen: the same verdict as before, the new date invisible behind it.
+        var vm = SessionStates.Ended();
+
+        vm.AdoptMoment("2040-06-15T08:30:00", 300);
+
+        Assert.True(vm.ShowsSetupPhase);
+        Assert.Equal("2040-06-15T08:30:00", vm.Moment.Canonical);
+        Assert.Equal(300, vm.SelectedZone.BiasMinutes);
+    }
+
+    [Fact]
+    public void A_calculator_moment_is_refused_while_a_session_runs()
+    {
+        // A live run's start moment is not up for editing, so the press leaves it exactly as it was.
+        var vm = SessionStates.Running();
+        var before = vm.Moment.Canonical;
+
+        vm.AdoptMoment("2040-06-15T08:30:00", 300);
+
+        Assert.Equal(before, vm.Moment.Canonical);
+    }
+
+    [Fact]
     public void Today_fills_the_moment_off_the_shipped_default()
     {
         var vm = new SessionViewModel();

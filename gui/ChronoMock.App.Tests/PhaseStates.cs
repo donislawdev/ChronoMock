@@ -50,6 +50,18 @@ internal static class PhaseStates
         return model;
     }
 
+    /// <summary>The setup form as "Set up again" leaves it: filled from a past session whose zone this version
+    /// no longer offers, so the footer carries the note naming the field that did not load. Reached the way
+    /// the user reaches it - through the command from the result screen - so the render shows what the
+    /// press actually produces, not a form dressed up to look like it.</summary>
+    public static SessionViewModel SetupAfterRepeatWithMissingZone()
+    {
+        var model = ResultWorks();
+        model.SelectedRecord = model.History[1] with { TzBiasMin = 999 };
+        model.Commands.Repeat.Execute(null);
+        return model;
+    }
+
     /// <summary>An application chosen and the options that show as chips in the folded header.</summary>
     public static SessionViewModel SetupConfigured()
     {

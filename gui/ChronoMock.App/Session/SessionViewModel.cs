@@ -673,6 +673,30 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     /// <summary>Choose the target executable to run (from the picker, the recent list, or the dev default).</summary>
     public void SetTarget(string path) => TargetPath = path;
 
+    /// <summary>
+    /// Take a moment built elsewhere (the calculator's "Use this date") as the start moment, with its zone
+    /// (rule 2 - a moment never travels without one). A zone the closed catalogue does not offer leaves the
+    /// current one standing, which the calculator already refuses to send. Ignored while a session runs -
+    /// a live run's start moment is not up for editing. Nothing starts (rule 7).
+    /// </summary>
+    /// <remarks>
+    /// 🔴 It leaves a finished result first, the way <see cref="LoadFromHistory"/> does. Idle is true once a
+    /// session has ended, so the moment used to land on the setup form while the result screen stayed on
+    /// top of it: the press switched to this module and showed the same verdict as before, with the new
+    /// date invisible behind it.
+    /// </remarks>
+    public void AdoptMoment(string momentLocal, int zoneBias)
+    {
+        if (!_idle || IsRunning)
+        {
+            return;
+        }
+
+        BeginNewSession();
+        Moment.LoadCanonical(momentLocal);
+        SelectedZone = Zones.FirstOrDefault(z => z.BiasMinutes == zoneBias) ?? SelectedZone;
+    }
+
     /// <summary>Fill the recent list from the session history: distinct target paths, newest first, capped.
     /// A record with no target path is skipped - <see cref="BuildRecord"/> writes an empty string when a
     /// session somehow ended without one, and an entry that cannot be run is not a shortcut.</summary>
@@ -2162,6 +2186,12 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
         {
             return;
         }
+
+        // 🔴 Leave the result FIRST. The history well lives on the result screen, so this used to fill the
+        // setup form behind that screen: every field changed and nothing on the display did, which read as
+        // a button that does nothing. A no-op on a fresh form, and it keeps the history (rule 7 - nothing
+        // starts, the filled form waits for Start).
+        BeginNewSession();
 
         SetTarget(record.TargetPath);
         Moment.LoadCanonical(record.MomentLocal);

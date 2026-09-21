@@ -548,6 +548,14 @@
            The caption colour, not the error colour. Nothing has gone WRONG on a screen somebody has just
            opened - a step is outstanding, and red would tell a first run it had already made a mistake.
            When something IS wrong the field itself says so in red, and this sentence points at it. -->
+      <!-- What "Set up again" could NOT fill in: a zone or a speed this version no longer offers, so the
+           field above still holds the previous choice. It used to be said only on the result screen, and
+           Set up again now leaves that screen for this one - the sentence has to follow the form it is
+           about (rule 6). -->
+      <TextBlock x:Name="HistoryLoadNote" Style="{StaticResource PartNote}" Margin="{StaticResource StackGapSm}"
+                 Text="{Binding HistoryNoteKey, Converter={StaticResource KeyToText}}"
+                 Visibility="{Binding HasHistoryNote, Converter={StaticResource BoolToVis}}" />
+
       <TextBlock Style="{StaticResource PartNote}" Margin="{StaticResource StackGapSm}"
                  Text="{Binding StartRefusalKey, Converter={StaticResource KeyToText}}"
                  Visibility="{Binding HasStartRefusal, Converter={StaticResource BoolToVis}}" />
