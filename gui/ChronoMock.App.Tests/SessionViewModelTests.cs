@@ -47,9 +47,8 @@ public class SessionViewModelTests
             // its own dictionary, which is right for the test and worth saying out loud: the label itself
             // is guarded by XamlResourceKeyTests and by the renders, not from in here.
             ["mode.flow"] = "×1",
-            // The covered/observed rows fold their read count in through this, the same key the view's
-            // CoverageRowConverter resolves - without it a summary test would read the key back and pass or
-            // fail for the wrong reason.
+            // The covered/observed rows of the copied summary fold their read count in through this -
+            // without it a summary test would read the key back and pass or fail for the wrong reason.
             ["coverage.reads"] = "{0} - read {1} times",
             ["coverage.reads_one"] = "{0} - read once",
         };
@@ -257,7 +256,7 @@ public class SessionViewModelTests
             InstalledLate = ["timeGetTime"],
             WarningKeys = ["coverage.channel_installed_late"],
         });
-        Assert.True(vm.HasUnobserved && vm.HasInstalledLate, "the fixture no longer carries a previous session");
+        Assert.True(vm.HasUnobserved && vm.InstalledLate.Count > 0, "the fixture no longer carries a previous session");
 
         vm.SetTarget(Path.Combine(Path.GetTempPath(), $"chrono-missing-{Guid.NewGuid():N}.exe"));
         await vm.StartAsync();
@@ -533,7 +532,7 @@ public class SessionViewModelTests
         Assert.True(vm.HasCovered);
         Assert.Equal("GetSystemTimeAsFileTime", vm.Covered[0].Channel);
         Assert.Equal(842L, vm.Covered[0].Calls);
-        Assert.True(vm.HasObserved);
+        Assert.NotEmpty(vm.Observed);
         Assert.Equal("QueryPerformanceCounter", vm.Observed[0].Channel);
         Assert.Equal("KUSER_SHARED_DATA", Assert.Single(vm.Uncovered));
         Assert.Equal("source.network_at_start", Assert.Single(vm.Warnings));
@@ -563,7 +562,7 @@ public class SessionViewModelTests
             WarningKeys = ["coverage.channel_installed_late"],
         });
 
-        Assert.True(vm.HasInstalledLate);
+        Assert.NotEmpty(vm.InstalledLate);
         Assert.Equal(["timeGetTime", "WSAWaitForMultipleEvents"], vm.InstalledLate);
     }
 
@@ -748,6 +747,27 @@ public class SessionViewModelTests
         var summary = vm.BuildSummary(T());
 
         Assert.Contains("source.network_at_start", summary, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void The_summary_names_the_channels_that_could_not_be_watched()
+    {
+        // The screen has always listed them, the copied report left them out - and a report that omits a
+        // watch the tool promised and is not running claims coverage it does not have (untouchable rule 4).
+        // Reversal probe: drop the coverage.unobserved line from BuildSummary and this fails.
+        var vm = new SessionViewModel();
+        vm.SetTarget(@"C:\apps\Installer.exe");
+        vm.Apply(new CoverageEvent
+        {
+            V = ProtocolJson.ProtocolVersion,
+            Pid = 100,
+            Unobserved = ["NtQuerySystemTime"],
+        });
+
+        var summary = vm.BuildSummary(T());
+
+        Assert.Contains("coverage.unobserved", summary, StringComparison.Ordinal);
+        Assert.Contains("NtQuerySystemTime", summary, StringComparison.Ordinal);
     }
 
     /// <summary>

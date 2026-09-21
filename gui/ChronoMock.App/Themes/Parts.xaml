@@ -1185,17 +1185,6 @@
     edge down the middle of the list. Capped in height and scrolling, because a family session can
     produce forty channels and this is a detail inside a folded section, not the subject of the screen.
   -->
-  <!-- The row for a covered or observed channel - a name and a read count folded into a sentence
-       (coverage.reads) so the count does not read as a speed. The same TextBlock as the fact list's own row,
-       so the two line up - only the converter differs, turning a CoveredChannel into text where the fact list
-       turns a key into text. -->
-  <DataTemplate x:Key="CoverageRowTemplate">
-    <TextBlock Style="{StaticResource PartCaption}" TextWrapping="NoWrap"
-               TextTrimming="CharacterEllipsis"
-               FontFamily="{StaticResource FontFamilyMono}"
-               Text="{Binding Converter={StaticResource CoverageRow}}" />
-  </DataTemplate>
-
   <Style x:Key="PartFactList" TargetType="HeaderedItemsControl">
     <Setter Property="Margin" Value="{StaticResource StackGapLg}" />
     <Setter Property="ItemTemplate">
@@ -1268,5 +1257,113 @@
       </Setter.Value>
     </Setter>
   </Style>
+
+  <!--
+    ============================ Audit table ============================
+
+    The functions a session saw, one per row, with WHERE each one read its time and how many times. It
+    replaces five separate lists (fake clock, real clock, by design, not watched, late), each with its
+    own heading and its own scrolling well, which the owner's review of the shipped build read as a wall
+    of text (2026-09-21): the eye had to find five headings to learn where one function had read from.
+    A row per function answers that in the row.
+
+    🔴 THE STATUS IS A WORD IN COLOUR, never colour alone. The word is what the row says, the colour is
+    what makes a column of forty scannable: the readings that fail a verdict in the failure ink, the
+    ones nobody could judge in the undetermined ink, the good news in the works ink. A late row is fake
+    clock with a floor under its count, so it takes the partial ink. "By design" is a real-clock reading
+    the session chose, so it carries no alarm at all - the secondary ink, like any other fact.
+
+    The columns share their widths across rows (shared size groups, computed off the content), so the
+    caller sets Grid.IsSharedSizeScope on the list. The count column alone has a fixed width, so the
+    digits keep one right edge whatever the names beside them do.
+  -->
+  <DataTemplate x:Key="AuditRowTemplate">
+    <Grid>
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="Auto" SharedSizeGroup="AuditFunction" />
+        <ColumnDefinition Width="Auto" SharedSizeGroup="AuditStatus" />
+        <ColumnDefinition Width="{StaticResource AuditCountColumnWidth}" />
+      </Grid.ColumnDefinitions>
+      <TextBlock Grid.Column="0" Style="{StaticResource PartCaption}" TextWrapping="NoWrap"
+                 FontFamily="{StaticResource FontFamilyMono}" Foreground="{DynamicResource BrushTextPrimary}"
+                 VerticalAlignment="Center"
+                 Margin="{StaticResource AuditCellGap}" Text="{Binding Channel}" />
+      <TextBlock Grid.Column="1" TextWrapping="NoWrap" FontSize="{StaticResource FontSizeCaption}"
+                 VerticalAlignment="Center"
+                 Margin="{StaticResource AuditCellGap}"
+                 Text="{Binding StatusKey, Converter={StaticResource KeyToText}}">
+        <TextBlock.Style>
+          <Style TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{DynamicResource BrushTextSecondary}" />
+            <Style.Triggers>
+              <DataTrigger Binding="{Binding Status}" Value="real">
+                <Setter Property="Foreground" Value="{DynamicResource BrushStatusFails}" />
+              </DataTrigger>
+              <DataTrigger Binding="{Binding Status}" Value="unwatched">
+                <Setter Property="Foreground" Value="{DynamicResource BrushStatusUndetermined}" />
+              </DataTrigger>
+              <DataTrigger Binding="{Binding Status}" Value="late">
+                <Setter Property="Foreground" Value="{DynamicResource BrushStatusPartial}" />
+              </DataTrigger>
+              <DataTrigger Binding="{Binding Status}" Value="fake">
+                <Setter Property="Foreground" Value="{DynamicResource BrushStatusWorks}" />
+              </DataTrigger>
+            </Style.Triggers>
+          </Style>
+        </TextBlock.Style>
+      </TextBlock>
+      <TextBlock Grid.Column="2" Style="{StaticResource PartCaption}" TextWrapping="NoWrap"
+                 FontFamily="{StaticResource FontFamilyMono}" HorizontalAlignment="Right"
+                 VerticalAlignment="Center"
+                 Margin="{StaticResource AuditCellGap}" Text="{Binding CallsText}" />
+    </Grid>
+  </DataTemplate>
+
+  <!-- The table's header row: the same three columns in the same groups, so the words stand over the
+       values they name. A caption, not a label - it names columns, it is not content. -->
+  <ControlTemplate x:Key="AuditTableHeader">
+    <!-- A rule under the header, on the header's width only: it is what makes three captions over
+         three columns read as a table's head rather than a fourth row. -->
+    <Border BorderBrush="{DynamicResource BrushDivider}" BorderThickness="{StaticResource TableHeaderEdge}"
+            HorizontalAlignment="Left">
+      <Grid>
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="Auto" SharedSizeGroup="AuditFunction" />
+          <ColumnDefinition Width="Auto" SharedSizeGroup="AuditStatus" />
+          <ColumnDefinition Width="{StaticResource AuditCountColumnWidth}" />
+        </Grid.ColumnDefinitions>
+        <TextBlock Grid.Column="0" Style="{StaticResource PartCaption}" TextWrapping="NoWrap"
+                   Margin="{StaticResource AuditCellGap}" Text="{DynamicResource audit.col_function}" />
+        <TextBlock Grid.Column="1" Style="{StaticResource PartCaption}" TextWrapping="NoWrap"
+                   Margin="{StaticResource AuditCellGap}" Text="{DynamicResource audit.col_source}" />
+        <TextBlock Grid.Column="2" Style="{StaticResource PartCaption}" TextWrapping="NoWrap"
+                   HorizontalAlignment="Right"
+                   Margin="{StaticResource AuditCellGap}" Text="{DynamicResource audit.col_reads}" />
+      </Grid>
+    </Border>
+  </ControlTemplate>
+
+  <!--
+    ============================ Callout ============================
+
+    A sentence the reader has to act on, set apart from the prose around it: a warning the session
+    raised. A filled box on the alternate surface, so a run of them reads as a list of separate things
+    rather than one paragraph, and the text wraps to its full length - a warning clipped at the edge is
+    one the reader cannot act on, which is the whole point of having raised it. Padded like a control,
+    not like a card: it is an item in a list, not a section of the screen.
+  -->
+  <Style x:Key="PartCallout" TargetType="Border">
+    <Setter Property="Background" Value="{DynamicResource BrushBgSurfaceAlt}" />
+    <Setter Property="CornerRadius" Value="{StaticResource RadiusSm}" />
+    <Setter Property="Padding" Value="{StaticResource ChipPadding}" />
+    <Setter Property="Margin" Value="{StaticResource StackGapSm}" />
+    <Setter Property="SnapsToDevicePixels" Value="True" />
+  </Style>
+
+  <DataTemplate x:Key="CalloutRow">
+    <Border Style="{StaticResource PartCallout}">
+      <TextBlock Style="{StaticResource PartNote}" Text="{Binding Converter={StaticResource KeyToText}}" />
+    </Border>
+  </DataTemplate>
 
 </ResourceDictionary>

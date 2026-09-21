@@ -145,35 +145,40 @@
                    Text="{Binding CoverageNoteKey, Converter={StaticResource KeyToText}}"
                    Visibility="{Binding HasCoverageNote, Converter={StaticResource BoolToVis}}" />
 
-        <HeaderedItemsControl Style="{StaticResource PartFactList}"
-                              Header="{DynamicResource coverage.covered}"
-                              ItemsSource="{Binding Covered}"
-                              ItemTemplate="{StaticResource CoverageRowTemplate}"
-                              Visibility="{Binding HasCovered, Converter={StaticResource BoolToVis}}" />
-        <HeaderedItemsControl Style="{StaticResource PartFactList}"
-                              Header="{DynamicResource coverage.uncovered}"
-                              ItemsSource="{Binding Uncovered}"
-                              Visibility="{Binding HasUncovered, Converter={StaticResource BoolToVis}}" />
-        <HeaderedItemsControl Style="{StaticResource PartFactList}"
-                              Header="{DynamicResource coverage.observed}"
-                              ItemsSource="{Binding Observed}"
-                              ItemTemplate="{StaticResource CoverageRowTemplate}"
-                              Visibility="{Binding HasObserved, Converter={StaticResource BoolToVis}}" />
-        <HeaderedItemsControl Style="{StaticResource PartFactList}"
-                              Header="{DynamicResource coverage.unobserved}"
-                              ItemsSource="{Binding Unobserved}"
-                              Visibility="{Binding HasUnobserved, Converter={StaticResource BoolToVis}}" />
-        <!-- Named, and above the warning that explains them: every row is also in a list above with its
-             count, and this is the list that says which of those counts are floors. -->
-        <HeaderedItemsControl Style="{StaticResource PartFactList}"
-                              Header="{DynamicResource coverage.installed_late}"
-                              ItemsSource="{Binding InstalledLate}"
-                              Visibility="{Binding HasInstalledLate, Converter={StaticResource BoolToVis}}" />
-        <!-- The note variant, because these are sentences: a warning clipped at the card's edge is one the
-             reader cannot act on, which is the whole point of having raised it. -->
+        <!-- 🔴 ONE TABLE, NOT FIVE LISTS. Every function the session saw is a row: its name, where it
+             read its time from (a word in the meaning ink), and how many times. The five lists this
+             replaces each had a heading and a scrolling well, and finding where one function had read
+             from meant finding the heading it sat under - the owner's review of the shipped build read
+             the whole as a wall of text (2026-09-21). The rows are folded from the same five lists the
+             view model still exposes (AuditRowsConverter), in the order that matters: the readings that
+             fail a verdict first, the ones nobody could judge next, the good news last. Shared-size
+             columns, so the header and every row agree on where a column starts. -->
+        <StackPanel Grid.IsSharedSizeScope="True" Margin="{StaticResource StackGapLg}"
+                    Visibility="{Binding HasAuditRows, Converter={StaticResource BoolToVis}}">
+          <ContentControl x:Name="AuditTableHeader" Template="{StaticResource AuditTableHeader}"
+                          Focusable="False" IsTabStop="False" />
+          <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
+                        MaxHeight="{StaticResource AuditTableMaxHeight}" Focusable="False">
+            <ItemsControl x:Name="AuditTable" ItemTemplate="{StaticResource AuditRowTemplate}">
+              <ItemsControl.ItemsSource>
+                <MultiBinding Converter="{StaticResource AuditRows}">
+                  <Binding Path="Covered" />
+                  <Binding Path="Uncovered" />
+                  <Binding Path="Observed" />
+                  <Binding Path="Unobserved" />
+                  <Binding Path="InstalledLate" />
+                </MultiBinding>
+              </ItemsControl.ItemsSource>
+            </ItemsControl>
+          </ScrollViewer>
+        </StackPanel>
+
+        <!-- The warnings, each in its own box so a run of them reads as separate things to act on rather
+             than one paragraph, under the heading that counts them. -->
         <HeaderedItemsControl Style="{StaticResource PartNoteList}"
                               Header="{DynamicResource coverage.warnings}"
                               ItemsSource="{Binding Warnings}"
+                              ItemTemplate="{StaticResource CalloutRow}"
                               Visibility="{Binding HasWarnings, Converter={StaticResource BoolToVis}}" />
       </StackPanel>
     </Expander>

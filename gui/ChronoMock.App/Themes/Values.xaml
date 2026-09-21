@@ -192,6 +192,21 @@
        so nothing is ever clipped. -->
   <sys:Double x:Key="CoverageMaxHeight">140</sys:Double>
 
+  <!-- The audit table's cap. One table where there were five capped lists, so it may be taller than any
+       one of them was and still shorter than the five together: a family session's forty channels scroll
+       inside it, a plain session's six do not scroll at all. -->
+  <sys:Double x:Key="AuditTableMaxHeight">280</sys:Double>
+
+  <!-- The audit table's columns. The function column is as wide as the longest name on screen (shared
+       size, computed, never a number), the status column likewise - only the count column takes a fixed
+       width, so the digits sit under one right edge whatever the names beside them do. Eight digits of
+       monospaced caption text and the row gap. -->
+  <GridLength x:Key="AuditCountColumnWidth">88</GridLength>
+  <Thickness x:Key="AuditCellGap">0,2,16,2</Thickness>
+  <!-- The rule under a table's header, and only under it: the head's one edge, the way FooterEdge is
+       the footer's. -->
+  <Thickness x:Key="TableHeaderEdge">0,0,0,1</Thickness>
+
   <!-- The history list scrolls inside this height so a long history never dominates the panel. Named cap,
        not free geometry (zasady/13 2.1); the whole panel also scrolls. -->
   <sys:Double x:Key="HistoryMaxHeight">160</sys:Double>

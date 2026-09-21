@@ -361,6 +361,17 @@
   // floors - which the late-hook warning needs, and could not say on its own.
   "coverage.installed_late": "Came under the fake clock late",
   "coverage.warnings": "Warnings",
+  // The audit table: one row per function the session saw, with where it read its time from. The status
+  // words are short because they sit in a column, and each is also the row's colour - a word first, so the
+  // colour never carries the meaning alone.
+  "audit.col_function": "Function",
+  "audit.col_source": "Read from",
+  "audit.col_reads": "Reads",
+  "audit.status_fake": "fake clock",
+  "audit.status_real": "real clock",
+  "audit.status_by_design": "real clock, by design",
+  "audit.status_unwatched": "not watched",
+  "audit.status_late": "fake clock, late",
   // The read count on a covered or observed channel, in prose so it does not read like the speed multiplier
   // the raw count sat beside - built in code (SessionViewModel.FormatChannel), P6.
   "coverage.reads": "{0} - read {1} times",

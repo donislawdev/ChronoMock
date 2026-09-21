@@ -34,6 +34,19 @@ public partial class ComponentCatalogue : UserControl
         Zone = "UTC+00:00",
     };
 
+    /// <summary>Every status the audit fold can produce, in the order the table lists them, plus the extremes:
+    /// a function name longer than any real one and a count past six digits. Rows, not lists, because the
+    /// fold is the converter's and the catalogue shows the drawing.</summary>
+    public IReadOnlyList<AuditRow> SampleAuditRows { get; } =
+    [
+        new("GetLocalTime", "audit.status_real", AuditStatus.Real, null),
+        new("QueryPerformanceCounter", "audit.status_by_design", AuditStatus.ByDesign, 3),
+        new("NtQuerySystemTime", "audit.status_unwatched", AuditStatus.Unwatched, null),
+        new("timeGetTime", "audit.status_late", AuditStatus.Late, 7),
+        new("GetSystemTimeAsFileTime", "audit.status_fake", AuditStatus.Fake, 128004),
+        new("GetSystemTimePreciseAsFileTimeWithAnImpossiblyLongName", "audit.status_fake", AuditStatus.Fake, 9876543210),
+    ];
+
     /// <summary>The date input with nothing typed yet, so the hint shows and the calendar has no selection.
     /// A MomentField rather than a stub, so the catalogue draws the part over the same object the
     /// screens bind it to.</summary>

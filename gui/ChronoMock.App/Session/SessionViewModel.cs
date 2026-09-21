@@ -1331,14 +1331,14 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     public IReadOnlyList<CoveredChannel> Covered
     {
         get => _covered;
-        private set { if (Set(ref _covered, value)) { RaisePropertyChanged(nameof(HasCovered)); } }
+        private set { if (Set(ref _covered, value)) { RaisePropertyChanged(nameof(HasCovered)); RaisePropertyChanged(nameof(HasAuditRows)); } }
     }
 
     /// <summary>Channels hooked but deliberately left real (e.g. QPC-based waits, ADR-2), formatted "channel  xN".</summary>
     public IReadOnlyList<CoveredChannel> Observed
     {
         get => _observed;
-        private set { if (Set(ref _observed, value)) { RaisePropertyChanged(nameof(HasObserved)); } }
+        private set { if (Set(ref _observed, value)) { RaisePropertyChanged(nameof(HasAuditRows)); } }
     }
 
     /// <summary>Uncovered channel identifiers (raw API names, not translation keys) - the partial verdict's
@@ -1346,7 +1346,7 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     public IReadOnlyList<string> Uncovered
     {
         get => _uncovered;
-        private set { if (Set(ref _uncovered, value)) { RaisePropertyChanged(nameof(HasUncovered)); } }
+        private set { if (Set(ref _uncovered, value)) { RaisePropertyChanged(nameof(HasUncovered)); RaisePropertyChanged(nameof(HasAuditRows)); } }
     }
 
     /// <summary>Channels the session meant to watch and could not hook, unioned over the family. Its own
@@ -1355,7 +1355,7 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     public IReadOnlyList<string> Unobserved
     {
         get => _unobserved;
-        private set { if (Set(ref _unobserved, value)) { RaisePropertyChanged(nameof(HasUnobserved)); } }
+        private set { if (Set(ref _unobserved, value)) { RaisePropertyChanged(nameof(HasUnobserved)); RaisePropertyChanged(nameof(HasAuditRows)); } }
     }
 
     /// <summary>Channels that came under the fake clock only once their module loaded, unioned over the
@@ -1364,7 +1364,7 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     public IReadOnlyList<string> InstalledLate
     {
         get => _installedLate;
-        private set { if (Set(ref _installedLate, value)) { RaisePropertyChanged(nameof(HasInstalledLate)); } }
+        private set { if (Set(ref _installedLate, value)) { RaisePropertyChanged(nameof(HasAuditRows)); } }
     }
 
     /// <summary>Warning translation keys the core raised (rendered in the current language), unioned over
@@ -1421,13 +1421,15 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
 
     public bool HasCovered => _covered.Count > 0;
 
-    public bool HasObserved => _observed.Count > 0;
-
     public bool HasUncovered => _uncovered.Count > 0;
 
     public bool HasUnobserved => _unobserved.Count > 0;
 
-    public bool HasInstalledLate => _installedLate.Count > 0;
+    /// <summary>Whether the audit table has a row to show: any function the session saw, wherever it read
+    /// from. The table folds the four channel lists into one (AuditRowsConverter), so its visibility is
+    /// the union of theirs. HasObserved and HasInstalledLate went with the separate lists they gated.</summary>
+    public bool HasAuditRows => _covered.Count > 0 || _observed.Count > 0 || _uncovered.Count > 0
+        || _unobserved.Count > 0 || _installedLate.Count > 0;
 
     public bool HasWarnings => _warnings.Count > 0;
 
@@ -1815,8 +1817,8 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
 
     /// <summary>
     /// A covered or observed channel as one line for the copy-summary, its read count folded in as prose so
-    /// it does not read as a speed. The view renders the same row through CoverageRowConverter - two
-    /// surfaces, one wording (coverage.reads). InvariantCulture keeps the count stable across machines, and
+    /// it does not read as a speed. The screen shows the same count in its own column of the audit table,
+    /// in the same invariant digits. InvariantCulture keeps the count stable across machines, and
     /// CDP no longer prefixes a raw context id (P6): two contexts reading one channel differ by their count.
     /// </summary>
     private static string FormatReadRow(CoveredChannel channel, Func<string, string> translate)
@@ -1939,6 +1941,9 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
         AppendList(sb, translate, "coverage.covered", _covered.Select(ch => FormatReadRow(ch, translate)).ToList(), translateItems: false);
         AppendList(sb, translate, "coverage.observed", _observed.Select(ch => FormatReadRow(ch, translate)).ToList(), translateItems: false);
         AppendList(sb, translate, "coverage.uncovered", _uncovered, translateItems: false);
+        // The channels the session meant to watch and could not: on screen since the audit table, and a
+        // copied report that left them out claimed a watch it was not running (untouchable rule 4).
+        AppendList(sb, translate, "coverage.unobserved", _unobserved, translateItems: false);
         // The channels hooked only after their module loaded - shown in the in-app audit, so the copied
         // report must carry them too, or the warning below references a list the reader cannot see (rule 4).
         AppendList(sb, translate, "coverage.installed_late", _installedLate, translateItems: false);
