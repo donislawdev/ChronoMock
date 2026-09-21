@@ -494,7 +494,17 @@ pub const CTL_MAGIC: u64 = 0x4348_524F_4E4F_4354; // "CHRONOCT"
 ///
 /// 5: `Cov` gained `waits_at_floor`, which widens it by 8 bytes and moves every slot after the first,
 /// for the same reason version 3 did.
-pub const CTL_LAYOUT_VERSION: u32 = 5;
+///
+/// 6: `Cov` gained the `uncovered_children` ring and its counter (`UNCOVERED_CHILDREN_MAX` pids plus
+/// two u32), appended AFTER `calls` so no existing offset inside a slot moves - but the slot stride
+/// does, which is the same hazard as version 3.
+pub const CTL_LAYOUT_VERSION: u32 = 6;
+
+/// How many uncovered children one process's `Cov` can name. Past this the counter still grows, so
+/// the audit says "and N more" rather than losing the number. Sized for what a Chromium browser
+/// process spawns in a session (a handful of renderer, GPU and utility processes, more under site
+/// isolation) at 4 bytes a pid - 128 bytes per slot, 32 KiB across the registry.
+pub const UNCOVERED_CHILDREN_MAX: usize = 32;
 
 /// Session-wide control block in `Local\ChronoCtl`. `#[repr(C)]` so both processes
 /// agree on the layout. Coverage lives here too, one `Cov` per registry slot, so a
@@ -604,6 +614,29 @@ pub struct Cov {
     pub waits_at_floor: u64,
     /// Per-channel call counters for this process, indexed by IDX_*.
     pub calls: [u64; CHANNEL_COUNT],
+    /// The pids of children THIS process spawned that the hook did not follow into - named, not just
+    /// counted. Two ways in, both certain: a direct `NtCreateUserProcess` (the CreateProcess* detours
+    /// never saw it, so nothing injected - the path a Chromium sandbox takes for every renderer), and
+    /// a CreateProcess* child whose `inject_self` failed (`uninjected_children` counts those too).
+    ///
+    /// Why a list and not the counter that already existed: a count says "one child ran on the real
+    /// clock" and nothing about WHICH - and for an app that embeds a web engine, which one is the whole
+    /// finding (the renderer is the process the page's `Date.now()` lives in). The mechanism resolves
+    /// each pid to an image name while the child is still alive, and folds the fact into the family
+    /// verdict, where a process nobody reached is exactly what keeps a family from `works`
+    /// (untouchable rule 4 at the session level).
+    ///
+    /// Written in the SPAWNING parent's slot for the same reason as `uninjected_children`: the child
+    /// has no slot, and this is the process the fact belongs to. Entries are claimed with an atomic
+    /// index (`uncovered_children_count`), because two threads spawning at once with a plain RMW
+    /// would overwrite each other's pid - a lost COUNT under-reports, a lost PID drops a process.
+    pub uncovered_children: [u32; UNCOVERED_CHILDREN_MAX],
+    /// How many uncovered children this process spawned in total - the ring above holds the first
+    /// `UNCOVERED_CHILDREN_MAX` of them. Also the atomic index that claims a ring entry.
+    pub uncovered_children_count: u32,
+    /// Keeps the slot 8-byte aligned so `calls` of the NEXT slot stays aligned. Explicit rather than
+    /// left to the compiler because `#[repr(C)]` would add it silently and the layout doc would lie.
+    pub uncovered_children_pad: u32,
 }
 
 impl Cov {
@@ -615,6 +648,9 @@ impl Cov {
         late_installed: 0,
         waits_at_floor: 0,
         calls: [0; CHANNEL_COUNT],
+        uncovered_children: [0; UNCOVERED_CHILDREN_MAX],
+        uncovered_children_count: 0,
+        uncovered_children_pad: 0,
     };
 }
 
@@ -1212,6 +1248,54 @@ pub unsafe fn bump_uninjected_children(p: *mut Cov) { unsafe {
 /// `p` must point to a live, correctly aligned `Cov`.
 pub unsafe fn read_uninjected_children(p: *const Cov) -> u64 { unsafe {
     read_volatile(addr_of!((*p).uninjected_children))
+}}
+
+/// Name a child this process spawned that the hook did not follow into (hook side, own `Cov`).
+///
+/// The counter is the atomic index: `fetch_add` claims one entry per call, so two threads spawning
+/// at once each get their own (the plain RMW `bump_uninjected_children` uses can lose a bump, which
+/// for a COUNT only under-reports - here it would drop a pid). An entry past the ring is not written,
+/// but the counter still says how many there were. The pid is written AFTER the claim, so a reader
+/// can see a claimed entry still holding 0 - it treats that as "not yet" and comes back.
+///
+/// A pid of 0 is never a child (that is the idle process), so 0 is safe as the "empty" mark.
+///
+/// Called from a detour: no allocation, no panic - one atomic and one volatile store.
+///
+/// # Safety
+/// `p` must point to a live, correctly aligned `Cov`.
+pub unsafe fn record_uncovered_child(p: *mut Cov, pid: u32) { unsafe {
+    if pid == 0 {
+        return;
+    }
+    let counter = &*(addr_of!((*p).uncovered_children_count) as *const AtomicU32);
+    let index = counter.fetch_add(1, Ordering::SeqCst) as usize;
+    if index < UNCOVERED_CHILDREN_MAX {
+        let entry = (addr_of_mut!((*p).uncovered_children) as *mut u32).add(index);
+        write_volatile(entry, pid);
+    }
+}}
+
+/// How many uncovered children this process has spawned in total (mechanism side). The ring holds
+/// at most `UNCOVERED_CHILDREN_MAX` of them by pid - see [`read_uncovered_child`].
+///
+/// # Safety
+/// `p` must point to a live, correctly aligned `Cov`.
+pub unsafe fn read_uncovered_children_count(p: *const Cov) -> u32 { unsafe {
+    read_volatile(addr_of!((*p).uncovered_children_count))
+}}
+
+/// The pid in ring entry `index`, or 0 while the entry is claimed but not yet written (or never
+/// claimed). `index` past the ring reads as 0 as well, so a caller iterating up to the count never
+/// indexes out of bounds.
+///
+/// # Safety
+/// `p` must point to a live, correctly aligned `Cov`.
+pub unsafe fn read_uncovered_child(p: *const Cov, index: usize) -> u32 { unsafe {
+    if index >= UNCOVERED_CHILDREN_MAX {
+        return 0;
+    }
+    read_volatile((addr_of!((*p).uncovered_children) as *const u32).add(index))
 }}
 
 /// Count one wait held at the scaling floor (hook side, this process's own `Cov`).

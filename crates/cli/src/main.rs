@@ -34,6 +34,8 @@ mod cdp_session;
 mod cli;
 /// `chrono __core` - the hidden core mode.
 mod core;
+/// Embedded web engines (WebView2, Qt WebEngine): what a native session can say about them.
+mod embedded;
 /// Writing protocol events, and the shapes both mechanisms share.
 mod events;
 /// The step grammar shared by the calculator flags and the preset reader.

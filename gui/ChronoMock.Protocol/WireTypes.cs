@@ -44,6 +44,17 @@ public sealed record Clock
     [JsonPropertyName("zone_bias_min")] public int ZoneBiasMin { get; init; }
 }
 
+/// <summary>
+/// A process the family spawned without the hook inside it - it ran on the real clock. <c>Image</c> is
+/// the executable's file name when the child was still alive to be asked, null otherwise.
+/// </summary>
+public sealed record UncoveredChild
+{
+    [JsonPropertyName("pid")] public uint Pid { get; init; }
+    [JsonPropertyName("parent_pid")] public uint ParentPid { get; init; }
+    [JsonPropertyName("image")] public string? Image { get; init; }
+}
+
 /// <summary>One channel's coverage and how many times the target has called it so far.</summary>
 public sealed record CoveredChannel
 {

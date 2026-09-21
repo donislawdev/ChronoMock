@@ -16,13 +16,16 @@ use std::time::{Duration, Instant};
 use chrono_core::{
     filetime_utc_to_wall, verdict_from_coverage, Moment, SessionSpec, TimeMode, Verdict,
 };
+use chrono_mech::UncoveredChild;
 use chrono_proto::{
     parse_command, Command, Event, MomentSpec, TargetSpec, TimeSpec, PROTOCOL_VERSION,
+    UNCOVERED_CHILDREN_WIRE_MAX,
 };
 
 use crate::cdp;
 use crate::cdp_session::cdp_session;
 use crate::cli::{this_bitness, CORE_VERSION};
+use crate::embedded::is_web_engine_subprocess;
 use crate::events::{
     command_id, emit, emit_coverage, ended_clean, jump_error_key, state_event,
     state_event_from, unsupported_command,
@@ -284,7 +287,12 @@ pub(crate) fn run_session(
     // Did the fake clock ever stand on the last instant this build can represent (R2-X2)?
     let mut clock_clamped = false;
     let mut duration_clamped = false;
+    // Children the hook did NOT follow into, named as they are spawned (SLOWNIK `uncoveredChild`).
+    // Polled at the child cadence for the same reason children are: a short-lived one has to be
+    // asked its name while it is still there.
+    let mut uncovered_children: Vec<UncoveredChild> = Vec::new();
     fold_children(&mut session, &mut family, &mut family_pids);
+    uncovered_children.extend(session.poll_uncovered_children());
 
     let heartbeat = Duration::from_secs(1);
     // Children are polled faster than the heartbeat. A child publishes its evidence in a section
@@ -313,6 +321,7 @@ pub(crate) fn run_session(
         let now = Instant::now();
         if now >= child_deadline {
             fold_children(&mut session, &mut family, &mut family_pids);
+            uncovered_children.extend(session.poll_uncovered_children());
             child_deadline = now + child_poll;
         }
         // The heartbeat keeps its own once-a-second cadence: `state` and the liveness check stay
@@ -336,7 +345,15 @@ pub(crate) fn run_session(
         }
     }
 
-    close_session(session, family, family_pids, clock_clamped, duration_clamped, target_exit)
+    close_session(
+        session,
+        family,
+        family_pids,
+        uncovered_children,
+        clock_clamped,
+        duration_clamped,
+        target_exit,
+    )
 }
 
 /// Act on one command that arrived mid-session.
@@ -444,12 +461,23 @@ pub(crate) fn close_session(
     mut session: chrono_mech::Session,
     mut family: Verdict,
     mut family_pids: HashSet<u32>,
+    mut uncovered_children: Vec<UncoveredChild>,
     clock_clamped: bool,
     duration_clamped: bool,
     target_exit: Option<i32>,
 ) -> i32 {
     // Final fold so a child that joined since the last heartbeat still counts in the family.
     fold_children(&mut session, &mut family, &mut family_pids);
+    uncovered_children.extend(session.poll_uncovered_children());
+    let uncovered_children_total = session.uncovered_children_total();
+    // A process nobody reached ran on the real clock: that is "something uncovered" for the family,
+    // so the family cannot be `works` (untouchable rule 4 at the session level - the verdict model
+    // already says so, this is the fact it was never fed). Folded as a verdict rather than a flag so
+    // the same `combine` rule that rolls up channels rolls up processes.
+    let any_uncovered_children = uncovered_children_total > 0 || !uncovered_children.is_empty();
+    if any_uncovered_children {
+        family = family.combine(Verdict::Fails);
+    }
     // Capture the session clocks before ending so `ended` can state the duration and the fake wall
     // clock reached - reliably, even for a session too short to have emitted a heartbeat.
     let final_state = session.state();
@@ -471,17 +499,32 @@ pub(crate) fn close_session(
     session.end();
     // The sticky flag OR the final sample, so a session too short to have emitted a heartbeat still
     // reports a clamped clock.
-    let session_warnings = native_session_warnings(
+    let mut session_warnings = native_session_warnings(
         uncovered_processes,
         clock_clamped || final_state.clock_at_range_end(),
         duration_clamped || final_state.duration_at_range_end(),
     );
+    session_warnings.extend(uncovered_children_warnings(&uncovered_children, uncovered_children_total));
+    // The wire names the first UNCOVERED_CHILDREN_WIRE_MAX and carries the true total beside them.
+    // The image name is text from the target's world, so it passes the same sieve as everything
+    // else the target writes before it reaches a terminal or the panel.
+    let named: Vec<chrono_proto::UncoveredChild> = uncovered_children
+        .iter()
+        .take(UNCOVERED_CHILDREN_WIRE_MAX)
+        .map(|c| chrono_proto::UncoveredChild {
+            pid: c.pid,
+            parent_pid: c.parent_pid,
+            image: c.image.as_deref().map(crate::cdp::sanitise_target_text),
+        })
+        .collect();
     emit(&Event::SessionVerdict {
         v: PROTOCOL_VERSION,
         verdict: family.wire().into(),
-        reason_key: session_reason_key(family).into(),
+        reason_key: session_reason_key(family, any_uncovered_children).into(),
         process_count: 1 + family_pids.len() as u32,
         warning_keys: session_warnings,
+        uncovered_children: named,
+        uncovered_children_total,
     });
     emit(&Event::Ended {
         v: PROTOCOL_VERSION,
@@ -513,13 +556,38 @@ pub(crate) fn fold_children(
 }
 
 /// Stable reason key for the family (session) verdict, scoped to the whole family.
-pub(crate) fn session_reason_key(v: Verdict) -> &'static str {
-    match v {
-        Verdict::Works => "session.family_covered",
-        Verdict::Partial => "session.family_partial",
-        Verdict::Fails => "session.family_uncovered",
-        Verdict::Undetermined => "session.family_undetermined",
+///
+/// With uncovered children the family is `partial` or `fails` by construction (`close_session`
+/// folds a `Fails` in), and the reason has to say WHY in words a tester can act on: not "some
+/// channels were queried but not covered" - which is about what a hooked process read - but that a
+/// process of this application ran with no hook in it at all.
+pub(crate) fn session_reason_key(v: Verdict, uncovered_children: bool) -> &'static str {
+    match (v, uncovered_children) {
+        (Verdict::Works | Verdict::Partial, true) => "session.family_partial_children",
+        (Verdict::Fails | Verdict::Undetermined, true) => "session.family_uncovered_children",
+        (Verdict::Works, false) => "session.family_covered",
+        (Verdict::Partial, false) => "session.family_partial",
+        (Verdict::Fails, false) => "session.family_uncovered",
+        (Verdict::Undetermined, false) => "session.family_undetermined",
     }
+}
+
+/// The session-level warnings that uncovered children raise, each said only when it happened:
+/// that some were spawned at all, and that they include an embedded web engine's subprocesses -
+/// the case where "a helper ran on the real clock" means "every page inside this app did".
+///
+/// `total` rather than the list's length decides the first, because a parent's ring can overflow
+/// and the count is the number the audit owes. The second looks at the names it has, which is a
+/// floor: an engine subprocess that exited before it could be named is not recognised.
+pub(crate) fn uncovered_children_warnings(children: &[UncoveredChild], total: u32) -> Vec<String> {
+    let mut warnings = Vec::new();
+    if total > 0 || !children.is_empty() {
+        warnings.push("inheritance.children_uncovered".to_string());
+    }
+    if children.iter().any(|c| c.image.as_deref().is_some_and(is_web_engine_subprocess)) {
+        warnings.push("embedded.web_engine_uncovered".to_string());
+    }
+    warnings
 }
 
 /// Resolve a `MomentSpec` to a UTC FILETIME for a jump. Absolute moments only here

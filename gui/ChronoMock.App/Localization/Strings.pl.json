@@ -335,6 +335,11 @@
   "session.family_partial": "Część odczytów czasu pochodziła z fałszywego zegara, część z prawdziwego.",
   "session.family_uncovered": "Aplikacja pytała o czas i zawsze dostawała prawdziwy zegar.",
   "session.family_undetermined": "Nic nie odczytało fałszywego zegara, więc nie ma czego oceniać.",
+  // Reasons when the family spawned processes the hook never got into (SLOWNIK uncoveredChild):
+  // the verdict is partial or fails BECAUSE a process ran on the real clock, and the reason says so
+  // in those words rather than in terms of channels.
+  "session.family_partial_children": "Fałszywy zegar dotarł do procesów wymienionych jako objęte. Te, które aplikacja uruchomiła bez niego, działały na prawdziwym.",
+  "session.family_uncovered_children": "Nic nie odczytało fałszywego zegara, a procesy, które aplikacja uruchomiła bez niego, działały na prawdziwym.",
 
   // Coverage / audit preview (chrono-mock 7.2). Channel names are raw API identifiers, not translated.
   //
@@ -382,6 +387,11 @@
   // R2-S2. Distinct from the NtCreateUserProcess warning above it: there we choose not to inject,
   // here we tried and it did not take, so a process of this family really did run on the real clock.
   "inheritance.child_not_injected": "Procesowi potomnemu nie udało się podać fałszywego zegara i działał na prawdziwym - zwykle dziecko o innej bitowości. Liczba procesów jest o tyle zaniżona.",
+  // Session-level, on session_verdict: the family spawned processes the hook never got into, named
+  // in uncovered_children. The second is the case that matters most - an embedded Chromium (WebView2,
+  // Qt WebEngine) whose renderer is such a process, so every page inside the app read the real clock.
+  "inheritance.children_uncovered": "Ta aplikacja uruchomiła procesy, które nigdy nie dostały fałszywego zegara - przez cały czas działały na prawdziwym.",
+  "embedded.web_engine_uncovered": "Są wśród nich procesy osadzonego silnika web (WebView2 albo Qt WebEngine). Każda strona wewnątrz tej aplikacji odczytywała prawdziwy zegar: piaskowany renderer jest poza zasięgiem mechanizmu natywnego.",
   // R2-S9. Session-level, not per-process: it is about processes that never got a coverage slot,
   // so it arrives on session_verdict rather than on any one coverage event.
   "coverage.pid_registry_full": "Ta sesja uruchomiła więcej procesów, niż audyt potrafi śledzić (256). Część działała całkiem bez fałszywego zegara i nie ma jej w liczbie procesów ani na listach powyżej.",

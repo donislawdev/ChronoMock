@@ -343,6 +343,11 @@
   "session.family_partial": "Some time readings came from the fake clock and some from the real one.",
   "session.family_uncovered": "The application asked for the time and always got the real clock.",
   "session.family_undetermined": "Nothing read the fake clock, so there is nothing to judge.",
+  // Reasons when the family spawned processes the hook never got into (SLOWNIK uncoveredChild):
+  // the verdict is partial or fails BECAUSE a process ran on the real clock, and the reason says so
+  // in those words rather than in terms of channels.
+  "session.family_partial_children": "The fake clock reached the processes listed as covered. The ones this application started without it ran on the real clock.",
+  "session.family_uncovered_children": "Nothing read the fake clock, and the processes this application started without it ran on the real clock.",
 
   // Coverage / audit preview (chrono-mock 7.2). Channel names are raw API identifiers, not translated.
   //
@@ -394,6 +399,11 @@
   // R2-S2. Distinct from the NtCreateUserProcess warning above it: there we choose not to inject,
   // here we tried and it did not take, so a process of this family really did run on the real clock.
   "inheritance.child_not_injected": "A child process could not be given the fake clock and ran on the real one - usually a child of a different bitness. The process count is short by that many.",
+  // Session-level, on session_verdict: the family spawned processes the hook never got into, named
+  // in uncovered_children. The second is the case that matters most - an embedded Chromium (WebView2,
+  // Qt WebEngine) whose renderer is such a process, so every page inside the app read the real clock.
+  "inheritance.children_uncovered": "This application started processes that never got the fake clock - they ran on the real one the whole time.",
+  "embedded.web_engine_uncovered": "Those include the processes of an embedded web engine (WebView2 or Qt WebEngine). Every page inside this application read the real clock: a sandboxed renderer is out of reach for the native mechanism.",
   // R2-S9. Session-level, not per-process: it is about processes that never got a coverage slot,
   // so it arrives on session_verdict rather than on any one coverage event.
   "coverage.pid_registry_full": "This session ran more processes than the audit can track (256). Some ran with no fake clock at all and are missing from the process count and the lists above.",

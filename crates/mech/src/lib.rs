@@ -20,7 +20,7 @@ use chrono_core::{ChannelCoverage, Coverage, SessionSpec, TimeMode};
 use chrono_ctl::{
     cov_at, ctl_size, freeze_dur, freeze_qpc, header_is_ours, read_anchor, read_calls,
     read_core_pid, read_dur, read_installed, read_late_installed, read_pid, read_pid_count, read_qpc,
-    read_uninjected_children, read_waits_at_floor,
+    read_uncovered_child, read_uncovered_children_count, read_uninjected_children, read_waits_at_floor,
     write_anchor, write_anchor_full, write_header,
     write_core_pid, write_scale_dur, write_scale_qpc, write_tz_bias, ChannelCategory, ChannelModule,
     Cov, Ctl, CHANNELS, IDX_TIMEGETTIME, MAX_COV_PIDS,
@@ -44,9 +44,10 @@ use windows::Win32::System::SystemInformation::{
 use windows::Win32::System::Time::{GetTimeZoneInformation, TIME_ZONE_INFORMATION};
 use windows::Win32::System::Threading::{
     CreateMutexW, CreateProcessW, CreateRemoteThread, GetCurrentProcess, GetCurrentProcessId,
-    GetExitCodeProcess, GetExitCodeThread, IsWow64Process2, OpenProcess, ResumeThread,
-    TerminateProcess, WaitForSingleObject, CREATE_SUSPENDED, LPTHREAD_START_ROUTINE,
-    PROCESS_INFORMATION, PROCESS_SYNCHRONIZE, STARTUPINFOW,
+    GetExitCodeProcess, GetExitCodeThread, IsWow64Process2, OpenProcess, QueryFullProcessImageNameW,
+    ResumeThread, TerminateProcess, WaitForSingleObject, CREATE_SUSPENDED, LPTHREAD_START_ROUTINE,
+    PROCESS_INFORMATION, PROCESS_NAME_FORMAT, PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_SYNCHRONIZE,
+    STARTUPINFOW,
 };
 use windows::Win32::System::Performance::QueryPerformanceCounter;
 use windows::Win32::System::WindowsProgramming::QueryUnbiasedInterruptTime;
@@ -125,9 +126,44 @@ pub struct Session {
     /// as a duplicate. The coverage itself needs no bookkeeping here, since it lives in the control
     /// block this session already holds mapped and so outlives every process that writes it (S-9).
     reported_slots: Vec<bool>,
+    /// How many entries of each slot's `uncovered_children` ring have been handed out already, so
+    /// `poll_uncovered_children` names each child exactly once. Indexed by SLOT like `reported_slots`,
+    /// and for the same reason. An entry claimed but not yet written (pid 0) stops the walk for that
+    /// slot until the next poll - the writer fills it within a few instructions of claiming it.
+    consumed_children: Vec<u32>,
     /// The session lock, held for as long as the session lives. Dropped last, so a second core
     /// cannot start until this one has released the control block it was using.
     _lock: SessionLock,
+}
+
+/// A process this session's family spawned and the hook did not follow into: it ran on the real
+/// clock for as long as it lived, whatever it read. `image` is the executable's file name when the
+/// child was still there to ask, `None` when it had already gone.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UncoveredChild {
+    pub pid: u32,
+    pub parent_pid: u32,
+    pub image: Option<String>,
+}
+
+/// The file name of a running process's executable, or `None` when the process cannot be opened -
+/// which is the ordinary outcome for a child that has already exited, and the honest one for a
+/// process this user's token may not query. Limited-information access is enough for the name and
+/// is granted for a lower-integrity child (a sandboxed renderer) by a medium-integrity parent.
+fn image_name_of(pid: u32) -> Option<String> {
+    unsafe {
+        let h = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid).ok()?;
+        let mut buf = [0u16; 1024];
+        let mut len = buf.len() as u32;
+        let ok = QueryFullProcessImageNameW(h, PROCESS_NAME_FORMAT(0), PWSTR(buf.as_mut_ptr()), &mut len).is_ok();
+        let _ = CloseHandle(h);
+        if !ok {
+            return None;
+        }
+        let full = String::from_utf16_lossy(&buf[..len as usize]);
+        let name = full.rsplit(['\\', '/']).next().unwrap_or(&full);
+        Some(name.to_string())
+    }
 }
 
 /// Both clocks at one instant, in raw UTC FILETIME ticks. The core formats them.
@@ -340,6 +376,58 @@ impl Session {
             }
         }
         out
+    }
+
+    /// Children that hooked processes spawned and the hook did not follow into, not seen before -
+    /// each named once, with the image name resolved NOW, while the child is most likely still alive.
+    ///
+    /// The pid comes from the parent's slot (the hook wrote it at the spawn, see
+    /// `chrono_ctl::record_uncovered_child`), and only the pid: a detour must not allocate, so naming
+    /// happens here, on the mechanism side, from a snapshot the OS still holds. A child that has
+    /// already exited keeps its pid and loses its name - the report says so rather than guessing.
+    ///
+    /// Called at the child poll cadence (about every 100 ms) so a short-lived child is usually still
+    /// there to be named, and once more at the end so a late spawn is not lost. A parent whose ring
+    /// overflowed still reports every pid it managed to record, and `uncovered_children_total` (the
+    /// sum of the counters) carries the ones it could not.
+    pub fn poll_uncovered_children(&mut self) -> Vec<UncoveredChild> {
+        let mut out = Vec::new();
+        unsafe {
+            for i in 0..MAX_COV_PIDS {
+                let parent = read_pid(self.ctl(), i);
+                if parent == 0 {
+                    continue;
+                }
+                let cov = cov_at(self.ctl(), i);
+                let count = read_uncovered_children_count(cov) as usize;
+                let named = count.min(chrono_ctl::UNCOVERED_CHILDREN_MAX);
+                while (self.consumed_children[i] as usize) < named {
+                    let index = self.consumed_children[i] as usize;
+                    let pid = read_uncovered_child(cov, index);
+                    if pid == 0 {
+                        break; // claimed, not written yet - the next poll will see it
+                    }
+                    self.consumed_children[i] += 1;
+                    out.push(UncoveredChild { pid, parent_pid: parent, image: image_name_of(pid) });
+                }
+            }
+        }
+        out
+    }
+
+    /// Every uncovered child every hooked process reported, ring overflow included - the number the
+    /// audit owes when the named list is shorter than the truth.
+    pub fn uncovered_children_total(&self) -> u32 {
+        let mut total: u32 = 0;
+        unsafe {
+            for i in 0..MAX_COV_PIDS {
+                if read_pid(self.ctl(), i) == 0 {
+                    continue;
+                }
+                total = total.saturating_add(read_uncovered_children_count(cov_at(self.ctl(), i)));
+            }
+        }
+        total
     }
 
     /// Every published process's coverage as it stands NOW, reported or not.
@@ -991,6 +1079,7 @@ pub fn prepare(spec: &SessionSpec, target: &Target, hook_dll: &Path) -> Result<P
             scale_duration: spec.scale_duration,
             scale_qpc: spec.scale_qpc,
             reported_slots,
+            consumed_children: vec![0; MAX_COV_PIDS],
             _lock: lock,
         };
         Ok(Prepared { coverage, session, vanished_lived_ms, orphan_reclaimed })
