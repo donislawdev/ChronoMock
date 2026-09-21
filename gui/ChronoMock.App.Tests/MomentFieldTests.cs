@@ -123,7 +123,7 @@ public class MomentFieldTests
         // probe: drop the shift and every row but the last fails.
         var field = new MomentField();
 
-        field.LoadInZone(canonical, fromBias, toBias);
+        Assert.True(field.LoadInZone(canonical, fromBias, toBias));
 
         Assert.Equal(expected, field.Canonical);
     }
@@ -136,7 +136,7 @@ public class MomentFieldTests
         var field = new MomentField();
         field.LoadCanonical("2038-01-19T03:14:07");
 
-        field.LoadInZone("not a moment", 300, 0);
+        Assert.False(field.LoadInZone("not a moment", 300, 0));
 
         Assert.Equal("2038-01-19T03:14:07", field.Canonical);
     }
@@ -146,7 +146,7 @@ public class MomentFieldTests
     {
         var field = new MomentField();
 
-        field.LoadInZone("9999-12-31T23:30:00", 0, -120); // two hours past the last representable instant
+        Assert.False(field.LoadInZone("9999-12-31T23:30:00", 0, -120)); // two hours past the last representable instant
 
         Assert.Equal(string.Empty, field.DateText);
     }

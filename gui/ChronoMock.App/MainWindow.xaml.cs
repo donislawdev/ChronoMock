@@ -93,8 +93,12 @@ public partial class MainWindow : FluentWindow
     // session does with it depends on its phase and is decided there, not here.
     private void OnUseInSubstitution(string momentLocal, int zoneBias)
     {
-        _session.AdoptMoment(momentLocal, zoneBias);
-        ModeSubstitution.IsChecked = true; // OnModeChanged swaps the visible module
+        // Shown only when a field took the moment: landing on a screen that shows nothing of the press
+        // is exactly what "the button does nothing" looked like before.
+        if (_session.AdoptMoment(momentLocal, zoneBias))
+        {
+            ModeSubstitution.IsChecked = true; // OnModeChanged swaps the visible module
+        }
     }
 
     // Dropping an application on the window (chrono-mock 7.1 pt 1). Only fills the target - it never

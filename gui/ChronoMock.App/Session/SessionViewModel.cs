@@ -686,7 +686,11 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     /// top of it: the press switched to this module and showed the same verdict as before, with the new
     /// date invisible behind it.
     /// </remarks>
-    public void AdoptMoment(string momentLocal, int zoneBias)
+    /// <returns>True when a field took the moment, false when nothing did - a session on its way in or
+    /// out, or a running one handed a text the jump field could not re-express. The caller switches to
+    /// this module only on true, so a press that adopted nothing does not land on a form that shows
+    /// nothing of it.</returns>
+    public bool AdoptMoment(string momentLocal, int zoneBias)
     {
         if (IsRunning)
         {
@@ -694,18 +698,18 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
             // field, re-expressed in the session's zone (which cannot change in flight), and waits for
             // the Jump button - the press fills a field, it never jumps by itself (rule 7). It used to
             // switch to this module and leave the field empty, which read as the press doing nothing.
-            JumpMoment.LoadInZone(momentLocal, zoneBias, SelectedZone.BiasMinutes);
-            return;
+            return JumpMoment.LoadInZone(momentLocal, zoneBias, SelectedZone.BiasMinutes);
         }
 
         if (!_idle)
         {
-            return;
+            return false;
         }
 
         BeginNewSession();
         Moment.LoadCanonical(momentLocal);
         SelectedZone = Zones.FirstOrDefault(z => z.BiasMinutes == zoneBias) ?? SelectedZone;
+        return true;
     }
 
     /// <summary>Fill the recent list from the session history: distinct target paths, newest first, capped.

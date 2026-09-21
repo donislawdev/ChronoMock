@@ -13,11 +13,15 @@
        wraps there. In a narrow column, the calculator's builder, the time field drops to the next line
        instead of being clipped off the right edge, which a fixed-width stack did. -->
   <WrapPanel Orientation="Horizontal" VerticalAlignment="Center">
-    <controls:DateInput VerticalAlignment="Center" />
+    <!-- Named for assistive tech: the two fields carry a placeholder and a tooltip, and neither is a
+         name, so a screen reader announced two nameless edit boxes. The row's own label (Starts at,
+         Jump to) names the row, not the field inside it. -->
+    <controls:DateInput VerticalAlignment="Center" AccessibleName="{DynamicResource moment.date_name}" />
 
     <TextBox Text="{Binding TimeText, UpdateSourceTrigger=PropertyChanged}"
              app:PartState.Placeholder="{DynamicResource moment.time_placeholder}"
              ToolTip="{DynamicResource tip.time_field}"
+             AutomationProperties.Name="{DynamicResource moment.time_name}"
              Width="{StaticResource MomentTimeFieldWidth}" FontFamily="{StaticResource FontFamilyMono}"
              Margin="{StaticResource SpaceXs}" VerticalAlignment="Center" />
   </WrapPanel>

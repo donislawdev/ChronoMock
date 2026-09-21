@@ -100,20 +100,22 @@ public sealed class MomentField : ObservableObject
     /// instant in a different zone is a shift by the difference of the two biases (UTC = local + bias, so
     /// local' = local + bias - bias'). Both zones are fixed offsets, so this is exact and needs no calendar.
     /// A text that is not a canonical moment, or a shift that leaves the representable range, leaves the
-    /// field untouched rather than holding a moment in the wrong zone.
+    /// field untouched rather than holding a moment in the wrong zone, and says so by returning false -
+    /// the caller decides what a press that adopted nothing should look like.
     /// </summary>
-    public void LoadInZone(string? canonical, int fromBiasMinutes, int toBiasMinutes)
+    /// <returns>True when the field now holds the moment, false when it was left as it was.</returns>
+    public bool LoadInZone(string? canonical, int fromBiasMinutes, int toBiasMinutes)
     {
         if (!DateTime.TryParseExact(
                 canonical, "yyyy-MM-dd'T'HH:mm:ss", CultureInfo.InvariantCulture, DateTimeStyles.None, out var local))
         {
-            return;
+            return false;
         }
 
         var shift = TimeSpan.FromMinutes(fromBiasMinutes - toBiasMinutes);
         if (local.Ticks + shift.Ticks < DateTime.MinValue.Ticks || local.Ticks + shift.Ticks > DateTime.MaxValue.Ticks)
         {
-            return;
+            return false;
         }
 
         var shifted = local + shift;
@@ -121,6 +123,7 @@ public sealed class MomentField : ObservableObject
             ? shifted.ToString("HH:mm", CultureInfo.InvariantCulture)
             : shifted.ToString("HH:mm:ss", CultureInfo.InvariantCulture);
         Fill(shifted.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture), time);
+        return true;
     }
 
     /// <summary>Fill the field with midnight today in the SESSION zone (a fixed offset, rule 2 - relative to

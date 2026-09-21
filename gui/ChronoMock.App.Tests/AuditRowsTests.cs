@@ -47,6 +47,25 @@ public class AuditRowsTests
     }
 
     [Fact]
+    public void A_late_channel_left_real_by_design_is_one_row_with_its_count_and_both_facts()
+    {
+        // The late list can name an observed channel as well as a covered one. It used to fold to two rows
+        // - the observed one with its count and a second, uncounted late one - because the deduplication
+        // looked at the covered list alone. Reversal probe: build the counted set from covered only.
+        var rows = AuditRowsConverter.Fold(
+            covered: [],
+            uncovered: [],
+            observed: [Channel("QueryPerformanceCounter", 3)],
+            unobserved: [],
+            installedLate: ["QueryPerformanceCounter"]);
+
+        var row = Assert.Single(rows);
+        Assert.Equal(AuditStatus.ByDesignLate, row.Status);
+        Assert.Equal("audit.status_by_design_late", row.StatusKey);
+        Assert.Equal("3", row.CallsText);
+    }
+
+    [Fact]
     public void A_late_channel_the_covered_list_does_not_carry_still_gets_a_row()
     {
         // The audit never drops a fact the core reported (untouchable rule 4): a late name with no count

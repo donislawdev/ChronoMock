@@ -41,6 +41,7 @@ public partial class ComponentCatalogue : UserControl
     [
         new("GetLocalTime", "audit.status_real", AuditStatus.Real, null),
         new("QueryPerformanceCounter", "audit.status_by_design", AuditStatus.ByDesign, 3),
+        new("QueryPerformanceFrequency", "audit.status_by_design_late", AuditStatus.ByDesignLate, 2),
         new("NtQuerySystemTime", "audit.status_unwatched", AuditStatus.Unwatched, null),
         new("timeGetTime", "audit.status_late", AuditStatus.Late, 7),
         new("GetSystemTimeAsFileTime", "audit.status_fake", AuditStatus.Fake, 128004),

@@ -185,6 +185,9 @@
   "moment.label": "At:",
   "moment.date_placeholder": "YYYY-MM-DD",
   "moment.time_placeholder": "HH:MM",
+  // What a screen reader calls the two fields of a moment input - the placeholder is a hint, not a name.
+  "moment.date_name": "Date",
+  "moment.time_name": "Time",
   "moment.date_empty": "Enter a date.",
   "moment.date_format": "Use the form YYYY-MM-DD.",
   "moment.date_invalid": "That date does not exist.",
@@ -370,6 +373,7 @@
   "audit.status_fake": "fake clock",
   "audit.status_real": "real clock",
   "audit.status_by_design": "real clock, by design",
+  "audit.status_by_design_late": "real clock, by design, hooked late",
   "audit.status_unwatched": "not watched",
   "audit.status_late": "fake clock, late",
   // The read count on a covered or observed channel, in prose so it does not read like the speed multiplier

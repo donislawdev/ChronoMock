@@ -181,11 +181,23 @@ public class SessionCommandsTests
         // showed that screen: the same verdict as before, the new date invisible behind it.
         var vm = SessionStates.Ended();
 
-        vm.AdoptMoment("2040-06-15T08:30:00", 300);
+        Assert.True(vm.AdoptMoment("2040-06-15T08:30:00", 300));
 
         Assert.True(vm.ShowsSetupPhase);
         Assert.Equal("2040-06-15T08:30:00", vm.Moment.Canonical);
         Assert.Equal(300, vm.SelectedZone.BiasMinutes);
+    }
+
+    [Fact]
+    public void A_press_that_adopts_nothing_says_so_instead_of_switching_to_an_empty_form()
+    {
+        // The window switches modules only when a field took the moment. A running session handed a text
+        // the jump field cannot re-express adopts nothing - and used to land the reader on the session
+        // screen with an empty Jump to field, the same "nothing happened" this fix was for.
+        var vm = SessionStates.Running();
+
+        Assert.False(vm.AdoptMoment("not a moment", 0));
+        Assert.Equal(string.Empty, vm.JumpMoment.DateText);
     }
 
     [Fact]
@@ -200,7 +212,7 @@ public class SessionCommandsTests
         Assert.Equal(0, vm.SelectedZone.BiasMinutes);
         var startBefore = vm.Moment.Canonical;
 
-        vm.AdoptMoment("2040-06-15T08:30:00", 300);
+        Assert.True(vm.AdoptMoment("2040-06-15T08:30:00", 300));
 
         Assert.Equal(startBefore, vm.Moment.Canonical);
         Assert.Equal("2040-06-15T13:30:00", vm.JumpMoment.Canonical);

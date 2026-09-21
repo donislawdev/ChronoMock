@@ -31,6 +31,10 @@ public static class AuditStatus
     /// <summary>Read the real clock because the session chose to leave it real (QPC unscaled, for one).</summary>
     public const string ByDesign = "design";
 
+    /// <summary>Left real by design AND hooked only once its module loaded, so its count is a floor. Both
+    /// facts in one word, because one function is one row and the audit drops neither (rule 4).</summary>
+    public const string ByDesignLate = "design-late";
+
     /// <summary>A channel the session meant to watch and could not - nothing was hooked in.</summary>
     public const string Unwatched = "unwatched";
 
@@ -70,8 +74,10 @@ public sealed class AuditRowsConverter : IMultiValueConverter
     }
 
     /// <summary>The fold itself, testable without a binding. Order: real first (the verdict's reason),
-    /// then not watched, then late, then the fake-clock rows - within a group, the order the session
-    /// reported them. A covered channel named among the late ones is one row, marked late, not two.</summary>
+    /// then by design, then not watched, then late, then the fake-clock rows - within a group, the order
+    /// the session reported them. A channel named among the late ones is ONE row wherever else it is
+    /// listed: a covered one is marked late with its count, an observed one is marked by-design-and-late
+    /// with its count, and a name no counted list carries gets a late row without a count.</summary>
     public static IReadOnlyList<AuditRow> Fold(
         IEnumerable<CoveredChannel> covered,
         IEnumerable<string> uncovered,
@@ -80,16 +86,20 @@ public sealed class AuditRowsConverter : IMultiValueConverter
         IEnumerable<string> installedLate)
     {
         var late = new HashSet<string>(installedLate, StringComparer.Ordinal);
+        var coveredList = covered.ToList();
+        var observedList = observed.ToList();
         var rows = new List<AuditRow>();
         rows.AddRange(uncovered.Select(name => new AuditRow(name, "audit.status_real", AuditStatus.Real, null)));
-        rows.AddRange(observed.Select(c => new AuditRow(c.Channel, "audit.status_by_design", AuditStatus.ByDesign, c.Calls)));
+        rows.AddRange(observedList.Select(c => late.Contains(c.Channel)
+            ? new AuditRow(c.Channel, "audit.status_by_design_late", AuditStatus.ByDesignLate, c.Calls)
+            : new AuditRow(c.Channel, "audit.status_by_design", AuditStatus.ByDesign, c.Calls)));
         rows.AddRange(unobserved.Select(name => new AuditRow(name, "audit.status_unwatched", AuditStatus.Unwatched, null)));
-        var coveredList = covered.ToList();
         rows.AddRange(coveredList.Where(c => late.Contains(c.Channel))
             .Select(c => new AuditRow(c.Channel, "audit.status_late", AuditStatus.Late, c.Calls)));
-        // A late name the covered list does not carry is still a fact the core reported, and the audit
-        // never drops one (untouchable rule 4): it gets its row, without a count.
-        var counted = new HashSet<string>(coveredList.Select(c => c.Channel), StringComparer.Ordinal);
+        // A late name no counted list carries is still a fact the core reported, and the audit never
+        // drops one (untouchable rule 4): it gets its row, without a count.
+        var counted = new HashSet<string>(
+            coveredList.Select(c => c.Channel).Concat(observedList.Select(c => c.Channel)), StringComparer.Ordinal);
         rows.AddRange(installedLate.Where(name => !counted.Contains(name))
             .Select(name => new AuditRow(name, "audit.status_late", AuditStatus.Late, null)));
         rows.AddRange(coveredList.Where(c => !late.Contains(c.Channel))
