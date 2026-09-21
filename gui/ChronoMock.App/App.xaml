@@ -31,6 +31,7 @@
            core and the VM emit) to text in the current language (untouchable rules 15/16). -->
       <local:TranslationKeyConverter x:Key="KeyToText" />
       <local:AuditRowsConverter x:Key="AuditRows" />
+      <local:UncoveredProcessRowsConverter x:Key="UncoveredProcessRows" />
 
       <!-- Verdict indicator: the glyph and colour come from the verdict kind, colour from the named palette. -->
       <local:VerdictGlyphConverter x:Key="VerdictGlyph" />

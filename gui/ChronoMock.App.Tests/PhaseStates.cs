@@ -127,6 +127,62 @@ internal static class PhaseStates
         return model;
     }
 
+    /// <summary>
+    /// A session whose family spawned processes the hook never got into - the shape an application with
+    /// an embedded web engine produces (measured on two of them, 2026-09-21): the engine's runtime in
+    /// every role it runs, one of them the renderer, a second runtime with a renderer of its own, two
+    /// children gone before they could be named, and a total above the named list.
+    /// </summary>
+    public static SessionViewModel ResultPartialWithUncoveredProcesses()
+    {
+        var model = ResultRunning();
+        model.Apply(new SessionVerdictEvent
+        {
+            V = ProtocolJson.ProtocolVersion,
+            Verdict = "partial",
+            ReasonKey = "session.family_partial_children",
+            ProcessCount = 3,
+            WarningKeys = ["inheritance.children_uncovered", "embedded.web_engine_uncovered"],
+            UncoveredChildren =
+            [
+                new UncoveredChild { Pid = 5120, ParentPid = 4300, Image = "msedgewebview2.exe", Role = "crashpad-handler" },
+                new UncoveredChild { Pid = 5136, ParentPid = 4300, Image = "msedgewebview2.exe", Role = "gpu-process" },
+                new UncoveredChild { Pid = 5150, ParentPid = 4300, Image = "msedgewebview2.exe", Role = "utility" },
+                new UncoveredChild { Pid = 5164, ParentPid = 4300, Image = "msedgewebview2.exe", Role = "utility" },
+                new UncoveredChild { Pid = 5180, ParentPid = 4300, Image = "msedgewebview2.exe", Role = "renderer" },
+                new UncoveredChild { Pid = 6012, ParentPid = 4242, Image = "QtWebEngineProcess.exe", Role = "renderer" },
+                new UncoveredChild { Pid = 6100, ParentPid = 4242 },
+                new UncoveredChild { Pid = 6104, ParentPid = 4242 },
+            ],
+            UncoveredChildrenTotal = 11,
+        });
+        model.Apply(Ended());
+        return model;
+    }
+
+    /// <summary>
+    /// The family verdict naming <paramref name="total"/> processes the hook never got into, applied to
+    /// a model in whatever state it is - for a guard that reads a count off the screen and wants that
+    /// count to be one no other list shares - or, with an <paramref name="image"/>, for a guard that
+    /// reads how the table treats one particular name.
+    /// </summary>
+    public static SessionViewModel WithUncoveredProcesses(SessionViewModel model, int total, string image = "helper.exe")
+    {
+        model.Apply(new SessionVerdictEvent
+        {
+            V = ProtocolJson.ProtocolVersion,
+            Verdict = "partial",
+            ReasonKey = "session.family_partial_children",
+            ProcessCount = 2,
+            WarningKeys = ["inheritance.children_uncovered"],
+            UncoveredChildren = Enumerable.Range(0, total)
+                .Select(i => new UncoveredChild { Pid = (uint)(7000 + i), ParentPid = 4242, Image = image })
+                .ToList(),
+            UncoveredChildrenTotal = total,
+        });
+        return model;
+    }
+
     /// <summary>The core refusing to start, with the diagnostics that refusal leaves behind.</summary>
     public static SessionViewModel ResultRefused()
     {

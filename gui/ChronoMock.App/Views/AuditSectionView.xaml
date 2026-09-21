@@ -77,6 +77,16 @@
               <Run Text="{DynamicResource session.chip_warnings}" /><Run Text=" " /><Run Text="{Binding Warnings.Count, Mode=OneWay}" />
             </TextBlock>
           </Border>
+          <!-- The fifth count, for the same reason the third was missing and had to be added: processes
+               the hook never got into are a watch the tool could not run, and a folded section whose
+               header does not mention them hides them (untouchable rule 4). The true total, not the
+               number of rows - the table groups. -->
+          <Border x:Name="ProcessesChip" Style="{StaticResource PartBadge}" Margin="{StaticResource SpaceXs}"
+                  Visibility="{Binding HasUncoveredChildren, Converter={StaticResource BoolToVis}}">
+            <TextBlock Style="{StaticResource PartCaption}" TextWrapping="NoWrap">
+              <Run Text="{DynamicResource session.chip_processes}" /><Run Text=" " /><Run Text="{Binding UncoveredChildrenTotal, Mode=OneWay}" />
+            </TextBlock>
+          </Border>
         </StackPanel>
       </ControlTemplate>
     </ResourceDictionary>
@@ -151,26 +161,56 @@
              from meant finding the heading it sat under - the owner's review of the shipped build read
              the whole as a wall of text (2026-09-21). The rows are folded from the same five lists the
              view model still exposes (AuditRowsConverter), in the order that matters: the readings that
-             fail a verdict first, the ones nobody could judge next, the good news last. Shared-size
-             columns, so the header and every row agree on where a column starts. -->
-        <StackPanel Grid.IsSharedSizeScope="True" Margin="{StaticResource StackGapLg}"
-                    Visibility="{Binding HasAuditRows, Converter={StaticResource BoolToVis}}">
-          <ContentControl x:Name="AuditTableHeader" Template="{StaticResource AuditTableHeader}"
-                          Focusable="False" IsTabStop="False" />
-          <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
-                        MaxHeight="{StaticResource AuditTableMaxHeight}" Focusable="False">
-            <ItemsControl x:Name="AuditTable" ItemTemplate="{StaticResource AuditRowTemplate}">
-              <ItemsControl.ItemsSource>
-                <MultiBinding Converter="{StaticResource AuditRows}">
-                  <Binding Path="Covered" />
-                  <Binding Path="Uncovered" />
-                  <Binding Path="Observed" />
-                  <Binding Path="Unobserved" />
-                  <Binding Path="InstalledLate" />
-                </MultiBinding>
-              </ItemsControl.ItemsSource>
-            </ItemsControl>
-          </ScrollViewer>
+             fail a verdict first, the ones nobody could judge next, the good news last. The table shell
+             (the header, the capped well, one scope for the shared column widths) is the PartTable part,
+             which the process table under it shares. -->
+        <HeaderedItemsControl x:Name="AuditTable" Style="{StaticResource PartTable}"
+                              Margin="{StaticResource StackGapLg}"
+                              ItemTemplate="{StaticResource AuditRowTemplate}"
+                              Visibility="{Binding HasAuditRows, Converter={StaticResource BoolToVis}}">
+          <HeaderedItemsControl.Header>
+            <ContentControl x:Name="AuditTableHeader" Template="{StaticResource AuditTableHeader}"
+                            Focusable="False" IsTabStop="False" />
+          </HeaderedItemsControl.Header>
+          <HeaderedItemsControl.ItemsSource>
+            <MultiBinding Converter="{StaticResource AuditRows}">
+              <Binding Path="Covered" />
+              <Binding Path="Uncovered" />
+              <Binding Path="Observed" />
+              <Binding Path="Unobserved" />
+              <Binding Path="InstalledLate" />
+            </MultiBinding>
+          </HeaderedItemsControl.ItemsSource>
+        </HeaderedItemsControl>
+
+        <!-- 🔴 THE PROCESSES THE HOOK NEVER GOT INTO, and until this block the screen only said that some
+             existed: the family verdict's reason read "the ones this application started without it ran on
+             the real clock", the warning under it said "this application started processes that never got
+             the fake clock", and neither said WHICH (untouchable rule 4 - the CLI report names them). One
+             row per executable and role, counted, under a heading that carries the true total - the wire
+             names at most a fixed number of them, and a total above the rows is said in words under the
+             table rather than left as a mismatch. It stands between the audit table and the warnings, where
+             the CLI report puts it, because the warnings are about these rows. -->
+        <StackPanel x:Name="ProcessBlock" Margin="{StaticResource StackGapLg}"
+                    Visibility="{Binding HasUncoveredChildren, Converter={StaticResource BoolToVis}}">
+          <TextBlock x:Name="ProcessHeading" Style="{StaticResource PartLabel}" TextWrapping="NoWrap"
+                     TextTrimming="CharacterEllipsis">
+            <Run Text="{DynamicResource audit.processes_heading}" /><Run Text=" (" /><Run Text="{Binding UncoveredChildrenTotal, Mode=OneWay}" /><Run Text=")" />
+          </TextBlock>
+          <HeaderedItemsControl x:Name="ProcessTable" Style="{StaticResource PartTable}"
+                                Margin="{StaticResource StackGapSm}"
+                                ItemTemplate="{StaticResource ProcessRowTemplate}"
+                                ItemsSource="{Binding UncoveredChildren, Converter={StaticResource UncoveredProcessRows}}">
+            <HeaderedItemsControl.Header>
+              <ContentControl x:Name="ProcessTableHeader" Template="{StaticResource ProcessTableHeader}"
+                              Focusable="False" IsTabStop="False" />
+            </HeaderedItemsControl.Header>
+          </HeaderedItemsControl>
+          <TextBlock x:Name="ProcessesMore" Style="{StaticResource PartNote}" TextWrapping="Wrap"
+                     Margin="{StaticResource StackGapSm}"
+                     Visibility="{Binding HasUnnamedUncoveredChildren, Converter={StaticResource BoolToVis}}">
+            <Run Text="{DynamicResource audit.processes_more_before}" /><Run Text="{Binding UncoveredChildrenUnnamed, StringFormat=' {0} ', Mode=OneWay}" /><Run Text="{DynamicResource audit.processes_more_after}" />
+          </TextBlock>
         </StackPanel>
 
         <!-- The warnings, each in its own box so a run of them reads as separate things to act on rather

@@ -225,6 +225,13 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     private IReadOnlyList<string> _unobserved = [];
     private IReadOnlyList<string> _installedLate = [];
     private IReadOnlyList<string> _warnings = [];
+    // The processes the family spawned and the hook did not follow into, as the session verdict names them
+    // (docs/zasady/SLOWNIK uncoveredChild). They are the reason a family verdict is partial, and until slice
+    // A2 the model dropped them: the screen said "the ones this application started without it ran on the
+    // real clock" and never said which (untouchable rule 4). The wire caps the list, so the total travels
+    // separately and is the number the screen prints.
+    private IReadOnlyList<UncoveredChild> _uncoveredChildren = [];
+    private int _uncoveredChildrenTotal;
 
     private bool _hasTiming;
     private long _elapsedRealMs;
@@ -1379,6 +1386,53 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
         private set { if (Set(ref _warnings, value)) { RaisePropertyChanged(nameof(HasWarnings)); } }
     }
 
+    /// <summary>The processes this session's family spawned without the hook inside them, as the session
+    /// verdict names them - each ran on the real clock the whole time. Raw wire records: the screen folds
+    /// them into a table by executable and role (UncoveredProcessRowsConverter), the copied summary prints
+    /// them one per pid the way the CLI report does. The wire names at most a fixed number of them
+    /// (UNCOVERED_CHILDREN_WIRE_MAX) - <see cref="UncoveredChildrenTotal"/> is the true count regardless.</summary>
+    public IReadOnlyList<UncoveredChild> UncoveredChildren
+    {
+        get => _uncoveredChildren;
+        private set
+        {
+            if (Set(ref _uncoveredChildren, value))
+            {
+                RaisePropertyChanged(nameof(UncoveredChildrenUnnamed));
+                RaisePropertyChanged(nameof(HasUnnamedUncoveredChildren));
+            }
+        }
+    }
+
+    /// <summary>How many processes ran without the hook, named or not - the number the heading and the
+    /// chip print. Never below the length of the named list: a core that counted fewer than it named would
+    /// be a core contradicting itself, and the screen prints the larger of the two rather than a count
+    /// smaller than the rows under it.</summary>
+    public int UncoveredChildrenTotal
+    {
+        get => _uncoveredChildrenTotal;
+        private set
+        {
+            if (Set(ref _uncoveredChildrenTotal, value))
+            {
+                RaisePropertyChanged(nameof(HasUncoveredChildren));
+                RaisePropertyChanged(nameof(UncoveredChildrenUnnamed));
+                RaisePropertyChanged(nameof(HasUnnamedUncoveredChildren));
+            }
+        }
+    }
+
+    /// <summary>How many of the counted processes the report could not name - the ones past the wire's cap.
+    /// Said in words under the table, so a total above the rows is never a mismatch left for the reader to
+    /// notice (untouchable rule 4). Distinct from a named row that has no image: that process was seen and
+    /// gone before it could be asked, this one was never listed at all.</summary>
+    public int UncoveredChildrenUnnamed
+        => _uncoveredChildrenTotal > _uncoveredChildren.Count ? _uncoveredChildrenTotal - _uncoveredChildren.Count : 0;
+
+    public bool HasUncoveredChildren => _uncoveredChildrenTotal > 0;
+
+    public bool HasUnnamedUncoveredChildren => UncoveredChildrenUnnamed > 0;
+
     /// <summary>The target's own exit code, from <c>ended.target_exit_code</c> - present only for a native
     /// session whose app exited on its own (null for a Stop/end or a CDP session). Informational, never a
     /// verdict - shown so the reader can tell "the app closed itself (code N)" from "the session was stopped".</summary>
@@ -1523,6 +1577,16 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
             case SessionVerdictEvent sv:
                 // The family aggregate, at end - it overrides the per-process verdict on the indicator.
                 ProcessCount = sv.ProcessCount;
+                // The processes the hook never got into, named on the one event that speaks for the whole
+                // family - none of them has a coverage event of its own, that is what uncovered means. The
+                // total is the true count and the list is the wire's capped slice of it, so the screen
+                // prints the total and says how many it could not name.
+                UncoveredChildren = sv.UncoveredChildren;
+                // Plain comparisons rather than Math.Max: System.Math would be one more type on a class that
+                // stands on its coupling ceiling, and the ceiling is for the one type this slice needs.
+                UncoveredChildrenTotal = sv.UncoveredChildrenTotal > sv.UncoveredChildren.Count
+                    ? sv.UncoveredChildrenTotal
+                    : sv.UncoveredChildren.Count;
                 // Session-level warnings join the per-process ones (R2-S9). They are about the family,
                 // not about any one process, so the panel shows them in the same list - a warning the
                 // reader has to attribute to an event type is a warning they will not read.
@@ -1797,6 +1861,8 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
         Unobserved = [];
         InstalledLate = [];
         Warnings = [];
+        UncoveredChildren = [];
+        UncoveredChildrenTotal = 0;
 
         _hasTiming = false;
         _elapsedRealMs = 0;
@@ -1951,6 +2017,10 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
         // The channels hooked only after their module loaded - shown in the in-app audit, so the copied
         // report must carry them too, or the warning below references a list the reader cannot see (rule 4).
         AppendList(sb, translate, "coverage.installed_late", _installedLate, translateItems: false);
+        // The processes the hook never got into, where the CLI report puts them: after the channel lists
+        // and before the warnings that talk about them. A copied report that left them out claimed less
+        // than the screen shows and less than the CLI says (untouchable rule 4).
+        AppendUncoveredChildren(sb, translate);
         AppendList(sb, translate, "coverage.warnings", _warnings, translateItems: true);
         // Cleanup residue the core could not remove (ended.residue_keys) - reported, never hidden (rule 6).
         AppendList(sb, translate, "report.cleanup", _residueKeys, translateItems: true);
@@ -2057,6 +2127,38 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
         catch (FormatException)
         {
             return template;
+        }
+    }
+
+    /// <summary>
+    /// The processes the hook never got into, one line per pid the way the CLI report prints them (pid,
+    /// executable, role, the parent that spawned it). The screen groups them by executable because a reader
+    /// scanning a table wants the shape, and the clipboard keeps the pids because a ticket about one runaway
+    /// child wants the fact. A count past the named list is said in words, never left as a mismatch.
+    /// </summary>
+    private void AppendUncoveredChildren(StringBuilder sb, Func<string, string> translate)
+    {
+        if (!HasUncoveredChildren)
+        {
+            return;
+        }
+
+        sb.Append("  ").Append(translate("report.processes_uncovered"))
+          .Append(" (").Append(_uncoveredChildrenTotal).Append("):\n");
+        foreach (var child in _uncoveredChildren)
+        {
+            // Empty like null: a path that ends in a separator names nothing, and the table already reads
+            // an empty name as the unnamed row - the clipboard must not print a blank where it prints words.
+            var image = string.IsNullOrEmpty(child.Image) ? translate("audit.process_unnamed") : child.Image;
+            var line = child.Role is { Length: > 0 } role
+                ? Fmt(translate("report.process_line_role"), child.Pid, image, role, child.ParentPid)
+                : Fmt(translate("report.process_line"), child.Pid, image, child.ParentPid);
+            sb.Append("    - ").Append(line).Append('\n');
+        }
+
+        if (UncoveredChildrenUnnamed > 0)
+        {
+            sb.Append("    - ").Append(Fmt(translate("report.processes_more"), UncoveredChildrenUnnamed)).Append('\n');
         }
     }
 

@@ -907,7 +907,7 @@ public class LayoutGuardTests
     /// warning counts and nothing for the channels the session could not watch, so a session with an
     /// unwatched channel said nothing about it until the section was opened (untouchable rule 4).
     ///
-    /// The four counts differ on purpose. With two lists of the same length, a chip bound to the wrong
+    /// The five counts differ on purpose. With two lists of the same length, a chip bound to the wrong
     /// list would show the right number and pass.
     ///
     /// Reversal probes: delete UnobservedChip from AuditSummary in SessionPhaseView.xaml and this reddens on
@@ -939,8 +939,14 @@ public class LayoutGuardTests
                     "source.network_at_start",
                 ],
             });
+            // The fifth count: processes the hook never got into, on the family verdict - which also raises
+            // a warning of its own, so the warnings go to five and the processes to six. That verdict opens
+            // the section by itself, so the reader who folds it is the one this guard stands for.
+            PhaseStates.WithUncoveredProcesses(model, total: 6);
 
             var view = new SessionPhaseView { DataContext = model };
+            LayoutProbe.Settle(view);
+            ((Expander)LayoutProbe.FindNamed(view, "AuditSection")!).IsExpanded = false;
             LayoutProbe.Settle(view);
             var elements = LayoutProbe.Walk(view);
 
@@ -955,12 +961,126 @@ public class LayoutGuardTests
         Assert.EndsWith(" 3", chips["CoveredChip"], StringComparison.Ordinal);
         Assert.EndsWith(" 1", chips["UncoveredChip"], StringComparison.Ordinal);
         Assert.EndsWith(" 2", chips["UnobservedChip"], StringComparison.Ordinal);
-        Assert.EndsWith(" 4", chips["WarningsChip"], StringComparison.Ordinal);
+        Assert.EndsWith(" 5", chips["WarningsChip"], StringComparison.Ordinal);
+        Assert.EndsWith(" 6", chips["ProcessesChip"], StringComparison.Ordinal);
     }
 
-    /// <summary>Covered, uncovered, could not be watched, warnings. A literal, so a walk that found no chips
-    /// cannot pass by never reaching the number checks.</summary>
-    private const int AuditChips = 4;
+    /// <summary>Covered, uncovered, could not be watched, warnings, processes on the real clock. A literal,
+    /// so a walk that found no chips cannot pass by never reaching the number checks.</summary>
+    private const int AuditChips = 5;
+
+    /// <summary>
+    /// A session whose family spawned processes the hook never got into names them under the audit
+    /// table: one row per executable and role, the true total in the heading, and the count the report
+    /// could not name said in words.
+    /// </summary>
+    /// <remarks>
+    /// 🔴 THIS GUARD EXISTS BECAUSE THE FAULT WAS MADE. The verdict's reason said "the ones this application
+    /// started without it ran on the real clock", the warning said "this application started processes that
+    /// never got the fake clock", and the screen never said which - the model dropped the list the family
+    /// verdict carried (untouchable rule 4, and the CLI report had named them all along).
+    ///
+    /// The fixture is the shape two applications with an embedded web engine produced: one runtime in
+    /// four roles, a second with a renderer, two children gone before they could be named, a total above
+    /// the list. The numbers differ from each other on purpose, so a heading bound to the row count (8) or
+    /// the list length (8) instead of the total (11) reddens on the number.
+    ///
+    /// Reversal probes: delete ProcessBlock from AuditSectionView.xaml and this reddens on visibility. Bind
+    /// ProcessHeading to UncoveredChildren.Count and it reddens on "(11)". Drop the DataTrigger on IsUnnamed
+    /// from ProcessRowTemplate and it reddens on the unnamed sentence.
+    /// </remarks>
+    [Fact]
+    public void A_session_that_spawned_processes_without_the_hook_names_them_under_the_audit_table()
+    {
+        var (block, heading, rows, more) = WpfTestHost.InvokeSettled(() =>
+        {
+            var view = ResultView(PhaseStates.ResultPartialWithUncoveredProcesses());
+            LayoutProbe.Settle(view);
+            var elements = LayoutProbe.Walk(view);
+            var table = elements.Single(e => e.Name == "ProcessTable");
+            var cells = elements
+                .Where(e => e.Kind == nameof(TextBlock) && e.IsVisible && table.Bounds.Contains(e.Bounds))
+                .Select(e => e.Text)
+                .ToList();
+            return (
+                elements.Single(e => e.Name == "ProcessBlock").IsVisible,
+                elements.Single(e => e.Name == "ProcessHeading").Text,
+                cells,
+                elements.Single(e => e.Name == "ProcessesMore"));
+        });
+
+        Assert.True(block, "the processes the hook never got into are not on the result screen");
+        Assert.EndsWith("(11)", heading, StringComparison.Ordinal);
+        Assert.Equal(4, rows.Count(t => t == "msedgewebview2.exe"));
+        Assert.Equal(1, rows.Count(t => t == "QtWebEngineProcess.exe"));
+        Assert.Equal(2, rows.Count(t => t == "renderer"));
+        Assert.Equal(1, rows.Count(t => t == TranslationKeyConverter.Resolve("audit.process_unnamed")));
+        Assert.True(more.IsVisible, "the count the report could not name is not said under the table");
+        Assert.Contains(" 3 ", more.Text, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// An executable name longer than the name column trims to the column's ceiling, and the count beside
+    /// it stays on the card.
+    /// </summary>
+    /// <remarks>
+    /// The table's well does not scroll sideways and the core lets two hundred characters of a name
+    /// through, so an uncapped shared column would grow to the name and carry the role and the count off
+    /// the card with no ellipsis anywhere. Measured on the render, not read off the attribute: a MaxWidth on
+    /// a shared-size column is the kind of property a toolkit can ignore quietly (GUI rule 10).
+    ///
+    /// The first build of the fix put the ceiling on the shared-size COLUMN, and this guard read the name
+    /// cell at 1 346 px under a 268 px ceiling: WPF ignores MaxWidth there. The ceiling lives on the cell.
+    ///
+    /// Reversal probe: drop MaxWidth from the name cell in ProcessRowTemplate and this reddens on the name
+    /// cell's width, and again on the count cell's right edge.
+    /// </remarks>
+    [Fact]
+    public void A_process_name_longer_than_its_column_trims_and_keeps_the_count_on_the_card()
+    {
+        var (ceiling, nameWidth, countRight, tableRight) = WpfTestHost.InvokeSettled(() =>
+        {
+            // A finished session given the verdict again, now naming one process with a two-hundred
+            // character name - the longest the core lets through.
+            var model = PhaseStates.WithUncoveredProcesses(PhaseStates.ResultPartial(), total: 1, image: new string('x', 200) + ".exe");
+            var view = ResultView(model);
+            LayoutProbe.Settle(view);
+            var elements = LayoutProbe.Walk(view);
+            var table = elements.Single(e => e.Name == "ProcessTable");
+            // Found by their text and their row, NOT by lying inside the table: a cell that overflowed the
+            // table is exactly the failure this guard reads for, and a filter on containment would turn
+            // that failure into "no such element".
+            var cells = elements
+                .Where(e => e.Kind == nameof(TextBlock) && e.IsVisible
+                    && e.Bounds.Top >= table.Bounds.Top && e.Bounds.Bottom <= table.Bounds.Bottom)
+                .ToList();
+            var name = cells.Single(e => e.Text.StartsWith("xxxx", StringComparison.Ordinal));
+            var count = cells.Single(e => e.Text == "1");
+            return (
+                (double)view.FindResource("ProcessImageColumnMaxWidth"),
+                name.Bounds.Width,
+                count.Bounds.Right,
+                table.Bounds.Right);
+        });
+
+        Assert.True(nameWidth <= ceiling, $"the name cell is {nameWidth:F0} px wide against a ceiling of {ceiling:F0}");
+        Assert.True(countRight <= tableRight + 0.5, $"the count ends at {countRight:F0}, past the table's edge at {tableRight:F0}");
+    }
+
+    /// <summary>A session whose family spawned nothing the hook missed shows no process table at all - an
+    /// empty table under a heading with a zero would be a question nobody asked.</summary>
+    [Fact]
+    public void A_session_with_every_process_covered_shows_no_process_table()
+    {
+        var visible = WpfTestHost.InvokeSettled(() =>
+        {
+            var view = ResultView(PhaseStates.ResultPartial());
+            LayoutProbe.Settle(view);
+            return LayoutProbe.Walk(view).Single(e => e.Name == "ProcessBlock").IsVisible;
+        });
+
+        Assert.False(visible, "the process table is on screen for a session that had nothing to put in it");
+    }
 
     /// <summary>
     /// The two clocks share the outer edges of the card under them, and the channel between them is wider
