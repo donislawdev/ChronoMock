@@ -59,9 +59,10 @@ public class StateSheetTests
     /// 4 096 is both a power of two and a multiple of 1 024, and the two readings part company above it.
     /// The grid is 1 024. The clock and the fact list took the content to 4 851 px, so this went to 5 120:
     /// one step, not the measurement. Doubling to 8 192 would have doubled the cost of every render of it
-    /// for 269 px of content. The verdict headline took it to 5 397, so one more step: 6 144.
+    /// for 269 px of content. The verdict headline took it to 5 397, so one more step: 6 144. The process
+    /// table took it to 6 266, so one more: 7 168.
     /// </remarks>
-    private const int CatalogueHeight = 6144;
+    private const int CatalogueHeight = 7168;
 
     /// <summary>
     /// The rebuilt setup phase, in the three states that decide whether it works.
@@ -197,6 +198,7 @@ public class StateSheetTests
 
             total += RenderResult("result-works", PhaseStates.ResultWorks()).Count;
             total += RenderResult("result-partial", PhaseStates.ResultPartial()).Count;
+            total += RenderResult("result-processes", PhaseStates.ResultPartialWithUncoveredProcesses(), "AuditSection").Count;
             total += RenderResult("result-refused", PhaseStates.ResultRefused()).Count;
             total += RenderResult("result-vanished", PhaseStates.ResultVanished()).Count;
             total += RenderResult("result-not-started", PhaseStates.ResultNotStarted()).Count;

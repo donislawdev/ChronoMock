@@ -371,6 +371,15 @@
   "audit.status_by_design_late": "prawdziwy zegar, celowo, zaczepiona późno",
   "audit.status_unwatched": "nieobserwowana",
   "audit.status_late": "fałszywy zegar, późno",
+  // The process table, see the English file.
+  "session.chip_processes": "procesy na prawdziwym zegarze:",
+  "audit.processes_heading": "Procesy, które działały na prawdziwym zegarze",
+  "audit.col_process": "Proces",
+  "audit.col_role": "Rola",
+  "audit.col_count": "Liczba",
+  "audit.process_unnamed": "zakończył się, zanim dało się go nazwać",
+  "audit.processes_more_before": "i",
+  "audit.processes_more_after": "więcej, których ten raport nie nazwał",
   "coverage.reads": "{0} - odczytano {1} razy",
   "coverage.reads_one": "{0} - odczytano raz",
   "coverage.family_note": "Uruchomiło się kilka procesów - liczniki wywołań są z pierwszego, a ostrzeżenia i wszystko czytane z prawdziwego zegara dotyczą wszystkich.",
@@ -446,6 +455,11 @@
   // The target's own exit code (informational; native sessions where the app exited on its own) and any cleanup residue the core could not remove - both surfaced from `ended` so a session never hides them.
   "report.target_exit": "cel zakończył się kodem",
   "report.cleanup": "nie sprzątnięto do końca",
+  // The processes the hook never got into, see the English file.
+  "report.processes_uncovered": "procesy, które działały na prawdziwym zegarze",
+  "report.process_line": "pid {0}: {1}, uruchomiony przez pid {2}",
+  "report.process_line_role": "pid {0}: {1} ({2}), uruchomiony przez pid {3}",
+  "report.processes_more": "i {0} więcej, których ten raport nie nazwał",
   "report.requested": "żądano: {0} (strefa {1}, tryb {2})",
 
   // Session history (chrono-mock 7.2, 8.8, 11.1 pt 13). Local-only; clicking an entry fills the setup form and never starts a session (untouchable rule 7, docs/04 section 6).

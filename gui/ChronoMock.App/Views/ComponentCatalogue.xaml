@@ -454,11 +454,29 @@
                  Text="One row per function the session saw: the name, where it read its time from as a word in the meaning ink, and how many times. Every status the fold can produce, a name longer than any real one, a count past six digits, and rows with no count at all - the columns share their widths, so the header and the rows agree wherever a column starts." />
 
       <Border Style="{StaticResource PartCard}" Margin="{StaticResource StackGapSm}">
-        <StackPanel Grid.IsSharedSizeScope="True">
-          <ContentControl Template="{StaticResource AuditTableHeader}" Focusable="False" IsTabStop="False" />
-          <ItemsControl ItemTemplate="{StaticResource AuditRowTemplate}"
-                        ItemsSource="{Binding SampleAuditRows, RelativeSource={RelativeSource AncestorType=UserControl}}" />
-        </StackPanel>
+        <HeaderedItemsControl Style="{StaticResource PartTable}"
+                              ItemTemplate="{StaticResource AuditRowTemplate}"
+                              ItemsSource="{Binding SampleAuditRows, RelativeSource={RelativeSource AncestorType=UserControl}}">
+          <HeaderedItemsControl.Header>
+            <ContentControl Template="{StaticResource AuditTableHeader}" Focusable="False" IsTabStop="False" />
+          </HeaderedItemsControl.Header>
+        </HeaderedItemsControl>
+      </Border>
+
+      <!-- ============ Process table ============ -->
+      <TextBlock Text="Process table" Style="{StaticResource PartHeading}" Margin="{StaticResource StackGapLg}" />
+
+      <TextBlock Style="{StaticResource PartCaption}" Margin="{StaticResource StackGapSm}"
+                 Text="One row per executable and role among the processes the hook never got into, counted. The renderer row in the failure ink because it means the pages read the real clock, every other role in the secondary ink, a process with no role at all, a name longer than any real one, a count past six digits, and last the one row for the processes gone before they could be named. The same table shell as the audit table (PartTable)." />
+
+      <Border Style="{StaticResource PartCard}" Margin="{StaticResource StackGapSm}">
+        <HeaderedItemsControl Style="{StaticResource PartTable}"
+                              ItemTemplate="{StaticResource ProcessRowTemplate}"
+                              ItemsSource="{Binding SampleProcessRows, RelativeSource={RelativeSource AncestorType=UserControl}}">
+          <HeaderedItemsControl.Header>
+            <ContentControl Template="{StaticResource ProcessTableHeader}" Focusable="False" IsTabStop="False" />
+          </HeaderedItemsControl.Header>
+        </HeaderedItemsControl>
       </Border>
 
       <!-- ============ Note list ============ -->

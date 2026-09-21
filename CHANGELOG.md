@@ -29,6 +29,15 @@ the notes below say what a user sees rather than how the parts were rearranged.
 - **Type-to-select in the drop-downs.** Typing a letter jumps to the matching entry - the offset,
   the unit, the zone - the way a native list does, so a long list is reached from the keyboard and
   not only the mouse.
+- **The window names the processes that ran on the real clock.** When an application starts a
+  process the hook never got into, the verdict already said so and the report on the command line
+  listed them - the window only said that some existed. "What the application read" now carries a
+  table of them under the functions: one row per executable and role, counted, with a renderer
+  (the process web pages run in) marked in the failure colour, because that row means the pages
+  read the real clock. The heading carries the true total, the folded section's header counts them
+  in a chip, a process gone before it could be named is one row in words, and a total above the
+  named list is said under the table. The copied summary lists them one per process id, the way
+  the command line does.
 
 ### Changed
 

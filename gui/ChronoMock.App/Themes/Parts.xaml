@@ -1344,6 +1344,118 @@
   </ControlTemplate>
 
   <!--
+    ============================ Table ============================
+
+    The shell every table on this interface shares: a header row, then the rows in a well that scrolls
+    inside a named cap, with one scope for the shared column widths so the header and every row agree on
+    where a column starts. The audit table wrote this shell out in its view, and the process table is the
+    second table (rule 7: the second repetition is a missing name). What a table carries is its own:
+    the header goes in Header, the row in ItemTemplate.
+
+    Not focusable and not a tab stop, like the header it hosts: a table is read, not operated. The cap is
+    the audit table's, because both tables stand in the audit section and answer the same question.
+  -->
+  <Style x:Key="PartTable" TargetType="HeaderedItemsControl">
+    <Setter Property="Focusable" Value="False" />
+    <Setter Property="IsTabStop" Value="False" />
+    <Setter Property="Grid.IsSharedSizeScope" Value="True" />
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="HeaderedItemsControl">
+          <StackPanel>
+            <ContentPresenter ContentSource="Header" />
+            <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
+                          MaxHeight="{StaticResource AuditTableMaxHeight}" Focusable="False">
+              <ItemsPresenter />
+            </ScrollViewer>
+          </StackPanel>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+
+  <!--
+    ============================ Process table ============================
+
+    The processes a session's family spawned and the hook never got into, one row per executable and
+    role, counted - they ran on the real clock the whole time, and this table says WHICH part of the
+    application that was. It stands under the audit table and takes its shape: the name in monospace,
+    a word in the meaning ink, digits under one right edge.
+
+    🔴 THE RENDERER ROW IS THE ONE THAT MATTERS, and it says so in the failure ink: a renderer is the
+    process web pages run in, so that row means the application's pages read the real clock. Every
+    other role is a fact in the secondary ink - a GPU or crash-handler process on the real clock changes
+    no answer. The processes that were gone before they could be named are one row in the secondary
+    ink, in words rather than a blank: an empty name cell would read as a table with a hole in it.
+  -->
+  <DataTemplate x:Key="ProcessRowTemplate">
+    <Grid>
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="Auto" SharedSizeGroup="ProcessImage" />
+        <ColumnDefinition Width="Auto" SharedSizeGroup="ProcessRole" />
+        <ColumnDefinition Width="{StaticResource AuditCountColumnWidth}" />
+      </Grid.ColumnDefinitions>
+      <TextBlock Grid.Column="0" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis"
+                 FontSize="{StaticResource FontSizeCaption}" FontFamily="{StaticResource FontFamilyMono}"
+                 VerticalAlignment="Center"
+                 Margin="{StaticResource AuditCellGap}">
+        <TextBlock.Style>
+          <Style TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{DynamicResource BrushTextPrimary}" />
+            <Setter Property="Text" Value="{Binding Image}" />
+            <Style.Triggers>
+              <DataTrigger Binding="{Binding IsUnnamed}" Value="True">
+                <Setter Property="Foreground" Value="{DynamicResource BrushTextSecondary}" />
+                <Setter Property="Text" Value="{DynamicResource audit.process_unnamed}" />
+              </DataTrigger>
+            </Style.Triggers>
+          </Style>
+        </TextBlock.Style>
+      </TextBlock>
+      <TextBlock Grid.Column="1" TextWrapping="NoWrap" FontSize="{StaticResource FontSizeCaption}"
+                 VerticalAlignment="Center"
+                 Margin="{StaticResource AuditCellGap}" Text="{Binding Role}">
+        <TextBlock.Style>
+          <Style TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{DynamicResource BrushTextSecondary}" />
+            <Style.Triggers>
+              <DataTrigger Binding="{Binding IsRenderer}" Value="True">
+                <Setter Property="Foreground" Value="{DynamicResource BrushStatusFails}" />
+              </DataTrigger>
+            </Style.Triggers>
+          </Style>
+        </TextBlock.Style>
+      </TextBlock>
+      <TextBlock Grid.Column="2" Style="{StaticResource PartCaption}" TextWrapping="NoWrap"
+                 FontFamily="{StaticResource FontFamilyMono}" HorizontalAlignment="Right"
+                 VerticalAlignment="Center"
+                 Margin="{StaticResource AuditCellGap}" Text="{Binding CountText}" />
+    </Grid>
+  </DataTemplate>
+
+  <!-- The process table's header row: the same three columns in the same groups, ruled under like the
+       audit table's head. -->
+  <ControlTemplate x:Key="ProcessTableHeader">
+    <Border BorderBrush="{DynamicResource BrushDivider}" BorderThickness="{StaticResource TableHeaderEdge}"
+            HorizontalAlignment="Left">
+      <Grid>
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="Auto" SharedSizeGroup="ProcessImage" />
+          <ColumnDefinition Width="Auto" SharedSizeGroup="ProcessRole" />
+          <ColumnDefinition Width="{StaticResource AuditCountColumnWidth}" />
+        </Grid.ColumnDefinitions>
+        <TextBlock Grid.Column="0" Style="{StaticResource PartCaption}" TextWrapping="NoWrap"
+                   Margin="{StaticResource AuditCellGap}" Text="{DynamicResource audit.col_process}" />
+        <TextBlock Grid.Column="1" Style="{StaticResource PartCaption}" TextWrapping="NoWrap"
+                   Margin="{StaticResource AuditCellGap}" Text="{DynamicResource audit.col_role}" />
+        <TextBlock Grid.Column="2" Style="{StaticResource PartCaption}" TextWrapping="NoWrap"
+                   HorizontalAlignment="Right"
+                   Margin="{StaticResource AuditCellGap}" Text="{DynamicResource audit.col_count}" />
+      </Grid>
+    </Border>
+  </ControlTemplate>
+
+  <!--
     ============================ Callout ============================
 
     A sentence the reader has to act on, set apart from the prose around it: a warning the session

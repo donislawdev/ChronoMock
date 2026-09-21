@@ -48,6 +48,20 @@ public partial class ComponentCatalogue : UserControl
         new("GetSystemTimePreciseAsFileTimeWithAnImpossiblyLongName", "audit.status_fake", AuditStatus.Fake, 9876543210),
     ];
 
+    /// <summary>Every kind of row the process fold can produce, in the order the table lists them: the
+    /// renderer row in the failure ink, the other roles, a process with no role at all, the extremes of an
+    /// executable name longer than any real one and a count past six digits, and last the row for the
+    /// processes gone before they could be named.</summary>
+    public IReadOnlyList<UncoveredProcessRow> SampleProcessRows { get; } =
+    [
+        new("engine.exe", IsUnnamed: false, "renderer", IsRenderer: true, 1),
+        new("engine.exe", IsUnnamed: false, "utility", IsRenderer: false, 2),
+        new("engine.exe", IsUnnamed: false, "gpu-process", IsRenderer: false, 1),
+        new("helper.exe", IsUnnamed: false, string.Empty, IsRenderer: false, 1),
+        new("AnEmbeddedRuntimeWithAnImpossiblyLongExecutableName.exe", IsUnnamed: false, "crashpad-handler", IsRenderer: false, 1234567),
+        new(string.Empty, IsUnnamed: true, string.Empty, IsRenderer: false, 2),
+    ];
+
     /// <summary>The date input with nothing typed yet, so the hint shows and the calendar has no selection.
     /// A MomentField rather than a stub, so the catalogue draws the part over the same object the
     /// screens bind it to.</summary>
