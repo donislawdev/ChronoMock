@@ -1,3 +1,4 @@
+using System.IO; // The WPF SDK trims System.IO from implicit usings (Path collides with Shapes.Path).
 using ChronoMock.App.Calc;
 using ChronoMock.Protocol;
 
@@ -193,6 +194,49 @@ public class CalculatorArgsTests
         Assert.Null(ex); // no crash
         Assert.True(vm.HasActivePreset);
         Assert.True(vm.ActiveNeedsParameters); // honest note instead of a wrong or absent date
+    }
+
+    [Fact]
+    public void The_base_picker_offers_no_utc_kind_of_its_own()
+    {
+        // "Specific instant (UTC)" was a zone folded into the base kind. Beside the zone picker it was one
+        // idea in two places, so the picker now carries the zone alone. Reversal probe: put the fourth
+        // BaseKindOption back and this fails on the count.
+        var vm = new CalculatorViewModel(new CalcClient(() => "chrono"));
+
+        Assert.Equal(3, vm.BaseKinds.Count);
+        Assert.DoesNotContain(vm.BaseKinds, b => b.Kind == BaseKind.SpecificUtc);
+    }
+
+    [Fact]
+    public void A_utc_instant_scenario_arrives_as_a_specific_date_with_the_zone_picker_on_utc()
+    {
+        // The 2038 boundary is an instant, and a scenario carrying one used to set the hidden UTC kind
+        // while the zone picker went on saying "this machine" - the screen said two different zones.
+        // Reversal probe: apply the preset's base kind directly and the picker stays on the host.
+        var vm = new CalculatorViewModel(new CalcClient(() => "chrono"));
+        var boundary = PresetCatalog.Load(Path.Combine(TestPaths.RepoRoot(), "presets")).Single(p => p.Id == "year-2038");
+
+        vm.ApplyPreset(boundary);
+
+        Assert.Equal(BaseKind.Specific, vm.SelectedBase.Kind);
+        Assert.False(vm.SelectedBaseZone.IsHost);
+        Assert.Equal(0, vm.SelectedBaseZone.BiasMinutes);
+        Assert.Equal("2038-01-19T03:14:07", vm.Base.Canonical);
+    }
+
+    [Fact]
+    public void A_wall_clock_scenario_after_a_utc_one_returns_the_zone_picker_to_the_host()
+    {
+        // The UTC zone must not linger under the next scenario, where it would quietly make "Today" the
+        // UTC day. A scenario defines its moment whole, zone included.
+        var vm = new CalculatorViewModel(new CalcClient(() => "chrono"));
+        var catalogue = PresetCatalog.Load(Path.Combine(TestPaths.RepoRoot(), "presets"));
+
+        vm.ApplyPreset(catalogue.Single(p => p.Id == "year-2038"));
+        vm.ApplyPreset(catalogue.Single(p => p.Id == "month-end"));
+
+        Assert.True(vm.SelectedBaseZone.IsHost);
     }
 
     // The Specific base now reads a locale-safe MomentField (the shared MomentInput), seeded to the default

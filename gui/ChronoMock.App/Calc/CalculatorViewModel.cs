@@ -15,7 +15,10 @@ public enum BaseKind
     /// <summary>A specific moment read in UTC rather than in the session zone. For a base whose
     /// meaning is an instant - Unix epoch zero, the 32-bit time_t limit - which must not move with
     /// the tester's zone. The conversion belongs to the core, so this kind travels to it as
-    /// <c>--base-utc</c> rather than being converted here (one arithmetic, one place).</summary>
+    /// <c>--base-utc</c> rather than being converted here (one arithmetic, one place).
+    /// <para>The unpacker's spelling of a preset's <c>absolute_utc</c>, not a choice on the screen: the
+    /// picker offers three kinds, and a UTC instant is shown as <see cref="Specific"/> with the zone
+    /// picker on UTC, so the one control that names zones is the one that says it.</para></summary>
     SpecificUtc,
 }
 
@@ -403,12 +406,18 @@ public sealed class CalculatorViewModel : ObservableObject
         _client = client ?? throw new ArgumentNullException(nameof(client));
         _presetsDir = presetsDir;
 
+        // 🔴 Three kinds on screen, not four. "Specific instant (UTC)" was a fourth entry that meant
+        // "Specific date, read in UTC" - a zone folded into the base kind, from before the zone picker
+        // existed. Beside that picker it was one idea in two places, and it left the picker LYING: a
+        // preset that carried a UTC instant set this kind while the picker went on saying "this machine".
+        // A UTC instant now arrives as a Specific date with the picker on UTC, which says the same thing
+        // in the one place that says zones. The engine reads --base X --zone +00:00 as the same instant
+        // as --base-utc X (verified on the CLI: epoch 2147570047 both ways, 2026-09-21).
         BaseKinds =
         [
             new BaseKindOption(BaseKind.Today, "calc.base.today"),
             new BaseKindOption(BaseKind.Now, "calc.base.now"),
             new BaseKindOption(BaseKind.Specific, "calc.base.specific"),
-            new BaseKindOption(BaseKind.SpecificUtc, "calc.base.specific_utc"),
         ];
         _baseKind = BaseKinds[0];
 
@@ -988,7 +997,15 @@ public sealed class CalculatorViewModel : ObservableObject
                     RemoveStep(Steps[0]);
                 }
 
-                SelectedBase = BaseKinds.First(b => b.Kind == unpacked.Base);
+                // A scenario defines its moment whole, zone included: a UTC instant (epoch zero, the 2038
+                // boundary) is a Specific date read in UTC, and every other base is read in the host's
+                // zone, the way the calculator always read it. Set on every apply, so a UTC scenario's
+                // zone does not linger under the next one and quietly turn its "Today" into the UTC day.
+                var isUtcInstant = unpacked.Base == BaseKind.SpecificUtc;
+                SelectedBase = BaseKinds.First(b => b.Kind == (isUtcInstant ? BaseKind.Specific : unpacked.Base));
+                SelectedBaseZone = isUtcInstant
+                    ? BaseZones.First(z => !z.IsHost && z.BiasMinutes == 0)
+                    : BaseZones.First(z => z.IsHost);
                 if (unpacked.Base is BaseKind.Specific or BaseKind.SpecificUtc)
                 {
                     Base.LoadCanonical(unpacked.BaseText);
