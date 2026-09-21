@@ -94,6 +94,35 @@ public sealed class MomentField : ObservableObject
         Fill(date, time);
     }
 
+    /// <summary>
+    /// Fill the field with a canonical moment that was read in ONE fixed-offset zone, re-expressed in another
+    /// (rule 2 - a moment never changes zone silently, and the field's own zone is the session's). The same
+    /// instant in a different zone is a shift by the difference of the two biases (UTC = local + bias, so
+    /// local' = local + bias - bias'). Both zones are fixed offsets, so this is exact and needs no calendar.
+    /// A text that is not a canonical moment, or a shift that leaves the representable range, leaves the
+    /// field untouched rather than holding a moment in the wrong zone.
+    /// </summary>
+    public void LoadInZone(string? canonical, int fromBiasMinutes, int toBiasMinutes)
+    {
+        if (!DateTime.TryParseExact(
+                canonical, "yyyy-MM-dd'T'HH:mm:ss", CultureInfo.InvariantCulture, DateTimeStyles.None, out var local))
+        {
+            return;
+        }
+
+        var shift = TimeSpan.FromMinutes(fromBiasMinutes - toBiasMinutes);
+        if (local.Ticks + shift.Ticks < DateTime.MinValue.Ticks || local.Ticks + shift.Ticks > DateTime.MaxValue.Ticks)
+        {
+            return;
+        }
+
+        var shifted = local + shift;
+        var time = shifted.Second == 0
+            ? shifted.ToString("HH:mm", CultureInfo.InvariantCulture)
+            : shifted.ToString("HH:mm:ss", CultureInfo.InvariantCulture);
+        Fill(shifted.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture), time);
+    }
+
     /// <summary>Fill the field with midnight today in the SESSION zone (a fixed offset, rule 2 - relative to
     /// the session zone, never the OS clock's local time). The bias comes from the panel's selected zone.</summary>
     public void SetToday(int biasMinutes) => SetToday(biasMinutes, DateTime.UtcNow);

@@ -189,15 +189,22 @@ public class SessionCommandsTests
     }
 
     [Fact]
-    public void A_calculator_moment_is_refused_while_a_session_runs()
+    public void A_calculator_moment_during_a_running_session_becomes_the_jump_target_in_the_sessions_zone()
     {
-        // A live run's start moment is not up for editing, so the press leaves it exactly as it was.
+        // A live run's START moment is not up for editing, so the press leaves it as it was - and fills the
+        // Jump to field instead, which used to stay empty so the press read as doing nothing. The field is
+        // read in the session's zone, so a moment built in another zone is re-expressed: 08:30 at UTC-05:00
+        // is the same instant as 13:30 at the session's UTC+00:00. Reversal probe: load the text as it came
+        // and the time assertion fails by five hours.
         var vm = SessionStates.Running();
-        var before = vm.Moment.Canonical;
+        Assert.Equal(0, vm.SelectedZone.BiasMinutes);
+        var startBefore = vm.Moment.Canonical;
 
         vm.AdoptMoment("2040-06-15T08:30:00", 300);
 
-        Assert.Equal(before, vm.Moment.Canonical);
+        Assert.Equal(startBefore, vm.Moment.Canonical);
+        Assert.Equal("2040-06-15T13:30:00", vm.JumpMoment.Canonical);
+        Assert.True(vm.Commands.JumpToEntered.CanExecute(null)); // filled and ready, not jumped (rule 7)
     }
 
     [Fact]

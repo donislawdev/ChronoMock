@@ -674,10 +674,11 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     public void SetTarget(string path) => TargetPath = path;
 
     /// <summary>
-    /// Take a moment built elsewhere (the calculator's "Use this date") as the start moment, with its zone
-    /// (rule 2 - a moment never travels without one). A zone the closed catalogue does not offer leaves the
-    /// current one standing, which the calculator already refuses to send. Ignored while a session runs -
-    /// a live run's start moment is not up for editing. Nothing starts (rule 7).
+    /// Take a moment built elsewhere (the calculator's "Use this date"), with its zone (rule 2 - a moment
+    /// never travels without one). On the setup form it becomes the start moment and the zone, and a zone
+    /// the closed catalogue does not offer leaves the current one standing, which the calculator already
+    /// refuses to send. While a session runs it becomes the Jump to target instead, in the session's zone.
+    /// Nothing starts and nothing jumps (rule 7).
     /// </summary>
     /// <remarks>
     /// 🔴 It leaves a finished result first, the way <see cref="LoadFromHistory"/> does. Idle is true once a
@@ -687,7 +688,17 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     /// </remarks>
     public void AdoptMoment(string momentLocal, int zoneBias)
     {
-        if (!_idle || IsRunning)
+        if (IsRunning)
+        {
+            // A live run's START is not up for editing, but its clock is: the date goes to the Jump to
+            // field, re-expressed in the session's zone (which cannot change in flight), and waits for
+            // the Jump button - the press fills a field, it never jumps by itself (rule 7). It used to
+            // switch to this module and leave the field empty, which read as the press doing nothing.
+            JumpMoment.LoadInZone(momentLocal, zoneBias, SelectedZone.BiasMinutes);
+            return;
+        }
+
+        if (!_idle)
         {
             return;
         }
