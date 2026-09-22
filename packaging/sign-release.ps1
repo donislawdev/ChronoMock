@@ -373,7 +373,19 @@ Write-Host "`n[6/8] bills of materials over the signed bytes, and the checksums"
 # signing changes that hash - a document generated before the signature would describe an archive
 # nobody ships. Phase C then attests these against the signed bytes.
 foreach ($archive in $archives) {
-    $sbom = Join-Path $work ([System.IO.Path]::GetFileNameWithoutExtension($archive.Name) + '.spdx.json')
+    # 🔴 `<archive>.spdx.json`, keeping the `.zip`, and the extension is load-bearing rather than
+    # cosmetic. GitHub sorts a release's assets alphabetically by file name with no other lever, so a
+    # document named `<stem>.spdx.json` sorts ABOVE the archive it describes ('s' before 'z') and a
+    # reader meets an SBOM before anything downloadable. With the extension kept, the archive's own
+    # name is a prefix of the document's, so the shorter one leads - the shape the signature bundles
+    # already had.
+    #
+    # This line cost a release. Every OTHER place was renamed by replacing the literal old names, and
+    # this one COMPUTES the name, so it kept producing the old spelling while `$EXPECTED_ASSETS` above
+    # and `attest-signed.yml` both expected the new one. Phase C failed with "SBOM file not found" on
+    # v0.3.0. The lesson generalises past this file: a rename is finished when every place that
+    # DERIVES the name is found, not when every place that spells it out is.
+    $sbom = Join-Path $work ($archive.Name + '.spdx.json')
     & (Join-Path $PSScriptRoot 'sbom.ps1') -PackageId $PACKAGE_ID[$archive.Name] -ZipPath $archive.FullName -OutPath $sbom
     $shipped += $sbom
 }
