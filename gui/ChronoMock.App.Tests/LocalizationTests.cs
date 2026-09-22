@@ -49,7 +49,7 @@ public class LocalizationTests
         "inheritance.ntcreateuserprocess_child_maybe_uncovered",
         "inheritance.child_not_injected",
         // Session-level warning keys (SessionVerdict warning_keys).
-        "coverage.pid_registry_full",
+        "coverage.pid_registry_full", "coverage.session_clock_never_read",
         "inheritance.children_uncovered", "embedded.web_engine_uncovered",
         "embedded.web_engine_processes_uncovered",
         // The embedded-engine channel (docs/09 section 12): the pages inside the application.

@@ -14,7 +14,7 @@ use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
 use chrono_core::{
-    filetime_utc_to_wall, verdict_from_coverage, Moment, SessionSpec, TimeMode, Verdict,
+    filetime_utc_to_wall, verdict_from_coverage, Coverage, Moment, SessionSpec, TimeMode, Verdict,
 };
 use chrono_mech::UncoveredChild;
 use chrono_proto::{
@@ -488,6 +488,37 @@ pub(crate) fn apply_command(session: &mut chrono_mech::Session, bridge: &mut Emb
     }
 }
 
+/// How many times this whole family read a clock the session actually substituted.
+///
+/// `None` when the question cannot be asked at all: no process reported coverage, or not one
+/// channel was substituted. Those are separate facts carrying their own verdicts - a session whose
+/// hooks never installed is `uncovered`, not a session the application ignored - and folding them
+/// in here would answer a question nobody asked.
+///
+/// Only `covered` counts. The observed buckets (object waits, the multimedia timer, a direct spawn,
+/// a network connect) are hooked and deliberately left REAL, so a target that touched only those
+/// read no substituted clock at all - counting them would let a plain `Sleep` silence the one line
+/// saying the fake date was never looked at.
+///
+/// Summed across the family rather than per process, because a parent that reads nothing while its
+/// child reads the fake date is a session that WORKED. Per-process counts are already on each
+/// `coverage` event for whoever wants them.
+///
+/// The counters are read with a volatile 64-bit load, which on x86 is two 32-bit loads and can tear
+/// while the target runs. That cannot produce a false zero here: a torn read of a non-zero count
+/// still carries its low word, and the low word of anything from one upward is not zero.
+pub(crate) fn substituted_reads(coverage: &[(u32, Coverage)]) -> Option<u64> {
+    let mut any_channel = false;
+    let mut total: u64 = 0;
+    for (_, cov) in coverage {
+        for channel in &cov.covered {
+            any_channel = true;
+            total = total.saturating_add(channel.calls);
+        }
+    }
+    any_channel.then_some(total)
+}
+
 /// The warnings a finished native session carries beside its verdict, each said only when it
 /// happened.
 ///
@@ -503,8 +534,22 @@ pub(crate) fn native_session_warnings(
     uncovered_processes: u32,
     clamped: bool,
     duration_clamped: bool,
+    substituted_reads: Option<u64>,
 ) -> Vec<String> {
     let mut warnings = Vec::new();
+    // First, because it is the one line that changes what the verdict above it MEANS to a reader.
+    //
+    // Measured on the shared-page probe: it reads the clock straight out of KUSER_SHARED_DATA and
+    // never touches a substituted export, so all 41 channels install, nothing lands in `uncovered`,
+    // and the session reports `works` over an application that saw the REAL date from start to
+    // finish. The verdict is not wrong about the MECHANISM - the hooks are in and they substitute -
+    // but "time substitution took effect" is read as "my application ran on the fake clock", and
+    // there it did not. This says so without moving the verdict or the exit code, because what the
+    // mechanism achieved and what the application consumed are two different answers and the tester
+    // needs both (untouchable rule 4).
+    if substituted_reads == Some(0) {
+        warnings.push("coverage.session_clock_never_read".to_string());
+    }
     if uncovered_processes > 0 {
         warnings.push("coverage.pid_registry_full".to_string());
     }
@@ -581,6 +626,7 @@ pub(crate) fn close_session(
         uncovered_processes,
         clock_clamped || final_state.clock_at_range_end(),
         duration_clamped || final_state.duration_at_range_end(),
+        substituted_reads(&final_coverage),
     );
     let mut children_warnings = uncovered_children_warnings(&uncovered_children, uncovered_children_total);
     reconcile_engine_warnings(&mut children_warnings, pages.pages_reached());
@@ -957,12 +1003,120 @@ mod tests {
     /// that do appear worth reading.
     #[test]
     fn the_native_session_warnings_say_only_what_happened() {
-        assert!(native_session_warnings(0, false, false).is_empty());
-        assert_eq!(native_session_warnings(2, false, false), vec!["coverage.pid_registry_full"]);
-        assert_eq!(native_session_warnings(0, true, false), vec!["time.fake_clock_clamped"]);
+        assert!(native_session_warnings(0, false, false, None).is_empty());
+        assert_eq!(native_session_warnings(2, false, false, None), vec!["coverage.pid_registry_full"]);
+        assert_eq!(native_session_warnings(0, true, false, None), vec!["time.fake_clock_clamped"]);
         assert_eq!(
-            native_session_warnings(1, true, false),
+            native_session_warnings(1, true, false, None),
             vec!["coverage.pid_registry_full", "time.fake_clock_clamped"]
+        );
+    }
+
+    /// One process as a fixture spells it: its pid, its substituted channels, its observed ones,
+    /// each channel with the call count the session ended on.
+    type ProcessFixture<'a> = (u32, &'a [(&'a str, u64)], &'a [(&'a str, u64)]);
+
+    /// A family's coverage, spelled the way `read_all_coverage` hands it over: one entry per pid.
+    fn family(processes: &[ProcessFixture]) -> Vec<(u32, Coverage)> {
+        processes
+            .iter()
+            .map(|(pid, covered, observed)| {
+                let channels = |cs: &[(&str, u64)]| {
+                    cs.iter()
+                        .map(|(channel, calls)| chrono_core::ChannelCoverage {
+                            channel: (*channel).to_string(),
+                            calls: *calls,
+                        })
+                        .collect()
+                };
+                (
+                    *pid,
+                    Coverage {
+                        covered: channels(covered),
+                        observed: channels(observed),
+                        ..Coverage::default()
+                    },
+                )
+            })
+            .collect()
+    }
+
+    /// Zero reads is a FACT, and no reads to speak of is an ABSENCE of one. The warning rides the
+    /// first and has to stay silent on the second, because a session whose hooks never installed is
+    /// already `uncovered` and saying "the application never read the clock" over it would name the
+    /// wrong cause.
+    #[test]
+    fn a_family_that_never_read_is_told_apart_from_one_we_know_nothing_about() {
+        assert_eq!(substituted_reads(&[]), None, "no process reported at all");
+        assert_eq!(
+            substituted_reads(&family(&[(10, &[], &[])])),
+            None,
+            "a process with not one substituted channel is a failed install, not a quiet target"
+        );
+        assert_eq!(
+            substituted_reads(&family(&[(10, &[("GetSystemTime", 0), ("NtQuerySystemTime", 0)], &[])])),
+            Some(0),
+            "channels substituted and never called is the fact this exists for"
+        );
+    }
+
+    /// Summed across the family, because the question is about the SESSION. A parent that reads
+    /// nothing while its child reads the fake date is a session that worked, and warning there would
+    /// tell the tester to distrust a result that is sound.
+    #[test]
+    fn one_child_reading_the_fake_clock_speaks_for_the_whole_family() {
+        let quiet_parent_busy_child = family(&[
+            (10, &[("GetSystemTime", 0)], &[]),
+            (11, &[("GetSystemTime", 4)], &[]),
+        ]);
+        assert_eq!(substituted_reads(&quiet_parent_busy_child), Some(4));
+        assert!(
+            native_session_warnings(0, false, false, substituted_reads(&quiet_parent_busy_child))
+                .is_empty(),
+            "the family read the session clock, so there is nothing to caution about"
+        );
+    }
+
+    /// The observed buckets are hooked and deliberately left REAL (ADR-7), so calls into them are not
+    /// reads of a substituted clock. Counting them would let a plain `Sleep` or a `WaitForSingleObject`
+    /// silence the one line saying the fake date was never looked at - the target would have blocked
+    /// on the real clock and the report would call that engagement.
+    #[test]
+    fn a_wait_left_real_is_not_a_read_of_the_session_clock() {
+        let only_waits = family(&[(
+            10,
+            &[("GetSystemTimeAsFileTime", 0)],
+            &[("WaitForSingleObject", 37), ("Sleep", 12)],
+        )]);
+        assert_eq!(substituted_reads(&only_waits), Some(0));
+        assert_eq!(
+            native_session_warnings(0, false, false, substituted_reads(&only_waits)),
+            vec!["coverage.session_clock_never_read"],
+            "thirty-seven object waits are not one look at the fake date"
+        );
+    }
+
+    /// The reversal probe for the warning itself, in both directions and against the ABSENCE case -
+    /// a guard that only ever fires, or only ever stays quiet, proves nothing.
+    #[test]
+    fn the_never_read_caution_fires_on_zero_and_on_nothing_else() {
+        assert_eq!(
+            native_session_warnings(0, false, false, Some(0)),
+            vec!["coverage.session_clock_never_read"]
+        );
+        assert!(native_session_warnings(0, false, false, Some(1)).is_empty(), "one read is engagement");
+        assert!(
+            native_session_warnings(0, false, false, None).is_empty(),
+            "not knowing is not the same as knowing it was zero"
+        );
+        assert_eq!(
+            native_session_warnings(1, true, false, Some(0)),
+            vec![
+                "coverage.session_clock_never_read",
+                "coverage.pid_registry_full",
+                "time.fake_clock_clamped"
+            ],
+            "it leads, because it changes what the verdict above it means to a reader"
         );
     }
 
@@ -974,12 +1128,12 @@ mod tests {
     #[test]
     fn a_standing_duration_axis_is_its_own_caveat() {
         assert_eq!(
-            native_session_warnings(0, false, true),
+            native_session_warnings(0, false, true, None),
             vec!["time.duration_axis_clamped"],
             "the duration axes can stand while the wall clock is nowhere near its end"
         );
         assert_eq!(
-            native_session_warnings(0, true, true),
+            native_session_warnings(0, true, true, None),
             vec!["time.fake_clock_clamped", "time.duration_axis_clamped"],
             "and both can be true at once"
         );
