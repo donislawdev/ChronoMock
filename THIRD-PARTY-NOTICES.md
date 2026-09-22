@@ -50,7 +50,7 @@ SOFTWARE.
 
 ## The .NET runtime the window package carries
 
-`ChronoMock-win-x64.zip` is a self-contained publish, so it ships the .NET runtime itself -
+`ChronoMock-app-win-x64.zip` is a self-contained publish, so it ships the .NET runtime itself -
 around two hundred assemblies that are not ours. They arrive as three runtime packs, and
 until 2026-09-08 this file did not mention them at all. That was a real gap rather than a
 formality: two of the three are MIT, and MIT asks that its notice travel with every copy.

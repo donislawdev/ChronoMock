@@ -19,7 +19,11 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: The release tag whose signed assets to attest, e.g. v0.2.0
+        # 🔴 The asset names below are the ones used from 0.3.0 onward. Releases before that carry
+        # the older spelling, so pointing this at v0.2.0 or earlier fails on a file it cannot find.
+        # That is a loud failure rather than a wrong attestation, which is the right way round, and
+        # re-attesting a release that was already attested is not something this is here for.
+        description: The release tag whose signed assets to attest, e.g. v0.3.0
         required: true
         type: string
       digests:
@@ -91,15 +95,15 @@ jobs:
         id: gui
         uses: actions/attest-sbom@c604332985a26aa8cf1bdc465b92731239ec6b9e # v4.1.0
         with:
-          subject-path: assets/ChronoMock-win-x64.zip
-          sbom-path: assets/ChronoMock-win-x64.spdx.json
+          subject-path: assets/ChronoMock-app-win-x64.zip
+          sbom-path: assets/ChronoMock-app-win-x64.zip.spdx.json
 
       - name: Attest the bill of materials for the command line package
         id: cli
         uses: actions/attest-sbom@c604332985a26aa8cf1bdc465b92731239ec6b9e # v4.1.0
         with:
-          subject-path: assets/chrono-cli-win.zip
-          sbom-path: assets/chrono-cli-win.spdx.json
+          subject-path: assets/ChronoMock-cli-win.zip
+          sbom-path: assets/ChronoMock-cli-win.zip.spdx.json
 
       # Published as assets, with the extension the tooling and the scanners recognise, so the
       # attestation can be checked offline with `--bundle` by someone who would rather not call the
@@ -109,9 +113,9 @@ jobs:
           GUI_BUNDLE: ${{ steps.gui.outputs.bundle-path }}
           CLI_BUNDLE: ${{ steps.cli.outputs.bundle-path }}
         run: |
-          cp "$GUI_BUNDLE" ChronoMock-win-x64.zip.sigstore.json
-          cp "$CLI_BUNDLE" chrono-cli-win.zip.sigstore.json
+          cp "$GUI_BUNDLE" ChronoMock-app-win-x64.zip.sigstore.json
+          cp "$CLI_BUNDLE" ChronoMock-cli-win.zip.sigstore.json
           gh release upload "$TAG" \
-            ChronoMock-win-x64.zip.sigstore.json \
-            chrono-cli-win.zip.sigstore.json \
+            ChronoMock-app-win-x64.zip.sigstore.json \
+            ChronoMock-cli-win.zip.sigstore.json \
             --repo "$REPO" --clobber

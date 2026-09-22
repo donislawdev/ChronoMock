@@ -19,11 +19,11 @@
   "//packages": "The two things a release publishes. A component belongs to one or both, and each gets its own SBOM - a single document describing both would misstate each.",
   "packages": {
     "cli": {
-      "zip": "chrono-cli-win.zip",
+      "zip": "ChronoMock-cli-win.zip",
       "description": "The command line tool: both native cores, both injected libraries, the calendars and the presets"
     },
     "gui": {
-      "zip": "ChronoMock-win-x64.zip",
+      "zip": "ChronoMock-app-win-x64.zip",
       "description": "The window, self-contained, with the same native cores underneath it"
     }
   },
