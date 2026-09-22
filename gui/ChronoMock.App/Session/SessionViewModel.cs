@@ -1645,7 +1645,7 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
                 Warnings = [.. _warnings, .. c.WarningKeys.Where(w => !_warnings.Contains(w))];
                 CoverageKnown = true;
                 break;
-            case CoverageEvent c:
+            case CoverageEvent c when c.Kind == CoverageEvent.UnitProcess:
                 // Native. Call counts stay the PARENT's - the process the first event names - because
                 // summing them across processes would fabricate a per-process picture (untouchable rule
                 // 4), and a per-process family breakdown is a later slice. But a LATER event for that
@@ -1672,6 +1672,16 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
                 Uncovered = [.. _uncovered, .. c.Uncovered.Where(u => !_uncovered.Contains(u))];
                 Unobserved = [.. _unobserved, .. c.Unobserved.Where(u => !_unobserved.Contains(u))];
                 InstalledLate = [.. _installedLate, .. c.InstalledLate.Where(u => !_installedLate.Contains(u))];
+                Warnings = [.. _warnings, .. c.WarningKeys.Where(w => !_warnings.Contains(w))];
+                CoverageKnown = true;
+                break;
+            case CoverageEvent c:
+                // A kind this build does not know - a newer core naming a unit this panel has never
+                // heard of. Its number is neither a pid nor a context index, so it must not become the
+                // parent and its counts have no row to go in. What it says about the session - the
+                // warnings and the gaps - is evidence all the same, and stays (rule 4, rule 6).
+                Uncovered = [.. _uncovered, .. c.Uncovered.Where(u => !_uncovered.Contains(u))];
+                Unobserved = [.. _unobserved, .. c.Unobserved.Where(u => !_unobserved.Contains(u))];
                 Warnings = [.. _warnings, .. c.WarningKeys.Where(w => !_warnings.Contains(w))];
                 CoverageKnown = true;
                 break;

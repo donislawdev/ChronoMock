@@ -9,12 +9,15 @@
 //! before the session is the honest alternative to a report that looks fine and is not.
 
 /// Which namespace a coverage row's number lives in: an operating-system pid the hook is inside,
-/// or the index of a JS context reached over the DevTools protocol (`coverage.kind` on the wire).
-/// Processes sort first, so the parent still leads a report that holds both.
+/// the index of a JS context reached over the DevTools protocol (`coverage.kind` on the wire), or a
+/// kind this build does not know - a core newer than this driver may name one, and calling its rows
+/// processes would be a claim the core never made. Processes sort first, so the parent still leads a
+/// report that holds all three.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(crate) enum Unit {
     Process,
     Context,
+    Unknown,
 }
 
 /// A coverage unit as the report names it: `pid 1234` or `context 1`. Two namespaces that a reader
@@ -27,10 +30,16 @@ pub(crate) struct UnitId {
 }
 
 impl UnitId {
-    /// From a `coverage` event's `kind` and `pid`. Anything that is not the context token is a
-    /// process - the token an older core never wrote defaults to that on the wire as well.
+    /// From a `coverage` event's `kind` and `pid`. The two tokens this build knows name their unit,
+    /// and the token an older core never wrote defaults to a process on the wire itself. Anything
+    /// else is kept as unknown rather than folded into either: the row stays in the report with its
+    /// evidence, labelled as a unit this driver could not name, instead of being called a pid.
     pub(crate) fn from_wire(kind: &str, pid: u32) -> UnitId {
-        let unit = if kind == chrono_proto::UNIT_CONTEXT { Unit::Context } else { Unit::Process };
+        let unit = match kind {
+            chrono_proto::UNIT_PROCESS => Unit::Process,
+            chrono_proto::UNIT_CONTEXT => Unit::Context,
+            _ => Unit::Unknown,
+        };
         UnitId { unit, id: pid }
     }
 }
@@ -40,6 +49,7 @@ impl std::fmt::Display for UnitId {
         match self.unit {
             Unit::Process => write!(f, "pid {}", self.id),
             Unit::Context => write!(f, "context {}", self.id),
+            Unit::Unknown => write!(f, "unit {} (of a kind this build does not know)", self.id),
         }
     }
 }
@@ -905,6 +915,26 @@ mod tests {
         });
         assert!(plain.contains("(processes: 1)"), "got:\n{plain}");
         assert!(!plain.contains("web engines"), "got:\n{plain}");
+    }
+
+    /// A kind this build does not know - a newer core naming a unit this driver has never heard of -
+    /// is neither a process nor a context. Folding it into `pid N` would put a claim in the report
+    /// the core never made, and dropping it would lose evidence, so the row stays and says what it is.
+    #[test]
+    fn a_coverage_kind_this_build_does_not_know_is_not_called_a_pid() {
+        assert_eq!(UnitId::from_wire("process", 8).unit, Unit::Process);
+        assert_eq!(UnitId::from_wire("context", 8).unit, Unit::Context);
+        assert_eq!(UnitId::from_wire("thread", 8).unit, Unit::Unknown);
+        let text = UnitId::from_wire("thread", 8).to_string();
+        assert!(!text.starts_with("pid"), "{text}");
+        assert!(text.contains("does not know"), "{text}");
+
+        let r = SessionReport {
+            covered: vec![(UnitId::from_wire("thread", 8), "SomeChannel".into(), 3)],
+            ..empty_report()
+        };
+        let out = render_report(&r);
+        assert!(out.contains("- unit 8 (of a kind this build does not know): SomeChannel (3 calls)"), "got:\n{out}");
     }
 
     #[test]
