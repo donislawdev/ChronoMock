@@ -149,6 +149,26 @@
     lighter than ours and often darker, and what it does differently is keep that text the same size as
     the text above it.
   -->
+  <!--
+    A VALUE the reader is meant to read off the screen, as opposed to a caption that describes one. Same
+    size as a caption, primary ink rather than secondary: the caption is the label, this is the thing it
+    labels, and giving both the quiet ink made the result column read as one grey block.
+
+    It exists because the pair was written out three times in the calculator (GUI rule 7: a set of visual
+    properties used a second time is a style, a third time a component). The mono variant is the same
+    style with the data face, through BasedOn rather than a copy - a value that can be copied to the
+    clipboard is set in the face that makes digits line up and a lowercase L tell itself from a one.
+  -->
+  <Style x:Key="PartValue" TargetType="TextBlock">
+    <Setter Property="FontSize" Value="{StaticResource FontSizeCaption}" />
+    <Setter Property="Foreground" Value="{DynamicResource BrushTextPrimary}" />
+    <Setter Property="TextWrapping" Value="Wrap" />
+  </Style>
+
+  <Style x:Key="PartValueMono" TargetType="TextBlock" BasedOn="{StaticResource PartValue}">
+    <Setter Property="FontFamily" Value="{StaticResource FontFamilyMono}" />
+  </Style>
+
   <Style x:Key="PartNote" TargetType="TextBlock">
     <Setter Property="FontSize" Value="{StaticResource FontSizeBody}" />
     <Setter Property="Foreground" Value="{DynamicResource BrushTextSecondary}" />

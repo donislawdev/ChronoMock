@@ -111,10 +111,12 @@
         <Setter Property="AutomationProperties.Name" Value="{Binding FullPath}" />
       </Style>
 
-      <Style x:Key="LabelKeyRow" TargetType="ComboBoxItem" BasedOn="{StaticResource {x:Type ComboBoxItem}}">
-        <Setter Property="AutomationProperties.Name"
-                Value="{Binding LabelKey, Converter={StaticResource KeyToText}}" />
-      </Style>
+      <!-- The label-key item style is NOT here. It was, word for word the same as LabelKeyComboItem in
+           App.xaml, under a second name - one decision in two places, which is the shape GUI rules 5 and
+           7 forbid: the next change to how a list item names itself would have had to be made twice, and
+           would have been made once. The calculator has always used the App.xaml one, which is also the
+           proof that the reference resolves from a view: StaticResource walks up to Application.Resources,
+           it is a parent view's LOCAL merge it cannot see. -->
 
       <!-- The zone list's container style and row (ZoneComboItem, ZoneRow) are shared parts, so this
            picker and the calculator's draw and name a zone from one definition. -->
@@ -282,7 +284,7 @@
                        FontFamily="{StaticResource FontFamilyMono}"
                        AutomationProperties.Name="{DynamicResource moment.relative_amount}" />
               <ComboBox ItemsSource="{Binding Units}" SelectedItem="{Binding Unit}"
-                        ItemContainerStyle="{StaticResource LabelKeyRow}"
+                        ItemContainerStyle="{StaticResource LabelKeyComboItem}"
                         Width="{StaticResource ShiftUnitWidth}"
                         AutomationProperties.Name="{DynamicResource moment.relative_unit}">
                 <ComboBox.ItemTemplate>
@@ -413,7 +415,7 @@
               <TextBlock Style="{StaticResource PartLabel}" Text="{DynamicResource setup.label_mode}" />
             </HeaderedContentControl.Header>
             <ComboBox ItemsSource="{Binding Modes}" SelectedItem="{Binding SelectedMode}"
-                      ItemContainerStyle="{StaticResource LabelKeyRow}"
+                      ItemContainerStyle="{StaticResource LabelKeyComboItem}"
                       IsEnabled="{Binding CanEditTime}" ToolTip="{DynamicResource tip.mode}"
                       HorizontalAlignment="Left" MinWidth="{StaticResource LaunchFieldWidth}">
               <ComboBox.ItemTemplate>

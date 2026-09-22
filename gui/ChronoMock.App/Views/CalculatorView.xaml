@@ -481,10 +481,8 @@
                     </Grid.ColumnDefinitions>
                     <TextBlock Grid.Column="0" Text="{Binding Label}"
                                FontSize="{StaticResource FontSizeCaption}" Foreground="{DynamicResource BrushTextSecondary}" />
-                    <TextBlock Grid.Column="1" Text="{Binding Value}" TextWrapping="Wrap"
-                               Margin="{StaticResource CopyValueGap}"
-                               FontFamily="{StaticResource FontFamilyMono}"
-                               FontSize="{StaticResource FontSizeCaption}" Foreground="{DynamicResource BrushTextPrimary}" />
+                    <TextBlock Grid.Column="1" Style="{StaticResource PartValueMono}" Text="{Binding Value}"
+                               Margin="{StaticResource CopyValueGap}" />
                     <Button Grid.Column="2" Content="{DynamicResource calc.copy}" Click="OnCopyFormatClick"
                             Tag="{Binding Value}" MinWidth="{StaticResource CopyButtonMinWidth}"
                             FontSize="{StaticResource FontSizeCaption}" />
@@ -516,10 +514,8 @@
                 <ColumnDefinition Width="*" />
                 <ColumnDefinition Width="Auto" />
               </Grid.ColumnDefinitions>
-              <TextBlock Grid.Column="0" Text="{Binding CustomFormatResult}" TextWrapping="Wrap"
-                         Margin="{StaticResource CopyValueGap}"
-                         FontFamily="{StaticResource FontFamilyMono}"
-                         FontSize="{StaticResource FontSizeCaption}" Foreground="{DynamicResource BrushTextPrimary}" />
+              <TextBlock Grid.Column="0" Style="{StaticResource PartValueMono}" Text="{Binding CustomFormatResult}"
+                         Margin="{StaticResource CopyValueGap}" />
               <Button Grid.Column="1" Content="{DynamicResource calc.copy}" Click="OnCopyFormatClick"
                       Tag="{Binding CustomFormatResult}" MinWidth="{StaticResource CopyButtonMinWidth}"
                       FontSize="{StaticResource FontSizeCaption}" />
@@ -533,8 +529,8 @@
                        FontSize="{StaticResource FontSizeCaption}" Foreground="{DynamicResource BrushStatusPartial}" />
 
             <TextBlock Style="{StaticResource PartGroupHeading}" Text="{DynamicResource calc.metadata}" Margin="{StaticResource SpaceXs}" />
-            <TextBlock Text="{Binding MetadataLine}" TextWrapping="Wrap" Margin="{StaticResource SpaceXs}"
-                       FontSize="{StaticResource FontSizeCaption}" Foreground="{DynamicResource BrushTextPrimary}" />
+            <TextBlock Style="{StaticResource PartValue}" Text="{Binding MetadataLine}"
+                       Margin="{StaticResource SpaceXs}" />
 
             <!-- The one action this module ends in, styled as the setup's Start is: it read as any other
                  button, and the owner's review of the shipped build could not find it (2026-09-21). -->
