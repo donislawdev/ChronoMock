@@ -1,0 +1,178 @@
+<!-- WebView2 and Qt WebEngine, English.
+
+     The sibling page, electron-chromium, answers "my application IS Chromium". This one
+     answers "my application is native and one screen inside it is a web page", which is a
+     different mechanism and a different failure: there the countdown simply did not move,
+     here half the application moves and the other half does not, with nothing reporting
+     an error about it. -->
+
+<div class="shell">
+
+  <section class="plain">
+    <h1>The web pages inside a native app</h1>
+    <p class="sub">
+      A desktop application with a built-in web engine runs its pages in a separate,
+      sandboxed process. The native mechanism covers the application and stops at that
+      boundary - so the window moves to the date you asked for and the panel inside it
+      does not. This closes that gap.
+    </p>
+  </section>
+
+  <section>
+    <h2>The failure that looks like a success</h2>
+    <div class="prose">
+      <p>
+        Plenty of Windows applications are native on the outside and a web page on the inside.
+        A settings screen, a dashboard, a report view, a licence panel - built once as HTML and
+        hosted in <strong>WebView2</strong> or <strong>Qt WebEngine</strong> rather than written
+        twice.
+      </p>
+      <p>
+        The engine runs those pages in its own process, and that process is sandboxed. A library
+        injected into the application does not get into it. Everything the application asks
+        Windows for moves to the session's date, and everything the page asks JavaScript for
+        does not:
+      </p>
+      <ul>
+        <li>The title bar, the logs and the files say <strong>2038</strong>.</li>
+        <li>The panel inside the same window says <strong>today</strong>.</li>
+        <li>Nothing errors, nothing warns, and both halves look equally confident.</li>
+      </ul>
+      <p>
+        That is the expensive version of this bug, because the test appears to have run. The
+        older behaviour reported such a session as a clean pass, which was a claim the tool
+        could not back.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>What the session does instead</h2>
+    <div class="prose">
+      <p>
+        The session runs <strong>both mechanisms at once</strong>. The native hook goes into the
+        application as always, and the pages are reached the only way anything reaches a
+        sandboxed renderer: by asking the engine itself.
+      </p>
+      <p>
+        At launch the application inherits two environment variables that ask its engine to open
+        a local debugging port. They are appended to whatever switches the application already
+        passes rather than replacing them. The session then watches its own processes for that
+        port to appear, and when it does, every page and every worker behind it goes onto the
+        same clock as the application.
+      </p>
+      <p>
+        One start, one speed, one timeline. A speed change or a jump reaches the application and
+        its pages together, and the pages' timers run at the application's own pace rather than
+        a pace of their own.
+      </p>
+      <p>
+        It is on by default and off with one switch, which opens no port at all and leaves the
+        pages on the real clock.
+      </p>
+    </div>
+
+    <pre class="term"><span class="c"># Nothing to configure - the engine is found if it is there</span>
+<span class="p">chrono</span> run "C:\Program Files\YourApp\YourApp.exe" --at 2038-01-01T00:00:00 --mode x60
+
+<span class="c"># Or leave the pages alone, and open no port</span>
+<span class="p">chrono</span> run "C:\Program Files\YourApp\YourApp.exe" --at 2038-01-01T00:00:00 --no-embedded</pre>
+  </section>
+
+  <section>
+    <h2>What the report says about the pages</h2>
+    <div class="prose">
+      <p>
+        The pages are not folded into the application's own numbers. They are counted as units
+        of their own, because a process and a page are different things and summing them would
+        invent a number that means nothing:
+      </p>
+      <ul>
+        <li>The headline counts both - <code>processes: 4, contexts: 1</code>.</li>
+        <li>Each page gets its own rows, such as <code>context 1: page Date.now (12 calls)</code>
+          on the command line and <em>page Date.now - fake clock</em> in the window's audit table.</li>
+        <li>The engine that was reached is named with its port, so you can point your own DevTools
+          at exactly the pages the session is driving.</li>
+      </ul>
+      <p>
+        A dry run says whether the pages would be reached before anything is started.
+        <a href="/time-source-audit/">What the verdicts mean &rarr;</a>
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Three limits worth knowing before you start</h2>
+
+    <div class="note warning">
+      <p><strong>A debugging port stands open while the engine runs.</strong></p>
+      <p>
+        It listens on this computer only, but it is open to <em>any</em> program on this computer
+        for as long as the engine is running, and anything that can reach it can drive those pages.
+        The session warns about it every single time one was opened, and names the port rather than
+        mentioning it in the abstract. On a shared or untrusted machine, use the switch that opens
+        nothing.
+      </p>
+    </div>
+
+    <div class="note warning">
+      <p><strong>An application running elevated is out of reach.</strong></p>
+      <p>
+        An engine hosted by an elevated application ignores the variables the session sets, so its
+        pages stay on the real clock. This is the engine's own rule, not a setting, and there is no
+        way around it from outside.
+      </p>
+    </div>
+
+    <div class="note">
+      <p><strong>Such a session reports PARTIAL, and that is the honest answer.</strong></p>
+      <p>
+        The engine's helper processes, and the renderer's own native time calls, stay on the real
+        clock. The pages are on the session clock and the rest of that family is not, so the verdict
+        says <em>partial</em> and names what was left out rather than rounding up to a pass.
+      </p>
+    </div>
+
+    <div class="prose">
+      <p>
+        Two smaller ones, said plainly. The pages keep <strong>this machine's time zone</strong>,
+        so an independent session zone is a native-mode feature only. And a timer already scheduled
+        <em>before</em> the session reached the page keeps its old rate, the same way it does in a
+        pure Chromium session - the session warns rather than letting you conclude nothing happened.
+      </p>
+      <p>
+        If the engine is configured through a browser-arguments policy in the registry, the
+        session's variable takes precedence for its duration, and the report says so - because a
+        debugging port you set up there would not have been applied.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>How well tested is it</h2>
+    <div class="prose">
+      <p>
+        <strong>Experimental</strong>, with the same defined meaning as elsewhere here: it works on
+        the targets it was built against, it has not been tested broadly, and the built-in audit is
+        your source of truth rather than this page. It was measured by hand against a WebView2 host
+        and a Qt WebEngine host on 64-bit Windows, not by the automated suite. In those runs the
+        pages read the session's year at the session's rate and followed a jump.
+      </p>
+      <p>
+        On 32-bit Windows there is a wrinkle worth knowing rather than discovering: the WebView2
+        runtime is 64-bit even when the application hosting it is 32-bit, so a 32-bit session cannot
+        name the engine's processes or their roles. The channel to the pages still works. The report
+        is simply less specific about what it could not identify, and says which of the two it is.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Try it</h2>
+    <div class="cta">
+      <a class="btn btn-primary" href="/download/">Download for Windows</a>
+      <a class="btn btn-ghost" href="/faq/">Read the FAQ</a>
+    </div>
+  </section>
+
+</div>

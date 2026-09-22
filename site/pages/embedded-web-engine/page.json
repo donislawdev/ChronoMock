@@ -1,0 +1,25 @@
+{
+  "//": "The sibling of electron-chromium, and a different question. There the application IS Chromium and the whole answer is the DevTools protocol. Here the application is native - it has a window, menus and files of its own - and one panel inside it happens to be a web page. Somebody hitting that has a native application that looks time-shifted everywhere except the one screen they care about, which is the hardest kind of failure to diagnose, because nothing reports an error.",
+
+  "//honesty": "This mode is marked experimental in README.md's support matrix and was measured by hand on a WebView2 host and a Qt WebEngine host on 64-bit Windows, not by the automated suite. The page names its real limits rather than the comfortable ones: a debugging port stands open to every program on the machine for as long as the engine runs, an elevated application is out of reach entirely, and the engine's helper processes keep the real clock, which is why such a session reports PARTIAL rather than a clean pass.",
+
+  "id": "embedded-web-engine",
+  "order": 57,
+  "nav": false,
+  "group": "tools",
+
+  "languages": {
+    "en": {
+      "slug": "webview2-qt-webengine",
+      "link_text": "WebView2 and Qt WebEngine",
+      "title": "Fake the date for the web pages inside a native app",
+      "description": "A native application with a built-in web engine runs its pages in a process injection cannot enter, so they keep the real date while the rest of the application moves. The session reaches them through the engine's own debugging port."
+    },
+    "pl": {
+      "slug": "webview2-qt-webengine",
+      "link_text": "WebView2 i Qt WebEngine",
+      "title": "Podmiana daty dla stron wewnątrz natywnej aplikacji",
+      "description": "Natywna aplikacja z wbudowanym silnikiem web trzyma strony w procesie, do którego wstrzyknięcie nie wchodzi, więc zostają na prawdziwej dacie, gdy reszta aplikacji się przesuwa. Sesja sięga do nich portem diagnostycznym silnika."
+    }
+  }
+}
