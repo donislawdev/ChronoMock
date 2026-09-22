@@ -1137,15 +1137,17 @@ public class LayoutGuardTests
     [Fact]
     public void A_renderer_whose_pages_were_reached_is_not_painted_as_a_failure()
     {
-        var (rendererInk, helperInk, fails, partial) = WpfTestHost.InvokeSettled(() =>
+        var (rendererText, rendererInk, helperInk, fails, partial) = WpfTestHost.InvokeSettled(() =>
         {
             var view = ResultView(PhaseStates.ResultPartialWithEmbeddedPages());
             LayoutProbe.Settle(view);
             var cells = LayoutProbe.Walk(view)
                 .Where(e => e.Kind == nameof(TextBlock) && e.IsVisible)
                 .ToList();
+            var renderer = cells.Single(e => e.Text.StartsWith("renderer", StringComparison.Ordinal));
             return (
-                cells.Single(e => e.Text.StartsWith("renderer", StringComparison.Ordinal)).Foreground,
+                renderer.Text,
+                renderer.Foreground,
                 cells.Single(e => e.Text == "gpu-process").Foreground,
                 ((System.Windows.Media.SolidColorBrush)view.FindResource("BrushStatusFails")).Color,
                 ((System.Windows.Media.SolidColorBrush)view.FindResource("BrushStatusPartial")).Color);
@@ -1155,6 +1157,12 @@ public class LayoutGuardTests
         Assert.NotEqual(fails, rendererInk);
         // The helpers of the same engine share its parent pid and were NOT marked - they host no pages.
         Assert.NotEqual(partial, helperInk);
+        // The SENTENCE, not just the colour. The cell is found by "renderer", so a note converter that
+        // returned nothing would leave this guard passing on the ink alone - the row would have changed
+        // colour without ever saying why, which is the half of the fix a reader actually reads.
+        Assert.Equal(
+            "renderer" + TranslationKeyConverter.Resolve("audit.role_pages_reached"),
+            rendererText);
     }
 
     /// <summary>
