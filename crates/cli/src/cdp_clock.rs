@@ -7,6 +7,7 @@
 use chrono_core::calc::{Base, EvalContext, MomentExpr};
 use chrono_proto::{Clock, Event, MomentSpec, TimeSpec, PROTOCOL_VERSION};
 
+use crate::cdp_attach::ShimOrigin;
 use crate::events::jump_error_key;
 use crate::grammar::parse_shift;
 use crate::zone::{epoch_ms_to_wall, moment_epoch_ms};
@@ -127,9 +128,10 @@ impl CdpClock {
 
     /// The origin a newly attached context must be shimmed from: the CURRENT wall origin and rate,
     /// not the session's initial values, so a context attaching after an in-flight change starts on
-    /// the same clock as every other one (rule 3).
-    pub(crate) fn shim_origin(&self) -> (i64, i64, i64) {
-        (self.wall_fake0, self.wall_real0, self.mult)
+    /// the same clock as every other one (rule 3). A Chromium session runs the duration axis at the
+    /// wall rate - the acceleration is the point of driving it.
+    pub(crate) fn shim_origin(&self) -> ShimOrigin {
+        ShimOrigin { fake0: self.wall_fake0, real0: self.wall_real0, mult: self.mult, dur: self.mult }
     }
 }
 
@@ -264,7 +266,7 @@ mod tests {
     #[test]
     fn the_mode_becomes_the_rate_the_shim_runs_at() {
         let rate = |mode: &str, m: Option<i64>| {
-            CdpClock::from_time_spec(&spec(None, None, mode, m), 0).unwrap().shim_origin().2
+            CdpClock::from_time_spec(&spec(None, None, mode, m), 0).unwrap().shim_origin().mult
         };
         assert_eq!(rate("flow", None), 1);
         assert_eq!(rate("frozen", None), 0);

@@ -31,8 +31,17 @@ pub(crate) struct CdpContext {
     pub(crate) target_id: String,
 }
 
-/// The clock origin a shim is built from: fake start, real start (both Unix-epoch ms) and the rate.
-pub(crate) type ShimOrigin = (i64, i64, i64);
+/// The clock origin a shim is built from: fake start and real start (both Unix-epoch ms), the wall
+/// rate and the duration rate. A Chromium session runs both rates at the multiplier. A page inside a
+/// natively hooked application follows that application's duration axis, which scales only under
+/// `scale_duration` (docs/09 section 12.6).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct ShimOrigin {
+    pub(crate) fake0: i64,
+    pub(crate) real0: i64,
+    pub(crate) mult: i64,
+    pub(crate) dur: i64,
+}
 
 /// How many contexts one attacher will shim over its lifetime. The pid registry has the same shape
 /// of ceiling (256 slots, `coverage.pid_registry_full`), for the same reason: a family that fans
@@ -187,8 +196,7 @@ impl Attacher {
             self.resume(&sid);
             return;
         }
-        let (fake0, real0, mult) = origin;
-        let shim = cdp::build_shim(fake0, real0, mult);
+        let shim = cdp::build_shim(origin.fake0, origin.real0, origin.mult, origin.dur);
         let injected = if cdp::is_worker(&ty) {
             cdp::inject_worker(&mut self.client, &sid, &shim)
         } else {

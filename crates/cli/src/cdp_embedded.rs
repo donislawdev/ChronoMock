@@ -14,7 +14,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use crate::cdp;
-use crate::cdp_attach::{Attacher, Pumped};
+use crate::cdp_attach::{Attacher, Pumped, ShimOrigin};
 use crate::cdp_discover::{Discovery, Notice};
 use crate::embedded::engine_env;
 use crate::zone::{moment_epoch_ms, now_epoch_ms};
@@ -92,7 +92,7 @@ pub(crate) fn cdp_embedded_probe(argv: &[String]) -> i32 {
         eprintln!("chrono: --at is not a moment: {}", args.at);
         return 1;
     };
-    let origin = (fake, real, args.multiplier);
+    let origin = ShimOrigin { fake0: fake, real0: real, mult: args.multiplier, dur: args.multiplier };
 
     // The host: launched with the engine variables (the session's future behaviour), or given.
     let launched;

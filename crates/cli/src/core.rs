@@ -271,6 +271,53 @@ pub(crate) fn read_start<R: BufRead>(
     }
 }
 
+/// What the session loop accumulates between the start verdict and the closing account: the family
+/// verdict as processes join, the pids it has seen, the children the hook never followed into, and
+/// whether either clock ever stood at the end of its range.
+///
+/// One value rather than five variables, because `close_session` took every one of them as its own
+/// argument, and the embedded-engine channel (docs/09) adds its own share to the same account.
+pub(crate) struct SessionLedger {
+    family: Verdict,
+    family_pids: HashSet<u32>,
+    /// Children the hook did NOT follow into, named as they are spawned (SLOWNIK `uncoveredChild`).
+    /// Polled at the child cadence for the same reason children are: a short-lived one has to be
+    /// asked its name while it is still there.
+    uncovered_children: Vec<UncoveredChild>,
+    /// Did the fake clock ever stand on the last instant this build can represent (R2-X2)? Sticky:
+    /// that the clock STOOD on the edge stays true for this session even if a later jump moves it
+    /// back, because the readings taken while it stood there were clamped.
+    clock_clamped: bool,
+    /// Sticky for the same reason as the wall flag: readings taken while the duration axis stood
+    /// there were held, and a later re-anchor does not make them untrue.
+    duration_clamped: bool,
+}
+
+impl SessionLedger {
+    /// Seed the family roll-up with the parent's verdict. Each child's verdict folds in as it joins.
+    pub(crate) fn new(parent: Verdict) -> Self {
+        SessionLedger {
+            family: parent,
+            family_pids: HashSet::new(),
+            uncovered_children: Vec::new(),
+            clock_clamped: false,
+            duration_clamped: false,
+        }
+    }
+
+    /// Poll for children that joined and for children the hook could not follow into.
+    pub(crate) fn poll(&mut self, session: &mut chrono_mech::Session) {
+        fold_children(session, &mut self.family, &mut self.family_pids);
+        self.uncovered_children.extend(session.poll_uncovered_children());
+    }
+
+    /// Note whether either clock stands at the end of its range in this sample.
+    pub(crate) fn sample(&mut self, st: &chrono_mech::SessionState) {
+        self.clock_clamped |= st.clock_at_range_end();
+        self.duration_clamped |= st.duration_at_range_end();
+    }
+}
+
 /// Drive a running session: emit a ~1 s `state` heartbeat, answer `query`, and stop
 /// on `end`, on stdin EOF, or when the target exits. Returns the verdict's exit code.
 pub(crate) fn run_session(
@@ -283,19 +330,9 @@ pub(crate) fn run_session(
     let rx = spawn_command_reader(reader);
 
     // Report any child that already joined during the guard window, before the first
-    // heartbeat, so a fast child does not wait a whole second to appear. Seed the family
-    // roll-up with the parent verdict, then fold each child's verdict as it joins.
-    let mut family = verdict;
-    let mut family_pids: HashSet<u32> = HashSet::new();
-    // Did the fake clock ever stand on the last instant this build can represent (R2-X2)?
-    let mut clock_clamped = false;
-    let mut duration_clamped = false;
-    // Children the hook did NOT follow into, named as they are spawned (SLOWNIK `uncoveredChild`).
-    // Polled at the child cadence for the same reason children are: a short-lived one has to be
-    // asked its name while it is still there.
-    let mut uncovered_children: Vec<UncoveredChild> = Vec::new();
-    fold_children(&mut session, &mut family, &mut family_pids);
-    uncovered_children.extend(session.poll_uncovered_children());
+    // heartbeat, so a fast child does not wait a whole second to appear.
+    let mut ledger = SessionLedger::new(verdict);
+    ledger.poll(&mut session);
 
     let heartbeat = Duration::from_secs(1);
     // Children are polled faster than the heartbeat. A child publishes its evidence in a section
@@ -323,21 +360,14 @@ pub(crate) fn run_session(
 
         let now = Instant::now();
         if now >= child_deadline {
-            fold_children(&mut session, &mut family, &mut family_pids);
-            uncovered_children.extend(session.poll_uncovered_children());
+            ledger.poll(&mut session);
             child_deadline = now + child_poll;
         }
         // The heartbeat keeps its own once-a-second cadence: `state` and the liveness check stay
         // exactly as often as the protocol says, whatever else the loop is doing.
         if now >= deadline {
             let st = session.state();
-            // Sticky: that the clock STOOD on the edge stays true for this session even if a later
-            // jump moves it back, because the readings taken while it stood there were clamped
-            // (R2-X2).
-            clock_clamped |= st.clock_at_range_end();
-            // Sticky for the same reason as the wall flag above: readings taken while the axis stood
-            // there were held, and a later re-anchor does not make them untrue.
-            duration_clamped |= st.duration_at_range_end();
+            ledger.sample(&st);
             emit(&state_event_from(&st));
             if !session.is_alive() {
                 target_exit = session.exit_code();
@@ -348,15 +378,7 @@ pub(crate) fn run_session(
         }
     }
 
-    close_session(
-        session,
-        family,
-        family_pids,
-        uncovered_children,
-        clock_clamped,
-        duration_clamped,
-        target_exit,
-    )
+    close_session(session, ledger, target_exit)
 }
 
 /// Act on one command that arrived mid-session.
@@ -462,16 +484,13 @@ pub(crate) fn native_session_warnings(
 /// every process ENDED with, the family verdict and `ended`. Returns the family's exit code.
 pub(crate) fn close_session(
     mut session: chrono_mech::Session,
-    mut family: Verdict,
-    mut family_pids: HashSet<u32>,
-    mut uncovered_children: Vec<UncoveredChild>,
-    clock_clamped: bool,
-    duration_clamped: bool,
+    mut ledger: SessionLedger,
     target_exit: Option<i32>,
 ) -> i32 {
     // Final fold so a child that joined since the last heartbeat still counts in the family.
-    fold_children(&mut session, &mut family, &mut family_pids);
-    uncovered_children.extend(session.poll_uncovered_children());
+    ledger.poll(&mut session);
+    let SessionLedger { mut family, family_pids, uncovered_children, clock_clamped, duration_clamped } =
+        ledger;
     let uncovered_children_total = session.uncovered_children_total();
     // A process nobody reached ran on the real clock: that is "something uncovered" for the family,
     // so the family cannot be `works` (untouchable rule 4 at the session level - the verdict model

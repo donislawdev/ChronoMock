@@ -49,6 +49,10 @@ pub struct CdpClient {
     /// Set once the queue has had to drop an event, so the notice is printed a single time rather
     /// than on every subsequent drop.
     queue_overflow_warned: bool,
+    /// How long `call` waits for its reply. [`CALL_DEADLINE_SECS`] unless the owner asked for less:
+    /// a loop that has other work to do in the meantime - the native session's heartbeat and child
+    /// poll - cannot afford ten seconds of standing on a renderer busy with its own JS.
+    call_deadline: Duration,
 }
 
 /// Cap on events parked while waiting for a command reply. CDP events are small and the session
@@ -138,6 +142,7 @@ impl CdpClient {
             next_id: 1,
             queued: std::collections::VecDeque::new(),
             queue_overflow_warned: false,
+            call_deadline: Duration::from_secs(CALL_DEADLINE_SECS),
         })
     }
 
@@ -157,7 +162,7 @@ impl CdpClient {
         self.ws.send_text(&Value::Object(req).to_string())?;
 
         // A reply should come promptly - poll until it does, bounded so a hung target cannot block us.
-        let deadline = Instant::now() + Duration::from_secs(CALL_DEADLINE_SECS);
+        let deadline = Instant::now() + self.call_deadline;
         loop {
             // Checked every pass, not only when the socket goes quiet. A target that keeps pushing
             // events - a page logging in a loop, a worker chattering - would otherwise never let the
