@@ -66,6 +66,14 @@ Chrono Mock - session report
         jest różnicą między testem, któremu można ufać, a takim, któremu nie można.
       </p>
     </div>
+
+    <figure class="shot filled">
+      <img src="/assets/audit-table.png" width="1560" height="1200" loading="lazy"
+           alt="Ekran wyniku Chrono Mock z rozwiniętą sekcją mówiącą, co aplikacja odczytała: tabela z kolumnami funkcja, źródło odczytu i liczba odczytów. NtCreateUserProcess jest oznaczona jako czytana z prawdziwego zegara z rozmysłu, a connect jako czytana z prawdziwego zegara z rozmysłu i podpięta późno, podczas gdy pozostałe wiersze - GetSystemTimeAsFileTime, NtQuerySystemTime, GetTimeZoneInformation i reszta - czytają z fałszywego zegara, każdy z własną liczbą. Pod tabelą stoją dwa ostrzeżenia.">
+      <figcaption>Ta sama odpowiedź w oknie. Każda funkcja, o którą aplikacja mogła zapytać, to,
+        z czego naprawdę czytała, i ile razy - łącznie z tymi zostawionymi na prawdziwym zegarze
+        z rozmysłu, które są nazwane, a nie po cichu policzone jako sukces.</figcaption>
+    </figure>
   </section>
 
   <section>

@@ -70,6 +70,14 @@ Chrono Mock - session report
         That sentence is the difference between a test you can trust and one you cannot.
       </p>
     </div>
+
+    <figure class="shot filled">
+      <img src="/assets/audit-table.png" width="1560" height="1200" loading="lazy"
+           alt="The Chrono Mock result screen with What the application read open: a table of Function, Read from and Reads. NtCreateUserProcess is marked as read from the real clock by design and connect as read from the real clock by design and hooked late, while the remaining rows - GetSystemTimeAsFileTime, NtQuerySystemTime, GetTimeZoneInformation and the rest - read from the fake clock, each with its own count. Two warnings sit under the table.">
+      <figcaption>The same answer in the window. Every function the application could have asked,
+        what it actually read from, and how many times - including the ones left on the real clock
+        on purpose, which are named rather than quietly counted as a pass.</figcaption>
+    </figure>
   </section>
 
   <section>

@@ -1,0 +1,170 @@
+<!-- WebView2 and Qt WebEngine, Polish. Same story, same three limits. -->
+
+<div class="shell">
+
+  <section class="plain">
+    <h1>Strony internetowe wewnątrz natywnej aplikacji</h1>
+    <p class="sub">
+      Aplikacja desktopowa z wbudowanym silnikiem web trzyma swoje strony w osobnym,
+      piaskowanym procesie. Mechanizm natywny obejmuje aplikację i zatrzymuje się na tej
+      granicy - więc okno przesuwa się na wskazaną datę, a panel w jego środku nie. To
+      domyka tę lukę.
+    </p>
+  </section>
+
+  <section>
+    <h2>Awaria, która wygląda jak sukces</h2>
+    <div class="prose">
+      <p>
+        Sporo aplikacji Windows jest natywnych na zewnątrz i webowych w środku. Ekran ustawień,
+        pulpit z danymi, widok raportu, panel licencji - zbudowane raz jako HTML i osadzone
+        w <strong>WebView2</strong> albo <strong>Qt WebEngine</strong>, zamiast pisane dwa razy.
+      </p>
+      <p>
+        Silnik uruchamia te strony we własnym procesie, a ten proces jest piaskowany. Biblioteka
+        wstrzyknięta do aplikacji do niego nie wchodzi. Wszystko, o co aplikacja pyta Windows,
+        przesuwa się na datę sesji, a wszystko, o co strona pyta JavaScript, nie:
+      </p>
+      <ul>
+        <li>Pasek tytułu, dzienniki i pliki mówią <strong>2038</strong>.</li>
+        <li>Panel w tym samym oknie mówi <strong>dzisiaj</strong>.</li>
+        <li>Nic nie zgłasza błędu, nic nie ostrzega, a obie połowy wyglądają równie pewnie.</li>
+      </ul>
+      <p>
+        To jest kosztowna odmiana tego błędu, bo test sprawia wrażenie wykonanego. Wcześniejsze
+        zachowanie raportowało taką sesję jako czyste przejście, czyli twierdziło coś, czego
+        narzędzie nie miało czym poprzeć.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Co robi sesja zamiast tego</h2>
+    <div class="prose">
+      <p>
+        Sesja uruchamia <strong>oba mechanizmy naraz</strong>. Hook natywny wchodzi do aplikacji
+        jak zawsze, a strony osiąga się jedyną drogą, jaką cokolwiek sięga do piaskowanego
+        renderera: pytając sam silnik.
+      </p>
+      <p>
+        Przy starcie aplikacja dziedziczy dwie zmienne środowiskowe, które proszą jej silnik
+        o otwarcie lokalnego portu diagnostycznego. Są dokładane do przełączników, które aplikacja
+        i tak przekazuje, a nie stawiane w ich miejsce. Potem sesja pilnuje własnych procesów, aż
+        ten port się pojawi, a gdy się pojawi, każda strona i każdy worker za nim trafiają na ten
+        sam zegar co aplikacja.
+      </p>
+      <p>
+        Jeden start, jedno tempo, jedna oś czasu. Zmiana tempa albo skok sięgają aplikacji i jej
+        stron razem, a liczniki stron biegną w tempie aplikacji, a nie własnym.
+      </p>
+      <p>
+        Działa domyślnie i wyłącza się jednym przełącznikiem, który nie otwiera żadnego portu
+        i zostawia strony na prawdziwym zegarze.
+      </p>
+    </div>
+
+    <pre class="term"><span class="c"># Nic do konfigurowania - silnik zostanie znaleziony, jeśli tam jest</span>
+<span class="p">chrono</span> run "C:\Program Files\YourApp\YourApp.exe" --at 2038-01-01T00:00:00 --mode x60
+
+<span class="c"># Albo zostaw strony w spokoju i nie otwieraj portu</span>
+<span class="p">chrono</span> run "C:\Program Files\YourApp\YourApp.exe" --at 2038-01-01T00:00:00 --no-embedded</pre>
+  </section>
+
+  <section>
+    <h2>Co raport mówi o stronach</h2>
+    <div class="prose">
+      <p>
+        Strony nie są wliczane do liczb samej aplikacji. Liczą się jako osobne jednostki, bo proces
+        i strona to różne rzeczy, a zsumowanie ich dałoby liczbę, która nic nie znaczy:
+      </p>
+      <ul>
+        <li>Nagłówek liczy jedno i drugie - <code>processes: 4, contexts: 1</code>.</li>
+        <li>Każda strona dostaje własne wiersze, na przykład <code>context 1: page Date.now
+          (12 calls)</code> w wierszu poleceń i <em>page Date.now - fake clock</em> w tabeli audytu
+          w oknie.</li>
+        <li>Osiągnięty silnik jest nazwany razem z portem, więc możesz wycelować własne DevTools
+          dokładnie w te strony, którymi steruje sesja.</li>
+      </ul>
+      <p>
+        Przebieg na sucho mówi, czy strony zostałyby osiągnięte, zanim cokolwiek wystartuje.
+        <a href="/pl/audyt-zrodel-czasu/">Co znaczą werdykty &rarr;</a>
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Trzy ograniczenia, które warto znać przed startem</h2>
+
+    <div class="note warning">
+      <p><strong>Port diagnostyczny stoi otwarty, dopóki silnik działa.</strong></p>
+      <p>
+        Nasłuchuje wyłącznie na tym komputerze, ale jest otwarty dla <em>każdego</em> programu na
+        tym komputerze przez cały czas pracy silnika, a cokolwiek do niego sięgnie, może tymi
+        stronami sterować. Sesja ostrzega o tym za każdym razem, gdy port został otwarty, i podaje
+        jego numer, zamiast wspominać o nim ogólnikowo. Na maszynie współdzielonej albo niezaufanej
+        użyj przełącznika, który nie otwiera niczego.
+      </p>
+    </div>
+
+    <div class="note warning">
+      <p><strong>Aplikacja z podniesionymi uprawnieniami jest poza zasięgiem.</strong></p>
+      <p>
+        Silnik osadzony w aplikacji z podniesionymi uprawnieniami ignoruje zmienne, które ustawia
+        sesja, więc jego strony zostają na prawdziwym zegarze. To jest reguła samego silnika, a nie
+        ustawienie, i nie da się jej obejść z zewnątrz.
+      </p>
+    </div>
+
+    <div class="note">
+      <p><strong>Taka sesja raportuje PARTIAL i to jest uczciwa odpowiedź.</strong></p>
+      <p>
+        Procesy pomocnicze silnika oraz natywne odczyty czasu samego renderera zostają na
+        prawdziwym zegarze. Strony są na zegarze sesji, a reszta tej rodziny nie, więc werdykt mówi
+        <em>partial</em> i nazywa to, co zostało pominięte, zamiast zaokrąglać w górę do sukcesu.
+      </p>
+    </div>
+
+    <div class="prose">
+      <p>
+        Dwa mniejsze, powiedziane wprost. Strony zachowują <strong>strefę czasową tej maszyny</strong>,
+        więc niezależna strefa sesji jest funkcją wyłącznie trybu natywnego. A licznik zaplanowany
+        <em>zanim</em> sesja sięgnęła do strony zachowuje stare tempo, tak samo jak w czystej sesji
+        Chromium - sesja ostrzega, zamiast pozwolić ci wyciągnąć wniosek, że nic się nie stało.
+      </p>
+      <p>
+        Jeśli silnik jest konfigurowany polityką argumentów przeglądarki w rejestrze, zmienna sesji
+        ma pierwszeństwo na czas jej trwania, a raport to mówi - bo port diagnostyczny ustawiony tam
+        nie zostałby zastosowany.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Jak dobrze to jest przetestowane</h2>
+    <div class="prose">
+      <p>
+        <strong>Eksperymentalnie</strong>, w tym samym zdefiniowanym znaczeniu co wszędzie tutaj:
+        działa na celach, na których było budowane, nie było testowane szeroko, a źródłem prawdy
+        jest wbudowany audyt, a nie ta strona. Zmierzone ręcznie na hoście WebView2 i hoście
+        Qt WebEngine pod 64-bitowym Windows, a nie przez zestaw automatyczny. W tych przebiegach
+        strony czytały rok sesji w tempie sesji i poszły za skokiem.
+      </p>
+      <p>
+        Pod 32-bitowym Windows jest zmarszczka, o której lepiej wiedzieć, niż ją odkryć: runtime
+        WebView2 jest 64-bitowy nawet wtedy, gdy aplikacja go osadzająca jest 32-bitowa, więc sesja
+        32-bitowa nie potrafi nazwać procesów silnika ani ich ról. Kanał do stron działa mimo to.
+        Raport jest po prostu mniej konkretny co do tego, czego nie rozpoznał, i mówi, który
+        z dwóch przypadków to jest.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Wypróbuj</h2>
+    <div class="cta">
+      <a class="btn btn-primary" href="/pl/pobieranie/">Pobierz na Windows</a>
+      <a class="btn btn-ghost" href="/pl/faq/">Przeczytaj FAQ</a>
+    </div>
+  </section>
+
+</div>
