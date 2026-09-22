@@ -69,6 +69,13 @@ the notes below say what a user sees rather than how the parts were rearranged.
   in a chip, a process gone before it could be named is one row in words, and a total above the
   named list is said under the table. The copied summary lists them one per process id, the way
   the command line does.
+- **A renderer whose pages were reached no longer reads as a failure.** The process table marks a
+  renderer in the failure colour, because a renderer is the process web pages run in, so one the hook
+  never entered used to mean the application's pages read the real clock. Since the session learned to
+  reach those pages that is no longer true of every renderer: its pages run on the session clock and
+  only its own native reads do not. Such a row now reads as partial - the same word the verdict beside
+  it uses - and says why, so the screen no longer contradicts its own verdict. Two renderers of one
+  executable, one reached and one not, stay two rows rather than being counted into one.
 - **The window names the web engine it reached, and the port it reached it on.** A session that
   put an application's pages on the session clock warns that a local debugging port stands open to
   other programs on this computer for as long as the engine runs. The command line named the port

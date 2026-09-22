@@ -1118,6 +1118,54 @@ public class LayoutGuardTests
     }
 
     /// <summary>
+    /// The renderer row of an engine the session reached reads as partial, not as a failure, and says why.
+    /// </summary>
+    /// <remarks>
+    /// 🔴 THIS GUARD EXISTS BECAUSE THE SCREEN CONTRADICTED ITS OWN VERDICT. A renderer row has been
+    /// painted in the failure ink since the process table shipped, on the reasoning that a renderer is
+    /// the process web pages run in, so an uncovered one means the application's pages read the real
+    /// clock. After the session learned to reach those pages that stopped being true: the pages run on
+    /// the session clock and only the renderer's own native reads do not, which is partial - the very
+    /// word the family verdict uses for this case, three lines further up the same screen.
+    ///
+    /// The ink is measured, not read off the markup: a DataTrigger that never fires looks identical to
+    /// one that does (GUI rule 10).
+    ///
+    /// Reversal probe: drop the PagesReached trigger from ProcessRowTemplate and the renderer comes back
+    /// in the failure ink while the verdict beside it still says partial.
+    /// </remarks>
+    [Fact]
+    public void A_renderer_whose_pages_were_reached_is_not_painted_as_a_failure()
+    {
+        var (rendererText, rendererInk, helperInk, fails, partial) = WpfTestHost.InvokeSettled(() =>
+        {
+            var view = ResultView(PhaseStates.ResultPartialWithEmbeddedPages());
+            LayoutProbe.Settle(view);
+            var cells = LayoutProbe.Walk(view)
+                .Where(e => e.Kind == nameof(TextBlock) && e.IsVisible)
+                .ToList();
+            var renderer = cells.Single(e => e.Text.StartsWith("renderer", StringComparison.Ordinal));
+            return (
+                renderer.Text,
+                renderer.Foreground,
+                cells.Single(e => e.Text == "gpu-process").Foreground,
+                ((System.Windows.Media.SolidColorBrush)view.FindResource("BrushStatusFails")).Color,
+                ((System.Windows.Media.SolidColorBrush)view.FindResource("BrushStatusPartial")).Color);
+        });
+
+        Assert.Equal(partial, rendererInk);
+        Assert.NotEqual(fails, rendererInk);
+        // The helpers of the same engine share its parent pid and were NOT marked - they host no pages.
+        Assert.NotEqual(partial, helperInk);
+        // The SENTENCE, not just the colour. The cell is found by "renderer", so a note converter that
+        // returned nothing would leave this guard passing on the ink alone - the row would have changed
+        // colour without ever saying why, which is the half of the fix a reader actually reads.
+        Assert.Equal(
+            "renderer" + TranslationKeyConverter.Resolve("audit.role_pages_reached"),
+            rendererText);
+    }
+
+    /// <summary>
     /// A session that reached a web engine inside the application names it and the port it was reached on,
     /// under the process table and above the warnings.
     /// </summary>

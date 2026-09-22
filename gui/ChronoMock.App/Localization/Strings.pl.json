@@ -381,6 +381,7 @@
   "audit.col_role": "Rola",
   "audit.col_count": "Liczba",
   "audit.process_unnamed": "zakończył się, zanim dało się go nazwać",
+  "audit.role_pages_reached": " - do jego stron sesja dotarła",
   // A count label with the number LAST: Polish inflects whatever follows a number, in three forms across
   // the counts, so the English "and N more" shape has no wording that is right for every N. The pair of
   // keys exists precisely so a language can put its number where its grammar wants it - here at the end,
