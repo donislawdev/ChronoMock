@@ -10,7 +10,7 @@
 use std::collections::{BTreeMap, HashMap};
 
 use chrono_core::Verdict;
-use chrono_proto::{CoveredChannel, Event, PROTOCOL_VERSION};
+use chrono_proto::{CoveredChannel, Event, PROTOCOL_VERSION, UNIT_CONTEXT};
 
 /// The channels the session can honestly call covered, in a stable order.
 pub(crate) fn covered_channels(counts: BTreeMap<(u32, String), u64>) -> Vec<(u32, String, u64)> {
@@ -45,6 +45,20 @@ pub(crate) fn cdp_verdict(shimmed: usize, any_covered: bool, failed: usize) -> V
         Verdict::Partial
     } else {
         Verdict::Works
+    }
+}
+
+/// What the pages reached inside a natively hooked application contribute to the family verdict
+/// (docs/09 section 12.7). `Undetermined` is the identity of `Verdict::combine`, so it is the answer
+/// wherever there is nothing to judge: no engine was reached at all, or one was and had no page yet
+/// (an application whose web view has not opened is not an application whose pages ran real).
+/// With pages present the judgement is the Chromium session's own - every shimmed context that read
+/// time is covered, a context refused or failed is uncovered.
+pub(crate) fn embedded_verdict(reached: bool, shimmed: usize, any_covered: bool, failed: usize) -> Verdict {
+    if !reached || (shimmed == 0 && failed == 0) {
+        Verdict::Undetermined
+    } else {
+        cdp_verdict(shimmed, any_covered, failed)
     }
 }
 
@@ -106,6 +120,7 @@ pub(crate) fn coverage_events(
         return vec![Event::Coverage {
             v: PROTOCOL_VERSION,
             pid: 0,
+            kind: UNIT_CONTEXT.to_string(),
             covered: Vec::new(),
             observed: Vec::new(),
             uncovered: Vec::new(),
@@ -126,6 +141,7 @@ pub(crate) fn coverage_events(
             Event::Coverage {
                 v: PROTOCOL_VERSION,
                 pid: *index,
+                kind: UNIT_CONTEXT.to_string(),
                 covered: chans,
                 observed: Vec::new(),
                 uncovered: Vec::new(),
@@ -195,6 +211,22 @@ mod tests {
         let a = context_index_for("", &mut map, &mut next);
         let b = context_index_for("", &mut map, &mut next);
         assert_ne!(a, b);
+    }
+
+    /// What the pages inside a natively hooked application contribute to the family (docs/09
+    /// section 12.7). Nothing reached, or reached with no page to judge, is the identity of the fold -
+    /// an application whose web view never opened is not one whose pages ran real. With pages the
+    /// judgement is the Chromium session's own.
+    #[test]
+    fn the_pages_contribute_nothing_until_there_is_a_page_to_judge() {
+        assert_eq!(embedded_verdict(false, 0, false, 0), Verdict::Undetermined);
+        assert_eq!(embedded_verdict(true, 0, false, 0), Verdict::Undetermined, "an engine with no page yet");
+        assert_eq!(embedded_verdict(true, 2, true, 0), Verdict::Works);
+        assert_eq!(embedded_verdict(true, 2, false, 0), Verdict::Undetermined, "shimmed, never asked the time");
+        assert_eq!(embedded_verdict(true, 2, true, 1), Verdict::Partial);
+        assert_eq!(embedded_verdict(true, 0, false, 1), Verdict::Fails, "a page refused and none covered");
+        // The identity of the fold: a family that works stays works with nothing to judge.
+        assert_eq!(Verdict::Works.combine(embedded_verdict(true, 0, false, 0)), Verdict::Works);
     }
 
     #[test]

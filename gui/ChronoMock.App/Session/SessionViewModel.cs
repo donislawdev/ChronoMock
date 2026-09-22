@@ -77,6 +77,7 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     private bool _scaleDuration;
     private bool _scaleQpc;
     private bool _forceStart;
+    private bool _reachEmbedded = true;
     private string _targetArgs = string.Empty;
     private string _workingFolder = string.Empty;
     private readonly ISessionHistoryStore _store;
@@ -116,6 +117,7 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     private bool _startScaleDuration;
     private bool _startScaleQpc;
     private bool _startForce;
+    private bool _startReachEmbedded = true;
     private string _inFlightErrorKey = string.Empty;
     private bool _applyingMultiplier; // guard: syncing the Mode dropdown from a state event must not re-send
 
@@ -221,6 +223,11 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     private bool _isCdp;
     private IReadOnlyList<CoveredChannel> _covered = [];
     private IReadOnlyList<CoveredChannel> _observed = [];
+    // A native session's covered rows in two halves: the parent process's (replaced by its later
+    // snapshot, R2-X8) and the pages reached inside the application (accumulated per context, docs/09).
+    // Kept apart so a late parent snapshot cannot wipe the page rows, whichever arrives last.
+    private IReadOnlyList<CoveredChannel> _parentCovered = [];
+    private IReadOnlyList<CoveredChannel> _pageCovered = [];
     private IReadOnlyList<string> _uncovered = [];
     private IReadOnlyList<string> _unobserved = [];
     private IReadOnlyList<string> _installedLate = [];
@@ -594,6 +601,26 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     /// default: the core stops the target in that case, because an application that looks time-shifted
     /// but is not produces evidence about a session that never happened. Start-only.</summary>
     public bool ForceStart { get => _forceStart; set => Set(ref _forceStart, value); }
+
+    /// <summary>Reach the web pages inside the application through its embedded web engine's debugging
+    /// port (docs/09). ON by default - covering those pages is the product's promise, and what the switch
+    /// buys the tester who turns it off is that no debugging port opens in their application for the
+    /// session. Maps to the wire <c>target.embedded</c>. Start-only.</summary>
+    public bool ReachEmbedded
+    {
+        get => _reachEmbedded;
+        set
+        {
+            if (Set(ref _reachEmbedded, value))
+            {
+                RaisePropertyChanged(nameof(LeavesEmbeddedPages));
+            }
+        }
+    }
+
+    /// <summary>The opt-out, for the folded header's chip: reaching the pages is the default, so the chip
+    /// shows only when the tester turned it off - a chip for every session would say nothing.</summary>
+    public bool LeavesEmbeddedPages => !_reachEmbedded;
 
     /// <summary>Command-line arguments for the target (chrono-mock 7.1 pt 1), as one line the tester types.
     /// Split into the wire's argument list by <see cref="TargetArguments"/>, which mirrors the CLI's own
@@ -1608,7 +1635,17 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
                 Warnings = [.. _warnings, .. c.WarningKeys.Where(w => !_warnings.Contains(w))];
                 CoverageKnown = true;
                 break;
-            case CoverageEvent c:
+            case CoverageEvent c when c.Kind == CoverageEvent.UnitContext:
+                // A page or worker inside a natively hooked application, reached through its web
+                // engine's debugging port (docs/09 section 12). Its number is a context index, never a
+                // pid, so it must not be mistaken for the parent. Rows accumulate per context like the
+                // CDP branch above and stand after the parent's, whichever event arrives last.
+                _pageCovered = [.. _pageCovered, .. c.Covered];
+                Covered = [.. _parentCovered, .. _pageCovered];
+                Warnings = [.. _warnings, .. c.WarningKeys.Where(w => !_warnings.Contains(w))];
+                CoverageKnown = true;
+                break;
+            case CoverageEvent c when c.Kind == CoverageEvent.UnitProcess:
                 // Native. Call counts stay the PARENT's - the process the first event names - because
                 // summing them across processes would fabricate a per-process picture (untouchable rule
                 // 4), and a per-process family breakdown is a later slice. But a LATER event for that
@@ -1619,7 +1656,8 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
                 _parentPid ??= c.Pid;
                 if (c.Pid == _parentPid)
                 {
-                    Covered = c.Covered.ToList();
+                    _parentCovered = c.Covered.ToList();
+                    Covered = [.. _parentCovered, .. _pageCovered];
                     Observed = c.Observed.ToList();
                 }
 
@@ -1634,6 +1672,16 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
                 Uncovered = [.. _uncovered, .. c.Uncovered.Where(u => !_uncovered.Contains(u))];
                 Unobserved = [.. _unobserved, .. c.Unobserved.Where(u => !_unobserved.Contains(u))];
                 InstalledLate = [.. _installedLate, .. c.InstalledLate.Where(u => !_installedLate.Contains(u))];
+                Warnings = [.. _warnings, .. c.WarningKeys.Where(w => !_warnings.Contains(w))];
+                CoverageKnown = true;
+                break;
+            case CoverageEvent c:
+                // A kind this build does not know - a newer core naming a unit this panel has never
+                // heard of. Its number is neither a pid nor a context index, so it must not become the
+                // parent and its counts have no row to go in. What it says about the session - the
+                // warnings and the gaps - is evidence all the same, and stays (rule 4, rule 6).
+                Uncovered = [.. _uncovered, .. c.Uncovered.Where(u => !_uncovered.Contains(u))];
+                Unobserved = [.. _unobserved, .. c.Unobserved.Where(u => !_unobserved.Contains(u))];
                 Warnings = [.. _warnings, .. c.WarningKeys.Where(w => !_warnings.Contains(w))];
                 CoverageKnown = true;
                 break;
@@ -1677,6 +1725,7 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
             _startScaleDuration = _scaleDuration;
             _startScaleQpc = _scaleQpc;
             _startForce = _forceStart;
+            _startReachEmbedded = _reachEmbedded;
             _startCaptured = true;
             RaisePropertyChanged(nameof(StartedAtPreview));
 
@@ -1692,7 +1741,8 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
                     BuildTime(),
                     _forceStart,
                     TargetArguments.Split(_targetArgs),
-                    _workingFolder);
+                    _workingFolder,
+                    _reachEmbedded);
             }
             catch (InvalidOperationException ex)
             {
@@ -1853,6 +1903,8 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
         _parentPid = null;
         IsCdp = false;
         Covered = [];
+        _parentCovered = [];
+        _pageCovered = [];
         Observed = [];
         Uncovered = [];
         // 🔴 Unobserved was missing from this list, so a second session in the same window kept listing the
@@ -2203,6 +2255,7 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
             ScaleDuration = _startCaptured ? _startScaleDuration : _scaleDuration,
             ScaleQpc = _startCaptured ? _startScaleQpc : _scaleQpc,
             Force = _startCaptured ? _startForce : _forceStart,
+            Embedded = _startCaptured ? _startReachEmbedded : _reachEmbedded,
             Verdict = RecordedVerdict(),
             EndedAtUtc = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture),
         };
@@ -2322,6 +2375,7 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
         ScaleDuration = record.ScaleDuration;
         ScaleQpc = record.ScaleQpc;
         ForceStart = record.Force;
+        ReachEmbedded = record.Embedded;
 
         // A zone or a mode the catalogues no longer offer cannot be filled in, and the old code left the
         // CURRENT one standing without a word - so the form claimed to be the recorded session while one of

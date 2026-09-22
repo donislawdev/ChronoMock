@@ -161,6 +161,80 @@ internal static class PhaseStates
     }
 
     /// <summary>
+    /// A session whose application has an embedded web engine and whose pages the session reached through
+    /// the engine's debugging port (docs/09 section 12): the engine's helper processes still ran on the
+    /// real clock and stand in the process table, the renderer among them, but its pages have rows of their
+    /// own under the parent's - context rows, not process rows - and the warning says they were reached
+    /// rather than that they read the real clock. The shape the bench measured on two hosts, 2026-09-22.
+    /// </summary>
+    public static SessionViewModel ResultPartialWithEmbeddedPages()
+    {
+        var model = ResultRunning();
+        // The parent's final snapshot arrives BEFORE the page rows, as the core emits them - and the
+        // page rows must survive it whichever order they come in.
+        model.Apply(new CoverageEvent
+        {
+            V = ProtocolJson.ProtocolVersion,
+            Pid = 4242,
+            Covered =
+            [
+                new CoveredChannel { Channel = "GetSystemTimeAsFileTime", Calls = 130_020 },
+                new CoveredChannel { Channel = "GetLocalTime", Calls = 3_602 },
+                new CoveredChannel { Channel = "GetTickCount64", Calls = 45_118 },
+            ],
+            Uncovered = ["QueryPerformanceCounter"],
+            Unobserved = ["NtQuerySystemTime"],
+            InstalledLate = ["timeGetTime"],
+            WarningKeys = [],
+        });
+        model.Apply(new CoverageEvent
+        {
+            V = ProtocolJson.ProtocolVersion,
+            Pid = 1,
+            Kind = CoverageEvent.UnitContext,
+            Covered =
+            [
+                new CoveredChannel { Channel = "page Date.now", Calls = 612 },
+                new CoveredChannel { Channel = "page performance.now", Calls = 588 },
+                new CoveredChannel { Channel = "page setInterval", Calls = 2 },
+            ],
+            WarningKeys = [],
+        });
+        model.Apply(new CoverageEvent
+        {
+            V = ProtocolJson.ProtocolVersion,
+            Pid = 2,
+            Kind = CoverageEvent.UnitContext,
+            Covered = [new CoveredChannel { Channel = "worker Date.now", Calls = 41 }],
+            WarningKeys = [],
+        });
+        model.Apply(new SessionVerdictEvent
+        {
+            V = ProtocolJson.ProtocolVersion,
+            Verdict = "partial",
+            ReasonKey = "session.family_partial_children",
+            ProcessCount = 3,
+            WarningKeys =
+            [
+                "inheritance.children_uncovered", "embedded.web_engine_reached", "embedded.debug_port_open",
+                "chromium.rate_change_affects_running_timers",
+            ],
+            UncoveredChildren =
+            [
+                new UncoveredChild { Pid = 5120, ParentPid = 4300, Image = "msedgewebview2.exe", Role = "crashpad-handler" },
+                new UncoveredChild { Pid = 5136, ParentPid = 4300, Image = "msedgewebview2.exe", Role = "gpu-process" },
+                new UncoveredChild { Pid = 5150, ParentPid = 4300, Image = "msedgewebview2.exe", Role = "utility" },
+                new UncoveredChild { Pid = 5180, ParentPid = 4300, Image = "msedgewebview2.exe", Role = "renderer" },
+            ],
+            UncoveredChildrenTotal = 4,
+            ContextCount = 2,
+            Engines = [new ReachedEngine { Pid = 4300, Port = 61868, Browser = "Engine/153.0" }],
+        });
+        model.Apply(Ended());
+        return model;
+    }
+
+    /// <summary>
     /// The family verdict naming <paramref name="total"/> processes the hook never got into, applied to
     /// a model in whatever state it is - for a guard that reads a count off the screen and wants that
     /// count to be one no other list shares - or, with an <paramref name="image"/>, for a guard that

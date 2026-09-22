@@ -43,6 +43,9 @@ windows = { version = "0.62", features = [
     "Win32_System_Environment",
     "Win32_NetworkManagement_IpHelper",
     "Win32_System_Diagnostics_ToolHelp",
+    # One read-only registry query for the same channel (slice C): whether a WebView2 policy value
+    # the session's variable hides is there, so the session can say so. Nothing writes.
+    "Win32_System_Registry",
 ] }
 chrono-core = { path = "crates/core" }
 chrono-ctl = { path = "crates/ctl" }

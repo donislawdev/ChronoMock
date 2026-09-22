@@ -23,7 +23,7 @@ use crate::events::{
 };
 use crate::wire::spawn_command_reader;
 use crate::cdp_attach::{Attacher, Pumped};
-use crate::cdp_clock::{cdp_resolve_jump, CdpClock};
+use crate::cdp_clock::{cdp_jump_expr, cdp_resolve_jump, cdp_set_multiplier_expr, CdpClock};
 use crate::cdp_audit::{
     covered_channels, coverage_events, cdp_verdict, session_warnings,
     verdict_keys,
@@ -164,7 +164,7 @@ pub(crate) fn cdp_session(target: TargetSpec, time: TimeSpec, reader: BufReader<
                     }
                     let now = now_epoch_ms();
                     let (fake0, real0, m) = clock.set_multiplier_at(multiplier, now);
-                    attacher.broadcast(&cdp_set_multiplier_expr(fake0, real0, m));
+                    attacher.broadcast(&cdp_set_multiplier_expr(fake0, real0, m, m));
                     rate_changed_in_flight = true;
                     emit(&Event::Ack { v: PROTOCOL_VERSION, id });
                     emit(&clock.state_event_at(now_epoch_ms()));
@@ -267,6 +267,8 @@ pub(crate) fn cdp_session(target: TargetSpec, time: TimeSpec, reader: BufReader<
 /// The family verdict of a CDP session. No PID registry on this path: a CDP session tracks JS
 /// contexts, not injected processes, so its per-context warnings already travel on the coverage
 /// events, and it spawns nothing the hook could fail to follow - the two child fields stay empty.
+/// `process_count` has carried the context count since this session existed and keeps doing so for
+/// the clients that read it there. `context_count` says the same number under its own name.
 fn emit_cdp_session_verdict(token: &str, reason: &str, contexts: u32) {
     emit(&Event::SessionVerdict {
         v: PROTOCOL_VERSION,
@@ -276,26 +278,9 @@ fn emit_cdp_session_verdict(token: &str, reason: &str, contexts: u32) {
         warning_keys: Vec::new(),
         uncovered_children: Vec::new(),
         uncovered_children_total: 0,
+        context_count: contexts,
+        engines: Vec::new(),
     });
 }
 
-/// The JS to push a new wall origin AND rate into a context's `__chronomock`, re-anchoring its local
-/// duration axis first so `performance.now` stays continuous across the rate change (rule 3). The wall
-/// origin (fake0, real0, mult) is the driver's, identical for every context, so all contexts stay in
-/// step.
-pub(crate) fn cdp_set_multiplier_expr(fake0: i64, real0: i64, mult: i64) -> String {
-    format!(
-        "(function(){{var S=globalThis.__chronomock;if(!S)return 'no-shim';\
-         var p=S._realPerf?S._realPerf():0;S.perfBase=(S.perfBase||0)+(p-S.perfAnchorReal)*(S.M||1);\
-         S.perfAnchorReal=p;S.fakeStart={fake0};S.realStart={real0};S.M={mult};return 'ok';}})()"
-    )
-}
 
-/// The JS to push a new wall origin into a context's `__chronomock` for a jump - wall only - the rate
-/// and the duration axis are untouched, so a backward jump never rewinds elapsed time (rule 3).
-pub(crate) fn cdp_jump_expr(fake0: i64, real0: i64) -> String {
-    format!(
-        "(function(){{var S=globalThis.__chronomock;if(!S)return 'no-shim';\
-         S.fakeStart={fake0};S.realStart={real0};return 'ok';}})()"
-    )
-}

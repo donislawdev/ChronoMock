@@ -39,6 +39,8 @@ mod cli;
 mod core;
 /// Embedded web engines (WebView2, Qt WebEngine): what a native session can say about them.
 mod embedded;
+/// The bridge a native session holds to the pages inside its application (docs/09 section 12).
+mod embedded_bridge;
 /// Writing protocol events, and the shapes both mechanisms share.
 mod events;
 /// The step grammar shared by the calculator flags and the preset reader.

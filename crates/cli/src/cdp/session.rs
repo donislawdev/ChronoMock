@@ -12,24 +12,32 @@ use super::CdpClient;
 use serde_json::{json, Value};
 use std::io;
 
-/// The time shim, with `__MULT__`/`__FAKE_START__`/`__REAL_START__` filled in by [`build_shim`].
-/// A guard (`__chronomock`) makes re-injection (a page reload re-runs the add-script hook) a no-op,
-/// so the originals are wrapped exactly once. `fakeNow` is `fakeStart + (realNow - realStart) * M`,
-/// so M = 1 is a pure wall offset and M > 1 accelerates.
+/// The time shim, with `__MULT__`/`__DUR__`/`__FAKE_START__`/`__REAL_START__` filled in by
+/// [`build_shim`]. A guard (`__chronomock`) makes re-injection (a page reload re-runs the add-script
+/// hook) a no-op, so the originals are wrapped exactly once. `fakeNow` is
+/// `fakeStart + (realNow - realStart) * M`, so M = 1 is a pure wall offset and M > 1 accelerates.
 ///
 /// The clock (`M`/`fakeStart`/`realStart` and the duration anchor) lives in the mutable `__chronomock`
 /// object, and every override reads it live, so the driver can change the rate or jump the wall in
 /// flight by writing new values (slice C7) - the CDP equivalent of the native hook re-reading `Ctl`.
 /// A rate change re-anchors the duration axis (`perfBase`/`perfAnchorReal`) so `performance.now` stays
-/// continuous and never runs backward when M drops (untouchable rule 3). It cannot, however, reschedule
-/// a `setInterval` already queued at the old rate - that stays at its old cadence (the driver warns).
+/// continuous and never runs backward when the rate drops (untouchable rule 3). It cannot, however,
+/// reschedule a `setInterval` already queued at the old rate - that stays at its old cadence (the
+/// driver warns).
+///
+/// The wall and the duration axis have separate rates. `M` moves the wall (`Date`), `D` moves the
+/// timers and `performance.now`. A Chromium session sets both to the multiplier. A page inside a
+/// natively hooked application follows that application instead, whose duration axis scales only
+/// under `scale_duration` (docs/09 section 12.6) - one rule for one application, whichever half of
+/// it a timer runs in.
 const SHIM_TEMPLATE: &str = r#"(function(){
   if (globalThis.__chronomock) { return 'already'; }
   var _OrigDate = Date;
   var _now = _OrigDate.now.bind(_OrigDate);
   var _perf = (typeof performance !== 'undefined' && performance.now) ? performance.now.bind(performance) : null;
   var S = {
-    M: __MULT__,                    /* 0 = frozen, 1 = flow (wall offset only), N = accelerate */
+    M: __MULT__,                    /* wall rate: 0 = frozen, 1 = flow (wall offset only), N = accelerate */
+    D: __DUR__,                     /* duration rate for timers and performance.now, never below 1 */
     fakeStart: __FAKE_START__,
     realStart: __REAL_START__,
     perfBase: 0,                    /* accumulated scaled duration up to the last rate change */
@@ -54,13 +62,13 @@ const SHIM_TEMPLATE: &str = r#"(function(){
   CMDate.UTC = _OrigDate.UTC;
   try { globalThis.Date = CMDate; } catch (e) { try { Date.now = CMDate.now; } catch (e2) {} }
 
-  /* setInterval/setTimeout read the duration scale (M || 1) live, so a NEW timer picks up the current
+  /* setInterval/setTimeout read the duration rate (D || 1) live, so a NEW timer picks up the current
      rate; one already scheduled keeps its old cadence (the kernel already queued it). */
   var _si = globalThis.setInterval, _st = globalThis.setTimeout;
-  if (_si) { globalThis.setInterval = function(fn, d){ S.counts.si++; var a = [].slice.call(arguments, 2); return _si.apply(globalThis, [fn, (d || 0) / (S.M || 1)].concat(a)); }; }
-  if (_st) { globalThis.setTimeout = function(fn, d){ S.counts.st++; var a = [].slice.call(arguments, 2); return _st.apply(globalThis, [fn, (d || 0) / (S.M || 1)].concat(a)); }; }
+  if (_si) { globalThis.setInterval = function(fn, d){ S.counts.si++; var a = [].slice.call(arguments, 2); return _si.apply(globalThis, [fn, (d || 0) / (S.D || 1)].concat(a)); }; }
+  if (_st) { globalThis.setTimeout = function(fn, d){ S.counts.st++; var a = [].slice.call(arguments, 2); return _st.apply(globalThis, [fn, (d || 0) / (S.D || 1)].concat(a)); }; }
   if (_perf) {
-    performance.now = function(){ S.counts.perf++; return S.perfBase + (_perf() - S.perfAnchorReal) * (S.M || 1); };
+    performance.now = function(){ S.counts.perf++; return S.perfBase + (_perf() - S.perfAnchorReal) * (S.D || 1); };
   }
   return 'installed';
 })()"#;
@@ -71,11 +79,14 @@ const SHIM_TEMPLATE: &str = r#"(function(){
 pub const COUNTS_EXPR: &str = "(globalThis.__chronomock && globalThis.__chronomock.counts) || null";
 
 /// Build the shim source for a session clock: `fake_start_ms`/`real_start_ms` are Unix-epoch ms, `mult`
-/// the speed-up (>= 1). The browser's own `Date.now` supplies "real now" at run time, so all contexts
-/// share one clock origin as long as the driver's and the browser's wall clocks agree (same machine).
-pub fn build_shim(fake_start_ms: i64, real_start_ms: i64, mult: i64) -> String {
+/// the wall rate (0 freezes it) and `dur` the duration rate for timers and `performance.now` (never
+/// below 1 - a frozen wall does not stop a timer, untouchable rule 3). The browser's own `Date.now`
+/// supplies "real now" at run time, so all contexts share one clock origin as long as the driver's and
+/// the browser's wall clocks agree (same machine).
+pub fn build_shim(fake_start_ms: i64, real_start_ms: i64, mult: i64, dur: i64) -> String {
     SHIM_TEMPLATE
         .replace("__MULT__", &mult.to_string())
+        .replace("__DUR__", &dur.max(1).to_string())
         .replace("__FAKE_START__", &fake_start_ms.to_string())
         .replace("__REAL_START__", &real_start_ms.to_string())
 }
@@ -175,12 +186,30 @@ mod tests {
 
     #[test]
     fn shim_substitutes_its_parameters() {
-        let s = build_shim(1_700_000_000_000, 1_600_000_000_000, 60);
+        let s = build_shim(1_700_000_000_000, 1_600_000_000_000, 60, 60);
         assert!(s.contains("M: 60,"));
+        assert!(s.contains("D: 60,"));
         assert!(s.contains("fakeStart: 1700000000000,"));
         assert!(s.contains("realStart: 1600000000000,"));
         assert!(!s.contains("__MULT__"));
+        assert!(!s.contains("__DUR__"));
         assert!(!s.contains("__FAKE_START__"));
+    }
+
+    /// The two rates are independent: a page inside a natively hooked application keeps its timers
+    /// real while its wall runs fast (docs/09 section 12.6), and a frozen wall never stops a timer
+    /// (untouchable rule 3), so the duration rate is floored at 1 whatever the caller passes.
+    #[test]
+    fn the_wall_rate_and_the_duration_rate_are_filled_in_separately() {
+        let s = build_shim(0, 0, 60, 1);
+        assert!(s.contains("M: 60,"), "{s}");
+        assert!(s.contains("D: 1,"), "{s}");
+        assert!(s.contains("(S.D || 1)"), "timers read the duration rate, not the wall rate");
+        assert!(!s.contains("/ (S.M || 1)"), "no timer divides by the wall rate any more");
+
+        let frozen = build_shim(0, 0, 0, 0);
+        assert!(frozen.contains("M: 0,"), "{frozen}");
+        assert!(frozen.contains("D: 1,"), "a frozen wall keeps timers at real speed: {frozen}");
     }
 
     #[test]

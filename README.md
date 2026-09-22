@@ -36,6 +36,10 @@ it exists.
   after a 14-day trial", business days and holidays, every format at once.
 - **Electron and Chromium apps too** - through a different mechanism, because their clock lives in a
   sandboxed renderer where injection does not reach.
+- **The web pages inside an ordinary application too** - an application with a built-in web engine
+  (WebView2, Qt WebEngine) runs its pages in a process the hook cannot enter. The session asks the
+  engine to open a local debugging port and puts those pages on the same clock as the rest of the
+  application, through it. On by default, off with one switch.
 - **A window and a command line** - the same engine behind both, exit codes for CI.
 - **Portable** - no installer, no administrator rights, runs from a USB stick.
 
@@ -330,6 +334,15 @@ the starting point.
 The Chromium / Electron mode does not inject at all. It launches the target with a debug port and a
 clean isolated profile (see the support matrix), so it is not affected by this.
 
+An application with an embedded web engine gets both: the native hook in the application, and the
+pages inside it reached over the engine's own debugging port. That port is opened by the engine at the
+session's request (two environment variables the target inherits) and stays open, to any program on
+this computer, for as long as the engine runs - the report says so, names the port, and `--no-embedded`
+(or the checkbox in the window) leaves the pages on the real clock and opens nothing. The engine's
+helper processes and the renderer's own native reads stay on the real clock, so such a session is
+reported as PARTIAL with the reason spelled out. An application running elevated is out of reach: the
+engine ignores the variables there.
+
 ---
 
 ## Support matrix
@@ -345,6 +358,7 @@ column says which is which._
 | Java (JVM) | experimental | measured on x64, x86 | Wall clock and elapsed time are covered. The session time zone is not reached - a known gap. nanoTime stays on the real high-resolution counter unless you opt in with Scale QPC (`--scale-qpc`) |
 | Python (CPython, incl. PyInstaller) | experimental | measured by hand on x64, not by the suite | Wall clock (time.time, datetime) is covered. perf_counter, and monotonic on Python 3.13+, are on the high-resolution counter - real by default, accelerated when you opt in with Scale QPC (`--scale-qpc`) |
 | Applications reading time from the network | out of scope by definition | measured on x64, x86 | The audit detects it - connect observed, warned |
+| Embedded web engine inside a native app (WebView2, Qt WebEngine) | experimental | measured by hand on a WebView2 host and a Qt WebEngine host (x64), not by the suite | The native hook covers the application and the pages inside it are reached over the engine's debugging port, opened for the session through two environment variables the application inherits. The pages read the session clock at the session rate and follow a speed change and a jump. The engine's helper processes and the renderer's native reads stay on the real clock, so the verdict is PARTIAL and says why. The pages keep the machine's time zone. An elevated application is out of reach - the engine ignores the variables |
 | Electron / Chromium | experimental (Chromium mode) | measured by hand on an Electron app (x64), not by the suite | A separate mechanism, not injection: the app is launched with a debug port and a clean isolated profile, and its own JS time APIs are put on the session clock over the DevTools protocol - reaching the sandboxed renderer and its Web Workers, where the timer often lives. The session zone follows the host zone (the instant is faked, not the local-time getters) |
 | UWP / MSIX (Store apps) | not supported | declared (not exercised) | Packaging and launch model |
 | ARM64 | out of scope through v1.0 | declared (not exercised) | To be revisited |

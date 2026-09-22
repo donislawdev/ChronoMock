@@ -180,6 +180,15 @@ public class BinaryImportsTests
             "at runtime - a LoadLibrary would have hidden it from this file, which is the one thing this " +
             "file is for. Measured: one import by name, on both bitnesses"
         ),
+        (
+            "chrono.exe", "advapi32.dll",
+            "RegGetValueW, and nothing else. One read-only registry question for the same channel " +
+            "(docs/09 section 12.10): whether a WebView2 AdditionalBrowserArguments policy value for the " +
+            "target is there, because the session's environment variable hides it for the session and " +
+            "the tester is told so. The standard library stopped importing this module when it moved its " +
+            "random seed to bcryptprimitives, so it arrives here for this one call. Measured: one import " +
+            "by name, on both bitnesses"
+        ),
 
         (
             "chrono_hook.dll", "kernel32.dll",
@@ -272,6 +281,21 @@ public class BinaryImportsTests
             var table = PeImportTable.Read(RepoPaths.ReleaseBinary(RepoPaths.RepoRoot(), triple, "chrono.exe"));
             var entry = Assert.Single(table.Entries, e => SameModule(e.Name, "iphlpapi.dll"));
             Assert.Equal(["GetExtendedTcpTable"], entry.Functions.Order(StringComparer.Ordinal));
+        }
+    }
+
+    /// <summary>
+    /// The same pin for the registry module: one read-only query, and a second registry function
+    /// arriving under the same entry would be a different grant than the one written down.
+    /// </summary>
+    [Fact]
+    public void The_registry_module_is_imported_for_exactly_the_one_query_the_register_allows()
+    {
+        foreach (var triple in new[] { X64, X86 })
+        {
+            var table = PeImportTable.Read(RepoPaths.ReleaseBinary(RepoPaths.RepoRoot(), triple, "chrono.exe"));
+            var entry = Assert.Single(table.Entries, e => SameModule(e.Name, "advapi32.dll"));
+            Assert.Equal(["RegGetValueW"], entry.Functions.Order(StringComparer.Ordinal));
         }
     }
 

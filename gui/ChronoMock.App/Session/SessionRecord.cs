@@ -56,6 +56,10 @@ public sealed record SessionRecord
     /// substitution did not take effect.</summary>
     [JsonPropertyName("force")] public bool Force { get; init; }
 
+    /// <summary>Whether the web pages inside the application were reached through its embedded web
+    /// engine (docs/09). A record from before this field existed reads as the default, on.</summary>
+    [JsonPropertyName("embedded")] public bool Embedded { get; init; } = true;
+
     /// <summary>The target's file name for display - the full path stays in <see cref="TargetPath"/>.</summary>
     [JsonIgnore] public string TargetName => Path.GetFileName(TargetPath);
 

@@ -199,6 +199,7 @@ public class StateSheetTests
             total += RenderResult("result-works", PhaseStates.ResultWorks()).Count;
             total += RenderResult("result-partial", PhaseStates.ResultPartial()).Count;
             total += RenderResult("result-processes", PhaseStates.ResultPartialWithUncoveredProcesses(), "AuditSection").Count;
+            total += RenderResult("result-embedded", PhaseStates.ResultPartialWithEmbeddedPages(), "AuditSection").Count;
             total += RenderResult("result-refused", PhaseStates.ResultRefused()).Count;
             total += RenderResult("result-vanished", PhaseStates.ResultVanished()).Count;
             total += RenderResult("result-not-started", PhaseStates.ResultNotStarted()).Count;

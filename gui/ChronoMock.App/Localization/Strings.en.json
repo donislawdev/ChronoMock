@@ -99,6 +99,7 @@
   "setup.chip_duration": "duration scaled",
   "setup.chip_qpc": "QPC scaled",
   "setup.chip_force": "forced start",
+  "setup.chip_no_embedded": "web pages not reached",
   // The launch fields moved into this section, so its folded header says they are set without printing
   // values that have no length limit.
   "setup.chip_args": "arguments set",
@@ -141,6 +142,7 @@
   "setup.opt_duration": "Also speed up timers and countdowns inside the application",
   "setup.opt_qpc": "Also speed up timers that measure elapsed time (Stopwatch, nanoTime, monotonic)",
   "setup.opt_force": "Start even if the fake clock turns out not to work",
+  "setup.opt_embedded": "Reach the web pages inside the application",
 
   // Fits after a number, like the shipped one. It names the button to press rather than quoting it in
   // passing, because a reader who has never opened the calculator cannot tell a quotation from a label.
@@ -155,6 +157,7 @@
   // reader has to weigh BEFORE ticking, where the decision is made rather than a hover away from it.
   "setup.opt_qpc_note": "Can make animation and video inside the application look wrong.",
   "setup.opt_force_note": "The session is then marked unreliable everywhere it appears.",
+  "setup.opt_embedded_note": "Opens a local debugging port in the application's web engine for the session. Other programs on this computer can reach it while the application runs.",
 
   // Both of these say "target" in the shipped panel, which is the word this screen stopped using.
   "setup.tip_recent": "The applications you have run before. Choose… picks one this machine has not run yet.",
@@ -418,6 +421,15 @@
   "inheritance.children_uncovered": "This application started processes that never got the fake clock - they ran on the real one the whole time.",
   "embedded.web_engine_uncovered": "One of them is a web engine's renderer - the process web pages run in. The pages hosted by that renderer read the real clock: a renderer running in a sandbox is out of reach for the native mechanism.",
   "embedded.web_engine_processes_uncovered": "They include processes of an embedded web engine (WebView2 or Qt WebEngine), so part of that engine ran on the real clock. Whether its pages did could not be established: no renderer was among the processes named.",
+  // The embedded-engine channel (docs/09 section 12): the pages inside the application, reached
+  // through its own web engine's debugging port and put on the session clock from there.
+  "embedded.web_engine_reached": "One of them is a web engine's renderer - the process web pages run in. Those pages were reached through the engine's debugging port and ran on the session clock (the page rows in the table). The renderer's own native reads and the engine's helper processes ran on the real clock.",
+  "embedded.debug_port_open": "A local debugging port was opened in this application's web engine for the session - that is how its pages were put on the session clock. It stays open to other programs on this computer for as long as the engine runs.",
+  "embedded.engine_unreachable": "A web engine inside this application opened a debugging port, but the session could not attach to it. Its pages ran on the real clock.",
+  "embedded.discovery_unavailable": "The session could not look for web engines inside this application, so any pages inside it ran on the real clock.",
+  "embedded.qt_port_taken": "The port reserved for the application's Qt web engine was taken by something else before the engine could use it. Its pages could not be reached and ran on the real clock.",
+  "embedded.zone_is_host": "The pages inside this application read this computer's time zone, not the session's. A local time they show differs from the rest of the application by the zone offset.",
+  "embedded.registry_arguments_hidden": "This application has WebView2 browser arguments set in the registry. The session hid them for its duration, so whatever they set up (a debugging port of your own, say) was not applied.",
   // R2-S9. Session-level, not per-process: it is about processes that never got a coverage slot,
   // so it arrives on session_verdict rather than on any one coverage event.
   "coverage.pid_registry_full": "This session ran more processes than the audit can track (256). Some ran with no fake clock at all and are missing from the process count and the lists above.",
@@ -710,6 +722,7 @@
   "tip.mode": "How fast the fake clock runs: ×1 is real speed, frozen stops it, and the rest run that many times faster.",
   "tip.scale_duration": "Also speed up timers, sleeps and countdowns inside the app - not just the wall clock.",
   "tip.scale_qpc": "Also speed up QPC-based clocks (Python monotonic, .NET Stopwatch, Java nanoTime). May distort an app that times its rendering off QPC.",
+  "tip.embedded": "On by default. An application with a built-in web engine (WebView2, Qt WebEngine) runs its pages in a process the clock hook cannot enter. With this on, the engine is asked to open a local debugging port for the session and the pages follow the session clock through it. Untick it to leave those pages on the real clock and open no port.",
   "tip.force": "Off by default. When the opening verdict says the substitution did not take effect, the target is stopped rather than handed to you, because its evidence would be about the real clock. Tick this to run anyway - the session is then marked unreliable everywhere it appears.",
   "tip.start": "Launch the target under the fake clock. Needs a target and a valid moment.",
   "tip.freeze": "Freeze the fake clock so it stops advancing.",

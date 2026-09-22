@@ -71,6 +71,13 @@
             <TextBlock Style="{StaticResource PartCaption}" TextWrapping="NoWrap"
                        Text="{DynamicResource setup.chip_force}" />
           </Border>
+          <!-- Shown when the default is turned OFF: reaching the pages is every session's behaviour, so
+               a chip that said so would say nothing. -->
+          <Border Style="{StaticResource PartBadge}" Margin="{StaticResource SpaceXs}"
+                  Visibility="{Binding LeavesEmbeddedPages, Converter={StaticResource BoolToVis}}">
+            <TextBlock Style="{StaticResource PartCaption}" TextWrapping="NoWrap"
+                       Text="{DynamicResource setup.chip_no_embedded}" />
+          </Border>
           <!-- 🔴 The launch fields live in this section too, so its header has to account for them. A chip
                rather than the value: an argument list and a folder path are both as long as somebody makes
                them, and a summary that grew with them would push the rate off the right-hand edge. Neither
@@ -438,6 +445,15 @@
                     Margin="{StaticResource StackGapSm}" />
           <TextBlock Style="{StaticResource PartNote}" Margin="{StaticResource OptionNoteGap}"
                      Text="{DynamicResource setup.opt_force_note}" />
+
+          <!-- The one option that is ON by default: reaching the web pages inside the application is the
+               coverage promise (docs/09), and what turning it off buys is that no debugging port opens in
+               the application for the session. That cost stands under the box like the two above. -->
+          <CheckBox Content="{DynamicResource setup.opt_embedded}" IsChecked="{Binding ReachEmbedded}"
+                    IsEnabled="{Binding IsIdle}" ToolTip="{DynamicResource tip.embedded}"
+                    Margin="{StaticResource StackGapSm}" />
+          <TextBlock Style="{StaticResource PartNote}" Margin="{StaticResource OptionNoteGap}"
+                     Text="{DynamicResource setup.opt_embedded_note}" />
 
           <!--
             🔴 AND THE LAUNCH OPTIONS, IN THE SAME GROUP. They were a fifth section of their own, and

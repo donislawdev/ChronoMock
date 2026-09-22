@@ -142,7 +142,7 @@ pub(crate) fn cdp_shim_probe(argv: &[String]) -> i32 {
 
     // Pure acceleration for the proof: fake start = real start (the absolute wall moment is C5).
     let now = now_epoch_ms();
-    let shim = cdp::build_shim(now, now, mult);
+    let shim = cdp::build_shim(now, now, mult, mult);
     println!("multiplier: x{mult}, injecting shim into all contexts...");
 
     if let Err(e) = client.call(
@@ -248,7 +248,7 @@ pub(crate) fn cdp_date_probe(argv: &[String]) -> i32 {
     }
     let real = now_epoch_ms();
     let fake = moment_epoch_ms(iso, Some(0)).unwrap_or(real); // the probe treats the moment as UTC
-    let shim = cdp::build_shim(fake, real, 1); // flow: a wall offset, no acceleration
+    let shim = cdp::build_shim(fake, real, 1, 1); // flow: a wall offset, no acceleration
 
     let launched = match cdp::launch_chromium(target, &[], None, || {}) {
         Ok(l) => l,

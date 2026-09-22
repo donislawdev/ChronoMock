@@ -52,6 +52,10 @@ public class LocalizationTests
         "coverage.pid_registry_full",
         "inheritance.children_uncovered", "embedded.web_engine_uncovered",
         "embedded.web_engine_processes_uncovered",
+        // The embedded-engine channel (docs/09 section 12): the pages inside the application.
+        "embedded.web_engine_reached", "embedded.debug_port_open", "embedded.engine_unreachable",
+        "embedded.discovery_unavailable", "embedded.qt_port_taken", "embedded.zone_is_host",
+        "embedded.registry_arguments_hidden",
         "time.fake_clock_clamped", "time.duration_axis_clamped",
         "chromium.launched_with_debug_port", "chromium.app_closed_before_audit",
         "chromium.rate_change_affects_running_timers", "chromium.context_ceiling_reached",

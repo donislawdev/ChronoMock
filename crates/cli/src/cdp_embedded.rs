@@ -14,7 +14,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use crate::cdp;
-use crate::cdp_attach::{Attacher, Pumped};
+use crate::cdp_attach::{Attacher, Pumped, ShimOrigin};
 use crate::cdp_discover::{Discovery, Notice};
 use crate::embedded::engine_env;
 use crate::zone::{moment_epoch_ms, now_epoch_ms};
@@ -92,7 +92,7 @@ pub(crate) fn cdp_embedded_probe(argv: &[String]) -> i32 {
         eprintln!("chrono: --at is not a moment: {}", args.at);
         return 1;
     };
-    let origin = (fake, real, args.multiplier);
+    let origin = ShimOrigin { fake0: fake, real0: real, mult: args.multiplier, dur: args.multiplier };
 
     // The host: launched with the engine variables (the session's future behaviour), or given.
     let launched;
@@ -132,7 +132,7 @@ pub(crate) fn cdp_embedded_probe(argv: &[String]) -> i32 {
     let family = family_of(root);
     // `launched`, when there is one, terminates its host on every way out of this function - the
     // early returns below included - because PlainChild does that on drop.
-    let discovery = match Discovery::start(family) {
+    let discovery = match Discovery::start(family, None) {
         Ok(d) => d,
         Err(e) => {
             eprintln!("chrono: discovery thread did not start: {e}");
@@ -181,6 +181,7 @@ pub(crate) fn cdp_embedded_probe(argv: &[String]) -> i32 {
                     eprintln!("chrono: discovery unavailable: {why}");
                     return 2;
                 }
+                Notice::PortTaken(port) => println!("port {port} reserved for Qt is held by something else"),
             }
         }
         attachers.retain_mut(|attacher| match attacher.pump(origin, &mut next_index) {

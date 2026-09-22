@@ -23,9 +23,13 @@ use chrono_proto::{
 };
 
 use crate::cdp;
+use crate::cdp_attach::ShimOrigin;
+use crate::cdp_audit::{coverage_events, covered_channels, embedded_verdict};
+use crate::cdp_clock::shim_origin_from_state;
 use crate::cdp_session::cdp_session;
 use crate::cli::{this_bitness, CORE_VERSION};
 use crate::embedded::{is_renderer_role, is_web_engine_subprocess, role_from_command_line};
+use crate::embedded_bridge::{reconcile_engine_warnings, EmbeddedBridge, Launch, KEY_REGISTRY_ARGUMENTS_HIDDEN};
 use crate::events::{
     command_id, emit, emit_coverage, ended_clean, jump_error_key, state_event,
     state_event_from, unsupported_command,
@@ -112,20 +116,27 @@ pub(crate) fn core_mode() -> i32 {
         }
     };
 
+    // The embedded-engine channel (docs/09): the two variables that make an engine inside the
+    // application open a local debugging port, and the discovery that uses it - never one without
+    // the other. Off under `--no-embedded`, and then the environment is inherited untouched.
+    let launch = Launch::for_target(&target);
     let m_target = chrono_mech::Target {
         path: &target.path,
         args: &target.args,
         cwd: target.cwd.as_deref(),
-        // No extra variables yet: the embedded-engine channel (docs/09) adds its two in slice C,
-        // together with the discovery that uses the port they open - never one without the other.
-        env: &[],
+        env: &launch.env,
     };
 
     // Detect the target's runtime up front (static, no QPC hook, no process inspection) so the first
     // coverage can warn that its monotonic/elapsed clocks stand on QPC and do not scale - the failure a
     // Python/.NET/Java timer hits under a fast clock (B1, ADR-2). When --scale-qpc is on, this instead
     // cautions about render distortion (A2), since the QPC axis now scales.
-    let runtime_warnings = detect_runtime_warnings(std::path::Path::new(&target.path), spec.scale_qpc);
+    let mut runtime_warnings = detect_runtime_warnings(std::path::Path::new(&target.path), spec.scale_qpc);
+    if launch.registry_hidden {
+        // Known before the launch, like the runtime: a registry policy the tester set for this
+        // application is not read while the session's variable is in its environment.
+        runtime_warnings.push(KEY_REGISTRY_ARGUMENTS_HIDDEN.to_string());
+    }
 
     match chrono_mech::prepare(&spec, &m_target, &hook) {
         Ok(prepared) => {
@@ -183,7 +194,7 @@ pub(crate) fn core_mode() -> i32 {
             }
             // Enter the running session: heartbeat, answer queries, end on command,
             // EOF, or target exit.
-            run_session(prepared.session, verdict, reader)
+            run_session(prepared.session, verdict, reader, &launch, spec.scale_duration)
         }
         Err(e) => {
             let (code, key, origin, detail) = map_prepare_error(e);
@@ -271,31 +282,87 @@ pub(crate) fn read_start<R: BufRead>(
     }
 }
 
+/// What the session loop accumulates between the start verdict and the closing account: the family
+/// verdict as processes join, the pids it has seen, the children the hook never followed into, and
+/// whether either clock ever stood at the end of its range.
+///
+/// One value rather than five variables, because `close_session` took every one of them as its own
+/// argument, and the embedded-engine channel (docs/09) adds its own share to the same account.
+pub(crate) struct SessionLedger {
+    family: Verdict,
+    family_pids: HashSet<u32>,
+    /// Children the hook did NOT follow into, named as they are spawned (SLOWNIK `uncoveredChild`).
+    /// Polled at the child cadence for the same reason children are: a short-lived one has to be
+    /// asked its name while it is still there.
+    uncovered_children: Vec<UncoveredChild>,
+    /// Did the fake clock ever stand on the last instant this build can represent (R2-X2)? Sticky:
+    /// that the clock STOOD on the edge stays true for this session even if a later jump moves it
+    /// back, because the readings taken while it stood there were clamped.
+    clock_clamped: bool,
+    /// Sticky for the same reason as the wall flag: readings taken while the duration axis stood
+    /// there were held, and a later re-anchor does not make them untrue.
+    duration_clamped: bool,
+}
+
+impl SessionLedger {
+    /// Seed the family roll-up with the parent's verdict. Each child's verdict folds in as it joins.
+    pub(crate) fn new(parent: Verdict) -> Self {
+        SessionLedger {
+            family: parent,
+            family_pids: HashSet::new(),
+            uncovered_children: Vec::new(),
+            clock_clamped: false,
+            duration_clamped: false,
+        }
+    }
+
+    /// Poll for children that joined and for children the hook could not follow into.
+    pub(crate) fn poll(&mut self, session: &mut chrono_mech::Session) {
+        fold_children(session, &mut self.family, &mut self.family_pids);
+        self.uncovered_children.extend(session.poll_uncovered_children());
+    }
+
+    /// Note whether either clock stands at the end of its range in this sample.
+    pub(crate) fn sample(&mut self, st: &chrono_mech::SessionState) {
+        self.clock_clamped |= st.clock_at_range_end();
+        self.duration_clamped |= st.duration_at_range_end();
+    }
+
+    /// Every pid the session knows of: the parent, the children the hook entered, and the children
+    /// it did not - the family an engine's debugging port is looked for in (docs/09 section 12.9).
+    pub(crate) fn family(&self, parent: u32) -> Vec<u32> {
+        std::iter::once(parent)
+            .chain(self.family_pids.iter().copied())
+            .chain(self.uncovered_children.iter().map(|c| c.pid))
+            .collect()
+    }
+}
+
+/// The host's clock now, as the origin a page is shimmed from.
+fn host_origin(session: &chrono_mech::Session, scale_duration: bool) -> ShimOrigin {
+    shim_origin_from_state(&session.state(), scale_duration)
+}
+
 /// Drive a running session: emit a ~1 s `state` heartbeat, answer `query`, and stop
 /// on `end`, on stdin EOF, or when the target exits. Returns the verdict's exit code.
 pub(crate) fn run_session(
     mut session: chrono_mech::Session,
     verdict: Verdict,
     reader: BufReader<std::io::Stdin>,
+    launch: &Launch,
+    scale_duration: bool,
 ) -> i32 {
     // A reader thread turns stdin lines into commands so the main thread can beat the
     // heartbeat and watch the target without blocking on read_line.
     let rx = spawn_command_reader(reader);
 
     // Report any child that already joined during the guard window, before the first
-    // heartbeat, so a fast child does not wait a whole second to appear. Seed the family
-    // roll-up with the parent verdict, then fold each child's verdict as it joins.
-    let mut family = verdict;
-    let mut family_pids: HashSet<u32> = HashSet::new();
-    // Did the fake clock ever stand on the last instant this build can represent (R2-X2)?
-    let mut clock_clamped = false;
-    let mut duration_clamped = false;
-    // Children the hook did NOT follow into, named as they are spawned (SLOWNIK `uncoveredChild`).
-    // Polled at the child cadence for the same reason children are: a short-lived one has to be
-    // asked its name while it is still there.
-    let mut uncovered_children: Vec<UncoveredChild> = Vec::new();
-    fold_children(&mut session, &mut family, &mut family_pids);
-    uncovered_children.extend(session.poll_uncovered_children());
+    // heartbeat, so a fast child does not wait a whole second to appear.
+    let mut ledger = SessionLedger::new(verdict);
+    ledger.poll(&mut session);
+    // The bridge to the pages inside the application (docs/09 section 12): looks for an engine's
+    // debugging port in the family from here on, inert when the channel is off.
+    let mut bridge = EmbeddedBridge::start(launch, ledger.family(session.pid), scale_duration);
 
     let heartbeat = Duration::from_secs(1);
     // Children are polled faster than the heartbeat. A child publishes its evidence in a section
@@ -316,47 +383,40 @@ pub(crate) fn run_session(
         let wait = deadline.min(child_deadline).saturating_duration_since(Instant::now());
         match rx.recv_timeout(wait) {
             Ok(Command::End { .. }) => break,
-            Ok(cmd) => apply_command(&mut session, cmd),
+            Ok(cmd) => apply_command(&mut session, &mut bridge, cmd),
             Err(mpsc::RecvTimeoutError::Timeout) => {} // the tick below handles it
             Err(mpsc::RecvTimeoutError::Disconnected) => break, // stdin closed
         }
 
         let now = Instant::now();
         if now >= child_deadline {
-            fold_children(&mut session, &mut family, &mut family_pids);
-            uncovered_children.extend(session.poll_uncovered_children());
+            ledger.poll(&mut session);
+            bridge.family(ledger.family(session.pid));
             child_deadline = now + child_poll;
+        }
+        // Every turn, from the host's clock as it stands now - a page shimmed this turn starts on
+        // the same clock as the host. Bounded by the bridge's own budgets (10 ms per engine socket).
+        if bridge.is_active() {
+            bridge.pump(host_origin(&session, scale_duration));
         }
         // The heartbeat keeps its own once-a-second cadence: `state` and the liveness check stay
         // exactly as often as the protocol says, whatever else the loop is doing.
         if now >= deadline {
             let st = session.state();
-            // Sticky: that the clock STOOD on the edge stays true for this session even if a later
-            // jump moves it back, because the readings taken while it stood there were clamped
-            // (R2-X2).
-            clock_clamped |= st.clock_at_range_end();
-            // Sticky for the same reason as the wall flag above: readings taken while the axis stood
-            // there were held, and a later re-anchor does not make them untrue.
-            duration_clamped |= st.duration_at_range_end();
+            ledger.sample(&st);
             emit(&state_event_from(&st));
             if !session.is_alive() {
                 target_exit = session.exit_code();
                 break;
             }
+            bridge.poll_counts();
+            bridge.resync(shim_origin_from_state(&st, scale_duration));
 
             deadline = now + heartbeat;
         }
     }
 
-    close_session(
-        session,
-        family,
-        family_pids,
-        uncovered_children,
-        clock_clamped,
-        duration_clamped,
-        target_exit,
-    )
+    close_session(session, ledger, bridge, target_exit)
 }
 
 /// Act on one command that arrived mid-session.
@@ -365,7 +425,7 @@ pub(crate) fn run_session(
 /// command's effect on the session, so that one arm stays where the decision is made. Everything
 /// else is answered: a command this state cannot act on gets `unsupported` WITH its id, so a client
 /// waiting on `ack` learns the outcome instead of waiting for ever.
-pub(crate) fn apply_command(session: &mut chrono_mech::Session, cmd: Command) {
+pub(crate) fn apply_command(session: &mut chrono_mech::Session, bridge: &mut EmbeddedBridge, cmd: Command) {
     match cmd {
         Command::Query { id, .. } => {
             emit(&state_event(session));
@@ -378,6 +438,8 @@ pub(crate) fn apply_command(session: &mut chrono_mech::Session, cmd: Command) {
             // session keeps running at the rate it had, and the client is told why (rule 6).
             if chrono_core::multiplier_in_range(multiplier) {
                 session.set_multiplier(multiplier);
+                // The host first (it is the source of truth), then its new clock to the pages.
+                bridge.set_multiplier(host_origin(session, bridge.scale_duration()));
                 emit(&Event::Ack { v: PROTOCOL_VERSION, id });
                 emit(&state_event(session));
             } else {
@@ -408,6 +470,7 @@ pub(crate) fn apply_command(session: &mut chrono_mech::Session, cmd: Command) {
             };
             match resolved {
                 Ok(()) => {
+                    bridge.jump(host_origin(session, bridge.scale_duration()));
                     emit(&Event::Ack { v: PROTOCOL_VERSION, id });
                     emit(&state_event(session));
                 }
@@ -462,16 +525,20 @@ pub(crate) fn native_session_warnings(
 /// every process ENDED with, the family verdict and `ended`. Returns the family's exit code.
 pub(crate) fn close_session(
     mut session: chrono_mech::Session,
-    mut family: Verdict,
-    mut family_pids: HashSet<u32>,
-    mut uncovered_children: Vec<UncoveredChild>,
-    clock_clamped: bool,
-    duration_clamped: bool,
+    mut ledger: SessionLedger,
+    bridge: EmbeddedBridge,
     target_exit: Option<i32>,
 ) -> i32 {
     // Final fold so a child that joined since the last heartbeat still counts in the family.
-    fold_children(&mut session, &mut family, &mut family_pids);
-    uncovered_children.extend(session.poll_uncovered_children());
+    ledger.poll(&mut session);
+    let SessionLedger { mut family, family_pids, uncovered_children, clock_clamped, duration_clamped } =
+        ledger;
+    // What the pages inside the application did, folded into the family like any process: a page
+    // shimmed and reading time is covered, one refused or failed is not, and none at all judges
+    // nothing (docs/09 section 12.7).
+    let pages = bridge.finish();
+    let page_rows = covered_channels(pages.counts.clone());
+    family = family.combine(embedded_verdict(pages.reached, pages.seen.len(), !page_rows.is_empty(), pages.failed + pages.overflow));
     let uncovered_children_total = session.uncovered_children_total();
     // A process nobody reached ran on the real clock: that is "something uncovered" for the family,
     // so the family cannot be `works` (untouchable rule 4 at the session level - the verdict model
@@ -499,6 +566,14 @@ pub(crate) fn close_session(
     for (pid, cov) in &final_coverage {
         emit_coverage(*pid, cov, &[]);
     }
+    // One `coverage` per page context reached, under `kind: context` - never when there was none,
+    // because the bare event a Chromium session emits for an empty audit would claim a context here.
+    if !pages.seen.is_empty() {
+        for event in coverage_events(&pages.seen, &page_rows, Vec::new()) {
+            emit(&event);
+        }
+    }
+    let zone_differs = session.state().tz_bias != chrono_mech::host_tz_bias_min();
     session.end();
     // The sticky flag OR the final sample, so a session too short to have emitted a heartbeat still
     // reports a clamped clock.
@@ -507,7 +582,10 @@ pub(crate) fn close_session(
         clock_clamped || final_state.clock_at_range_end(),
         duration_clamped || final_state.duration_at_range_end(),
     );
-    session_warnings.extend(uncovered_children_warnings(&uncovered_children, uncovered_children_total));
+    let mut children_warnings = uncovered_children_warnings(&uncovered_children, uncovered_children_total);
+    reconcile_engine_warnings(&mut children_warnings, pages.pages_reached());
+    session_warnings.extend(children_warnings);
+    session_warnings.extend(pages.session_warnings(zone_differs));
     // The wire names the first UNCOVERED_CHILDREN_WIRE_MAX and carries the true total beside them.
     // The image name is text from the target's world, so it passes the same sieve as everything
     // else the target writes before it reaches a terminal or the panel.
@@ -529,6 +607,8 @@ pub(crate) fn close_session(
         warning_keys: session_warnings,
         uncovered_children: named,
         uncovered_children_total,
+        context_count: pages.seen.len() as u32,
+        engines: pages.engines,
     });
     emit(&Event::Ended {
         v: PROTOCOL_VERSION,
@@ -783,6 +863,7 @@ mod tests {
                 path: "app.exe".into(),
                 args: Vec::new(),
                 cwd: cwd.map(str::to_string),
+                embedded: true,
             },
             time: TimeSpec {
                 moment: MomentSpec {

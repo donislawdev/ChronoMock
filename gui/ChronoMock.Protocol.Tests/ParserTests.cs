@@ -125,6 +125,9 @@ public class ParserTests
         Assert.Contains("\"type\":\"start\"", json, StringComparison.Ordinal);
         Assert.Contains("\"scale_duration\":false", json, StringComparison.Ordinal);
         Assert.Contains("\"scale_qpc\":false", json, StringComparison.Ordinal);
+        // Reaching the web pages inside the application is the default, and it is written out rather
+        // than left to the core's default, so the wire says what the panel decided (docs/09).
+        Assert.Contains("\"embedded\":true", json, StringComparison.Ordinal);
         Assert.Contains("\"tz_bias_min\":0", json, StringComparison.Ordinal);
         Assert.DoesNotContain("\"cwd\"", json, StringComparison.Ordinal); // null is omitted on write
         Assert.DoesNotContain("\"multiplier\"", json, StringComparison.Ordinal); // null is omitted on write
@@ -201,5 +204,45 @@ public class ParserTests
         Assert.Null(ev.UncoveredChildren[1].Image);
         Assert.Null(ev.UncoveredChildren[1].Role);
         Assert.Equal(5, ev.UncoveredChildrenTotal);
+        // The two fields the embedded-engine channel added (docs/09 section 12.4): absent is zero and
+        // empty, never a parse failure.
+        Assert.Equal(0, ev.ContextCount);
+        Assert.Empty(ev.Engines);
+    }
+
+    /// <summary>A native session that reached an embedded web engine says how many JS contexts it covered
+    /// beside its processes and names the endpoint it reached them through (docs/09 section 12.4).</summary>
+    [Fact]
+    public void Session_verdict_carries_the_context_count_and_the_engines_reached()
+    {
+        const string line = "{\"type\":\"session_verdict\",\"v\":1,\"verdict\":\"partial\"," +
+            "\"reason_key\":\"session.family_partial_children\",\"process_count\":3," +
+            "\"warning_keys\":[\"embedded.debug_port_open\"],\"context_count\":2," +
+            "\"engines\":[{\"pid\":8072,\"port\":51234,\"browser\":\"Engine/1.0\"}]}";
+
+        var ev = Assert.IsType<SessionVerdictEvent>(EventParser.Parse(line));
+        Assert.Equal(3, ev.ProcessCount);
+        Assert.Equal(2, ev.ContextCount);
+        var engine = Assert.Single(ev.Engines);
+        Assert.Equal(8072u, engine.Pid);
+        Assert.Equal(51234, engine.Port);
+        Assert.Equal("Engine/1.0", engine.Browser);
+    }
+
+    /// <summary>`kind` says which namespace `pid` lives in. A coverage line from a core built before the
+    /// field existed came from a process, so absent reads as that - never as a context, never as a
+    /// failure. A context row says so, and the number is then the context's index, not a pid.</summary>
+    [Fact]
+    public void Coverage_without_kind_is_a_process_and_a_context_says_so()
+    {
+        var old = """{"type":"coverage","v":1,"pid":42,"covered":[],"uncovered":[],"warning_keys":[]}""";
+        var process = Assert.IsType<CoverageEvent>(EventParser.Parse(old));
+        Assert.Equal(CoverageEvent.UnitProcess, process.Kind);
+
+        var line = """{"type":"coverage","v":1,"pid":3,"kind":"context","covered":[{"channel":"page Date.now","calls":12}],"uncovered":[],"warning_keys":[]}""";
+        var context = Assert.IsType<CoverageEvent>(EventParser.Parse(line));
+        Assert.Equal(CoverageEvent.UnitContext, context.Kind);
+        Assert.Equal(3u, context.Pid);
+        Assert.Equal("page Date.now", Assert.Single(context.Covered).Channel);
     }
 }

@@ -7,9 +7,10 @@
 use chrono_core::calc::{Base, EvalContext, MomentExpr};
 use chrono_proto::{Clock, Event, MomentSpec, TimeSpec, PROTOCOL_VERSION};
 
+use crate::cdp_attach::ShimOrigin;
 use crate::events::jump_error_key;
 use crate::grammar::parse_shift;
-use crate::zone::{epoch_ms_to_wall, moment_epoch_ms};
+use crate::zone::{epoch_ms_to_wall, moment_epoch_ms, FT_UNIX_EPOCH};
 
 /// The live clock of a CDP session, computed entirely Rust-side so the panel matches the app's own
 /// `Date.now()` with no browser round-trip. The wall origin (`wall_fake0` at `wall_real0`, rate `mult`)
@@ -127,10 +128,67 @@ impl CdpClock {
 
     /// The origin a newly attached context must be shimmed from: the CURRENT wall origin and rate,
     /// not the session's initial values, so a context attaching after an in-flight change starts on
-    /// the same clock as every other one (rule 3).
-    pub(crate) fn shim_origin(&self) -> (i64, i64, i64) {
-        (self.wall_fake0, self.wall_real0, self.mult)
+    /// the same clock as every other one (rule 3). A Chromium session runs the duration axis at the
+    /// wall rate - the acceleration is the point of driving it.
+    pub(crate) fn shim_origin(&self) -> ShimOrigin {
+        ShimOrigin { fake0: self.wall_fake0, real0: self.wall_real0, mult: self.mult, dur: self.mult }
     }
+}
+
+/// A UTC FILETIME as Unix-epoch milliseconds, saturating at either end of the range rather than
+/// wrapping - a wall clock standing at the end of its range must not come out as a date centuries
+/// before the epoch.
+fn filetime_to_epoch_ms(ft: i64) -> i64 {
+    ft.saturating_sub(FT_UNIX_EPOCH) / 10_000
+}
+
+/// The origin a page inside a natively hooked application is shimmed from: the native session's
+/// fake wall at its real wall, both from one `SessionState` snapshot, at the native rate. The
+/// duration rate follows the application - it scales only under `scale_duration`, so the pages'
+/// timers run at the same speed as the host's own (docs/09 section 12.6).
+pub(crate) fn shim_origin_from_state(state: &chrono_mech::SessionState, scale_duration: bool) -> ShimOrigin {
+    ShimOrigin {
+        fake0: filetime_to_epoch_ms(state.fake_ft),
+        real0: filetime_to_epoch_ms(state.real_ft),
+        mult: state.multiplier,
+        dur: if scale_duration { state.multiplier.max(1) } else { 1 },
+    }
+}
+
+/// How far, in fake milliseconds, the clock the pages were last given has walked away from the
+/// session clock: what a page would read now from the origin it holds, minus what the host reads
+/// now (`fresh` is the host's fake and real wall at one instant). The two clocks stand on different
+/// bases - the host's anchor on interrupt time, which does not run while the machine sleeps, and the
+/// pages' on the system clock, which does - so they drift apart across a sleep and across a clock
+/// correction (docs/09 section 12.5). Positive means the pages run ahead.
+pub(crate) fn drift_ms(pushed: ShimOrigin, fresh: ShimOrigin) -> i64 {
+    let page_reads = pushed
+        .fake0
+        .saturating_add(fresh.real0.saturating_sub(pushed.real0).saturating_mul(pushed.mult));
+    page_reads.saturating_sub(fresh.fake0)
+}
+
+/// The JS to push a new wall origin AND both rates into a context's `__chronomock`, re-anchoring its
+/// local duration axis first (at the OLD duration rate) so `performance.now` stays continuous across
+/// the change (rule 3). The wall origin (fake0, real0, mult) is the driver's, identical for every
+/// context, so all contexts stay in step. `dur` is the duration rate for timers and `performance.now`,
+/// floored at 1 like the shim itself.
+pub(crate) fn cdp_set_multiplier_expr(fake0: i64, real0: i64, mult: i64, dur: i64) -> String {
+    let dur = dur.max(1);
+    format!(
+        "(function(){{var S=globalThis.__chronomock;if(!S)return 'no-shim';\
+         var p=S._realPerf?S._realPerf():0;S.perfBase=(S.perfBase||0)+(p-S.perfAnchorReal)*(S.D||1);\
+         S.perfAnchorReal=p;S.fakeStart={fake0};S.realStart={real0};S.M={mult};S.D={dur};return 'ok';}})()"
+    )
+}
+
+/// The JS to push a new wall origin into a context's `__chronomock` for a jump - wall only - the rate
+/// and the duration axis are untouched, so a backward jump never rewinds elapsed time (rule 3).
+pub(crate) fn cdp_jump_expr(fake0: i64, real0: i64) -> String {
+    format!(
+        "(function(){{var S=globalThis.__chronomock;if(!S)return 'no-shim';\
+         S.fakeStart={fake0};S.realStart={real0};return 'ok';}})()"
+    )
 }
 
 /// Resolve a CDP jump target to a fake epoch-ms instant: an absolute moment in the session zone, or a
@@ -158,6 +216,38 @@ pub(crate) fn cdp_resolve_jump(clock: &CdpClock, to: &MomentSpec, now: i64) -> R
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn origin(fake0: i64, real0: i64, mult: i64) -> ShimOrigin {
+        ShimOrigin { fake0, real0, mult, dur: mult }
+    }
+
+    /// A FILETIME to epoch milliseconds, and the end of the range does not come out as a date before
+    /// the epoch: the wall standing at its last representable instant saturates on the way.
+    #[test]
+    fn a_filetime_becomes_epoch_milliseconds_without_wrapping() {
+        assert_eq!(filetime_to_epoch_ms(FT_UNIX_EPOCH), 0);
+        assert_eq!(filetime_to_epoch_ms(FT_UNIX_EPOCH + 10_000), 1);
+        assert!(filetime_to_epoch_ms(i64::MAX) > 0, "the end of the range is far ahead, not behind");
+    }
+
+    /// The pages hold the origin they were last given and read `fake0 + (now - real0) * M` off the
+    /// system clock. The host reads its own clock off interrupt time. Across a sleep the first keeps
+    /// counting and the second does not, and the drift is exactly what the pages would read minus
+    /// what the host reads (docs/09 section 12.5).
+    #[test]
+    fn the_drift_is_what_the_pages_read_minus_what_the_host_reads() {
+        let pushed = origin(1_000_000, 500_000, 60);
+        // Ten real seconds later, both agree: the pages read 1_000_000 + 10_000 * 60.
+        let agreed = origin(1_600_000, 510_000, 60);
+        assert_eq!(drift_ms(pushed, agreed), 0);
+        // The machine slept for five of those seconds: the host's clock counted five, the pages'
+        // system clock counted ten - the pages run 5 s * 60 ahead.
+        let slept = origin(1_300_000, 510_000, 60);
+        assert_eq!(drift_ms(pushed, slept), 300_000);
+        // Frozen: the pages hold fake0 whatever the system clock does, and so does the host.
+        let frozen = origin(1_000_000, 500_000, 0);
+        assert_eq!(drift_ms(frozen, origin(1_000_000, 900_000, 0)), 0);
+    }
 
     #[test]
     fn cdp_clock_saturates_instead_of_panicking() {
@@ -264,7 +354,7 @@ mod tests {
     #[test]
     fn the_mode_becomes_the_rate_the_shim_runs_at() {
         let rate = |mode: &str, m: Option<i64>| {
-            CdpClock::from_time_spec(&spec(None, None, mode, m), 0).unwrap().shim_origin().2
+            CdpClock::from_time_spec(&spec(None, None, mode, m), 0).unwrap().shim_origin().mult
         };
         assert_eq!(rate("flow", None), 1);
         assert_eq!(rate("frozen", None), 0);

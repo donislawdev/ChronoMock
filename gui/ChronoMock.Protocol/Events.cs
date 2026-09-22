@@ -27,6 +27,17 @@ public sealed record CoverageEvent : ChronoEvent
     // high pid, and the mismatch would fail the whole event's deserialization - dropping a process's
     // evidence entirely, with only a diagnostic line to show for it (R2-N20, rules 4 and 6).
     [JsonPropertyName("pid")] public uint Pid { get; init; }
+
+    /// <summary>What <c>Pid</c> names: <see cref="UnitProcess"/> (an operating-system process the hook is
+    /// inside) or <see cref="UnitContext"/> (a JS context reached over the DevTools protocol, and the
+    /// number is its index in this session). Two namespaces a reader must not confuse: pid 8 and context 8
+    /// are different units, and one native session can hold both (docs/09 section 12.4). Absent in
+    /// messages from an older core, which came from processes.</summary>
+    [JsonPropertyName("kind")] public string Kind { get; init; } = UnitProcess;
+
+    public const string UnitProcess = "process";
+    public const string UnitContext = "context";
+
     [JsonPropertyName("covered")] public IReadOnlyList<CoveredChannel> Covered { get; init; } = [];
     [JsonPropertyName("observed")] public IReadOnlyList<CoveredChannel> Observed { get; init; } = [];
     [JsonPropertyName("uncovered")] public IReadOnlyList<string> Uncovered { get; init; } = [];
@@ -98,6 +109,15 @@ public sealed record SessionVerdictEvent : ChronoEvent
     /// </summary>
     [JsonPropertyName("uncovered_children")] public IReadOnlyList<UncoveredChild> UncoveredChildren { get; init; } = [];
     [JsonPropertyName("uncovered_children_total")] public int UncoveredChildrenTotal { get; init; }
+
+    /// <summary>How many JS contexts the session covered beside its processes - the pages and workers of
+    /// an embedded web engine (docs/09). <c>ProcessCount</c> stays the number of processes. Absent in
+    /// messages from an older core, which deserializes to zero.</summary>
+    [JsonPropertyName("context_count")] public int ContextCount { get; init; }
+
+    /// <summary>The DevTools endpoints the session reached inside the application, one per engine. Empty
+    /// for a session that found none, and for a Chromium session, which opened its own.</summary>
+    [JsonPropertyName("engines")] public IReadOnlyList<ReachedEngine> Engines { get; init; } = [];
 }
 
 public sealed record EndedEvent : ChronoEvent

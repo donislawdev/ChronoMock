@@ -8,6 +8,52 @@
 //! runtimes read elapsed time from a counter this tool leaves alone by default (ADR-2), and saying so
 //! before the session is the honest alternative to a report that looks fine and is not.
 
+/// Which namespace a coverage row's number lives in: an operating-system pid the hook is inside,
+/// the index of a JS context reached over the DevTools protocol (`coverage.kind` on the wire), or a
+/// kind this build does not know - a core newer than this driver may name one, and calling its rows
+/// processes would be a claim the core never made. Processes sort first, so the parent still leads a
+/// report that holds all three.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub(crate) enum Unit {
+    Process,
+    Context,
+    Unknown,
+}
+
+/// A coverage unit as the report names it: `pid 1234` or `context 1`. Two namespaces that a reader
+/// must not confuse, and the family of one session can hold both (docs/09 section 12.4), so the
+/// number never travels without its kind.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub(crate) struct UnitId {
+    pub(crate) unit: Unit,
+    pub(crate) id: u32,
+}
+
+impl UnitId {
+    /// From a `coverage` event's `kind` and `pid`. The two tokens this build knows name their unit,
+    /// and the token an older core never wrote defaults to a process on the wire itself. Anything
+    /// else is kept as unknown rather than folded into either: the row stays in the report with its
+    /// evidence, labelled as a unit this driver could not name, instead of being called a pid.
+    pub(crate) fn from_wire(kind: &str, pid: u32) -> UnitId {
+        let unit = match kind {
+            chrono_proto::UNIT_PROCESS => Unit::Process,
+            chrono_proto::UNIT_CONTEXT => Unit::Context,
+            _ => Unit::Unknown,
+        };
+        UnitId { unit, id: pid }
+    }
+}
+
+impl std::fmt::Display for UnitId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self.unit {
+            Unit::Process => write!(f, "pid {}", self.id),
+            Unit::Context => write!(f, "context {}", self.id),
+            Unit::Unknown => write!(f, "unit {} (of a kind this build does not know)", self.id),
+        }
+    }
+}
+
 /// One process's channel coverage as of the latest `coverage` event for its pid. Kept per process
 /// and replaced rather than appended, because the core reports a process more than once: a first
 /// snapshot when it is discovered, and a final one when the session ends (R2-X8).
@@ -39,23 +85,29 @@ pub(crate) struct SessionReport {
     /// not end the session) is listed below the verdict instead of vanishing.
     pub(crate) errors: Vec<(String, String)>,
     pub(crate) warnings: Vec<String>,
-    /// Channels queried but not covered, tagged with the pid that queried them (never summed
-    /// across processes - untouchable rule 4).
-    pub(crate) uncovered: Vec<(u32, String)>,
-    /// Channels this session meant to WATCH and could not hook, tagged with the pid. Separate from
+    /// Channels queried but not covered, tagged with the unit that queried them (never summed
+    /// across units - untouchable rule 4).
+    pub(crate) uncovered: Vec<(UnitId, String)>,
+    /// Channels this session meant to WATCH and could not hook, tagged with the unit. Separate from
     /// `uncovered` because it is not a verdict input: a watch that did not start says nothing about
     /// whether the substitution took effect. It is here because the alternative was no line at all.
-    pub(crate) unobserved: Vec<(u32, String)>,
-    /// Channels hooked only once their module loaded, tagged with the pid. Every one is also listed
+    pub(crate) unobserved: Vec<(UnitId, String)>,
+    /// Channels hooked only once their module loaded, tagged with the unit. Every one is also listed
     /// above with its count, and this is what says that count is a floor - named, because the warning
     /// alone said "a time channel" and left the reader to guess which.
-    pub(crate) installed_late: Vec<(u32, String)>,
-    /// Channels covered (substituted), tagged with the pid and the call count. Per-pid, never
-    /// summed across processes (untouchable rule 4).
-    pub(crate) covered: Vec<(u32, String, u64)>,
+    pub(crate) installed_late: Vec<(UnitId, String)>,
+    /// Channels covered (substituted), tagged with the unit and the call count. Per unit, never
+    /// summed across units (untouchable rule 4).
+    pub(crate) covered: Vec<(UnitId, String, u64)>,
     /// Channels hooked but deliberately left real (waits, network, multimedia timers) - their own
     /// bucket so a reader never reads them as substituted.
-    pub(crate) observed: Vec<(u32, String, u64)>,
+    pub(crate) observed: Vec<(UnitId, String, u64)>,
+    /// JS contexts the session covered beside its processes, from `session_verdict.context_count`.
+    /// Zero for a native session that reached no embedded engine, and for a Chromium session, whose
+    /// contexts already ride `process_count` (docs/08 9b).
+    pub(crate) context_count: u32,
+    /// The DevTools endpoints the session reached inside the application, one per engine.
+    pub(crate) engines: Vec<chrono_proto::ReachedEngine>,
     /// Session duration as the core states it in `ended`: (fake wall reached, real ms elapsed,
     /// fake ms elapsed), or None when `ended` carried no end wall (a session that never started).
     /// Authoritative, not sampled from the heartbeats - one source of truth (3d35a79).
@@ -192,6 +244,29 @@ pub(crate) fn describe_warning(key: &str) -> String {
         }
         "embedded.web_engine_processes_uncovered" => {
             "those include processes of an embedded web engine (WebView2 or Qt WebEngine), so part of that engine ran on the real clock - whether its pages did could not be established, because no renderer was among the ones named"
+        }
+        // The embedded-engine channel (docs/09 section 12): the pages inside a natively hooked
+        // application, reached through the engine's own debugging port.
+        "embedded.web_engine_reached" => {
+            "one of those is a Chromium renderer - the process web pages run in - and its pages were reached through the engine's debugging port and ran on the session clock (the context rows above) - the renderer's own native reads and the engine's helper processes ran on the real clock"
+        }
+        "embedded.debug_port_open" => {
+            "a local debugging port was opened in this application's web engine for the session, which is how its pages were put on the session clock - it stays open to other programs on this computer for as long as the engine runs (the port is listed under the engines reached)"
+        }
+        "embedded.engine_unreachable" => {
+            "a web engine inside this application opened a debugging port and answered as one, but the session could not attach to it - its pages ran on the real clock"
+        }
+        "embedded.discovery_unavailable" => {
+            "the session could not look for web engines inside this application (no loopback port to reserve, or the table of listening sockets could not be read), so any pages inside it ran on the real clock"
+        }
+        "embedded.qt_port_taken" => {
+            "the port reserved for a Qt WebEngine debugging endpoint was held by something else by the time the engine would have bound it, so its pages could not be reached and ran on the real clock"
+        }
+        "embedded.zone_is_host" => {
+            "the pages inside this application use this machine's time zone rather than the session's, so a local time they show can differ from the session's local time (the rest of the application reads the session zone)"
+        }
+        "embedded.registry_arguments_hidden" => {
+            "a WebView2 AdditionalBrowserArguments policy value for this application exists in the registry, and the session's environment variable hid it for the session - any flags it carried (a debugging port of your own, say) were not applied"
         }
         "coverage.pid_registry_full" => {
             "this session ran more processes than the audit can track (256), so some ran uncovered and are missing from the process count and the channel lists below"
@@ -489,23 +564,48 @@ fn render_uncovered_children(children: &[chrono_proto::UncoveredChild], total: u
     out
 }
 
-fn render_channel_names(heading: &str, rows: &[(u32, String)], unit: &str) -> String {
+fn render_channel_names(heading: &str, rows: &[(UnitId, String)]) -> String {
     if rows.is_empty() {
         return String::new();
     }
     let mut out = format!("{heading}\n");
-    for (pid, ch) in rows {
-        out.push_str(&format!("            - {unit} {pid}: {ch}\n"));
+    for (unit, ch) in rows {
+        out.push_str(&format!("            - {unit}: {ch}\n"));
     }
     out
+}
+
+/// The DevTools endpoints the session reached inside the application, one line each, or nothing.
+/// The port is the actionable half: a debugging port stands open in the application for as long as
+/// its engine runs, and a tester who wants their own DevTools on those pages attaches to this one.
+fn render_engines(engines: &[chrono_proto::ReachedEngine]) -> String {
+    if engines.is_empty() {
+        return String::new();
+    }
+    let mut out = String::from("  web engines reached inside the app (their pages ran on the session clock):\n");
+    for e in engines {
+        let name = if e.browser.is_empty() { "engine" } else { e.browser.as_str() };
+        out.push_str(&format!("            - {name} on port {} (pid {})\n", e.port, e.pid));
+    }
+    out
+}
+
+/// What the headline adds after the process count when the session covered JS contexts beside its
+/// processes: ", contexts: N". Empty otherwise, so a report without an embedded engine reads exactly
+/// as it always did, and a Chromium report - whose count IS contexts - does not say it twice.
+fn contexts_suffix(cdp: bool, context_count: u32) -> String {
+    if cdp || context_count == 0 {
+        String::new()
+    } else {
+        format!(", contexts: {context_count}")
+    }
 }
 
 pub(crate) fn render_report(r: &SessionReport) -> String {
     let mut out = String::from("Chrono Mock - session report\n");
     out.push_str(&format!("  target:   {}\n", r.target));
     // A Chromium session's coverage unit is a JS context, not an OS process (rule 4 - never sum
-    // across units either way).
-    let unit = if r.cdp { "context" } else { "pid" };
+    // across units either way). Each row names its own unit - a native session can hold both kinds.
     let units = if r.cdp { "contexts" } else { "processes" };
 
     // Before the verdict, not after the channel lists: a caveat that arrives once the reader has
@@ -521,9 +621,10 @@ pub(crate) fn render_report(r: &SessionReport) -> String {
         ));
     } else if let Some((verdict, reason_key, count)) = &r.session_verdict {
         out.push_str(&format!(
-            "  verdict:  {}  ({units}: {count}{})\n",
+            "  verdict:  {}  ({units}: {count}{}{})\n",
             verdict_headline(verdict),
-            uncovered_children_suffix(r.uncovered_children_total)
+            uncovered_children_suffix(r.uncovered_children_total),
+            contexts_suffix(r.cdp, r.context_count)
         ));
         let why = describe_reason(reason_key);
         if why.is_empty() {
@@ -591,22 +692,21 @@ pub(crate) fn render_report(r: &SessionReport) -> String {
 
     if !r.covered.is_empty() {
         out.push_str("  covered channels (substituted, with call counts):\n");
-        for (pid, ch, calls) in &r.covered {
-            out.push_str(&format!("            - {unit} {pid}: {ch} ({})\n", calls_label(*calls)));
+        for (unit, ch, calls) in &r.covered {
+            out.push_str(&format!("            - {unit}: {ch} ({})\n", calls_label(*calls)));
         }
     }
 
     if !r.observed.is_empty() {
         out.push_str("  observed channels (hooked but left real):\n");
-        for (pid, ch, calls) in &r.observed {
-            out.push_str(&format!("            - {unit} {pid}: {ch} ({})\n", calls_label(*calls)));
+        for (unit, ch, calls) in &r.observed {
+            out.push_str(&format!("            - {unit}: {ch} ({})\n", calls_label(*calls)));
         }
     }
 
     out.push_str(&render_channel_names(
         "  uncovered channels (queried but not covered):",
         &r.uncovered,
-        unit,
     ));
     // Its own heading, and the wording is the point: this is not a gap in the substitution, it is a
     // watch that did not start. Reading it as an uncovered channel would suggest the session missed
@@ -614,16 +714,15 @@ pub(crate) fn render_report(r: &SessionReport) -> String {
     out.push_str(&render_channel_names(
         "  channels we meant to watch and could not hook:",
         &r.unobserved,
-        unit,
     ));
     // Named, and above the warning that explains them: each is also listed with its count, and this is
     // the line that says which of those counts are floors.
     out.push_str(&render_channel_names(
         "  channels hooked only once their module loaded (their counts are floors):",
         &r.installed_late,
-        unit,
     ));
     out.push_str(&render_uncovered_children(&r.uncovered_children, r.uncovered_children_total));
+    out.push_str(&render_engines(&r.engines));
 
     if !r.warnings.is_empty() {
         out.push_str("  warnings:\n");
@@ -704,6 +803,14 @@ mod tests {
     use crate::core::map_prepare_error;
     use crate::testutil::unique_temp_dir;
 
+    fn pid(n: u32) -> UnitId {
+        UnitId { unit: Unit::Process, id: n }
+    }
+
+    fn context(n: u32) -> UnitId {
+        UnitId { unit: Unit::Context, id: n }
+    }
+
     fn empty_report() -> SessionReport {
         SessionReport {
             target: "app.exe".into(),
@@ -712,6 +819,8 @@ mod tests {
             vanished: None,
             errors: vec![],
             warnings: vec![],
+            context_count: 0,
+            engines: vec![],
             uncovered: vec![],
             unobserved: vec![],
             installed_late: vec![],
@@ -762,16 +871,70 @@ mod tests {
     fn cdp_report_labels_the_unit_as_context() {
         let r = SessionReport {
             session_verdict: Some(("works".into(), "chromium.contexts_covered".into(), 2)),
-            covered: vec![(1, "page setInterval".into(), 5)],
+            covered: vec![(context(1), "page setInterval".into(), 5)],
             warnings: vec!["chromium.launched_with_debug_port".into()],
             cdp: true,
+            context_count: 2,
             ..empty_report()
         };
         let out = render_report(&r);
         assert!(out.contains("contexts: 2"), "got:\n{out}");
+        assert!(!out.contains("contexts: 2, contexts"), "a Chromium report does not say its count twice: {out}");
         assert!(out.contains("- context 1: page setInterval"), "got:\n{out}");
         assert!(out.contains("JS context ran on the session clock"), "got:\n{out}");
         assert!(out.contains("remote-debugging port"), "got:\n{out}");
+    }
+
+    /// A native session that reached an embedded web engine holds both kinds of unit, and the same
+    /// number in the two namespaces is two rows: `pid 4` is a process the hook is inside, `context 4`
+    /// is a page reached over the DevTools protocol (docs/09 section 12.4). The headline says how many
+    /// contexts stood beside the processes, and the engines block names the port the pages were
+    /// reached through - the actionable half for a tester who wants their own DevTools on them.
+    #[test]
+    fn a_native_report_names_each_row_by_its_own_unit() {
+        let r = SessionReport {
+            session_verdict: Some(("partial".into(), "session.family_partial_children".into(), 3)),
+            covered: vec![
+                (pid(4), "GetSystemTimeAsFileTime".into(), 9),
+                (context(4), "page Date.now".into(), 12),
+            ],
+            context_count: 2,
+            engines: vec![chrono_proto::ReachedEngine { pid: 8072, port: 51234, browser: "Engine/1.0".into() }],
+            ..empty_report()
+        };
+        let out = render_report(&r);
+        assert!(out.contains("processes: 3, contexts: 2"), "got:\n{out}");
+        assert!(out.contains("- pid 4: GetSystemTimeAsFileTime (9 calls)"), "got:\n{out}");
+        assert!(out.contains("- context 4: page Date.now (12 calls)"), "got:\n{out}");
+        assert!(out.contains("- Engine/1.0 on port 51234 (pid 8072)"), "got:\n{out}");
+
+        // No engine reached, no contexts: the report reads exactly as it always did.
+        let plain = render_report(&SessionReport {
+            session_verdict: Some(("works".into(), "session.family_covered".into(), 1)),
+            ..empty_report()
+        });
+        assert!(plain.contains("(processes: 1)"), "got:\n{plain}");
+        assert!(!plain.contains("web engines"), "got:\n{plain}");
+    }
+
+    /// A kind this build does not know - a newer core naming a unit this driver has never heard of -
+    /// is neither a process nor a context. Folding it into `pid N` would put a claim in the report
+    /// the core never made, and dropping it would lose evidence, so the row stays and says what it is.
+    #[test]
+    fn a_coverage_kind_this_build_does_not_know_is_not_called_a_pid() {
+        assert_eq!(UnitId::from_wire("process", 8).unit, Unit::Process);
+        assert_eq!(UnitId::from_wire("context", 8).unit, Unit::Context);
+        assert_eq!(UnitId::from_wire("thread", 8).unit, Unit::Unknown);
+        let text = UnitId::from_wire("thread", 8).to_string();
+        assert!(!text.starts_with("pid"), "{text}");
+        assert!(text.contains("does not know"), "{text}");
+
+        let r = SessionReport {
+            covered: vec![(UnitId::from_wire("thread", 8), "SomeChannel".into(), 3)],
+            ..empty_report()
+        };
+        let out = render_report(&r);
+        assert!(out.contains("- unit 8 (of a kind this build does not know): SomeChannel (3 calls)"), "got:\n{out}");
     }
 
     #[test]
@@ -863,7 +1026,7 @@ mod tests {
     fn uncovered_and_warnings_are_surfaced_unknown_key_verbatim() {
         let r = SessionReport {
             session_verdict: Some(("partial".into(), "session.family_partial".into(), 1)),
-            uncovered: vec![(1234, "KUSER_SHARED_DATA".into())],
+            uncovered: vec![(pid(1234), "KUSER_SHARED_DATA".into())],
             warnings: vec!["wait.object_waits_not_scaled".into(), "some.unknown_key".into()],
             ..empty_report()
         };
@@ -879,8 +1042,8 @@ mod tests {
     fn covered_and_observed_channels_are_shown_with_counts_per_pid() {
         let r = SessionReport {
             session_verdict: Some(("works".into(), "session.family_covered".into(), 1)),
-            covered: vec![(1234, "GetSystemTime".into(), 7)],
-            observed: vec![(1234, "WaitForSingleObject".into(), 1)],
+            covered: vec![(pid(1234), "GetSystemTime".into(), 7)],
+            observed: vec![(pid(1234), "WaitForSingleObject".into(), 1)],
             ..empty_report()
         };
         let out = render_report(&r);
@@ -981,8 +1144,8 @@ mod tests {
         // verdict, which has to survive.
         let r = SessionReport {
             session_verdict: Some(("works".into(), "session.family_covered".into(), 1)),
-            covered: vec![(7, "GetSystemTime".into(), 4)],
-            unobserved: vec![(7, "WaitOnAddress".into())],
+            covered: vec![(pid(7), "GetSystemTime".into(), 4)],
+            unobserved: vec![(pid(7), "WaitOnAddress".into())],
             ..empty_report()
         };
 
@@ -1005,8 +1168,8 @@ mod tests {
         // prints them under their own heading, before the warning that says what they cost.
         let r = SessionReport {
             session_verdict: Some(("works".into(), "session.family_covered".into(), 1)),
-            covered: vec![(7, "timeGetTime".into(), 12)],
-            installed_late: vec![(7, "timeGetTime".into())],
+            covered: vec![(pid(7), "timeGetTime".into(), 12)],
+            installed_late: vec![(pid(7), "timeGetTime".into())],
             warnings: vec!["coverage.channel_installed_late".into()],
             ..empty_report()
         };
@@ -1029,7 +1192,7 @@ mod tests {
         // report over a sample from the session's first blink.
         let r = SessionReport {
             session_verdict: Some(("works".into(), "session.family_covered".into(), 1)),
-            covered: vec![(1, "QueryPerformanceCounter".into(), 634)],
+            covered: vec![(pid(1), "QueryPerformanceCounter".into(), 634)],
             stopped_early: Some("timeout"),
             ..empty_report()
         };
@@ -1060,7 +1223,7 @@ mod tests {
     fn evidence_from_works_has_no_unreliable_banner_and_echoes_params() {
         let r = SessionReport {
             session_verdict: Some(("works".into(), "session.family_covered".into(), 1)),
-            covered: vec![(1, "GetSystemTime".into(), 2)],
+            covered: vec![(pid(1), "GetSystemTime".into(), 2)],
             ..empty_report()
         };
         let p = EvidenceParams {

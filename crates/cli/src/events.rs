@@ -49,6 +49,7 @@ pub(crate) fn emit_coverage(pid: u32, cov: &chrono_core::Coverage, extra_warning
     emit(&Event::Coverage {
         v: PROTOCOL_VERSION,
         pid,
+        kind: chrono_proto::UNIT_PROCESS.to_string(),
         covered: to_wire(&cov.covered),
         observed: to_wire(&cov.observed),
         uncovered: cov.uncovered.clone(),

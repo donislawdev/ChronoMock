@@ -8,6 +8,20 @@ public sealed record TargetSpec
     [JsonPropertyName("path")] public required string Path { get; init; }
     [JsonPropertyName("args")] public IReadOnlyList<string> Args { get; init; } = [];
     [JsonPropertyName("cwd")] public string? Cwd { get; init; }
+
+    /// <summary>Reach the web pages inside the application through its embedded web engine's debugging
+    /// port (docs/09). On by default, the opt-out is the panel's checkbox. Ignored for a target that IS
+    /// Chromium, which the core drives over its own port either way.</summary>
+    [JsonPropertyName("embedded")] public bool Embedded { get; init; } = true;
+}
+
+/// <summary>A DevTools endpoint the session reached inside the application: the pid that holds it,
+/// the loopback port, and what the engine calls itself (mirrors <c>chrono_proto::ReachedEngine</c>).</summary>
+public sealed record ReachedEngine
+{
+    [JsonPropertyName("pid")] public uint Pid { get; init; }
+    [JsonPropertyName("port")] public int Port { get; init; }
+    [JsonPropertyName("browser")] public string Browser { get; init; } = "";
 }
 
 /// <summary>The target moment, session-zone semantics (mirrors <c>chrono_proto::MomentSpec</c>).</summary>

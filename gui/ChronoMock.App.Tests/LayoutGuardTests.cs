@@ -1020,6 +1020,41 @@ public class LayoutGuardTests
     }
 
     /// <summary>
+    /// A session that reached the pages inside its application shows those pages' reads as rows of the
+    /// audit table, under the parent's rows, on the fake clock - beside the process table that still
+    /// names the engine's helper processes on the real clock (docs/09 section 12.11). Measured on the
+    /// render: the page rows have to survive the parent's final snapshot, which arrives before them.
+    /// </summary>
+    /// <remarks>
+    /// Reversal probe: fold context rows into the parent's snapshot in SessionViewModel.Apply (assign
+    /// Covered from the parent event alone) and this reddens on the page row.
+    /// </remarks>
+    [Fact]
+    public void A_session_that_reached_the_pages_inside_the_app_lists_their_reads_under_the_parent()
+    {
+        var (cells, processBlock) = WpfTestHost.InvokeSettled(() =>
+        {
+            var view = ResultView(PhaseStates.ResultPartialWithEmbeddedPages());
+            LayoutProbe.Settle(view);
+            var elements = LayoutProbe.Walk(view);
+            var table = elements.Single(e => e.Name == "AuditTable");
+            var texts = elements
+                .Where(e => e.Kind == nameof(TextBlock) && e.IsVisible && table.Bounds.Contains(e.Bounds))
+                .Select(e => e.Text)
+                .ToList();
+            return (texts, elements.Single(e => e.Name == "ProcessBlock").IsVisible);
+        });
+
+        Assert.Contains("page Date.now", cells);
+        Assert.Contains("worker Date.now", cells);
+        Assert.Contains("GetSystemTimeAsFileTime", cells);
+        Assert.True(
+            cells.IndexOf("GetSystemTimeAsFileTime") < cells.IndexOf("page Date.now"),
+            "the parent's rows lead, the pages' rows follow");
+        Assert.True(processBlock, "the engine's helper processes still ran on the real clock and stay in their table");
+    }
+
+    /// <summary>
     /// An executable name longer than the name column trims to the column's ceiling, and the count beside
     /// it stays on the card.
     /// </summary>
