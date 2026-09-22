@@ -49,9 +49,114 @@ pub(crate) fn is_web_engine_subprocess(image: &str) -> bool {
     ENGINE_SUBPROCESSES.contains(&lower.as_str())
 }
 
+/// The variable WebView2 reads extra browser switches from. Its value is APPENDED to whatever the
+/// host passes in `additionalBrowserArguments`, so the host's own switches survive (Microsoft
+/// Learn, WebView2 Win32 reference, "Globals"). It takes precedence over the registry override of
+/// the same name, which is the one thing the channel cannot preserve.
+pub(crate) const WEBVIEW2_ARGUMENTS_VAR: &str = "WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS";
+
+/// The variable Qt WebEngine opens its DevTools endpoint from. The port has to be explicit:
+/// measured 2026-09-21, a zero opens nothing.
+pub(crate) const QT_DEBUGGING_VAR: &str = "QTWEBENGINE_REMOTE_DEBUGGING";
+
+/// The switch that makes a Chromium open a DevTools port. Zero is an ephemeral port, documented for
+/// WebView2 - the channel finds the number in the TCP table, so it never needs to know it up front.
+const REMOTE_DEBUGGING_PORT_SWITCH: &str = "--remote-debugging-port";
+
+/// The two variables that make an embedded engine open a DevTools port, merged with what the
+/// tester's environment already says - `current` is looked up by name, without regard to case, the
+/// way the system looks variables up.
+///
+/// - WebView2: our switch is added after whatever the tester set, unless they already chose a
+///   debugging port or pipe themselves - two port switches on one command line are a coin toss,
+///   and the table read finds their port as well as ours.
+/// - Qt: the tester's value stands untouched when there is one (an explicit port of their own
+///   choosing), otherwise `127.0.0.1:<qt_port>`, a port the caller found free a moment ago.
+///
+/// Pure over `current`, so the merge is tested without an environment.
+pub(crate) fn engine_env(current: &[(String, String)], qt_port: u16) -> Vec<(String, String)> {
+    let lookup = |name: &str| {
+        current.iter().find(|(n, _)| n.eq_ignore_ascii_case(name)).map(|(_, v)| v.as_str())
+    };
+    let mut out = Vec::new();
+
+    let webview2 = lookup(WEBVIEW2_ARGUMENTS_VAR).unwrap_or("");
+    if !has_debugging_switch(webview2) {
+        let value = if webview2.trim().is_empty() {
+            format!("{REMOTE_DEBUGGING_PORT_SWITCH}=0")
+        } else {
+            format!("{} {REMOTE_DEBUGGING_PORT_SWITCH}=0", webview2.trim_end())
+        };
+        out.push((WEBVIEW2_ARGUMENTS_VAR.to_string(), value));
+    }
+
+    if lookup(QT_DEBUGGING_VAR).is_none_or(|v| v.trim().is_empty()) {
+        out.push((QT_DEBUGGING_VAR.to_string(), format!("127.0.0.1:{qt_port}")));
+    }
+
+    out
+}
+
+/// Whether a switch list already asks for a DevTools endpoint, by port or by pipe.
+fn has_debugging_switch(switches: &str) -> bool {
+    switches
+        .split_whitespace()
+        .any(|t| t.starts_with(REMOTE_DEBUGGING_PORT_SWITCH) || t.starts_with("--remote-debugging-pipe"))
+}
+
+/// Whether a `/json/version` reply is a Chromium DevTools endpoint's: it names the WebSocket URL
+/// of its browser target. Any listener the family holds gets asked, and an application's own HTTP
+/// server answering with something else is not an engine.
+pub(crate) fn is_devtools_version(reply: &serde_json::Value) -> bool {
+    reply.get("webSocketDebuggerUrl").and_then(serde_json::Value::as_str).is_some_and(|u| !u.is_empty())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn pair(n: &str, v: &str) -> (String, String) {
+        (n.to_string(), v.to_string())
+    }
+
+    #[test]
+    fn a_clean_environment_gets_both_variables() {
+        let env = engine_env(&[], 9333);
+        assert_eq!(
+            env,
+            vec![
+                pair(WEBVIEW2_ARGUMENTS_VAR, "--remote-debugging-port=0"),
+                pair(QT_DEBUGGING_VAR, "127.0.0.1:9333"),
+            ]
+        );
+    }
+
+    #[test]
+    fn the_tester_s_own_webview2_switches_survive_with_ours_appended() {
+        let env = engine_env(&[pair("webview2_additional_browser_arguments", "--disable-gpu ")], 1);
+        assert_eq!(env[0], pair(WEBVIEW2_ARGUMENTS_VAR, "--disable-gpu --remote-debugging-port=0"));
+    }
+
+    #[test]
+    fn a_tester_who_chose_a_debugging_endpoint_keeps_it_and_gets_no_second_one() {
+        let port = engine_env(&[pair(WEBVIEW2_ARGUMENTS_VAR, "--remote-debugging-port=9222")], 1);
+        assert!(port.iter().all(|(n, _)| n != WEBVIEW2_ARGUMENTS_VAR));
+        let pipe = engine_env(&[pair(WEBVIEW2_ARGUMENTS_VAR, "--remote-debugging-pipe")], 1);
+        assert!(pipe.iter().all(|(n, _)| n != WEBVIEW2_ARGUMENTS_VAR));
+        let qt = engine_env(&[pair("QtWebEngine_Remote_Debugging", "127.0.0.1:5555")], 1);
+        assert!(qt.iter().all(|(n, _)| n != QT_DEBUGGING_VAR));
+        // An empty Qt value is no choice at all.
+        let empty = engine_env(&[pair(QT_DEBUGGING_VAR, "  ")], 7);
+        assert!(empty.contains(&pair(QT_DEBUGGING_VAR, "127.0.0.1:7")));
+    }
+
+    #[test]
+    fn a_devtools_version_reply_names_its_browser_endpoint_and_anything_else_does_not() {
+        assert!(is_devtools_version(&serde_json::json!({ "Browser": "Edg/153", "webSocketDebuggerUrl": "ws://127.0.0.1:1/devtools/browser/x" })));
+        assert!(!is_devtools_version(&serde_json::json!({ "webSocketDebuggerUrl": "" })));
+        assert!(!is_devtools_version(&serde_json::json!({ "status": "ok" })));
+        assert!(!is_devtools_version(&serde_json::json!("text")));
+    }
 
     #[test]
     fn recognises_both_engines_case_insensitively() {

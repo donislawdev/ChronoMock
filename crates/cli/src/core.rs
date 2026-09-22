@@ -116,6 +116,9 @@ pub(crate) fn core_mode() -> i32 {
         path: &target.path,
         args: &target.args,
         cwd: target.cwd.as_deref(),
+        // No extra variables yet: the embedded-engine channel (docs/09) adds its two in slice C,
+        // together with the discovery that uses the port they open - never one without the other.
+        env: &[],
     };
 
     // Detect the target's runtime up front (static, no QPC hook, no process inspection) so the first

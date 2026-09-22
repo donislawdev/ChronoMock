@@ -23,9 +23,12 @@ mod calendar;
 /// The Chromium/Electron substitution mechanism (CDP faketime), a parallel path to the native core.
 mod cdp;
 /// What a Chromium session covered, and the verdict that follows from it.
+mod cdp_attach;
 mod cdp_audit;
 /// The clock a Chromium session runs on, and the arithmetic that moves it.
 mod cdp_clock;
+mod cdp_discover;
+mod cdp_embedded;
 /// Hidden diagnostic probes for the Chromium path.
 mod cdp_probe;
 /// The Chromium/Electron session - the second substitution mechanism.
@@ -70,6 +73,7 @@ fn main() {
         Some("__cdp-launch") => cdp_launch_probe(&args[2..]),
         Some("__cdp-shim") => cdp_shim_probe(&args[2..]),
         Some("__cdp-date") => cdp_date_probe(&args[2..]),
+        Some("__cdp-embedded") => cdp_embedded::cdp_embedded_probe(&args[2..]),
         Some("version") | Some("--version") | Some("-V") => {
             print_version();
             0

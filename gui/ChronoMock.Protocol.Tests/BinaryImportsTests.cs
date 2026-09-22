@@ -112,7 +112,8 @@ public class BinaryImportsTests
         ("urlmon", "the URL moniker library, home of the one-call file downloader"),
         ("httpapi", "the kernel-mode HTTP stack"),
         ("dnsapi", "name resolution, which is a network round trip"),
-        ("iphlpapi", "the IP helper API"),
+        // iphlpapi stood here until the embedded-engine channel (docs/09) needed one call from it. It
+        // is registered below, for the core only, with the one import it is allowed to be.
         ("mswsock", "the Winsock service provider"),
         ("wsock32", "the legacy Winsock"),
         ("netapi32", "the network management API"),
@@ -167,6 +168,17 @@ public class BinaryImportsTests
             "sent. Measured: 12 imports, of which WSASocketW, WSADuplicateSocketW, getaddrinfo and " +
             "freeaddrinfo are by name and the rest by ordinal - the shape of a client, with no listener " +
             "and no server"
+        ),
+        (
+            "chrono.exe", "iphlpapi.dll",
+            "GetExtendedTcpTable, and nothing else. The local TCP table with the pid that owns each " +
+            "listening socket, read to find the DevTools port an embedded web engine opened inside the " +
+            "session's own process family (the browser process of WebView2, the host itself for Qt " +
+            "WebEngine). It reads a kernel table and opens nothing: the connection to a port found this " +
+            "way is made through ws2_32 above, after the same loopback-and-port check every other " +
+            "endpoint passes. Forbidden until the channel existed, then registered rather than resolved " +
+            "at runtime - a LoadLibrary would have hidden it from this file, which is the one thing this " +
+            "file is for. Measured: one import by name, on both bitnesses"
         ),
 
         (
@@ -238,6 +250,29 @@ public class BinaryImportsTests
             "the product promises it never reaches the network, and the linker disagrees. Either this is " +
             "a mistake, or the register at the top of this file needs an entry saying why it is not: " +
             string.Join("; ", offenders));
+    }
+
+    // -----------------------------------------------------------------------------------------------
+    // B1a. A module registered for ONE function imports exactly that function
+    // -----------------------------------------------------------------------------------------------
+
+    /// <summary>
+    /// The register grants <c>iphlpapi.dll</c> to the core for one call, and a register that checks
+    /// module names alone would let a second call from the same module in under the same entry. This
+    /// reads the function list off the import table and pins it, on both bitnesses.
+    /// </summary>
+    /// <remarks>
+    /// Reversal probe: import one more function from the module and this reddens on the set.
+    /// </remarks>
+    [Fact]
+    public void The_ip_helper_module_is_imported_for_exactly_the_one_call_the_register_allows()
+    {
+        foreach (var triple in new[] { X64, X86 })
+        {
+            var table = PeImportTable.Read(RepoPaths.ReleaseBinary(RepoPaths.RepoRoot(), triple, "chrono.exe"));
+            var entry = Assert.Single(table.Entries, e => SameModule(e.Name, "iphlpapi.dll"));
+            Assert.Equal(["GetExtendedTcpTable"], entry.Functions.Order(StringComparer.Ordinal));
+        }
     }
 
     // -----------------------------------------------------------------------------------------------

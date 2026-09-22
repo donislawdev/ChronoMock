@@ -29,6 +29,16 @@ the notes below say what a user sees rather than how the parts were rearranged.
 - **Type-to-select in the drop-downs.** Typing a letter jumps to the matching entry - the offset,
   the unit, the zone - the way a native list does, so a long list is reached from the keyboard and
   not only the mouse.
+- **Groundwork for reaching the web engine embedded in an application.** Nothing a session does
+  has changed yet: a native session still sets no variable and opens no port. What the core gained
+  is the channel it will use, proven by a hidden probe (`__cdp-embedded`) on hosts with WebView2 and
+  Qt WebEngine inside: the two environment variables that make such an engine open a debugging port
+  (appended to the host's own switches, never replacing them), a read of this machine's own list of
+  listening sockets to find that port among the session's processes (one call into the Windows IP
+  helper library, the only thing the core takes from it), and an attach that shims the pages the
+  engine already has open as well as the ones it opens later. In the probe both hosts' pages read
+  the session's year at the session's rate. Wiring this into a session, with the port named in the
+  report, is the next slice.
 - **The window names the processes that ran on the real clock.** When an application starts a
   process the hook never got into, the verdict already said so and the report on the command line
   listed them - the window only said that some existed. "What the application read" now carries a

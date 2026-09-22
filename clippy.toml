@@ -42,7 +42,12 @@
 # `run::driver_run` 165, with `mech::prepare` still at 144 and `mech::install` next at 133. Checked by
 # prediction rather than by trusting one run: at a threshold of 165 exactly two functions fire, which
 # is only true if driver_run is at or below 165 and parse_run_args above it.
-too-many-lines-threshold = 225
+#
+# Lowered 2026-09-22 (the embedded-engine channel, docs/09): `cdp_session` handed its attach loop
+# to `cdp_attach::Attacher` and went from 225 to 157, so the ceiling holder is now
+# `run::args::parse_run_args` at 170, with `run::driver_run` at 165 and `cdp_session` third. Down
+# is routine: the number is the measurement, and `tools/margin.ps1` said the old one had 55 of room.
+too-many-lines-threshold = 170
 
 # A tie at 25: `run::driver_run` and `report::render_report`. This happens to be clippy's own
 # default, which is worth saying out loud rather than leaving to look like a copied number - it

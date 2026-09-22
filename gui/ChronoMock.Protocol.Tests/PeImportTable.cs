@@ -22,9 +22,15 @@ internal sealed class PeImportTable
     private const int BoundImportDirectory = 11;
     private const int DelayImportDirectory = 13;
 
-    /// <summary>Size of one IMAGE_IMPORT_DESCRIPTOR, and the offset of its Name field within it.</summary>
+    /// <summary>Size of one IMAGE_IMPORT_DESCRIPTOR, and the offsets of its OriginalFirstThunk, Name and
+    /// FirstThunk fields within it.</summary>
     private const int DescriptorSize = 20;
+    private const int OriginalFirstThunkField = 0;
     private const int NameField = 12;
+    private const int FirstThunkField = 16;
+
+    /// <summary>A thunk list this long is a parse that has lost its way, not a real import.</summary>
+    private const int MaxFunctions = 4096;
 
     /// <summary>A descriptor list this long is a parse that has lost its way, not a real binary.</summary>
     private const int MaxModules = 512;
@@ -49,7 +55,9 @@ internal sealed class PeImportTable
     /// this same parser, instead of asserting against a hand-built fixture that proves only that the
     /// fixture matches the parser.
     /// </remarks>
-    public readonly record struct ModuleImport(string Name, int NameOffset);
+    /// <summary>One imported module, and every function imported from it: by name, or as
+    /// <c>#ordinal</c> when the binary imports by ordinal alone.</summary>
+    public readonly record struct ModuleImport(string Name, int NameOffset, IReadOnlyList<string> Functions);
 
     /// <summary>One entry of the optional header's data directory: where a table is, and how big.</summary>
     public readonly record struct DataDirectory(uint Rva, uint Size)
@@ -93,7 +101,7 @@ internal sealed class PeImportTable
         return new PeImportTable(
             label,
             layout.DataDirectory,
-            ReadModules(image, sections, imports, label),
+            ReadModules(image, sections, imports, label, layout.Plus),
             ReadDirectory(image, layout, BoundImportDirectory, label),
             ReadDirectory(image, layout, DelayImportDirectory, label));
     }
@@ -124,7 +132,7 @@ internal sealed class PeImportTable
         Require(magic is 0x10B or 0x20B, label, $"unknown optional header magic 0x{magic:X4}");
 
         bool plus = magic == 0x20B;
-        return new Layout(optional + (plus ? 112 : 96), (int)sectionTable, sectionCount);
+        return new Layout(optional + (plus ? 112 : 96), (int)sectionTable, sectionCount, plus);
     }
 
     private static List<Section> ReadSections(byte[] image, Layout layout)
@@ -156,7 +164,7 @@ internal sealed class PeImportTable
     }
 
     private static List<ModuleImport> ReadModules(
-        byte[] image, IReadOnlyList<Section> sections, DataDirectory imports, string label)
+        byte[] image, IReadOnlyList<Section> sections, DataDirectory imports, string label, bool plus)
     {
         var entries = new List<ModuleImport>();
         if (imports.Rva == 0)
@@ -181,11 +189,66 @@ internal sealed class PeImportTable
             uint nameRva = ReadU32(image, offset + NameField);
             int nameOffset = RvaToOffset(sections, nameRva);
             Require(nameOffset >= 0, label, $"a module name at RVA 0x{nameRva:X} is outside every section");
-            entries.Add(new ModuleImport(ReadCString(image, nameOffset, label), nameOffset));
+            // The import name table (OriginalFirstThunk) names the functions - the loader overwrites the
+            // other list (FirstThunk) with addresses. A binary without the first falls back to the
+            // second, which is still names on disk.
+            uint thunks = ReadU32(image, offset + OriginalFirstThunkField);
+            if (thunks == 0)
+            {
+                thunks = ReadU32(image, offset + FirstThunkField);
+            }
+
+            var functions = ReadFunctions(image, sections, thunks, plus, label);
+            entries.Add(new ModuleImport(ReadCString(image, nameOffset, label), nameOffset, functions));
             offset += DescriptorSize;
         }
 
         throw new InvalidDataException($"{label}: more than {MaxModules} import descriptors - this is not a parse");
+    }
+
+    /// <summary>
+    /// The functions one descriptor imports, read off its thunk list: eight bytes each on PE32+, four
+    /// on PE32, a set high bit meaning "by ordinal", otherwise the RVA of a hint followed by the name.
+    /// The list ends at a zero thunk.
+    /// </summary>
+    private static List<string> ReadFunctions(
+        byte[] image, IReadOnlyList<Section> sections, uint thunksRva, bool plus, string label)
+    {
+        var functions = new List<string>();
+        if (thunksRva == 0)
+        {
+            return functions;
+        }
+
+        int offset = RvaToOffset(sections, thunksRva);
+        Require(offset >= 0, label, $"a thunk list at RVA 0x{thunksRva:X} is outside every section");
+        int width = plus ? 8 : 4;
+        while (functions.Count < MaxFunctions)
+        {
+            Require((long)offset + width <= image.Length, label, "a thunk list runs past the end of the file");
+            ulong thunk = plus ? BinaryPrimitives.ReadUInt64LittleEndian(image.AsSpan(offset)) : ReadU32(image, offset);
+            if (thunk == 0)
+            {
+                return functions;
+            }
+
+            ulong ordinalFlag = plus ? 1UL << 63 : 1UL << 31;
+            if ((thunk & ordinalFlag) != 0)
+            {
+                functions.Add($"#{thunk & 0xFFFF}");
+            }
+            else
+            {
+                int byName = RvaToOffset(sections, (uint)thunk);
+                Require(byName >= 0, label, $"an import-by-name entry at RVA 0x{thunk:X} is outside every section");
+                // Two bytes of hint, then the name.
+                functions.Add(ReadCString(image, byName + 2, label));
+            }
+
+            offset += width;
+        }
+
+        throw new InvalidDataException($"{label}: more than {MaxFunctions} thunks in one descriptor - this is not a parse");
     }
 
     /// <summary>The import directory ends at an all-zero descriptor, which is the only terminator there is.</summary>
@@ -229,7 +292,7 @@ internal sealed class PeImportTable
         }
     }
 
-    private readonly record struct Layout(int DataDirectory, int SectionTable, int SectionCount);
+    private readonly record struct Layout(int DataDirectory, int SectionTable, int SectionCount, bool Plus);
 
     private readonly record struct Section(uint Rva, uint VirtualSize, uint RawOffset, uint RawSize);
 }

@@ -54,7 +54,7 @@ public class LocalizationTests
         "embedded.web_engine_processes_uncovered",
         "time.fake_clock_clamped", "time.duration_axis_clamped",
         "chromium.launched_with_debug_port", "chromium.app_closed_before_audit",
-        "chromium.rate_change_affects_running_timers",
+        "chromium.rate_change_affects_running_timers", "chromium.context_ceiling_reached",
         // Runtime detection warnings the driver appends to coverage (B1): a Python/.NET/Java target whose
         // monotonic/elapsed clock stands on QPC and does not scale.
         "runtime.python_monotonic_qpc", "runtime.python_perfcounter_qpc",

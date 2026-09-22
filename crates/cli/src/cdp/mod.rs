@@ -279,6 +279,17 @@ fn ws_endpoint_is_ours(ws_host: &str, ws_port: u16, our_port: u16) -> bool {
     ws_port == our_port && LOOPBACK_HOSTS.iter().any(|h| h.eq_ignore_ascii_case(ws_host))
 }
 
+/// A loopback port nobody is listening on right now, for an engine that has to be TOLD its debug
+/// port (Qt WebEngine reads one from its environment and opens nothing for a zero). Bound to
+/// 127.0.0.1 on port zero and released at once, so the number is the system's pick, not a guess. A
+/// process that binds it in the gap before the engine does is possible and detectable: the
+/// listener that then appears on the port belongs to a pid outside the family, and the discovery
+/// says so instead of speaking to it.
+pub fn free_loopback_port() -> io::Result<u16> {
+    let listener = std::net::TcpListener::bind(("127.0.0.1", 0))?;
+    Ok(listener.local_addr()?.port())
+}
+
 /// A tiny blocking HTTP/1.1 GET that returns the JSON body. Only for the loopback CDP HTTP endpoints
 /// (`/json/version`, `/json`). Reads the body by `Content-Length` - the DevTools HTTP server keeps
 /// the connection alive despite `Connection: close`, so reading to EOF would block forever. A read

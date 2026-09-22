@@ -14,6 +14,6 @@
 # key by key and fails unless every value here is exactly one below its counterpart, so the two
 # cannot drift apart in silence - but it cannot tell you which of the two you meant to change.
 
-too-many-lines-threshold = 224
+too-many-lines-threshold = 169
 cognitive-complexity-threshold = 24
 excessive-nesting-threshold = 5
