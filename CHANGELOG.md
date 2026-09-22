@@ -4,7 +4,7 @@ Notable changes to Chrono Mock, newest first. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project aims to follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.3.0] - 2026-09-22
 
 The window was rebuilt so it can be changed one place at a time. Most of the work is a new
 structure a user never sees, but a good deal of it is visible the moment the tool opens, and
@@ -533,5 +533,6 @@ listing everything as "added", here is where to find out what it does:
 
 From the next release onwards this file records what changed.
 
+[0.3.0]: https://github.com/donislawdev/ChronoMock/releases/tag/v0.3.0
 [0.2.0]: https://github.com/donislawdev/ChronoMock/releases/tag/v0.2.0
 [0.1.0]: https://github.com/donislawdev/ChronoMock/releases/tag/v0.1.0
