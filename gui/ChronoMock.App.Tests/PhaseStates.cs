@@ -257,6 +257,27 @@ internal static class PhaseStates
         return model;
     }
 
+    /// <summary>
+    /// The family verdict naming one web engine the session reached, applied to a model in whatever state
+    /// it is - for a guard that reads how the engine table treats one particular name, such as one far
+    /// longer than its column. An engine names itself in its own version endpoint, so its length is not
+    /// ours to promise.
+    /// </summary>
+    public static SessionViewModel WithEngine(SessionViewModel model, string browser, int port = 61868)
+    {
+        model.Apply(new SessionVerdictEvent
+        {
+            V = ProtocolJson.ProtocolVersion,
+            Verdict = "partial",
+            ReasonKey = "session.family_partial_children",
+            ProcessCount = 2,
+            WarningKeys = ["embedded.web_engine_reached", "embedded.debug_port_open"],
+            ContextCount = 1,
+            Engines = [new ReachedEngine { Pid = 4300, Port = port, Browser = browser }],
+        });
+        return model;
+    }
+
     /// <summary>The core refusing to start, with the diagnostics that refusal leaves behind.</summary>
     public static SessionViewModel ResultRefused()
     {

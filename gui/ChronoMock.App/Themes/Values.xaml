@@ -211,6 +211,13 @@
        measured is twenty-two) plus the cell gap. A Double, not a GridLength: MaxWidth is not Width. It
        goes on the name CELL - on a shared-size column it is ignored, measured (Parts.xaml says where). -->
   <sys:Double x:Key="ProcessImageColumnMaxWidth">268</sys:Double>
+
+  <!-- The ceiling on the engine name cell, for the same reason and with the same mechanics: the name is
+       whatever the engine puts in its own version endpoint, so its length is not ours to promise. Its own
+       token rather than a second use of the one above, because the two cells cap different things and will
+       not move together - a runtime file name and an engine's self-description are different axes that
+       happen to sit at the same number today. The longest measured is sixteen characters. -->
+  <sys:Double x:Key="EngineNameColumnMaxWidth">268</sys:Double>
   <!-- The rule under a table's header, and only under it: the head's one edge, the way FooterEdge is
        the footer's. -->
   <Thickness x:Key="TableHeaderEdge">0,0,0,1</Thickness>

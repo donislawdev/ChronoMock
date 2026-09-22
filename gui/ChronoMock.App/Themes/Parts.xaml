@@ -1465,6 +1465,75 @@
   </ControlTemplate>
 
   <!--
+    ============================ Engine row ============================
+
+    The web engines inside the application whose debugging port the session reached, one row each: what
+    the engine calls itself, and the port it is listening on. Same shape as the process table above it -
+    a name in monospace under a ceiling, a number under the right edge - because they sit in one section
+    and answer one question between them: what inside this application ran on which clock.
+
+    Two columns rather than three. The pid is in the copied summary, as it is in the CLI report, and not
+    here: the process table above names executables rather than pids, so a pid column would be a number
+    with nothing on the screen to match it against. The port is the half a reader can act on - it is the
+    subject of the warning that a debugging port stands open for as long as the engine runs, and it is
+    where their own DevTools would attach.
+
+    An engine that named nothing gets the word rather than a blank cell, the same way the process table
+    handles a process gone before it could be named.
+  -->
+  <DataTemplate x:Key="EngineRowTemplate">
+    <Grid>
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="Auto" SharedSizeGroup="EngineName" />
+        <ColumnDefinition Width="{StaticResource AuditCountColumnWidth}" />
+      </Grid.ColumnDefinitions>
+      <!-- The ceiling is on the CELL, not the column - a MaxWidth on a shared-size column is ignored,
+           measured on the process table and recorded there. -->
+      <TextBlock Grid.Column="0" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis"
+                 MaxWidth="{StaticResource EngineNameColumnMaxWidth}"
+                 FontSize="{StaticResource FontSizeCaption}" FontFamily="{StaticResource FontFamilyMono}"
+                 VerticalAlignment="Center"
+                 Margin="{StaticResource AuditCellGap}">
+        <TextBlock.Style>
+          <Style TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{DynamicResource BrushTextPrimary}" />
+            <Setter Property="Text" Value="{Binding Name}" />
+            <Style.Triggers>
+              <DataTrigger Binding="{Binding IsUnnamed}" Value="True">
+                <Setter Property="Foreground" Value="{DynamicResource BrushTextSecondary}" />
+                <Setter Property="Text" Value="{DynamicResource audit.engine_unnamed}" />
+              </DataTrigger>
+            </Style.Triggers>
+          </Style>
+        </TextBlock.Style>
+      </TextBlock>
+      <TextBlock Grid.Column="1" Style="{StaticResource PartCaption}" TextWrapping="NoWrap"
+                 FontFamily="{StaticResource FontFamilyMono}" HorizontalAlignment="Right"
+                 VerticalAlignment="Center"
+                 Margin="{StaticResource AuditCellGap}" Text="{Binding PortText}" />
+    </Grid>
+  </DataTemplate>
+
+  <!-- The engine table's header row: the same two columns in the same groups, ruled under like the
+       process table's head. -->
+  <ControlTemplate x:Key="EngineTableHeader">
+    <Border BorderBrush="{DynamicResource BrushDivider}" BorderThickness="{StaticResource TableHeaderEdge}"
+            HorizontalAlignment="Left">
+      <Grid>
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="Auto" SharedSizeGroup="EngineName" />
+          <ColumnDefinition Width="{StaticResource AuditCountColumnWidth}" />
+        </Grid.ColumnDefinitions>
+        <TextBlock Grid.Column="0" Style="{StaticResource PartCaption}" TextWrapping="NoWrap"
+                   Margin="{StaticResource AuditCellGap}" Text="{DynamicResource audit.col_engine}" />
+        <TextBlock Grid.Column="1" Style="{StaticResource PartCaption}" TextWrapping="NoWrap"
+                   HorizontalAlignment="Right"
+                   Margin="{StaticResource AuditCellGap}" Text="{DynamicResource audit.col_port}" />
+      </Grid>
+    </Border>
+  </ControlTemplate>
+
+  <!--
     ============================ Callout ============================
 
     A sentence the reader has to act on, set apart from the prose around it: a warning the session

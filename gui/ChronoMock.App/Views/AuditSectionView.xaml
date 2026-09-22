@@ -191,6 +191,8 @@
              names at most a fixed number of them, and a total above the rows is said in words under the
              table rather than left as a mismatch. It stands between the audit table and the warnings, where
              the CLI report puts it, because the warnings are about these rows. -->
+        
+
         <StackPanel x:Name="ProcessBlock" Margin="{StaticResource StackGapLg}"
                     Visibility="{Binding HasUncoveredChildren, Converter={StaticResource BoolToVis}}">
           <TextBlock x:Name="ProcessHeading" Style="{StaticResource PartLabel}" TextWrapping="NoWrap"
@@ -213,9 +215,34 @@
           </TextBlock>
         </StackPanel>
 
+        <!-- The web engines inside the application whose pages the session reached, under the processes
+             that stayed on the real clock and above the warnings - the place the CLI report gives them,
+             and the place that reads right: the two tables together say what inside this application ran
+             on which clock, and the warning about an open debugging port names the port from here.
+
+             No count in the heading, unlike the table above. That count exists because the wire caps the
+             process list and the total can be larger than the rows - the heading carries a truth the rows
+             cannot show. Nothing caps this list, so a count would only repeat what is already visible. -->
+        <StackPanel x:Name="EngineBlock" Margin="{StaticResource StackGapLg}"
+                    Visibility="{Binding HasEngines, Converter={StaticResource BoolToVis}}">
+          <TextBlock x:Name="EngineHeading" Style="{StaticResource PartLabel}" TextWrapping="NoWrap"
+                     TextTrimming="CharacterEllipsis" Text="{DynamicResource audit.engines_heading}" />
+          <HeaderedItemsControl x:Name="EngineTable" Style="{StaticResource PartTable}"
+                                Margin="{StaticResource StackGapSm}"
+                                ItemTemplate="{StaticResource EngineRowTemplate}"
+                                ItemsSource="{Binding Engines, Converter={StaticResource EngineRows}}">
+            <HeaderedItemsControl.Header>
+              <ContentControl x:Name="EngineTableHeader" Template="{StaticResource EngineTableHeader}"
+                              Focusable="False" IsTabStop="False" />
+            </HeaderedItemsControl.Header>
+          </HeaderedItemsControl>
+          <TextBlock x:Name="EngineNote" Style="{StaticResource PartNote}" TextWrapping="Wrap"
+                     Margin="{StaticResource StackGapSm}" Text="{DynamicResource audit.engines_note}" />
+        </StackPanel>
+
         <!-- The warnings, each in its own box so a run of them reads as separate things to act on rather
              than one paragraph, under the heading that counts them. -->
-        <HeaderedItemsControl Style="{StaticResource PartNoteList}"
+        <HeaderedItemsControl x:Name="AuditWarnings" Style="{StaticResource PartNoteList}"
                               Header="{DynamicResource coverage.warnings}"
                               ItemsSource="{Binding Warnings}"
                               ItemTemplate="{StaticResource CalloutRow}"

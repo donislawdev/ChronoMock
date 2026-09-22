@@ -69,6 +69,15 @@ the notes below say what a user sees rather than how the parts were rearranged.
   in a chip, a process gone before it could be named is one row in words, and a total above the
   named list is said under the table. The copied summary lists them one per process id, the way
   the command line does.
+- **The window names the web engine it reached, and the port it reached it on.** A session that
+  put an application's pages on the session clock warns that a local debugging port stands open to
+  other programs on this computer for as long as the engine runs. The command line named the port
+  beside that warning and the window did not, so the warning named something a reader had no way
+  to identify. "What the application read" now carries a second table under the processes: the
+  engine as it names itself, and its port. The two tables answer one question between them - what
+  inside this application ran on which clock - and the port is where a tester points their own
+  DevTools at the same pages. The copied summary keeps the process id beside the port, the way the
+  command line does.
 
 ### Changed
 

@@ -60,7 +60,18 @@
 # TEST class holds the ceiling, which is a fact about the test file and not a licence for the view
 # model. Caught by `tools/margin.ps1`, not by the pin: the tightened build still failed on CA1502 and
 # the gate counted error lines rather than rules, so one rule with slack hid behind the other.
-CA1506: 80
+# 80 to 81 on 2026-09-22, the up door, opened a second time by the owner - and the reasoning is the same
+# one that opened it the first time. The session had reached the web engine inside an application and put
+# its pages on the session clock, and the CLI report named the engine and the port it was reached on. The
+# screen did not. It carried the warning that a debugging port stands open to other programs for as long
+# as the engine runs, and gave the reader no way to learn which port that was - a warning whose subject
+# cannot be identified is one nobody can act on. Everything presentational went to the view, as this file
+# asks: EngineRowsConverter folds the rows, the template draws them. What could NOT leave is the list
+# itself, because a converter needs a source and the source is a bindable property here. Weighed against
+# a carve-out: the two seams already taken out (CoreSession, ScenarioMoment) each moved a responsibility,
+# and there was none left to move for the sake of one list. What is NOT being granted is headroom - 81 is
+# the measurement again (tools/margin.ps1), and the tightened copy at 80 still has to fail.
+CA1506: 81
 
 # `PresetCatalog.ReadParameters`, a JSON reader that validates each field as it goes. Next are
 # `SessionViewModel.Apply` at 15 and `SessionViewModel`'s event router at 13. The analyzer's default

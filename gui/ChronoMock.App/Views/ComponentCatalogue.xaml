@@ -479,6 +479,22 @@
         </HeaderedItemsControl>
       </Border>
 
+      <!-- ============ Engine table ============ -->
+      <TextBlock Text="Engine table" Style="{StaticResource PartHeading}" Margin="{StaticResource StackGapLg}" />
+
+      <TextBlock Style="{StaticResource PartCaption}" Margin="{StaticResource StackGapSm}"
+                 Text="One row per web engine inside the application whose debugging port the session reached: what the engine calls itself, and the port. An engine that named nothing takes the word instead, in the secondary ink, the way the process table treats a process gone before it could be named. Two columns rather than three - the pid is in the copied summary, where the CLI report puts it, and has nothing on screen to match it against. The extremes: a name far longer than any engine reports, and the highest port number there is. The same table shell as the two above (PartTable)." />
+
+      <Border Style="{StaticResource PartCard}" Margin="{StaticResource StackGapSm}">
+        <HeaderedItemsControl Style="{StaticResource PartTable}"
+                              ItemTemplate="{StaticResource EngineRowTemplate}"
+                              ItemsSource="{Binding SampleEngineRows, RelativeSource={RelativeSource AncestorType=UserControl}}">
+          <HeaderedItemsControl.Header>
+            <ContentControl Template="{StaticResource EngineTableHeader}" Focusable="False" IsTabStop="False" />
+          </HeaderedItemsControl.Header>
+        </HeaderedItemsControl>
+      </Border>
+
       <!-- ============ Note list ============ -->
       <TextBlock Text="Note list" Style="{StaticResource PartHeading}" Margin="{StaticResource StackGapLg}" />
 

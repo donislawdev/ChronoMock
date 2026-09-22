@@ -240,6 +240,14 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     private IReadOnlyList<UncoveredChild> _uncoveredChildren = [];
     private int _uncoveredChildrenTotal;
 
+    // The web engines inside the application whose debugging port the session reached, so the pages they
+    // host ran on the session clock. The port is the actionable half and the reason this list is on the
+    // screen at all: the session raises a warning that a debugging port stands open to other programs for
+    // as long as the engine runs, and a warning whose subject the reader cannot identify is one they
+    // cannot act on. The CLI report has named the port since slice C - this is the same fact, one
+    // interface over.
+    private IReadOnlyList<ReachedEngine> _engines = [];
+
     private bool _hasTiming;
     private long _elapsedRealMs;
     private long _elapsedFakeMs;
@@ -1458,6 +1466,19 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
 
     public bool HasUncoveredChildren => _uncoveredChildrenTotal > 0;
 
+    /// <summary>The web engines inside the application the session reached through their debugging ports,
+    /// as the verdict names them - the pages they host ran on the session clock. Raw wire records: the
+    /// screen folds them into a table of name and port (EngineRowsConverter), the copied summary prints
+    /// the pid beside them the way the CLI report does. Empty for a session that found none, and for a
+    /// Chromium session, which opens its own port rather than finding one.</summary>
+    public IReadOnlyList<ReachedEngine> Engines
+    {
+        get => _engines;
+        private set { if (Set(ref _engines, value)) { RaisePropertyChanged(nameof(HasEngines)); } }
+    }
+
+    public bool HasEngines => _engines.Count > 0;
+
     public bool HasUnnamedUncoveredChildren => UncoveredChildrenUnnamed > 0;
 
     /// <summary>The target's own exit code, from <c>ended.target_exit_code</c> - present only for a native
@@ -1614,6 +1635,11 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
                 UncoveredChildrenTotal = sv.UncoveredChildrenTotal > sv.UncoveredChildren.Count
                     ? sv.UncoveredChildrenTotal
                     : sv.UncoveredChildren.Count;
+                // Taken as it comes, without a test on it: this method sits ON the cyclomatic ceiling
+                // (CA1502 18 of 18, measured with tools/margin.ps1), so one more branch here would be a
+                // red build. Everything the rows need deciding - a nameless engine, an endpoint seen
+                // twice - is decided in the converter, which is where presentation belongs anyway.
+                Engines = sv.Engines;
                 // Session-level warnings join the per-process ones (R2-S9). They are about the family,
                 // not about any one process, so the panel shows them in the same list - a warning the
                 // reader has to attribute to an event type is a warning they will not read.
@@ -1915,6 +1941,7 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
         Warnings = [];
         UncoveredChildren = [];
         UncoveredChildrenTotal = 0;
+        Engines = [];
 
         _hasTiming = false;
         _elapsedRealMs = 0;
@@ -2073,6 +2100,10 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
         // and before the warnings that talk about them. A copied report that left them out claimed less
         // than the screen shows and less than the CLI says (untouchable rule 4).
         AppendUncoveredChildren(sb, translate);
+        // The engines whose pages the session reached, in the same place the CLI report puts them: right
+        // after the processes that stayed on the real clock, because the two lists answer one question
+        // between them - what inside this application ran on which clock.
+        AppendEngines(sb, translate);
         AppendList(sb, translate, "coverage.warnings", _warnings, translateItems: true);
         // Cleanup residue the core could not remove (ended.residue_keys) - reported, never hidden (rule 6).
         AppendList(sb, translate, "report.cleanup", _residueKeys, translateItems: true);
@@ -2212,6 +2243,63 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
         {
             sb.Append("    - ").Append(Fmt(translate("report.processes_more"), UncoveredChildrenUnnamed)).Append('\n');
         }
+    }
+
+    /// <summary>
+    /// The web engines the session reached inside the application, one line each, with the pid beside the
+    /// port exactly as the CLI report prints them. The screen leaves the pid out - there is nothing on the
+    /// screen to match it against, since the process table names executables rather than pids - but a
+    /// ticket about one engine wants it, and a clipboard that says less than the CLI would be the same
+    /// report disagreeing with itself.
+    /// </summary>
+    private void AppendEngines(StringBuilder sb, Func<string, string> translate)
+    {
+        if (!HasEngines)
+        {
+            return;
+        }
+
+        sb.Append("  ").Append(translate("report.engines_reached")).Append(":\n");
+        for (var i = 0; i < _engines.Count; i++)
+        {
+            // One endpoint once, the same rule the table folds by. The screen deduplicated and this did
+            // not, so an endpoint reported twice drew one row and printed TWO lines - one session
+            // described two ways, which is the disagreement this whole slice exists to remove.
+            if (!IsFirstMention(_engines, i))
+            {
+                continue;
+            }
+
+            var engine = _engines[i];
+            // Whitespace like empty: an engine that named nothing gets the word, never a blank where the
+            // report prints a name. The core sanitises that text but does not trim it.
+            var name = string.IsNullOrWhiteSpace(engine.Browser) ? translate("audit.engine_unnamed") : engine.Browser;
+            sb.Append("    - ").Append(Fmt(translate("report.engine_line"), name, engine.Port, engine.Pid)).Append('\n');
+        }
+    }
+
+    /// <summary>
+    /// Whether the engine at <paramref name="index"/> is the first mention of its endpoint - pid and port
+    /// together, because one port number held by two processes in turn is two engines.
+    /// </summary>
+    /// <remarks>
+    /// The rule is written twice, here and in <see cref="EngineRowsConverter"/>, and that is a cost
+    /// rather than a preference: sharing it would bring the converter's type into this class, which
+    /// stands ON its coupling ceiling (gui/CodeMetricsConfig.txt), and a HashSet would be another type
+    /// again. What keeps the pair from drifting is a test that counts the engines on the screen and in
+    /// the copied summary and requires the two numbers to agree.
+    /// </remarks>
+    private static bool IsFirstMention(IReadOnlyList<ReachedEngine> engines, int index)
+    {
+        for (var earlier = 0; earlier < index; earlier++)
+        {
+            if (engines[earlier].Pid == engines[index].Pid && engines[earlier].Port == engines[index].Port)
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private static void AppendList(

@@ -396,6 +396,15 @@
   "audit.process_unnamed": "exited before it could be named",
   "audit.processes_more_before": "and",
   "audit.processes_more_after": "more this report could not name",
+  // The engine table. "Engine" is what the engine calls itself, read from its own version endpoint, and
+  // "Port" is the loopback port it listens on - the fact the warning about an open debugging port is
+  // about, and the one a reader can act on. The note says what the table means, because a list of names
+  // and numbers with no sentence beside it is a list the reader has to guess the purpose of.
+  "audit.engines_heading": "Web engines reached inside the application",
+  "audit.col_engine": "Engine",
+  "audit.col_port": "Port",
+  "audit.engine_unnamed": "engine",
+  "audit.engines_note": "Their pages ran on the session clock. The port is where your own DevTools would attach to those pages.",
   // The read count on a covered or observed channel, in prose so it does not read like the speed multiplier
   // the raw count sat beside - built in code (SessionViewModel.FormatChannel), P6.
   "coverage.reads": "{0} - read {1} times",
@@ -490,6 +499,10 @@
   "report.process_line": "pid {0}: {1}, spawned by pid {2}",
   "report.process_line_role": "pid {0}: {1} ({2}), spawned by pid {3}",
   "report.processes_more": "and {0} more this report could not name",
+  // The engine lines of the copied summary. The pid is here and not on the screen: a ticket about one
+  // engine wants it, and this is the line the CLI report prints too.
+  "report.engines_reached": "web engines reached inside the application, whose pages ran on the session clock",
+  "report.engine_line": "{0} on port {1} (pid {2})",
   "report.requested": "requested: {0} (zone {1}, mode {2})",
 
   // Session history (chrono-mock 7.2, 8.8, 11.1 pt 13). Local-only; clicking an entry fills the setup form and never starts a session (untouchable rule 7, docs/04 section 6).
