@@ -99,6 +99,82 @@ public class UncoveredProcessRowsTests
     }
 
     [Fact]
+    public void A_renderer_whose_engine_the_session_reached_is_told_apart_from_one_it_did_not()
+    {
+        // 🔴 THE ROW USED TO SAY THE SAME THING IN BOTH CASES, and one of them was wrong. A renderer the
+        // session could not reach means the application's pages read the real clock. A renderer whose
+        // ENGINE was reached means its pages ran on the session clock and only its own native reads did
+        // not - and the screen painted both in the failure ink, contradicting the family verdict beside
+        // it, which calls that case partial.
+        //
+        // The join is the parent: the core records the hooked process that spawned each uncovered child,
+        // and a renderer is spawned by the browser process that holds the debugging port. Measured on
+        // three recorded sessions across two engines before this was written.
+        //
+        // Reversal probe: pass no engines and both rows come back PagesReached false.
+        var rows = UncoveredProcessRowsConverter.Fold(
+            [Child(10, "engine.exe", "renderer"), Child(11, "engine.exe", "renderer")],
+            // The pid the Child helper records as the parent - that is the join being exercised.
+            [new ReachedEngine { Pid = 1, Port = 61868, Browser = "Engine/1.0" }]);
+
+        // Both children name that pid as their parent, so both were reached.
+        var row = Assert.Single(rows);
+        Assert.True(row.PagesReached);
+        Assert.Equal(2, row.Count);
+    }
+
+    [Fact]
+    public void Two_renderers_of_one_executable_split_when_only_one_engine_was_reached()
+    {
+        // Counted into one row they would put a number against a claim true of only half of it.
+        var rows = UncoveredProcessRowsConverter.Fold(
+            [
+                new UncoveredChild { Pid = 10, ParentPid = 4242, Image = "engine.exe", Role = "renderer" },
+                new UncoveredChild { Pid = 11, ParentPid = 9999, Image = "engine.exe", Role = "renderer" },
+            ],
+            [new ReachedEngine { Pid = 4242, Port = 61868, Browser = "Engine/1.0" }]);
+
+        Assert.Equal(2, rows.Count);
+        // The one still on the real clock leads: it is the row that changes the answer.
+        Assert.False(rows[0].PagesReached);
+        Assert.True(rows[1].PagesReached);
+        Assert.All(rows, r => Assert.True(r.IsRenderer));
+    }
+
+    [Fact]
+    public void Only_a_renderer_is_said_to_have_had_its_pages_reached()
+    {
+        // 🔴 THIS GUARD EXISTS BECAUSE THE RENDER CAUGHT WHAT THESE TESTS DID NOT. Every helper of a
+        // reached engine shares its parent pid - the crash handler, the GPU process, the utilities - so
+        // a join on the parent alone marked all of them, and the screen told the reader that a crash
+        // handler's pages had been reached. It has no pages. The tests passed because they only ever
+        // fed this renderers.
+        //
+        // Reversal probe: drop the role check from the fold and this fails on the first helper.
+        var rows = UncoveredProcessRowsConverter.Fold(
+            [
+                Child(10, "engine.exe", "renderer"),
+                Child(11, "engine.exe", "gpu-process"),
+                Child(12, "engine.exe", "crashpad-handler"),
+                Child(13, "engine.exe", "utility"),
+            ],
+            [new ReachedEngine { Pid = 1, Port = 61868, Browser = "Engine/1.0" }]);
+
+        Assert.True(rows.Single(r => r.Role == "renderer").PagesReached);
+        Assert.All(rows.Where(r => r.Role != "renderer"), r => Assert.False(r.PagesReached));
+    }
+
+    [Fact]
+    public void With_no_engines_reached_every_row_reads_as_it_always_did()
+    {
+        // The reversal probe as a test of its own: a session that reached nothing must produce exactly
+        // the table this screen showed before any of this existed.
+        var rows = UncoveredProcessRowsConverter.Fold([Child(10, "engine.exe", "renderer")]);
+
+        Assert.False(Assert.Single(rows).PagesReached);
+    }
+
+    [Fact]
     public void An_empty_list_folds_to_no_rows()
     {
         Assert.Empty(UncoveredProcessRowsConverter.Fold([]));
@@ -111,7 +187,7 @@ public class UncoveredProcessRowsTests
         var converter = new UncoveredProcessRowsConverter();
 
         var result = converter.Convert(
-            System.Windows.DependencyProperty.UnsetValue,
+            [System.Windows.DependencyProperty.UnsetValue, System.Windows.DependencyProperty.UnsetValue],
             typeof(object), null, System.Globalization.CultureInfo.InvariantCulture);
 
         Assert.Empty(Assert.IsAssignableFrom<IEnumerable<UncoveredProcessRow>>(result));

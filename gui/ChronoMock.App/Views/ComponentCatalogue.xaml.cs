@@ -51,15 +51,20 @@ public partial class ComponentCatalogue : UserControl
     /// <summary>Every kind of row the process fold can produce, in the order the table lists them: the
     /// renderer row in the failure ink, the other roles, a process with no role at all, the extremes of an
     /// executable name longer than any real one and a count past six digits, and last the row for the
-    /// processes gone before they could be named.</summary>
+    /// processes gone before they could be named - and the renderer in BOTH of its meanings, with and without
+    /// its pages reached.</summary>
     public IReadOnlyList<UncoveredProcessRow> SampleProcessRows { get; } =
     [
-        new("engine.exe", IsUnnamed: false, "renderer", IsRenderer: true, 1),
-        new("engine.exe", IsUnnamed: false, "utility", IsRenderer: false, 2),
-        new("engine.exe", IsUnnamed: false, "gpu-process", IsRenderer: false, 1),
-        new("helper.exe", IsUnnamed: false, string.Empty, IsRenderer: false, 1),
-        new("AnEmbeddedRuntimeWithAnImpossiblyLongExecutableName.exe", IsUnnamed: false, "crashpad-handler", IsRenderer: false, 1234567),
-        new(string.Empty, IsUnnamed: true, string.Empty, IsRenderer: false, 2),
+        new("engine.exe", IsUnnamed: false, "renderer", IsRenderer: true, PagesReached: false, 1),
+        // The same role with the opposite meaning, which is why the two are never counted into one row:
+        // the session reached this renderer's engine, so its pages ran on the session clock and only its
+        // own native reads did not. Partial ink and an annotation, not the failure ink.
+        new("engine.exe", IsUnnamed: false, "renderer", IsRenderer: true, PagesReached: true, 1),
+        new("engine.exe", IsUnnamed: false, "utility", IsRenderer: false, PagesReached: false, 2),
+        new("engine.exe", IsUnnamed: false, "gpu-process", IsRenderer: false, PagesReached: false, 1),
+        new("helper.exe", IsUnnamed: false, string.Empty, IsRenderer: false, PagesReached: false, 1),
+        new("AnEmbeddedRuntimeWithAnImpossiblyLongExecutableName.exe", IsUnnamed: false, "crashpad-handler", IsRenderer: false, PagesReached: false, 1234567),
+        new(string.Empty, IsUnnamed: true, string.Empty, IsRenderer: false, PagesReached: false, 2),
     ];
 
     /// <summary>Every kind of row the engine fold can produce: an engine that named itself, one that named

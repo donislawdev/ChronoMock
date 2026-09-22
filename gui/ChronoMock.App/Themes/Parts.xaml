@@ -1441,9 +1441,16 @@
           </Style>
         </TextBlock.Style>
       </TextBlock>
+      <!-- 🔴 THE RENDERER ROW SAYS TWO DIFFERENT THINGS NOW, and the ink has to follow. A renderer whose
+           engine the session never got into means the application's pages read the real clock - failure
+           ink, as before. A renderer whose engine WAS reached means its pages ran on the session clock
+           and only its own native reads did not - which is partial, the same word the family verdict
+           uses for it. Leaving both red was the screen contradicting its own verdict.
+           The annotation is a second Run rather than text appended to the role: the role is a token the
+           engine wrote and the annotation is ours, and a reader must be able to tell them apart. -->
       <TextBlock Grid.Column="1" TextWrapping="NoWrap" FontSize="{StaticResource FontSizeCaption}"
                  VerticalAlignment="Center"
-                 Margin="{StaticResource AuditCellGap}" Text="{Binding Role}">
+                 Margin="{StaticResource AuditCellGap}">
         <TextBlock.Style>
           <Style TargetType="TextBlock">
             <Setter Property="Foreground" Value="{DynamicResource BrushTextSecondary}" />
@@ -1451,9 +1458,14 @@
               <DataTrigger Binding="{Binding IsRenderer}" Value="True">
                 <Setter Property="Foreground" Value="{DynamicResource BrushStatusFails}" />
               </DataTrigger>
+              <DataTrigger Binding="{Binding PagesReached}" Value="True">
+                <Setter Property="Foreground" Value="{DynamicResource BrushStatusPartial}" />
+              </DataTrigger>
             </Style.Triggers>
           </Style>
         </TextBlock.Style>
+        <Run Text="{Binding Role, Mode=OneWay}" /><Run x:Name="PagesReachedNote"
+             Text="{Binding PagesReached, Converter={StaticResource PagesReachedNote}, Mode=OneWay}" />
       </TextBlock>
       <TextBlock Grid.Column="2" Style="{StaticResource PartCaption}" TextWrapping="NoWrap"
                  FontFamily="{StaticResource FontFamilyMono}" HorizontalAlignment="Right"

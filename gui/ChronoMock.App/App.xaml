@@ -33,6 +33,7 @@
       <local:AuditRowsConverter x:Key="AuditRows" />
       <local:UncoveredProcessRowsConverter x:Key="UncoveredProcessRows" />
       <local:EngineRowsConverter x:Key="EngineRows" />
+      <local:PagesReachedNoteConverter x:Key="PagesReachedNote" />
 
       <!-- Verdict indicator: the glyph and colour come from the verdict kind, colour from the named palette. -->
       <local:VerdictGlyphConverter x:Key="VerdictGlyph" />

@@ -201,8 +201,15 @@
           </TextBlock>
           <HeaderedItemsControl x:Name="ProcessTable" Style="{StaticResource PartTable}"
                                 Margin="{StaticResource StackGapSm}"
-                                ItemTemplate="{StaticResource ProcessRowTemplate}"
-                                ItemsSource="{Binding UncoveredChildren, Converter={StaticResource UncoveredProcessRows}}">
+                                ItemTemplate="{StaticResource ProcessRowTemplate}">
+            <!-- Two lists, because a renderer row cannot be read without both: the processes the hook
+                 never entered, and the engines the session reached. Same fold, more of the truth. -->
+            <HeaderedItemsControl.ItemsSource>
+              <MultiBinding Converter="{StaticResource UncoveredProcessRows}">
+                <Binding Path="UncoveredChildren" />
+                <Binding Path="Engines" />
+              </MultiBinding>
+            </HeaderedItemsControl.ItemsSource>
             <HeaderedItemsControl.Header>
               <ContentControl x:Name="ProcessTableHeader" Template="{StaticResource ProcessTableHeader}"
                               Focusable="False" IsTabStop="False" />

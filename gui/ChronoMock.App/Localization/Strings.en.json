@@ -394,6 +394,10 @@
   "audit.col_role": "Role",
   "audit.col_count": "Count",
   "audit.process_unnamed": "exited before it could be named",
+  // The renderer row that does NOT mean the application's pages read the real clock: the session
+  // reached the engine that spawned it, so those pages ran on the session clock. Leading space, because
+  // it is appended to the role token in the same cell.
+  "audit.role_pages_reached": " - its pages were reached",
   "audit.processes_more_before": "and",
   "audit.processes_more_after": "more this report could not name",
   // The engine table. "Engine" is what the engine calls itself, read from its own version endpoint, and
