@@ -13,7 +13,7 @@
 //! context index counter: several attachers in one session (slice C) must hand out disjoint
 //! indexes, because the index is the unit's identity on the wire.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::io;
 
 use serde_json::json;
@@ -56,6 +56,9 @@ pub(crate) enum Pumped {
 pub(crate) struct Attacher {
     client: cdp::CdpClient,
     port: u16,
+    /// The context indexes refused past the ceiling, each once: a refused target that detaches and
+    /// re-attaches keeps its index and must not be counted again.
+    refused: HashSet<u32>,
     /// Who we still TALK to - polling or broadcasting to a dead session costs the full read
     /// deadline inside the caller's loop.
     contexts: Vec<CdpContext>,
@@ -71,11 +74,12 @@ pub(crate) struct Attacher {
 }
 
 impl Attacher {
-    /// Connect to the browser endpoint on a loopback port and arm auto-attach, so every page and
-    /// worker the browser creates from now on arrives as an `attachedToTarget` event, paused until
-    /// the shim is in. The pages that ALREADY exist are the caller's next call.
-    pub(crate) fn connect(port: u16) -> io::Result<Attacher> {
-        let mut client = cdp::CdpClient::connect_to_port("127.0.0.1", port)?;
+    /// Connect to the browser endpoint on a loopback host and port and arm auto-attach, so every
+    /// page and worker the browser creates from now on arrives as an `attachedToTarget` event,
+    /// paused until the shim is in. The pages that ALREADY exist are the caller's next call. The
+    /// host is `127.0.0.1` or `::1` - whichever family the listener was found on.
+    pub(crate) fn connect(host: &str, port: u16) -> io::Result<Attacher> {
+        let mut client = cdp::CdpClient::connect_to_port(host, port)?;
         client.call(
             "Target.setAutoAttach",
             json!({ "autoAttach": true, "waitForDebuggerOnStart": true, "flatten": true }),
@@ -89,6 +93,7 @@ impl Attacher {
             counts: BTreeMap::new(),
             failed: 0,
             overflow: 0,
+            refused: HashSet::new(),
             index_by_target: HashMap::new(),
         })
     }
@@ -173,9 +178,12 @@ impl Attacher {
         }
         let index = context_index_for(&tid, &mut self.index_by_target, next_index);
         if past_ceiling(&self.seen, index) {
-            // Counted, said by the caller (rule 4), and released: a context refused the shim runs on
-            // the real clock, it does not stand paused for the rest of the session.
-            self.overflow += 1;
+            // Counted once per context, said by the caller (rule 4), and released: a context refused
+            // the shim runs on the real clock, it does not stand paused for the rest of the session -
+            // and when it re-attaches under the same index it is the same refused context, not another.
+            if self.refused.insert(index) {
+                self.overflow += 1;
+            }
             self.resume(&sid);
             return;
         }

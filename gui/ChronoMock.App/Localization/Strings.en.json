@@ -442,7 +442,7 @@
   "chromium.no_contexts": "No JS context could be shimmed.",
   "chromium.launched_with_debug_port": "Electron/Chromium app: launched with a remote-debugging port and a clean isolated profile, not your real one. While the session runs, any other local process can use that port to control the app.",
   "chromium.app_closed_before_audit": "The app closed before the audit could read final call counts - the coverage may be incomplete.",
-  "chromium.context_ceiling_reached": "More JS contexts opened than one session can shim (256). The ones past that ran on the real clock and have no row in the audit.",
+  "chromium.context_ceiling_reached": "The application opened more web pages and workers than one session can put under the fake clock (256). The ones past that read the real clock and are missing from the audit.",
   "chromium.rate_change_affects_running_timers": "The speed changed in flight: new timers and the clock reflect it at once, but a setInterval already running keeps its old cadence.",
 
   // Cleanup residue the core reports in `ended.residue_keys` when a teardown could not finish (rules 4, 6). Today only a CDP session raises one (the temporary browser profile could not be removed); a native session always ends clean. Rendered verbatim in the panel and the summary.

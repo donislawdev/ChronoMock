@@ -19,13 +19,23 @@ use windows::Win32::NetworkManagement::IpHelper::{
     MIB_TCPTABLE_OWNER_PID, TCP_TABLE_OWNER_PID_LISTENER,
 };
 
-/// One listening socket: who bound it, on which port, and whether it is bound to a loopback
-/// address - the only kind of endpoint the session will ever speak to.
+/// One listening socket: who bound it, on which port, whether it is bound to a loopback address -
+/// the only kind of endpoint the session will ever speak to - and on which address family, because
+/// the loopback name to connect to differs between the two.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Listener {
     pub pid: u32,
     pub port: u16,
     pub loopback: bool,
+    pub v6: bool,
+}
+
+impl Listener {
+    /// The loopback host a client connects to for this listener: `::1` for an IPv6 socket,
+    /// `127.0.0.1` otherwise.
+    pub fn loopback_host(&self) -> &'static str {
+        if self.v6 { "::1" } else { "127.0.0.1" }
+    }
 }
 
 /// The address families as ws2def.h numbers them. Literal here on purpose: the winsock feature of
@@ -71,6 +81,7 @@ fn read_v4() -> Result<Vec<Listener>, String> {
                 // dwLocalAddr is in network byte order, so on this little-endian machine the first
                 // octet of the address is the low byte of the DWORD: 127 is the whole 127/8 block.
                 loopback: (row.dwLocalAddr & 0xFF) == 127,
+                v6: false,
             })
             .collect())
     }
@@ -94,6 +105,7 @@ fn read_v6() -> Result<Vec<Listener>, String> {
                 pid: row.dwOwningPid,
                 port: port_from_network_order(row.dwLocalPort),
                 loopback: row.ucLocalAddr == IPV6_LOOPBACK,
+                v6: true,
             })
             .collect())
     }
@@ -166,6 +178,14 @@ mod tests {
         assert_eq!(port_from_network_order(0x0624), 9222);
         assert_eq!(port_from_network_order(0xFFFF_0624), 9222);
         assert_eq!(port_from_network_order(0), 0);
+    }
+
+    #[test]
+    fn the_loopback_host_follows_the_address_family() {
+        let v4 = Listener { pid: 1, port: 1, loopback: true, v6: false };
+        let v6 = Listener { pid: 1, port: 1, loopback: true, v6: true };
+        assert_eq!(v4.loopback_host(), "127.0.0.1");
+        assert_eq!(v6.loopback_host(), "::1");
     }
 
     #[test]

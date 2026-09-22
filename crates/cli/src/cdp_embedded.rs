@@ -161,13 +161,14 @@ pub(crate) fn cdp_embedded_probe(argv: &[String]) -> i32 {
                         continue;
                     }
                     println!(
-                        "t+{:.1}s found port {} on pid {} ({})",
+                        "t+{:.1}s found port {} on {} pid {} ({})",
                         started.elapsed().as_secs_f64(),
                         found.port,
+                        found.host,
                         found.pid,
                         found.browser
                     );
-                    match Attacher::connect(found.port) {
+                    match Attacher::connect(found.host, found.port) {
                         Ok(mut attacher) => {
                             let existing = attacher.attach_existing(origin, &mut next_index).unwrap_or(0);
                             println!("attached port {}: {existing} existing context(s) shimmed by name", found.port);

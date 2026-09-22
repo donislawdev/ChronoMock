@@ -18,6 +18,8 @@ fn a_bound_loopback_listener_is_in_the_table_under_this_pid_and_gone_once_droppe
     let ours: Vec<_> = while_bound.iter().filter(|l| l.pid == me && l.port == port).collect();
     assert_eq!(ours.len(), 1, "the table lists this process's listener once: {ours:?}");
     assert!(ours[0].loopback, "a 127.0.0.1 listener is a loopback listener");
+    assert!(!ours[0].v6);
+    assert_eq!(ours[0].loopback_host(), "127.0.0.1");
 
     drop(listener);
     let after = chrono_mech::listening_sockets().expect("the table is readable");
@@ -25,6 +27,23 @@ fn a_bound_loopback_listener_is_in_the_table_under_this_pid_and_gone_once_droppe
         !after.iter().any(|l| l.pid == me && l.port == port),
         "the listener is still in the table after it was closed"
     );
+}
+
+#[test]
+fn an_ipv6_loopback_listener_is_found_on_its_own_family_with_its_own_host() {
+    // An engine told to listen on `::1` is as much ours as one on 127.0.0.1, and the host a client
+    // must connect to is different - the table read says which.
+    let listener = TcpListener::bind(("::1", 0)).expect("an IPv6 loopback port is free");
+    let port = listener.local_addr().expect("the bound address is readable").port();
+    let me = std::process::id();
+
+    let table = chrono_mech::listening_sockets().expect("the table is readable");
+    let ours = table
+        .iter()
+        .find(|l| l.pid == me && l.port == port && l.v6)
+        .expect("the table lists this process's IPv6 listener");
+    assert!(ours.loopback);
+    assert_eq!(ours.loopback_host(), "::1");
 }
 
 #[test]

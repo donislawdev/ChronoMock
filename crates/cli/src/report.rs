@@ -233,7 +233,7 @@ pub(crate) fn describe_warning(key: &str) -> String {
             "the speed changed in flight: new timers and the clock reflect it at once, but a setInterval already running keeps its old cadence"
         }
         "chromium.context_ceiling_reached" => {
-            "more JS contexts opened than one session can shim (256) - the ones past that ran on the real clock and have no row in the audit"
+            "the app opened more web pages and workers than one session can put under the fake clock (256) - the ones past that read the real clock and are missing from the audit"
         }
         "runtime.python_monotonic_qpc" => {
             "this Python app measures time with perf_counter and monotonic - both use QueryPerformanceCounter on Python 3.13+, which is left real, so a timer built on them does not scale (time.time and the wall clock do)"

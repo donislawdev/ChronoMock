@@ -100,7 +100,7 @@ pub(crate) fn cdp_session(target: TargetSpec, time: TimeSpec, reader: BufReader<
     // The attacher connects to the browser endpoint, arms auto-attach and attaches by name to the
     // pages the browser already has - measured, auto-attach delivers those too, and the by-name pass
     // is the belt for an engine where it does not. Any failure is one honest error here, as before.
-    let mut attacher = match Attacher::connect(launched.port)
+    let mut attacher = match Attacher::connect("127.0.0.1", launched.port)
         .and_then(|mut a| a.attach_existing(clock.shim_origin(), &mut next_index).map(|_| a))
     {
         Ok(a) => a,
