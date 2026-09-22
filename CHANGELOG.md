@@ -29,16 +29,37 @@ the notes below say what a user sees rather than how the parts were rearranged.
 - **Type-to-select in the drop-downs.** Typing a letter jumps to the matching entry - the offset,
   the unit, the zone - the way a native list does, so a long list is reached from the keyboard and
   not only the mouse.
-- **Groundwork for reaching the web engine embedded in an application.** Nothing a session does
-  has changed yet: a native session still sets no variable and opens no port. What the core gained
-  is the channel it will use, proven by a hidden probe (`__cdp-embedded`) on hosts with WebView2 and
-  Qt WebEngine inside: the two environment variables that make such an engine open a debugging port
-  (appended to the host's own switches, never replacing them), a read of this machine's own list of
-  listening sockets to find that port among the session's processes (one call into the Windows IP
-  helper library, the only thing the core takes from it), and an attach that shims the pages the
-  engine already has open as well as the ones it opens later. In the probe both hosts' pages read
-  the session's year at the session's rate. Wiring this into a session, with the port named in the
-  report, is the next slice.
+- **The web pages inside an application follow the session clock.** An application with an
+  embedded web engine (WebView2, Qt WebEngine) runs its pages in a process the hook cannot enter,
+  and until now those pages showed the real date while the rest of the application showed the
+  session's. A native session now asks the engine to open a local debugging port (two environment
+  variables the application inherits, appended to its own switches), keeps looking for that port
+  among the session's own processes, and puts every page and worker behind it on the same clock as
+  the application - one start, one speed, and a speed change or a jump reaches both. The pages'
+  timers run at the application's own pace: scaled only when timers are scaled for the rest of it.
+  On by default. `--no-embedded`, or the "Reach the web pages inside the application" box in the
+  window, leaves the pages on the real clock and opens no port. Measured by hand on a WebView2
+  host and a Qt WebEngine host: the pages read the session's year at the session's rate and moved
+  with a jump.
+  - The report shows those pages as rows of their own - `context 1: page Date.now (12 calls)` on
+    the command line, "page Date.now - fake clock" in the window's audit table - counted per page,
+    never summed, and names the engine reached with its port, so a tester can attach their own
+    DevTools to the same pages. The headline says "processes: N, contexts: M".
+  - The port stays open, to any program on this computer, for as long as the engine runs, and a
+    warning says so every time one was opened. Further warnings, each only when it happened: an
+    engine that answered as DevTools but could not be attached to, a session that could not look
+    for engines at all, the port reserved for a Qt engine taken by something else, pages that read
+    this machine's time zone while the session's differs, and a WebView2 browser-arguments policy
+    in the registry that the session's variable hid for its duration (the engine reads the
+    variable first, so a debugging port set up there was not applied).
+  - The machine protocol carries `coverage.kind` (`process` or `context` - pid 8 and context 8 are
+    different units), `session_verdict.context_count` and `session_verdict.engines`, and
+    `start.target.embedded`, all additive. A dry run says whether the pages would be reached.
+  - Out of reach, and said so: the engine's helper processes and the renderer's own native reads
+    (the verdict stays PARTIAL and the warning that used to claim the pages read the real clock
+    now says they were reached instead), a timer already scheduled before the session reached
+    the page, the pages' time zone, and an application running elevated, where the engine ignores
+    the variables.
 - **The window names the processes that ran on the real clock.** When an application starts a
   process the hook never got into, the verdict already said so and the report on the command line
   listed them - the window only said that some existed. "What the application read" now carries a
