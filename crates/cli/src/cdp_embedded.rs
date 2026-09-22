@@ -132,7 +132,7 @@ pub(crate) fn cdp_embedded_probe(argv: &[String]) -> i32 {
     let family = family_of(root);
     // `launched`, when there is one, terminates its host on every way out of this function - the
     // early returns below included - because PlainChild does that on drop.
-    let discovery = match Discovery::start(family) {
+    let discovery = match Discovery::start(family, None) {
         Ok(d) => d,
         Err(e) => {
             eprintln!("chrono: discovery thread did not start: {e}");
@@ -181,6 +181,7 @@ pub(crate) fn cdp_embedded_probe(argv: &[String]) -> i32 {
                     eprintln!("chrono: discovery unavailable: {why}");
                     return 2;
                 }
+                Notice::PortTaken(port) => println!("port {port} reserved for Qt is held by something else"),
             }
         }
         attachers.retain_mut(|attacher| match attacher.pump(origin, &mut next_index) {

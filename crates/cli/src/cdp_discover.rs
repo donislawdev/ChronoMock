@@ -41,6 +41,11 @@ pub(crate) enum Notice {
     /// The table could not be read at all - said once, then the thread ends. The session goes on
     /// without the channel, and the caller reports the loss (untouchable rule 6).
     Unavailable(String),
+    /// The port reserved for a Qt engine is held by something that is not a DevTools endpoint: a
+    /// process outside the family bound it first, or one inside the family that never answered as
+    /// DevTools (the application's own server landing on the same ephemeral port). Said once. The
+    /// engine could not have bound it, so its pages stay unreached and the caller says why.
+    PortTaken(u16),
 }
 
 /// How often the table is read.
@@ -58,16 +63,18 @@ pub(crate) struct Discovery {
 }
 
 impl Discovery {
-    /// Start the thread with an initial family. A thread that cannot be started (handles or memory
-    /// exhausted) is the caller's to report - the session goes on without the channel, which is
-    /// what `Notice::Unavailable` promises for the table, and a panic here would end it instead.
-    pub(crate) fn start(family: Vec<u32>) -> std::io::Result<Discovery> {
+    /// Start the thread with an initial family and, when a port was reserved for a Qt engine, that
+    /// port - so the thread can say when something else took it. A thread that cannot be started
+    /// (handles or memory exhausted) is the caller's to report - the session goes on without the
+    /// channel, which is what `Notice::Unavailable` promises for the table, and a panic here would
+    /// end it instead.
+    pub(crate) fn start(family: Vec<u32>, reserved: Option<u16>) -> std::io::Result<Discovery> {
         let (pid_tx, pid_rx) = mpsc::channel::<Vec<u32>>();
         let (notice_tx, notice_rx) = mpsc::channel::<Notice>();
         let _ = pid_tx.send(family);
         thread::Builder::new()
             .name("chrono-discover".into())
-            .spawn(move || run(&pid_rx, &notice_tx))?;
+            .spawn(move || run(&pid_rx, &notice_tx, reserved))?;
         Ok(Discovery { pids: pid_tx, notices: notice_rx })
     }
 
@@ -83,9 +90,10 @@ impl Discovery {
 }
 
 /// The thread body: sweep, probe what is new, report, sleep, until the caller is gone.
-fn run(pids: &Receiver<Vec<u32>>, notices: &Sender<Notice>) {
+fn run(pids: &Receiver<Vec<u32>>, notices: &Sender<Notice>, reserved: Option<u16>) {
     let mut family: HashSet<u32> = HashSet::new();
     let mut memory = Memory::default();
+    let mut taken_said = false;
     loop {
         // The latest family wins, and a closed channel means the caller dropped its handle.
         loop {
@@ -103,6 +111,15 @@ fn run(pids: &Receiver<Vec<u32>>, notices: &Sender<Notice>) {
             }
         };
         let now = Instant::now();
+        if let Some(port) = reserved
+            && !taken_said
+            && reserved_port_taken(&table, &family, port, &memory)
+        {
+            taken_said = true;
+            if notices.send(Notice::PortTaken(port)).is_err() {
+                return;
+            }
+        }
         let candidates = memory.due(candidates(&table, &family), now);
         for candidate in candidates {
             let host = candidate.loopback_host();
@@ -125,6 +142,21 @@ fn run(pids: &Receiver<Vec<u32>>, notices: &Sender<Notice>) {
 /// table, so the join is tested on a made-up machine.
 fn candidates(table: &[chrono_mech::Listener], family: &HashSet<u32>) -> Vec<chrono_mech::Listener> {
     table.iter().filter(|l| l.loopback && family.contains(&l.pid)).copied().collect()
+}
+
+/// Whether the port reserved for a Qt engine is held by something that is not its DevTools endpoint:
+/// a listener on it outside the family, or one inside the family whose retries as DevTools are spent.
+/// Pure over the table and the memory, so both shapes are tested without a socket.
+fn reserved_port_taken(
+    table: &[chrono_mech::Listener],
+    family: &HashSet<u32>,
+    port: u16,
+    memory: &Memory,
+) -> bool {
+    table
+        .iter()
+        .filter(|l| l.port == port)
+        .any(|l| !family.contains(&l.pid) || memory.spent(l))
 }
 
 /// Ask a port on a loopback host whether it is a DevTools endpoint. The browser name is the
@@ -179,6 +211,11 @@ impl Memory {
         entry.0 += 1;
         entry.1 = now;
     }
+
+    /// Whether a listener has been asked every time it will be and never answered as DevTools.
+    fn spent(&self, l: &chrono_mech::Listener) -> bool {
+        self.refused.get(&key(l)).is_some_and(|(attempts, _)| *attempts > RETRIES)
+    }
 }
 
 #[cfg(test)]
@@ -208,6 +245,28 @@ mod tests {
         assert_eq!(found, vec![listener(10, 9222, true), listener(11, 9444, true), listener6(11, 9555)]);
         assert_eq!(found[2].loopback_host(), "::1");
         assert!(candidates(&table, &HashSet::new()).is_empty());
+    }
+
+    /// The port reserved for a Qt engine is taken when something outside the family listens on it,
+    /// or when a family process on it never answered as DevTools in all its retries - either way the
+    /// engine could not have bound it (docs/09 section 12.17 point 4). A family listener still being
+    /// asked is not taken yet.
+    #[test]
+    fn the_reserved_port_is_taken_by_a_stranger_or_by_a_family_socket_that_is_not_devtools() {
+        let family: HashSet<u32> = [10].into_iter().collect();
+        let mut memory = Memory::default();
+        let t0 = Instant::now();
+
+        let stranger = [listener(99, 40000, true)];
+        assert!(reserved_port_taken(&stranger, &family, 40000, &memory));
+        assert!(!reserved_port_taken(&stranger, &family, 40001, &memory), "another port is not ours");
+
+        let own = listener(10, 40000, true);
+        assert!(!reserved_port_taken(&[own], &family, 40000, &memory), "still being asked");
+        for n in 0..=RETRIES {
+            memory.refused(own, t0 + RETRY_GAP * n);
+        }
+        assert!(reserved_port_taken(&[own], &family, 40000, &memory), "retries spent, never DevTools");
     }
 
     #[test]

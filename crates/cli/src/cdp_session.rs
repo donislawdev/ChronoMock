@@ -23,7 +23,7 @@ use crate::events::{
 };
 use crate::wire::spawn_command_reader;
 use crate::cdp_attach::{Attacher, Pumped};
-use crate::cdp_clock::{cdp_resolve_jump, CdpClock};
+use crate::cdp_clock::{cdp_jump_expr, cdp_resolve_jump, cdp_set_multiplier_expr, CdpClock};
 use crate::cdp_audit::{
     covered_channels, coverage_events, cdp_verdict, session_warnings,
     verdict_keys,
@@ -283,25 +283,4 @@ fn emit_cdp_session_verdict(token: &str, reason: &str, contexts: u32) {
     });
 }
 
-/// The JS to push a new wall origin AND both rates into a context's `__chronomock`, re-anchoring its
-/// local duration axis first (at the OLD duration rate) so `performance.now` stays continuous across
-/// the change (rule 3). The wall origin (fake0, real0, mult) is the driver's, identical for every
-/// context, so all contexts stay in step. `dur` is the duration rate for timers and `performance.now`,
-/// floored at 1 like the shim itself.
-pub(crate) fn cdp_set_multiplier_expr(fake0: i64, real0: i64, mult: i64, dur: i64) -> String {
-    let dur = dur.max(1);
-    format!(
-        "(function(){{var S=globalThis.__chronomock;if(!S)return 'no-shim';\
-         var p=S._realPerf?S._realPerf():0;S.perfBase=(S.perfBase||0)+(p-S.perfAnchorReal)*(S.D||1);\
-         S.perfAnchorReal=p;S.fakeStart={fake0};S.realStart={real0};S.M={mult};S.D={dur};return 'ok';}})()"
-    )
-}
 
-/// The JS to push a new wall origin into a context's `__chronomock` for a jump - wall only - the rate
-/// and the duration axis are untouched, so a backward jump never rewinds elapsed time (rule 3).
-pub(crate) fn cdp_jump_expr(fake0: i64, real0: i64) -> String {
-    format!(
-        "(function(){{var S=globalThis.__chronomock;if(!S)return 'no-shim';\
-         S.fakeStart={fake0};S.realStart={real0};return 'ok';}})()"
-    )
-}

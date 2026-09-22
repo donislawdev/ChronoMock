@@ -20,6 +20,7 @@ use serde_json::json;
 
 use crate::cdp;
 use crate::cdp_audit::context_index_for;
+use crate::zone::now_epoch_ms;
 
 /// One shimmed JS context of a Chromium target: the coverage unit of a CDP session (rule 4 - never
 /// summed across contexts).
@@ -43,6 +44,39 @@ pub(crate) struct ShimOrigin {
     pub(crate) dur: i64,
 }
 
+/// What a context answered when asked which clock it already reads (docs/09 section 12.17 point 3).
+/// Asked before the shim goes in, by an attacher inside a natively hooked session: a context that
+/// already reads the session clock through the native mechanism must not get the shim on top, or it
+/// would scale the fake wall a second time and the audit would still call it covered.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ClockRead {
+    /// Our own shim marker is there - a page that reloaded and re-ran the add-script hook.
+    Shim,
+    /// The reading stands nearer the session clock than the real one: covered natively already.
+    Native,
+    /// The reading is real, or there was no reading to judge by - the shim is what covers it.
+    Real,
+}
+
+/// The probe: our marker if it is there, otherwise the context's own `Date.now()` as text.
+const CLOCK_PROBE_EXPR: &str = "globalThis.__chronomock ? 'shim' : String(Date.now())";
+
+/// Judge a probe reply against where the session clock and the real clock stand now. No reply, or one
+/// that is not a number, is `Real`: the absence of evidence that a context is covered is not evidence
+/// that it is, and the shim is the safe side. A reading equally far from both is `Real` as well - that
+/// only happens with the session clock within milliseconds of the real one, where a second
+/// substitution is the identity.
+pub(crate) fn classify_clock_read(reply: Option<&str>, fake_now_ms: i64, real_now_ms: i64) -> ClockRead {
+    match reply {
+        Some("shim") => ClockRead::Shim,
+        Some(text) => match text.parse::<i64>() {
+            Ok(read) if (read - fake_now_ms).abs() < (read - real_now_ms).abs() => ClockRead::Native,
+            _ => ClockRead::Real,
+        },
+        None => ClockRead::Real,
+    }
+}
+
 /// How many contexts one attacher will shim over its lifetime. The pid registry has the same shape
 /// of ceiling (256 slots, `coverage.pid_registry_full`), for the same reason: a family that fans
 /// out without bound must not grow the audit without bound. A context past this is counted in
@@ -62,9 +96,24 @@ pub(crate) enum Pumped {
     Closed,
 }
 
+/// What one attacher covered, handed over when it is done - because it was closed by the engine, or
+/// because the session ended. The counts and the seen list are the audit's evidence, and an attacher
+/// dropped without this hand-over takes them with it (docs/09 section 12.17).
+pub(crate) struct AttacherOutcome {
+    pub(crate) seen: Vec<u32>,
+    pub(crate) counts: BTreeMap<(u32, String), u64>,
+    pub(crate) failed: usize,
+    pub(crate) overflow: usize,
+}
+
 pub(crate) struct Attacher {
     client: cdp::CdpClient,
     port: u16,
+    /// Whether to ask a context which clock it reads before shimming it. Off for the Chromium
+    /// session, whose contexts nothing else covers. On for an attacher inside a native session.
+    probe_clock: bool,
+    /// Contexts found already on the session clock and left alone, for the diagnostic line.
+    native: usize,
     /// The context indexes refused past the ceiling, each once: a refused target that detaches and
     /// re-attaches keeps its index and must not be counted again.
     refused: HashSet<u32>,
@@ -97,6 +146,8 @@ impl Attacher {
         Ok(Attacher {
             client,
             port,
+            probe_clock: false,
+            native: 0,
             contexts: Vec::new(),
             seen: Vec::new(),
             counts: BTreeMap::new(),
@@ -109,6 +160,27 @@ impl Attacher {
 
     pub(crate) fn port(&self) -> u16 {
         self.port
+    }
+
+    /// Shorten the client's poll interval and call deadline - see `CdpClient::set_budgets`. For an
+    /// attacher driven from a loop that has its own cadence to keep.
+    pub(crate) fn set_budgets(&mut self, poll: std::time::Duration, call: std::time::Duration) -> io::Result<()> {
+        self.client.set_budgets(poll, call)
+    }
+
+    /// Ask each context which clock it reads before shimming it (see [`ClockRead`]).
+    pub(crate) fn probe_clock_before_shim(&mut self) {
+        self.probe_clock = true;
+    }
+
+    /// How many contexts were found already on the session clock and left unshimmed.
+    pub(crate) fn native(&self) -> usize {
+        self.native
+    }
+
+    /// Hand over what this attacher covered. The connection closes with it.
+    pub(crate) fn into_outcome(self) -> AttacherOutcome {
+        AttacherOutcome { seen: self.seen, counts: self.counts, failed: self.failed, overflow: self.overflow }
     }
 
     /// Attach to every shimmable target the browser already has - the pages an embedded engine
@@ -196,6 +268,13 @@ impl Attacher {
             self.resume(&sid);
             return;
         }
+        if self.probe_clock && self.reads_session_clock_natively(&sid, origin) {
+            // Covered by the native mechanism already: it has a row of its own under its pid, and a
+            // shim here would scale the fake wall twice. Released, and not counted as a context.
+            self.native += 1;
+            self.resume(&sid);
+            return;
+        }
         let shim = cdp::build_shim(origin.fake0, origin.real0, origin.mult, origin.dur);
         let injected = if cdp::is_worker(&ty) {
             cdp::inject_worker(&mut self.client, &sid, &shim)
@@ -224,6 +303,20 @@ impl Attacher {
                 self.resume(&sid);
             }
         }
+    }
+
+    /// Ask a context which clock it reads and judge the answer against the session clock projected
+    /// to now. One `Runtime.evaluate`, bounded by the client's call deadline - a context that does
+    /// not answer counts as real, and gets the shim.
+    fn reads_session_clock_natively(&mut self, sid: &str, origin: ShimOrigin) -> bool {
+        let real_now = now_epoch_ms();
+        let fake_now = origin.fake0.saturating_add((real_now - origin.real0).saturating_mul(origin.mult));
+        let reply = self
+            .client
+            .call("Runtime.evaluate", json!({ "expression": CLOCK_PROBE_EXPR, "returnByValue": true }), Some(sid))
+            .ok();
+        let text = reply.as_ref().and_then(|r| r["result"]["value"].as_str());
+        classify_clock_read(text, fake_now, real_now) == ClockRead::Native
     }
 
     /// Release a target that auto-attach paused on start. Best effort: a target that is not paused
@@ -337,6 +430,25 @@ fn new_targets(reply: &serde_json::Value, known: &HashMap<String, u32>) -> Vec<(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The probe decides whether a page inside a natively hooked application gets the shim. Our own
+    /// marker means a page that reloaded - it is ours, and it is tracked again. A reading nearer the
+    /// session clock than the real one means the native mechanism covers it already, and a shim on
+    /// top would scale the fake wall twice - so it is left alone. Anything else is real and gets the
+    /// shim: no reply, a reply that is not a number, or a reading nearer the real clock.
+    #[test]
+    fn the_clock_probe_tells_ours_from_native_from_real() {
+        let fake = 1_900_000_000_000;
+        let real = 1_700_000_000_000;
+        assert_eq!(classify_clock_read(Some("shim"), fake, real), ClockRead::Shim);
+        assert_eq!(classify_clock_read(Some("1900000000500"), fake, real), ClockRead::Native);
+        assert_eq!(classify_clock_read(Some("1700000000500"), fake, real), ClockRead::Real);
+        assert_eq!(classify_clock_read(None, fake, real), ClockRead::Real, "no evidence is no hook");
+        assert_eq!(classify_clock_read(Some("undefined"), fake, real), ClockRead::Real);
+        // A reading equally far from both only happens with the session clock within milliseconds
+        // of the real one, where a second substitution is the identity - so it gets the shim.
+        assert_eq!(classify_clock_read(Some("1800000000000"), fake, real), ClockRead::Real);
+    }
 
     /// The ceiling is on contexts ever seen, and a re-attach of a known context never counts against
     /// it - the one decision the live path cannot exercise without 257 pages.

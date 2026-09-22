@@ -409,6 +409,13 @@
   // gets the weak claim, because the GPU and utility processes carry the same image name.
   "inheritance.children_uncovered": "Ta aplikacja uruchomiła procesy, które nigdy nie dostały fałszywego zegara - przez cały czas działały na prawdziwym.",
   "embedded.web_engine_uncovered": "Jeden z nich to renderer silnika web - proces, w którym działają strony. Strony obsługiwane przez ten renderer odczytywały prawdziwy zegar: renderer uruchomiony w piaskownicy jest poza zasięgiem mechanizmu natywnego.",
+  "embedded.web_engine_reached": "Jeden z nich to renderer silnika web - proces, w którym działają strony WWW. Te strony zostały osiągnięte przez port debugowania silnika i biegły na zegarze sesji (wiersze stron w tabeli). Własne natywne odczyty renderera i procesy pomocnicze silnika biegły na realnym zegarze.",
+  "embedded.debug_port_open": "Na czas sesji w silniku WWW tej aplikacji otwarto lokalny port debugowania - tędy jej strony trafiły na zegar sesji. Port pozostaje dostępny dla innych programów na tym komputerze, dopóki silnik działa.",
+  "embedded.engine_unreachable": "Silnik WWW wewnątrz tej aplikacji otworzył port debugowania, ale sesja nie zdołała się do niego podłączyć. Jego strony biegły na realnym zegarze.",
+  "embedded.discovery_unavailable": "Sesja nie mogła szukać silników WWW wewnątrz tej aplikacji, więc jej ewentualne strony biegły na realnym zegarze.",
+  "embedded.qt_port_taken": "Port zarezerwowany dla silnika Qt tej aplikacji został zajęty przez coś innego, zanim silnik mógł go użyć. Jego stron nie dało się osiągnąć i biegły na realnym zegarze.",
+  "embedded.zone_is_host": "Strony wewnątrz tej aplikacji czytają strefę czasową tego komputera, nie sesji. Pokazywany przez nie czas lokalny różni się od reszty aplikacji o przesunięcie strefy.",
+  "embedded.registry_arguments_hidden": "Ta aplikacja ma w rejestrze ustawione argumenty przeglądarki WebView2. Sesja przesłoniła je na czas swojego trwania, więc to, co ustawiały (na przykład własny port debugowania), nie zadziałało.",
   "embedded.web_engine_processes_uncovered": "Są wśród nich procesy osadzonego silnika web (WebView2 albo Qt WebEngine), więc część tego silnika działała na prawdziwym zegarze. Czy jego strony też - nie da się ustalić: wśród nazwanych procesów nie było renderera.",
   // R2-S9. Session-level, not per-process: it is about processes that never got a coverage slot,
   // so it arrives on session_verdict rather than on any one coverage event.

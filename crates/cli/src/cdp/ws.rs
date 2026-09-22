@@ -91,6 +91,14 @@ impl WsClient {
         Ok(client)
     }
 
+    /// Change how often a blocked read wakes. The default is [`POLL_TIMEOUT`], sized for a loop that
+    /// does nothing else. A loop with its own cadence - the native session, polling children every
+    /// 100 ms - asks for a shorter one, so a quiet socket costs it a tenth of that rather than five
+    /// times it.
+    pub fn set_poll_interval(&mut self, interval: Duration) -> io::Result<()> {
+        self.stream.set_read_timeout(Some(interval))
+    }
+
     /// Send one text message as a single masked frame (FIN + opcode 0x1). CDP messages are small
     /// enough that fragmenting the client side buys nothing.
     pub fn send_text(&mut self, text: &str) -> io::Result<()> {

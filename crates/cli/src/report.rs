@@ -235,6 +235,29 @@ pub(crate) fn describe_warning(key: &str) -> String {
         "embedded.web_engine_processes_uncovered" => {
             "those include processes of an embedded web engine (WebView2 or Qt WebEngine), so part of that engine ran on the real clock - whether its pages did could not be established, because no renderer was among the ones named"
         }
+        // The embedded-engine channel (docs/09 section 12): the pages inside a natively hooked
+        // application, reached through the engine's own debugging port.
+        "embedded.web_engine_reached" => {
+            "one of those is a Chromium renderer - the process web pages run in - and its pages were reached through the engine's debugging port and ran on the session clock (the context rows above) - the renderer's own native reads and the engine's helper processes ran on the real clock"
+        }
+        "embedded.debug_port_open" => {
+            "a local debugging port was opened in this application's web engine for the session, which is how its pages were put on the session clock - it stays open to other programs on this computer for as long as the engine runs (the port is listed under the engines reached)"
+        }
+        "embedded.engine_unreachable" => {
+            "a web engine inside this application opened a debugging port and answered as one, but the session could not attach to it - its pages ran on the real clock"
+        }
+        "embedded.discovery_unavailable" => {
+            "the session could not look for web engines inside this application (no loopback port to reserve, or the table of listening sockets could not be read), so any pages inside it ran on the real clock"
+        }
+        "embedded.qt_port_taken" => {
+            "the port reserved for a Qt WebEngine debugging endpoint was held by something else by the time the engine would have bound it, so its pages could not be reached and ran on the real clock"
+        }
+        "embedded.zone_is_host" => {
+            "the pages inside this application read this machine's time zone rather than the session's, so a local time they show differs from the host's by the zone offset"
+        }
+        "embedded.registry_arguments_hidden" => {
+            "a WebView2 AdditionalBrowserArguments policy value for this application exists in the registry, and the session's environment variable hid it for the session - any flags it carried (a debugging port of your own, say) were not applied"
+        }
         "coverage.pid_registry_full" => {
             "this session ran more processes than the audit can track (256), so some ran uncovered and are missing from the process count and the channel lists below"
         }

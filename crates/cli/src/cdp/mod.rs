@@ -146,6 +146,17 @@ impl CdpClient {
         })
     }
 
+    /// Shorten how long a quiet socket blocks a poll and how long a call waits for its reply. The
+    /// defaults suit a loop that does nothing but drive this client. The native session loop drives
+    /// the target, its children and a heartbeat beside it (docs/09 section 12.17), so it asks for
+    /// budgets that keep those cadences - a renderer busy with its own JS does not answer
+    /// `Runtime.evaluate`, and ten seconds of standing on it once a second would be the heartbeat gone.
+    pub fn set_budgets(&mut self, poll: Duration, call: Duration) -> io::Result<()> {
+        self.ws.set_poll_interval(poll)?;
+        self.call_deadline = call;
+        Ok(())
+    }
+
     /// Send a command and block until its reply arrives, queuing any events seen in between. Returns
     /// the `result` object (or an error carrying the CDP `error.message`).
     pub fn call(&mut self, method: &str, params: Value, session_id: Option<&str>) -> io::Result<Value> {
