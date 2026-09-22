@@ -114,6 +114,49 @@ public class ReachedEngineTests
     }
 
     [Fact]
+    public void The_screen_and_the_copied_summary_name_the_same_engines()
+    {
+        // 🔴 THE GUARD FOR A RULE WRITTEN TWICE. The table folds one row per endpoint and the summary
+        // prints one line per endpoint, and the two folds are separate code: sharing them would put the
+        // converter's type into the view model, which is on its coupling ceiling. So this counts both
+        // sides of one duplicated wire and requires them to agree.
+        //
+        // Reversal probe: drop the IsFirstMention check from AppendEngines and this fails 1 against 2 -
+        // which is exactly the state this PR was in when review caught it.
+        var vm = new SessionViewModel();
+        vm.SetTarget(@"C:\apps\Host.exe");
+        vm.Apply(Verdict([Engine(4300, 61868), Engine(4300, 61868), Engine(9100, 5123, "python/3.14")]));
+
+        var rows = EngineRowsConverter.Fold(vm.Engines);
+        var lines = vm.BuildSummary(T)
+            .Split('\n')
+            // " on port " and not "port": the warning key embedded.debug_port_open is also a line
+            // beginning with a dash and containing the word, and counting it made this read 3 against 2
+            // while the code under test was right.
+            .Count(l => l.StartsWith("    - ", StringComparison.Ordinal) && l.Contains(" on port ", StringComparison.Ordinal));
+
+        Assert.Equal(2, rows.Count);
+        Assert.Equal(rows.Count, lines);
+    }
+
+    [Fact]
+    public void An_engine_whose_name_is_only_whitespace_is_treated_as_nameless_on_both_sides()
+    {
+        // The core sanitises what an engine calls itself but does not trim it, and the text comes from
+        // an engine inside somebody else's application - so three spaces is a name the wire can carry.
+        // Untrimmed, it drew a blank cell on the screen and printed a blank in the summary.
+        var vm = new SessionViewModel();
+        vm.SetTarget(@"C:\apps\Host.exe");
+        vm.Apply(Verdict([Engine(4300, 61868, "   ")]));
+
+        var row = Assert.Single(EngineRowsConverter.Fold(vm.Engines));
+        Assert.True(row.IsUnnamed);
+        Assert.Equal(string.Empty, row.Name);
+        Assert.Contains(
+            "    - audit.engine_unnamed on port 61868 (pid 4300)\n", vm.BuildSummary(T), StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void The_engines_stand_between_the_processes_and_the_warnings_as_they_do_in_the_cli_report()
     {
         // Order is the claim here: the two tables answer one question between them, and the warning about

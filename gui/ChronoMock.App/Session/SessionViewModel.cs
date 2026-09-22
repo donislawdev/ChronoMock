@@ -2260,13 +2260,46 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
         }
 
         sb.Append("  ").Append(translate("report.engines_reached")).Append(":\n");
-        foreach (var engine in _engines)
+        for (var i = 0; i < _engines.Count; i++)
         {
-            // Empty like the table's nameless row: an engine that named nothing gets the word, never a
-            // blank where the report prints a name.
-            var name = string.IsNullOrEmpty(engine.Browser) ? translate("audit.engine_unnamed") : engine.Browser;
+            // One endpoint once, the same rule the table folds by. The screen deduplicated and this did
+            // not, so an endpoint reported twice drew one row and printed TWO lines - one session
+            // described two ways, which is the disagreement this whole slice exists to remove.
+            if (!IsFirstMention(_engines, i))
+            {
+                continue;
+            }
+
+            var engine = _engines[i];
+            // Whitespace like empty: an engine that named nothing gets the word, never a blank where the
+            // report prints a name. The core sanitises that text but does not trim it.
+            var name = string.IsNullOrWhiteSpace(engine.Browser) ? translate("audit.engine_unnamed") : engine.Browser;
             sb.Append("    - ").Append(Fmt(translate("report.engine_line"), name, engine.Port, engine.Pid)).Append('\n');
         }
+    }
+
+    /// <summary>
+    /// Whether the engine at <paramref name="index"/> is the first mention of its endpoint - pid and port
+    /// together, because one port number held by two processes in turn is two engines.
+    /// </summary>
+    /// <remarks>
+    /// The rule is written twice, here and in <see cref="EngineRowsConverter"/>, and that is a cost
+    /// rather than a preference: sharing it would bring the converter's type into this class, which
+    /// stands ON its coupling ceiling (gui/CodeMetricsConfig.txt), and a HashSet would be another type
+    /// again. What keeps the pair from drifting is a test that counts the engines on the screen and in
+    /// the copied summary and requires the two numbers to agree.
+    /// </remarks>
+    private static bool IsFirstMention(IReadOnlyList<ReachedEngine> engines, int index)
+    {
+        for (var earlier = 0; earlier < index; earlier++)
+        {
+            if (engines[earlier].Pid == engines[index].Pid && engines[earlier].Port == engines[index].Port)
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private static void AppendList(

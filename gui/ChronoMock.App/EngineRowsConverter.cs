@@ -59,8 +59,13 @@ public sealed class EngineRowsConverter : IValueConverter
                 continue;
             }
 
-            var name = engine.Browser ?? string.Empty;
-            rows.Add(new EngineRow(name, name.Length == 0, engine.Port));
+            // Whitespace counts as no name. The core sanitises the engine's text but does not trim it
+            // (crates/cli/src/cdp/mod.rs), and the text is whatever an engine inside somebody's
+            // application puts in its own version endpoint - so a name of three spaces is possible, and
+            // it would have drawn a blank cell: the hole in the table this row exists to avoid.
+            var browser = engine.Browser ?? string.Empty;
+            var unnamed = string.IsNullOrWhiteSpace(browser);
+            rows.Add(new EngineRow(unnamed ? string.Empty : browser, unnamed, engine.Port));
         }
 
         return rows;
