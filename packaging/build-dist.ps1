@@ -14,7 +14,7 @@
             core/x86/  chrono.exe  chrono_hook.dll
             calendars/*.json   presets/*.json
             LICENSE   THIRD-PARTY-NOTICES.md   README.md
-        dist/ChronoMock-win-x64.zip   the same folder, zipped
+        dist/ChronoMock-app-win-x64.zip   the same folder, zipped
 
     It also assembles a lean CLI-only package (no .NET runtime, just the self-contained Rust
     binaries and data) for scripting and CI:
@@ -24,7 +24,7 @@
             x86/  chrono.exe  chrono_hook.dll  the 32-bit tool (for 32-bit targets)
             calendars/*.json   presets/*.json
             LICENSE   THIRD-PARTY-NOTICES.md   README.md
-        dist/chrono-cli-win.zip       the same folder, zipped
+        dist/ChronoMock-cli-win.zip       the same folder, zipped
 
     The launcher resolves the GUI layout through AppPaths (the x64 core beside it under core/
     is the portable marker). The native cores are self-contained already (static CRT, ADR-1).
@@ -56,9 +56,9 @@ $root = Split-Path -Parent $PSScriptRoot
 $dist = Join-Path $root 'dist'
 $stage = Join-Path $dist 'ChronoMock'
 $publish = Join-Path $root 'target/publish-gui'
-$zip = Join-Path $dist 'ChronoMock-win-x64.zip'
+$zip = Join-Path $dist 'ChronoMock-app-win-x64.zip'
 $cliStage = Join-Path $dist 'chrono-cli'
-$cliZip = Join-Path $dist 'chrono-cli-win.zip'
+$cliZip = Join-Path $dist 'ChronoMock-cli-win.zip'
 # What the publish itself says it bundled. The only place the runtime pack versions are knowable, since
 # global.json pins the test runner and not the SDK.
 $depsJson = Join-Path $stage 'ChronoMock.deps.json'
@@ -67,8 +67,8 @@ $depsJson = Join-Path $stage 'ChronoMock.deps.json'
 # with the card, and repacking changes every hash - so packaging/sign-release.ps1 regenerates both over
 # the signed bytes and those are what get uploaded. Written here anyway, because a local build deserves
 # its own manifest and because generating them on every packaging run is what keeps the generator honest.
-$guiSbom = Join-Path $dist 'ChronoMock-win-x64.spdx.json'
-$cliSbom = Join-Path $dist 'chrono-cli-win.spdx.json'
+$guiSbom = Join-Path $dist 'ChronoMock-app-win-x64.zip.spdx.json'
+$cliSbom = Join-Path $dist 'ChronoMock-cli-win.zip.spdx.json'
 $sums = Join-Path $dist 'SHA256SUMS'
 
 function Assert-Exists([string] $path, [string] $why) {

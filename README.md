@@ -59,8 +59,8 @@ Grab the latest build from the **[Releases page](https://github.com/donislawdev/
 
 | File | What it is | Size |
 |---|---|---|
-| `ChronoMock-win-x64.zip` | The desktop app, self-contained - no .NET install needed | ~69 MB |
-| `chrono-cli-win.zip` | Just the command-line tool, for CI and scripts | ~1.6 MB |
+| `ChronoMock-app-win-x64.zip` | The desktop app, self-contained - no .NET install needed | ~69 MB |
+| `ChronoMock-cli-win.zip` | Just the command-line tool, for CI and scripts | ~1.6 MB |
 
 Unzip anywhere and run `ChronoMock.exe` (or `chrono.exe` for the CLI). There is no installer, nothing
 is written to the registry, and no administrator rights are needed.
@@ -72,8 +72,8 @@ archive:
 
 <!-- verify-commands -->
 ```
-gh attestation verify ChronoMock-win-x64.zip --repo donislawdev/ChronoMock --predicate-type https://spdx.dev/Document/v2.3
-gh attestation verify ChronoMock-win-x64.zip --repo donislawdev/ChronoMock --predicate-type https://spdx.dev/Document/v2.3 --bundle ChronoMock-win-x64.zip.sigstore.json
+gh attestation verify ChronoMock-app-win-x64.zip --repo donislawdev/ChronoMock --predicate-type https://spdx.dev/Document/v2.3
+gh attestation verify ChronoMock-app-win-x64.zip --repo donislawdev/ChronoMock --predicate-type https://spdx.dev/Document/v2.3 --bundle ChronoMock-app-win-x64.zip.sigstore.json
 ```
 <!-- /verify-commands -->
 

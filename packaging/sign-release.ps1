@@ -80,7 +80,7 @@ $CODE_SIGNING_OID = '1.3.6.1.5.5.7.3.3'
 # (Wpf.Ui.dll and Wpf.Ui.Abstractions.dll) - they stay unsigned for the same reason. The bill of
 # materials declares them, so a reader who notices can see what they are.
 $OURS = @{
-    'ChronoMock-win-x64.zip' = @(
+    'ChronoMock-app-win-x64.zip' = @(
         'ChronoMock/ChronoMock.exe',
         'ChronoMock/ChronoMock.dll',
         'ChronoMock/ChronoMock.Protocol.dll',
@@ -89,7 +89,7 @@ $OURS = @{
         'ChronoMock/core/x86/chrono.exe',
         'ChronoMock/core/x86/chrono_hook.dll'
     )
-    'chrono-cli-win.zip'     = @(
+    'ChronoMock-cli-win.zip'     = @(
         'chrono-cli/chrono.exe',
         'chrono-cli/chrono_hook.dll',
         'chrono-cli/x86/chrono.exe',
@@ -99,13 +99,13 @@ $OURS = @{
 
 # Which package id in packaging/components.json each archive is, for regenerating the SBOM.
 $PACKAGE_ID = @{
-    'ChronoMock-win-x64.zip' = 'gui'
-    'chrono-cli-win.zip'     = 'cli'
+    'ChronoMock-app-win-x64.zip' = 'gui'
+    'ChronoMock-cli-win.zip'     = 'cli'
 }
 
 # What a complete draft carries. A missing one of these is a phase that did not finish.
-$EXPECTED_ASSETS = @('ChronoMock-win-x64.zip', 'chrono-cli-win.zip',
-    'ChronoMock-win-x64.spdx.json', 'chrono-cli-win.spdx.json', 'SHA256SUMS')
+$EXPECTED_ASSETS = @('ChronoMock-app-win-x64.zip', 'ChronoMock-cli-win.zip',
+    'ChronoMock-app-win-x64.zip.spdx.json', 'ChronoMock-cli-win.zip.spdx.json', 'SHA256SUMS')
 
 $WARN_DAYS = 90
 
