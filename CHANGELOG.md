@@ -6,6 +6,8 @@ Notable changes to Chrono Mock, newest first. The format follows
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-09-22
+
 The window was rebuilt so it can be changed one place at a time. Most of the work is a new
 structure a user never sees, but a good deal of it is visible the moment the tool opens, and
 the notes below say what a user sees rather than how the parts were rearranged.
@@ -533,5 +535,6 @@ listing everything as "added", here is where to find out what it does:
 
 From the next release onwards this file records what changed.
 
+[0.3.0]: https://github.com/donislawdev/ChronoMock/releases/tag/v0.3.0
 [0.2.0]: https://github.com/donislawdev/ChronoMock/releases/tag/v0.2.0
 [0.1.0]: https://github.com/donislawdev/ChronoMock/releases/tag/v0.1.0
