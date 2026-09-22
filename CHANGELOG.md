@@ -6,6 +6,19 @@ Notable changes to Chrono Mock, newest first. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **A caution when the application never read the clock the session replaces.** The verdict
+  answers whether the substitution took effect, and it can say it did over an application that
+  read the real date from start to finish - because the channels were hooked, which is a
+  different thing from the application asking for them. A session where no process ever read a
+  substituted clock now says so in as many words, beside the verdict rather than instead of it.
+  It does not change the verdict or the exit code: what the session achieved and what the
+  application used are two answers, and a tester needs both.
+- **The total beside the channel list.** The list of covered channels now carries how many times
+  the whole family read them, so the one number worth seeing first does not have to be counted
+  off forty-one rows by eye.
+
 ## [0.3.0] - 2026-09-22
 
 The window was rebuilt so it can be changed one place at a time. Most of the work is a new

@@ -271,6 +271,14 @@ pub(crate) fn describe_warning(key: &str) -> String {
         "coverage.pid_registry_full" => {
             "this session ran more processes than the audit can track (256), so some ran uncovered and are missing from the process count and the channel lists below"
         }
+        // Says what the verdict above it does NOT say. The verdict answers "did the substitution take
+        // effect", and it can be `works` over an application that read its time somewhere we cannot
+        // reach - straight out of the shared page, through a direct syscall, or off a server. The
+        // channels are covered, the counts are simply all zero, and without this line a reader takes
+        // the verdict for proof that their application ran on the fake date.
+        "coverage.session_clock_never_read" => {
+            "not one process in this session ever read a clock the session substitutes, so nothing the application did was driven by the fake date - the channels listed above are installed and working, they were never asked"
+        }
         "time.fake_clock_clamped" => {
             "the fake clock reached the last date this build can represent (year 30828) and stood there for the rest of the session, so late readings are not the moments the rate would have produced"
         }
@@ -691,7 +699,15 @@ pub(crate) fn render_report(r: &SessionReport) -> String {
     }
 
     if !r.covered.is_empty() {
-        out.push_str("  covered channels (substituted, with call counts):\n");
+        // The total belongs in the heading, not under the rows. There are up to forty-one of these
+        // and the one number a reader needs first is whether the application asked for the time at
+        // all - a wall of "(0 calls)" says it too, but only to whoever reads every line. Saturating
+        // because a long session at speed can count high and a wrapped total would read as silence.
+        let total = r.covered.iter().fold(0u64, |sum, (_, _, calls)| sum.saturating_add(*calls));
+        out.push_str(&format!(
+            "  covered channels (substituted, with call counts, {} in all):\n",
+            calls_label(total)
+        ));
         for (unit, ch, calls) in &r.covered {
             out.push_str(&format!("            - {unit}: {ch} ({})\n", calls_label(*calls)));
         }
