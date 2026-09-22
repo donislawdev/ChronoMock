@@ -23,6 +23,42 @@ pub struct TargetSpec {
     pub args: Vec<String>,
     #[serde(default)]
     pub cwd: Option<String>,
+    /// Reach the web pages inside the application: an embedded Chromium engine (WebView2, Qt
+    /// WebEngine) is asked to open a local debugging port for the session, and its pages are put on
+    /// the session clock through it (docs/09). On by default, and a client from before this field
+    /// existed gets the default - the channel is the product's coverage promise (rule 27), and the
+    /// opt-out is for the tester who does not want a debugging port open in their application.
+    /// Ignored for a target that IS Chromium, which the CDP session drives anyway.
+    #[serde(default = "embedded_default")]
+    pub embedded: bool,
+}
+
+/// The default for [`TargetSpec::embedded`]: reach the pages.
+fn embedded_default() -> bool {
+    true
+}
+
+/// The coverage unit a `coverage` event speaks for: an operating-system process the hook is inside
+/// (`pid` is its pid), or a JS context reached over the DevTools protocol (`pid` is the context's
+/// index in this session). Two namespaces that a reader must not confuse: pid 8 and context 8 are
+/// different units, and the family of one session can hold both (docs/09 section 12.4).
+pub const UNIT_PROCESS: &str = "process";
+pub const UNIT_CONTEXT: &str = "context";
+
+/// The default for `coverage.kind`: a message from before the field existed came from a process.
+fn unit_process() -> String {
+    UNIT_PROCESS.to_string()
+}
+
+/// A DevTools endpoint the session reached inside the application: the pid that holds it, the
+/// loopback port, and what the engine calls itself in `/json/version` (cleaned). The port is here
+/// rather than in a warning's text because keys are static - a tester who wants to attach their
+/// own DevTools reads it off this.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ReachedEngine {
+    pub pid: u32,
+    pub port: u16,
+    pub browser: String,
 }
 
 /// The target moment (session-zone semantics, docs/01 section 4).
@@ -150,6 +186,10 @@ pub enum Event {
     Coverage {
         v: u32,
         pid: u32,
+        /// [`UNIT_PROCESS`] or [`UNIT_CONTEXT`] - what `pid` names. Additive: absent in older
+        /// messages, which came from processes.
+        #[serde(default = "unit_process")]
+        kind: String,
         covered: Vec<CoveredChannel>,
         /// Hooked and counted but deliberately left real (ADR-7 class B object waits). Its own
         /// bucket so the consumer never confuses it with substituted channels. `#[serde(default)]`
@@ -227,6 +267,14 @@ pub enum Event {
         uncovered_children: Vec<UncoveredChild>,
         #[serde(default)]
         uncovered_children_total: u32,
+        /// How many JS contexts the session covered beside its processes - the pages and workers of
+        /// an embedded web engine (docs/09). `process_count` stays the number of PROCESSES. Additive.
+        #[serde(default)]
+        context_count: u32,
+        /// The DevTools endpoints the session reached inside the application, one per engine.
+        /// Empty for a session that found none, and for a Chromium session, which opened its own.
+        #[serde(default)]
+        engines: Vec<ReachedEngine>,
     },
     Ended {
         v: u32,
@@ -287,7 +335,13 @@ mod tests {
             "time":{"moment":{"kind":"absolute","local":"2038-01-19T03:14:07","tz_bias_min":0,"delta":null},
             "mode":"flow","multiplier":null,"scale_duration":false,"scale_qpc":false}}"#;
         match parse_command(line).expect("an older client's start still parses") {
-            Command::Start { force, .. } => assert!(!force, "a missing force must not run anyway"),
+            Command::Start { force, target, .. } => {
+                assert!(!force, "a missing force must not run anyway");
+                // The opposite default for the embedded-engine channel (docs/09): reaching the pages
+                // inside the application is the coverage promise, and the opt-out is the flag a
+                // client has to send. An older client that never heard of it gets the promise.
+                assert!(target.embedded, "a missing embedded must mean reach the pages");
+            }
             _ => panic!("expected a start command"),
         }
     }
@@ -297,7 +351,7 @@ mod tests {
         let cmd = Command::Start {
             v: PROTOCOL_VERSION,
             id: 1,
-            target: TargetSpec { path: "C:/app.exe".into(), args: vec!["--x".into()], cwd: None },
+            target: TargetSpec { path: "C:/app.exe".into(), args: vec!["--x".into()], cwd: None, embedded: false },
             time: TimeSpec {
                 moment: MomentSpec {
                     kind: "absolute".into(),
@@ -356,6 +410,7 @@ mod tests {
         let ev = Event::Coverage {
             v: PROTOCOL_VERSION,
             pid: 42,
+            kind: UNIT_PROCESS.into(),
             covered: vec![CoveredChannel { channel: "GetSystemTime".into(), calls: 3 }],
             observed: vec![CoveredChannel { channel: "WaitForSingleObject".into(), calls: 5 }],
             uncovered: vec![],
@@ -435,9 +490,13 @@ mod tests {
                 UncoveredChild { pid: 4243, parent_pid: 100, image: None, role: None },
             ],
             uncovered_children_total: 3,
+            context_count: 2,
+            engines: vec![ReachedEngine { pid: 8072, port: 51234, browser: "Engine/1.0".into() }],
         };
         let line = ev.to_ndjson();
         assert!(line.starts_with(r#"{"type":"session_verdict""#), "got {line}");
+        assert!(line.contains(r#""context_count":2"#), "got {line}");
+        assert!(line.contains(r#""engines":[{"pid":8072,"port":51234,"browser":"Engine/1.0"}]"#), "got {line}");
         // An unnamed child carries no `image` key at all, rather than a null the panel would render.
         assert!(line.contains(r#"{"pid":4243,"parent_pid":100}"#), "got {line}");
         match parse_event(&line).unwrap() {
@@ -461,6 +520,13 @@ mod tests {
             }
             _ => panic!("wrong event variant"),
         }
+        match parse_event(&line).unwrap() {
+            Event::SessionVerdict { context_count, engines, .. } => {
+                assert_eq!(context_count, 2);
+                assert_eq!(engines, vec![ReachedEngine { pid: 8072, port: 51234, browser: "Engine/1.0".into() }]);
+            }
+            _ => panic!("wrong event variant"),
+        }
     }
 
     /// R2-S9. `warning_keys` was added to session_verdict after the field set was already in use, so a
@@ -478,6 +544,46 @@ mod tests {
                 assert!(uncovered_children.is_empty());
                 assert_eq!(uncovered_children_total, 0);
             }
+            _ => panic!("wrong event variant"),
+        }
+        // And for the two the embedded-engine channel added (docs/09 section 12.4).
+        match parse_event(line).unwrap() {
+            Event::SessionVerdict { context_count, engines, .. } => {
+                assert_eq!(context_count, 0);
+                assert!(engines.is_empty());
+            }
+            _ => panic!("wrong event variant"),
+        }
+    }
+
+    /// `coverage.kind` names the namespace of `pid`: a process the hook is inside, or a JS context
+    /// reached over the DevTools protocol. A message from before the field existed came from a
+    /// process, so absent reads as that - never as a parse failure, never as a context.
+    #[test]
+    fn a_coverage_without_kind_is_a_process_and_kind_round_trips() {
+        let old = r#"{"type":"coverage","v":1,"pid":42,"covered":[],"uncovered":[],"warning_keys":[]}"#;
+        match parse_event(old).unwrap() {
+            Event::Coverage { kind, pid, .. } => {
+                assert_eq!(kind, UNIT_PROCESS);
+                assert_eq!(pid, 42);
+            }
+            _ => panic!("wrong event variant"),
+        }
+        let ev = Event::Coverage {
+            v: PROTOCOL_VERSION,
+            pid: 3,
+            kind: UNIT_CONTEXT.into(),
+            covered: vec![CoveredChannel { channel: "page Date.now".into(), calls: 12 }],
+            observed: vec![],
+            uncovered: vec![],
+            unobserved: vec![],
+            installed_late: vec![],
+            warning_keys: vec![],
+        };
+        let line = ev.to_ndjson();
+        assert!(line.contains(r#""pid":3,"kind":"context""#), "kind rides beside the number it qualifies: {line}");
+        match parse_event(&line).unwrap() {
+            Event::Coverage { kind, .. } => assert_eq!(kind, UNIT_CONTEXT),
             _ => panic!("wrong event variant"),
         }
     }

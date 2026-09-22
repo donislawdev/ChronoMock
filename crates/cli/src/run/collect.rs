@@ -10,7 +10,7 @@ use std::collections::HashMap;
 
 use chrono_proto::Event;
 
-use crate::report::{ProcessCoverage, SessionReport};
+use crate::report::{ProcessCoverage, SessionReport, UnitId};
 
 /// The session's evidence as it arrives, one field per thing the report states. Nothing here is
 /// derived twice, so the report cannot claim more than the core actually said (untouchable rule 4).
@@ -28,8 +28,12 @@ pub(super) struct Collector {
     // discovered and a final one for every process at the end, because the first is sampled inside
     // the guard window and its call counts never move again (R2-X8). Appending every event instead
     // would print each channel twice, once with a number from the session's first blink.
-    cov_by_pid: HashMap<u32, ProcessCoverage>,
-    pid_order: Vec<u32>,  // first-seen order, so the parent still leads the report
+    cov_by_unit: HashMap<UnitId, ProcessCoverage>,
+    unit_order: Vec<UnitId>,  // first-seen order, so the parent still leads the report
+    // JS contexts covered beside the processes, and the engines they were reached through - both
+    // from `session_verdict` (docs/09).
+    context_count: u32,
+    engines: Vec<chrono_proto::ReachedEngine>,
     timing: Option<(String, i64, i64)>,  // (fake wall reached, real ms, fake ms) from `ended`
     // The target's own exit code and whatever teardown could not remove, both from `ended`. The wire
     // has carried them since the session report grew a duration, and the GUI panel has shown them
@@ -57,12 +61,16 @@ impl Collector {
                 warning_keys,
                 uncovered_children,
                 uncovered_children_total,
+                context_count,
+                engines,
                 ..
             } => {
                 self.session_line = Some((verdict, reason_key, process_count));
                 self.warn(warning_keys);
                 self.uncovered_children = uncovered_children;
                 self.uncovered_children_total = uncovered_children_total;
+                self.context_count = context_count;
+                self.engines = engines;
             }
             Event::Vanished { reason_key, lived_ms, .. } => {
                 self.vanished = Some((reason_key, lived_ms));
@@ -72,6 +80,7 @@ impl Collector {
             }
             Event::Coverage {
                 pid,
+                kind,
                 covered: cov,
                 observed: obs,
                 uncovered: unc,
@@ -81,11 +90,12 @@ impl Collector {
                 ..
             } => {
                 self.warn(warning_keys);
-                if !self.cov_by_pid.contains_key(&pid) {
-                    self.pid_order.push(pid);
+                let unit = UnitId::from_wire(&kind, pid);
+                if !self.cov_by_unit.contains_key(&unit) {
+                    self.unit_order.push(unit);
                 }
-                self.cov_by_pid.insert(
-                    pid,
+                self.cov_by_unit.insert(
+                    unit,
                     ProcessCoverage {
                         covered: cov,
                         observed: obs,
@@ -138,28 +148,28 @@ impl Collector {
         cdp: bool,
         stopped_early: Option<&'static str>,
     ) -> SessionReport {
-        // Flatten the per-process snapshots into report rows, parent first (first-seen order).
-        let mut uncovered: Vec<(u32, String)> = Vec::new(); // (pid, channel) - the honest gaps
-        let mut unobserved: Vec<(u32, String)> = Vec::new(); // (pid, channel) - watches that never started
-        let mut installed_late: Vec<(u32, String)> = Vec::new(); // (pid, channel) - hooked once its module loaded
-        let mut covered: Vec<(u32, String, u64)> = Vec::new(); // (pid, channel, calls) - what took effect
-        let mut observed: Vec<(u32, String, u64)> = Vec::new(); // (pid, channel, calls) - hooked, left real
-        for pid in &self.pid_order {
-            if let Some(pc) = self.cov_by_pid.get(pid) {
+        // Flatten the per-unit snapshots into report rows, parent first (first-seen order).
+        let mut uncovered: Vec<(UnitId, String)> = Vec::new(); // (unit, channel) - the honest gaps
+        let mut unobserved: Vec<(UnitId, String)> = Vec::new(); // (unit, channel) - watches that never started
+        let mut installed_late: Vec<(UnitId, String)> = Vec::new(); // (unit, channel) - hooked once its module loaded
+        let mut covered: Vec<(UnitId, String, u64)> = Vec::new(); // (unit, channel, calls) - what took effect
+        let mut observed: Vec<(UnitId, String, u64)> = Vec::new(); // (unit, channel, calls) - hooked, left real
+        for unit in &self.unit_order {
+            if let Some(pc) = self.cov_by_unit.get(unit) {
                 for ch in &pc.covered {
-                    covered.push((*pid, ch.channel.clone(), ch.calls));
+                    covered.push((*unit, ch.channel.clone(), ch.calls));
                 }
                 for ch in &pc.observed {
-                    observed.push((*pid, ch.channel.clone(), ch.calls));
+                    observed.push((*unit, ch.channel.clone(), ch.calls));
                 }
                 for ch in &pc.uncovered {
-                    uncovered.push((*pid, ch.clone()));
+                    uncovered.push((*unit, ch.clone()));
                 }
                 for ch in &pc.unobserved {
-                    unobserved.push((*pid, ch.clone()));
+                    unobserved.push((*unit, ch.clone()));
                 }
                 for ch in &pc.installed_late {
-                    installed_late.push((*pid, ch.clone()));
+                    installed_late.push((*unit, ch.clone()));
                 }
             }
         }
@@ -181,6 +191,8 @@ impl Collector {
             residue: self.residue,
             uncovered_children: self.uncovered_children,
             uncovered_children_total: self.uncovered_children_total,
+            context_count: self.context_count,
+            engines: self.engines,
             cdp,
             stopped_early,
         }
@@ -196,6 +208,7 @@ mod tests {
         Event::Coverage {
             v: 1,
             pid,
+            kind: chrono_proto::UNIT_PROCESS.to_string(),
             covered: vec![CoveredChannel { channel: "GetSystemTimeAsFileTime".into(), calls }],
             observed: Vec::new(),
             uncovered: Vec::new(),
@@ -216,7 +229,7 @@ mod tests {
 
         let report = c.into_report("app.exe".into(), false, None);
         assert_eq!(report.covered.len(), 1, "one row per channel per process, not one per event");
-        assert_eq!(report.covered[0], (100, "GetSystemTimeAsFileTime".to_string(), 4242));
+        assert_eq!(report.covered[0], (UnitId::from_wire("process", 100), "GetSystemTimeAsFileTime".to_string(), 4242));
     }
 
     /// Untouchable rule 4 at the report level: a channel covered in two processes is two rows, each
@@ -230,8 +243,8 @@ mod tests {
 
         let report = c.into_report("app.exe".into(), false, None);
         assert_eq!(report.covered.len(), 2, "two processes, two rows");
-        assert_eq!(report.covered[0].0, 100, "first seen still leads the report");
-        assert_eq!(report.covered[1].0, 200);
+        assert_eq!(report.covered[0].0.id, 100, "first seen still leads the report");
+        assert_eq!(report.covered[1].0.id, 200);
         assert_eq!(report.covered[0].2, 7);
         assert_eq!(report.covered[1].2, 5);
     }
@@ -251,6 +264,8 @@ mod tests {
             warning_keys: vec!["runtime.qpc_elapsed".into(), "session.pid_registry_full".into()],
             uncovered_children: Vec::new(),
             uncovered_children_total: 0,
+            context_count: 0,
+            engines: Vec::new(),
         });
 
         let report = c.into_report("app.exe".into(), false, None);

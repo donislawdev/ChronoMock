@@ -59,6 +59,16 @@ public class LaunchOptionsTests
         Assert.Empty(plan.Start.Target.Args);
     }
 
+    /// <summary>Reaching the web pages inside the application is the default, and the opt-out is what
+    /// the panel has to send - a plan built without a word about it reaches them, one built with the
+    /// switch off says so on the wire (docs/09).</summary>
+    [Fact]
+    public void Reaching_the_embedded_pages_is_the_default_and_the_opt_out_reaches_the_wire()
+    {
+        Assert.True(SessionPlan.Build(APeFile(), AnyTime()).Start.Target.Embedded);
+        Assert.False(SessionPlan.Build(APeFile(), AnyTime(), embedded: false).Start.Target.Embedded);
+    }
+
     /// <summary>
     /// The preview reads the ISO input back in words. The inputs are locale-invariant on purpose (a dev box
     /// and a test VM in different locales must read the same typed date the same way) - this line is what

@@ -10,7 +10,7 @@
 use std::collections::{BTreeMap, HashMap};
 
 use chrono_core::Verdict;
-use chrono_proto::{CoveredChannel, Event, PROTOCOL_VERSION};
+use chrono_proto::{CoveredChannel, Event, PROTOCOL_VERSION, UNIT_CONTEXT};
 
 /// The channels the session can honestly call covered, in a stable order.
 pub(crate) fn covered_channels(counts: BTreeMap<(u32, String), u64>) -> Vec<(u32, String, u64)> {
@@ -106,6 +106,7 @@ pub(crate) fn coverage_events(
         return vec![Event::Coverage {
             v: PROTOCOL_VERSION,
             pid: 0,
+            kind: UNIT_CONTEXT.to_string(),
             covered: Vec::new(),
             observed: Vec::new(),
             uncovered: Vec::new(),
@@ -126,6 +127,7 @@ pub(crate) fn coverage_events(
             Event::Coverage {
                 v: PROTOCOL_VERSION,
                 pid: *index,
+                kind: UNIT_CONTEXT.to_string(),
                 covered: chans,
                 observed: Vec::new(),
                 uncovered: Vec::new(),

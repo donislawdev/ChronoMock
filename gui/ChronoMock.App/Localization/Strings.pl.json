@@ -99,6 +99,7 @@
   "setup.chip_duration": "trwanie skalowane",
   "setup.chip_qpc": "QPC skalowane",
   "setup.chip_force": "start wymuszony",
+  "setup.chip_no_embedded": "bez stron WWW",
   // The launch fields moved into this section, so its folded header says they are set without printing
   // values that have no length limit.
   "setup.chip_args": "argumenty ustawione",
@@ -141,6 +142,7 @@
   "setup.opt_duration": "Przyspiesz też liczniki i odliczanie wewnątrz aplikacji",
   "setup.opt_qpc": "Przyspiesz też liczniki mierzące upływ czasu (Stopwatch, nanoTime, monotonic)",
   "setup.opt_force": "Uruchom nawet wtedy, gdy podmiana zegara okaże się nieskuteczna",
+  "setup.opt_embedded": "Sięgnij do stron WWW wewnątrz aplikacji",
 
   // Fits after a number, like the shipped one. It names the button to press rather than quoting it in
   // passing, because a reader who has never opened the calculator cannot tell a quotation from a label.
@@ -155,6 +157,7 @@
   // reader has to weigh BEFORE ticking, where the decision is made rather than a hover away from it.
   "setup.opt_qpc_note": "Animacja i wideo wewnątrz aplikacji mogą wyglądać źle.",
   "setup.opt_force_note": "Sesja jest wtedy wszędzie oznaczona jako niewiarygodna.",
+  "setup.opt_embedded_note": "Otwiera na czas sesji lokalny port debugowania w silniku WWW aplikacji. Inne programy na tym komputerze mogą z niego korzystać, dopóki aplikacja działa.",
 
   // Both of these say "target" in the shipped panel, which is the word this screen stopped using.
   "setup.tip_recent": "Aplikacje uruchamiane wcześniej. „Wybierz…” wskazuje taką, której ta maszyna jeszcze nie uruchamiała.",
@@ -697,6 +700,7 @@
   "tip.mode": "Jak szybko idzie podmieniony zegar: ×1 to zwykłe tempo, zamrożony go zatrzymuje, reszta idzie tyle razy szybciej.",
   "tip.scale_duration": "Przyśpiesz też liczniki, uśpienia i odliczania w aplikacji - nie tylko zegar ścienny.",
   "tip.scale_qpc": "Przyśpiesz też zegary na QPC (Python monotonic, .NET Stopwatch, Java nanoTime). Może zniekształcić aplikację liczącą render z QPC.",
+  "tip.embedded": "Domyślnie włączone. Aplikacja z wbudowanym silnikiem WWW (WebView2, Qt WebEngine) uruchamia swoje strony w procesie, do którego hook zegara nie wchodzi. Z tą opcją silnik jest proszony o otwarcie na czas sesji lokalnego portu debugowania, a strony idą za zegarem sesji przez ten port. Odznacz, aby zostawić te strony na realnym zegarze i nie otwierać portu.",
   "tip.force": "Domyślnie wyłączone. Gdy werdykt otwierający mówi, że podmiana nie zadziałała, cel jest zatrzymywany zamiast oddany do pracy - jego dowód dotyczyłby realnego zegara. Zaznacz, aby mimo to uruchomić - sesja jest wtedy wszędzie oznaczona jako nierzetelna.",
   "tip.start": "Uruchom cel z podmienionym zegarem. Wymaga celu i poprawnego momentu.",
   "tip.freeze": "Zamroź podmieniony zegar, by przestał iść.",

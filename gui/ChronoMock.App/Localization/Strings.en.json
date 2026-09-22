@@ -99,6 +99,7 @@
   "setup.chip_duration": "duration scaled",
   "setup.chip_qpc": "QPC scaled",
   "setup.chip_force": "forced start",
+  "setup.chip_no_embedded": "web pages not reached",
   // The launch fields moved into this section, so its folded header says they are set without printing
   // values that have no length limit.
   "setup.chip_args": "arguments set",
@@ -141,6 +142,7 @@
   "setup.opt_duration": "Also speed up timers and countdowns inside the application",
   "setup.opt_qpc": "Also speed up timers that measure elapsed time (Stopwatch, nanoTime, monotonic)",
   "setup.opt_force": "Start even if the fake clock turns out not to work",
+  "setup.opt_embedded": "Reach the web pages inside the application",
 
   // Fits after a number, like the shipped one. It names the button to press rather than quoting it in
   // passing, because a reader who has never opened the calculator cannot tell a quotation from a label.
@@ -155,6 +157,7 @@
   // reader has to weigh BEFORE ticking, where the decision is made rather than a hover away from it.
   "setup.opt_qpc_note": "Can make animation and video inside the application look wrong.",
   "setup.opt_force_note": "The session is then marked unreliable everywhere it appears.",
+  "setup.opt_embedded_note": "Opens a local debugging port in the application's web engine for the session. Other programs on this computer can reach it while the application runs.",
 
   // Both of these say "target" in the shipped panel, which is the word this screen stopped using.
   "setup.tip_recent": "The applications you have run before. Choose… picks one this machine has not run yet.",
@@ -710,6 +713,7 @@
   "tip.mode": "How fast the fake clock runs: ×1 is real speed, frozen stops it, and the rest run that many times faster.",
   "tip.scale_duration": "Also speed up timers, sleeps and countdowns inside the app - not just the wall clock.",
   "tip.scale_qpc": "Also speed up QPC-based clocks (Python monotonic, .NET Stopwatch, Java nanoTime). May distort an app that times its rendering off QPC.",
+  "tip.embedded": "On by default. An application with a built-in web engine (WebView2, Qt WebEngine) runs its pages in a process the clock hook cannot enter. With this on, the engine is asked to open a local debugging port for the session and the pages follow the session clock through it. Untick it to leave those pages on the real clock and open no port.",
   "tip.force": "Off by default. When the opening verdict says the substitution did not take effect, the target is stopped rather than handed to you, because its evidence would be about the real clock. Tick this to run anyway - the session is then marked unreliable everywhere it appears.",
   "tip.start": "Launch the target under the fake clock. Needs a target and a valid moment.",
   "tip.freeze": "Freeze the fake clock so it stops advancing.",

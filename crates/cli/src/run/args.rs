@@ -26,6 +26,10 @@ pub(crate) struct RunArgs {
     pub(super) scale_qpc: bool,
     /// Run even when the opening verdict says the substitution did not take effect (`--force`).
     pub(super) force: bool,
+    /// Reach the web pages inside the application through its embedded engine's debugging port
+    /// (docs/09). On unless `--no-embedded` - the opt-out for a tester who does not want that port
+    /// open in their application for the session.
+    pub(super) embedded: bool,
     /// How many `state` heartbeats to stream before ending. 0 = end right after the
     /// verdict (one-shot).
     pub(super) ticks: u64,
@@ -124,7 +128,25 @@ pub(crate) fn target_spec_for(ra: &RunArgs) -> TargetSpec {
         path: ra.target.clone(),
         args: ra.args.clone(),
         cwd: ra.cwd.clone(),
+        embedded: ra.embedded,
     }
+}
+
+/// The value of `--set-after`: `<tick>:<multiplier>`, with the multiplier under the same invariant as
+/// `--mode xN` (`parse_mode`) - an in-flight multiplier is >= 1 and within the clock's range. A zero or
+/// negative value would freeze or run the wall clock backward as a silent side effect of an
+/// unvalidated surface (rule 4) - freezing in flight is not a feature here.
+fn parse_set_after(raw: &str) -> Result<(u64, i64), String> {
+    let (t, m) = raw.split_once(':').ok_or("--set-after must be <tick>:<multiplier>")?;
+    let tick: u64 = t.parse().map_err(|_| format!("bad tick in '{raw}'"))?;
+    let mult: i64 = m.parse().map_err(|_| format!("bad multiplier in '{raw}'"))?;
+    if mult < 1 {
+        return Err(format!("--set-after multiplier must be >= 1, got '{raw}'"));
+    }
+    if mult > chrono_core::MULTIPLIER_MAX {
+        return Err(format!("--set-after multiplier must be <= {}, got '{raw}'", chrono_core::MULTIPLIER_MAX));
+    }
+    Ok((tick, mult))
 }
 
 pub(crate) fn parse_run_args(argv: &[String]) -> Result<RunArgs, String> {
@@ -137,6 +159,7 @@ pub(crate) fn parse_run_args(argv: &[String]) -> Result<RunArgs, String> {
     let mut multiplier: Option<i64> = None;
     let mut scale_duration = false;
     let mut scale_qpc = false;
+    let mut embedded = true;
     let mut force = false;
     let mut dry_run = false;
     let mut ticks: u64 = 0;
@@ -210,6 +233,9 @@ pub(crate) fn parse_run_args(argv: &[String]) -> Result<RunArgs, String> {
             "--force" => {
                 force = true;
             }
+            "--no-embedded" => {
+                embedded = false;
+            }
             "--dry-run" => {
                 dry_run = true;
             }
@@ -236,24 +262,7 @@ pub(crate) fn parse_run_args(argv: &[String]) -> Result<RunArgs, String> {
             "--set-after" => {
                 i += 1;
                 let raw = argv.get(i).ok_or("--set-after needs <tick>:<multiplier>")?;
-                let (t, m) = raw
-                    .split_once(':')
-                    .ok_or("--set-after must be <tick>:<multiplier>")?;
-                let tick: u64 = t.parse().map_err(|_| format!("bad tick in '{raw}'"))?;
-                let mult: i64 = m.parse().map_err(|_| format!("bad multiplier in '{raw}'"))?;
-                // Same invariant as --mode xN (parse_mode): an in-flight multiplier is >= 1. A zero or
-                // negative value would freeze or run the wall clock backward as a silent side effect
-                // of an unvalidated surface (rule 4) - freezing in flight is not a feature here.
-                if mult < 1 {
-                    return Err(format!("--set-after multiplier must be >= 1, got '{raw}'"));
-                }
-                if mult > chrono_core::MULTIPLIER_MAX {
-                    return Err(format!(
-                        "--set-after multiplier must be <= {}, got '{raw}'",
-                        chrono_core::MULTIPLIER_MAX
-                    ));
-                }
-                set_after = Some((tick, mult));
+                set_after = Some(parse_set_after(raw)?);
             }
             "--jump-after" => {
                 i += 1;
@@ -305,6 +314,7 @@ pub(crate) fn parse_run_args(argv: &[String]) -> Result<RunArgs, String> {
         scale_duration,
         scale_qpc,
         force,
+        embedded,
         dry_run,
         ticks,
         timeout_secs,
@@ -378,6 +388,18 @@ mod tests {
 
         let bare = parse_run_args(&["app.exe".into()]).unwrap();
         assert_eq!(target_spec_for(&bare).cwd, None);
+    }
+
+    /// Reaching the web pages inside the application is on unless the tester opts out - the flag is
+    /// the one thing the driver has to send, and a bare run carries the default to the wire.
+    #[test]
+    fn no_embedded_is_the_opt_out_and_the_default_reaches_the_pages() {
+        let bare = parse_run_args(&["app.exe".into()]).unwrap();
+        assert!(target_spec_for(&bare).embedded, "a bare run reaches the pages inside the app");
+
+        let off = parse_run_args(&["app.exe".into(), "--no-embedded".into()]).unwrap();
+        assert!(!off.embedded);
+        assert!(!target_spec_for(&off).embedded, "the opt-out has to reach the wire");
     }
 
     /// An explicitly empty value is a usage error rather than a quiet "no directory". The two are

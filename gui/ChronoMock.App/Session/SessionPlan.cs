@@ -24,7 +24,8 @@ internal sealed record SessionPlan(string CorePath, PeReader.Machine Machine, St
         TimeSpec time,
         bool force = false,
         IReadOnlyList<string>? args = null,
-        string? workingFolder = null)
+        string? workingFolder = null,
+        bool embedded = true)
     {
         ArgumentException.ThrowIfNullOrEmpty(targetPath);
         ArgumentNullException.ThrowIfNull(time);
@@ -46,6 +47,7 @@ internal sealed record SessionPlan(string CorePath, PeReader.Machine Machine, St
                 // Blank means "do not ask", which is not the same as an empty string: the core passes a
                 // present-but-empty cwd straight to CreateProcessW, where it is not a valid directory.
                 Cwd = string.IsNullOrWhiteSpace(workingFolder) ? null : workingFolder,
+                Embedded = embedded,
             },
             Time = time,
             Force = force,

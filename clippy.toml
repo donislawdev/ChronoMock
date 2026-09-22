@@ -47,7 +47,12 @@
 # to `cdp_attach::Attacher` and went from 225 to 157, so the ceiling holder is now
 # `run::args::parse_run_args` at 170, with `run::driver_run` at 165 and `cdp_session` third. Down
 # is routine: the number is the measurement, and `tools/margin.ps1` said the old one had 55 of room.
-too-many-lines-threshold = 170
+#
+# Lowered again the same day (slice C2 of the same channel): `parse_run_args` grew by the
+# `--no-embedded` arm to 175, over the ceiling, and rather than raise it the `--set-after` value
+# parsing moved out to `parse_set_after`, taking the function to 161. The holder is `run::driver_run`
+# at 165 again, `parse_run_args` second, `cdp_session` third at 160 (measured by `tools/margin.ps1`).
+too-many-lines-threshold = 165
 
 # A tie at 25: `run::driver_run` and `report::render_report`. This happens to be clippy's own
 # default, which is worth saying out loud rather than leaving to look like a copied number - it

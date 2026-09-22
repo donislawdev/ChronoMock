@@ -548,6 +548,8 @@ pub(crate) fn close_session(
         warning_keys: session_warnings,
         uncovered_children: named,
         uncovered_children_total,
+        context_count: 0,
+        engines: Vec::new(),
     });
     emit(&Event::Ended {
         v: PROTOCOL_VERSION,
@@ -802,6 +804,7 @@ mod tests {
                 path: "app.exe".into(),
                 args: Vec::new(),
                 cwd: cwd.map(str::to_string),
+                embedded: true,
             },
             time: TimeSpec {
                 moment: MomentSpec {

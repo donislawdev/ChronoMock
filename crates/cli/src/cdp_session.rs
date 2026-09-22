@@ -267,6 +267,8 @@ pub(crate) fn cdp_session(target: TargetSpec, time: TimeSpec, reader: BufReader<
 /// The family verdict of a CDP session. No PID registry on this path: a CDP session tracks JS
 /// contexts, not injected processes, so its per-context warnings already travel on the coverage
 /// events, and it spawns nothing the hook could fail to follow - the two child fields stay empty.
+/// `process_count` has carried the context count since this session existed and keeps doing so for
+/// the clients that read it there. `context_count` says the same number under its own name.
 fn emit_cdp_session_verdict(token: &str, reason: &str, contexts: u32) {
     emit(&Event::SessionVerdict {
         v: PROTOCOL_VERSION,
@@ -276,6 +278,8 @@ fn emit_cdp_session_verdict(token: &str, reason: &str, contexts: u32) {
         warning_keys: Vec::new(),
         uncovered_children: Vec::new(),
         uncovered_children_total: 0,
+        context_count: contexts,
+        engines: Vec::new(),
     });
 }
 

@@ -1441,6 +1441,7 @@ public class SessionViewModelTests
         vm.ScaleDuration = false;
         vm.ScaleQpc = false;
         vm.ForceStart = false;
+        vm.ReachEmbedded = true; // the default, so the record has to carry the opt-out back
 
         var record = HistoryRecord("Ledger") with
         {
@@ -1449,6 +1450,7 @@ public class SessionViewModelTests
             ScaleDuration = true,
             ScaleQpc = true,
             Force = true,
+            Embedded = false,
         };
         vm.LoadFromHistory(record);
 
@@ -1457,6 +1459,7 @@ public class SessionViewModelTests
         Assert.True(vm.ScaleDuration);
         Assert.True(vm.ScaleQpc);
         Assert.True(vm.ForceStart);
+        Assert.False(vm.ReachEmbedded);
         Assert.False(vm.HasHistoryNote, "everything was on offer, so there is nothing to report");
     }
 
@@ -1648,6 +1651,7 @@ public class SessionViewModelTests
         vm.ScaleDuration = true;
         vm.ScaleQpc = true;
         vm.ForceStart = true;
+        vm.ReachEmbedded = false;
 
         var record = vm.BuildRecord();
 
@@ -1656,6 +1660,26 @@ public class SessionViewModelTests
         Assert.True(record.ScaleDuration);
         Assert.True(record.ScaleQpc);
         Assert.True(record.Force);
+        Assert.False(record.Embedded);
+    }
+
+    /// <summary>Reaching the web pages inside the application is on for a fresh form, and the folded
+    /// header's chip is the opt-out's, so it announces itself when the box is unticked (docs/09).</summary>
+    [Fact]
+    public void Reaching_the_embedded_pages_is_on_by_default_and_the_chip_shows_the_opt_out()
+    {
+        var vm = new SessionViewModel();
+        var announced = new List<string>();
+        vm.PropertyChanged += (_, e) => announced.Add(e.PropertyName ?? string.Empty);
+
+        Assert.True(vm.ReachEmbedded);
+        Assert.False(vm.LeavesEmbeddedPages);
+
+        vm.ReachEmbedded = false;
+
+        Assert.True(vm.LeavesEmbeddedPages);
+        Assert.Contains(nameof(SessionViewModel.LeavesEmbeddedPages), announced);
+        Assert.True(vm.BuildRecord().Embedded == false);
     }
 
     /// <summary>

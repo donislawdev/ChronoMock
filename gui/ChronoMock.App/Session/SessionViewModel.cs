@@ -77,6 +77,7 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     private bool _scaleDuration;
     private bool _scaleQpc;
     private bool _forceStart;
+    private bool _reachEmbedded = true;
     private string _targetArgs = string.Empty;
     private string _workingFolder = string.Empty;
     private readonly ISessionHistoryStore _store;
@@ -116,6 +117,7 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     private bool _startScaleDuration;
     private bool _startScaleQpc;
     private bool _startForce;
+    private bool _startReachEmbedded = true;
     private string _inFlightErrorKey = string.Empty;
     private bool _applyingMultiplier; // guard: syncing the Mode dropdown from a state event must not re-send
 
@@ -594,6 +596,26 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
     /// default: the core stops the target in that case, because an application that looks time-shifted
     /// but is not produces evidence about a session that never happened. Start-only.</summary>
     public bool ForceStart { get => _forceStart; set => Set(ref _forceStart, value); }
+
+    /// <summary>Reach the web pages inside the application through its embedded web engine's debugging
+    /// port (docs/09). ON by default - covering those pages is the product's promise, and what the switch
+    /// buys the tester who turns it off is that no debugging port opens in their application for the
+    /// session. Maps to the wire <c>target.embedded</c>. Start-only.</summary>
+    public bool ReachEmbedded
+    {
+        get => _reachEmbedded;
+        set
+        {
+            if (Set(ref _reachEmbedded, value))
+            {
+                RaisePropertyChanged(nameof(LeavesEmbeddedPages));
+            }
+        }
+    }
+
+    /// <summary>The opt-out, for the folded header's chip: reaching the pages is the default, so the chip
+    /// shows only when the tester turned it off - a chip for every session would say nothing.</summary>
+    public bool LeavesEmbeddedPages => !_reachEmbedded;
 
     /// <summary>Command-line arguments for the target (chrono-mock 7.1 pt 1), as one line the tester types.
     /// Split into the wire's argument list by <see cref="TargetArguments"/>, which mirrors the CLI's own
@@ -1677,6 +1699,7 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
             _startScaleDuration = _scaleDuration;
             _startScaleQpc = _scaleQpc;
             _startForce = _forceStart;
+            _startReachEmbedded = _reachEmbedded;
             _startCaptured = true;
             RaisePropertyChanged(nameof(StartedAtPreview));
 
@@ -1692,7 +1715,8 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
                     BuildTime(),
                     _forceStart,
                     TargetArguments.Split(_targetArgs),
-                    _workingFolder);
+                    _workingFolder,
+                    _reachEmbedded);
             }
             catch (InvalidOperationException ex)
             {
@@ -2203,6 +2227,7 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
             ScaleDuration = _startCaptured ? _startScaleDuration : _scaleDuration,
             ScaleQpc = _startCaptured ? _startScaleQpc : _scaleQpc,
             Force = _startCaptured ? _startForce : _forceStart,
+            Embedded = _startCaptured ? _startReachEmbedded : _reachEmbedded,
             Verdict = RecordedVerdict(),
             EndedAtUtc = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture),
         };
@@ -2322,6 +2347,7 @@ public sealed class SessionViewModel : ObservableObject, IAsyncDisposable
         ScaleDuration = record.ScaleDuration;
         ScaleQpc = record.ScaleQpc;
         ForceStart = record.Force;
+        ReachEmbedded = record.Embedded;
 
         // A zone or a mode the catalogues no longer offer cannot be filled in, and the old code left the
         // CURRENT one standing without a word - so the form claimed to be the recorded session while one of

@@ -280,6 +280,16 @@ fn session_block(p: &Plan) -> String {
     if p.ra.force {
         out.push_str(&note("--force: carries on even if the opening verdict says the substitution did not take effect"));
     }
+    // The embedded-engine channel (docs/09) is part of what a native session does, so a plan that
+    // kept quiet about it would describe a different session than the one that would run. A
+    // Chromium target is driven over its own debug port either way, so there the line says nothing.
+    if !p.chromium {
+        out.push_str(&note(if p.ra.embedded {
+            "web pages inside the app: reached through the app's own web engine, if it has one (--no-embedded turns this off)"
+        } else {
+            "--no-embedded: web pages inside the app are left on the real clock"
+        }));
+    }
     if let Some(path) = &p.ra.report {
         out.push_str(&line("evidence", &format!("would be written to {path}")));
     }
@@ -384,6 +394,9 @@ struct SessionJson<'a> {
     set_after: Option<[i64; 2]>,
     jump_after: Option<(u64, &'a str)>,
     force: bool,
+    /// Whether the web pages inside the application would be reached through its embedded web
+    /// engine (docs/09). Always false for a Chromium target, which is driven over its own port.
+    embedded: bool,
     /// The path `--report` named. A dry run does not write it.
     report: Option<&'a str>,
 }
@@ -438,6 +451,7 @@ fn render_json(p: &Plan) -> String {
             set_after: p.ra.set_after.map(|(tick, m)| [tick as i64, m]),
             jump_after: p.ra.jump_after.as_ref().map(|(tick, moment)| (*tick, moment.as_str())),
             force: p.ra.force,
+            embedded: p.ra.embedded && !p.chromium,
             report: p.ra.report.as_deref(),
         },
         warnings: &p.warning_keys,
