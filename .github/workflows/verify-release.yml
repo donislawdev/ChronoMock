@@ -122,15 +122,24 @@ jobs:
         run: |
           $pin = (Get-Content -Raw packaging/codesign.json | ConvertFrom-Json).certificate_sha256
           if ($pin -notmatch '^[0-9a-f]{64}$') { throw 'packaging/codesign.json carries no usable certificate_sha256' }
-          $ours = @{
-            'ChronoMock-app-win-x64.zip' = @(
+          # 🔴 The same version branch as the asset list above, and for the same reason - this step
+          # opens the archives BY NAME. Gating only the list there would let an older tag pass that
+          # check and then fail here on a file the release never had, which is a worse failure than
+          # the one it replaced: it looks like a broken release rather than a renamed asset.
+          # What does NOT change with the version is the path INSIDE each archive. The packages were
+          # renamed and the folders they unzip to deliberately were not, so only the keys differ.
+          $version = [version]($env:TAG.TrimStart('v'))
+          $legacy = $version -lt [version]'0.3.0'
+          $appArchive = if ($legacy) { 'ChronoMock-win-x64.zip' } else { 'ChronoMock-app-win-x64.zip' }
+          $cliArchive = if ($legacy) { 'chrono-cli-win.zip' }     else { 'ChronoMock-cli-win.zip' }
+          $ours = @{}
+          $ours[$appArchive] = @(
               'ChronoMock/ChronoMock.exe', 'ChronoMock/ChronoMock.dll', 'ChronoMock/ChronoMock.Protocol.dll',
               'ChronoMock/core/x64/chrono.exe', 'ChronoMock/core/x64/chrono_hook.dll',
               'ChronoMock/core/x86/chrono.exe', 'ChronoMock/core/x86/chrono_hook.dll')
-            'ChronoMock-cli-win.zip'     = @(
+          $ours[$cliArchive] = @(
               'chrono-cli/chrono.exe', 'chrono-cli/chrono_hook.dll',
               'chrono-cli/x86/chrono.exe', 'chrono-cli/x86/chrono_hook.dll')
-          }
           $bad = @()
           foreach ($archive in $ours.Keys) {
             $where = "extracted/$([System.IO.Path]::GetFileNameWithoutExtension($archive))"
