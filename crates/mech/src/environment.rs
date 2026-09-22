@@ -50,14 +50,12 @@ pub fn current_environment() -> Vec<(String, String)> {
     }
 }
 
-/// `name=value` into its two halves. The split is at the first `=` AFTER position zero, so a
-/// drive-directory entry's leading `=` stays with the name.
+/// `name=value` into its two halves. The split is at the first `=` AFTER the first character, so a
+/// drive-directory entry's leading `=` stays with the name. By character, not by byte: a name may
+/// start with a character wider than one byte, and a byte slice at offset one would panic on it.
 fn split_entry(text: &str) -> (String, String) {
-    match text[1.min(text.len())..].find('=') {
-        Some(offset) => {
-            let at = offset + 1;
-            (text[..at].to_string(), text[at + 1..].to_string())
-        }
+    match text.char_indices().skip(1).find(|(_, c)| *c == '=') {
+        Some((at, _)) => (text[..at].to_string(), text[at + 1..].to_string()),
         None => (text.to_string(), String::new()),
     }
 }
@@ -145,6 +143,10 @@ mod tests {
         assert_eq!(split_entry("PATH=C:\\bin;D:\\bin"), pair("PATH", "C:\\bin;D:\\bin"));
         assert_eq!(split_entry("EMPTY="), pair("EMPTY", ""));
         assert_eq!(split_entry("NOEQUALS"), pair("NOEQUALS", ""));
+        // A name that starts with a character wider than one byte, and a name that IS one.
+        assert_eq!(split_entry("\u{c4}_NAME=v"), pair("\u{c4}_NAME", "v"));
+        assert_eq!(split_entry("\u{c4}=v"), pair("\u{c4}", "v"));
+        assert_eq!(split_entry("\u{c4}"), pair("\u{c4}", ""));
     }
 
     #[test]

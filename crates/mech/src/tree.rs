@@ -10,7 +10,9 @@
 //! Read every time it is asked, never cached: an engine spawns its processes seconds after the
 //! host starts, and a snapshot from before then would say the family is the host alone.
 
-use windows::Win32::Foundation::CloseHandle;
+use std::collections::{HashMap, HashSet};
+
+use windows::Win32::Foundation::{CloseHandle, GetLastError, ERROR_NO_MORE_FILES};
 use windows::Win32::System::Diagnostics::ToolHelp::{
     CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W, TH32CS_SNAPPROCESS,
 };
@@ -23,11 +25,14 @@ pub fn family_of(root: u32) -> Result<Vec<u32>, String> {
     Ok(descendants(root, &edges))
 }
 
-/// Every `(pid, parent pid)` pair the snapshot holds.
+/// Every `(pid, parent pid)` pair the snapshot holds. The walk ends only on the one error that means
+/// "no more entries" - any other failure is reported, because a list cut short would be handed on
+/// as a family with members missing, and a family missing the process that holds the port is a
+/// search that quietly finds nothing.
 fn parent_edges() -> Result<Vec<(u32, u32)>, String> {
     // SAFETY: the snapshot handle is closed on every path out, and the entry structure carries its
-    // own size as the API requires. The walk stops at the first `Process32NextW` failure, which is
-    // the documented end of the list.
+    // own size as the API requires. The last error is read right after the failing call, before
+    // anything else can overwrite it.
     unsafe {
         let snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0)
             .map_err(|e| format!("CreateToolhelp32Snapshot failed: {e}"))?;
@@ -36,29 +41,42 @@ fn parent_edges() -> Result<Vec<(u32, u32)>, String> {
             ..Default::default()
         };
         let mut edges = Vec::new();
-        if Process32FirstW(snapshot, &mut entry).is_ok() {
-            loop {
-                edges.push((entry.th32ProcessID, entry.th32ParentProcessID));
-                if Process32NextW(snapshot, &mut entry).is_err() {
-                    break;
-                }
+        let mut step = Process32FirstW(snapshot, &mut entry);
+        let outcome = loop {
+            if step.is_err() {
+                let error = GetLastError();
+                break if error == ERROR_NO_MORE_FILES {
+                    Ok(())
+                } else {
+                    Err(format!("the process snapshot ended with error {}", error.0))
+                };
             }
-        }
+            edges.push((entry.th32ProcessID, entry.th32ParentProcessID));
+            step = Process32NextW(snapshot, &mut entry);
+        };
         let _ = CloseHandle(snapshot);
-        Ok(edges)
+        outcome.map(|()| edges)
     }
 }
 
-/// The root and everything under it, breadth first, each pid once. Pure over the edge list, so the
-/// walk is tested on a made-up tree. A parent pid the system has recycled can point a stray process
-/// at the root - the snapshot cannot tell, and neither can this, which is why a caller that has a
-/// hook registry prefers it.
+/// The root and everything under it, each pid once. Pure over the edge list, so the walk is tested
+/// on a made-up tree. The edges are indexed by parent first, so a snapshot of a few hundred
+/// processes read once a second costs one pass over it, not one pass per family member. A parent
+/// pid the system has recycled can point a stray process at the root - the snapshot cannot tell,
+/// and neither can this, which is why a caller that has a hook registry prefers it.
 fn descendants(root: u32, edges: &[(u32, u32)]) -> Vec<u32> {
+    let mut children: HashMap<u32, Vec<u32>> = HashMap::new();
+    for &(pid, ppid) in edges {
+        if pid != ppid {
+            children.entry(ppid).or_default().push(pid);
+        }
+    }
     let mut family = vec![root];
+    let mut seen: HashSet<u32> = HashSet::from([root]);
     let mut frontier = vec![root];
     while let Some(parent) = frontier.pop() {
-        for &(pid, ppid) in edges {
-            if ppid == parent && pid != parent && !family.contains(&pid) {
+        for &pid in children.get(&parent).map(Vec::as_slice).unwrap_or_default() {
+            if seen.insert(pid) {
                 family.push(pid);
                 frontier.push(pid);
             }

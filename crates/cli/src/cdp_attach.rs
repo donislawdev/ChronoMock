@@ -127,7 +127,14 @@ impl Attacher {
                 let sid = params["sessionId"].as_str().unwrap_or("").to_string();
                 let ty = params["targetInfo"]["type"].as_str().unwrap_or("").to_string();
                 let tid = params["targetInfo"]["targetId"].as_str().unwrap_or("").to_string();
-                if sid.is_empty() || !cdp::is_shimmable(&ty) {
+                if sid.is_empty() {
+                    return Pumped::Idle;
+                }
+                if !cdp::is_shimmable(&ty) {
+                    // Auto-attach paused it on start, like everything it delivers. A target with no
+                    // timer of ours to cover is let go at once - left as it arrived, it would stay
+                    // paused for as long as the session ran.
+                    self.resume(&sid);
                     return Pumped::Idle;
                 }
                 self.shim(sid, ty, tid, origin, next_index);
@@ -158,13 +165,18 @@ impl Attacher {
     fn shim(&mut self, sid: String, ty: String, tid: String, origin: ShimOrigin, next_index: &mut u32) {
         // A target reached twice while it is live - auto-attach and the by-name attach can both
         // deliver the same page - stays one context: the shim itself is idempotent, but a second
-        // session on the list would be polled and broadcast to twice.
+        // session on the list would be polled and broadcast to twice. The second session is let go
+        // so it does not sit paused.
         if !tid.is_empty() && self.contexts.iter().any(|c| c.target_id == tid) {
+            self.resume(&sid);
             return;
         }
         let index = context_index_for(&tid, &mut self.index_by_target, next_index);
         if past_ceiling(&self.seen, index) {
+            // Counted, said by the caller (rule 4), and released: a context refused the shim runs on
+            // the real clock, it does not stand paused for the rest of the session.
             self.overflow += 1;
+            self.resume(&sid);
             return;
         }
         let (fake0, real0, mult) = origin;
@@ -189,8 +201,19 @@ impl Attacher {
                     target_id: tid,
                 });
             }
-            Err(_) => self.failed += 1,
+            Err(_) => {
+                // The shim did not take, and the injection stopped before its own resume call: let
+                // the context run unshimmed rather than paused, and count it as uncovered.
+                self.failed += 1;
+                self.resume(&sid);
+            }
         }
+    }
+
+    /// Release a target that auto-attach paused on start. Best effort: a target that is not paused
+    /// answers the same, and one that is already gone errors harmlessly.
+    fn resume(&mut self, sid: &str) {
+        let _ = self.client.call("Runtime.runIfWaitingForDebugger", json!({}), Some(sid));
     }
 
     /// Evaluate a JS expression in every live context (best-effort: a context that just closed

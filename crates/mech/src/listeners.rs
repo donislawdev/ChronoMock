@@ -49,10 +49,11 @@ pub fn listening_sockets() -> Result<Vec<Listener>, String> {
 }
 
 fn read_v4() -> Result<Vec<Listener>, String> {
-    let buffer = read_table(AF_INET)?;
+    let (buffer, len) = read_table(AF_INET)?;
     // SAFETY: the buffer holds a MIB_TCPTABLE_OWNER_PID the system just wrote, sized by the
-    // system's own count. The row pointer arithmetic below goes through the table's declared array
-    // member so alignment and padding are the structure's own, as the documentation asks.
+    // system's own count, in storage aligned for the structure (see `Table`). The row pointer
+    // arithmetic goes through the table's declared array member so padding is the structure's own,
+    // as the documentation asks, and the capacity belt keeps the count inside the bytes written.
     unsafe {
         let table = buffer.as_ptr().cast::<MIB_TCPTABLE_OWNER_PID>();
         let count = (*table).dwNumEntries as usize;
@@ -60,7 +61,7 @@ fn read_v4() -> Result<Vec<Listener>, String> {
         let offset = (first as usize).saturating_sub(table as usize);
         let rows = std::slice::from_raw_parts(
             first,
-            count.min(row_capacity(buffer.len(), offset, std::mem::size_of::<MIB_TCPROW_OWNER_PID>())),
+            count.min(row_capacity(len, offset, std::mem::size_of::<MIB_TCPROW_OWNER_PID>())),
         );
         Ok(rows
             .iter()
@@ -76,7 +77,7 @@ fn read_v4() -> Result<Vec<Listener>, String> {
 }
 
 fn read_v6() -> Result<Vec<Listener>, String> {
-    let buffer = read_table(AF_INET6)?;
+    let (buffer, len) = read_table(AF_INET6)?;
     // SAFETY: as in read_v4, over the IPv6 table type.
     unsafe {
         let table = buffer.as_ptr().cast::<MIB_TCP6TABLE_OWNER_PID>();
@@ -85,7 +86,7 @@ fn read_v6() -> Result<Vec<Listener>, String> {
         let offset = (first as usize).saturating_sub(table as usize);
         let rows = std::slice::from_raw_parts(
             first,
-            count.min(row_capacity(buffer.len(), offset, std::mem::size_of::<MIB_TCP6ROW_OWNER_PID>())),
+            count.min(row_capacity(len, offset, std::mem::size_of::<MIB_TCP6ROW_OWNER_PID>())),
         );
         Ok(rows
             .iter()
@@ -113,9 +114,16 @@ fn port_from_network_order(raw: u32) -> u16 {
     u16::from_be((raw & 0xFFFF) as u16)
 }
 
-/// The raw table for one address family: size it, then fill it, growing the buffer while the table
-/// keeps outgrowing the size it reported a moment earlier.
-fn read_table(family: u32) -> Result<Vec<u8>, String> {
+/// Storage for a table the system fills: `u64` cells, so the buffer's alignment is at least the
+/// eight bytes either table structure could ask for - a `Vec<u8>` promises an alignment of one,
+/// and casting it to a structure with wider fields is undefined behaviour however the allocator
+/// happens to behave. The byte length the system wrote travels beside it.
+type Table = Vec<u64>;
+
+/// The raw table for one address family and the number of bytes the system wrote into it: size it,
+/// then fill it, growing the buffer while the table keeps outgrowing the size it reported a moment
+/// earlier.
+fn read_table(family: u32) -> Result<(Table, usize), String> {
     let mut size: u32 = 0;
     // SAFETY: a null table with size zero is the documented way to ask for the size.
     let sizing = unsafe { GetExtendedTcpTable(None, &mut size, false, family, TCP_TABLE_OWNER_PID_LISTENER, 0) };
@@ -123,13 +131,16 @@ fn read_table(family: u32) -> Result<Vec<u8>, String> {
         return Err(format!("GetExtendedTcpTable sizing failed with {sizing}"));
     }
     for _ in 0..GROW_ATTEMPTS {
-        let mut buffer = vec![0u8; size.max(4) as usize];
-        // SAFETY: the buffer is at least `size` bytes, and the call writes at most `size` bytes,
-        // updating `size` when it needs more.
+        let cells = (size as usize).max(4).div_ceil(std::mem::size_of::<u64>());
+        let mut buffer: Table = vec![0u64; cells];
+        let mut capacity = u32::try_from(buffer.len() * std::mem::size_of::<u64>())
+            .map_err(|_| "GetExtendedTcpTable asked for a table larger than the API can address".to_string())?;
+        // SAFETY: the buffer holds `capacity` bytes, and the call writes at most that many, updating
+        // the size when it needs more.
         let filled = unsafe {
             GetExtendedTcpTable(
                 Some(buffer.as_mut_ptr().cast::<c_void>()),
-                &mut size,
+                &mut capacity,
                 false,
                 family,
                 TCP_TABLE_OWNER_PID_LISTENER,
@@ -137,11 +148,8 @@ fn read_table(family: u32) -> Result<Vec<u8>, String> {
             )
         };
         match WIN32_ERROR(filled) {
-            ERROR_SUCCESS => {
-                buffer.truncate(size as usize);
-                return Ok(buffer);
-            }
-            ERROR_INSUFFICIENT_BUFFER => continue,
+            ERROR_SUCCESS => return Ok((buffer, capacity as usize)),
+            ERROR_INSUFFICIENT_BUFFER => size = capacity,
             other => return Err(format!("GetExtendedTcpTable failed with {}", other.0)),
         }
     }

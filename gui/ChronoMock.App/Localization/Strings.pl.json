@@ -431,6 +431,7 @@
   "chromium.no_contexts": "Nie udało się objąć żadnego kontekstu JS.",
   "chromium.launched_with_debug_port": "Aplikacja Electron/Chromium: uruchomiona z portem zdalnego debugowania i czystym izolowanym profilem, nie Twoim prawdziwym. Dopóki sesja trwa, dowolny inny lokalny proces może przez ten port sterować aplikacją.",
   "chromium.app_closed_before_audit": "Aplikacja zamknęła się, zanim audyt zdążył odczytać końcowe liczniki wywołań - pokrycie może być niepełne.",
+  "chromium.context_ceiling_reached": "Otworzyło się więcej kontekstów JS, niż jedna sesja potrafi objąć (256). Te ponad limit działały na prawdziwym zegarze i nie mają wiersza w audycie.",
   "chromium.rate_change_affects_running_timers": "Prędkość zmieniła się w locie: nowe timery i zegar odzwierciedlają ją od razu, ale już działający setInterval zachowuje stare tempo.",
 
   // Cleanup residue the core reports in `ended.residue_keys` when a teardown could not finish (rules 4, 6). Today only a CDP session raises one (the temporary browser profile could not be removed); a native session always ends clean. Rendered verbatim in the panel and the summary.

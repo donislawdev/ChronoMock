@@ -586,8 +586,11 @@ impl Drop for Session {
 
 /// A process launched WITHOUT the hook, for a probe that needs a host running with the session's
 /// environment and nothing else - the embedded-engine channel proves its port discovery and its
-/// attach on a host it started this way (docs/09). Terminated on drop unless the caller says the
-/// process is theirs to leave: a probe that launched an application owns it.
+/// attach on a host it started this way (docs/09). The process is the owner's for as long as this
+/// value lives and is TERMINATED when it drops, whichever way the owner leaves - an early return
+/// included. A probe that launched an application must never leave it running with the session's
+/// variables in its environment. Nothing today needs to keep such a process alive past its owner,
+/// so there is no way to detach one - the day a caller needs that, it gets a method, not a default.
 pub struct PlainChild {
     pub pid: u32,
     handle: HANDLE,
@@ -627,8 +630,10 @@ impl PlainChild {
 
 impl Drop for PlainChild {
     fn drop(&mut self) {
-        // SAFETY: closing the one handle this struct opened, once.
+        // SAFETY: terminating the process this struct owns (a process already gone fails harmlessly),
+        // then closing the one handle it opened, once.
         unsafe {
+            let _ = TerminateProcess(self.handle, 1);
             let _ = CloseHandle(self.handle);
         }
     }

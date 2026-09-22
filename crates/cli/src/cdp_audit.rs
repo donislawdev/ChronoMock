@@ -64,7 +64,12 @@ pub(crate) fn verdict_keys(verdict: &Verdict) -> (&'static str, &'static str) {
 /// The launch is invasive by construction (our own profile, a debug port), so that one is always
 /// said. The other two are honest caveats rather than failures, and both would be invisible to the
 /// reader if they were left out (rule 6).
-pub(crate) fn session_warnings(app_closed: bool, audited: bool, rate_changed_in_flight: bool) -> Vec<String> {
+pub(crate) fn session_warnings(
+    app_closed: bool,
+    audited: bool,
+    rate_changed_in_flight: bool,
+    context_ceiling_reached: bool,
+) -> Vec<String> {
     let mut warnings = vec!["chromium.launched_with_debug_port".to_string()];
     if app_closed && !audited {
         warnings.push("chromium.app_closed_before_audit".to_string());
@@ -74,6 +79,12 @@ pub(crate) fn session_warnings(app_closed: bool, audited: bool, rate_changed_in_
         // once, but a setInterval already scheduled at the old rate keeps its old cadence - the JS engine
         // had already queued it (rule 4). The native hook has no equivalent gap (it divides Ctl live).
         warnings.push("chromium.rate_change_affects_running_timers".to_string());
+    }
+    if context_ceiling_reached {
+        // The attacher shims at most MAX_CONTEXTS contexts in one session. The ones past that ran on
+        // the real clock and have no row in the audit - the verdict already counts them as uncovered,
+        // and this says why (rule 4).
+        warnings.push("chromium.context_ceiling_reached".to_string());
     }
     warnings
 }
@@ -274,18 +285,23 @@ mod tests {
         }
     }
 
-    /// The two caveats are conditional and the invasive-launch note is not. An app that closed before
-    /// anything could be audited says so, and a rate changed in flight says so, because a running
-    /// setInterval keeps its old cadence (rule 4).
+    /// The three caveats are conditional and the invasive-launch note is not. An app that closed before
+    /// anything could be audited says so, a rate changed in flight says so, because a running
+    /// setInterval keeps its old cadence, and a session that refused contexts past its ceiling says
+    /// so, because those ran on the real clock with no row in the audit (rule 4).
     #[test]
     fn the_session_warnings_say_only_what_happened() {
-        assert_eq!(session_warnings(false, true, false), vec!["chromium.launched_with_debug_port"]);
+        assert_eq!(session_warnings(false, true, false, false), vec!["chromium.launched_with_debug_port"]);
         assert_eq!(
-            session_warnings(true, false, false),
+            session_warnings(true, false, false, false),
             vec!["chromium.launched_with_debug_port", "chromium.app_closed_before_audit"]
         );
         assert_eq!(
-            session_warnings(true, true, true),
+            session_warnings(false, true, false, true),
+            vec!["chromium.launched_with_debug_port", "chromium.context_ceiling_reached"]
+        );
+        assert_eq!(
+            session_warnings(true, true, true, false),
             vec!["chromium.launched_with_debug_port", "chromium.rate_change_affects_running_timers"],
             "an app that closed AFTER being audited has nothing to apologise for"
         );

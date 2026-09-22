@@ -56,16 +56,17 @@ pub(crate) struct Discovery {
 }
 
 impl Discovery {
-    /// Start the thread with an initial family.
-    pub(crate) fn start(family: Vec<u32>) -> Discovery {
+    /// Start the thread with an initial family. A thread that cannot be started (handles or memory
+    /// exhausted) is the caller's to report - the session goes on without the channel, which is
+    /// what `Notice::Unavailable` promises for the table, and a panic here would end it instead.
+    pub(crate) fn start(family: Vec<u32>) -> std::io::Result<Discovery> {
         let (pid_tx, pid_rx) = mpsc::channel::<Vec<u32>>();
         let (notice_tx, notice_rx) = mpsc::channel::<Notice>();
         let _ = pid_tx.send(family);
         thread::Builder::new()
             .name("chrono-discover".into())
-            .spawn(move || run(&pid_rx, &notice_tx))
-            .expect("the discovery thread starts");
-        Discovery { pids: pid_tx, notices: notice_rx }
+            .spawn(move || run(&pid_rx, &notice_tx))?;
+        Ok(Discovery { pids: pid_tx, notices: notice_rx })
     }
 
     /// The family as of now. The thread uses the latest set it has received.

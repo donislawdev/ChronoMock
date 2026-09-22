@@ -253,6 +253,29 @@ public class BinaryImportsTests
     }
 
     // -----------------------------------------------------------------------------------------------
+    // B1a. A module registered for ONE function imports exactly that function
+    // -----------------------------------------------------------------------------------------------
+
+    /// <summary>
+    /// The register grants <c>iphlpapi.dll</c> to the core for one call, and a register that checks
+    /// module names alone would let a second call from the same module in under the same entry. This
+    /// reads the function list off the import table and pins it, on both bitnesses.
+    /// </summary>
+    /// <remarks>
+    /// Reversal probe: import one more function from the module and this reddens on the set.
+    /// </remarks>
+    [Fact]
+    public void The_ip_helper_module_is_imported_for_exactly_the_one_call_the_register_allows()
+    {
+        foreach (var triple in new[] { X64, X86 })
+        {
+            var table = PeImportTable.Read(RepoPaths.ReleaseBinary(RepoPaths.RepoRoot(), triple, "chrono.exe"));
+            var entry = Assert.Single(table.Entries, e => SameModule(e.Name, "iphlpapi.dll"));
+            Assert.Equal(["GetExtendedTcpTable"], entry.Functions.Order(StringComparer.Ordinal));
+        }
+    }
+
+    // -----------------------------------------------------------------------------------------------
     // B2. The register describes imports that exist
     // -----------------------------------------------------------------------------------------------
 

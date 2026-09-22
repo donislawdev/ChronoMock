@@ -93,9 +93,16 @@ pub(crate) fn cdp_session(target: TargetSpec, time: TimeSpec, reader: BufReader<
             return 2;
         }
     };
-    // The attacher connects to the browser endpoint and arms auto-attach in one step - the two
-    // failures it can have (no endpoint, no auto-attach) are one honest error here, as before.
-    let mut attacher = match Attacher::connect(launched.port) {
+    // The contexts, their counts and their indexes live in the attacher (cdp_attach) - the index
+    // counter stays here, because it is the session's: several attachers in one session must hand
+    // out disjoint indexes, and that is the shape the embedded-engine channel needs (docs/09).
+    let mut next_index = 0u32;
+    // The attacher connects to the browser endpoint, arms auto-attach and attaches by name to the
+    // pages the browser already has - measured, auto-attach delivers those too, and the by-name pass
+    // is the belt for an engine where it does not. Any failure is one honest error here, as before.
+    let mut attacher = match Attacher::connect(launched.port)
+        .and_then(|mut a| a.attach_existing(clock.shim_origin(), &mut next_index).map(|_| a))
+    {
         Ok(a) => a,
         Err(e) => {
             let residue = launched.shutdown_with_residue();
@@ -122,10 +129,6 @@ pub(crate) fn cdp_session(target: TargetSpec, time: TimeSpec, reader: BufReader<
 
     // Install the shim into every context as it attaches (page and its Web Workers), beat a ~1 s
     // `state` heartbeat, and sample per-context call counts, until `end`, stdin EOF, or the app closes.
-    // The contexts, their counts and their indexes live in the attacher (cdp_attach) - the index
-    // counter stays here, because it is the session's - several attachers in one session must hand
-    // out disjoint indexes, and that is the shape the embedded-engine channel needs (docs/09).
-    let mut next_index = 0u32;
     let mut app_closed = false;
     let heartbeat = Duration::from_secs(1);
     let mut deadline = Instant::now() + heartbeat;
@@ -214,19 +217,23 @@ pub(crate) fn cdp_session(target: TargetSpec, time: TimeSpec, reader: BufReader<
     }
     attacher.poll_counts(); // final best-effort read
     let seen = attacher.seen().to_vec();
+    // A context the shim did not take in and a context refused past the ceiling are the same fact
+    // to the verdict: a context that ran on the real clock (untouchable rule 4). The ceiling gets
+    // its own warning so the reader learns WHY, not just that some were missed.
     let failed = attacher.failed();
+    let past_ceiling = attacher.overflow();
     let counts = attacher.into_counts();
     let audited = !counts.is_empty();
 
     let covered = covered_channels(counts);
 
-    let verdict = cdp_verdict(seen.len(), !covered.is_empty(), failed);
+    let verdict = cdp_verdict(seen.len(), !covered.is_empty(), failed + past_ceiling);
     let (token, reason) = verdict_keys(&verdict);
 
     for event in coverage_events(
         &seen,
         &covered,
-        session_warnings(app_closed, audited, rate_changed_in_flight),
+        session_warnings(app_closed, audited, rate_changed_in_flight, past_ceiling > 0),
     ) {
         emit(&event);
     }

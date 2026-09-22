@@ -10,6 +10,7 @@
 //! No hook and no protocol here: this is a probe, like `__cdp-shim` and `__cdp-date`, and it prints
 //! text. Exit 0 when at least one context was shimmed, 2 otherwise.
 
+use std::thread;
 use std::time::{Duration, Instant};
 
 use crate::cdp;
@@ -20,6 +21,11 @@ use crate::zone::{moment_epoch_ms, now_epoch_ms};
 
 const USAGE: &str = "usage: chrono __cdp-embedded --at <YYYY-MM-DDTHH:MM:SS> [--multiplier N] [--seconds S] \
                      [--cwd <dir>] (--launch <host.exe> [args...] | --pid <pid>)";
+
+/// How long a turn with nothing to pump waits before the next one. With no attacher yet, nothing
+/// in the loop blocks - discovery is polled, not awaited - and a host that takes a minute to open
+/// its engine would otherwise cost a core for that minute.
+const TURN: Duration = Duration::from_millis(50);
 
 /// The probe's arguments, parsed by hand like the other probes: everything after `--launch <exe>`
 /// belongs to the host.
@@ -124,7 +130,15 @@ pub(crate) fn cdp_embedded_probe(argv: &[String]) -> i32 {
     };
 
     let family = family_of(root);
-    let discovery = Discovery::start(family);
+    // `launched`, when there is one, terminates its host on every way out of this function - the
+    // early returns below included - because PlainChild does that on drop.
+    let discovery = match Discovery::start(family) {
+        Ok(d) => d,
+        Err(e) => {
+            eprintln!("chrono: discovery thread did not start: {e}");
+            return 2;
+        }
+    };
     let mut attachers: Vec<Attacher> = Vec::new();
     let mut next_index = 0u32;
     let started = Instant::now();
@@ -141,6 +155,11 @@ pub(crate) fn cdp_embedded_probe(argv: &[String]) -> i32 {
         while let Some(notice) = discovery.try_recv() {
             match notice {
                 Notice::Found(found) => {
+                    // Discovery forgets a pair whose socket left one sweep of the table, so a port
+                    // that blinks out and back is found twice - and one attacher per port is the rule.
+                    if attachers.iter().any(|a| a.port() == found.port) {
+                        continue;
+                    }
                     println!(
                         "t+{:.1}s found port {} on pid {} ({})",
                         started.elapsed().as_secs_f64(),
@@ -174,6 +193,9 @@ pub(crate) fn cdp_embedded_probe(argv: &[String]) -> i32 {
             }
             Pumped::Detached | Pumped::Idle => true,
         });
+        if attachers.is_empty() {
+            thread::sleep(TURN);
+        }
         if last_tick.elapsed() >= Duration::from_secs(1) {
             last_tick = Instant::now();
             discovery.update_family(family_of(root));
@@ -198,8 +220,9 @@ pub(crate) fn cdp_embedded_probe(argv: &[String]) -> i32 {
     let failed: usize = attachers.iter().map(Attacher::failed).sum();
     let overflow: usize = attachers.iter().map(Attacher::overflow).sum();
     println!("summary: ports {} contexts {shimmed} failed {failed} past-ceiling {overflow}", attachers.len());
-    if let Some(child) = launched {
-        child.terminate();
+    if launched.is_some() {
+        // Explicitly here for the printout - the drop at the end of the function would do it too.
+        drop(launched);
         println!("host terminated");
     }
     if shimmed > 0 { 0 } else { 2 }
