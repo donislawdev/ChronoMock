@@ -504,12 +504,25 @@ pub(crate) fn apply_command(session: &mut chrono_mech::Session, bridge: &mut Emb
 /// child reads the fake date is a session that WORKED. Per-process counts are already on each
 /// `coverage` event for whoever wants them.
 ///
-/// The counters are read with a volatile 64-bit load, which on x86 is two 32-bit loads and can tear
-/// while the target runs. That cannot produce a false zero here: a torn read of a non-zero count
-/// still carries its low word, and the low word of anything from one upward is not zero.
-pub(crate) fn substituted_reads(coverage: &[(u32, Coverage)]) -> Option<u64> {
-    let mut any_channel = false;
-    let mut total: u64 = 0;
+/// 🔴 The pages inside the application count too, and leaving them out was a real bug. A hybrid
+/// session substitutes the clock twice over - natively in the host, and in the host's embedded web
+/// engine through its debugging port - and those two halves are tallied in different places
+/// (`read_all_coverage` against `pages.counts`). An application whose time logic lives in its web UI
+/// can have a host that never reads a substituted export while its pages read `Date.now` all
+/// session: native-only, that is `Some(0)`, and the report would have carried
+/// `embedded.web_engine_reached` and "no process ever read a clock the session substitutes" side by
+/// side. `page_reads` arrives already filtered to counts above zero (CDP coverage means CALLED, not
+/// merely hooked), so an empty slice really does mean the pages read nothing.
+///
+/// The native counters are read with a volatile 64-bit load, which on x86 is two 32-bit loads and
+/// can tear while the target runs. That cannot produce a false zero here: a torn read of a non-zero
+/// count still carries its low word, and the low word of anything from one upward is not zero.
+pub(crate) fn substituted_reads(
+    coverage: &[(u32, Coverage)],
+    page_reads: &[(u32, String, u64)],
+) -> Option<u64> {
+    let mut any_channel = !page_reads.is_empty();
+    let mut total: u64 = page_reads.iter().fold(0u64, |sum, (_, _, calls)| sum.saturating_add(*calls));
     for (_, cov) in coverage {
         for channel in &cov.covered {
             any_channel = true;
@@ -626,7 +639,7 @@ pub(crate) fn close_session(
         uncovered_processes,
         clock_clamped || final_state.clock_at_range_end(),
         duration_clamped || final_state.duration_at_range_end(),
-        substituted_reads(&final_coverage),
+        substituted_reads(&final_coverage, &page_rows),
     );
     let mut children_warnings = uncovered_children_warnings(&uncovered_children, uncovered_children_total);
     reconcile_engine_warnings(&mut children_warnings, pages.pages_reached());
@@ -1047,14 +1060,14 @@ mod tests {
     /// wrong cause.
     #[test]
     fn a_family_that_never_read_is_told_apart_from_one_we_know_nothing_about() {
-        assert_eq!(substituted_reads(&[]), None, "no process reported at all");
+        assert_eq!(substituted_reads(&[], &[]), None, "no process reported at all");
         assert_eq!(
-            substituted_reads(&family(&[(10, &[], &[])])),
+            substituted_reads(&family(&[(10, &[], &[])]), &[]),
             None,
             "a process with not one substituted channel is a failed install, not a quiet target"
         );
         assert_eq!(
-            substituted_reads(&family(&[(10, &[("GetSystemTime", 0), ("NtQuerySystemTime", 0)], &[])])),
+            substituted_reads(&family(&[(10, &[("GetSystemTime", 0), ("NtQuerySystemTime", 0)], &[])]), &[]),
             Some(0),
             "channels substituted and never called is the fact this exists for"
         );
@@ -1069,9 +1082,9 @@ mod tests {
             (10, &[("GetSystemTime", 0)], &[]),
             (11, &[("GetSystemTime", 4)], &[]),
         ]);
-        assert_eq!(substituted_reads(&quiet_parent_busy_child), Some(4));
+        assert_eq!(substituted_reads(&quiet_parent_busy_child, &[]), Some(4));
         assert!(
-            native_session_warnings(0, false, false, substituted_reads(&quiet_parent_busy_child))
+            native_session_warnings(0, false, false, substituted_reads(&quiet_parent_busy_child, &[]))
                 .is_empty(),
             "the family read the session clock, so there is nothing to caution about"
         );
@@ -1088,11 +1101,55 @@ mod tests {
             &[("GetSystemTimeAsFileTime", 0)],
             &[("WaitForSingleObject", 37), ("Sleep", 12)],
         )]);
-        assert_eq!(substituted_reads(&only_waits), Some(0));
+        assert_eq!(substituted_reads(&only_waits, &[]), Some(0));
         assert_eq!(
-            native_session_warnings(0, false, false, substituted_reads(&only_waits)),
+            native_session_warnings(0, false, false, substituted_reads(&only_waits, &[])),
             vec!["coverage.session_clock_never_read"],
             "thirty-seven object waits are not one look at the fake date"
+        );
+    }
+
+    /// 🔴 The pages inside the application are half the session, and counting only the native half
+    /// was a real bug (caught in review on PR #40, before it shipped).
+    ///
+    /// A hybrid session substitutes the clock twice over - natively in the host, and in the host's
+    /// embedded web engine through its debugging port - and the two halves are tallied in different
+    /// places. An application whose time logic lives in its web UI can have a host that never touches
+    /// a substituted export while its pages read `Date.now` all session. Native-only, that is
+    /// `Some(0)`, and the verdict would have carried `embedded.web_engine_reached` and "no process
+    /// ever read a clock the session substitutes" on the same screen.
+    #[test]
+    fn pages_reading_the_fake_clock_count_as_much_as_the_host_does() {
+        let silent_host = family(&[(10, &[("GetSystemTimeAsFileTime", 0)], &[])]);
+        let pages_read = [(0u32, "page Date.now".to_string(), 9u64)];
+        assert_eq!(
+            substituted_reads(&silent_host, &pages_read),
+            Some(9),
+            "the host read nothing and the pages read nine - the session substituted for both"
+        );
+        assert!(
+            native_session_warnings(0, false, false, substituted_reads(&silent_host, &pages_read))
+                .is_empty(),
+            "warning here would contradict embedded.web_engine_reached on the same verdict"
+        );
+        // The paired direction, so the line above cannot pass by never firing: the same host with
+        // pages that were reached and stayed silent is still a session nobody read the clock in.
+        assert_eq!(
+            native_session_warnings(0, false, false, substituted_reads(&silent_host, &[])),
+            vec!["coverage.session_clock_never_read"]
+        );
+    }
+
+    /// Pages alone can carry the answer. A session whose native side established no substituted
+    /// channel at all is `None` on its own - but if the engine inside it read the fake date, the
+    /// question WAS answerable and the answer is not zero.
+    #[test]
+    fn pages_alone_make_the_question_answerable() {
+        assert_eq!(substituted_reads(&[], &[(0, "page Date.now".to_string(), 3)]), Some(3));
+        assert_eq!(
+            substituted_reads(&[], &[]),
+            None,
+            "no native channel and no page read is still nothing to go on"
         );
     }
 
