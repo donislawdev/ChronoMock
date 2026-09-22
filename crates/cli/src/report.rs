@@ -437,9 +437,23 @@ const GO_BUILDINFO_MAGIC: &[u8] = b"\xff Go buildinf:";
 /// four kilobytes covers it with room to spare on every binary we have measured.
 const PE_HEADER_WINDOW: u64 = 4096;
 
-/// How far into `.data` to look for the magic. Measured on a Go binary built here: the blob starts
-/// TWO bytes into the section, so this is generous by four orders of magnitude - and bounded on
-/// purpose, because the alternative is reading a half-gigabyte target to answer one yes-or-no.
+/// The whole header the Go linker writes: the magic, then version-dependent fields. Go's own
+/// `debug/buildinfo` puts that header at 32 bytes.
+///
+/// We require it to be COMPLETE and deliberately do not READ the fields. Parsing them would trade a
+/// yes-or-no answer for a version-dependent one - the layout changed with Go 1.18 - and buy nothing,
+/// because the fourteen magic bytes already identify the linker that wrote them. Requiring the full
+/// header costs nothing and refuses a magic sitting at the very tail of what we read.
+const GO_BUILDINFO_HEADER: usize = 32;
+
+/// How far into `.data` to look. Bounded on purpose: the alternative is reading a half-gigabyte
+/// target to answer one yes-or-no.
+///
+/// Measured on FOUR binaries - x64 and x86, stripped and not, one with a four-megabyte global array -
+/// and the blob sits at offset ZERO of the section in every one, with `.data` itself between 36 and
+/// 51 KiB. So this window reads the whole section on everything measured. (An earlier comment here
+/// said the blob starts TWO bytes in. That was wrong and it was mine: I had searched for the
+/// readable `Go buildinf:`, which begins two bytes inside the fourteen-byte magic.)
 const GO_DATA_WINDOW: usize = 64 * 1024;
 
 /// Whether this executable was produced by the Go toolchain.
@@ -494,7 +508,8 @@ fn go_buildinfo_in_data(target_path: &std::path::Path) -> Option<bool> {
         let mut data: Vec<u8> = Vec::new();
         file.seek(SeekFrom::Start(raw)).ok()?;
         file.by_ref().take(size.min(GO_DATA_WINDOW) as u64).read_to_end(&mut data).ok()?;
-        return Some(data.windows(GO_BUILDINFO_MAGIC.len()).any(|w| w == GO_BUILDINFO_MAGIC));
+        let at = data.windows(GO_BUILDINFO_MAGIC.len()).position(|w| w == GO_BUILDINFO_MAGIC);
+        return Some(matches!(at, Some(start) if data.len() - start >= GO_BUILDINFO_HEADER));
     }
     Some(false)
 }
@@ -1066,25 +1081,25 @@ mod tests {
     /// Built here rather than pointing at a Go binary on this machine, and that is the whole point:
     /// the probe binaries live outside the repository, so a test that read one would pass here and
     /// fail on every clean runner - the exact shape that kept CI red for four pushes once already.
-    fn synthetic_pe(nazwa_sekcji: &[u8; 8], dane: &[u8]) -> Vec<u8> {
+    fn synthetic_pe(section_name: &[u8; 8], data: &[u8]) -> Vec<u8> {
         let pe_at: usize = 0x80;
         let table = pe_at + 24 + 224;
         let raw = 0x400usize;
-        let mut bytes = vec![0u8; raw + dane.len().max(1)];
+        let mut bytes = vec![0u8; raw + data.len().max(1)];
         bytes[..2].copy_from_slice(b"MZ");
         bytes[0x3C..0x40].copy_from_slice(&(pe_at as u32).to_le_bytes());
         bytes[pe_at..pe_at + 4].copy_from_slice(b"PE\0\0");
         bytes[pe_at + 6..pe_at + 8].copy_from_slice(&1u16.to_le_bytes()); // one section
         bytes[pe_at + 20..pe_at + 22].copy_from_slice(&224u16.to_le_bytes()); // optional header size
-        bytes[table..table + 8].copy_from_slice(nazwa_sekcji);
-        bytes[table + 16..table + 20].copy_from_slice(&(dane.len() as u32).to_le_bytes());
+        bytes[table..table + 8].copy_from_slice(section_name);
+        bytes[table + 16..table + 20].copy_from_slice(&(data.len() as u32).to_le_bytes());
         bytes[table + 20..table + 24].copy_from_slice(&(raw as u32).to_le_bytes());
-        bytes[raw..raw + dane.len()].copy_from_slice(dane);
+        bytes[raw..raw + data.len()].copy_from_slice(data);
         bytes
     }
 
-    fn write_probe(nazwa: &str, bytes: &[u8]) -> std::path::PathBuf {
-        let path = std::env::temp_dir().join(format!("chrono-go-fingerprint-{nazwa}.bin"));
+    fn write_probe(name: &str, bytes: &[u8]) -> std::path::PathBuf {
+        let path = std::env::temp_dir().join(format!("chrono-go-fingerprint-{name}.bin"));
         std::fs::write(&path, bytes).expect("probe file");
         path
     }
@@ -1094,21 +1109,33 @@ mod tests {
     /// a test that checks a single case.
     #[test]
     fn the_go_fingerprint_answers_on_the_magic_and_not_on_the_section_alone() {
-        let mut z_magia = GO_BUILDINFO_MAGIC.to_vec();
-        z_magia.extend_from_slice(b"\x08\x00go1.27.0");
-        let go = write_probe("go", &synthetic_pe(b".data\0\0\0", &z_magia));
+        // A header the size the linker really writes: the magic, the pointer-size and flags bytes,
+        // then the rest of the thirty-two, then whatever the version fields hold. The first draft of
+        // this fixture stopped at twenty-four bytes and the completeness check rejected it - which is
+        // the check earning its place rather than a fixture being awkward.
+        let mut with_magic = GO_BUILDINFO_MAGIC.to_vec();
+        with_magic.extend_from_slice(&[0x08, 0x02]);
+        with_magic.extend_from_slice(&[0u8; 16]);
+        with_magic.extend_from_slice(b"go1.27.0");
+        let go = write_probe("go", &synthetic_pe(b".data\0\0\0", &with_magic));
         assert!(is_go_binary(&go), "the magic sits in .data and this is what Go leaves there");
 
         // Same section, same size, no magic: a perfectly ordinary binary must not be accused.
-        let inny = write_probe("inny", &synthetic_pe(b".data\0\0\0", b"zwykle dane, zaden linker Go"));
-        assert!(!is_go_binary(&inny), "a .data section is not evidence - the magic is");
+        let plain = write_probe("plain", &synthetic_pe(b".data\0\0\0", b"ordinary bytes, no Go linker anywhere"));
+        assert!(!is_go_binary(&plain), "a .data section is not evidence - the magic is");
 
         // The magic present but somewhere we do not look. Go puts it two bytes into .data, and this
         // pins that we read the SECTION rather than trusting any occurrence anywhere in the file.
-        let obok = write_probe("obok", &synthetic_pe(b".rdata\0\0", &z_magia));
-        assert!(!is_go_binary(&obok), "read .data, not whatever section happens to carry the bytes");
+        let neighbour = write_probe("neighbour", &synthetic_pe(b".rdata\0\0", &with_magic));
+        assert!(!is_go_binary(&neighbour), "read .data, not whatever section happens to carry the bytes");
 
-        for p in [go, inny, obok] {
+        // The magic with nothing behind it. Go's header is 32 bytes and the linker never writes a
+        // truncated one, so this can only be a coincidence sitting at the tail of what we read -
+        // and a coincidence is not evidence.
+        let tail = write_probe("tail", &synthetic_pe(b".data\0\0\0", GO_BUILDINFO_MAGIC));
+        assert!(!is_go_binary(&tail), "fourteen bytes with no header behind them prove nothing");
+
+        for p in [go, plain, neighbour, tail] {
             let _ = std::fs::remove_file(p);
         }
     }
@@ -1117,13 +1144,13 @@ mod tests {
     /// have - an audit that invents one is no better than an audit that hides one (rule 4).
     #[test]
     fn an_unreadable_or_malformed_target_is_never_called_a_go_binary() {
-        assert!(!is_go_binary(std::path::Path::new("nie ma takiego pliku.exe")));
-        let urwany = write_probe("urwany", b"MZ");
-        assert!(!is_go_binary(&urwany), "a two-byte file is not a PE");
-        let nie_pe = write_probe("niepe", &vec![0u8; 8192]);
-        assert!(!is_go_binary(&nie_pe), "zeroes are not a PE either");
-        let _ = std::fs::remove_file(urwany);
-        let _ = std::fs::remove_file(nie_pe);
+        assert!(!is_go_binary(std::path::Path::new("no such file anywhere.exe")));
+        let truncated = write_probe("truncated", b"MZ");
+        assert!(!is_go_binary(&truncated), "a two-byte file is not a PE");
+        let not_pe = write_probe("not_pe", &vec![0u8; 8192]);
+        assert!(!is_go_binary(&not_pe), "zeroes are not a PE either");
+        let _ = std::fs::remove_file(truncated);
+        let _ = std::fs::remove_file(not_pe);
     }
 
     #[test]
