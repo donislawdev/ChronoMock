@@ -62,6 +62,17 @@ public partial class ComponentCatalogue : UserControl
         new(string.Empty, IsUnnamed: true, string.Empty, IsRenderer: false, 2),
     ];
 
+    /// <summary>Every kind of row the engine fold can produce: an engine that named itself, one that named
+    /// nothing and takes the word instead, and the extremes - a name far longer than any engine reports and
+    /// the highest port number there is.</summary>
+    public IReadOnlyList<EngineRow> SampleEngineRows { get; } =
+    [
+        new("Engine/153.0", IsUnnamed: false, 61868),
+        new("python/3.14", IsUnnamed: false, 5123),
+        new(string.Empty, IsUnnamed: true, 9222),
+        new("AnEmbeddedWebEngineThatReportsAnImpossiblyLongVersionString/153.0.3283.0", IsUnnamed: false, 65535),
+    ];
+
     /// <summary>The date input with nothing typed yet, so the hint shows and the calendar has no selection.
     /// A MomentField rather than a stub, so the catalogue draws the part over the same object the
     /// screens bind it to.</summary>

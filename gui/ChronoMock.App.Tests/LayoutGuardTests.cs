@@ -1118,6 +1118,108 @@ public class LayoutGuardTests
     }
 
     /// <summary>
+    /// A session that reached a web engine inside the application names it and the port it was reached on,
+    /// under the process table and above the warnings.
+    /// </summary>
+    /// <remarks>
+    /// 🔴 THIS GUARD EXISTS BECAUSE THE SCREEN WAS SILENT ABOUT BOTH. The wire has carried
+    /// <c>session_verdict.engines</c> since slice C and the CLI report printed "on port N (pid M)" from it,
+    /// while the GUI showed the warning that a debugging port stands open to other programs for as long as
+    /// the engine runs - and no way to learn which port that was. A warning whose subject cannot be
+    /// identified is one nobody can act on.
+    ///
+    /// The order is part of the claim: the engines sit between the processes that stayed on the real clock
+    /// and the warnings, the way the CLI report lays them out, because the warning about the port comes
+    /// after the list that names it.
+    ///
+    /// Reversal probes: delete EngineBlock from AuditSectionView.xaml and this reddens on visibility. Drop
+    /// the port cell from EngineRowTemplate and it reddens on the port. Move the block above ProcessBlock
+    /// and it reddens on the order.
+    /// </remarks>
+    [Fact]
+    public void A_session_that_reached_a_web_engine_names_it_and_its_port_under_the_process_table()
+    {
+        var (block, cells, engineTop, processTop, warningsTop) = WpfTestHost.InvokeSettled(() =>
+        {
+            var view = ResultView(PhaseStates.ResultPartialWithEmbeddedPages());
+            LayoutProbe.Settle(view);
+            var elements = LayoutProbe.Walk(view);
+            var table = elements.Single(e => e.Name == "EngineTable");
+            var texts = elements
+                .Where(e => e.Kind == nameof(TextBlock) && e.IsVisible && table.Bounds.Contains(e.Bounds))
+                .Select(e => e.Text)
+                .ToList();
+            return (
+                elements.Single(e => e.Name == "EngineBlock").IsVisible,
+                texts,
+                table.Bounds.Top,
+                elements.Single(e => e.Name == "ProcessTable").Bounds.Top,
+                elements.Single(e => e.Name == "AuditWarnings").Bounds.Top);
+        });
+
+        Assert.True(block, "the engine the session reached is not on the result screen");
+        Assert.Contains("Engine/153.0", cells);
+        Assert.Contains("61868", cells);
+        Assert.True(processTop < engineTop, "the engines are not under the processes that stayed on the real clock");
+        Assert.True(engineTop < warningsTop, "the warning about the open port comes before the list that names it");
+    }
+
+    /// <summary>
+    /// An engine name longer than its column trims and leaves the port where the reader can read it.
+    /// </summary>
+    /// <remarks>
+    /// The name comes out of the engine's own version endpoint, so its length is not ours to promise, and
+    /// the well does not scroll sideways. Reversal probe: drop MaxWidth from the name cell in
+    /// EngineRowTemplate and this reddens on the cell's width, and again on the port's right edge.
+    ///
+    /// 🔴 The ceiling has to be on the CELL. WPF ignores MaxWidth on a ColumnDefinition in a SharedSizeGroup
+    /// - measured on the process table, 1 346 px of cell under a 268 px column ceiling.
+    /// </remarks>
+    [Fact]
+    public void An_engine_name_longer_than_its_column_trims_and_keeps_the_port_on_the_card()
+    {
+        var (ceiling, nameWidth, portRight, tableRight) = WpfTestHost.InvokeSettled(() =>
+        {
+            var model = PhaseStates.WithEngine(PhaseStates.ResultPartial(), new string('y', 200) + "/1.0");
+            var view = ResultView(model);
+            LayoutProbe.Settle(view);
+            var elements = LayoutProbe.Walk(view);
+            var table = elements.Single(e => e.Name == "EngineTable");
+            // Found by their row rather than by lying inside the table: a cell that overflowed the table is
+            // the failure this guard reads for, and a containment filter would report it as "no such cell".
+            var cells = elements
+                .Where(e => e.Kind == nameof(TextBlock) && e.IsVisible
+                    && e.Bounds.Top >= table.Bounds.Top && e.Bounds.Bottom <= table.Bounds.Bottom)
+                .ToList();
+            var name = cells.Single(e => e.Text.StartsWith("yyyy", StringComparison.Ordinal));
+            var port = cells.Single(e => e.Text == "61868");
+            return (
+                (double)view.FindResource("EngineNameColumnMaxWidth"),
+                name.Bounds.Width,
+                port.Bounds.Right,
+                table.Bounds.Right);
+        });
+
+        Assert.True(nameWidth <= ceiling, $"the name cell is {nameWidth:F0} px wide against a ceiling of {ceiling:F0}");
+        Assert.True(portRight <= tableRight + 0.5, $"the port ends at {portRight:F0}, past the table's edge at {tableRight:F0}");
+    }
+
+    /// <summary>A session that reached no web engine shows no engine table - an empty table would be an
+    /// answer to a question nobody asked, and worse, would read as "an engine was found and named nothing".</summary>
+    [Fact]
+    public void A_session_that_reached_no_web_engine_shows_no_engine_table()
+    {
+        var visible = WpfTestHost.InvokeSettled(() =>
+        {
+            var view = ResultView(PhaseStates.ResultPartial());
+            LayoutProbe.Settle(view);
+            return LayoutProbe.Walk(view).Single(e => e.Name == "EngineBlock").IsVisible;
+        });
+
+        Assert.False(visible, "the engine table is on screen for a session that reached no engine");
+    }
+
+    /// <summary>
     /// The two clocks share the outer edges of the card under them, and the channel between them is wider
     /// than the padding inside either.
     /// </summary>

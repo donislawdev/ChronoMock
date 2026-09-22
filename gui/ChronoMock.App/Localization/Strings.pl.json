@@ -387,6 +387,13 @@
   // after a colon, with nothing after.
   "audit.processes_more_before": "Dalszych procesów, których ten raport nie nazwał:",
   "audit.processes_more_after": "",
+  // The engine table. "DevTools" stays untranslated, the way Chromium and Electron do: it is the browser
+  // tool's own name, and a translated one would name something the reader cannot find under that name.
+  "audit.engines_heading": "Silniki webowe osiągnięte wewnątrz aplikacji",
+  "audit.col_engine": "Silnik",
+  "audit.col_port": "Port",
+  "audit.engine_unnamed": "silnik",
+  "audit.engines_note": "Ich strony szły zegarem sesji. Pod ten port podłącza się własny DevTools, żeby je obejrzeć.",
   "coverage.reads": "{0} - odczytano {1} razy",
   "coverage.reads_one": "{0} - odczytano raz",
   "coverage.family_note": "Uruchomiło się kilka procesów - liczniki wywołań są z pierwszego, a ostrzeżenia i wszystko czytane z prawdziwego zegara dotyczą wszystkich.",
@@ -475,6 +482,8 @@
   "report.process_line": "pid {0}: {1}, uruchomiony przez pid {2}",
   "report.process_line_role": "pid {0}: {1} ({2}), uruchomiony przez pid {3}",
   "report.processes_more": "dalszych procesów, których ten raport nie nazwał: {0}",
+  "report.engines_reached": "silniki webowe osiągnięte wewnątrz aplikacji, których strony szły zegarem sesji",
+  "report.engine_line": "{0} na porcie {1} (pid {2})",
   "report.requested": "żądano: {0} (strefa {1}, tryb {2})",
 
   // Session history (chrono-mock 7.2, 8.8, 11.1 pt 13). Local-only; clicking an entry fills the setup form and never starts a session (untouchable rule 7, docs/04 section 6).
