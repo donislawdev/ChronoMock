@@ -285,7 +285,7 @@ fn session_block(p: &Plan) -> String {
     // Chromium target is driven over its own debug port either way, so there the line says nothing.
     if !p.chromium {
         out.push_str(&note(if p.ra.embedded {
-            "web pages inside the app: reached through the app's own web engine, if it has one (--no-embedded turns this off)"
+            "web pages inside the app: the session will try to reach them through the app's own web engine, if it has one - only the session report can say whether it did (--no-embedded turns this off)"
         } else {
             "--no-embedded: web pages inside the app are left on the real clock"
         }));
@@ -394,8 +394,10 @@ struct SessionJson<'a> {
     set_after: Option<[i64; 2]>,
     jump_after: Option<(u64, &'a str)>,
     force: bool,
-    /// Whether the web pages inside the application would be reached through its embedded web
-    /// engine (docs/09). Always false for a Chromium target, which is driven over its own port.
+    /// Whether the session is asked to reach the web pages inside the application through its
+    /// embedded web engine (docs/09) - a setting, like `force` beside it, not an outcome: whether an
+    /// engine exists and whether its pages were reached is what the finished session's report says.
+    /// Always false for a Chromium target, which is driven over its own port.
     embedded: bool,
     /// The path `--report` named. A dry run does not write it.
     report: Option<&'a str>,

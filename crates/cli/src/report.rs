@@ -253,7 +253,7 @@ pub(crate) fn describe_warning(key: &str) -> String {
             "the port reserved for a Qt WebEngine debugging endpoint was held by something else by the time the engine would have bound it, so its pages could not be reached and ran on the real clock"
         }
         "embedded.zone_is_host" => {
-            "the pages inside this application read this machine's time zone rather than the session's, so a local time they show differs from the host's by the zone offset"
+            "the pages inside this application use this machine's time zone rather than the session's, so a local time they show can differ from the session's local time (the rest of the application reads the session zone)"
         }
         "embedded.registry_arguments_hidden" => {
             "a WebView2 AdditionalBrowserArguments policy value for this application exists in the registry, and the session's environment variable hid it for the session - any flags it carried (a debugging port of your own, say) were not applied"

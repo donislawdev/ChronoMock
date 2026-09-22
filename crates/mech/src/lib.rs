@@ -17,7 +17,7 @@ mod policy;
 mod tree;
 
 pub use environment::{current_environment, encode_block, environment_block, merge_entries};
-pub use listeners::{listening_sockets, Listener};
+pub use listeners::{listening_sockets, Listener, IPV4_ANY_ADDR, IPV4_LOOPBACK_ADDR};
 pub use policy::webview2_arguments_policy_present;
 pub use tree::family_of;
 

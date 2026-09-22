@@ -146,7 +146,9 @@ fn candidates(table: &[chrono_mech::Listener], family: &HashSet<u32>) -> Vec<chr
 
 /// Whether the port reserved for a Qt engine is held by something that is not its DevTools endpoint:
 /// a listener on it outside the family, or one inside the family whose retries as DevTools are spent.
-/// Pure over the table and the memory, so both shapes are tested without a socket.
+/// Only a socket that stands in the way of the engine's own bind (`127.0.0.1:<port>`) counts - an IPv6
+/// socket or one on another IPv4 address on the same port leaves that bind free, and would make this
+/// a false alarm. Pure over the table and the memory, so every shape is tested without a socket.
 fn reserved_port_taken(
     table: &[chrono_mech::Listener],
     family: &HashSet<u32>,
@@ -155,7 +157,7 @@ fn reserved_port_taken(
 ) -> bool {
     table
         .iter()
-        .filter(|l| l.port == port)
+        .filter(|l| l.port == port && l.blocks_ipv4_loopback_bind())
         .any(|l| !family.contains(&l.pid) || memory.spent(l))
 }
 
@@ -224,11 +226,12 @@ mod tests {
     use chrono_mech::Listener;
 
     fn listener(pid: u32, port: u16, loopback: bool) -> Listener {
-        Listener { pid, port, loopback, v6: false }
+        let addr_v4 = if loopback { chrono_mech::IPV4_LOOPBACK_ADDR } else { 0x0501_A8C0 };
+        Listener { pid, port, loopback, v6: false, addr_v4 }
     }
 
     fn listener6(pid: u32, port: u16) -> Listener {
-        Listener { pid, port, loopback: true, v6: true }
+        Listener { pid, port, loopback: true, v6: true, addr_v4: 0 }
     }
 
     #[test]
@@ -260,6 +263,12 @@ mod tests {
         let stranger = [listener(99, 40000, true)];
         assert!(reserved_port_taken(&stranger, &family, 40000, &memory));
         assert!(!reserved_port_taken(&stranger, &family, 40001, &memory), "another port is not ours");
+        // Sockets on the same port that do NOT stand in the way of a bind to 127.0.0.1: an IPv6 one,
+        // and an IPv4 one on a LAN address. The wildcard does.
+        assert!(!reserved_port_taken(&[listener6(99, 40000)], &family, 40000, &memory), "IPv6 leaves the IPv4 bind free");
+        assert!(!reserved_port_taken(&[listener(99, 40000, false)], &family, 40000, &memory), "a LAN address leaves it free");
+        let wildcard = Listener { pid: 99, port: 40000, loopback: false, v6: false, addr_v4: chrono_mech::IPV4_ANY_ADDR };
+        assert!(reserved_port_taken(&[wildcard], &family, 40000, &memory), "the wildcard claims every address");
 
         let own = listener(10, 40000, true);
         assert!(!reserved_port_taken(&[own], &family, 40000, &memory), "still being asked");

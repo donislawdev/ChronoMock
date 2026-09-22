@@ -226,7 +226,7 @@ pub(crate) fn print_usage() {
     eprintln!("       without --at (or --preset) the session clock starts at the real current time, so `--mode xN` alone just runs the target faster");
     eprintln!("       --scale-qpc also scales the high-resolution counter, which is where Python 3.13+ monotonic, .NET Stopwatch and Java nanoTime read elapsed time");
     eprintln!("       --force runs on even when the opening verdict says the substitution did not take effect (the target is stopped otherwise)");
-    eprintln!("       --no-embedded leaves the web pages inside the app on the real clock; without it, an app with a built-in web engine (WebView2, Qt WebEngine) is asked to open a local debugging port for the session and its pages follow the session clock through it");
+    eprintln!("       --no-embedded leaves the web pages inside the app on the real clock and opens no debugging port. Without it, an app with a built-in web engine (WebView2, Qt WebEngine) is asked to open a local debugging port for the session and its pages follow the session clock through it - while it is open, any other program on this computer can use that port to reach those pages");
     eprintln!("       --timeout gives up after N seconds and exits 6, for a pipeline that must not hang; a core that stops answering for 15 s exits 6 on its own");
     eprintln!("       --cwd starts the target in that directory; without it the target inherits ours, and a directory that does not exist stops the session rather than looking like a broken target");
     eprintln!("       (--preset supplies the moment and mode from presets/<id>.json, exclusive of --at/--mode/--scale-duration; --param fills its parameters, a trial start_date defaults to the target's file date)");

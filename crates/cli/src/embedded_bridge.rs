@@ -81,26 +81,30 @@ impl Launch {
 
     /// Prepare the channel for a target: reserve the port a Qt engine needs telling, build the two
     /// variables on top of what the tester already has, and look whether a registry policy is about
-    /// to be hidden. A machine that cannot hand out a loopback port gets no variables at all - half
-    /// a channel would find WebView2 and silently never Qt.
+    /// to be hidden. The three reads of the machine happen here, the composition in `compose`.
     pub(crate) fn for_target(target: &TargetSpec) -> Launch {
         if !target.embedded {
             return Launch::off();
         }
-        let Ok(qt_port) = cdp::free_loopback_port() else {
-            return Launch { env: Vec::new(), qt_port: None, enabled: true, unavailable: true, registry_hidden: false };
-        };
         let exe_name = std::path::Path::new(&target.path)
             .file_name()
             .map(|n| n.to_string_lossy().into_owned())
             .unwrap_or_default();
-        Launch {
-            env: engine_env(&chrono_mech::current_environment(), qt_port),
-            qt_port: Some(qt_port),
-            enabled: true,
-            unavailable: false,
-            registry_hidden: chrono_mech::webview2_arguments_policy_present(&exe_name),
-        }
+        let qt_port = cdp::free_loopback_port().ok();
+        let registry_hidden = chrono_mech::webview2_arguments_policy_present(&exe_name);
+        Launch::compose(&chrono_mech::current_environment(), qt_port, registry_hidden)
+    }
+
+    /// The channel's launch from what the machine said: the tester's environment, the port reserved
+    /// for a Qt engine (none when the machine could not hand one out), and whether a registry policy
+    /// is about to be hidden. A machine without a port gets no variables at all - half a channel
+    /// would find WebView2 and silently never Qt. Pure, so the shapes are tested with an environment
+    /// of the test's choosing rather than whatever the tester's machine carries.
+    fn compose(base: &[(String, String)], qt_port: Option<u16>, registry_hidden: bool) -> Launch {
+        let Some(qt_port) = qt_port else {
+            return Launch { env: Vec::new(), qt_port: None, enabled: true, unavailable: true, registry_hidden };
+        };
+        Launch { env: engine_env(base, qt_port), qt_port: Some(qt_port), enabled: true, unavailable: false, registry_hidden }
     }
 }
 
@@ -431,23 +435,43 @@ mod tests {
         TargetSpec { path: "C:/apps/host.exe".into(), args: Vec::new(), cwd: None, embedded }
     }
 
-    /// The opt-out means no variable in the environment and nothing to look for. On, the two
-    /// variables are there - the WebView2 one asking for an ephemeral port, the Qt one naming the
-    /// port that was reserved for it.
+    /// The opt-out means no variable in the environment and nothing to look for. On, the machine is
+    /// asked for a port - and what the launch is made of is judged on `compose`, below, with an
+    /// environment of the test's choosing: this machine's own may already carry a debugging switch,
+    /// which `engine_env` honours by adding nothing, and a test that read it would fail on exactly
+    /// the tester's machine it is meant to describe.
     #[test]
-    fn the_launch_carries_the_variables_only_when_the_channel_is_on() {
+    fn the_launch_reads_the_machine_only_when_the_channel_is_on() {
         let off = Launch::for_target(&target(false));
         assert!(off.env.is_empty());
         assert!(!off.enabled);
+        assert!(!off.unavailable);
 
         let on = Launch::for_target(&target(true));
         assert!(on.enabled);
-        assert!(!on.unavailable);
+        assert!(!on.unavailable, "this machine hands out loopback ports");
+        assert!(on.qt_port.is_some());
+    }
+
+    /// From a bare environment the two variables are there - the WebView2 one asking for an
+    /// ephemeral port, the Qt one naming the port that was reserved for it. Without a port there is
+    /// no variable at all, and the launch says the channel is unavailable. The registry finding rides
+    /// through untouched either way.
+    #[test]
+    fn the_launch_is_composed_from_the_environment_and_the_reserved_port() {
+        let on = Launch::compose(&[], Some(45_001), false);
+        assert!(on.enabled && !on.unavailable);
+        assert_eq!(on.qt_port, Some(45_001));
         let names: Vec<&str> = on.env.iter().map(|(n, _)| n.as_str()).collect();
         assert!(names.contains(&"WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS"), "{names:?}");
         assert!(names.contains(&"QTWEBENGINE_REMOTE_DEBUGGING"), "{names:?}");
         let qt = on.env.iter().find(|(n, _)| n == "QTWEBENGINE_REMOTE_DEBUGGING").map(|(_, v)| v.clone()).unwrap();
-        assert_eq!(qt, format!("127.0.0.1:{}", on.qt_port.unwrap()), "the Qt variable names the reserved port");
+        assert_eq!(qt, "127.0.0.1:45001", "the Qt variable names the reserved port");
+
+        let no_port = Launch::compose(&[], None, true);
+        assert!(no_port.enabled && no_port.unavailable);
+        assert!(no_port.env.is_empty(), "half a channel would find WebView2 and never Qt");
+        assert!(no_port.registry_hidden);
     }
 
     /// Slice A's strong claim - the pages read the real clock - is refuted once the pages were

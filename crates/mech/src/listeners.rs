@@ -20,21 +20,38 @@ use windows::Win32::NetworkManagement::IpHelper::{
 };
 
 /// One listening socket: who bound it, on which port, whether it is bound to a loopback address -
-/// the only kind of endpoint the session will ever speak to - and on which address family, because
-/// the loopback name to connect to differs between the two.
+/// the only kind of endpoint the session will ever speak to - on which address family, because the
+/// loopback name to connect to differs between the two, and for IPv4 the exact local address, because
+/// one question needs more than "loopback": whether this socket stands in the way of a bind to
+/// `127.0.0.1` on the same port.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Listener {
     pub pid: u32,
     pub port: u16,
     pub loopback: bool,
     pub v6: bool,
+    /// The IPv4 local address as the table carries it (network byte order), zero for an IPv6 socket.
+    pub addr_v4: u32,
 }
+
+/// `127.0.0.1` in network byte order, as `dwLocalAddr` carries it on this little-endian machine.
+pub const IPV4_LOOPBACK_ADDR: u32 = 0x0100_007F;
+/// `0.0.0.0` - the wildcard, which claims the port on every address including the loopback one.
+pub const IPV4_ANY_ADDR: u32 = 0;
 
 impl Listener {
     /// The loopback host a client connects to for this listener: `::1` for an IPv6 socket,
     /// `127.0.0.1` otherwise.
     pub fn loopback_host(&self) -> &'static str {
         if self.v6 { "::1" } else { "127.0.0.1" }
+    }
+
+    /// Whether this socket blocks a bind to `127.0.0.1` on its port - what a Qt engine told
+    /// `QTWEBENGINE_REMOTE_DEBUGGING=127.0.0.1:<port>` attempts. Only an IPv4 socket on that exact
+    /// address or on the wildcard does. An IPv6 socket, or an IPv4 socket on another address (a
+    /// LAN interface, another `127/8` address), leaves that bind free.
+    pub fn blocks_ipv4_loopback_bind(&self) -> bool {
+        !self.v6 && (self.addr_v4 == IPV4_LOOPBACK_ADDR || self.addr_v4 == IPV4_ANY_ADDR)
     }
 }
 
@@ -82,6 +99,7 @@ fn read_v4() -> Result<Vec<Listener>, String> {
                 // octet of the address is the low byte of the DWORD: 127 is the whole 127/8 block.
                 loopback: (row.dwLocalAddr & 0xFF) == 127,
                 v6: false,
+                addr_v4: row.dwLocalAddr,
             })
             .collect())
     }
@@ -106,6 +124,7 @@ fn read_v6() -> Result<Vec<Listener>, String> {
                 port: port_from_network_order(row.dwLocalPort),
                 loopback: row.ucLocalAddr == IPV6_LOOPBACK,
                 v6: true,
+                addr_v4: 0,
             })
             .collect())
     }
@@ -182,8 +201,8 @@ mod tests {
 
     #[test]
     fn the_loopback_host_follows_the_address_family() {
-        let v4 = Listener { pid: 1, port: 1, loopback: true, v6: false };
-        let v6 = Listener { pid: 1, port: 1, loopback: true, v6: true };
+        let v4 = Listener { pid: 1, port: 1, loopback: true, v6: false, addr_v4: IPV4_LOOPBACK_ADDR };
+        let v6 = Listener { pid: 1, port: 1, loopback: true, v6: true, addr_v4: 0 };
         assert_eq!(v4.loopback_host(), "127.0.0.1");
         assert_eq!(v6.loopback_host(), "::1");
     }
