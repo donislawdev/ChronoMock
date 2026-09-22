@@ -450,6 +450,10 @@
   // clock, and a parent that reads nothing while its child reads the fake date is a session that
   // worked. Deliberately does not touch the verdict - what the session achieved and what the
   // application consumed are two answers, and this one is the second.
+  // Not a "we chose not to scale this" caution like the runtime.*_qpc family above it - this one
+  // says a clock is out of reach entirely, and names what DID reach the application, because a real
+  // date shown in the session's time zone is the part that confuses a reader.
+  "runtime.go_wall_clock_unreachable": "This application was built with Go. Its runtime reads the date straight from shared system memory instead of asking Windows for it, so it sees the REAL date and no setting here can change that. The session time zone does reach it, so the times it shows are the real moment expressed in the session's zone.",
   "coverage.session_clock_never_read": "No process in this session ever read a clock the session replaces, so nothing this application did came from the fake date. The channels above are in place and working - the application simply took its time from somewhere else, such as a source outside this computer.",
   "time.fake_clock_clamped": "The fake clock reached the last date this build can represent (year 30828) and stood there for the rest of the session. Late readings are not the moments the chosen speed would have produced.",
   "time.duration_axis_clamped": "The monotonic counters (tick count, unbiased interrupt time, and QPC when scaled) reached the end of their range and stood there, so elapsed time inside the application stopped advancing even though the session went on. A lower speed or a shorter session avoids it.",
