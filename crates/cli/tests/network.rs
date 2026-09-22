@@ -149,6 +149,11 @@ const ALLOWED: &[(&str, &str, &str)] = &[
          because a test can reach the network in CI as easily as the product can on a desktop",
     ),
     (
+        "crates/cli/tests/listeners.rs",
+        "socket",
+        "binds a loopback listener on a port the system picks, so the mechanism's read of the          local TCP table can be seen to name this process and that port. Nothing connects to it          and it is closed before the test ends",
+    ),
+    (
         "crates/cli/tests/dry_run.rs",
         "spawn",
         "the dry-run guard runs the built binary twice over: once with --dry-run, which must start \
@@ -445,6 +450,17 @@ fn no_dependency_is_a_network_client() {
 // N4. The windows crate enables no networking feature
 // ---------------------------------------------------------------------------------------------
 
+/// The windows-crate features under the network prefix that ARE allowed, each with its reason.
+/// `GetExtendedTcpTable` lists the sockets this machine's processes hold, with the owning pid -
+/// the mechanism reads it to find the DevTools port an embedded web engine opened inside the
+/// session's own process family. It reads a table and opens nothing: the connection to that port
+/// is made by the registered socket code in `cdp/`, after the same loopback-and-port check every
+/// other endpoint passes.
+const ALLOWED_NETWORK_FEATURES: &[(&str, &str)] = &[(
+    "Win32_NetworkManagement_IpHelper",
+    "the local TCP table with owning pids, read to find an embedded engine's debug port",
+)];
+
 #[test]
 fn the_windows_crate_enables_no_networking_feature() {
     let manifest =
@@ -452,11 +468,16 @@ fn the_windows_crate_enables_no_networking_feature() {
 
     // The features are enumerated one by one in the root manifest, which is what makes this
     // cheap: reaching WinHTTP through the windows crate needs a new line there, and this is the
-    // line that refuses it.
+    // line that refuses it. The prefix covers both `Win32_Networking` (sockets, WinSock) and
+    // `Win32_NetworkManagement` (the IP helper API among others), and the one feature permitted
+    // under it is named below with its reason - a feature that reads a kernel table is not a
+    // feature that opens a connection, and the register says so rather than leaving the prefix
+    // check to guess.
     let offenders: Vec<&str> = manifest
         .lines()
         .map(str::trim)
-        .filter(|l| l.starts_with("\"Win32_Networking") || l.starts_with("\"Win32_Web"))
+        .filter(|l| l.starts_with("\"Win32_Network") || l.starts_with("\"Win32_Web"))
+        .filter(|l| !ALLOWED_NETWORK_FEATURES.iter().any(|(feature, _)| l.starts_with(&format!("\"{feature}\""))))
         .collect();
 
     assert!(

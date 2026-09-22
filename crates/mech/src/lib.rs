@@ -11,6 +11,14 @@
 //! The tool injects its OWN probes on the host - injecting into third-party or system
 //! processes stays on the VM or requires explicit consent.
 
+mod environment;
+mod listeners;
+mod tree;
+
+pub use environment::{current_environment, encode_block, environment_block, merge_entries};
+pub use listeners::{listening_sockets, Listener};
+pub use tree::family_of;
+
 use std::ffi::{c_void, OsStr};
 use std::os::windows::ffi::OsStrExt;
 use std::path::Path;
@@ -45,7 +53,8 @@ use windows::Win32::System::Time::{GetTimeZoneInformation, TIME_ZONE_INFORMATION
 use windows::Win32::System::Threading::{
     CreateMutexW, CreateProcessW, CreateRemoteThread, GetCurrentProcess, GetCurrentProcessId,
     GetExitCodeProcess, GetExitCodeThread, IsWow64Process2, OpenProcess, QueryFullProcessImageNameW,
-    ResumeThread, TerminateProcess, WaitForSingleObject, CREATE_SUSPENDED, LPTHREAD_START_ROUTINE,
+    ResumeThread, TerminateProcess, WaitForSingleObject, CREATE_SUSPENDED, CREATE_UNICODE_ENVIRONMENT,
+    LPTHREAD_START_ROUTINE,
     PROCESS_INFORMATION, PROCESS_NAME_FORMAT, PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_SYNCHRONIZE,
     STARTUPINFOW,
 };
@@ -57,6 +66,11 @@ pub struct Target<'a> {
     pub path: &'a str,
     pub args: &'a [String],
     pub cwd: Option<&'a str>,
+    /// Variables the target gets on top of this process's environment (a name already present is
+    /// replaced). Empty means the child inherits the environment untouched, through a null
+    /// `lpEnvironment` - byte for byte what every session did before the embedded-engine channel
+    /// (docs/09) had two variables to add. Non-empty means a block built by `environment_block`.
+    pub env: &'a [(String, String)],
 }
 
 /// Why preparing a session failed. Each variant carries a message from the point of
@@ -570,6 +584,109 @@ impl Drop for Session {
     }
 }
 
+/// A process launched WITHOUT the hook, for a probe that needs a host running with the session's
+/// environment and nothing else - the embedded-engine channel proves its port discovery and its
+/// attach on a host it started this way (docs/09). Terminated on drop unless the caller says the
+/// process is theirs to leave: a probe that launched an application owns it.
+pub struct PlainChild {
+    pub pid: u32,
+    handle: HANDLE,
+}
+
+impl PlainChild {
+    /// Whether the process is still running.
+    pub fn is_alive(&self) -> bool {
+        // SAFETY: the handle is ours until drop.
+        unsafe { WaitForSingleObject(self.handle, 0) == WAIT_TIMEOUT }
+    }
+
+    /// Wait up to `timeout_ms` for the process to end and return its exit code, or None if it is
+    /// still running when the wait runs out.
+    pub fn wait_exit(&self, timeout_ms: u32) -> Option<i32> {
+        // SAFETY: the handle is ours until drop, and the exit code is read only after the wait
+        // said the process signalled.
+        unsafe {
+            if WaitForSingleObject(self.handle, timeout_ms) != WAIT_OBJECT_0 {
+                return None;
+            }
+            let mut code: u32 = 0;
+            GetExitCodeProcess(self.handle, &mut code).ok()?;
+            Some(code as i32)
+        }
+    }
+
+    /// End the process now. Idempotent: a process already gone is not an error here.
+    pub fn terminate(&self) {
+        // SAFETY: the handle is ours until drop, and terminating a process that already exited fails
+        // harmlessly.
+        unsafe {
+            let _ = TerminateProcess(self.handle, 1);
+        }
+    }
+}
+
+impl Drop for PlainChild {
+    fn drop(&mut self) {
+        // SAFETY: closing the one handle this struct opened, once.
+        unsafe {
+            let _ = CloseHandle(self.handle);
+        }
+    }
+}
+
+/// Launch a target without suspending or injecting it: `CreateProcessW` with the command line the
+/// hooked launch builds, the working folder, and the same environment treatment. The one way a
+/// probe starts a host the channel then has to find.
+pub fn launch_plain(target: &Target) -> Result<PlainChild, String> {
+    // SAFETY: the same call `prepare` makes with the same buffers, minus the suspend flag. The
+    // thread handle is closed at once - nothing here resumes or inspects the thread.
+    unsafe {
+        let mut app = to_wide(target.path);
+        let mut cmdline = build_command_line(target.path, target.args);
+        let cwd_wide = target.cwd.map(to_wide);
+        let cwd_ptr = cwd_wide
+            .as_ref()
+            .map(|w| PCWSTR(w.as_ptr()))
+            .unwrap_or(PCWSTR::null());
+        let si = STARTUPINFOW {
+            cb: std::mem::size_of::<STARTUPINFOW>() as u32,
+            ..Default::default()
+        };
+        let mut pi = PROCESS_INFORMATION::default();
+        let (block, env_ptr, env_flag) = environment_for(target.env);
+        let launched = CreateProcessW(
+            PCWSTR(app.as_mut_ptr()),
+            Some(PWSTR(cmdline.as_mut_ptr())),
+            None,
+            None,
+            false,
+            env_flag,
+            env_ptr,
+            cwd_ptr,
+            &si,
+            &mut pi,
+        );
+        drop(block);
+        launched.map_err(|e| win32_detail("CreateProcessW", &e))?;
+        let _ = CloseHandle(pi.hThread);
+        Ok(PlainChild { pid: pi.dwProcessId, handle: pi.hProcess })
+    }
+}
+
+/// The `lpEnvironment` argument and its creation flag for a launch: null and no flag when there is
+/// nothing to add (the child inherits, exactly as before), or a Unicode block with its flag. The
+/// block is returned so it outlives the call - the pointer is into it.
+fn environment_for(
+    extra: &[(String, String)],
+) -> (Option<Vec<u16>>, Option<*const c_void>, windows::Win32::System::Threading::PROCESS_CREATION_FLAGS) {
+    if extra.is_empty() {
+        return (None, None, windows::Win32::System::Threading::PROCESS_CREATION_FLAGS(0));
+    }
+    let block = environment_block(extra);
+    let ptr = block.as_ptr().cast::<c_void>();
+    (Some(block), Some(ptr), CREATE_UNICODE_ENVIRONMENT)
+}
+
 fn to_wide(s: &str) -> Vec<u16> {
     OsStr::new(s).encode_wide().chain(std::iter::once(0)).collect()
 }
@@ -1038,18 +1155,20 @@ pub fn prepare(spec: &SessionSpec, target: &Target, hook_dll: &Path) -> Result<P
             ..Default::default()
         };
         let mut pi = PROCESS_INFORMATION::default();
+        let (block, env_ptr, env_flag) = environment_for(target.env);
         let launched = CreateProcessW(
             PCWSTR(app.as_mut_ptr()),
             Some(PWSTR(cmdline.as_mut_ptr())),
             None,
             None,
             false,
-            CREATE_SUSPENDED,
-            None,
+            CREATE_SUSPENDED | env_flag,
+            env_ptr,
             cwd_ptr,
             &si,
             &mut pi,
         );
+        drop(block);
         if let Err(e) = launched {
             let _ = UnmapViewOfFile(MEMORY_MAPPED_VIEW_ADDRESS { Value: view.Value });
             let _ = CloseHandle(hmap);
@@ -1341,6 +1460,29 @@ unsafe fn inject(hproc: HANDLE, dll_wide: &[u16]) -> Result<(), PrepareError> { 
 
 #[cfg(test)]
 mod tests {
+    /// The shell every Windows has, asked one question about its environment and answering with
+    /// its exit code - no pipes, no output, the one oracle a plain launch offers.
+    fn cmd_exit_if_defined(name: &str, env: &[(String, String)]) -> i32 {
+        let system_root = std::env::var("SystemRoot").unwrap_or_else(|_| r"C:\Windows".to_string());
+        let path = format!(r"{system_root}\System32\cmd.exe");
+        let args = vec!["/c".to_string(), format!("if defined {name} (exit 3) else (exit 0)")];
+        let child = super::launch_plain(&super::Target { path: &path, args: &args, cwd: None, env })
+            .expect("cmd.exe launches");
+        child.wait_exit(10_000).expect("cmd.exe exits within ten seconds")
+    }
+
+    #[test]
+    fn a_launched_child_sees_the_variable_the_block_added_and_the_environment_it_inherited() {
+        let extra = vec![("CHRONO_MECH_PROBE".to_string(), "1".to_string())];
+        // The block carries the new name...
+        assert_eq!(cmd_exit_if_defined("CHRONO_MECH_PROBE", &extra), 3);
+        // ...and everything the parent had - a block that dropped SystemRoot would start a child
+        // that cannot find its own system folder.
+        assert_eq!(cmd_exit_if_defined("SystemRoot", &extra), 3);
+        // Reversal: without the block the name is not there, so the variable is the block's doing.
+        assert_eq!(cmd_exit_if_defined("CHRONO_MECH_PROBE", &[]), 0);
+    }
+
     use super::*;
     // Only the QPC-channel test needs this bit, so it is imported here rather than in the lib.
     use chrono_ctl::CH_QPC;

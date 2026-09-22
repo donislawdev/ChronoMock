@@ -112,7 +112,8 @@ public class BinaryImportsTests
         ("urlmon", "the URL moniker library, home of the one-call file downloader"),
         ("httpapi", "the kernel-mode HTTP stack"),
         ("dnsapi", "name resolution, which is a network round trip"),
-        ("iphlpapi", "the IP helper API"),
+        // iphlpapi stood here until the embedded-engine channel (docs/09) needed one call from it. It
+        // is registered below, for the core only, with the one import it is allowed to be.
         ("mswsock", "the Winsock service provider"),
         ("wsock32", "the legacy Winsock"),
         ("netapi32", "the network management API"),
@@ -167,6 +168,17 @@ public class BinaryImportsTests
             "sent. Measured: 12 imports, of which WSASocketW, WSADuplicateSocketW, getaddrinfo and " +
             "freeaddrinfo are by name and the rest by ordinal - the shape of a client, with no listener " +
             "and no server"
+        ),
+        (
+            "chrono.exe", "iphlpapi.dll",
+            "GetExtendedTcpTable, and nothing else. The local TCP table with the pid that owns each " +
+            "listening socket, read to find the DevTools port an embedded web engine opened inside the " +
+            "session's own process family (the browser process of WebView2, the host itself for Qt " +
+            "WebEngine). It reads a kernel table and opens nothing: the connection to a port found this " +
+            "way is made through ws2_32 above, after the same loopback-and-port check every other " +
+            "endpoint passes. Forbidden until the channel existed, then registered rather than resolved " +
+            "at runtime - a LoadLibrary would have hidden it from this file, which is the one thing this " +
+            "file is for. Measured: one import by name, on both bitnesses"
         ),
 
         (

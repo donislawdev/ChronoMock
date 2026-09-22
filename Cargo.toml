@@ -36,6 +36,13 @@ windows = { version = "0.62", features = [
     "Win32_System_SystemServices",
     "Win32_System_SystemInformation",
     "Win32_System_Diagnostics_Debug",
+    # The three below joined for the embedded-engine channel (docs/09): the process environment
+    # block a launched target inherits, the local TCP table with owning pids (read, never opened -
+    # crates/cli/tests/network.rs names it), and the process snapshot a probe walks for a family
+    # that has no hook registry.
+    "Win32_System_Environment",
+    "Win32_NetworkManagement_IpHelper",
+    "Win32_System_Diagnostics_ToolHelp",
 ] }
 chrono-core = { path = "crates/core" }
 chrono-ctl = { path = "crates/ctl" }
