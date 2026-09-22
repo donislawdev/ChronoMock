@@ -182,6 +182,33 @@
   <sys:Double x:Key="CalcBuilderColumnMinWidth">368</sys:Double>
   <sys:Double x:Key="CalcResultColumnMinWidth">340</sys:Double>
 
+  <!--
+    🔴 THE WINDOW'S OWN SIZE, which lived as four raw numbers on MainWindow.xaml until 2026-09-22 (GUI
+    rules 21 and 22: a dimension is a token like a colour is). They are here for the reason the rest of
+    this file exists, and for one more that is specific to them: the minimum width is NOT a number
+    somebody liked. It is DERIVED from the calculator's three columns above, which is a relationship
+    that was written in prose in their comment ("their sum with the card margins has to fit the
+    window's own MinWidth") and nowhere the compiler or a guard could see it. Change a column floor and
+    the window silently stops fitting its own calculator.
+
+    CalculatorMinWidth below is that sum, named so it can be asserted against: the three floors plus the
+    grid's own margin on both sides. WindowMinWidth stands at or above it, and a render-side guard
+    (LayoutGuardTests) measures the three columns in a window squeezed to WindowMinWidth and fails if any
+    of them is below its floor - so the derivation is checked against the picture rather than trusted.
+
+    The default is wider and taller than the minimum on purpose: the minimum is the point below which
+    the layout stops being readable, and a window that opens AT its own floor opens at its worst.
+  -->
+  <sys:Double x:Key="CalculatorMinWidth">972</sys:Double>
+  <sys:Double x:Key="WindowMinWidth">1000</sys:Double>
+  <!-- The floor for height is the one dimension that does NOT derive from content: every phase scrolls
+       vertically, so a short window is cramped rather than broken. It keeps the title bar, the phase
+       heading and a first row of the form on screen together - below that the window shows a header and
+       nothing to act on. -->
+  <sys:Double x:Key="WindowMinHeight">360</sys:Double>
+  <sys:Double x:Key="WindowDefaultWidth">1040</sys:Double>
+  <sys:Double x:Key="WindowDefaultHeight">800</sys:Double>
+
   <sys:Double x:Key="StrokeThin">1</sys:Double>
   <!-- The same one-pixel edge as a Thickness, for a BorderThickness. WPF does not convert a Double to a
        Thickness through a resource reference, so the two spellings of one decision both have to exist. -->
