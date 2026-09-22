@@ -45,11 +45,12 @@
 <span class="p">chrono</span> run "C:\apps\test.exe" --mode frozen</pre>
 
     <figure class="shot filled">
-      <img src="/assets/chrono-in-action.gif" width="2598" height="1197" loading="lazy"
-           alt="Nagranie sesji sterującej inną aplikacją Windows. Lewe okno to Chrono Mock z zegarem aplikacji na 2028-06-03 i prawdziwym na 2026-09-04, prędkość zmienia się z zamrożonej na x10 w trakcie sesji. Prawe okno to testowana aplikacja, której własny dziennik zapisał start sesji na 2028-06-03.">
+      <img src="/assets/chrono-in-action.gif" width="2644" height="1206" loading="lazy"
+           alt="Nagranie sesji sterującej inną aplikacją Windows. Lewe okno to Chrono Mock z zegarem aplikacji na 2038-01-19, który biegnie sześćdziesiąt razy szybciej, podczas gdy prawdziwy zegar obok przesuwa się o kilka sekund. Prawe okno to testowana aplikacja, której własny zapis sesji pokazuje start 2038-01-19 i czas trwania liczony w minutach, przy niecałym pół minucie w pokoju.">
       <figcaption>Prawdziwa sesja, prawdziwa aplikacja. Zwróć uwagę na prawe okno: testowany
-        program zapisał <strong>2028-06-03</strong> we własnym dzienniku sesji. Prędkość
-        zmienia się w trakcie, bez restartowania czegokolwiek.</figcaption>
+        program zapisał własny start na <strong>19 stycznia 2038</strong>, a jego sesja trwa
+        minuty, podczas gdy zegar w pokoju przesunął się o sekundy. Prędkość zmienia się
+        w trakcie, bez restartowania czegokolwiek.</figcaption>
     </figure>
   </section>
 

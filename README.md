@@ -43,10 +43,11 @@ it exists.
 - **A window and a command line** - the same engine behind both, exit codes for CI.
 - **Portable** - no installer, no administrator rights, runs from a USB stick.
 
-![Chrono Mock running another Windows application at a fake date. The left window shows the application's clock on 2028-06-03 against the real clock on 2026-09-04, with the speed changed from frozen to x10 while it runs. The right window is the program under test, whose own session log records 2028-06-03.](site/assets/chrono-in-action.gif)
+![Chrono Mock running another Windows application at a fake date. The left window is Chrono Mock: the application's clock reads 19 January 2038 and climbs at sixty times real speed while the real clock beside it moves a few seconds. The right window is the application under test, whose own session record shows it started on 19 January 2038 and has been running for minutes while barely half a minute has passed in the room.](site/assets/chrono-in-action.gif)
 
-*A real session. The window on the right is the program under test - and it wrote **2028-06-03** into
-its own session log, which is the whole point.*
+*A real session. The window on the right is the program under test - and it recorded its own start as
+**19 January 2038**, then ran for minutes of its own time while the clock in the room moved seconds.
+That is the whole point.*
 
 ![Clicking the Star button at the top of the Chrono Mock repository page: the counter goes from Star 0 to Starred 1.](assets/sta-chono.gif)
 
@@ -119,7 +120,7 @@ command-line arguments or a particular working folder, they are under *Arguments
 Once it starts, the panel shows the application's clock and the real clock side by side, the
 verdict, and which time channels the application is actually reading.
 
-![The Chrono Mock session panel: the application's clock reading 2038-01-19, the real clock reading 2026-09-04, a green Works verdict, and a list of 26 covered time channels each with a call count.](site/assets/session-panel.png)
+![The Chrono Mock session panel: the application's clock reading 19 January 2038 at 03:14:14 beside the real clock reading 22 September 2026 at 15:50:30, each with its own elapsed time, then the speeds from ×1 to ×1440 with a Freeze, the relative jumps and a jump to a typed date, and on the footer a green Works verdict beside a red Stop session.](site/assets/session-panel.png)
 
 **From the command line:**
 
@@ -249,7 +250,7 @@ speaks in QA terms rather than arithmetic:
 
 Any calculated date goes straight into a time-shift session with one click.
 
-![The Chrono Mock calculator: scenarios with explanations on the left, the step builder in the middle, and the result column listing every format with a copy button. At the bottom a pasted 04/08/2008 is reported as ambiguous, with both the American and Polish readings shown.](site/assets/calculator.png)
+![The Chrono Mock calculator: a searchable scenario list with its explanations on the left, the date builder in the middle where a pasted 04/08/2008 is reported as ambiguous with both the American and the Polish reading shown, and on the right the result in every format with a copy button against each one and Use this date below them.](site/assets/calculator.png)
 
 ---
 
