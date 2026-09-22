@@ -410,7 +410,14 @@ $deadline = (Get-Date).AddSeconds([Math]::Max(0, $Wait))
 $signedDigests = @{}
 foreach ($archive in $archives) { $signedDigests[$archive.Name] = Get-Sha256 $archive.FullName }
 while ($true) {
-    $view = gh release view $Tag --repo $repo --json assets, isDraft 2>$null | ConvertFrom-Json
+    # 🔴 NO SPACE after the comma, and it is not a matter of taste. PowerShell splits a native
+    # command's arguments on whitespace, so `--json assets, isDraft` reaches gh as two arguments,
+    # `assets,` and `isDraft`. gh refuses the field list, `2>$null` swallows the complaint, and
+    # $view comes back null - so this loop read an empty asset list off a release that was complete
+    # and reported every expected file as missing. Measured on v0.3.0: with the space, null; without
+    # it, seven assets. tools/lint.ps1 knows this failure as its rule 3 and names it "silence that
+    # looks like an answer", which is exactly what it was.
+    $view = gh release view $Tag --repo $repo --json 'assets,isDraft' 2>$null | ConvertFrom-Json
     $names = @()
     if ($view) { $names = @($view.assets | ForEach-Object { $_.name }) }
     $missing = @($EXPECTED_ASSETS | Where-Object { $names -notcontains $_ })

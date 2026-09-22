@@ -164,7 +164,14 @@ jobs:
       - name: For a full release, latest must point here
         shell: pwsh
         run: |
-          $release = gh release view $env:TAG --repo ${{ github.repository }} --json isPrerelease, isDraft | ConvertFrom-Json
+          # 🔴 NO SPACE after the comma. PowerShell splits a native command's arguments on whitespace,
+          # so `--json isPrerelease, isDraft` reaches gh as `isPrerelease,` and `isDraft`, gh refuses
+          # the field list and $release comes back null - at which point BOTH tests below read as
+          # false and this step skips them while reporting success. A verifier that quietly checks
+          # nothing is worse than one that fails. Measured on v0.3.0, where the same spelling in
+          # phase B made a complete draft look empty.
+          $release = gh release view $env:TAG --repo ${{ github.repository }} --json 'isPrerelease,isDraft' | ConvertFrom-Json
+          if ($null -eq $release) { throw "cannot read the release view of $env:TAG - refusing to report a pass on nothing" }
           if ($release.isDraft) { throw "$env:TAG is still a draft, so it publishes nothing" }
           if ($release.isPrerelease) {
             Write-Host "$env:TAG is a pre-release, so latest is not expected to point at it"
