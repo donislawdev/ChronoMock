@@ -4,6 +4,8 @@ Notable changes to Chrono Mock, newest first. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project aims to follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
 ## [0.3.0] - 2026-09-22
 
 The window was rebuilt so it can be changed one place at a time. Most of the work is a new
