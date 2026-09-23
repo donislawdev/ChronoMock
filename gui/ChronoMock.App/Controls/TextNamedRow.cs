@@ -41,8 +41,10 @@ public sealed class TextNamedRow : ContentPresenter
     /// which step it is - the first version skipped inputs and named every step after its remove button.
     ///
     /// Left out, each for a reason: anything not visible (a collapsed cell says nothing on screen), a
-    /// password, a list nested in the row (its rows are named on their own), and icon glyphs from the
-    /// private-use area, which a symbol font draws and a screen reader would spell as nothing useful.
+    /// password, any list nested in the row - a calculator reading holds its significance notes in one,
+    /// whose rows are named on their own, and reading them into the row too would say them twice - and
+    /// icon glyphs from the private-use area, which a symbol font draws and a screen reader would spell
+    /// as nothing useful. A drop-down is a list as well, and is matched first, for the choice it shows.
     ///
     /// A button is left out too, while the row has anything else to say: a format row reads "ISO date,
     /// 2026-09-23" and its Copy button is announced as the button it is, rather than the row ending in
@@ -81,7 +83,7 @@ public sealed class TextNamedRow : ContentPresenter
                 // walk inside it takes buttons in, and a chevron glyph drops out as private use.
                 Descend(combo, parts, withButtons: true);
                 return;
-            case TextBoxBase or PasswordBox or ListBox:
+            case TextBoxBase or PasswordBox or ItemsControl:
             case ButtonBase when !withButtons:
                 return;
             case ButtonBase button when AutomationProperties.GetName(button) is { Length: > 0 } label:

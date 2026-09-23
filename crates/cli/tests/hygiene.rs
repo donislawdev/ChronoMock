@@ -1122,25 +1122,124 @@ fn the_cs_known_unused_list_only_ever_shrinks() {
 /// script or a workflow passed it untouched (found 2026-09-23, reversal probe in `CHANGELOG-DEV.md`).
 const HASH_COMMENTED: &[&str] = &["ps1", "yml", "toml"];
 
-/// The comment part of a line in a `#`-commented file: from a `#` that stands outside any quotes and
-/// after whitespace or at the start of the line. The whitespace rule is YAML's own (a `#` inside a
-/// plain scalar, as in a URL, is not a comment), and it costs nothing in PowerShell or TOML, where a
-/// comment written anywhere else is rare enough not to matter.
-fn hash_comment_part(line: &str) -> Option<&str> {
-    let (mut double, mut single) = (0usize, 0usize);
-    let mut previous = ' ';
-    for (i, c) in line.char_indices() {
-        match c {
-            '"' => double += 1,
-            '\'' => single += 1,
-            '#' if double.is_multiple_of(2) && single.is_multiple_of(2) && previous.is_whitespace() => {
-                return Some(&line[i..]);
+/// The comment part of every line of a `#`-commented file, in order: from a `#` that stands outside
+/// any string and after whitespace or at the start of the line, and every line of a PowerShell block
+/// comment (`<#` to `#>`). The whitespace rule is YAML's own (a `#` inside a plain scalar, as in a
+/// URL, is not a comment), and it costs nothing in PowerShell or TOML, where a comment written
+/// anywhere else is rare enough not to matter.
+///
+/// 🔴 A string is ONE active quote, and a string that spans lines is state carried to the next line.
+/// The first version counted each kind of quote on its own line, so the apostrophe in `"don't"` hid
+/// the comment after it, and the lines of a PowerShell here-string or a TOML `"""` string read as
+/// code (found in review, 2026-09-23). The escapes are each language's own: a backtick in PowerShell,
+/// where a backslash is an ordinary character in every path, and a backslash in YAML and TOML. A
+/// quote opens a string only where one can start - after whitespace or punctuation - because in a
+/// YAML plain scalar ("Don't do it") an apostrophe is a letter.
+fn hash_comments(text: &str, powershell: bool) -> Vec<Option<&str>> {
+    let mut state = HashState::default();
+    text.lines()
+        .map(|line| {
+            if state.block {
+                state.block = !line.contains("#>");
+                return Some(line);
             }
-            _ => {}
+            let from = match state.closing {
+                None => 0,
+                Some(close) => {
+                    let found = if powershell {
+                        let indent = line.len() - line.trim_start().len();
+                        line.trim_start().starts_with(close).then_some(indent)
+                    } else {
+                        line.find(close)
+                    };
+                    let at = found?;
+                    state.closing = None;
+                    at + close.len()
+                }
+            };
+            hash_comment_from(line, from, powershell, &mut state)
+        })
+        .collect()
+}
+
+/// What a `#`-commented file is inside of, carried from one line to the next.
+#[derive(Default)]
+struct HashState {
+    /// A PowerShell block comment is open.
+    block: bool,
+    /// A string that spans lines is open, and this closes it: `"@`, `'@`, `"""` or `'''`.
+    closing: Option<&'static str>,
+}
+
+/// The comment on one line from byte `from` on, opening a block comment or a string that spans lines
+/// when the line leaves one open.
+fn hash_comment_from<'a>(line: &'a str, from: usize, powershell: bool, state: &mut HashState) -> Option<&'a str> {
+    let escape = if powershell { '`' } else { '\\' };
+    let mut quote: Option<char> = None;
+    let mut previous = ' ';
+    let mut i = from;
+    while let Some(c) = line[i..].chars().next() {
+        let rest = &line[i..];
+        let mut step = c.len_utf8();
+        match quote {
+            Some('"') if c == escape => step += rest[1..].chars().next().map_or(0, char::len_utf8),
+            // A doubled quote is the quote itself in PowerShell and in YAML, not the end of the string.
+            Some(q) if c == q && rest[1..].starts_with(q) => step += 1,
+            Some(q) if c == q => quote = None,
+            Some(_) => {}
+            None if powershell && rest.starts_with("<#") => {
+                state.block = !rest.contains("#>");
+                return Some(rest);
+            }
+            None if c == '#' && previous.is_whitespace() => return Some(rest),
+            None if powershell && matches!(rest.trim_end(), "@\"" | "@'") => {
+                state.closing = Some(if rest.starts_with("@\"") { "\"@" } else { "'@" });
+                return None;
+            }
+            None if !powershell && (rest.starts_with("\"\"\"") || rest.starts_with("'''")) => {
+                let delimiter = if rest.starts_with("\"\"\"") { "\"\"\"" } else { "'''" };
+                match rest[3..].find(delimiter) {
+                    Some(at) => step = 3 + at + 3,
+                    None => {
+                        state.closing = Some(delimiter);
+                        return None;
+                    }
+                }
+            }
+            None if (c == '"' || c == '\'') && (previous.is_whitespace() || "=([{,:;|&!".contains(previous)) => {
+                quote = Some(c);
+            }
+            None => {}
         }
         previous = c;
+        i += step;
     }
     None
+}
+
+/// The comment scan on the shapes that fooled the first version, and on the ones it must leave alone.
+#[test]
+fn hash_comments_are_read_where_each_language_puts_them() {
+    let comments = |text: &str, powershell: bool| -> Vec<Option<String>> {
+        hash_comments(text, powershell).into_iter().map(|c| c.map(str::to_string)).collect()
+    };
+    let one = |text: &str, powershell: bool| comments(text, powershell).remove(0);
+    assert_eq!(one("run: echo \"don't stop\" # after", false).as_deref(), Some("# after"));
+    assert_eq!(one("name: Don't do it # after", false).as_deref(), Some("# after"));
+    assert_eq!(one("$a = \"It's\" # after", true).as_deref(), Some("# after"));
+    assert_eq!(one("$p = \"C:\\tools\\\" # after", true).as_deref(), Some("# after"));
+    assert_eq!(one("$q = 'can''t' # after", true).as_deref(), Some("# after"));
+    assert_eq!(one("$q = 'it''s # inside' # after", true).as_deref(), Some("# after"));
+    assert_eq!(one("x = \"a \\\" # not\" # after", false).as_deref(), Some("# after"));
+    assert_eq!(one("url: https://example.com/#anchor", false), None);
+    assert_eq!(one("$s = \"a # not\"", true), None);
+
+    let here = comments("$s = @\"\n# inside the string\n\"@ # after", true);
+    assert_eq!(here, [None, None, Some("# after".to_string())]);
+    let toml = comments("s = \"\"\"\n# inside the string\n\"\"\" # after\nt = \"\"\"one line\"\"\" # too", false);
+    assert_eq!(toml, [None, None, Some("# after".to_string()), Some("# too".to_string())]);
+    let block = comments("<#\ninside\n#>\n$x = 1", true);
+    assert_eq!(block, [Some("<#".to_string()), Some("inside".to_string()), Some("#>".to_string()), None]);
 }
 
 /// Polish diacritics. Untouchable rule 9 makes the criterion the PLACE, not the reader: everything
@@ -1240,17 +1339,12 @@ fn every_comment_in_the_repository_is_english() {
         let Ok(text) = std::fs::read_to_string(path) else {
             continue;
         };
-        let hashed = has_extension(path, HASH_COMMENTED);
-        let mut in_block = false;
+        let hashed = has_extension(path, HASH_COMMENTED)
+            .then(|| hash_comments(&text, has_extension(path, &["ps1"])));
         for (number, line) in text.lines().enumerate() {
-            let comment = if !hashed {
-                comment_part(line)
-            } else if in_block || line.contains("<#") {
-                // A PowerShell block comment, `<#` to `#>`, possibly on one line.
-                in_block = !line.contains("#>");
-                Some(line)
-            } else {
-                hash_comment_part(line)
+            let comment = match &hashed {
+                Some(comments) => comments[number],
+                None => comment_part(line),
             };
             let Some(comment) = comment else { continue };
             let by_letter = comment.chars().any(|c| POLISH_LETTERS.contains(&c));
@@ -1608,7 +1702,9 @@ fn cs_hole_end(chars: &[char], from: usize) -> usize {
 fn xaml_names(text: &str) -> Vec<(usize, String)> {
     let mut names = Vec::new();
     for (number, line) in text.lines().enumerate() {
-        for attribute in ["x:Name=\"", "x:Key=\""] {
+        // The plain `Name` does the same job as `x:Name` on a framework element. The leading space keeps
+        // `TargetName`, `SourceName` and `DisplayName` out.
+        for attribute in ["x:Name=\"", "x:Key=\"", " Name=\""] {
             for (at, _) in line.match_indices(attribute) {
                 let value = &line[at + attribute.len()..];
                 let value = &value[..value.find('"').unwrap_or(value.len())];
@@ -1703,12 +1799,24 @@ fn a_polish_word_is_found_wherever_it_sits_in_a_name() {
 // H7c. Nothing in a file that nobody can see
 // ---------------------------------------------------------------------------------------------
 
-/// A character that takes no visible place where it stands: the private-use area (icon-font glyphs),
-/// the zero-width space, joiners and marks, the word joiner, and a byte order mark. Written as numbers,
-/// because the ranges spelled as escapes are exactly what turned into the characters themselves once.
+/// A character that takes no visible place where it stands, or changes how the text around it is shown:
+/// the private-use area (icon-font glyphs), the zero-width space, joiners and the two direction marks
+/// (U+200B to U+200F), the word joiner and the invisible operators (U+2060 to U+2064), a byte order
+/// mark, a soft hyphen (U+00AD), the Mongolian vowel separator (U+180E), the Arabic letter mark
+/// (U+061C), and the bidirectional embeddings, overrides and isolates (U+202A to U+202E, U+2066 to
+/// U+2069) - the reordering that shows code other than what compiles (CVE-2021-42574). rustc refuses
+/// those in Rust, and nothing refuses them in C#, XAML, YAML, PowerShell or JSON.
+///
+/// Written as numbers, because the ranges spelled as escapes are exactly what turned into the
+/// characters themselves once.
 fn is_invisible(c: char) -> bool {
     let code = u32::from(c);
-    (0xE000..=0xF8FF).contains(&code) || (0x200B..=0x200F).contains(&code) || code == 0x2060 || code == 0xFEFF
+    (0xE000..=0xF8FF).contains(&code)
+        || (0x200B..=0x200F).contains(&code)
+        || (0x2060..=0x2064).contains(&code)
+        || (0x202A..=0x202E).contains(&code)
+        || (0x2066..=0x2069).contains(&code)
+        || matches!(code, 0xFEFF | 0x00AD | 0x180E | 0x061C)
 }
 
 /// No committed text file carries a character that cannot be seen.

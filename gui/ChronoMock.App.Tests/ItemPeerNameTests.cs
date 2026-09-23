@@ -69,8 +69,10 @@ public class ItemPeerNameTests
                 + "rendering their lists, so this guard was about to pass over nothing");
         Assert.True(
             offenders.Count == 0,
-            "these rows read out something the screen does not show. Give the list an ItemContainerStyle "
-                + $"that sets AutomationProperties.Name from what the row says:{Environment.NewLine}"
+            "these rows read out something the screen does not show. Make the list a controls:TextNamedList or "
+                + "controls:TextNamedItems, whose TextNamedRow names each row by its rendered text - or, for a "
+                + "ListBox or ComboBox, set AutomationProperties.Name in its ItemContainerStyle:"
+                + Environment.NewLine
                 + string.Join(Environment.NewLine, offenders.Distinct()));
     }
 
