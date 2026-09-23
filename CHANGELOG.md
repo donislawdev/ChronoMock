@@ -31,6 +31,12 @@ Notable changes to Chrono Mock, newest first. The format follows
 - **The total beside the channel list.** The list of covered channels now carries how many times
   the whole family read them, so the one number worth seeing first does not have to be counted
   off forty-one rows by eye.
+- **A caution about network timeouts under sped-up timers.** A consequence of the sped-up timers
+  fix below: a network library that measures its own timeout from the tick count, WinHTTP for one,
+  now counts that timeout in session time, while the network wait underneath stays real. At x60 a
+  60 second timeout runs out after one real second, so a server slower than that makes the request
+  fail. A session with timers sped up now says so whenever the application has the network stack
+  loaded, right under the line saying that waits on system objects stay on the real clock.
 
 ### Fixed
 
@@ -49,6 +55,15 @@ Notable changes to Chrono Mock, newest first. The format follows
   one. It now sits where the code lives, so both routes are covered, and every such read shows in
   the channel counts instead of being invisible. Python and Ruby get the session time zone from
   the same change, where until now they kept the machine's.
+- **Sped-up timers missed code that reaches them the way Windows' own libraries do.** With timers
+  sped up (`--scale-duration`, or "Also speed up timers and countdowns inside the application"),
+  the millisecond tick count, the interrupt-time counter and waitable timers followed the session
+  only for code that asks for them through the classic entry points. Code that takes the newer
+  route, which is how the older `msvcrt` runtime and the libraries inside Windows itself ask, read
+  them at real speed, and with `--scale-qpc` the same was true of the high-resolution counter. Its
+  waits on system objects never showed in the audit either, and a sleep taken that way was
+  shortened but counted under another function's name. All of these now follow the session and
+  are counted where they are called, on both 32 and 64 bit.
 
 ## [0.3.0] - 2026-09-22
 

@@ -246,6 +246,10 @@ static O_TLTST: OnceLock<StslFn> = OnceLock::new();
 static O_TLTSTEX: OnceLock<StslexFn> = OnceLock::new();
 static O_TICK: OnceLock<TickFn> = OnceLock::new();
 static O_TICK32: OnceLock<Tick32Fn> = OnceLock::new();
+// The kernelbase copies of the two tick counts (`ChannelModule::KernelBaseAndKernel32`). Separate
+// trampolines, because each detour falls back to the body it replaced.
+static O_TICK_KB: OnceLock<TickFn> = OnceLock::new();
+static O_TICK32_KB: OnceLock<Tick32Fn> = OnceLock::new();
 static O_QUIT: OnceLock<QuitFn> = OnceLock::new();
 static O_SLEEP: OnceLock<SleepFn> = OnceLock::new();
 static O_SLEEPEX: OnceLock<SleepExFn> = OnceLock::new();
@@ -301,13 +305,19 @@ fn cov_ptr() -> Option<*mut Cov> {
 /// object-wait usage (ADR-7 class B - the audit must count the app's waits, not our machinery's,
 /// rule 4). With WFSO unhooked (scale_duration off) the direct call is not counted either.
 ///
+/// The trampoline alone stopped being enough when the waits moved into kernelbase: there, 64-bit
+/// WaitForSingleObject is two instructions ending in a jump to the EXPORTED WaitForSingleObjectEx,
+/// which is hooked too. Without the flag `unobserved` raises, the watcher's startup polling (a wait
+/// every 20 ms while modules may still arrive) reached the audit as waits the application never made:
+/// measured on a probe that waits on nothing, WaitForSingleObjectEx = 30.
+///
 /// # Safety
 /// `h` must be a valid handle to wait on.
 unsafe fn wait_raw(h: HANDLE, ms: u32) -> u32 { unsafe {
-    match O_WFSO.get() {
+    unobserved(|| match O_WFSO.get() {
         Some(o) => o(h, ms),
         None => WaitForSingleObject(h, ms).0,
-    }
+    })
 }}
 
 /// `STILL_ACTIVE` (259): the exit code `GetExitCodeThread` reports for a thread that has not finished.
@@ -1117,10 +1127,19 @@ unsafe extern "system" fn h_stslex(
 // `m` is clamped to >= 1 inside `dur_tick_at`/`dur_quit_at`, so the axis keeps advancing even when the
 // wall clock is frozen. QPC and timeGetTime are left real (ADR-2).
 
-unsafe extern "system" fn h_tick() -> u64 { unsafe {
+/// The scaled GetTickCount64, falling back to `original` (the body this detour replaced) once the
+/// session is gone. Shared by the kernel32 and the kernelbase detour, which differ only in that body.
+///
+/// Absolute on purpose: while the session holds, the answer comes from the anchors and `original` is
+/// never called, so a kernel32 copy that calls into kernelbase's cannot reach the second detour and
+/// count one read twice (`ChannelModule::KernelBaseAndKernel32`).
+///
+/// # Safety
+/// `original` must hold this channel's trampoline, if anything.
+unsafe fn tick64_or(original: &OnceLock<TickFn>) -> u64 { unsafe {
     bump(IDX_GTC64);
     if detached() {
-        return O_TICK.get().map(|o| o()).unwrap_or(0);
+        return original.get().map(|o| o()).unwrap_or(0);
     }
     match ctl_ptr() {
         Some(p) => {
@@ -1131,21 +1150,24 @@ unsafe extern "system" fn h_tick() -> u64 { unsafe {
             if still_ours(p as *const Ctl) {
                 fake
             } else {
-                O_TICK.get().map(|o| o()).unwrap_or(0)
+                original.get().map(|o| o()).unwrap_or(0)
             }
         }
-        None => O_TICK.get().map(|o| o()).unwrap_or(0),
+        None => original.get().map(|o| o()).unwrap_or(0),
     }
 }}
 
-// GetTickCount (32-bit): the low 32 bits of the SAME scaled millisecond count as
-// GetTickCount64 (shares the dur_tick_c0 base), so a target comparing the two sees them
-// agree. Wraps at 2^32 ms like the real one - and sooner under acceleration - which is the
-// honest behavior of a fast 32-bit counter - callers handle the wrap with unsigned deltas.
-unsafe extern "system" fn h_tick32() -> u32 { unsafe {
+/// GetTickCount (32-bit): the low 32 bits of the SAME scaled millisecond count as
+/// GetTickCount64 (shares the dur_tick_c0 base), so a target comparing the two sees them
+/// agree. Wraps at 2^32 ms like the real one - and sooner under acceleration - which is the
+/// honest behavior of a fast 32-bit counter - callers handle the wrap with unsigned deltas.
+///
+/// # Safety
+/// `original` must hold this channel's trampoline, if anything.
+unsafe fn tick32_or(original: &OnceLock<Tick32Fn>) -> u32 { unsafe {
     bump(IDX_GTC);
     if detached() {
-        return O_TICK32.get().map(|o| o()).unwrap_or(0);
+        return original.get().map(|o| o()).unwrap_or(0);
     }
     match ctl_ptr() {
         Some(p) => {
@@ -1154,12 +1176,17 @@ unsafe extern "system" fn h_tick32() -> u32 { unsafe {
             if still_ours(p as *const Ctl) {
                 fake
             } else {
-                O_TICK32.get().map(|o| o()).unwrap_or(0)
+                original.get().map(|o| o()).unwrap_or(0)
             }
         }
-        None => O_TICK32.get().map(|o| o()).unwrap_or(0),
+        None => original.get().map(|o| o()).unwrap_or(0),
     }
 }}
+
+unsafe extern "system" fn h_tick() -> u64 { unsafe { tick64_or(&O_TICK) } }
+unsafe extern "system" fn h_tick_kb() -> u64 { unsafe { tick64_or(&O_TICK_KB) } }
+unsafe extern "system" fn h_tick32() -> u32 { unsafe { tick32_or(&O_TICK32) } }
+unsafe extern "system" fn h_tick32_kb() -> u32 { unsafe { tick32_or(&O_TICK32_KB) } }
 
 unsafe extern "system" fn h_quit(lp: *mut u64) -> i32 { unsafe {
     bump(IDX_QUIT);
@@ -1232,10 +1259,13 @@ unsafe extern "system" fn h_qpc(lp: *mut i64) -> i32 { unsafe {
 // 0 pass through (scale_wait). Unlike the absolute wall detours, a wait detour is RELATIVE - it
 // calls the original with a modified argument, and the original may re-enter another hooked wait
 // export on the same thread. A thread-local guard makes each app-level wait scale exactly once
-// and be counted against the export the app actually called, never an internal cascade. On
-// Win11 26200 Sleep does not reach the exported SleepEx (internal path), but both Sleep and
-// SleepEx bottom out on NtDelayExecution - so with that funnel hooked the guard is load-bearing:
-// Sleep scales at h_sleep, then re-enters h_ntdelay, which the flag makes pass through unscaled.
+// and be counted against the export the app actually called, never an internal cascade. Both
+// Sleep and SleepEx bottom out on NtDelayExecution, so with that funnel hooked the guard is
+// load-bearing: Sleep scales at h_sleep, then re-enters h_ntdelay, which the flag makes pass
+// through unscaled. Since the two stand in kernelbase (2026-09-23) a 64-bit Sleep crosses THREE
+// detours, because kernelbase's Sleep is `xor edx, edx` and a jump to the exported SleepEx (32-bit
+// calls an internal copy instead). Before the move, a Sleep through the api-set never met h_sleep:
+// it was scaled at h_ntdelay and counted under that name - measured, scaled x57, NtDelayExecution +3.
 
 thread_local! {
     static SCALING_WAIT: Cell<bool> = const { Cell::new(false) };
@@ -1345,9 +1375,11 @@ unsafe extern "system" fn h_ntdelay(alertable: u8, interval: *const i64) -> i32 
 // attributed to the export the app actually called - an internal cascade passes through uncounted.
 // This guard gates only counting (class B never divides), separate from class A's scaling guard -
 // the two wait families never cross-nest (Sleep/NtDelay do not call WaitForX and vice versa).
-// Measured on Win11 26200 (guard on vs off, psleep): the cascades take an INTERNAL path and do not
-// reach the exported partner (like Sleep -> SleepEx in class A), so the guard is a correct policy
-// here, not yet load-bearing - it protects other Windows versions and direct ...Ex callers.
+// Measured on Win11 26200 (guard on vs off, psleep) while these stood on kernel32's stubs: the
+// cascades did not reach a hooked partner. Since they stand in kernelbase (2026-09-23) the guard
+// is load-bearing: 64-bit WaitForSingleObject there is `xor r8d, r8d` and a jump to the exported
+// WaitForSingleObjectEx, and 29 other places in kernelbase call that export directly, among them
+// GetOverlappedResult and OutputDebugStringA. The hook's own waits go through `unobserved`.
 // Detached state is irrelevant: we never modify the wait either way.
 
 thread_local! {
@@ -1372,6 +1404,18 @@ fn enter_observed_wait(idx: usize) -> Option<ObservedWaitGuard> {
     bump(idx);
     OBSERVING_WAIT.set(true);
     Some(ObservedWaitGuard)
+}
+
+/// Run a call of the hook's OWN that may end in an observed wait, with the flag raised and nothing
+/// counted, so the wait it reaches passes through as a cascade would. The flag is restored only by
+/// the call that raised it, so a nested use leaves an outer wait's flag alone.
+fn unobserved<R>(f: impl FnOnce() -> R) -> R {
+    if OBSERVING_WAIT.get() {
+        return f();
+    }
+    OBSERVING_WAIT.set(true);
+    let _guard = ObservedWaitGuard;
+    f()
 }
 
 unsafe extern "system" fn h_wfso(handle: HANDLE, ms: u32) -> u32 { unsafe {
@@ -2054,9 +2098,13 @@ unsafe extern "system" fn h_cpa(
 }}
 
 /// Diagnostics only (stderr-equivalent for an injected DLL) - never affects coverage.
+///
+/// "Never" needs the flag: with a debug monitor listening, OutputDebugStringA waits on its buffer
+/// inside kernelbase through the exported WaitForSingleObjectEx, which the hook observes. A line of
+/// ours must not reach the audit as a wait of the target's.
 fn log(msg: &str) {
     if let Ok(c) = CString::new(msg) {
-        unsafe { OutputDebugStringA(PCSTR(c.as_ptr() as *const u8)) }
+        unobserved(|| unsafe { OutputDebugStringA(PCSTR(c.as_ptr() as *const u8)) })
     }
 }
 
@@ -2073,29 +2121,96 @@ fn log(msg: &str) {
 /// # Safety
 /// `entry` must be the address of a function exported by kernel32 in this process.
 unsafe fn code_behind_kernel32(entry: usize, name: PCSTR, label: &str) -> usize { unsafe {
+    match kernelbase_side(entry, name, label) {
+        KernelBaseSide::Same(own) => own,
+        KernelBaseSide::Separate(_) => {
+            log(&format!(
+                "[chrono_hook] kernel32's {label} does not lead to kernelbase, so it stays hooked on \
+                 kernel32 and a caller that goes through the api-set is not covered"
+            ));
+            entry
+        }
+        KernelBaseSide::Absent => entry,
+    }
+}}
+
+/// What kernelbase holds under a kernel32 export's name, seen from kernel32's entry.
+enum KernelBaseSide {
+    /// Kernel32's entry IS kernelbase's export (a forwarder `GetProcAddress` already resolved) or one
+    /// indirect jump away from it, so one detour at this address sees both paths.
+    Same(usize),
+    /// Kernelbase's export is a different body from the one kernel32's entry runs.
+    Separate(usize),
+    /// Kernelbase is not loaded or does not export the name. Already logged.
+    Absent,
+}
+
+/// Where kernelbase's export of `name` stands relative to kernel32's `entry`. The slot read cannot
+/// fault: it is the very pointer the CPU loads whenever it executes this entry.
+///
+/// # Safety
+/// `entry` must be the address of a function exported by kernel32 in this process.
+unsafe fn kernelbase_side(entry: usize, name: PCSTR, label: &str) -> KernelBaseSide { unsafe {
     let Ok(kernelbase) = GetModuleHandleA(s!("kernelbase.dll")) else {
         log(&format!("[chrono_hook] kernelbase not loaded, {label} stays on kernel32"));
-        return entry;
+        return KernelBaseSide::Absent;
     };
     let Some(own) = GetProcAddress(kernelbase, name) else {
         log(&format!("[chrono_hook] kernelbase does not export {label}, it stays on kernel32"));
-        return entry;
+        return KernelBaseSide::Absent;
     };
     let own = own as *const () as usize;
     if entry == own {
-        return own;
+        return KernelBaseSide::Same(own);
     }
     let code = core::ptr::read_unaligned(entry as *const [u8; 12]);
     if let Some(slot) = indirect_jump_slot(&code, entry, cfg!(target_pointer_width = "64"))
         && core::ptr::read_unaligned(slot as *const usize) == own
     {
-        return own;
+        return KernelBaseSide::Same(own);
     }
-    log(&format!(
-        "[chrono_hook] kernel32's {label} does not lead to kernelbase, so it stays hooked on kernel32 \
-         and a caller that goes through the api-set is not covered"
-    ));
-    entry
+    KernelBaseSide::Separate(own)
+}}
+
+/// The second detour of a `ChannelModule::KernelBaseAndKernel32` channel: kernelbase's own copy, for
+/// the callers that reach it through the api-set. `make_hook` has placed the first one already, on
+/// kernel32's entry, or on kernelbase's export when the two are one body, and then there is nothing
+/// left to do here.
+///
+/// The bit is set when this detour goes live even if the first failed, because the api-set callers
+/// are then covered. The failure of either is logged, and the other one's callers keep their detour.
+///
+/// # Safety
+/// `detour` must be correct for `slot`, and `slot` must not be the first detour's.
+unsafe fn make_kernelbase_copy_hook<T: Copy>(
+    pending: &mut u64,
+    k32: HMODULE,
+    idx: usize,
+    detour: *mut c_void,
+    slot: &OnceLock<T>,
+) { unsafe {
+    let ch = &CHANNELS[idx];
+    let Ok(cname) = CString::new(ch.name) else {
+        return;
+    };
+    let name = PCSTR(cname.as_ptr() as *const u8);
+    let Some(entry) = GetProcAddress(k32, name) else {
+        return; // make_hook logged the missing export
+    };
+    let KernelBaseSide::Separate(own) = kernelbase_side(entry as *const () as usize, name, ch.name) else {
+        return;
+    };
+    match MinHook::create_hook(own as *mut c_void, detour) {
+        Ok(original) => {
+            let _ = slot.set(std::mem::transmute_copy::<*mut c_void, T>(&original));
+            *pending |= ch.bit;
+        }
+        Err(e) => log(&format!(
+            "[chrono_hook] create_hook {} in kernelbase failed: {e:?}, a caller that goes through the \
+             api-set is not covered",
+            ch.name
+        )),
+    }
 }}
 
 /// Resolve, create, and record one channel's detour. Best-effort: a missing export
@@ -2123,7 +2238,9 @@ unsafe fn make_hook<T: Copy>(
     let module = match ch.module {
         // Resolved in kernel32 first either way. The second kind then follows the entry into
         // kernelbase below, once there is an address to follow.
-        ChannelModule::Kernel32 | ChannelModule::KernelBaseBehindKernel32 => k32,
+        ChannelModule::Kernel32
+        | ChannelModule::KernelBaseBehindKernel32
+        | ChannelModule::KernelBaseAndKernel32 => k32,
         ChannelModule::Ntdll => ntdll,
         // user32 may be absent in a console/service target - resolve it here rather than force-load it
         // (forcing a DLL the target never needed would change its behavior). Absent -> honest partial.
@@ -2179,10 +2296,17 @@ unsafe fn make_hook<T: Copy>(
         }
     };
     let entry = target as *const () as usize;
-    let mut at = entry;
-    if ch.module == ChannelModule::KernelBaseBehindKernel32 {
-        at = code_behind_kernel32(entry, PCSTR(cname.as_ptr() as *const u8), ch.name);
-    }
+    let name = PCSTR(cname.as_ptr() as *const u8);
+    let at = match ch.module {
+        ChannelModule::KernelBaseBehindKernel32 => code_behind_kernel32(entry, name, ch.name),
+        // One body: detour it where both paths meet. Two bodies: kernel32's here, and
+        // `make_kernelbase_copy_hook` takes kernelbase's.
+        ChannelModule::KernelBaseAndKernel32 => match kernelbase_side(entry, name, ch.name) {
+            KernelBaseSide::Same(own) => own,
+            KernelBaseSide::Separate(_) | KernelBaseSide::Absent => entry,
+        },
+        _ => entry,
+    };
     // A detour that cannot be created in kernelbase (a prologue MinHook cannot relocate, another
     // hooking library there first) retries on kernel32's entry, which is where it stood before the
     // move. Without this the channel would install nowhere, and the kernel32 callers it covered
@@ -2320,7 +2444,9 @@ unsafe fn install() -> Result<(), String> { unsafe {
     // opt-in asks otherwise (ADR-2) - timeGetTime rides this axis, sharing GetTickCount's base.
     if read_scale_dur(ctl as *const Ctl) {
         make_hook(&mut pending, k32, ntdll, IDX_GTC64, h_tick as *const () as *mut c_void, &O_TICK);
+        make_kernelbase_copy_hook(&mut pending, k32, IDX_GTC64, h_tick_kb as *const () as *mut c_void, &O_TICK_KB);
         make_hook(&mut pending, k32, ntdll, IDX_GTC, h_tick32 as *const () as *mut c_void, &O_TICK32);
+        make_kernelbase_copy_hook(&mut pending, k32, IDX_GTC, h_tick32_kb as *const () as *mut c_void, &O_TICK32_KB);
         make_hook(&mut pending, k32, ntdll, IDX_QUIT, h_quit as *const () as *mut c_void, &O_QUIT);
         make_hook(&mut pending, k32, ntdll, IDX_SLEEP, h_sleep as *const () as *mut c_void, &O_SLEEP);
         make_hook(&mut pending, k32, ntdll, IDX_SLEEPEX, h_sleepex as *const () as *mut c_void, &O_SLEEPEX);

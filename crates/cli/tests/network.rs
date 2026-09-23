@@ -168,6 +168,13 @@ const ALLOWED: &[(&str, &str, &str)] = &[
          past this machine",
     ),
     (
+        "crates/cli/tests/duration_axis.rs",
+        "spawn",
+        "runs this test binary's own ignored probe twice, once alone as the control and once under a \
+         session through the built binary, and reads the tick rate it wrote to a scratch file. \
+         Neither reaches past this machine",
+    ),
+    (
         "crates/hook/src/lib.rs",
         "winsock",
         "the injected library resolves ws2_32 to INTERCEPT the target's own connect and count it. \

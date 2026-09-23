@@ -420,6 +420,7 @@
   "source.network_at_start": "The application opened a network connection - it may read the time from a server, which no local clock can change.",
   "wait.object_waits_not_scaled": "Waits on system objects are left on the real clock on purpose - an I/O or hardware timeout is not shortened.",
   "wait.timeout_collapsed": "Some of this application's waits were too short to divide by the full speed factor, so they ran at the shortest step this tool uses (1 ms) instead. That part of the application did not accelerate - a lower speed makes it exact again.",
+  "wait.network_timeouts_scaled": "This application has the network stack loaded. A network library that measures its own timeout from the system tick count, such as WinHTTP, follows the session speed - so a server slower than that timeout divided by the speed makes a request fail, even though the waits underneath stay on the real clock.",
   "timer.multimedia_not_scaled": "The multimedia timer (timeSetEvent) is observed but not scaled.",
   "clock.timegettime_scaled_audio_may_shift": "The winmm clock timeGetTime is being scaled with the rest of the duration axis, so a target that paces itself from it follows the session - but a media application that positions audio from that clock may drift.",
   "coverage.channel_installed_late": "The functions listed as coming under the fake clock late were hooked only once their own module loaded, so calls the application made before that are missing from their counts - and a scaled one's clock jumped once when it joined.",
