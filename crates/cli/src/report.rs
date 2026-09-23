@@ -331,7 +331,7 @@ pub(crate) fn describe_warning(key: &str) -> String {
             "this Python app's perf_counter uses QueryPerformanceCounter, which is left real, so a perf_counter timer does not scale - on Python 3.13+ monotonic uses QPC too (time.time and the wall clock do scale)"
         }
         "runtime.dotnet_stopwatch_qpc" => {
-            "this .NET app's Stopwatch uses QueryPerformanceCounter, which is left real, so a Stopwatch timer does not scale (DateTime and Environment.TickCount do)"
+            "this .NET app's Stopwatch uses QueryPerformanceCounter, which is left real, so a Stopwatch timer does not scale (DateTime does, and Environment.TickCount does with --scale-duration)"
         }
         "runtime.java_nanotime_qpc" => {
             "this Java app's System.nanoTime uses QueryPerformanceCounter, which is left real, so a nanoTime timer does not scale (System.currentTimeMillis does)"
@@ -557,7 +557,8 @@ fn fingerprint_target(target_path: &std::path::Path) -> Vec<String> {
             };
             if let Some(minor) = python_dll_minor(&name) {
                 // Python 3.13+ moved monotonic onto QPC too (CPython PR 116781) - earlier, only
-                // perf_counter is on QPC and monotonic (GetTickCount64) still scales.
+                // perf_counter is on QPC and monotonic (GetTickCount64) still scales under
+                // --scale-duration, the flag every duration clock off QPC needs.
                 add(
                     &mut keys,
                     if minor >= 13 {
@@ -1492,7 +1493,8 @@ mod tests {
 
     #[test]
     fn detect_runtime_flags_python_312_perfcounter_only() {
-        // Python 3.12: only perf_counter is on QPC - monotonic (GetTickCount64) still scales.
+        // Python 3.12: only perf_counter is on QPC - monotonic (GetTickCount64) still scales under
+        // --scale-duration.
         let dir = unique_temp_dir("chrono-rt-py312");
         std::fs::create_dir_all(dir.join("_internal")).unwrap();
         std::fs::write(dir.join("_internal").join("python312.dll"), b"").unwrap();
