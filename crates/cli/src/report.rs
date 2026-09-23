@@ -390,9 +390,9 @@ pub(crate) fn exit_code_label(code: i32) -> String {
 /// (and its PyInstaller `_internal/` folder) plus a few bounded kilobytes of the target's own executable
 /// (`pe`: Go build info, a .NET runtime linked in): no QPC hook (ADR-2 holds), no process inspection.
 /// Best-effort: a runtime unpacked at runtime (PyInstaller onefile), a `java -jar` launch, a
-/// framework-dependent single-file .NET build, or a launcher that starts the real binary from another
-/// folder is not caught here, and a false positive only adds a "may not scale" note, never a false
-/// verdict (rules 4, 6).
+/// framework-dependent single-file .NET build, a NativeAOT build published with `DebuggerSupport`
+/// off, or a launcher that starts the real binary from another folder is not caught here, and a false
+/// positive only adds a "may not scale" note, never a false verdict (rules 4, 6).
 pub(crate) fn detect_runtime_warnings(target_path: &std::path::Path, scale_qpc: bool) -> Vec<String> {
     let mut keys = fingerprint_target(target_path);
 

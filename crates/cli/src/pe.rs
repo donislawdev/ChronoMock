@@ -61,6 +61,7 @@ const GO_DATA_WINDOW: usize = 64 * 1024;
 ///   has already replaced it with `DotNetRuntimeContractDescriptor`. Both are added by
 ///   `Microsoft.NETCore.Native.targets` only while `DebuggerSupport` is on, so an application built
 ///   with it off exports neither and stays unrecognised - a miss, which is the safe direction.
+///   Measured: the same probe published with it off keeps an export directory and has zero names.
 /// - The self-contained single-file host exports `DotNetRuntimeInfo` from .NET 6 onwards and
 ///   `DotNetRuntimeContractDescriptor` from .NET 9, unconditionally (`singlefilehost.def`).
 ///
@@ -324,8 +325,11 @@ mod tests {
         synthetic_pe(magic, b".rdata\0\0", &block, Some((RVA, block.len() as u32)))
     }
 
+    /// A fixture file under a name no other test process can share. A fixed name would let two
+    /// `cargo test` runs side by side (both architectures, two worktrees) overwrite and delete each
+    /// other's files.
     fn write_probe(name: &str, bytes: &[u8]) -> std::path::PathBuf {
-        let path = std::env::temp_dir().join(format!("chrono-pe-fingerprint-{name}.bin"));
+        let path = crate::testutil::unique_temp_dir(&format!("chrono-pe-fingerprint-{name}")).with_extension("bin");
         std::fs::write(&path, bytes).expect("probe file");
         path
     }
@@ -464,7 +468,7 @@ mod tests {
     /// entry the session uses, so removing either line in `fingerprint_target` turns it red.
     #[test]
     fn both_fingerprints_reach_the_runtime_warnings() {
-        let dir = std::env::temp_dir().join(format!("chrono-pe-wiring-{}", std::process::id()));
+        let dir = crate::testutil::unique_temp_dir("chrono-pe-wiring");
         std::fs::create_dir_all(&dir).expect("probe dir");
 
         let aot = dir.join("Aot.exe");
