@@ -241,13 +241,15 @@ impl PeFile {
         Some((u32_at(&self.head, entry)?, u32_at(&self.head, entry.checked_add(4)?)?))
     }
 
-    /// The file offset behind a relative virtual address, through the section that holds it. Only
-    /// bytes that are really in the file count: the zero-filled tail a section has in memory has no
-    /// place on disk to read.
-    fn offset_of(&self, rva: u32) -> Option<u64> {
+    /// The file offset behind `len` bytes starting at a relative virtual address, through the section
+    /// that holds them ALL on disk. Only bytes that are really in the file count: the zero-filled tail
+    /// a section has in memory has no place on disk to read, and bytes past the section's raw size
+    /// belong to whatever the file keeps next, not to this section.
+    fn offset_of(&self, rva: u32, len: u32) -> Option<u64> {
         self.sections().find_map(|section| {
             let delta = rva.checked_sub(section.virtual_address)?;
-            (delta < section.raw_size).then(|| u64::from(section.raw_offset) + u64::from(delta))
+            let end = delta.checked_add(len)?;
+            (len > 0 && end <= section.raw_size).then(|| u64::from(section.raw_offset) + u64::from(delta))
         })
     }
 
@@ -274,14 +276,15 @@ impl PeFile {
         Some(searched.windows(APPHOST_BUNDLE_SIGNATURE.len()).any(|w| w == APPHOST_BUNDLE_SIGNATURE))
     }
 
-    /// Whether data directory 14 points at a CLR header the file really holds: a whole one, inside a
-    /// section, whose own size field says it is at least as large as the format defines it. A stray
-    /// directory entry pointing nowhere, or at something shorter, is not a managed image.
+    /// Whether data directory 14 points at a CLR header the file really holds: a directory declaring a
+    /// whole one, all of it inside one section on disk, and the header's own size field saying it is
+    /// at least as large as the format defines it. A stray entry pointing nowhere, declaring less, or
+    /// at bytes running out of their section, is not a managed image.
     fn has_clr_header(&mut self) -> Option<bool> {
-        let Some((rva, _)) = self.directory(CLR_DIRECTORY).filter(|&(rva, size)| rva != 0 && size != 0) else {
+        let Some((rva, _)) = self.directory(CLR_DIRECTORY).filter(|&(rva, size)| rva != 0 && size as usize >= CLR_HEADER) else {
             return Some(false);
         };
-        let at = self.offset_of(rva)?;
+        let at = self.offset_of(rva, CLR_HEADER as u32)?;
         let header = self.read_at(at, CLR_HEADER)?;
         Some(header.len() == CLR_HEADER && u32_at(&header, 0)? as usize >= CLR_HEADER)
     }
@@ -294,7 +297,9 @@ impl PeFile {
         let Some((rva, size)) = self.directory(EXPORT_DIRECTORY).filter(|&(rva, _)| rva != 0) else {
             return Some(false);
         };
-        let at = self.offset_of(rva)?;
+        // Only the first byte has to be in a section here: the block is bounded by its own size field
+        // and the window, and every name is resolved inside what was read.
+        let at = self.offset_of(rva, 1)?;
         let block = self.read_at(at, (size as usize).min(EXPORT_WINDOW))?;
         let count = u32_at(&block, 24)? as usize;
         let names = u32_at(&block, 32)?.checked_sub(rva)? as usize;
@@ -603,10 +608,26 @@ mod tests {
 
             // The directory pointing past every section.
             let mut lost = managed(magic, CLR_HEADER as u32);
-            let table_at = 0x80 + 24 + (if magic == 0x20B { 112 } else { 96 }) + CLR_DIRECTORY * DATA_DIRECTORY_ENTRY;
-            lost[table_at..table_at + 4].copy_from_slice(&0x9000_0000u32.to_le_bytes());
+            let entry = 0x80 + 24 + (if magic == 0x20B { 112 } else { 96 }) + CLR_DIRECTORY * DATA_DIRECTORY_ENTRY;
+            lost[entry..entry + 4].copy_from_slice(&0x9000_0000u32.to_le_bytes());
             let lost = write_probe(&format!("{flavour}-lost"), &lost);
             assert!(!is_dotnet_executable(&lost), "{flavour}: a directory no section holds");
+
+            // A directory that declares less than a whole header, pointing at one that is whole.
+            let mut tiny = managed(magic, CLR_HEADER as u32);
+            tiny[entry + 4..entry + 8].copy_from_slice(&1u32.to_le_bytes());
+            let tiny = write_probe(&format!("{flavour}-tiny"), &tiny);
+            assert!(!is_dotnet_executable(&tiny), "{flavour}: a directory declaring one byte");
+
+            // A header that starts inside the section and runs past its end on disk, into bytes the
+            // section does not own. The file holds all 72, so only the section's bound refuses it.
+            let mut data = vec![0u8; 8];
+            data.extend_from_slice(&(CLR_HEADER as u32).to_le_bytes());
+            data.resize(CLR_HEADER, 0);
+            let mut straddle = synthetic_pe(magic, b".text\0\0\0", &data, Some((CLR_DIRECTORY, RVA + 8, CLR_HEADER as u32)));
+            straddle.extend_from_slice(&[0u8; 16]);
+            let straddle = write_probe(&format!("{flavour}-straddle"), &straddle);
+            assert!(!is_dotnet_executable(&straddle), "{flavour}: a header running past the end of its section");
 
             // A header cut short by the end of the file.
             let whole = managed(magic, CLR_HEADER as u32);
@@ -620,7 +641,7 @@ mod tests {
             let few = write_probe(&format!("{flavour}-few"), &few);
             assert!(!is_dotnet_executable(&few), "{flavour}: entry 14 past the declared table");
 
-            for p in [managed_exe, native, small, lost, cut, few] {
+            for p in [managed_exe, native, small, lost, tiny, straddle, cut, few] {
                 let _ = std::fs::remove_file(p);
             }
         }
