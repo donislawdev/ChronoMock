@@ -91,8 +91,9 @@ Chrono Mock - date calculator
           nie zna żaden rejestr Windows. Cokolwiek mapuje tę nazwę z powrotem na strefę -
           w tym <code>TimeZoneInfo.Local</code> w .NET - spada na offset, co jest właściwą
           odpowiedzią. Aplikacja upierająca się przy nazwie z rejestru jej nie znajdzie.</li>
-        <li><strong>Java nie podchwytuje strefy sesji.</strong> Zegar ścienny i czas trwania są
-          objęte, strefa nie. To znana dziura, powiedziana wprost, a nie ukryta.</li>
+        <li><strong>Java przejmuje strefę sesji jako offset.</strong> Strefa sesji nie ma czasu
+          letniego ani miasta za sobą, więc Java nazywa ją od offsetu -
+          <code>GMT+05:30</code> dla sesji na +05:30.</li>
         <li><strong>W trybie Chromium i Electron strefa idzie za hostem.</strong> Fałszowana
           jest chwila, a nie funkcje czasu lokalnego.</li>
         <li><strong>Offsety mieszczą się od -14:00 do +14:00</strong>, w pełnych minutach.

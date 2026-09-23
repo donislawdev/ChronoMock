@@ -57,8 +57,8 @@
         <li><strong>.NET</strong> - zegar ścienny i strefa sesji są objęte.
           <code>Stopwatch</code> zostaje na prawdziwym liczniku wysokiej rozdzielczości,
           chyba że włączysz jego skalowanie.</li>
-        <li><strong>Java</strong> - zegar ścienny i czas trwania są objęte. Strefa sesji
-          <em>nie</em> jest osiągana i jest to znana dziura.</li>
+        <li><strong>Java</strong> - zegar ścienny, czas trwania i strefa sesji są objęte.
+          Strefa przychodzi jako stały offset, nazwany np. <code>GMT+05:30</code>.</li>
         <li><strong>Python</strong> - <code>time.time</code> i <code>datetime</code> są objęte.
           <code>perf_counter</code>, a od Pythona 3.13 również <code>monotonic</code>, siedzą
           na liczniku wysokiej rozdzielczości, chyba że włączysz skalowanie.</li>

@@ -279,9 +279,11 @@ cover something is worse than one that says what it cannot do.
   boundary drifts an hour from what that zone would really show. Forcing an application through a DST
   transition is therefore not something this tool does yet, and the date calculator says so rather
   than guessing
-- **The zone reports itself as "Chrono Session"**, a name no Windows registry knows. Anything that
-  maps that name back to a zone (.NET's `TimeZoneInfo.Local` among them) falls back to the offset
-  instead, which is the right answer - but a target that insists on a registry name will not find one
+- **The zone reports itself as "Chrono Session"**, a name no Windows registry knows, and says it
+  has no daylight saving time. Anything that maps that name back to a zone falls back to the offset
+  instead, which is the right answer: .NET's `TimeZoneInfo.Local` keeps the name, Java names the zone
+  after its offset (`GMT+05:30`), and so do Node.js and Deno for a whole hour (`Etc/GMT-5`). A target
+  that insists on a registry name will not find one
 - **Chrono Mock cleans up after itself. It cannot clean up after the application you tested.** See the
   warning below
 - Windows only. No macOS, no Linux - `libfaketime` already covers Linux well
@@ -356,7 +358,7 @@ column says which is which._
 |---|---|---|---|
 | Native Win32 / Win64 (C, C++, Delphi) | supported | measured on x64, x86 | The cleanest case |
 | .NET (Framework and modern) | experimental | measured on x64, x86 | Time calls go through Win32 exports and are covered, including the session time zone. Stopwatch stays on the real high-resolution counter unless you opt in with Scale QPC (`--scale-qpc`), which accelerates it too |
-| Java (JVM) | experimental | measured on x64, x86 | Wall clock and elapsed time are covered. The session time zone is not reached - a known gap. nanoTime stays on the real high-resolution counter unless you opt in with Scale QPC (`--scale-qpc`) |
+| Java (JVM) | experimental | measured on x64, x86 | Wall clock, elapsed time and the session time zone are covered. The zone arrives as a fixed offset named after it, like `GMT+05:30`. nanoTime stays on the real high-resolution counter unless you opt in with Scale QPC (`--scale-qpc`) |
 | Python (CPython, incl. PyInstaller) | experimental | measured by hand on x64, not by the suite | Wall clock (time.time, datetime) and the session time zone (time.localtime) are covered. perf_counter, and monotonic on Python 3.13+, are on the high-resolution counter - real by default, accelerated when you opt in with Scale QPC (`--scale-qpc`) |
 | Applications reading time from the network | out of scope by definition | measured on x64, x86 | The audit detects it - every connection attempt made through Windows' own socket layer is observed and warned about, whichever function made it (Winsock, WinHTTP, WinINet, and the .NET, Node.js, Go, Java and Python runtimes). A datagram sent without a connection is not a connection and is not counted. A third-party Winsock provider, rare on current Windows, is not watched |
 | Embedded web engine inside a native app (WebView2, Qt WebEngine) | experimental | measured by hand on a WebView2 host and a Qt WebEngine host (x64), not by the suite | The native hook covers the application and the pages inside it are reached over the engine's debugging port, opened for the session through two environment variables the application inherits. The pages read the session clock at the session rate and follow a speed change and a jump. The engine's helper processes and the renderer's native reads stay on the real clock, so the verdict is PARTIAL and says why. The pages keep the machine's time zone. An elevated application is out of reach - the engine ignores the variables |

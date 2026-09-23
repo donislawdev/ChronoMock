@@ -58,8 +58,8 @@
         <li><strong>.NET</strong> - the wall clock and the session time zone are covered.
           <code>Stopwatch</code> stays on the real high-resolution counter unless you opt in
           to scaling it.</li>
-        <li><strong>Java</strong> - the wall clock and elapsed time are covered. The session
-          time zone is <em>not</em> reached, which is a known gap.</li>
+        <li><strong>Java</strong> - the wall clock, elapsed time and the session time zone are
+          covered. The zone arrives as a fixed offset, named like <code>GMT+05:30</code>.</li>
         <li><strong>Python</strong> - <code>time.time</code> and <code>datetime</code> are
           covered. <code>perf_counter</code>, and <code>monotonic</code> on Python 3.13 and
           later, sit on the high-resolution counter unless you opt in.</li>

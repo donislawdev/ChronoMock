@@ -170,6 +170,14 @@ const ALLOWED: &[(&str, &str, &str)] = &[
          past this machine",
     ),
     (
+        "crates/cli/tests/session_zone.rs",
+        "spawn",
+        "runs Windows PowerShell twice, once alone as the control and once under a session through \
+         the built binary, with a probe script that compiles its one declaration using the C# \
+         compiler the .NET Framework ships with and writes the zone it read to a scratch file. \
+         Neither reaches past this machine",
+    ),
+    (
         "crates/cli/tests/duration_axis.rs",
         "spawn",
         "runs this test binary's own ignored probe twice, once alone as the control and once under a \
