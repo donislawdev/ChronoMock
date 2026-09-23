@@ -891,7 +891,10 @@ unsafe fn gather_coverage(
                 out.observed.push(ChannelCoverage { channel: ch.name.to_string(), calls });
             } else if matches!(
                 ch.module,
-                ChannelModule::Kernel32 | ChannelModule::Ntdll | ChannelModule::KernelBase
+                ChannelModule::Kernel32
+                    | ChannelModule::Ntdll
+                    | ChannelModule::KernelBase
+                    | ChannelModule::KernelBaseBehindKernel32
             ) {
                 // The module is in every process, so "wanted and not installed" can only mean the
                 // hook failed. That used to produce no line at all: not covered, not uncovered,
@@ -924,9 +927,10 @@ unsafe fn gather_coverage(
                 // kernelbase sits with kernel32 and ntdll rather than with the optional three: every
                 // Win32 process has it, so a channel of its that did not install is a real gap and has
                 // to be reported as one.
-                ChannelModule::Kernel32 | ChannelModule::Ntdll | ChannelModule::KernelBase => {
-                    out.uncovered.push(ch.name.to_string())
-                }
+                ChannelModule::Kernel32
+                | ChannelModule::Ntdll
+                | ChannelModule::KernelBase
+                | ChannelModule::KernelBaseBehindKernel32 => out.uncovered.push(ch.name.to_string()),
                 ChannelModule::User32 | ChannelModule::Winmm | ChannelModule::Ws2_32 => {}
             }
         }

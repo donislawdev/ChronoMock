@@ -25,6 +25,19 @@ Notable changes to Chrono Mock, newest first. The format follows
   the whole family read them, so the one number worth seeing first does not have to be counted
   off forty-one rows by eye.
 
+### Fixed
+
+- **Programs on the dynamic C runtime saw the real date.** A C or C++ program that reads the time
+  through the C runtime's own functions (`time()`, `localtime()`, `strftime`) and links that runtime
+  as a DLL, which is the default for a Release build in Visual Studio, got the real date and the
+  machine's real time zone under a session, while the session reported success. The same was true
+  of anything else that reaches the clock through the system's newer entry points instead of the
+  classic ones, the command interpreter's `%DATE%` among them. Windows keeps the time functions in
+  one system library and has an older one pass the call on, and the substitution sat on the older
+  one. It now sits where the code lives, so both routes are covered, and every such read shows in
+  the channel counts instead of being invisible. Python and Ruby get the session time zone from
+  the same change, where until now they kept the machine's.
+
 ## [0.3.0] - 2026-09-22
 
 The window was rebuilt so it can be changed one place at a time. Most of the work is a new

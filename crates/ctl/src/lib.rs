@@ -296,6 +296,22 @@ pub enum ChannelModule {
     /// api-set and does not export `WaitOnAddress` at all, while kernelbase exports all three for real.
     /// Hooking where the code actually lives also catches a caller that resolved the api-set directly.
     KernelBase,
+    /// Exported by kernel32, with the code in kernelbase: the hook follows kernel32's entry to the
+    /// function it lands on and detours THAT, so a caller that went to the api-set directly is caught too.
+    ///
+    /// Measured with `dumpbin` and a probe on both bitnesses: for the wall-clock and zone channels,
+    /// kernel32 exports a stub of its own rather than a forwarder, and the stub is one indirect jump
+    /// into kernelbase (on x86 behind the hot-patch prologue). A detour on that stub misses every
+    /// caller that imports the api-set, and the dynamic C runtime is one of them: its `time()` and
+    /// `localtime()` read the REAL date and zone under a session that reported `works`, while the
+    /// audit showed the channel installed with zero calls.
+    ///
+    /// The decision is taken per process, at install, not in this table (`indirect_jump_slot`). When
+    /// kernel32's entry does NOT lead to kernelbase's export (another Windows build, or a stub someone
+    /// else already patched), the hook stays on kernel32 exactly as before and logs it, and so it does
+    /// when the detour cannot be created in kernelbase. A change of shape can then cost the api-set
+    /// callers, never the callers this build already covered.
+    KernelBaseBehindKernel32,
 }
 
 /// What kind of time a channel carries. The duration axis and the object-wait observation
@@ -352,6 +368,39 @@ pub struct ChannelDef {
     pub category: ChannelCategory,
 }
 
+/// The address of the pointer slot an indirect jump at a function's entry loads its target from, or
+/// `None` when the entry is not one of the stub shapes kernel32 uses. The hook reads that slot to
+/// learn whether kernel32's export leads into kernelbase (`ChannelModule::KernelBaseBehindKernel32`).
+///
+/// Only the shapes measured on kernel32 (both bitnesses, 2026-09-23) are recognised, and any other
+/// entry answers `None`, which keeps the detour on kernel32 as it always was:
+/// - 64-bit `FF 25 disp32` and `48 FF 25 disp32`: `jmp [rip + disp32]`, relative to the end of the
+///   instruction.
+/// - 32-bit `FF 25 abs32`: `jmp [abs32]`.
+/// - 32-bit `8B FF 55 8B EC 5D FF 25 abs32`: the hot-patch prologue (`mov edi, edi`, `push ebp`,
+///   `mov ebp, esp`, `pop ebp`), which undoes itself before the same jump.
+///
+/// `rip_relative` picks the encoding, because the same `FF 25` addresses relative to the next
+/// instruction in 64-bit code and carries an absolute address in 32-bit code. Pure over the bytes it
+/// is given, so the caller owns the one unsafe read and both encodings are testable on either host.
+pub fn indirect_jump_slot(code: &[u8; 12], entry: usize, rip_relative: bool) -> Option<usize> {
+    let disp = |at: usize| i32::from_le_bytes([code[at], code[at + 1], code[at + 2], code[at + 3]]);
+    if rip_relative {
+        let (len, at) = match code {
+            [0x48, 0xFF, 0x25, ..] => (7, 3),
+            [0xFF, 0x25, ..] => (6, 2),
+            _ => return None,
+        };
+        return entry.checked_add(len)?.checked_add_signed(disp(at) as isize);
+    }
+    let at = match code {
+        [0xFF, 0x25, ..] => 2,
+        [0x8B, 0xFF, 0x55, 0x8B, 0xEC, 0x5D, 0xFF, 0x25, ..] => 8,
+        _ => return None,
+    };
+    Some(disp(at) as u32 as usize)
+}
+
 // --- Coverage audit against chrono-mock.md 9.1 ---------------------------------
 // COVERED (the CHANNELS table below): the Win32 wall clock (GetSystemTime,
 // GetSystemTimeAsFileTime, GetSystemTimePreciseAsFileTime, GetLocalTime), the session
@@ -372,8 +421,11 @@ pub struct ChannelDef {
 // USER_TIMER_MINIMUM (10 ms) up to it, a documented floor under heavy acceleration. The thread-pool
 // timers SetThreadpoolTimer / SetThreadpoolTimerEx (kernel32) scale the same way as SetWaitableTimer:
 // their FILETIME due-time (absolute converted to a scaled relative interval, relative scaled) and
-// their msPeriod / msWindowLength divide by M. CRT time / _time64 ride the hooked Win32 exports, so
-// they follow for free.
+// their msPeriod / msWindowLength divide by M. CRT time / _time64 / localtime ride the hooked Win32
+// exports - but only because the wall-clock and zone channels are detoured in KERNELBASE, where the
+// code lives (`ChannelModule::KernelBaseBehindKernel32`). The dynamic C runtime imports them through
+// the api-set, which skips kernel32 entirely. Before 2026-09-23 they were detoured on kernel32's stub,
+// so "for free" held for the static runtime only, and a /MD program read the real date.
 //
 // OPT-IN UNDER ITS OWN FLAG (`scale_qpc`, the ADR-2 reversal): QueryPerformanceCounter. Left real by
 // default - scaling it also scales a target's QPC-timed rendering - but a Python 3.13+ / .NET / Java
@@ -419,29 +471,35 @@ pub struct ChannelDef {
 // and warn that its child may be uncovered, an honest audit (rule 4) without the risk. A guard makes
 // the CreateProcess* funnel to NtCreateUserProcess NOT count (the child is already inherited).
 //
-// KNOWN GAPS, not yet covered (the verifier should report these honestly): none of the major time or
-// spawn surfaces remain - residual exotica (SetThreadpoolWait timeouts, RtlCreateUserProcess legacy
-// path) are out of scope and would be reported honestly if a target hit them.
+// KNOWN GAPS, not yet covered (the verifier should report these honestly): the duration axis and the
+// waits (GetTickCount, GetTickCount64, QueryUnbiasedInterruptTime, Sleep, SleepEx, SetWaitableTimer,
+// the object waits) are still detoured on kernel32's entry, so a caller that reaches them through the
+// api-set (system DLLs, the old msvcrt) runs at real speed there. Moving them is its own step because
+// it starts scaling waits INSIDE system components, and GetTickCount and GetTickCount64 have code of
+// their own in both DLLs, so they need two detours rather than one. Also not hooked at all:
+// GetTimeZoneInformationForYear, LocalFileTimeToLocalSystemTime and LocalSystemTimeToLocalFileTime.
+// Residual exotica (SetThreadpoolWait timeouts, RtlCreateUserProcess legacy path) are out of scope
+// and would be reported honestly if a target hit them.
 
 /// All time channels, ordered by their `calls` index (IDX_*): the wall-clock set, the
 /// session-zone functions, then the opt-in duration axis.
 pub const CHANNELS: [ChannelDef; CHANNEL_COUNT] = [
-    ChannelDef { bit: CH_GSTAFT, name: "GetSystemTimeAsFileTime", module: ChannelModule::Kernel32, category: ChannelCategory::Wall },
-    ChannelDef { bit: CH_GSTPAFT, name: "GetSystemTimePreciseAsFileTime", module: ChannelModule::Kernel32, category: ChannelCategory::Wall },
-    ChannelDef { bit: CH_GST, name: "GetSystemTime", module: ChannelModule::Kernel32, category: ChannelCategory::Wall },
-    ChannelDef { bit: CH_GLT, name: "GetLocalTime", module: ChannelModule::Kernel32, category: ChannelCategory::Wall },
+    ChannelDef { bit: CH_GSTAFT, name: "GetSystemTimeAsFileTime", module: ChannelModule::KernelBaseBehindKernel32, category: ChannelCategory::Wall },
+    ChannelDef { bit: CH_GSTPAFT, name: "GetSystemTimePreciseAsFileTime", module: ChannelModule::KernelBaseBehindKernel32, category: ChannelCategory::Wall },
+    ChannelDef { bit: CH_GST, name: "GetSystemTime", module: ChannelModule::KernelBaseBehindKernel32, category: ChannelCategory::Wall },
+    ChannelDef { bit: CH_GLT, name: "GetLocalTime", module: ChannelModule::KernelBaseBehindKernel32, category: ChannelCategory::Wall },
     ChannelDef { bit: CH_NTQST, name: "NtQuerySystemTime", module: ChannelModule::Ntdll, category: ChannelCategory::Wall },
-    ChannelDef { bit: CH_GTZI, name: "GetTimeZoneInformation", module: ChannelModule::Kernel32, category: ChannelCategory::Zone },
-    ChannelDef { bit: CH_GDTZI, name: "GetDynamicTimeZoneInformation", module: ChannelModule::Kernel32, category: ChannelCategory::Zone },
+    ChannelDef { bit: CH_GTZI, name: "GetTimeZoneInformation", module: ChannelModule::KernelBaseBehindKernel32, category: ChannelCategory::Zone },
+    ChannelDef { bit: CH_GDTZI, name: "GetDynamicTimeZoneInformation", module: ChannelModule::KernelBaseBehindKernel32, category: ChannelCategory::Zone },
     ChannelDef { bit: CH_GTC64, name: "GetTickCount64", module: ChannelModule::Kernel32, category: ChannelCategory::Duration },
     ChannelDef { bit: CH_QUIT, name: "QueryUnbiasedInterruptTime", module: ChannelModule::Kernel32, category: ChannelCategory::Duration },
     ChannelDef { bit: CH_GTC, name: "GetTickCount", module: ChannelModule::Kernel32, category: ChannelCategory::Duration },
-    ChannelDef { bit: CH_STSL, name: "SystemTimeToTzSpecificLocalTime", module: ChannelModule::Kernel32, category: ChannelCategory::Zone },
-    ChannelDef { bit: CH_STSLEX, name: "SystemTimeToTzSpecificLocalTimeEx", module: ChannelModule::Kernel32, category: ChannelCategory::Zone },
-    ChannelDef { bit: CH_FTLFT, name: "FileTimeToLocalFileTime", module: ChannelModule::Kernel32, category: ChannelCategory::Zone },
-    ChannelDef { bit: CH_LFTFT, name: "LocalFileTimeToFileTime", module: ChannelModule::Kernel32, category: ChannelCategory::Zone },
-    ChannelDef { bit: CH_TLTST, name: "TzSpecificLocalTimeToSystemTime", module: ChannelModule::Kernel32, category: ChannelCategory::Zone },
-    ChannelDef { bit: CH_TLTSTEX, name: "TzSpecificLocalTimeToSystemTimeEx", module: ChannelModule::Kernel32, category: ChannelCategory::Zone },
+    ChannelDef { bit: CH_STSL, name: "SystemTimeToTzSpecificLocalTime", module: ChannelModule::KernelBaseBehindKernel32, category: ChannelCategory::Zone },
+    ChannelDef { bit: CH_STSLEX, name: "SystemTimeToTzSpecificLocalTimeEx", module: ChannelModule::KernelBaseBehindKernel32, category: ChannelCategory::Zone },
+    ChannelDef { bit: CH_FTLFT, name: "FileTimeToLocalFileTime", module: ChannelModule::KernelBaseBehindKernel32, category: ChannelCategory::Zone },
+    ChannelDef { bit: CH_LFTFT, name: "LocalFileTimeToFileTime", module: ChannelModule::KernelBaseBehindKernel32, category: ChannelCategory::Zone },
+    ChannelDef { bit: CH_TLTST, name: "TzSpecificLocalTimeToSystemTime", module: ChannelModule::KernelBaseBehindKernel32, category: ChannelCategory::Zone },
+    ChannelDef { bit: CH_TLTSTEX, name: "TzSpecificLocalTimeToSystemTimeEx", module: ChannelModule::KernelBaseBehindKernel32, category: ChannelCategory::Zone },
     ChannelDef { bit: CH_SLEEP, name: "Sleep", module: ChannelModule::Kernel32, category: ChannelCategory::Duration },
     ChannelDef { bit: CH_SLEEPEX, name: "SleepEx", module: ChannelModule::Kernel32, category: ChannelCategory::Duration },
     ChannelDef { bit: CH_NTDELAY, name: "NtDelayExecution", module: ChannelModule::Ntdll, category: ChannelCategory::Duration },
@@ -2158,5 +2216,46 @@ mod tests {
         assert_eq!(shift_ticks_by_bias(hour * 2, 120, false), Some(0));
         // An addition that would overflow i64 is refused rather than wrapped.
         assert_eq!(shift_ticks_by_bias(i64::MAX, 120, true), None);
+    }
+
+    /// Every entry below was read out of kernel32 on this machine (2026-09-23), so the stubs are the
+    /// ones the hook will meet, and the three refusals are real kernel32 entries with code of their own.
+    #[test]
+    fn a_kernel32_stub_is_followed_to_its_slot_and_anything_else_is_left_alone() {
+        // Fits either bitness, so the test compiles for the 32-bit target too.
+        let entry = 0x7FF0_1000usize;
+
+        // 64-bit, with the REX prefix (GetLocalTime) and without it (SetWaitableTimer). The slot is
+        // relative to the END of the instruction, which is seven bytes long in one and six in the other.
+        let rex = [0x48, 0xFF, 0x25, 0x10, 0x00, 0x00, 0x00, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC];
+        assert_eq!(indirect_jump_slot(&rex, entry, true), Some(entry + 7 + 0x10));
+        let plain = [0xFF, 0x25, 0x9A, 0x00, 0x00, 0x00, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC];
+        assert_eq!(indirect_jump_slot(&plain, entry, true), Some(entry + 6 + 0x9A));
+        // The displacement is signed: an import table BEFORE the stub is a negative one.
+        let back = [0xFF, 0x25, 0xF0, 0xFF, 0xFF, 0xFF, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC];
+        assert_eq!(indirect_jump_slot(&back, entry, true), Some(entry + 6 - 0x10));
+
+        // 32-bit plain (Sleep) and behind the hot-patch prologue (QueryUnbiasedInterruptTime): the
+        // operand is the slot's absolute address, whatever the entry.
+        let x86 = [0xFF, 0x25, 0xD0, 0x19, 0xB8, 0x75, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC];
+        assert_eq!(indirect_jump_slot(&x86, 0x7650_0000, false), Some(0x75B8_19D0));
+        let hot = [0x8B, 0xFF, 0x55, 0x8B, 0xEC, 0x5D, 0xFF, 0x25, 0xC8, 0x19, 0xB8, 0x75];
+        assert_eq!(indirect_jump_slot(&hot, 0x7650_0000, false), Some(0x75B8_19C8));
+        // The same bytes mean something else in the other bitness, which is why the flag exists: the
+        // 32-bit reading of a 64-bit stub is an absolute address, not an offset from the entry.
+        assert_eq!(indirect_jump_slot(&plain, entry, false), Some(0x9A));
+        assert_eq!(indirect_jump_slot(&hot, 0x7650_0000, true), None);
+
+        // Real kernel32 entries that are NOT stubs. Each must answer None, because None is what keeps
+        // the detour where it always was, and a wrong Some would send it somewhere arbitrary.
+        let own_x64 = [0xB9, 0x20, 0x03, 0xFE, 0x7F, 0x48, 0x8B, 0x09, 0x8B, 0x04, 0x25, 0x04];
+        assert_eq!(indirect_jump_slot(&own_x64, entry, true), None, "GetTickCount reads the shared page itself");
+        let prologue_only = [0x8B, 0xFF, 0x55, 0x8B, 0xEC, 0x51, 0x8B, 0x15, 0x24, 0x03, 0xFE, 0x7F];
+        assert_eq!(indirect_jump_slot(&prologue_only, 0x7650_0000, false), None, "a hot-patch prologue with a body");
+        let call = [0x51, 0xFF, 0x15, 0xB4, 0x1B, 0xB8, 0x75, 0x59, 0xC3, 0xCC, 0xCC, 0xCC];
+        assert_eq!(indirect_jump_slot(&call, 0x7650_0000, false), None, "a call returns here, a jump does not");
+
+        // An entry so high that the slot address would wrap is refused rather than wrapped.
+        assert_eq!(indirect_jump_slot(&rex, usize::MAX - 3, true), None);
     }
 }
