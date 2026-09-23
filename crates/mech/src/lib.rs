@@ -33,7 +33,7 @@ use chrono_ctl::{
     read_uncovered_child, read_uncovered_children_count, read_uninjected_children, read_waits_at_floor,
     write_anchor, write_anchor_full, write_header,
     write_core_pid, write_scale_dur, write_scale_qpc, write_tz_bias, ChannelCategory, ChannelModule,
-    Cov, Ctl, CHANNELS, CH_CONNECT, CH_GTC, CH_GTC64, IDX_TIMEGETTIME, MAX_COV_PIDS,
+    Cov, Ctl, CHANNELS, CH_GTC, CH_GTC64, IDX_TIMEGETTIME, MAX_COV_PIDS,
 };
 use windows::core::{s, PCWSTR, PWSTR};
 use windows::Win32::Foundation::{
@@ -842,16 +842,19 @@ fn lock_is_ours(state: windows::Win32::Foundation::WAIT_EVENT) -> bool {
 /// before the move got the response. Without this line the report would say, one row above, that an
 /// I/O timeout is not shortened.
 ///
-/// The signal is ws2_32 being loaded (the `connect` channel installed), not a connection counted: WinHTTP
-/// connects through ConnectEx, which the `connect` observer does not see, so a count would miss exactly
-/// the library this warning is about.
+/// The signal is a connection counted by this process. The connection observer sees every Winsock
+/// path, WinHTTP's `ConnectEx` included, so the count is the one the warning needs. It used to be
+/// "ws2_32 loaded", read off the observer's install bit while the observer sat on ws2_32 and missed
+/// WinHTTP - which also made a failed hook in a loaded ws2_32 look like no network stack at all. A
+/// connection is the narrower signal on purpose: plenty of applications load ws2_32 through another
+/// library and never open a socket, and their timeouts have nothing to follow.
 ///
 /// A tick count channel has to be installed as well, because that is what the timeout follows: with
 /// both of them failed the tick count stays real, and the sentence would describe a session that did
 /// not happen. One of the two is enough for the caution to be true for a library reading that one, and
 /// the one that failed is listed as uncovered already.
-fn network_timeouts_follow_session(installed: u64, scale_duration: bool) -> bool {
-    scale_duration && installed & CH_CONNECT != 0 && installed & (CH_GTC64 | CH_GTC) != 0
+fn network_timeouts_follow_session(installed: u64, connected: bool, scale_duration: bool) -> bool {
+    scale_duration && connected && installed & (CH_GTC64 | CH_GTC) != 0
 }
 
 /// Build one process's coverage from its `Cov` section: the install bitmask and the
@@ -1001,7 +1004,7 @@ unsafe fn gather_coverage(
     if any_source_observed {
         out.warning_keys.push("source.network_at_start".to_string());
     }
-    if network_timeouts_follow_session(installed, scale_duration) {
+    if network_timeouts_follow_session(installed, any_source_observed, scale_duration) {
         out.warning_keys.push("wait.network_timeouts_scaled".to_string());
     }
     // At least one channel was hooked only after its module turned up, which for a runtime that pulls
@@ -1524,7 +1527,7 @@ mod tests {
     // Only the QPC-channel test needs this bit, so it is imported here rather than in the lib.
     use chrono_ctl::CH_QPC;
     // Same for the winmm-clock test: the bit, its counter index, and the counter writer.
-    use chrono_ctl::{bump_calls, set_late_installed, CH_TIMEGETTIME, IDX_TIMEGETTIME};
+    use chrono_ctl::{bump_calls, set_late_installed, CH_TIMEGETTIME, IDX_CONNECT, IDX_TIMEGETTIME};
 
     /// R2-X2. The projection the core reports has to be the one the target sees - the hook clamps at
     /// the end of the range, so this must clamp there too. Before it did, a session at the edge showed
@@ -1767,28 +1770,31 @@ mod tests {
     }
 
     /// Network timeouts follow the session once the tick count is detoured in kernelbase, and the audit
-    /// says so whenever the network stack is loaded under a scaled duration axis - with no call counted,
-    /// because WinHTTP connects through ConnectEx, which the `connect` observer never sees.
+    /// says so when the process opened a connection under a scaled duration axis. The connection is
+    /// counted, not inferred from the observer being installed: the observer sits in ntdll and is
+    /// installed in every process, network or not.
     #[test]
-    fn a_loaded_network_stack_under_a_scaled_duration_axis_is_warned_about_even_with_no_connect_counted() {
+    fn a_connection_under_a_scaled_duration_axis_warns_that_network_timeouts_follow_the_session() {
         let all = CHANNELS.iter().fold(0u64, |acc, ch| acc | ch.bit);
         let warned = |c: &Coverage| c.warning_keys.iter().any(|k| k == "wait.network_timeouts_scaled");
         let quiet = zeroed_cov();
+        let mut connected = zeroed_cov();
+        unsafe { bump_calls(&mut connected as *mut Cov, IDX_CONNECT) };
 
-        let loaded = unsafe { gather_coverage(&quiet as *const Cov, all, true, false) };
-        assert!(warned(&loaded), "network stack loaded and the axis scaled, with zero connects counted");
-        assert_eq!(chrono_core::verdict_from_coverage(&loaded), chrono_core::Verdict::Works, "a caution, never a verdict");
+        let with_connection = unsafe { gather_coverage(&connected as *const Cov, all, true, false) };
+        assert!(warned(&with_connection), "a connection counted and the axis scaled");
+        assert_eq!(chrono_core::verdict_from_coverage(&with_connection), chrono_core::Verdict::Works, "a caution, never a verdict");
 
-        let no_stack = unsafe { gather_coverage(&quiet as *const Cov, all & !CH_CONNECT, true, false) };
-        assert!(!warned(&no_stack), "no network stack loaded, nothing to time out");
+        let no_connection = unsafe { gather_coverage(&quiet as *const Cov, all, true, false) };
+        assert!(!warned(&no_connection), "the observer is installed everywhere, so no connection means nothing to time out");
 
-        let axis_real = unsafe { gather_coverage(&quiet as *const Cov, all, false, false) };
+        let axis_real = unsafe { gather_coverage(&connected as *const Cov, all, false, false) };
         assert!(!warned(&axis_real), "without the duration opt-in the tick count stays real");
 
         // The timeout follows the tick count, so the tick count has to be on the session's axis.
-        let no_tick = unsafe { gather_coverage(&quiet as *const Cov, all & !(CH_GTC64 | CH_GTC), true, false) };
+        let no_tick = unsafe { gather_coverage(&connected as *const Cov, all & !(CH_GTC64 | CH_GTC), true, false) };
         assert!(!warned(&no_tick), "both tick count channels failed, so the timeouts stay real");
-        let one_tick = unsafe { gather_coverage(&quiet as *const Cov, all & !CH_GTC, true, false) };
+        let one_tick = unsafe { gather_coverage(&connected as *const Cov, all & !CH_GTC, true, false) };
         assert!(warned(&one_tick), "a library reading the installed tick count still follows the session");
     }
 

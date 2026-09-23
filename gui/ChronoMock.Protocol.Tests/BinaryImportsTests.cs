@@ -335,8 +335,8 @@ public class BinaryImportsTests
 
             Assert.False(
                 table.ImportsAnythingNamed("ws2_32"),
-                $"chrono_hook.dll ({triple}) links Winsock. It hooks connect - it must never CALL it. The " +
-                "module is resolved with GetModuleHandleA, and only when the target has already loaded " +
+                $"chrono_hook.dll ({triple}) links Winsock. It observes the target's sockets - it must never " +
+                "open one. The module is resolved with GetModuleHandleA, and only when the target has already loaded " +
                 $"it, which is what keeps this import table clean: {string.Join(", ", table.Modules)}");
 
             var networking = table.Modules.Where(IsNetworking).ToList();
