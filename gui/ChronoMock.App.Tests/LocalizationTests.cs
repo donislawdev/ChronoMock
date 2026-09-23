@@ -133,8 +133,9 @@ public class LocalizationTests
                 var strings = LocalizationService.Load(culture);
                 foreach (var (text, label) in QuotedLabels)
                 {
+                    // An empty label is contained in every text, so it would pass without quoting anything.
                     if (strings[text] is not string body || strings[label] is not string name
-                        || !body.Contains(name, StringComparison.Ordinal))
+                        || name.Length == 0 || !body.Contains(name, StringComparison.Ordinal))
                     {
                         gaps.Add($"{text} does not quote {label} ({culture})");
                     }

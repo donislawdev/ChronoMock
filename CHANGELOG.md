@@ -36,9 +36,9 @@ Notable changes to Chrono Mock, newest first. The format follows
 
 - **The .NET timing caution said `Environment.TickCount` follows the session speed.** It does only
   when timers are sped up too (`--scale-duration`, or "Also speed up timers and countdowns inside
-  the application" in the window). With that off, it runs at real speed just like `Stopwatch`, so a
-  tester reading the caution could expect a countdown built on it to finish early when it would
-  not. The caution now says when.
+  the application" in the window). With that off, it runs at real speed, so a tester reading the
+  caution could expect a countdown built on it to finish early when it would not. The caution now
+  says when.
 - **Programs on the dynamic C runtime saw the real date.** A C or C++ program that reads the time
   through the C runtime's own functions (`time()`, `localtime()`, `strftime`) and links that runtime
   as a DLL, which is the default for a Release build in Visual Studio, got the real date and the
