@@ -33,7 +33,7 @@ use chrono_ctl::{
     read_uncovered_child, read_uncovered_children_count, read_uninjected_children, read_waits_at_floor,
     write_anchor, write_anchor_full, write_header,
     write_core_pid, write_scale_dur, write_scale_qpc, write_tz_bias, ChannelCategory, ChannelModule,
-    Cov, Ctl, CHANNELS, CH_CONNECT, IDX_TIMEGETTIME, MAX_COV_PIDS,
+    Cov, Ctl, CHANNELS, CH_CONNECT, CH_GTC, CH_GTC64, IDX_TIMEGETTIME, MAX_COV_PIDS,
 };
 use windows::core::{s, PCWSTR, PWSTR};
 use windows::Win32::Foundation::{
@@ -833,12 +833,6 @@ fn lock_is_ours(state: windows::Win32::Foundation::WAIT_EVENT) -> bool {
     state == WAIT_OBJECT_0 || state == WAIT_ABANDONED
 }
 
-/// Build one process's coverage from its `Cov` section: the install bitmask and the
-/// live per-channel call counters. Iterates the single-source `CHANNELS` table so the
-/// report names exactly what the hook installs.
-///
-/// # Safety
-/// `cov` must point to a live, correctly aligned `Cov`.
 /// Whether the audit should say that network timeouts inside this process follow the session speed.
 ///
 /// Since the tick count is detoured in kernelbase as well (2026-09-23), a network library that measures
@@ -851,10 +845,21 @@ fn lock_is_ours(state: windows::Win32::Foundation::WAIT_EVENT) -> bool {
 /// The signal is ws2_32 being loaded (the `connect` channel installed), not a connection counted: WinHTTP
 /// connects through ConnectEx, which the `connect` observer does not see, so a count would miss exactly
 /// the library this warning is about.
+///
+/// A tick count channel has to be installed as well, because that is what the timeout follows: with
+/// both of them failed the tick count stays real, and the sentence would describe a session that did
+/// not happen. One of the two is enough for the caution to be true for a library reading that one, and
+/// the one that failed is listed as uncovered already.
 fn network_timeouts_follow_session(installed: u64, scale_duration: bool) -> bool {
-    scale_duration && installed & CH_CONNECT != 0
+    scale_duration && installed & CH_CONNECT != 0 && installed & (CH_GTC64 | CH_GTC) != 0
 }
 
+/// Build one process's coverage from its `Cov` section: the install bitmask and the
+/// live per-channel call counters. Iterates the single-source `CHANNELS` table so the
+/// report names exactly what the hook installs.
+///
+/// # Safety
+/// `cov` must point to a live, correctly aligned `Cov`.
 unsafe fn gather_coverage(
     cov: *const Cov,
     installed: u64,
@@ -1779,6 +1784,12 @@ mod tests {
 
         let axis_real = unsafe { gather_coverage(&quiet as *const Cov, all, false, false) };
         assert!(!warned(&axis_real), "without the duration opt-in the tick count stays real");
+
+        // The timeout follows the tick count, so the tick count has to be on the session's axis.
+        let no_tick = unsafe { gather_coverage(&quiet as *const Cov, all & !(CH_GTC64 | CH_GTC), true, false) };
+        assert!(!warned(&no_tick), "both tick count channels failed, so the timeouts stay real");
+        let one_tick = unsafe { gather_coverage(&quiet as *const Cov, all & !CH_GTC, true, false) };
+        assert!(warned(&one_tick), "a library reading the installed tick count still follows the session");
     }
 
     /// A wait held at the scaling floor is reported, because it is partial coverage.

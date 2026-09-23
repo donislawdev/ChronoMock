@@ -2177,8 +2177,10 @@ unsafe fn kernelbase_side(entry: usize, name: PCSTR, label: &str) -> KernelBaseS
 /// kernel32's entry, or on kernelbase's export when the two are one body, and then there is nothing
 /// left to do here.
 ///
-/// The bit is set when this detour goes live even if the first failed, because the api-set callers
-/// are then covered. The failure of either is logged, and the other one's callers keep their detour.
+/// The channel counts as covered only when BOTH bodies are detoured, so this function never sets the
+/// bit and takes it back when the copy cannot be detoured (`settle_second_body`). The failure of either
+/// is logged, and the other one's callers keep their detour, but the audit reports the channel as
+/// uncovered, because one of its two sets of callers reads the real tick count.
 ///
 /// # Safety
 /// `detour` must be correct for `slot`, and `slot` must not be the first detour's.
@@ -2200,18 +2202,32 @@ unsafe fn make_kernelbase_copy_hook<T: Copy>(
     let KernelBaseSide::Separate(own) = kernelbase_side(entry as *const () as usize, name, ch.name) else {
         return;
     };
-    match MinHook::create_hook(own as *mut c_void, detour) {
+    let created = match MinHook::create_hook(own as *mut c_void, detour) {
         Ok(original) => {
             let _ = slot.set(std::mem::transmute_copy::<*mut c_void, T>(&original));
-            *pending |= ch.bit;
+            true
         }
-        Err(e) => log(&format!(
-            "[chrono_hook] create_hook {} in kernelbase failed: {e:?}, a caller that goes through the \
-             api-set is not covered",
-            ch.name
-        )),
-    }
+        Err(e) => {
+            log(&format!(
+                "[chrono_hook] create_hook {} in kernelbase failed: {e:?}, a caller that goes through \
+                 the api-set is not covered, so the channel is reported uncovered",
+                ch.name
+            ));
+            false
+        }
+    };
+    *pending = settle_second_body(*pending, ch.bit, created);
 }}
+
+/// The coverage mask once the second detour of a two-body channel has been attempted.
+///
+/// The bit is the audit's claim that every caller of the channel reads the session's clock, and with
+/// two bodies that holds only when both are detoured. So the second body never sets the bit (a first
+/// body that failed leaves it clear) and takes it back when it fails itself - the two cases where one
+/// of the two sets of callers keeps reading the real tick count while the report would say covered.
+fn settle_second_body(pending: u64, bit: u64, created: bool) -> u64 {
+    if created { pending } else { pending & !bit }
+}
 
 /// Resolve, create, and record one channel's detour. Best-effort: a missing export
 /// or a failed hook logs and leaves the bit unset (honest partial), never aborts the
@@ -2576,4 +2592,23 @@ pub extern "system" fn DllMain(hinst: HMODULE, reason: u32, _reserved: *mut c_vo
         }
     }
     1
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A two-body channel is covered only when both bodies are detoured. Either one failing leaves a
+    /// set of callers on the real tick count, so the bit must end up clear - including when the
+    /// second body is the one that went live.
+    #[test]
+    fn a_two_body_channel_is_covered_only_when_both_bodies_are_detoured() {
+        let bit = CHANNELS[IDX_GTC64].bit;
+        let other = CHANNELS[IDX_GSTAFT].bit;
+
+        assert_eq!(settle_second_body(bit | other, bit, true), bit | other, "both bodies detoured");
+        assert_eq!(settle_second_body(bit | other, bit, false), other, "the second body failed");
+        assert_eq!(settle_second_body(other, bit, true), other, "the first body failed, the second went live");
+        assert_eq!(settle_second_body(other, bit, false), other, "neither body detoured");
+    }
 }
