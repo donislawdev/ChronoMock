@@ -8,6 +8,12 @@ Notable changes to Chrono Mock, newest first. The format follows
 
 ### Added
 
+- **A caution when the application was built with Go.** The Go runtime reads the date straight
+  from shared system memory rather than asking Windows for it, so a Go application sees the real
+  date and nothing this tool can do will change that. The session time zone does reach it, which
+  makes the result confusing rather than merely incomplete - the real moment, shown in the
+  session's zone. The session now says so instead of reporting a clean success over it. Of the
+  runtimes this tool supports, Go is the only one the wall clock cannot reach.
 - **A caution when the application never read the clock the session replaces.** The verdict
   answers whether the substitution took effect, and it can say it did over an application that
   read the real date from start to finish - because the channels were hooked, which is a

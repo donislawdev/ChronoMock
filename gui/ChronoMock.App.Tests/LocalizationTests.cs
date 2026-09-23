@@ -61,6 +61,8 @@ public class LocalizationTests
         "chromium.rate_change_affects_running_timers", "chromium.context_ceiling_reached",
         // Runtime detection warnings the driver appends to coverage (B1): a Python/.NET/Java target whose
         // monotonic/elapsed clock stands on QPC and does not scale.
+        // Not a QPC-axis caution like the four below: a clock that is out of reach entirely.
+        "runtime.go_wall_clock_unreachable",
         "runtime.python_monotonic_qpc", "runtime.python_perfcounter_qpc",
         "runtime.dotnet_stopwatch_qpc", "runtime.java_nanotime_qpc",
         // QPC scaling render caution (A2), shown when --scale-qpc replaces the runtime.*_qpc warnings.

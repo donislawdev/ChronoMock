@@ -432,6 +432,10 @@
   // clock, and a parent that reads nothing while its child reads the fake date is a session that
   // worked. Deliberately does not touch the verdict - what the session achieved and what the
   // application consumed are two answers, and this one is the second.
+  // Not a "we chose not to scale this" caution like the runtime.*_qpc family above it - this one
+  // says a clock is out of reach entirely, and names what DID reach the application, because a real
+  // date shown in the session's time zone is the part that confuses a reader.
+  "runtime.go_wall_clock_unreachable": "Ta aplikacja jest zbudowana w Go. Jej runtime czyta datę wprost ze współdzielonej pamięci systemu, zamiast pytać o nią Windows, więc widzi PRAWDZIWĄ datę i żadne ustawienie tego nie zmieni. Strefa czasowa sesji do niej dociera, więc pokazywane godziny to prawdziwy moment wyrażony w strefie sesji.",
   "coverage.session_clock_never_read": "Żaden proces w tej sesji ani razu nie odczytał zegara, który sesja podmienia, więc nic z tego, co zrobiła aplikacja, nie wzięło się z fałszywej daty. Kanały powyżej są założone i działają - aplikacja po prostu wzięła czas skądinąd, na przykład ze źródła spoza tego komputera.",
   "time.fake_clock_clamped": "Fałszywy zegar doszedł do ostatniej daty, jaką ta wersja potrafi wyrazić (rok 30828), i stanął tam do końca sesji. Późniejsze odczyty nie są momentami, które dałaby wybrana prędkość.",
   "time.duration_axis_clamped": "Liczniki monotoniczne (licznik tyknięć, nieobciążony czas przerwań oraz QPC, gdy skalowany) doszły do końca swojego zakresu i stanęły, więc czas, jaki upłynął wewnątrz aplikacji, przestał rosnąć, mimo że sesja trwała dalej. Mniejsza prędkość albo krótsza sesja tego unika.",
