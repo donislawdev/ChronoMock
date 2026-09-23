@@ -1,6 +1,6 @@
 //! A bounded, read-only look inside the target's own executable, for the facts the file names around
-//! it cannot give: whether the Go toolchain linked it, and whether it carries the .NET runtime inside
-//! itself rather than in DLLs beside it.
+//! it cannot give: whether the Go toolchain linked it, and whether it is a .NET executable that leaves
+//! no runtime file beside it to say so.
 //!
 //! Every read is capped and every offset goes through `get`, so a truncated or hostile file answers
 //! "no" rather than panicking, and a half-gigabyte target costs a few kilobytes to ask. The file is
@@ -70,12 +70,45 @@ const GO_DATA_WINDOW: usize = 64 * 1024;
 /// kept, because a list that only knew today's would go quiet on the next release.
 ///
 /// What this does NOT reach: a framework-dependent single-file executable exports nothing at all
-/// (measured), and a .NET Framework executable carries no runtime of its own.
+/// (measured), and a .NET Framework executable carries no runtime of its own. The apphost signature
+/// and the CLR header below answer for those two.
 const DOTNET_RUNTIME_EXPORTS: &[&[u8]] = &[
     b"DotNetRuntimeDebugHeader",
     b"DotNetRuntimeContractDescriptor",
     b"DotNetRuntimeInfo",
 ];
+
+/// The signature every .NET apphost carries in its bundle locator, the SHA-256 of ".net core bundle",
+/// copied from the host's own source (`src/native/corehost/apphost/bundle_marker.c` in dotnet/runtime).
+/// The locator is the eight-byte offset of a single-file bundle followed by these 32 bytes, and
+/// `dotnet publish` only ever rewrites the offset, zero for a plain apphost. So the signature is there
+/// in every apphost, single-file or not, and never in a binary no .NET host produced.
+///
+/// Measured: at `.data+0x140` in a 3 072-byte section on three plain apphosts and on a
+/// framework-dependent single-file one, at `.data+0x3D78` in a 20 992-byte section on a
+/// self-contained single-file one, and absent from C, Go, Java, Python, Node, the command interpreter,
+/// `dotnet.exe` itself and our own `chrono.exe`.
+const APPHOST_BUNDLE_SIGNATURE: [u8; 32] = [
+    0x8b, 0x12, 0x02, 0xb9, 0x6a, 0x61, 0x20, 0x38, 0x72, 0x7b, 0x93, 0x02, 0x14, 0xd7, 0xa0, 0x32, 0x13, 0xf5,
+    0xb9, 0xe6, 0xef, 0xae, 0x33, 0x18, 0xee, 0x3b, 0x2d, 0xce, 0x24, 0xb3, 0x6a, 0xae,
+];
+
+/// The bundle offset in front of the signature. Required, like Go's complete header: a signature with
+/// no room for its locator in front of it is not one the host wrote.
+const APPHOST_BUNDLE_OFFSET: usize = 8;
+
+/// How far into `.data` to look for the signature. The largest offset measured is 0x3D78, so sixty-four
+/// kilobytes reads the whole section on everything measured, with four times that to spare.
+const APPHOST_DATA_WINDOW: usize = 64 * 1024;
+
+/// Data directory entry 14, which the PE format calls the COM descriptor: where a managed image keeps
+/// its CLR header. An executable carrying one is started by the .NET Framework runtime, because .NET
+/// (Core) never builds its managed code into an `.exe` - it builds a `.dll` and a native apphost.
+const CLR_DIRECTORY: usize = 14;
+
+/// The size of that header (`IMAGE_COR20_HEADER`), which its own first field, `cb`, repeats. Measured:
+/// 72 on every .NET Framework executable we have, x64 and x86.
+const CLR_HEADER: usize = 72;
 
 /// Whether this executable was produced by the Go toolchain.
 ///
@@ -92,22 +125,29 @@ pub(crate) fn is_go_binary(target_path: &Path) -> bool {
     go_buildinfo_in_data(target_path).unwrap_or(false)
 }
 
-/// Whether this executable carries the .NET runtime inside itself: NativeAOT, or a self-contained
-/// single-file build. Neither leaves `coreclr.dll` or a `.deps.json` beside the executable, which is
-/// all the file-name fingerprint can see, so without this such a target got no .NET caution at all.
-pub(crate) fn embeds_dotnet_runtime(target_path: &Path) -> bool {
-    PeFile::open(target_path)
-        .and_then(|mut pe| pe.exports_any(DOTNET_RUNTIME_EXPORTS))
-        .unwrap_or(false)
+/// Whether this is a .NET executable that the files beside it may not give away, by any of the three
+/// marks a .NET build leaves inside the file itself:
+///
+/// - the runtime's own exports: NativeAOT, and a self-contained single-file build,
+/// - the apphost's bundle signature: every apphost, including a framework-dependent single-file one,
+///   which carries nothing else,
+/// - a CLR header: a .NET Framework executable, whose runtime lives in the Windows directory.
+///
+/// None of those leaves `coreclr.dll` or a `.deps.json` beside the executable, which is all the
+/// file-name fingerprint can see, so without this such a target got no .NET caution at all. The file
+/// is opened once and every doubt answers "no", like the Go fingerprint.
+pub(crate) fn is_dotnet_executable(target_path: &Path) -> bool {
+    let Some(mut pe) = PeFile::open(target_path) else {
+        return false;
+    };
+    pe.exports_any(DOTNET_RUNTIME_EXPORTS) == Some(true)
+        || pe.carries_apphost_signature() == Some(true)
+        || pe.has_clr_header() == Some(true)
 }
 
-/// The walk `is_go_binary` wraps: the `.data` section header, then a window at its start.
+/// The walk `is_go_binary` wraps: a window at the start of `.data`.
 fn go_buildinfo_in_data(target_path: &Path) -> Option<bool> {
-    let mut pe = PeFile::open(target_path)?;
-    let Some(data) = pe.section(b".data\0\0\0") else {
-        return Some(false);
-    };
-    let bytes = pe.read_at(u64::from(data.raw_offset), (data.raw_size as usize).min(GO_DATA_WINDOW))?;
+    let bytes = PeFile::open(target_path)?.section_start(b".data\0\0\0", GO_DATA_WINDOW)?;
     let at = bytes.windows(GO_BUILDINFO_MAGIC.len()).position(|w| w == GO_BUILDINFO_MAGIC);
     Some(matches!(at, Some(start) if bytes.len() - start >= GO_BUILDINFO_HEADER))
 }
@@ -201,13 +241,15 @@ impl PeFile {
         Some((u32_at(&self.head, entry)?, u32_at(&self.head, entry.checked_add(4)?)?))
     }
 
-    /// The file offset behind a relative virtual address, through the section that holds it. Only
-    /// bytes that are really in the file count: the zero-filled tail a section has in memory has no
-    /// place on disk to read.
-    fn offset_of(&self, rva: u32) -> Option<u64> {
+    /// The file offset behind `len` bytes starting at a relative virtual address, through the section
+    /// that holds them ALL on disk. Only bytes that are really in the file count: the zero-filled tail
+    /// a section has in memory has no place on disk to read, and bytes past the section's raw size
+    /// belong to whatever the file keeps next, not to this section.
+    fn offset_of(&self, rva: u32, len: u32) -> Option<u64> {
         self.sections().find_map(|section| {
             let delta = rva.checked_sub(section.virtual_address)?;
-            (delta < section.raw_size).then(|| u64::from(section.raw_offset) + u64::from(delta))
+            let end = delta.checked_add(len)?;
+            (len > 0 && end <= section.raw_size).then(|| u64::from(section.raw_offset) + u64::from(delta))
         })
     }
 
@@ -218,6 +260,35 @@ impl PeFile {
         Some(bytes)
     }
 
+    /// Up to `window` bytes from the start of the named section, or `None` when there is no such
+    /// section or it cannot be read.
+    fn section_start(&mut self, name: &[u8; 8], window: usize) -> Option<Vec<u8>> {
+        let section = self.section(name)?;
+        self.read_at(u64::from(section.raw_offset), (section.raw_size as usize).min(window))
+    }
+
+    /// Whether `.data` holds the apphost's bundle locator: the signature with room for the offset in
+    /// front of it. Searched only past that room, so a signature sitting at the very start of the
+    /// section, where no locator could be, does not count.
+    fn carries_apphost_signature(&mut self) -> Option<bool> {
+        let bytes = self.section_start(b".data\0\0\0", APPHOST_DATA_WINDOW)?;
+        let searched = bytes.get(APPHOST_BUNDLE_OFFSET..)?;
+        Some(searched.windows(APPHOST_BUNDLE_SIGNATURE.len()).any(|w| w == APPHOST_BUNDLE_SIGNATURE))
+    }
+
+    /// Whether data directory 14 points at a CLR header the file really holds: a directory declaring a
+    /// whole one, all of it inside one section on disk, and the header's own size field saying it is
+    /// at least as large as the format defines it. A stray entry pointing nowhere, declaring less, or
+    /// at bytes running out of their section, is not a managed image.
+    fn has_clr_header(&mut self) -> Option<bool> {
+        let Some((rva, _)) = self.directory(CLR_DIRECTORY).filter(|&(rva, size)| rva != 0 && size as usize >= CLR_HEADER) else {
+            return Some(false);
+        };
+        let at = self.offset_of(rva, CLR_HEADER as u32)?;
+        let header = self.read_at(at, CLR_HEADER)?;
+        Some(header.len() == CLR_HEADER && u32_at(&header, 0)? as usize >= CLR_HEADER)
+    }
+
     /// Whether the export name table holds any of `wanted`, compared whole and case-sensitively, the
     /// way the loader compares them. One read of the export block, then everything is resolved inside
     /// it: a name pointing outside the block does not match, and a pointer table running out of it
@@ -226,7 +297,9 @@ impl PeFile {
         let Some((rva, size)) = self.directory(EXPORT_DIRECTORY).filter(|&(rva, _)| rva != 0) else {
             return Some(false);
         };
-        let at = self.offset_of(rva)?;
+        // Only the first byte has to be in a section here: the block is bounded by its own size field
+        // and the window, and every name is resolved inside what was read.
+        let at = self.offset_of(rva, 1)?;
         let block = self.read_at(at, (size as usize).min(EXPORT_WINDOW))?;
         let count = u32_at(&block, 24)? as usize;
         let names = u32_at(&block, 32)?.checked_sub(rva)? as usize;
@@ -267,12 +340,13 @@ mod tests {
 
     /// A PE just real enough to be walked: DOS stub with the offset at 0x3C, the signature, a COFF
     /// header naming one section, an optional header of the requested kind, and a section whose raw
-    /// bytes are ours to fill. `export` points data directory zero at a range of that section.
+    /// bytes are ours to fill. `directory` points one data directory entry, (index, RVA, size), at a
+    /// range of that section.
     ///
     /// Built here rather than pointing at a Go or .NET binary on this machine, and that is the whole
     /// point: the probe binaries live outside the repository, so a test that read one would pass here
     /// and fail on every clean runner - the exact shape that kept CI red for four pushes once already.
-    fn synthetic_pe(magic: u16, section_name: &[u8; 8], data: &[u8], export: Option<(u32, u32)>) -> Vec<u8> {
+    fn synthetic_pe(magic: u16, section_name: &[u8; 8], data: &[u8], directory: Option<(usize, u32, u32)>) -> Vec<u8> {
         let pe_at: usize = 0x80;
         let optional_size: usize = if magic == 0x20B { 240 } else { 224 };
         let (count_at, table_at) = if magic == 0x20B { (108, 112) } else { (92, 96) };
@@ -286,9 +360,10 @@ mod tests {
         bytes[pe_at + 20..pe_at + 22].copy_from_slice(&(optional_size as u16).to_le_bytes());
         bytes[optional..optional + 2].copy_from_slice(&magic.to_le_bytes());
         bytes[optional + count_at..optional + count_at + 4].copy_from_slice(&16u32.to_le_bytes());
-        if let Some((rva, size)) = export {
-            bytes[optional + table_at..optional + table_at + 4].copy_from_slice(&rva.to_le_bytes());
-            bytes[optional + table_at + 4..optional + table_at + 8].copy_from_slice(&size.to_le_bytes());
+        if let Some((index, rva, size)) = directory {
+            let entry = optional + table_at + index * DATA_DIRECTORY_ENTRY;
+            bytes[entry..entry + 4].copy_from_slice(&rva.to_le_bytes());
+            bytes[entry + 4..entry + 8].copy_from_slice(&size.to_le_bytes());
         }
         bytes[table..table + 8].copy_from_slice(section_name);
         bytes[table + 8..table + 12].copy_from_slice(&(data.len() as u32).to_le_bytes());
@@ -322,7 +397,24 @@ mod tests {
     /// telling the truth about the block.
     fn exporting(magic: u16, names: &[&[u8]]) -> Vec<u8> {
         let block = export_block(names);
-        synthetic_pe(magic, b".rdata\0\0", &block, Some((RVA, block.len() as u32)))
+        synthetic_pe(magic, b".rdata\0\0", &block, Some((EXPORT_DIRECTORY, RVA, block.len() as u32)))
+    }
+
+    /// The `.data` bytes of an apphost: some ordinary data, the zeroed bundle offset, the signature,
+    /// more data, the way the linker lays the locator out among the host's other globals.
+    fn apphost_data(signature: &[u8]) -> Vec<u8> {
+        let mut data = vec![0x5Au8; 0x138];
+        data.extend_from_slice(&[0u8; APPHOST_BUNDLE_OFFSET]);
+        data.extend_from_slice(signature);
+        data.extend_from_slice(&[0x5Au8; 64]);
+        data
+    }
+
+    /// A managed executable: a CLR header whose size field is `cb`, pointed at by directory 14.
+    fn managed(magic: u16, cb: u32) -> Vec<u8> {
+        let mut header = vec![0u8; CLR_HEADER];
+        header[..4].copy_from_slice(&cb.to_le_bytes());
+        synthetic_pe(magic, b".text\0\0\0", &header, Some((CLR_DIRECTORY, RVA, CLR_HEADER as u32)))
     }
 
     /// A fixture file under a name no other test process can share. A fixed name would let two
@@ -397,7 +489,7 @@ mod tests {
         for (flavour, magic) in [("pe32plus", 0x20Bu16), ("pe32", 0x10B)] {
             for &name in DOTNET_RUNTIME_EXPORTS {
                 let alone = write_probe(&format!("{flavour}-alone"), &exporting(magic, &[name]));
-                assert!(embeds_dotnet_runtime(&alone), "{flavour}: {} alone", String::from_utf8_lossy(name));
+                assert!(is_dotnet_executable(&alone), "{flavour}: {} alone", String::from_utf8_lossy(name));
                 let _ = std::fs::remove_file(alone);
             }
 
@@ -405,18 +497,19 @@ mod tests {
             // is neither first nor last.
             let crowd = exporting(magic, &[b"BrotliDecoderCreateInstance", b"DotNetRuntimeInfo", b"g_dacTable"]);
             let crowd = write_probe(&format!("{flavour}-crowd"), &crowd);
-            assert!(embeds_dotnet_runtime(&crowd), "{flavour}: found in the middle of the table");
+            assert!(is_dotnet_executable(&crowd), "{flavour}: found in the middle of the table");
 
             // A different export, a prefix of ours, and ours with different case: none is the runtime.
             let other = exporting(magic, &[b"DotNetRuntime", b"dotnetruntimeinfo", b"DotNetRuntimeInfoX"]);
             let other = write_probe(&format!("{flavour}-other"), &other);
-            assert!(!embeds_dotnet_runtime(&other), "{flavour}: a near miss is not a match");
+            assert!(!is_dotnet_executable(&other), "{flavour}: a near miss is not a match");
 
-            // No export directory at all, which is what a plain native executable and a
-            // framework-dependent single-file one both look like.
+            // No export directory at all, which is what a plain native executable looks like. A
+            // framework-dependent single-file one looks the same here and is recognised by its apphost
+            // signature instead, which this fixture does not carry.
             let none = synthetic_pe(magic, b".rdata\0\0", &export_block(&[b"DotNetRuntimeInfo"]), None);
             let none = write_probe(&format!("{flavour}-none"), &none);
-            assert!(!embeds_dotnet_runtime(&none), "{flavour}: names without a directory pointing at them");
+            assert!(!is_dotnet_executable(&none), "{flavour}: names without a directory pointing at them");
 
             for p in [crowd, other, none] {
                 let _ = std::fs::remove_file(p);
@@ -434,57 +527,169 @@ mod tests {
         let table_at = 0x80 + 24 + 112;
         nowhere[table_at..table_at + 4].copy_from_slice(&0x9000_0000u32.to_le_bytes());
         let nowhere = write_probe("nowhere", &nowhere);
-        assert!(!embeds_dotnet_runtime(&nowhere), "a directory no section holds");
+        assert!(!is_dotnet_executable(&nowhere), "a directory no section holds");
 
         let mut short = good.clone();
         short[table_at + 4..table_at + 8].copy_from_slice(&20u32.to_le_bytes());
         let short = write_probe("short", &short);
-        assert!(!embeds_dotnet_runtime(&short), "a size that does not even cover the directory");
+        assert!(!is_dotnet_executable(&short), "a size that does not even cover the directory");
 
         let cut = write_probe("cut", &good[..good.len() - 1]);
-        assert!(!embeds_dotnet_runtime(&cut), "the terminator of the only name is missing");
+        assert!(!is_dotnet_executable(&cut), "the terminator of the only name is missing");
 
         let headers = write_probe("headers", &good[..0x200]);
-        assert!(!embeds_dotnet_runtime(&headers), "headers without the section they describe");
+        assert!(!is_dotnet_executable(&headers), "headers without the section they describe");
 
         let mut unknown = good.clone();
         unknown[0x80 + 24..0x80 + 26].copy_from_slice(&0x107u16.to_le_bytes());
         let unknown = write_probe("unknown", &unknown);
-        assert!(!embeds_dotnet_runtime(&unknown), "a ROM image magic has no directory table we know");
+        assert!(!is_dotnet_executable(&unknown), "a ROM image magic has no directory table we know");
 
-        assert!(!embeds_dotnet_runtime(Path::new("no such file anywhere.exe")));
+        assert!(!is_dotnet_executable(Path::new("no such file anywhere.exe")));
 
         // And the untouched original still answers yes, so the five above failed for their damage
         // and not because the fixture never worked.
         let good = write_probe("good", &good);
-        assert!(embeds_dotnet_runtime(&good));
+        assert!(is_dotnet_executable(&good));
 
         for p in [nowhere, short, cut, headers, unknown, good] {
             let _ = std::fs::remove_file(p);
         }
     }
 
-    /// The fingerprint is only worth something if it reaches the report. This goes through the same
-    /// entry the session uses, so removing either line in `fingerprint_target` turns it red.
+    /// The reversal probe for the apphost fingerprint, in both directions and both PE flavours: the
+    /// signature counts in `.data` with its locator room in front of it, and nowhere else.
     #[test]
-    fn both_fingerprints_reach_the_runtime_warnings() {
-        let dir = crate::testutil::unique_temp_dir("chrono-pe-wiring");
-        std::fs::create_dir_all(&dir).expect("probe dir");
+    fn an_apphost_is_recognised_by_its_bundle_signature_in_data_and_only_there() {
+        for (flavour, magic) in [("pe32plus", 0x20Bu16), ("pe32", 0x10B)] {
+            let with = |section: &[u8; 8], data: &[u8]| synthetic_pe(magic, section, data, None);
 
-        let aot = dir.join("Aot.exe");
-        std::fs::write(&aot, exporting(0x20B, &[b"DotNetRuntimeDebugHeader"])).expect("probe file");
-        let keys = crate::report::detect_runtime_warnings(&aot, false);
-        assert_eq!(keys, vec!["runtime.dotnet_stopwatch_qpc".to_string()]);
+            let host = write_probe(&format!("{flavour}-apphost"), &with(b".data\0\0\0", &apphost_data(&APPHOST_BUNDLE_SIGNATURE)));
+            assert!(is_dotnet_executable(&host), "{flavour}: the signature where every apphost carries it");
+
+            // The same bytes in another section. The host keeps the locator in writable data, and a
+            // match anywhere else would be reading the whole file for a coincidence.
+            let elsewhere = write_probe(&format!("{flavour}-rdata"), &with(b".rdata\0\0", &apphost_data(&APPHOST_BUNDLE_SIGNATURE)));
+            assert!(!is_dotnet_executable(&elsewhere), "{flavour}: read .data, not whatever section holds the bytes");
+
+            // One byte off, the way a near miss looks.
+            let mut near = APPHOST_BUNDLE_SIGNATURE;
+            near[31] ^= 0x01;
+            let near = write_probe(&format!("{flavour}-near"), &with(b".data\0\0\0", &apphost_data(&near)));
+            assert!(!is_dotnet_executable(&near), "{flavour}: a signature with one byte changed is not the signature");
+
+            // The signature at the very start of the section, where no offset could sit in front of it.
+            let bare = write_probe(&format!("{flavour}-bare"), &with(b".data\0\0\0", &APPHOST_BUNDLE_SIGNATURE));
+            assert!(!is_dotnet_executable(&bare), "{flavour}: no room for the locator, so not a locator");
+
+            for p in [host, elsewhere, near, bare] {
+                let _ = std::fs::remove_file(p);
+            }
+        }
+    }
+
+    /// The reversal probe for the CLR header, in both directions and both PE flavours: directory 14 has
+    /// to point at a whole header the file holds, and nothing less counts as a managed executable.
+    #[test]
+    fn a_clr_header_is_recognised_only_when_the_file_really_holds_one() {
+        for (flavour, magic) in [("pe32plus", 0x20Bu16), ("pe32", 0x10B)] {
+            let managed_exe = write_probe(&format!("{flavour}-managed"), &managed(magic, CLR_HEADER as u32));
+            assert!(is_dotnet_executable(&managed_exe), "{flavour}: a whole CLR header behind directory 14");
+
+            // The same header bytes with directory 14 left empty: a native executable that happens to
+            // carry them.
+            let header = managed(magic, CLR_HEADER as u32)[RAW..].to_vec();
+            let native = write_probe(&format!("{flavour}-native"), &synthetic_pe(magic, b".text\0\0\0", &header, None));
+            assert!(!is_dotnet_executable(&native), "{flavour}: no directory entry, no managed image");
+
+            // A size field smaller than the format defines.
+            let small = write_probe(&format!("{flavour}-small"), &managed(magic, 40));
+            assert!(!is_dotnet_executable(&small), "{flavour}: a header claiming 40 bytes is not a CLR header");
+
+            // The directory pointing past every section.
+            let mut lost = managed(magic, CLR_HEADER as u32);
+            let entry = 0x80 + 24 + (if magic == 0x20B { 112 } else { 96 }) + CLR_DIRECTORY * DATA_DIRECTORY_ENTRY;
+            lost[entry..entry + 4].copy_from_slice(&0x9000_0000u32.to_le_bytes());
+            let lost = write_probe(&format!("{flavour}-lost"), &lost);
+            assert!(!is_dotnet_executable(&lost), "{flavour}: a directory no section holds");
+
+            // A directory that declares less than a whole header, pointing at one that is whole.
+            let mut tiny = managed(magic, CLR_HEADER as u32);
+            tiny[entry + 4..entry + 8].copy_from_slice(&1u32.to_le_bytes());
+            let tiny = write_probe(&format!("{flavour}-tiny"), &tiny);
+            assert!(!is_dotnet_executable(&tiny), "{flavour}: a directory declaring one byte");
+
+            // A header that starts inside the section and runs past its end on disk, into bytes the
+            // section does not own. The file holds all 72, so only the section's bound refuses it.
+            let mut data = vec![0u8; 8];
+            data.extend_from_slice(&(CLR_HEADER as u32).to_le_bytes());
+            data.resize(CLR_HEADER, 0);
+            let mut straddle = synthetic_pe(magic, b".text\0\0\0", &data, Some((CLR_DIRECTORY, RVA + 8, CLR_HEADER as u32)));
+            straddle.extend_from_slice(&[0u8; 16]);
+            let straddle = write_probe(&format!("{flavour}-straddle"), &straddle);
+            assert!(!is_dotnet_executable(&straddle), "{flavour}: a header running past the end of its section");
+
+            // A header cut short by the end of the file.
+            let whole = managed(magic, CLR_HEADER as u32);
+            let cut = write_probe(&format!("{flavour}-cut"), &whole[..whole.len() - 8]);
+            assert!(!is_dotnet_executable(&cut), "{flavour}: a header the file does not hold in full");
+
+            // A table that declares fewer directories than fifteen has no entry 14 at all.
+            let mut few = managed(magic, CLR_HEADER as u32);
+            let count_at = 0x80 + 24 + (if magic == 0x20B { 108 } else { 92 });
+            few[count_at..count_at + 4].copy_from_slice(&14u32.to_le_bytes());
+            let few = write_probe(&format!("{flavour}-few"), &few);
+            assert!(!is_dotnet_executable(&few), "{flavour}: entry 14 past the declared table");
+
+            for p in [managed_exe, native, small, lost, tiny, straddle, cut, few] {
+                let _ = std::fs::remove_file(p);
+            }
+        }
+    }
+
+    /// The fingerprints are only worth something if they reach the report. This goes through the same
+    /// entry the session uses, so removing any branch in `fingerprint_target` or `is_dotnet_executable`
+    /// turns it red. Each target sits in its own directory, because the report also reads the file
+    /// names beside a target and one fixture must not answer for another.
+    #[test]
+    fn every_fingerprint_reaches_the_runtime_warnings() {
+        let root = crate::testutil::unique_temp_dir("chrono-pe-wiring");
+        let probe = |name: &str, file: &str, bytes: &[u8]| {
+            let dir = root.join(name);
+            std::fs::create_dir_all(&dir).expect("probe dir");
+            let path = dir.join(file);
+            std::fs::write(&path, bytes).expect("probe file");
+            path
+        };
+        let dotnet = vec!["runtime.dotnet_stopwatch_qpc".to_string()];
+
+        let aot = probe("aot", "Aot.exe", &exporting(0x20B, &[b"DotNetRuntimeDebugHeader"]));
+        assert_eq!(crate::report::detect_runtime_warnings(&aot, false), dotnet, "NativeAOT");
         // Under --scale-qpc the Stopwatch axis DOES scale, so the caution must give way like every
         // other member of its family.
         let keys = crate::report::detect_runtime_warnings(&aot, true);
         assert_eq!(keys, vec!["qpc.scaled_render_may_distort".to_string()]);
 
-        let go = dir.join("Go.exe");
-        std::fs::write(&go, synthetic_pe(0, b".data\0\0\0", &go_blob(), None)).expect("probe file");
+        let single = synthetic_pe(0x20B, b".data\0\0\0", &apphost_data(&APPHOST_BUNDLE_SIGNATURE), None);
+        let host = probe("apphost", "Single.exe", &single);
+        assert_eq!(crate::report::detect_runtime_warnings(&host, false), dotnet, "an apphost with nothing beside it");
+
+        let framework = probe("framework", "Framework.exe", &managed(0x10B, CLR_HEADER as u32));
+        assert_eq!(crate::report::detect_runtime_warnings(&framework, false), dotnet, ".NET Framework");
+
+        // The .NET host by name alone: `dotnet app.dll` names the application only in its arguments.
+        let muxer = probe("muxer", "dotnet.exe", b"not a PE, the name is the evidence");
+        assert_eq!(crate::report::detect_runtime_warnings(&muxer, false), dotnet, "dotnet.exe");
+
+        let go = probe("go", "Go.exe", &synthetic_pe(0, b".data\0\0\0", &go_blob(), None));
         let keys = crate::report::detect_runtime_warnings(&go, false);
         assert_eq!(keys, vec!["runtime.go_wall_clock_unreachable".to_string()]);
 
-        let _ = std::fs::remove_dir_all(dir);
+        // And a plain executable next to nothing gets nothing, so the five above are not the report
+        // saying the same thing about every file.
+        let plain = probe("plain", "Plain.exe", &synthetic_pe(0x20B, b".data\0\0\0", b"ordinary data", None));
+        assert!(crate::report::detect_runtime_warnings(&plain, false).is_empty(), "a plain executable");
+
+        let _ = std::fs::remove_dir_all(root);
     }
 }
