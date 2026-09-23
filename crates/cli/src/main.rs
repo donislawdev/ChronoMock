@@ -45,6 +45,8 @@ mod embedded_bridge;
 mod events;
 /// The step grammar shared by the calculator flags and the preset reader.
 mod grammar;
+/// A bounded look inside the target's own executable: Go build info, a .NET runtime linked in.
+mod pe;
 /// Presets: a named moment with parameters (docs/04 section 4).
 mod preset;
 /// The terminal report and the evidence export for a finished session.

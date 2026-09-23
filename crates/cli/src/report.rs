@@ -386,11 +386,13 @@ pub(crate) fn exit_code_label(code: i32) -> String {
 /// Statically detect what the target is built on and warn about the limits that follow from it. Two
 /// families today: a language runtime whose monotonic/elapsed clocks stand on QueryPerformanceCounter,
 /// which is left real by default (ADR-2) and so does not scale, and a game engine that caps its own
-/// simulation step, which no amount of clock coverage can lift. This reads only file NAMES beside the
-/// target (and its PyInstaller `_internal/` folder): no QPC hook (ADR-2 holds), no process inspection.
-/// Best-effort: a runtime unpacked at runtime (PyInstaller onefile), a `java -jar` launch, or a launcher
-/// that starts the real binary from another folder is not caught here, and a false positive only adds a
-/// "may not scale" note, never a false verdict (rules 4, 6).
+/// simulation step, which no amount of clock coverage can lift. This reads file NAMES beside the target
+/// (and its PyInstaller `_internal/` folder) plus a few bounded kilobytes of the target's own executable
+/// (`pe`: Go build info, a .NET runtime linked in): no QPC hook (ADR-2 holds), no process inspection.
+/// Best-effort: a runtime unpacked at runtime (PyInstaller onefile), a `java -jar` launch, a
+/// framework-dependent single-file .NET build, a NativeAOT build published with `DebuggerSupport`
+/// off, or a launcher that starts the real binary from another folder is not caught here, and a false
+/// positive only adds a "may not scale" note, never a false verdict (rules 4, 6).
 pub(crate) fn detect_runtime_warnings(target_path: &std::path::Path, scale_qpc: bool) -> Vec<String> {
     let mut keys = fingerprint_target(target_path);
 
@@ -424,96 +426,10 @@ fn is_qpc_axis_warning(key: &str) -> bool {
     )
 }
 
-/// Everything the file names around the target say about it, independent of the session's flags. One walk
-/// of each directory, never one per family: `read_dir` on Windows does not stat its entries (`FindNextFile`
-/// hands back the name with the attributes), which is why this costs 0,2 ms on a real target folder and is
-/// worth keeping to a single pass.
-/// The magic the Go toolchain stamps on its build information, bytes as the linker writes them.
-/// Matched whole rather than by the readable tail alone, so a binary that merely MENTIONS the
-/// phrase (this file, for one) is not mistaken for one the Go linker produced.
-const GO_BUILDINFO_MAGIC: &[u8] = b"\xff Go buildinf:";
-
-/// How much of the PE headers to read. The section table sits right behind the optional header, and
-/// four kilobytes covers it with room to spare on every binary we have measured.
-const PE_HEADER_WINDOW: u64 = 4096;
-
-/// The whole header the Go linker writes: the magic, then version-dependent fields. Go's own
-/// `debug/buildinfo` puts that header at 32 bytes.
-///
-/// We require it to be COMPLETE and deliberately do not READ the fields. Parsing them would trade a
-/// yes-or-no answer for a version-dependent one - the layout changed with Go 1.18 - and buy nothing,
-/// because the fourteen magic bytes already identify the linker that wrote them. Requiring the full
-/// header costs nothing and refuses a magic sitting at the very tail of what we read.
-const GO_BUILDINFO_HEADER: usize = 32;
-
-/// How far into `.data` to look. Bounded on purpose: the alternative is reading a half-gigabyte
-/// target to answer one yes-or-no.
-///
-/// Measured on FOUR binaries - x64 and x86, stripped and not, one with a four-megabyte global array -
-/// and the blob sits at offset ZERO of the section in every one, with `.data` itself between 36 and
-/// 51 KiB. So this window reads the whole section on everything measured. (An earlier comment here
-/// said the blob starts TWO bytes in. That was wrong and it was mine: I had searched for the
-/// readable `Go buildinf:`, which begins two bytes inside the fourteen-byte magic.)
-const GO_DATA_WINDOW: usize = 64 * 1024;
-
-/// Whether this executable was produced by the Go toolchain.
-///
-/// 🔴 Why it is worth knowing: Go does not call a time export we can detour. Measured against the
-/// toolchain's own source, `runtime/time_windows.h` defines `_SYSTEM_TIME 0x7ffe0014` and
-/// `time·now` reads it with a plain `MOVQ` - the same shared page our Stage 0 negative-control probe
-/// reads to prove a clock we did NOT substitute. A Go target therefore runs on the real date while
-/// the session reports `works`, because the hooks all installed and Go calls some of them for other
-/// things (the time zone). This is the detection that lets the audit say so.
-///
-/// Leans to silence on every doubt: an unreadable file, a shape that is not a PE, no `.data`, a
-/// short read - all answer "not Go". Missing a Go binary costs a caution that was not raised, while
-/// a false one would accuse a target we cannot substitute of something it does not do, and an audit
-/// that invents a gap is no better than one that hides it (untouchable rule 4).
-fn is_go_binary(target_path: &std::path::Path) -> bool {
-    go_buildinfo_in_data(target_path).unwrap_or(false)
-}
-
-/// The bounded walk `is_go_binary` wraps: PE headers, the `.data` section header, a window at its
-/// start. Every step goes through `get`, so a truncated or hostile file yields `None` rather than a
-/// panic - this reads a file chosen by whoever runs the tool, and a detour must never take the
-/// process down with it.
-fn go_buildinfo_in_data(target_path: &std::path::Path) -> Option<bool> {
-    use std::io::{Read, Seek, SeekFrom};
-
-    let mut file = std::fs::File::open(target_path).ok()?;
-    let mut head: Vec<u8> = Vec::new();
-    // `take` + `read_to_end` rather than one `read`: a single read may return fewer bytes than asked
-    // for, and a short header would send the section-table offsets somewhere arbitrary.
-    file.by_ref().take(PE_HEADER_WINDOW).read_to_end(&mut head).ok()?;
-
-    if head.get(..2)? != b"MZ" {
-        return Some(false);
-    }
-    let pe = u32::from_le_bytes(head.get(0x3C..0x40)?.try_into().ok()?) as usize;
-    if head.get(pe..pe.checked_add(4)?)? != b"PE\0\0" {
-        return Some(false);
-    }
-    let sections = u16::from_le_bytes(head.get(pe + 6..pe + 8)?.try_into().ok()?) as usize;
-    let optional = u16::from_le_bytes(head.get(pe + 20..pe + 22)?.try_into().ok()?) as usize;
-    let table = pe.checked_add(24)?.checked_add(optional)?;
-
-    for index in 0..sections {
-        let entry = table.checked_add(index.checked_mul(40)?)?;
-        // A name shorter than eight bytes is zero-padded, which is why this compares the padding too.
-        if head.get(entry..entry.checked_add(8)?)? != b".data\0\0\0" {
-            continue;
-        }
-        let size = u32::from_le_bytes(head.get(entry + 16..entry + 20)?.try_into().ok()?) as usize;
-        let raw = u32::from_le_bytes(head.get(entry + 20..entry + 24)?.try_into().ok()?) as u64;
-        let mut data: Vec<u8> = Vec::new();
-        file.seek(SeekFrom::Start(raw)).ok()?;
-        file.by_ref().take(size.min(GO_DATA_WINDOW) as u64).read_to_end(&mut data).ok()?;
-        let at = data.windows(GO_BUILDINFO_MAGIC.len()).position(|w| w == GO_BUILDINFO_MAGIC);
-        return Some(matches!(at, Some(start) if data.len() - start >= GO_BUILDINFO_HEADER));
-    }
-    Some(false)
-}
-
+/// Everything the target's files say about it, independent of the session's flags. One walk of each
+/// directory, never one per family: `read_dir` on Windows does not stat its entries (`FindNextFile`
+/// hands back the name with the attributes), which is why this costs 0,2 ms on a real target folder and
+/// is worth keeping to a single pass. The two looks inside the executable itself live in `pe`.
 fn fingerprint_target(target_path: &std::path::Path) -> Vec<String> {
     fn add(keys: &mut Vec<String>, key: &str) {
         if !keys.iter().any(|k| k == key) {
@@ -526,8 +442,15 @@ fn fingerprint_target(target_path: &std::path::Path) -> Vec<String> {
     // First, because it is the only entry here that says a channel is OUT OF REACH rather than
     // merely left real. The others caution about an axis we chose not to scale - this one is a
     // clock we cannot touch at all.
-    if is_go_binary(target_path) {
+    if crate::pe::is_go_binary(target_path) {
         add(&mut keys, "runtime.go_wall_clock_unreachable");
+    }
+
+    // A .NET application that carries its runtime inside the executable (NativeAOT, self-contained
+    // single-file) leaves no DLL beside it for the loop below to find, yet its Stopwatch reads QPC
+    // exactly like the one in `coreclr.dll` - the class lives in the shared part of CoreLib.
+    if crate::pe::embeds_dotnet_runtime(target_path) {
+        add(&mut keys, "runtime.dotnet_stopwatch_qpc");
     }
 
     // The target executable's own name is a strong signal - a plain interpreter launcher.
@@ -1073,84 +996,6 @@ mod tests {
         let out = render_report(&r);
         assert!(out.contains("DID NOT TAKE EFFECT"), "got:\n{out}");
         assert!(out.contains("vanished"), "got:\n{out}");
-    }
-
-    /// A PE just real enough to be walked: DOS stub with the offset at 0x3C, the signature, a COFF
-    /// header naming one section, and a `.data` section whose raw bytes are ours to fill.
-    ///
-    /// Built here rather than pointing at a Go binary on this machine, and that is the whole point:
-    /// the probe binaries live outside the repository, so a test that read one would pass here and
-    /// fail on every clean runner - the exact shape that kept CI red for four pushes once already.
-    fn synthetic_pe(section_name: &[u8; 8], data: &[u8]) -> Vec<u8> {
-        let pe_at: usize = 0x80;
-        let table = pe_at + 24 + 224;
-        let raw = 0x400usize;
-        let mut bytes = vec![0u8; raw + data.len().max(1)];
-        bytes[..2].copy_from_slice(b"MZ");
-        bytes[0x3C..0x40].copy_from_slice(&(pe_at as u32).to_le_bytes());
-        bytes[pe_at..pe_at + 4].copy_from_slice(b"PE\0\0");
-        bytes[pe_at + 6..pe_at + 8].copy_from_slice(&1u16.to_le_bytes()); // one section
-        bytes[pe_at + 20..pe_at + 22].copy_from_slice(&224u16.to_le_bytes()); // optional header size
-        bytes[table..table + 8].copy_from_slice(section_name);
-        bytes[table + 16..table + 20].copy_from_slice(&(data.len() as u32).to_le_bytes());
-        bytes[table + 20..table + 24].copy_from_slice(&(raw as u32).to_le_bytes());
-        bytes[raw..raw + data.len()].copy_from_slice(data);
-        bytes
-    }
-
-    fn write_probe(name: &str, bytes: &[u8]) -> std::path::PathBuf {
-        let path = std::env::temp_dir().join(format!("chrono-go-fingerprint-{name}.bin"));
-        std::fs::write(&path, bytes).expect("probe file");
-        path
-    }
-
-    /// The reversal probe for the Go fingerprint, in BOTH directions. A detector that only ever says
-    /// yes accuses every target, and one that only ever says no is decoration - neither is caught by
-    /// a test that checks a single case.
-    #[test]
-    fn the_go_fingerprint_answers_on_the_magic_and_not_on_the_section_alone() {
-        // A header the size the linker really writes: the magic, the pointer-size and flags bytes,
-        // then the rest of the thirty-two, then whatever the version fields hold. The first draft of
-        // this fixture stopped at twenty-four bytes and the completeness check rejected it - which is
-        // the check earning its place rather than a fixture being awkward.
-        let mut with_magic = GO_BUILDINFO_MAGIC.to_vec();
-        with_magic.extend_from_slice(&[0x08, 0x02]);
-        with_magic.extend_from_slice(&[0u8; 16]);
-        with_magic.extend_from_slice(b"go1.27.0");
-        let go = write_probe("go", &synthetic_pe(b".data\0\0\0", &with_magic));
-        assert!(is_go_binary(&go), "the magic sits in .data and this is what Go leaves there");
-
-        // Same section, same size, no magic: a perfectly ordinary binary must not be accused.
-        let plain = write_probe("plain", &synthetic_pe(b".data\0\0\0", b"ordinary bytes, no Go linker anywhere"));
-        assert!(!is_go_binary(&plain), "a .data section is not evidence - the magic is");
-
-        // The magic present but somewhere we do not look. Go puts it two bytes into .data, and this
-        // pins that we read the SECTION rather than trusting any occurrence anywhere in the file.
-        let neighbour = write_probe("neighbour", &synthetic_pe(b".rdata\0\0", &with_magic));
-        assert!(!is_go_binary(&neighbour), "read .data, not whatever section happens to carry the bytes");
-
-        // The magic with nothing behind it. Go's header is 32 bytes and the linker never writes a
-        // truncated one, so this can only be a coincidence sitting at the tail of what we read -
-        // and a coincidence is not evidence.
-        let tail = write_probe("tail", &synthetic_pe(b".data\0\0\0", GO_BUILDINFO_MAGIC));
-        assert!(!is_go_binary(&tail), "fourteen bytes with no header behind them prove nothing");
-
-        for p in [go, plain, neighbour, tail] {
-            let _ = std::fs::remove_file(p);
-        }
-    }
-
-    /// Every doubt answers "not Go". A target we cannot read must not be accused of a gap it may not
-    /// have - an audit that invents one is no better than an audit that hides one (rule 4).
-    #[test]
-    fn an_unreadable_or_malformed_target_is_never_called_a_go_binary() {
-        assert!(!is_go_binary(std::path::Path::new("no such file anywhere.exe")));
-        let truncated = write_probe("truncated", b"MZ");
-        assert!(!is_go_binary(&truncated), "a two-byte file is not a PE");
-        let not_pe = write_probe("not_pe", &vec![0u8; 8192]);
-        assert!(!is_go_binary(&not_pe), "zeroes are not a PE either");
-        let _ = std::fs::remove_file(truncated);
-        let _ = std::fs::remove_file(not_pe);
     }
 
     #[test]
