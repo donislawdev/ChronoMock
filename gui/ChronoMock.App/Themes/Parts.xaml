@@ -1,5 +1,6 @@
 <ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:controls="clr-namespace:ChronoMock.App.Controls"
                     xmlns:app="clr-namespace:ChronoMock.App">
 
   <!--
@@ -1205,7 +1206,7 @@
     edge down the middle of the list. Capped in height and scrolling, because a family session can
     produce forty channels and this is a detail inside a folded section, not the subject of the screen.
   -->
-  <Style x:Key="PartFactList" TargetType="HeaderedItemsControl">
+  <Style x:Key="PartFactList" TargetType="controls:TextNamedList">
     <Setter Property="Margin" Value="{StaticResource StackGapLg}" />
     <Setter Property="ItemTemplate">
       <Setter.Value>
@@ -1227,7 +1228,7 @@
     </Setter>
     <Setter Property="Template">
       <Setter.Value>
-        <ControlTemplate TargetType="HeaderedItemsControl">
+        <ControlTemplate TargetType="controls:TextNamedList">
           <StackPanel>
             <TextBlock Style="{StaticResource PartLabel}" TextWrapping="NoWrap"
                        TextTrimming="CharacterEllipsis">
@@ -1265,7 +1266,7 @@
 
     Measured on the session-audit render: both warnings ran past the card and lost their ends.
   -->
-  <Style x:Key="PartNoteList" TargetType="HeaderedItemsControl"
+  <Style x:Key="PartNoteList" TargetType="controls:TextNamedList"
          BasedOn="{StaticResource PartFactList}">
     <Setter Property="ItemTemplate">
       <Setter.Value>
@@ -1375,13 +1376,13 @@
     Not focusable and not a tab stop, like the header it hosts: a table is read, not operated. The cap is
     the audit table's, because both tables stand in the audit section and answer the same question.
   -->
-  <Style x:Key="PartTable" TargetType="HeaderedItemsControl">
+  <Style x:Key="PartTable" TargetType="controls:TextNamedList">
     <Setter Property="Focusable" Value="False" />
     <Setter Property="IsTabStop" Value="False" />
     <Setter Property="Grid.IsSharedSizeScope" Value="True" />
     <Setter Property="Template">
       <Setter.Value>
-        <ControlTemplate TargetType="HeaderedItemsControl">
+        <ControlTemplate TargetType="controls:TextNamedList">
           <StackPanel>
             <ContentPresenter ContentSource="Header" />
             <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"

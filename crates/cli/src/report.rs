@@ -395,11 +395,11 @@ pub(crate) fn exit_code_label(code: i32) -> String {
 /// families today: a language runtime whose monotonic/elapsed clocks stand on QueryPerformanceCounter,
 /// which is left real by default (ADR-2) and so does not scale, and a game engine that caps its own
 /// simulation step, which no amount of clock coverage can lift. This reads file NAMES beside the target
-/// (and its PyInstaller `_internal/` folder) plus a few bounded kilobytes of the target's own executable
-/// (`pe`: Go build info, a .NET runtime linked in): no QPC hook (ADR-2 holds), no process inspection.
-/// Best-effort: a runtime unpacked at runtime (PyInstaller onefile), a `java -jar` launch, a
-/// framework-dependent single-file .NET build, a NativeAOT build published with `DebuggerSupport`
-/// off, or a launcher that starts the real binary from another folder is not caught here, and a false
+/// (and its PyInstaller `_internal/` folder) plus bounded reads of the target's own executable (`pe`:
+/// Go build info, the marks a .NET build leaves in the file): no QPC hook (ADR-2 holds), no process
+/// inspection. Best-effort: a runtime unpacked at runtime (PyInstaller onefile), a `java -jar` launch,
+/// a NativeAOT build published with `DebuggerSupport` off that also exports functions of its own, or
+/// a launcher that starts the real binary from another folder is not caught here, and a false
 /// positive only adds a "may not scale" note, never a false verdict (rules 4, 6).
 pub(crate) fn detect_runtime_warnings(target_path: &std::path::Path, scale_qpc: bool) -> Vec<String> {
     let mut keys = fingerprint_target(target_path);

@@ -63,6 +63,50 @@ public class XamlResourceKeyTests
                 + $"Strings.pl.json, so they would render as an empty label: {string.Join(", ", missing)}");
     }
 
+    /// <summary>The one key the catalogue shows on purpose WITHOUT a translation, so the fallback a missing
+    /// one gets is seen rather than discovered.</summary>
+    private const string DeliberatelyMissing = "warning.no.such.key.exists";
+
+    /// <summary>
+    /// The keys the component catalogue hands its lists as sample DATA are ones the application translates -
+    /// all but the one it shows missing on purpose.
+    /// </summary>
+    /// <remarks>
+    /// The catalogue's own comment said they were "real warning KEYS", and one of them,
+    /// <c>chromium.interval_queued_before_change</c>, never existed: the catalogue showed a raw key where
+    /// the application can only ever show a sentence, found by a screen reader's view of it on 2026-09-23.
+    /// A promise in a comment with nothing behind it is the guard untouchable rule 12 calls worse than none.
+    /// Reversal probe: put that key back and this reddens on it.
+    /// </remarks>
+    [Fact]
+    public void Every_key_the_catalogue_shows_as_data_exists_in_both_languages()
+    {
+        var catalogue = File.ReadAllText(Path.Combine(TestPaths.AppDirectory(), "Views", "ComponentCatalogue.xaml"));
+        var samples = SampleKey.Matches(catalogue).Select(m => m.Groups[1].Value).Distinct(StringComparer.Ordinal).ToList();
+
+        Assert.True(
+            samples.Count >= 14,
+            $"the scan found only {samples.Count} sample keys in the catalogue - it is reading the wrong file or "
+                + "the wrong shape, which would make the assertion below vacuous");
+        Assert.Contains(DeliberatelyMissing, samples);
+
+        var en = WpfTestHost.Invoke(() => KeysOf(LocalizationService.Load("en")));
+        var pl = WpfTestHost.Invoke(() => KeysOf(LocalizationService.Load("pl")));
+        var unknown = samples
+            .Where(key => key != DeliberatelyMissing && (!en.Contains(key) || !pl.Contains(key)))
+            .ToList();
+
+        Assert.True(
+            unknown.Count == 0,
+            "the catalogue shows these keys as sample data, and the application has no text for them, so the "
+                + $"catalogue promises a state the application can never be in: {string.Join(", ", unknown)}");
+    }
+
+    /// <summary>A dotted lowercase key given as a string item, the way the catalogue fills its lists.</summary>
+    private static readonly Regex SampleKey = new(
+        @"<sys:String>([a-z][a-z0-9_]*(?:\.[a-z0-9_]+)+)</sys:String>",
+        RegexOptions.Compiled);
+
     /// <summary>Every dotted DynamicResource key in the app's views, mapped to the file it was seen in
     /// first, so a failure says where to look rather than only what is wrong.</summary>
     private static Dictionary<string, string> ScanViewKeys()

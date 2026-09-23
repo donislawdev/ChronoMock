@@ -142,10 +142,10 @@
                 <TextBlock Style="{StaticResource PartLabel}" Text="{DynamicResource setup.label_mode}" />
               </HeaderedContentControl.Header>
               <WrapPanel>
-                <ItemsControl x:Name="SpeedPresets"
-                              ItemsSource="{x:Static app:TimeInputs.SessionSpeeds}"
-                              ItemTemplate="{StaticResource SpeedButton}"
-                              ItemsPanel="{StaticResource ControlRow}" />
+                <controls:TextNamedItems x:Name="SpeedPresets"
+                                         ItemsSource="{x:Static app:TimeInputs.SessionSpeeds}"
+                                         ItemTemplate="{StaticResource SpeedButton}"
+                                         ItemsPanel="{StaticResource ControlRow}" />
                 <!-- Any rate at all, for the one that is not a preset. Set passes the box's text to the
                      command, which parses "N" or "xN" and surfaces a bad value as an in-flight error rather
                      than a silent no-op (rule 6). -->
@@ -185,10 +185,10 @@
               <HeaderedContentControl.Header>
                 <TextBlock Style="{StaticResource PartLabel}" Text="{DynamicResource session.label_jump}" />
               </HeaderedContentControl.Header>
-              <ItemsControl x:Name="JumpButtons"
-                            ItemsSource="{x:Static app:TimeInputs.SessionJumps}"
-                            ItemTemplate="{StaticResource JumpButton}"
-                            ItemsPanel="{StaticResource ControlRow}" />
+              <controls:TextNamedItems x:Name="JumpButtons"
+                                       ItemsSource="{x:Static app:TimeInputs.SessionJumps}"
+                                       ItemTemplate="{StaticResource JumpButton}"
+                                       ItemsPanel="{StaticResource ControlRow}" />
               <HeaderedContentControl.Tag>
                 <TextBlock x:Name="JumpNote" Style="{StaticResource PartNote}"
                            Text="{DynamicResource session.jump_note}" />

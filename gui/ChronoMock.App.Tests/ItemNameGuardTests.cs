@@ -15,12 +15,76 @@ namespace ChronoMock.App.Tests;
 /// "ZoneOption { BiasMinutes = -120, Label = ... }" until 2026-09-07. A rule written three times in
 /// comments and enforced nowhere is the guard that does not exist (untouchable rule 12).
 ///
-/// Deliberately narrow: a list WITHOUT a template is left alone, because its items are strings whose
-/// ToString() is the label already (the calculator's "+"/"-" sign picker is the case in point). The rule
-/// is "a template means a record means a name", nothing wider.
+/// Deliberately narrow: a ComboBox or ListBox WITHOUT a template is left alone, because its items are
+/// strings whose ToString() is the label already (the calculator's "+"/"-" sign picker is the case in
+/// point). The rule is "a template means a record means a name", nothing wider.
+///
+/// 🔴 That belief did NOT hold for the plain item lists, and this guard never looked at them: the warning
+/// list holds translation KEYS, whose ToString() is the key, and the tables hold records. They are covered
+/// twice now - here by shape (a view never uses the bare ItemsControl or HeaderedItemsControl, only the
+/// text-named ones), and in <see cref="ItemPeerNameTests"/> by effect, on the names the rendered rows
+/// report.
 /// </summary>
 public class ItemNameGuardTests
 {
+    /// <summary>A literal floor for the text-named lists, for the same reason as the one below.</summary>
+    private const int TextNamedListsAtLeast = 19;
+
+    /// <summary>
+    /// Every item list in the application names its rows by what they show, because every one of them is a
+    /// TextNamedList or TextNamedItems.
+    /// </summary>
+    /// <remarks>
+    /// The effect guard cannot see the calculator's lists - its render fixture has no data behind it - so
+    /// this is what keeps a new plain ItemsControl there from reading a record out again. Reversal probe:
+    /// put one of the calculator's lists back to ItemsControl and this reddens on that line.
+    /// </remarks>
+    [Fact]
+    public void No_view_lists_items_through_a_control_that_names_rows_by_their_data()
+    {
+        var appDir = TestPaths.AppDirectory();
+        var bare = new List<string>();
+        int textNamed = 0;
+
+        foreach (var file in AppXaml(appDir))
+        {
+            var rel = Path.GetRelativePath(appDir, file).Replace('\\', '/');
+            foreach (var element in XDocument.Load(file, LoadOptions.SetLineInfo).Descendants())
+            {
+                switch (element.Name.LocalName)
+                {
+                    case "ItemsControl" or "HeaderedItemsControl":
+                        bare.Add($"  {rel}:{((System.Xml.IXmlLineInfo)element).LineNumber}: <{element.Name.LocalName}>");
+                        break;
+                    case "TextNamedList" or "TextNamedItems":
+                        textNamed++;
+                        break;
+                }
+            }
+        }
+
+        Assert.True(
+            textNamed >= TextNamedListsAtLeast,
+            $"only {textNamed} text-named lists were found, expected at least {TextNamedListsAtLeast} - the scan "
+                + "stopped reading the views, so this guard was about to pass over nothing");
+        Assert.True(
+            bare.Count == 0,
+            "these lists would name each row by its data item's ToString() - a translation key or a record - "
+                + $"instead of what it shows. Use controls:TextNamedList or controls:TextNamedItems:{Environment.NewLine}"
+                + string.Join(Environment.NewLine, bare));
+    }
+
+    /// <summary>Every XAML file of the application, build output left out.</summary>
+    private static IEnumerable<string> AppXaml(string appDir)
+        => Directory.EnumerateFiles(appDir, "*.xaml", SearchOption.AllDirectories)
+            .Where(file => !IsBuildOutput(Path.GetRelativePath(appDir, file).Replace('\\', '/')));
+
+    private static bool IsBuildOutput(string rel)
+        => rel.Contains("/bin/", StringComparison.OrdinalIgnoreCase)
+            || rel.Contains("/obj/", StringComparison.OrdinalIgnoreCase)
+            || rel.StartsWith("bin/", StringComparison.OrdinalIgnoreCase)
+            || rel.StartsWith("obj/", StringComparison.OrdinalIgnoreCase);
+
     /// <summary>The floor is a LITERAL, not a count derived from the same scan. A guard that counts what it
     /// found and then checks its own count passes just as happily over an empty directory - which is how a
     /// path change turns a guard into decoration without ever going red.</summary>
@@ -53,17 +117,9 @@ public class ItemNameGuardTests
         var unnamed = new List<string>();
         int templated = 0;
 
-        foreach (var file in Directory.EnumerateFiles(appDir, "*.xaml", SearchOption.AllDirectories))
+        foreach (var file in AppXaml(appDir))
         {
             var rel = Path.GetRelativePath(appDir, file).Replace('\\', '/');
-            if (rel.Contains("/bin/", StringComparison.OrdinalIgnoreCase)
-                || rel.Contains("/obj/", StringComparison.OrdinalIgnoreCase)
-                || rel.StartsWith("bin/", StringComparison.OrdinalIgnoreCase)
-                || rel.StartsWith("obj/", StringComparison.OrdinalIgnoreCase))
-            {
-                continue;
-            }
-
             foreach (var element in XDocument.Load(file).Descendants())
             {
                 var name = element.Name.LocalName;

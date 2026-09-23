@@ -1,7 +1,7 @@
 //! The Chromium/Electron substitution mechanism (F1-F4): instead of injecting a native hook, we
 //! speak the Chrome DevTools Protocol to the target's own JS engine and override its time APIs. The
 //! browser holds the clock, a JS shim is the "hook", and CDP over a WebSocket is the wire - the same
-//! rdzeni<->interfejs shape as the native `__core` over NDJSON (ADR-6), one layer down.
+//! core<->interface shape as the native `__core` over NDJSON (ADR-6), one layer down.
 //!
 //! This module is the transport + JSON-RPC layer. Target detection, launch, the time shim, and the
 //! session/report wiring live in sibling modules (built in later slices).

@@ -150,8 +150,8 @@
                       ItemTemplate="{StaticResource ZoneRow}" />
 
             <TextBlock Style="{StaticResource PartFieldLabel}" Text="{DynamicResource calc.steps_header}" />
-            <ItemsControl ItemsSource="{Binding Steps}">
-              <ItemsControl.ItemTemplate>
+            <controls:TextNamedItems ItemsSource="{Binding Steps}">
+              <controls:TextNamedItems.ItemTemplate>
                 <DataTemplate>
                   <Border Margin="{StaticResource StackGapSm}" Padding="{StaticResource SpaceSm}"
                           Background="{DynamicResource BrushBgSurfaceAlt}" CornerRadius="{StaticResource RadiusSm}">
@@ -259,8 +259,8 @@
                     </Grid>
                   </Border>
                 </DataTemplate>
-              </ItemsControl.ItemTemplate>
-            </ItemsControl>
+              </controls:TextNamedItems.ItemTemplate>
+            </controls:TextNamedItems>
             <Button x:Name="AddStepButton" Content="{DynamicResource calc.add_step}" Click="OnAddStepClick"
                     ToolTip="{DynamicResource tip.add_step}"
                     Margin="{StaticResource StackGapSm}" HorizontalAlignment="Left" />
@@ -305,8 +305,8 @@
               <TextBlock Text="{Binding AnalyzeError}" TextWrapping="Wrap" Margin="{StaticResource StackGapSm}"
                          FontSize="{StaticResource FontSizeCaption}" Foreground="{DynamicResource BrushStatusFails}"
                          Visibility="{Binding AnalyzeHasError, Converter={StaticResource BoolToVis}}" />
-              <ItemsControl ItemsSource="{Binding Readings}" Margin="{StaticResource StackGapSm}">
-                <ItemsControl.ItemTemplate>
+              <controls:TextNamedItems ItemsSource="{Binding Readings}" Margin="{StaticResource StackGapSm}">
+                <controls:TextNamedItems.ItemTemplate>
                   <DataTemplate>
                     <StackPanel Margin="{StaticResource StackGapSm}">
                       <TextBlock Text="{Binding ReadingLabelKey, Converter={StaticResource KeyToText}}" TextWrapping="Wrap"
@@ -314,24 +314,24 @@
                       <StackPanel Orientation="Horizontal">
                         <TextBlock VerticalAlignment="Center"
                                    FontSize="{StaticResource FontSizeBody}" Foreground="{DynamicResource BrushTextPrimary}"><Run Text="{Binding WeekdayKey, Converter={StaticResource KeyToText}, Mode=OneWay}" /><Run Text="  " /><Run Text="{Binding Date, Mode=OneWay}" /></TextBlock>
-                        <ItemsControl ItemsSource="{Binding Significance}" VerticalAlignment="Center" Margin="{StaticResource SpaceSm}">
-                          <ItemsControl.ItemsPanel>
+                        <controls:TextNamedItems ItemsSource="{Binding Significance}" VerticalAlignment="Center" Margin="{StaticResource SpaceSm}">
+                          <controls:TextNamedItems.ItemsPanel>
                             <ItemsPanelTemplate>
                               <StackPanel Orientation="Horizontal" />
                             </ItemsPanelTemplate>
-                          </ItemsControl.ItemsPanel>
-                          <ItemsControl.ItemTemplate>
+                          </controls:TextNamedItems.ItemsPanel>
+                          <controls:TextNamedItems.ItemTemplate>
                             <DataTemplate>
                               <TextBlock Text="{Binding Converter={StaticResource KeyToText}}" Margin="{StaticResource SpaceXs}"
                                          FontSize="{StaticResource FontSizeCaption}" Foreground="{DynamicResource BrushAccent}" />
                             </DataTemplate>
-                          </ItemsControl.ItemTemplate>
-                        </ItemsControl>
+                          </controls:TextNamedItems.ItemTemplate>
+                        </controls:TextNamedItems>
                       </StackPanel>
                     </StackPanel>
                   </DataTemplate>
-                </ItemsControl.ItemTemplate>
-              </ItemsControl>
+                </controls:TextNamedItems.ItemTemplate>
+              </controls:TextNamedItems>
             </StackPanel>
           </StackPanel>
         </ScrollViewer>
@@ -362,8 +362,8 @@
                 <StackPanel Margin="{StaticResource SpaceXs}"
                             Visibility="{Binding HasParamInputs, Converter={StaticResource BoolToVis}}">
                   <TextBlock Style="{StaticResource PartGroupHeading}" Text="{DynamicResource calc.preset_params_header}" />
-                  <ItemsControl ItemsSource="{Binding ParamInputs}">
-                    <ItemsControl.ItemTemplate>
+                  <controls:TextNamedItems ItemsSource="{Binding ParamInputs}">
+                    <controls:TextNamedItems.ItemTemplate>
                       <DataTemplate>
                         <StackPanel Orientation="Horizontal" Margin="{StaticResource SpaceXs}">
                           <TextBlock Text="{Binding Label}" VerticalAlignment="Center" MinWidth="90"
@@ -402,8 +402,8 @@
                           </ComboBox>
                         </StackPanel>
                       </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                  </ItemsControl>
+                    </controls:TextNamedItems.ItemTemplate>
+                  </controls:TextNamedItems>
                 </StackPanel>
 
                 <TextBlock Text="{DynamicResource calc.preset_needs_params}" TextWrapping="Wrap"
@@ -441,14 +441,14 @@
               <StackPanel>
                 <TextBlock Text="{DynamicResource calc.what_tests}" FontSize="{StaticResource FontSizeCaption}"
                            FontWeight="Bold" Foreground="{DynamicResource BrushAccent}" />
-                <ItemsControl ItemsSource="{Binding Significance}" Margin="{StaticResource SpaceXs}">
-                  <ItemsControl.ItemTemplate>
+                <controls:TextNamedItems ItemsSource="{Binding Significance}" Margin="{StaticResource SpaceXs}">
+                  <controls:TextNamedItems.ItemTemplate>
                     <DataTemplate>
                       <TextBlock Text="{Binding Converter={StaticResource KeyToText}}" TextWrapping="Wrap"
                                  FontSize="{StaticResource FontSizeBody}" Foreground="{DynamicResource BrushTextPrimary}" />
                     </DataTemplate>
-                  </ItemsControl.ItemTemplate>
-                </ItemsControl>
+                  </controls:TextNamedItems.ItemTemplate>
+                </controls:TextNamedItems>
                 <!-- Which calendar judged the weekend and holiday marks above. It belongs HERE and not
                      only beside the picker: the picker is in the middle column and this is read in the
                      right one, so a line saying "weekend - not a business day" would otherwise be a
@@ -470,8 +470,8 @@
                        FontSize="{StaticResource FontSizeCaption}" Foreground="{DynamicResource BrushStatusPartial}" />
 
             <TextBlock Style="{StaticResource PartGroupHeading}" Text="{DynamicResource calc.all_formats}" Margin="{StaticResource SpaceXs}" />
-            <ItemsControl x:Name="FormatList" ItemsSource="{Binding Formats}" Margin="{StaticResource SpaceXs}">
-              <ItemsControl.ItemTemplate>
+            <controls:TextNamedItems x:Name="FormatList" ItemsSource="{Binding Formats}" Margin="{StaticResource SpaceXs}">
+              <controls:TextNamedItems.ItemTemplate>
                 <DataTemplate>
                   <Grid Margin="{StaticResource SpaceXs}">
                     <Grid.ColumnDefinitions>
@@ -488,8 +488,8 @@
                             FontSize="{StaticResource FontSizeCaption}" />
                   </Grid>
                 </DataTemplate>
-              </ItemsControl.ItemTemplate>
-            </ItemsControl>
+              </controls:TextNamedItems.ItemTemplate>
+            </controls:TextNamedItems>
 
             <!-- Custom output format (7.3): a .NET/Java-token mask so the tester can hit the exact string the
                  tested app's field expects. Built from the civil date, so it renders even when epoch/FILETIME
