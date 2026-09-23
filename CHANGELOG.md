@@ -35,11 +35,19 @@ Notable changes to Chrono Mock, newest first. The format follows
   fix below: a network library that measures its own timeout from the tick count, WinHTTP for one,
   now counts that timeout in session time, while the network wait underneath stays real. At x60 a
   60 second timeout runs out after one real second, so a server slower than that makes the request
-  fail. A session with timers sped up now says so whenever the application has the network stack
-  loaded, right under the line saying that waits on system objects stay on the real clock.
+  fail. A session with timers sped up now says so whenever the application opened a network
+  connection, right under the line saying that waits on system objects stay on the real clock.
 
 ### Fixed
 
+- **The network caution missed most applications that go online.** The audit is meant to say when
+  an application opened a network connection, because it may then take the time from a server,
+  which no local substitution reaches. It watched one Windows function for that, and two of the
+  three ways to connect never call it - among them the one WinHTTP and WinINet use, and the ones
+  .NET, Node.js and Go connect through. Those applications got no caution and a clean result. The
+  audit now counts every connection attempt at the point all of them pass through, whichever
+  function made it, on both 32 and 64 bit. A datagram sent without a connection is still not
+  counted, because it is not one.
 - **The .NET timing caution said `Environment.TickCount` follows the session speed.** It does only
   when timers are sped up too (`--scale-duration`, or "Also speed up timers and countdowns inside
   the application" in the window). With that off, it runs at real speed, so a tester reading the

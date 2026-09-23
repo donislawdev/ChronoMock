@@ -208,7 +208,8 @@ pub const CH_TPTIMER: u64 = 1 << 31;
 pub const CH_TPTIMEREX: u64 = 1 << 32;
 /// Coverage bit: `NtCreateUserProcess` is hooked (direct process creation, observed not injected, ADR-3).
 pub const CH_NTCUP: u64 = 1 << 33;
-/// Coverage bit: `connect` is hooked (ws2_32 network connection, observed - a suspected server time source).
+/// Coverage bit: network connections are observed (every connection attempt, whichever API made it,
+/// counted at `NtDeviceIoControlFile` - a suspected server time source, see `ChannelDef::export`).
 pub const CH_CONNECT: u64 = 1 << 34;
 /// Coverage bit: `QueryPerformanceCounter` is hooked (QPC axis, opt-in `scale_qpc`, ADR-2 reversal).
 pub const CH_QPC: u64 = 1 << 35;
@@ -286,9 +287,10 @@ pub enum ChannelModule {
     /// winmm.dll - the multimedia timer timeSetEvent. Often absent (a console/service target rarely
     /// loads winmm) - resolved lazily like User32, honest partial if absent, never force-loaded.
     Winmm,
-    /// ws2_32.dll - the sockets `connect` and `WSAWaitForMultipleEvents`. Often absent (a target that
-    /// never touches the network never loads it) - resolved lazily like Winmm, honest partial if
-    /// absent, never force-loaded.
+    /// ws2_32.dll - the socket wait `WSAWaitForMultipleEvents`. Often absent (a target that never
+    /// touches the network never loads it) - resolved lazily like Winmm, honest partial if absent,
+    /// never force-loaded. The connection observer used to live here too, on `connect`, and moved to
+    /// ntdll because two of the three ways to connect never call that export (`ChannelDef::export`).
     Ws2_32,
     /// kernelbase.dll - the synchronisation waits that kernel32 does not export itself.
     ///
@@ -364,7 +366,7 @@ pub enum ChannelCategory {
     /// be uncovered, an honest audit (rule 4) without the risk. NOT opt-in (unlike the time observers):
     /// process creation is watched regardless of scale_duration.
     SpawnObserved,
-    /// Hooked and counted, but never modified: a network `connect` (ws2_32). A target that opens a
+    /// Hooked and counted, but never modified: a network connection attempt. A target that opens a
     /// network connection may read the time from a SERVER, which no local hook can cover - so we observe
     /// it and warn (source.network_at_start), an honest audit (rule 4) of a time source we cannot
     /// substitute. Like SpawnObserved, NOT opt-in: the network is watched regardless of scale_duration,
@@ -381,15 +383,33 @@ pub enum ChannelCategory {
     Qpc,
 }
 
-/// One time channel: its coverage bit, the exported symbol the hook detours, the
-/// module that exports it, and its category. Single source of truth so the mechanism
-/// reports exactly the channels the hook installs.
+/// One time channel: its coverage bit, its name, the module that exports it, and its category.
+/// Single source of truth so the mechanism reports exactly the channels the hook installs.
 #[derive(Debug, Clone, Copy)]
 pub struct ChannelDef {
     pub bit: u64,
+    /// The channel's name on the wire and in the report - a public contract key (untouchable
+    /// rule 17). It is also the exported symbol the hook detours, with the one exception
+    /// `export` names.
     pub name: &'static str,
     pub module: ChannelModule,
     pub category: ChannelCategory,
+}
+
+impl ChannelDef {
+    /// The exported symbol the hook detours for this channel. The channel's own name for every
+    /// channel but one.
+    ///
+    /// The exception is `connect`, which counts every network connection attempt at
+    /// `ntdll!NtDeviceIoControlFile` - the one place all of them pass through. Measured on both
+    /// bitnesses (2026-09-23): `connect` and `WSAConnect` reach the socket driver with control code
+    /// 0x12007, while `ConnectEx` - and with it `WSAConnectByName`, `WSAConnectByList`, WinHTTP and
+    /// WinINet - uses 0x120C7 and never calls the `connect` export. A detour on that export saw two
+    /// of those eleven paths, and the .NET, Node.js and Go runtimes connect through the others. The
+    /// name stays `connect` because it is a contract key, and because it still says what is counted.
+    pub const fn export(&self) -> &'static str {
+        if self.bit == CH_CONNECT { "NtDeviceIoControlFile" } else { self.name }
+    }
 }
 
 /// The address of the pointer slot an indirect jump at a function's entry loads its target from, or
@@ -549,7 +569,7 @@ pub const CHANNELS: [ChannelDef; CHANNEL_COUNT] = [
     ChannelDef { bit: CH_TPTIMER, name: "SetThreadpoolTimer", module: ChannelModule::KernelBaseBehindKernel32, category: ChannelCategory::Duration },
     ChannelDef { bit: CH_TPTIMEREX, name: "SetThreadpoolTimerEx", module: ChannelModule::KernelBaseBehindKernel32, category: ChannelCategory::Duration },
     ChannelDef { bit: CH_NTCUP, name: "NtCreateUserProcess", module: ChannelModule::Ntdll, category: ChannelCategory::SpawnObserved },
-    ChannelDef { bit: CH_CONNECT, name: "connect", module: ChannelModule::Ws2_32, category: ChannelCategory::SourceObserved },
+    ChannelDef { bit: CH_CONNECT, name: "connect", module: ChannelModule::Ntdll, category: ChannelCategory::SourceObserved },
     ChannelDef { bit: CH_QPC, name: "QueryPerformanceCounter", module: ChannelModule::KernelBaseBehindKernel32, category: ChannelCategory::Qpc },
     ChannelDef { bit: CH_TIMEGETTIME, name: "timeGetTime", module: ChannelModule::Winmm, category: ChannelCategory::Duration },
     ChannelDef { bit: CH_SCVSRW, name: "SleepConditionVariableSRW", module: ChannelModule::KernelBase, category: ChannelCategory::WaitObserved },
@@ -1976,6 +1996,22 @@ mod tests {
             assert_ne!(ch.bit, 0);
             assert_eq!(seen & ch.bit, 0, "duplicate bit for {}", ch.name);
             seen |= ch.bit;
+        }
+    }
+
+    /// The hook resolves every channel by `export`, and the report names it by `name`. The two differ
+    /// for the connection observer alone, which lives in ntdll - where no `connect` export exists, so
+    /// resolving it by its name would leave the channel quietly not installed.
+    #[test]
+    fn every_channel_detours_its_own_name_except_the_connection_observer() {
+        for ch in CHANNELS {
+            if ch.bit == CH_CONNECT {
+                assert_eq!(ch.export(), "NtDeviceIoControlFile");
+                assert_eq!(ch.name, "connect", "the name is a contract key");
+                assert_eq!(ch.module, ChannelModule::Ntdll, "the export lives in ntdll");
+            } else {
+                assert_eq!(ch.export(), ch.name, "{} detours a different symbol than it names", ch.name);
+            }
         }
     }
 

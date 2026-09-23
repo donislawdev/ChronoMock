@@ -26,14 +26,16 @@ use std::path::{Path, PathBuf};
 /// check that vanished cannot fail.
 const SHAPE_LINTS: &[&str] = &["too_many_lines", "cognitive_complexity", "excessive_nesting"];
 
-/// Escape hatches out of `clippy::too_many_arguments`, measured 2026-09-06.
+/// Escape hatches out of `clippy::too_many_arguments`, measured 2026-09-06 and again 2026-09-23.
 ///
-/// The four are `chrono-ctl::write_anchor_full` and three detours in `chrono-hook` that mirror
+/// The five are `chrono-ctl::write_anchor_full` and four detours in `chrono-hook` that mirror
 /// Win32 entry points: `h_ntcup` is NtCreateUserProcess, `h_cpw` and `h_cpa` are CreateProcessW and
-/// CreateProcessA. Their parameter lists are Microsoft's, not ours to split, which is why the width
-/// axis is not a ratchet in this project and this count is one instead. Pinned exactly rather than
-/// bounded: a count left standing above the truth grants a free allow nobody decided to grant.
-const ARGUMENT_ALLOWS: usize = 4;
+/// CreateProcessA, and `h_ntdiocf` is NtDeviceIoControlFile, where the connection observer moved from
+/// ws2_32's three-argument `connect` (2026-09-23). Their parameter lists are Microsoft's, not ours to
+/// split - on 32-bit the callee pops them, so the count has to match to the argument - which is why the
+/// width axis is not a ratchet in this project and this count is one instead. Pinned exactly rather
+/// than bounded: a count left standing above the truth grants a free allow nobody decided to grant.
+const ARGUMENT_ALLOWS: usize = 5;
 
 fn repo_root() -> PathBuf {
     // Duplicated from tests/hygiene.rs on purpose. Integration tests are separate binaries, and a
@@ -256,7 +258,7 @@ fn the_argument_escape_hatch_only_ever_gets_rarer() {
         found.len(),
         ARGUMENT_ALLOWS,
         "the argument escape hatches measured {} against a frozen {ARGUMENT_ALLOWS}. Fewer means \
-         lower the number in the same change. More means a fifth signature grew past seven \
+         lower the number in the same change. More means another signature grew past seven \
          arguments and reached for an allow instead of a smaller call: {found:?}",
         found.len()
     );

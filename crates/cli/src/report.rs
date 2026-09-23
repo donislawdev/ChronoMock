@@ -229,7 +229,7 @@ pub(crate) fn describe_warning(key: &str) -> String {
         // Sits next to the object-wait line on purpose: that one says an I/O timeout is not shortened,
         // and for a library that measures its own timeout from the tick count this one says otherwise.
         "wait.network_timeouts_scaled" => {
-            "this application has the network stack loaded - a network library that measures its own \
+            "this application opened a network connection - a network library that measures its own \
              timeout from the tick count (WinHTTP, for one) follows the session speed, so a server slower \
              than that timeout divided by the speed makes a request fail, even though the waits \
              underneath stay real"

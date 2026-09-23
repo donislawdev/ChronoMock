@@ -40,12 +40,14 @@
 //!   no equivalent of a Python audit hook here, so the static half stands alone.
 //! * **Data can leave a machine without a socket** - a file written into a synced folder, a report
 //!   pasted into an issue. Nothing here looks at that.
-//! * **The hooked `connect` is somebody else's traffic, not ours.** `chrono-hook` resolves
-//!   `ws2_32.dll` and intercepts `connect` so the audit can report that the target application
-//!   asked the network for something, which is a suspected server time source. Counting a call is
-//!   the opposite of making one, and the register says so where it grants that. The binary layer
-//!   says the half this one cannot: `chrono_hook.dll` LINKS no networking DLL at all, `ws2_32`
-//!   included, because it looks that module up only when the target has already loaded it.
+//! * **The observed connections are somebody else's traffic, not ours.** `chrono-hook` counts the
+//!   target's connection attempts where they reach the socket driver, in ntdll, so the audit can
+//!   report that the target application asked the network for something, which is a suspected
+//!   server time source. It also resolves `ws2_32.dll` to observe the target's socket waits.
+//!   Counting a call is the opposite of making one, and the register says so where it grants that.
+//!   The binary layer says the half this one cannot: `chrono_hook.dll` LINKS no networking DLL at
+//!   all, `ws2_32` included, because it looks that module up only when the target has already
+//!   loaded it.
 //!
 //! So this is not a proof of silence. It is a lock on the surface: nobody adds a way out by
 //! accident, and adding one on purpose means editing a register here and writing down why.
@@ -175,19 +177,40 @@ const ALLOWED: &[(&str, &str, &str)] = &[
          Neither reaches past this machine",
     ),
     (
+        "crates/cli/tests/network_observer.rs",
+        "spawn",
+        "runs this test binary's own ignored probe twice, once alone as the control and once under a \
+         session through the built binary. Neither reaches past this machine",
+    ),
+    (
+        "crates/cli/tests/network_observer.rs",
+        "socket",
+        "binds a loopback listener on a port the system picks, and the probe connects to that port \
+         alone, which is the one thing the connection observer can be seen to count. Nothing is \
+         sent, and the listener is closed before the test ends",
+    ),
+    (
+        "crates/cli/tests/network_observer.rs",
+        "winsock",
+        "declares the Winsock functions the probe connects through - WSAConnect and ConnectEx, the \
+         two ways to connect that never call the connect export - against the same loopback \
+         listener",
+    ),
+    (
         "crates/hook/src/lib.rs",
         "winsock",
-        "the injected library resolves ws2_32 to INTERCEPT the target's own connect and count it. \
-         Counting somebody else's call is the opposite of making one, and the audit reports it as \
-         a suspected server time source",
+        "the injected library resolves ws2_32 to OBSERVE the target's own socket waits, and counts \
+         the target's own connection attempts in ntdll. Counting somebody else's call is the \
+         opposite of making one, and the audit reports a connection as a suspected server time \
+         source",
     ),
     (
         "gui/ChronoMock.Protocol.Tests/BinaryImportsTests.cs",
         "winsock",
         "the binary layer of this same guard, which names the module in order to REFUSE it. It reads \
          the import table of every release binary and asserts that ws2_32 is linked by chrono.exe \
-         and by nothing else - least of all by chrono_hook.dll, which hooks connect without linking \
-         it. Naming a module in a register is the opposite of opening one",
+         and by nothing else - least of all by chrono_hook.dll, which observes connections without \
+         linking it. Naming a module in a register is the opposite of opening one",
     ),
     (
         "gui/ChronoMock.Protocol/CoreClient.cs",

@@ -1371,8 +1371,10 @@ fn every_optional_module_channel_can_be_installed_late() {
     let channels = optional_module_channels(&ctl_src);
 
     // Canary, with a LITERAL rather than a count derived from the same list it checks: six channels
-    // live in optional modules today (timeGetTime, timeSetEvent, SetTimer, both message waits,
-    // connect). Fewer means the scan stopped matching the table's shape and went blind.
+    // live in optional modules today (timeGetTime, timeSetEvent, SetTimer, both message waits, the
+    // socket wait). Fewer means the scan stopped matching the table's shape and went blind. The
+    // connection observer left the list for ntdll on 2026-09-23, when the socket wait already made
+    // the count seven.
     assert!(
         channels.len() >= 6,
         "found only {} channels in optional modules - the CHANNELS table changed shape and this \

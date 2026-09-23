@@ -171,10 +171,23 @@ type TimeSetEventFn = unsafe extern "system" fn(u32, u32, *const c_void, usize, 
 // application's own duration axis disagree with itself by the multiplier. Takes no argument, so the
 // detour is a pure substitution with nothing to translate.
 type TimeGetTimeFn = unsafe extern "system" fn() -> u32;
-// connect(SOCKET s, const sockaddr *name, int namelen) -> int (ws2_32). SourceObserved: we only COUNT a
-// network connection (a suspected server time source) and forward every arg untouched. SOCKET is a
-// UINT_PTR (usize), the sockaddr* is opaque (never dereferenced), namelen is int (i32).
-type ConnectFn = unsafe extern "system" fn(usize, *const c_void, i32) -> i32;
+// NtDeviceIoControlFile(FileHandle, Event, ApcRoutine, ApcContext, IoStatusBlock, IoControlCode,
+// InputBuffer, InputBufferLength, OutputBuffer, OutputBufferLength) -> NTSTATUS (ntdll, documented in
+// winternl.h). The connection observer: we read the control code, a plain number, and COUNT a
+// connection attempt (a suspected server time source) - every other argument is forwarded untouched and
+// never dereferenced, so no undocumented structure of the socket driver is ever parsed here.
+type NtDeviceIoControlFileFn = unsafe extern "system" fn(
+    HANDLE,
+    HANDLE,
+    *const c_void,
+    *const c_void,
+    *mut c_void,
+    u32,
+    *const c_void,
+    u32,
+    *mut c_void,
+    u32,
+) -> i32;
 // SetThreadpoolTimer(pti, pftDueTime, msPeriod, msWindowLength) -> VOID, and SetThreadpoolTimerEx ->
 // BOOL (kernel32, threadpoolapiset). pftDueTime is a FILETIME* (same 64 bits as SetWaitableTimer's
 // LARGE_INTEGER*): positive/zero = absolute, negative = relative, NULL = cancel. ADR-7 class C: due +
@@ -273,7 +286,7 @@ static O_TIMEGETTIME: OnceLock<TimeGetTimeFn> = OnceLock::new();
 static O_TPTIMER: OnceLock<SetTpTimerFn> = OnceLock::new();
 static O_TPTIMEREX: OnceLock<SetTpTimerExFn> = OnceLock::new();
 static O_NTCUP: OnceLock<NtcupFn> = OnceLock::new();
-static O_CONNECT: OnceLock<ConnectFn> = OnceLock::new();
+static O_NTDIOCF: OnceLock<NtDeviceIoControlFileFn> = OnceLock::new();
 
 // Child inheritance (ADR-3): our own module handle (to inject the same DLL into a
 // child) and the CreateProcessW trampoline.
@@ -420,8 +433,9 @@ unsafe extern "system" fn watcher_proc(_p: *mut c_void) -> u32 { unsafe {
 // from `GetTickCount`, two clocks that both mean "milliseconds since boot".
 //
 // Six channels can land here: `timeGetTime` and `SetTimer` are SCALED (their absence is a hole in
-// the acceleration, not just in the audit), `timeSetEvent`, both message waits and `connect` are
-// observed.
+// the acceleration, not just in the audit), `timeSetEvent`, both message waits and the socket wait
+// are observed. All six ride the `scale_duration` opt-in. The connection observer used to be the
+// seventh, on ws2_32's `connect`, and left this list when it moved to ntdll, which is never late.
 //
 // WHY THE INSTALL RUNS ON THE WATCHER THREAD AND NOT WHERE THE MODULE ARRIVES
 // ---------------------------------------------------------------------------
@@ -461,14 +475,7 @@ static INSTALL_DONE: AtomicBool = AtomicBool::new(false);
 const USER32_LATE: u64 =
     CHANNELS[IDX_MWFMO].bit | CHANNELS[IDX_MWFMOEX].bit | CHANNELS[IDX_SETTIMER].bit;
 const WINMM_LATE: u64 = CHANNELS[IDX_TIMESETEVENT].bit | CHANNELS[IDX_TIMEGETTIME].bit;
-/// ws2_32's two late channels sit behind DIFFERENT gates, which is why they are named apart. `connect`
-/// is watched in every session (the network is a suspected time source regardless of the duration
-/// axis), while the socket wait rides the wait family's `scale_duration` opt-in like every other wait.
-/// Folding them into one constant would make a session that never asked for the duration axis install
-/// a wait channel anyway, the exact thing the `wanted_late` gate exists to prevent.
-const WS2_32_CONNECT_LATE: u64 = CHANNELS[IDX_CONNECT].bit;
-const WS2_32_WAIT_LATE: u64 = CHANNELS[IDX_WSAWFME].bit;
-const WS2_32_LATE: u64 = WS2_32_CONNECT_LATE | WS2_32_WAIT_LATE;
+const WS2_32_LATE: u64 = CHANNELS[IDX_WSAWFME].bit;
 
 /// Every channel that lives in a module which may show up after `DllMain`.
 const LATE_CHANNELS: u64 = USER32_LATE | WINMM_LATE | WS2_32_LATE;
@@ -522,12 +529,12 @@ unsafe fn late_one<T: Copy>(
     if slot.get().is_some() {
         return; // already installed at DllMain time - nothing owed here
     }
-    let Ok(cname) = CString::new(ch.name) else {
+    let Ok(cname) = CString::new(ch.export()) else {
         log(&format!("[chrono_hook] late: bad channel name: {}", ch.name));
         return;
     };
     let Some(target) = GetProcAddress(module, PCSTR(cname.as_ptr() as *const u8)) else {
-        log(&format!("[chrono_hook] late: no export: {}", ch.name));
+        log(&format!("[chrono_hook] late: no export: {}", ch.export()));
         return;
     };
     match MinHook::create_hook(target as *const () as *mut c_void, detour) {
@@ -577,14 +584,7 @@ unsafe fn late_scan() { unsafe {
     if todo & WS2_32_LATE != 0
         && let Some(m) = pin_module(s!("ws2_32.dll"))
     {
-        // Per bit here, unlike the two blocks above, because these two channels answer to different
-        // opt-ins - so "the module arrived" is not on its own a reason to install both.
-        if todo & WS2_32_CONNECT_LATE != 0 {
-            late_one(&mut newly, m, IDX_CONNECT, h_connect as *const () as *mut c_void, &O_CONNECT);
-        }
-        if todo & WS2_32_WAIT_LATE != 0 {
-            late_one(&mut newly, m, IDX_WSAWFME, h_wsawfme as *const () as *mut c_void, &O_WSAWFME);
-        }
+        late_one(&mut newly, m, IDX_WSAWFME, h_wsawfme as *const () as *mut c_void, &O_WSAWFME);
     }
     if newly == 0 {
         return;
@@ -1734,17 +1734,58 @@ unsafe extern "system" fn h_timegettime() -> u32 { unsafe {
     }
 }}
 
-// connect (ws2_32, SourceObserved): a network connection is a suspected SERVER time source, which no
-// local hook can cover. We only COUNT it and forward untouched (never modify the connection) - the audit
-// then warns source.network_at_start. Like timeSetEvent: no guard, no detached check (we never change the
-// call). The unreachable None path returns SOCKET_ERROR (-1) so an un-hooked call never fakes success.
-unsafe extern "system" fn h_connect(s: usize, name: *const c_void, namelen: i32) -> i32 { unsafe {
-    let o = match O_CONNECT.get() {
+/// The socket driver's control code for a connection made by `connect` or `WSAConnect`.
+///
+/// Not documented by Microsoft. Measured on both bitnesses (2026-09-23) as the one code a connection
+/// attempt through either API sends, once, and corroborated by reverse engineering of the driver,
+/// which names its handler AfdConnect. The driver builds its codes as (0x12 << 12) | (op << 2) | method,
+/// NOT with the usual CTL_CODE layout, which is why the value looks like device type 1.
+const AFD_CONNECT: u32 = 0x12007;
+
+/// The socket driver's control code for a connection made by `ConnectEx`, which `WSAConnectByName`,
+/// `WSAConnectByList`, WinHTTP and WinINet all use. The driver names its handler AfdSuperConnect.
+/// Measured and corroborated the same way as `AFD_CONNECT`.
+const AFD_SUPER_CONNECT: u32 = 0x120C7;
+
+/// Whether a device control code is a network connection attempt. Every path measured sends exactly
+/// one of the two codes per attempt, never both, and a datagram sent without a connection sends
+/// neither - it is not a connection.
+fn is_connection_attempt(code: u32) -> bool {
+    code == AFD_CONNECT || code == AFD_SUPER_CONNECT
+}
+
+// The connection observer (SourceObserved, channel `connect`): a network connection is a suspected
+// SERVER time source, which no local hook can cover. Every Winsock connection attempt reaches the
+// socket driver through this one function, whichever API the application called - which is why it is
+// detoured here and not on ws2_32's `connect`, which two of the three ways to connect never call
+// (`ChannelDef::export`). We read the control code, COUNT a connection, and forward every argument
+// untouched. Like timeSetEvent: no guard, no detached check, since we never change the call.
+//
+// This runs for every device control call in the process, socket reads and writes included, so it is
+// two comparisons and a forward: measured against 200 000 socket polls, the difference stayed inside
+// the run-to-run noise on both bitnesses. The unreachable None path returns STATUS_UNSUCCESSFUL so an
+// un-hooked call never fakes success.
+#[allow(clippy::too_many_arguments)]
+unsafe extern "system" fn h_ntdiocf(
+    file: HANDLE,
+    event: HANDLE,
+    apc: *const c_void,
+    apc_context: *const c_void,
+    io_status: *mut c_void,
+    code: u32,
+    input: *const c_void,
+    input_len: u32,
+    output: *mut c_void,
+    output_len: u32,
+) -> i32 { unsafe {
+    let o = match O_NTDIOCF.get() {
         Some(o) => o,
-        None => return -1,
+        None => return 0xC000_0001_u32 as i32,
     };
-    bump(IDX_CONNECT);
-    o(s, name, namelen)
+    if is_connection_attempt(code) {
+        bump(IDX_CONNECT);
+    }
+    o(file, event, apc, apc_context, io_status, code, input, input_len, output, output_len)
 }}
 
 // Thread-pool timers (kernel32, ADR-7 class C): SetThreadpoolTimer / SetThreadpoolTimerEx share the
@@ -2192,7 +2233,7 @@ unsafe fn make_kernelbase_copy_hook<T: Copy>(
     slot: &OnceLock<T>,
 ) { unsafe {
     let ch = &CHANNELS[idx];
-    let Ok(cname) = CString::new(ch.name) else {
+    let Ok(cname) = CString::new(ch.export()) else {
         return;
     };
     let name = PCSTR(cname.as_ptr() as *const u8);
@@ -2297,7 +2338,7 @@ unsafe fn make_hook<T: Copy>(
             }
         },
     };
-    let cname = match CString::new(ch.name) {
+    let cname = match CString::new(ch.export()) {
         Ok(c) => c,
         Err(_) => {
             log(&format!("[chrono_hook] bad channel name: {}", ch.name));
@@ -2307,7 +2348,7 @@ unsafe fn make_hook<T: Copy>(
     let target = match GetProcAddress(module, PCSTR(cname.as_ptr() as *const u8)) {
         Some(f) => f,
         None => {
-            log(&format!("[chrono_hook] no export: {}", ch.name));
+            log(&format!("[chrono_hook] no export: {}", ch.export()));
             return;
         }
     };
@@ -2506,10 +2547,11 @@ unsafe fn install() -> Result<(), String> { unsafe {
     // forwards untouched - the SPAWNING guard keeps the CreateProcess* funnel from counting here.
     make_hook(&mut pending, k32, ntdll, IDX_NTCUP, h_ntcup as *const () as *mut c_void, &O_NTCUP);
 
-    // Suspected time source (Etap 2, observed): hook ws2_32 connect ALWAYS - the network is watched
-    // regardless of scale_duration. It only counts a connection (a suspected server time source we cannot
-    // cover) and forwards untouched - the audit warns source.network_at_start.
-    make_hook(&mut pending, k32, ntdll, IDX_CONNECT, h_connect as *const () as *mut c_void, &O_CONNECT);
+    // Suspected time source (Etap 2, observed): watch network connections ALWAYS - the network is
+    // watched regardless of scale_duration. The detour sits in ntdll, where every connection attempt
+    // passes whichever API made it, only counts one (a suspected server time source we cannot cover)
+    // and forwards untouched - the audit warns source.network_at_start.
+    make_hook(&mut pending, k32, ntdll, IDX_CONNECT, h_ntdiocf as *const () as *mut c_void, &O_NTDIOCF);
 
     // Child inheritance (ADR-3): hook CreateProcessW and CreateProcessA so the whole
     // process tree joins the session whichever spawn API the parent uses. Not coverage
@@ -2560,14 +2602,14 @@ unsafe fn install() -> Result<(), String> { unsafe {
     // Hand the watcher whatever this session WANTED from an optional module and did not get. The set
     // is computed here rather than in the watcher so the opt-in gates are stated once: without
     // scale_duration the duration and observed-time channels are not wanted at all, and looking for
-    // them later would install channels the session deliberately did not ask for. `connect` is not
-    // gated - the network is watched regardless.
+    // them later would install channels the session deliberately did not ask for. Every late channel
+    // rides that opt-in now - the connection observer lives in ntdll, which is never late - so a
+    // session without it leaves the watcher nothing to look for.
     //
     // `INSTALL_DONE` is released LAST, after the mask store above, and that ordering is the whole
     // point of the flag (R1): until it is set the watcher will not touch the Cov, so a late bit
     // cannot be ORed in and then wiped by our own store.
-    let wanted_late =
-        if read_scale_dur(ctl as *const Ctl) { LATE_CHANNELS } else { WS2_32_CONNECT_LATE };
+    let wanted_late = if read_scale_dur(ctl as *const Ctl) { LATE_CHANNELS } else { 0 };
     LATE_TODO.store(wanted_late & !pending, Ordering::Relaxed);
     INSTALL_DONE.store(true, Ordering::Release);
 
@@ -2610,5 +2652,17 @@ mod tests {
         assert_eq!(settle_second_body(bit | other, bit, false), other, "the second body failed");
         assert_eq!(settle_second_body(other, bit, true), other, "the first body failed, the second went live");
         assert_eq!(settle_second_body(other, bit, false), other, "neither body detoured");
+    }
+
+    /// The codes the connection observer counts, and the neighbours it must not, all measured on this
+    /// machine's socket driver (2026-09-23). The last one is a network code in the ordinary CTL_CODE
+    /// layout that name resolution sends - the value a filter built on that layout would have matched.
+    #[test]
+    fn only_the_two_connection_codes_count_as_a_connection_attempt() {
+        assert!(is_connection_attempt(0x12007), "connect and WSAConnect");
+        assert!(is_connection_attempt(0x120C7), "ConnectEx and everything built on it");
+        for other in [0x12003, 0x12023, 0x12024, 0x12047, 0x120BF, 0x120007] {
+            assert!(!is_connection_attempt(other), "0x{other:x} is not a connection attempt");
+        }
     }
 }
