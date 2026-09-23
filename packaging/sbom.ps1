@@ -174,8 +174,13 @@ $document = [ordered]@{
 
 # A self-check before anything is written, because this document goes into a release and gets an
 # attestation of its own. A malformed SBOM is worse than no SBOM: it looks like an answer.
-$ids = $packages | ForEach-Object { $_.SPDXID }
-$unique = [System.Collections.Generic.HashSet[string]]::new([string[]]$ids, [System.StringComparer]::Ordinal)
+# Always an array. A pipeline hands back one package as a bare string, and a bare string has no
+# Count under StrictMode, so a valid single-package document was refused with a message about a
+# missing property. No packages at all is refused on purpose, in words: an empty bill of materials
+# would pass the duplicate check below, and it is not an answer either.
+$ids = @($packages | ForEach-Object { $_.SPDXID })
+if ($ids.Count -eq 0) { throw 'the SBOM lists no packages, and an empty bill of materials is not an answer' }
+$unique =[System.Collections.Generic.HashSet[string]]::new([string[]]$ids, [System.StringComparer]::Ordinal)
 if ($unique.Count -ne $ids.Count) { throw 'two packages share an SPDX identifier' }
 foreach ($id in $ids) {
     $bare = $id -replace '^SPDXRef-', ''
