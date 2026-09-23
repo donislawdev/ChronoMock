@@ -13,7 +13,7 @@
 //! today (the same single finding either way), so it costs nothing now and stops costing something
 //! later.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 // ---------------------------------------------------------------------------------------------
@@ -1117,6 +1117,32 @@ fn the_cs_known_unused_list_only_ever_shrinks() {
 // H7 and H8. What the repository is written in, and how
 // ---------------------------------------------------------------------------------------------
 
+/// The kinds of file whose comments start with `#`. The language scan read them for years with
+/// `comment_part`, which knows `//` and `<!--` and nothing else, so a Polish `# comment` in a build
+/// script or a workflow passed it untouched (found 2026-09-23, reversal probe in `CHANGELOG-DEV.md`).
+const HASH_COMMENTED: &[&str] = &["ps1", "yml", "toml"];
+
+/// The comment part of a line in a `#`-commented file: from a `#` that stands outside any quotes and
+/// after whitespace or at the start of the line. The whitespace rule is YAML's own (a `#` inside a
+/// plain scalar, as in a URL, is not a comment), and it costs nothing in PowerShell or TOML, where a
+/// comment written anywhere else is rare enough not to matter.
+fn hash_comment_part(line: &str) -> Option<&str> {
+    let (mut double, mut single) = (0usize, 0usize);
+    let mut previous = ' ';
+    for (i, c) in line.char_indices() {
+        match c {
+            '"' => double += 1,
+            '\'' => single += 1,
+            '#' if double.is_multiple_of(2) && single.is_multiple_of(2) && previous.is_whitespace() => {
+                return Some(&line[i..]);
+            }
+            _ => {}
+        }
+        previous = c;
+    }
+    None
+}
+
 /// Polish diacritics. Untouchable rule 9 makes the criterion the PLACE, not the reader: everything
 /// in the repository is English, everything outside it is Polish.
 const POLISH_LETTERS: &[char] = &[
@@ -1162,6 +1188,13 @@ fn comment_part(line: &str) -> Option<&str> {
     None
 }
 
+/// Whether `haystack` holds `word` as a WHOLE word. Substring matching would redden on English that
+/// merely contains the letters ("sonda" inside a longer identifier), and a guard with false alarms is
+/// a guard that gets suppressed.
+fn contains_word(haystack: &str, word: &str) -> bool {
+    haystack.split(|c: char| !c.is_alphanumeric()).any(|w| w == word)
+}
+
 /// Polish words that survive without their diacritics, for a scan that would otherwise miss them.
 ///
 /// 🔴 The letter scan below catches `zażółć` and nothing about `plasterek`. Both are Polish in a
@@ -1173,16 +1206,17 @@ fn comment_part(line: &str) -> Option<&str> {
 /// The list only grows, like `FILE_SUFFIXES` above it. Every entry has to be a word that cannot be
 /// English - `to`, `me` and `pole` are Polish too, and are not here, because a list that reddens on
 /// English prose gets suppressed rather than fixed.
-/// Whether `haystack` holds `word` as a WHOLE word. Substring matching would redden on English that
-/// merely contains the letters ("sonda" inside a longer identifier), and a guard with false alarms is
-/// a guard that gets suppressed.
-fn contains_word(haystack: &str, word: &str) -> bool {
-    haystack.split(|c: char| !c.is_alphanumeric()).any(|w| w == word)
-}
-
-const POLISH_WORDS_WITHOUT_DIACRITICS: [&str; 12] = [
+///
+/// The words of this project's own Polish (the first twelve) are here because no translation uses
+/// them - they are the words of the work, not of the interface. The next two are names a review found
+/// in test code, which the translation vocabulary of H7b does not hold, the next five are the
+/// commonest Polish words of all, under that vocabulary's length floor, and the last two stood in a
+/// doc comment of `cdp/mod.rs` as "rdzeni<->interfejs" for as long as this scan existed - found by
+/// running the translation vocabulary over the comments once (2026-09-23).
+const POLISH_WORDS_WITHOUT_DIACRITICS: &[&str] = &[
     "plasterek", "jawne", "sonda", "straznik", "bramka", "wlasciciel", "zmierzone", "cisza",
-    "wiec", "dlatego", "poniewaz", "kolejnosc",
+    "wiec", "dlatego", "poniewaz", "kolejnosc", "sekcji", "urwany", "nie", "czy", "dla", "jak",
+    "tak", "rdzeni", "interfejs",
 ];
 
 /// Untouchable rules 9 and 14: comments in the repository are English, without exception.
@@ -1206,8 +1240,19 @@ fn every_comment_in_the_repository_is_english() {
         let Ok(text) = std::fs::read_to_string(path) else {
             continue;
         };
+        let hashed = has_extension(path, HASH_COMMENTED);
+        let mut in_block = false;
         for (number, line) in text.lines().enumerate() {
-            let Some(comment) = comment_part(line) else { continue };
+            let comment = if !hashed {
+                comment_part(line)
+            } else if in_block || line.contains("<#") {
+                // A PowerShell block comment, `<#` to `#>`, possibly on one line.
+                in_block = !line.contains("#>");
+                Some(line)
+            } else {
+                hash_comment_part(line)
+            };
+            let Some(comment) = comment else { continue };
             let by_letter = comment.chars().any(|c| POLISH_LETTERS.contains(&c));
             // Words too, because a Polish word with no diacritics in it looks exactly like English to
             // the letter scan - and that is the kind this repository actually accumulated.
@@ -1225,6 +1270,466 @@ fn every_comment_in_the_repository_is_english() {
         offenders.is_empty(),
         "a comment in the repository is not English (untouchable rules 9 and 14 - the criterion is \
          the PLACE, not the reader): {offenders:?}"
+    );
+}
+
+// ---------------------------------------------------------------------------------------------
+// H7b. Names in code are English too
+// ---------------------------------------------------------------------------------------------
+
+/// Words the Polish translations use that are English words as well, so a name made of them is not
+/// Polish. Each one met a real English name in the code when this guard was written, and the list
+/// grows the same way: when a translation brings in a word an English name already uses. An entry is
+/// a word that is PLAINLY English, never a way to let a Polish name through.
+const ALSO_ENGLISH: &[&str] = &["problem", "stale"];
+
+/// The shortest word the translation vocabulary keeps. Shorter Polish words are English ones too
+/// often ("ten", "pod", "sam"), and the few short ones that matter are in the hand list.
+const TRANSLATED_WORD_MIN: usize = 4;
+
+/// A Polish word in the ASCII form a name would carry it in.
+fn fold_polish(word: &str) -> String {
+    word.chars()
+        .map(|c| match c {
+            'ą' => 'a',
+            'ć' => 'c',
+            'ę' => 'e',
+            'ł' => 'l',
+            'ń' => 'n',
+            'ó' => 'o',
+            'ś' => 's',
+            'ź' | 'ż' => 'z',
+            other => other,
+        })
+        .collect()
+}
+
+/// The lowercase words of one language's interface text: the GUI strings and the product site, both
+/// committed, both translated by hand.
+fn interface_words(language: &str) -> BTreeSet<String> {
+    let root = repo_root();
+    let mut text = String::new();
+    // JSON with `//` comment lines - which are English in both files, so they go.
+    let strings = std::fs::read_to_string(root.join(format!("gui/ChronoMock.App/Localization/Strings.{language}.json")))
+        .expect("GUI strings");
+    let data: Vec<&str> = strings.lines().filter(|l| !l.trim_start().starts_with("//")).collect();
+    let strings: serde_json::Value = serde_json::from_str(&data.join("\n")).expect("GUI strings are JSON");
+    let site = std::fs::read_to_string(root.join(format!("site/i18n/{language}.json"))).expect("site strings");
+    let site: serde_json::Value = serde_json::from_str(&site).expect("site strings are JSON");
+    for value in [strings, site].iter().filter_map(serde_json::Value::as_object).flat_map(|o| o.values()) {
+        text.push_str(value.as_str().unwrap_or_default());
+        text.push(' ');
+    }
+    for page in std::fs::read_dir(root.join("site/pages")).expect("site pages").flatten() {
+        if let Ok(html) = std::fs::read_to_string(page.path().join(format!("{language}.html"))) {
+            let mut in_tag = false;
+            text.extend(html.chars().map(|c| {
+                in_tag = (in_tag || c == '<') && c != '>';
+                if in_tag || c == '>' { ' ' } else { c }
+            }));
+        }
+    }
+    text.split(|c: char| !c.is_alphabetic())
+        .filter(|w| !w.is_empty())
+        .map(str::to_lowercase)
+        .collect()
+}
+
+/// The Polish words a name might carry, in the ASCII form it would carry them in: the hand list, and
+/// every word of the Polish interface that the English one does not use.
+///
+/// 🔴 Built from the repository's own translations rather than written out, because the leak this
+/// guard exists for is ORDINARY Polish - `nazwa_sekcji`, `inny`, `obok`, four names in test code in
+/// one pull request, every gate green - and a hand list only ever holds the words somebody already
+/// thought of. The translations hold thousands, grow with the interface, and are Polish by
+/// definition. Subtracting the English interface takes out the words both share (product names,
+/// "moment", "format"), which is also why a name from the English interface can never trip this.
+///
+/// For NAMES only. Run once over the comments it found 39 words, and all but one were not Polish
+/// prose: paths into `docs/zasady/`, the English "alarm", the language's own name in the site's
+/// code. The one that was - "rdzeni<->interfejs" - went into the hand list, which the comments keep.
+fn polish_vocabulary() -> BTreeSet<String> {
+    let english = interface_words("en");
+    let mut words: BTreeSet<String> = POLISH_WORDS_WITHOUT_DIACRITICS.iter().map(|w| (*w).to_string()).collect();
+    for word in interface_words("pl") {
+        let folded = fold_polish(&word);
+        if folded.chars().count() >= TRANSLATED_WORD_MIN
+            && !english.contains(&word)
+            && !english.contains(&folded)
+            && !ALSO_ENGLISH.contains(&folded.as_str())
+        {
+            words.insert(folded);
+        }
+    }
+    words
+}
+
+/// Split a name into its words, lowercase: at underscores and digits, and where the case turns
+/// (`nazwaSekcji`, `HTTPServer` into `http` and `server`).
+fn name_words(name: &str) -> Vec<String> {
+    let chars: Vec<char> = name.chars().collect();
+    let mut words = Vec::new();
+    let mut current = String::new();
+    for (k, &c) in chars.iter().enumerate() {
+        let prev = k.checked_sub(1).map(|p| chars[p]);
+        let next = chars.get(k + 1).copied();
+        let turns = c.is_uppercase()
+            && prev.is_some_and(|p| p.is_lowercase() || (p.is_uppercase() && next.is_some_and(char::is_lowercase)));
+        if !c.is_alphabetic() || turns {
+            if !current.is_empty() {
+                words.push(std::mem::take(&mut current));
+            }
+            if !c.is_alphabetic() {
+                continue;
+            }
+        }
+        current.extend(c.to_lowercase());
+    }
+    if !current.is_empty() {
+        words.push(current);
+    }
+    words
+}
+
+/// Why a name is Polish, or `None` when it is not.
+fn polish_in_name(name: &str, vocabulary: &BTreeSet<String>) -> Option<String> {
+    if name.chars().any(|c| POLISH_LETTERS.contains(&c)) {
+        return Some("a Polish letter".to_string());
+    }
+    name_words(name).into_iter().find(|w| vocabulary.contains(w)).map(|w| format!("the Polish word \"{w}\""))
+}
+
+/// The names in a Rust or C# source, each with its line, and nothing from its comments, strings or
+/// character literals.
+///
+/// 🔴 A small lexer rather than line matching, because what has to be skipped spans lines: a raw
+/// string of test data, a verbatim string, a block comment, and an interpolated C# string whose holes
+/// hold quotes of their own - `$"{string.Join(", ", x)}"` ends at the wrong quote for any scan that
+/// only counts them, and from there it reads every string as code and every name as a string. Names
+/// inside an interpolation hole are skipped with the hole, which is the one blind spot, and a small
+/// one: a hole holds an expression, not a declaration.
+fn source_names(text: &str, csharp: bool) -> Vec<(usize, String)> {
+    let chars: Vec<char> = text.chars().collect();
+    let mut lines = Vec::with_capacity(chars.len());
+    let mut line = 1;
+    for &c in &chars {
+        lines.push(line);
+        if c == '\n' {
+            line += 1;
+        }
+    }
+    let mut names = Vec::new();
+    let mut i = 0;
+    while i < chars.len() {
+        if let Some(end) = skipped_at(&chars, i, csharp) {
+            i = end;
+            continue;
+        }
+        let c = chars[i];
+        if c.is_ascii_digit() {
+            i = run_end(&chars, i);
+            continue;
+        }
+        if c.is_alphabetic() || c == '_' {
+            let end = run_end(&chars, i);
+            let name: String = chars[i..end].iter().collect();
+            match (!csharp).then(|| rust_prefixed_literal(&chars, end, &name)).flatten() {
+                Some(after) => i = after,
+                None => {
+                    names.push((lines[i], name));
+                    i = end;
+                }
+            }
+            continue;
+        }
+        i += 1;
+    }
+    names
+}
+
+/// The end of the letters, digits and underscores starting at `from`.
+fn run_end(chars: &[char], from: usize) -> usize {
+    chars[from..].iter().position(|c| !(c.is_alphanumeric() || *c == '_')).map_or(chars.len(), |p| from + p)
+}
+
+/// Where a comment or a literal that starts at `i` ends, or `None` when nothing to skip starts there.
+fn skipped_at(chars: &[char], i: usize, csharp: bool) -> Option<usize> {
+    let at = |k: usize| chars.get(k).copied().unwrap_or('\0');
+    match (at(i), at(i + 1)) {
+        ('/', '/') => Some(chars[i..].iter().position(|&c| c == '\n').map_or(chars.len(), |p| i + p)),
+        ('/', '*') => Some(block_comment_end(chars, i, !csharp)),
+        ('"', _) if csharp => Some(cs_string_end(chars, i, false, false)),
+        ('"', _) => Some(escaped_end(chars, i + 1, '"')),
+        ('\'', _) => Some(char_or_lifetime_end(chars, i)),
+        ('@' | '$', _) if csharp => cs_prefixed_string_end(chars, i),
+        _ => None,
+    }
+}
+
+/// The end of a block comment, nested when the language nests them (Rust does, C# does not).
+fn block_comment_end(chars: &[char], from: usize, nested: bool) -> usize {
+    let mut depth = 0usize;
+    let mut j = from;
+    while j + 1 < chars.len() {
+        match (chars[j], chars[j + 1]) {
+            ('/', '*') if nested || depth == 0 => {
+                depth += 1;
+                j += 2;
+            }
+            ('*', '/') => {
+                depth -= 1;
+                j += 2;
+                if depth == 0 {
+                    return j;
+                }
+            }
+            _ => j += 1,
+        }
+    }
+    chars.len()
+}
+
+/// The end of a literal closed by `quote`, where a backslash escapes the next character.
+fn escaped_end(chars: &[char], from: usize, quote: char) -> usize {
+    let mut j = from;
+    while j < chars.len() {
+        match chars[j] {
+            '\\' => j += 2,
+            c if c == quote => return j + 1,
+            _ => j += 1,
+        }
+    }
+    chars.len()
+}
+
+/// A character literal - `'x'`, `'\n'`, `'\''` - or, in Rust, the quote of a lifetime or a label,
+/// which is only the quote itself: the name after it is read as a name.
+fn char_or_lifetime_end(chars: &[char], i: usize) -> usize {
+    match (chars.get(i + 1), chars.get(i + 2)) {
+        (Some('\\'), _) => escaped_end(chars, i + 1, '\''),
+        (Some(_), Some('\'')) => i + 3,
+        _ => i + 1,
+    }
+}
+
+/// A Rust literal behind a prefix that the lexer first read as a name: `r"..."`, `r#"..."#`, `br"..."`,
+/// `cr"..."`, `b"..."`, `c"..."` and `b'x'`. `None` when the name is just a name (a raw identifier
+/// such as `r#type` included).
+fn rust_prefixed_literal(chars: &[char], after: usize, prefix: &str) -> Option<usize> {
+    let next = chars.get(after).copied();
+    match prefix {
+        "r" | "br" | "cr" => {
+            let hashes = chars[after..].iter().take_while(|&&c| c == '#').count();
+            if chars.get(after + hashes) != Some(&'"') {
+                return None;
+            }
+            let mut j = after + hashes + 1;
+            while j < chars.len() {
+                if chars[j] == '"' && chars[j + 1..].iter().take(hashes).filter(|&&c| c == '#').count() == hashes {
+                    return Some(j + 1 + hashes);
+                }
+                j += 1;
+            }
+            Some(chars.len())
+        }
+        "b" | "c" if next == Some('"') => Some(escaped_end(chars, after + 1, '"')),
+        "b" if next == Some('\'') => Some(char_or_lifetime_end(chars, after)),
+        _ => None,
+    }
+}
+
+/// A C# string behind its `@` or `$` prefixes, or `None` when the prefix is something else (`@class`,
+/// a verbatim identifier).
+fn cs_prefixed_string_end(chars: &[char], i: usize) -> Option<usize> {
+    let prefix = chars[i..].iter().take_while(|&&c| c == '@' || c == '$').count();
+    if chars.get(i + prefix) != Some(&'"') {
+        return None;
+    }
+    let letters = &chars[i..i + prefix];
+    Some(cs_string_end(chars, i + prefix, letters.contains(&'@'), letters.contains(&'$')))
+}
+
+/// The end of a C# string whose opening quote is at `i`: a raw one (three quotes or more) closes on
+/// the same run of quotes, a verbatim one doubles its quotes instead of escaping them, and an
+/// interpolated one has holes, each skipped whole with whatever quotes it holds.
+fn cs_string_end(chars: &[char], i: usize, verbatim: bool, interpolated: bool) -> usize {
+    let quotes = chars[i..].iter().take_while(|&&c| c == '"').count();
+    if quotes >= 3 {
+        let mut j = i + quotes;
+        while j < chars.len() {
+            if chars[j..].iter().take_while(|&&c| c == '"').count() >= quotes {
+                return j + quotes;
+            }
+            j += 1;
+        }
+        return chars.len();
+    }
+    let mut j = i + 1;
+    while j < chars.len() {
+        match (chars[j], chars.get(j + 1).copied()) {
+            ('"', Some('"')) if verbatim => j += 2,
+            ('"', _) => return j + 1,
+            ('\\', _) if !verbatim => j += 2,
+            ('{', Some('{')) | ('}', Some('}')) if interpolated => j += 2,
+            ('{', _) if interpolated => j = cs_hole_end(chars, j + 1),
+            _ => j += 1,
+        }
+    }
+    chars.len()
+}
+
+/// The end of an interpolation hole that opened just before `from`: braces counted, and strings and
+/// characters inside it skipped whole, so their quotes and braces do not count.
+fn cs_hole_end(chars: &[char], from: usize) -> usize {
+    let mut depth = 1usize;
+    let mut j = from;
+    while j < chars.len() {
+        if let Some(end) = skipped_at(chars, j, true) {
+            j = end;
+            continue;
+        }
+        match chars[j] {
+            '{' => depth += 1,
+            '}' => {
+                depth -= 1;
+                if depth == 0 {
+                    return j + 1;
+                }
+            }
+            _ => {}
+        }
+        j += 1;
+    }
+    chars.len()
+}
+
+/// The names a XAML file gives its elements and resources, each with its line. A value in braces is
+/// a markup extension (`{x:Type Button}`), not a name.
+fn xaml_names(text: &str) -> Vec<(usize, String)> {
+    let mut names = Vec::new();
+    for (number, line) in text.lines().enumerate() {
+        for attribute in ["x:Name=\"", "x:Key=\""] {
+            for (at, _) in line.match_indices(attribute) {
+                let value = &line[at + attribute.len()..];
+                let value = &value[..value.find('"').unwrap_or(value.len())];
+                if !value.starts_with('{') {
+                    names.push((number + 1, value.to_string()));
+                }
+            }
+        }
+    }
+    names
+}
+
+/// Untouchable rule 14: all code is English, names included.
+///
+/// 🔴 The comment scan above is deliberately blind to code, because values may be Polish (rule 15),
+/// and nothing looked at NAMES at all: `nazwa_sekcji`, `inny`, `obok` and `urwany` went into test code
+/// in one pull request (2026-09-23) with every gate green, and a review found them. This reads every
+/// name the Rust and C# sources declare or use, and every `x:Name` and `x:Key` of the XAML, against
+/// the Polish letters and the vocabulary above. Reversal probes in `CHANGELOG-DEV.md`.
+#[test]
+fn every_name_in_the_code_is_english() {
+    let vocabulary = polish_vocabulary();
+    // Two canaries: a vocabulary that read nothing would pass every name, and one that read the wrong
+    // file would pass the ones that matter. The count is a literal and the words are the leaks above.
+    assert!(vocabulary.len() >= 1500, "the Polish vocabulary has only {} words", vocabulary.len());
+    for leak in ["nazwa", "sekcji", "inny", "obok", "urwany"] {
+        assert!(vocabulary.contains(leak), "the Polish vocabulary does not hold \"{leak}\"");
+    }
+
+    let mut offenders = BTreeSet::new();
+    let mut names = 0usize;
+    for path in tracked_files(&["rs", "cs", "xaml"]) {
+        let Ok(text) = std::fs::read_to_string(&path) else { continue };
+        let found = if has_extension(&path, &["xaml"]) {
+            xaml_names(&text)
+        } else {
+            source_names(&text, has_extension(&path, &["cs"]))
+        };
+        names += found.len();
+        for (line, name) in found {
+            if let Some(why) = polish_in_name(&name, &vocabulary) {
+                offenders.insert(format!("{}:{line}: {name} ({why})", rel(&path)));
+            }
+        }
+    }
+    assert!(names >= 100_000, "the name scan read only {names} names - it is reading the wrong files");
+    println!("name scan: {names} names against {} Polish words", vocabulary.len());
+    assert!(
+        offenders.is_empty(),
+        "a name in the code is Polish (untouchable rule 14). Rename it in English - or, if the word is \
+         plainly English as well, add it to ALSO_ENGLISH: {offenders:?}"
+    );
+}
+
+/// The lexer on the shapes that break a line scan, in both languages: what comes back is the names and
+/// only the names, with the lines they are on.
+#[test]
+fn the_name_scan_reads_code_and_skips_comments_and_literals() {
+    let rust = "fn nazwa() {\n    let s = \"obok\"; // inny\n    let r = r#\"multi\nline \"quoted\" obok\"#;\n    \
+                /* outer /* nested */ inny */ let c = '\\''; let q = b'x';\n    fn f<'a>(x: &'a str) {}\n}";
+    let names: Vec<String> = source_names(rust, false).into_iter().map(|(_, n)| n).collect();
+    assert_eq!(names, ["fn", "nazwa", "let", "s", "let", "r", "let", "c", "let", "q", "fn", "f", "a", "x", "a", "str"]);
+    let lines: Vec<usize> = source_names(rust, false).into_iter().map(|(l, _)| l).collect();
+    assert_eq!(lines[5], 3, "the name in front of the raw string, on its own line");
+    assert_eq!(lines[6], 5, "the name after a string that spans a line is counted on its own line");
+
+    let csharp = "var a = $\"{string.Join(\", \", obok)} inny\"; var b = @\"say \"\"urwany\"\"\";\n\
+                  var c = \"\"\"\nraw \"sekcji\"\n\"\"\"; var d = '\"'; var @class = 1;";
+    let names: Vec<String> = source_names(csharp, true).into_iter().map(|(_, n)| n).collect();
+    assert_eq!(names, ["var", "a", "var", "b", "var", "c", "var", "d", "var", "class"]);
+}
+
+/// The name test itself, on the real vocabulary and in both directions: a Polish word or letter
+/// anywhere in a name, and English names, including the words the vocabulary lets go as English.
+#[test]
+fn a_polish_word_is_found_wherever_it_sits_in_a_name() {
+    let vocabulary = polish_vocabulary();
+    for name in ["nazwa_sekcji", "NazwaSekcji", "nazwaSekcji", "SEKCJI_COUNT", "rowObok", "zażółć"] {
+        assert!(polish_in_name(name, &vocabulary).is_some(), "{name}");
+    }
+    for name in ["section_name", "HTTPServer", "obokeh", "unazwa", "stale_problem"] {
+        assert!(polish_in_name(name, &vocabulary).is_none(), "{name}");
+    }
+    assert_eq!(name_words("HTTPServerName2x"), ["http", "server", "name", "x"]);
+}
+
+// ---------------------------------------------------------------------------------------------
+// H7c. Nothing in a file that nobody can see
+// ---------------------------------------------------------------------------------------------
+
+/// A character that takes no visible place where it stands: the private-use area (icon-font glyphs),
+/// the zero-width space, joiners and marks, the word joiner, and a byte order mark. Written as numbers,
+/// because the ranges spelled as escapes are exactly what turned into the characters themselves once.
+fn is_invisible(c: char) -> bool {
+    let code = u32::from(c);
+    (0xE000..=0xF8FF).contains(&code) || (0x200B..=0x200F).contains(&code) || code == 0x2060 || code == 0xFEFF
+}
+
+/// No committed text file carries a character that cannot be seen.
+///
+/// 🔴 It happened and every gate was green: a C# comparison meant to hold the escapes for the first
+/// and last private-use code points reached the file as the two characters themselves (the tool
+/// writing it decoded the escapes), so the line showed as `c is < '' or > ''` - it compiled, it
+/// worked, and nobody reading it could tell what it compared (2026-09-23). A byte order mark is caught too, which `dotnet format` rejects with a
+/// charset error that does not say BOM. Reversal probe in `CHANGELOG-DEV.md`.
+#[test]
+fn no_file_carries_a_character_nobody_can_see() {
+    let files = tracked_files(&["rs", "cs", "xaml", "ps1", "json", "md", "yml", "toml", "html", "css", "js"]);
+    let mut offenders = Vec::new();
+    for path in &files {
+        let Ok(text) = std::fs::read_to_string(path) else { continue };
+        for (number, line) in text.lines().enumerate() {
+            if let Some(c) = line.chars().find(|&c| is_invisible(c)) {
+                offenders.push(format!("{}:{} U+{:04X}", rel(path), number + 1, u32::from(c)));
+            }
+        }
+    }
+    assert!(files.len() >= 60, "the invisible-character scan read only {} files", files.len());
+    assert!(
+        offenders.is_empty(),
+        "these lines carry a character that shows as nothing - write it as an escape or a number: {offenders:?}"
     );
 }
 
