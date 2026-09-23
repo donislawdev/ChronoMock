@@ -33,7 +33,7 @@ use chrono_ctl::{
     read_uncovered_child, read_uncovered_children_count, read_uninjected_children, read_waits_at_floor,
     write_anchor, write_anchor_full, write_header,
     write_core_pid, write_scale_dur, write_scale_qpc, write_tz_bias, ChannelCategory, ChannelModule,
-    Cov, Ctl, CHANNELS, IDX_TIMEGETTIME, MAX_COV_PIDS,
+    Cov, Ctl, CHANNELS, CH_CONNECT, CH_GTC, CH_GTC64, IDX_TIMEGETTIME, MAX_COV_PIDS,
 };
 use windows::core::{s, PCWSTR, PWSTR};
 use windows::Win32::Foundation::{
@@ -833,6 +833,27 @@ fn lock_is_ours(state: windows::Win32::Foundation::WAIT_EVENT) -> bool {
     state == WAIT_OBJECT_0 || state == WAIT_ABANDONED
 }
 
+/// Whether the audit should say that network timeouts inside this process follow the session speed.
+///
+/// Since the tick count is detoured in kernelbase as well (2026-09-23), a network library that measures
+/// its own timeout from it runs that timeout on the session's duration axis, while the socket wait
+/// underneath stays real (ADR-7 class B). Measured on WinHTTP at x60: a 60 s receive timeout against a
+/// server answering after 4 s gave up after 1.06 s real with ERROR_WINHTTP_TIMEOUT, where the build
+/// before the move got the response. Without this line the report would say, one row above, that an
+/// I/O timeout is not shortened.
+///
+/// The signal is ws2_32 being loaded (the `connect` channel installed), not a connection counted: WinHTTP
+/// connects through ConnectEx, which the `connect` observer does not see, so a count would miss exactly
+/// the library this warning is about.
+///
+/// A tick count channel has to be installed as well, because that is what the timeout follows: with
+/// both of them failed the tick count stays real, and the sentence would describe a session that did
+/// not happen. One of the two is enough for the caution to be true for a library reading that one, and
+/// the one that failed is listed as uncovered already.
+fn network_timeouts_follow_session(installed: u64, scale_duration: bool) -> bool {
+    scale_duration && installed & CH_CONNECT != 0 && installed & (CH_GTC64 | CH_GTC) != 0
+}
+
 /// Build one process's coverage from its `Cov` section: the install bitmask and the
 /// live per-channel call counters. Iterates the single-source `CHANNELS` table so the
 /// report names exactly what the hook installs.
@@ -895,6 +916,7 @@ unsafe fn gather_coverage(
                     | ChannelModule::Ntdll
                     | ChannelModule::KernelBase
                     | ChannelModule::KernelBaseBehindKernel32
+                    | ChannelModule::KernelBaseAndKernel32
             ) {
                 // The module is in every process, so "wanted and not installed" can only mean the
                 // hook failed. That used to produce no line at all: not covered, not uncovered,
@@ -930,7 +952,8 @@ unsafe fn gather_coverage(
                 ChannelModule::Kernel32
                 | ChannelModule::Ntdll
                 | ChannelModule::KernelBase
-                | ChannelModule::KernelBaseBehindKernel32 => out.uncovered.push(ch.name.to_string()),
+                | ChannelModule::KernelBaseBehindKernel32
+                | ChannelModule::KernelBaseAndKernel32 => out.uncovered.push(ch.name.to_string()),
                 ChannelModule::User32 | ChannelModule::Winmm | ChannelModule::Ws2_32 => {}
             }
         }
@@ -977,6 +1000,9 @@ unsafe fn gather_coverage(
     // and unsubstituted.
     if any_source_observed {
         out.warning_keys.push("source.network_at_start".to_string());
+    }
+    if network_timeouts_follow_session(installed, scale_duration) {
+        out.warning_keys.push("wait.network_timeouts_scaled".to_string());
     }
     // At least one channel was hooked only after its module turned up, which for a runtime that pulls
     // in winmm or ws2_32 during startup is the ordinary case rather than the exotic one - measured on
@@ -1738,6 +1764,32 @@ mod tests {
         assert!(!off.covered.iter().any(|c| is_tgt(&c.channel)));
         assert!(!off.observed.iter().any(|c| is_tgt(&c.channel)));
         assert!(!warned(&off));
+    }
+
+    /// Network timeouts follow the session once the tick count is detoured in kernelbase, and the audit
+    /// says so whenever the network stack is loaded under a scaled duration axis - with no call counted,
+    /// because WinHTTP connects through ConnectEx, which the `connect` observer never sees.
+    #[test]
+    fn a_loaded_network_stack_under_a_scaled_duration_axis_is_warned_about_even_with_no_connect_counted() {
+        let all = CHANNELS.iter().fold(0u64, |acc, ch| acc | ch.bit);
+        let warned = |c: &Coverage| c.warning_keys.iter().any(|k| k == "wait.network_timeouts_scaled");
+        let quiet = zeroed_cov();
+
+        let loaded = unsafe { gather_coverage(&quiet as *const Cov, all, true, false) };
+        assert!(warned(&loaded), "network stack loaded and the axis scaled, with zero connects counted");
+        assert_eq!(chrono_core::verdict_from_coverage(&loaded), chrono_core::Verdict::Works, "a caution, never a verdict");
+
+        let no_stack = unsafe { gather_coverage(&quiet as *const Cov, all & !CH_CONNECT, true, false) };
+        assert!(!warned(&no_stack), "no network stack loaded, nothing to time out");
+
+        let axis_real = unsafe { gather_coverage(&quiet as *const Cov, all, false, false) };
+        assert!(!warned(&axis_real), "without the duration opt-in the tick count stays real");
+
+        // The timeout follows the tick count, so the tick count has to be on the session's axis.
+        let no_tick = unsafe { gather_coverage(&quiet as *const Cov, all & !(CH_GTC64 | CH_GTC), true, false) };
+        assert!(!warned(&no_tick), "both tick count channels failed, so the timeouts stay real");
+        let one_tick = unsafe { gather_coverage(&quiet as *const Cov, all & !CH_GTC, true, false) };
+        assert!(warned(&one_tick), "a library reading the installed tick count still follows the session");
     }
 
     /// A wait held at the scaling floor is reported, because it is partial coverage.

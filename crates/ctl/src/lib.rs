@@ -275,6 +275,9 @@ pub const CHANNEL_COUNT: usize = 41;
 /// Which system module exports a channel (the hook resolves it there).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ChannelModule {
+    /// kernel32's entry, taken as it is. Since 2026-09-23 no channel in the table uses it: every time
+    /// export kernel32 has turned out to be a stub, a forwarder, or one of two copies (the two variants
+    /// at the end). It stays for a channel whose code really lives in kernel32 alone.
     Kernel32,
     Ntdll,
     /// user32.dll - the message waits. May be absent in a console/service target that never
@@ -311,7 +314,28 @@ pub enum ChannelModule {
     /// else already patched), the hook stays on kernel32 exactly as before and logs it, and so it does
     /// when the detour cannot be created in kernelbase. A change of shape can then cost the api-set
     /// callers, never the callers this build already covered.
+    ///
+    /// "Kernelbase's export" is whatever kernelbase resolves the name to, and for two duration channels
+    /// that is ntdll: kernelbase forwards `QueryUnbiasedInterruptTime` and `QueryPerformanceCounter` to
+    /// `RtlQueryUnbiasedInterruptTime` and `RtlQueryPerformanceCounter`, and kernel32's stub jumps
+    /// straight there. The detour then lands in ntdll, which is where both paths meet.
     KernelBaseBehindKernel32,
+    /// Code of its own in BOTH kernel32 and kernelbase, so one detour cannot see both paths: the hook
+    /// detours kernel32's entry for its importers and kernelbase's copy for the api-set ones, and both
+    /// count against the same channel.
+    ///
+    /// Measured on both bitnesses (2026-09-23): `GetTickCount64` has two separate bodies, and so has
+    /// `GetTickCount` on 64-bit. The runtimes import these from kernel32, while `msvcrt`, `user32`,
+    /// `combase`, `rpcrt4` and the network stacks import them through the api-set and read the real
+    /// tick count under a session that scales the duration axis.
+    ///
+    /// No thread guard is needed against counting twice, because the detours are absolute: they
+    /// compute the answer from the session's anchors and call the original only once the session is
+    /// gone. 32-bit `GetTickCount` shows why that matters, since kernel32's copy is a `call` into
+    /// kernelbase's, which `indirect_jump_slot` rightly refuses to treat as a jump. When kernel32's entry
+    /// IS kernelbase's (a forwarder) or one jump away from it, the hook makes one detour there instead,
+    /// because two detours on one address cannot exist.
+    KernelBaseAndKernel32,
 }
 
 /// What kind of time a channel carries. The duration axis and the object-wait observation
@@ -471,13 +495,20 @@ pub fn indirect_jump_slot(code: &[u8; 12], entry: usize, rip_relative: bool) -> 
 // and warn that its child may be uncovered, an honest audit (rule 4) without the risk. A guard makes
 // the CreateProcess* funnel to NtCreateUserProcess NOT count (the child is already inherited).
 //
-// KNOWN GAPS, not yet covered (the verifier should report these honestly): the duration axis and the
-// waits (GetTickCount, GetTickCount64, QueryUnbiasedInterruptTime, Sleep, SleepEx, SetWaitableTimer,
-// the object waits) are still detoured on kernel32's entry, so a caller that reaches them through the
-// api-set (system DLLs, the old msvcrt) runs at real speed there. Moving them is its own step because
-// it starts scaling waits INSIDE system components, and GetTickCount and GetTickCount64 have code of
-// their own in both DLLs, so they need two detours rather than one. Also not hooked at all:
-// GetTimeZoneInformationForYear, LocalFileTimeToLocalSystemTime and LocalSystemTimeToLocalFileTime.
+// WHERE THE DURATION AXIS AND THE WAITS ARE DETOURED (2026-09-23, the second half of the move above):
+// where their code lives, like the wall clock. Until then they stood on kernel32's stubs, and a caller
+// that went through the api-set (msvcrt, ucrtbase, user32, combase, rpcrt4, the network stacks) read a
+// real tick count, a real interrupt time and a real QPC, armed a real SetWaitableTimer, and waited on
+// objects the audit never saw. Sleep and SleepEx were the exception that made the others look covered:
+// they reached the hooked NtDelayExecution anyway, scaled but counted under that name. The thread-pool
+// timers and SetWaitableTimerEx never had the gap, because kernel32 forwards them to ntdll and
+// kernelbase and GetProcAddress already resolved the forwarder. The consequence to know about: the
+// session's duration axis now reaches the system components inside the target too, so a component that
+// computes a deadline from the tick count and then waits on an object with a real timeout can give up
+// sooner in real time. The thread-pool timers inside those components were already scaled before this.
+//
+// KNOWN GAPS, not yet covered (the verifier should report these honestly): GetTimeZoneInformationForYear,
+// LocalFileTimeToLocalSystemTime and LocalSystemTimeToLocalFileTime are not hooked at all.
 // Residual exotica (SetThreadpoolWait timeouts, RtlCreateUserProcess legacy path) are out of scope
 // and would be reported honestly if a target hit them.
 
@@ -491,35 +522,35 @@ pub const CHANNELS: [ChannelDef; CHANNEL_COUNT] = [
     ChannelDef { bit: CH_NTQST, name: "NtQuerySystemTime", module: ChannelModule::Ntdll, category: ChannelCategory::Wall },
     ChannelDef { bit: CH_GTZI, name: "GetTimeZoneInformation", module: ChannelModule::KernelBaseBehindKernel32, category: ChannelCategory::Zone },
     ChannelDef { bit: CH_GDTZI, name: "GetDynamicTimeZoneInformation", module: ChannelModule::KernelBaseBehindKernel32, category: ChannelCategory::Zone },
-    ChannelDef { bit: CH_GTC64, name: "GetTickCount64", module: ChannelModule::Kernel32, category: ChannelCategory::Duration },
-    ChannelDef { bit: CH_QUIT, name: "QueryUnbiasedInterruptTime", module: ChannelModule::Kernel32, category: ChannelCategory::Duration },
-    ChannelDef { bit: CH_GTC, name: "GetTickCount", module: ChannelModule::Kernel32, category: ChannelCategory::Duration },
+    ChannelDef { bit: CH_GTC64, name: "GetTickCount64", module: ChannelModule::KernelBaseAndKernel32, category: ChannelCategory::Duration },
+    ChannelDef { bit: CH_QUIT, name: "QueryUnbiasedInterruptTime", module: ChannelModule::KernelBaseBehindKernel32, category: ChannelCategory::Duration },
+    ChannelDef { bit: CH_GTC, name: "GetTickCount", module: ChannelModule::KernelBaseAndKernel32, category: ChannelCategory::Duration },
     ChannelDef { bit: CH_STSL, name: "SystemTimeToTzSpecificLocalTime", module: ChannelModule::KernelBaseBehindKernel32, category: ChannelCategory::Zone },
     ChannelDef { bit: CH_STSLEX, name: "SystemTimeToTzSpecificLocalTimeEx", module: ChannelModule::KernelBaseBehindKernel32, category: ChannelCategory::Zone },
     ChannelDef { bit: CH_FTLFT, name: "FileTimeToLocalFileTime", module: ChannelModule::KernelBaseBehindKernel32, category: ChannelCategory::Zone },
     ChannelDef { bit: CH_LFTFT, name: "LocalFileTimeToFileTime", module: ChannelModule::KernelBaseBehindKernel32, category: ChannelCategory::Zone },
     ChannelDef { bit: CH_TLTST, name: "TzSpecificLocalTimeToSystemTime", module: ChannelModule::KernelBaseBehindKernel32, category: ChannelCategory::Zone },
     ChannelDef { bit: CH_TLTSTEX, name: "TzSpecificLocalTimeToSystemTimeEx", module: ChannelModule::KernelBaseBehindKernel32, category: ChannelCategory::Zone },
-    ChannelDef { bit: CH_SLEEP, name: "Sleep", module: ChannelModule::Kernel32, category: ChannelCategory::Duration },
-    ChannelDef { bit: CH_SLEEPEX, name: "SleepEx", module: ChannelModule::Kernel32, category: ChannelCategory::Duration },
+    ChannelDef { bit: CH_SLEEP, name: "Sleep", module: ChannelModule::KernelBaseBehindKernel32, category: ChannelCategory::Duration },
+    ChannelDef { bit: CH_SLEEPEX, name: "SleepEx", module: ChannelModule::KernelBaseBehindKernel32, category: ChannelCategory::Duration },
     ChannelDef { bit: CH_NTDELAY, name: "NtDelayExecution", module: ChannelModule::Ntdll, category: ChannelCategory::Duration },
     ChannelDef { bit: CH_NTQSI, name: "NtQuerySystemInformation", module: ChannelModule::Ntdll, category: ChannelCategory::Wall },
-    ChannelDef { bit: CH_WFSO, name: "WaitForSingleObject", module: ChannelModule::Kernel32, category: ChannelCategory::WaitObserved },
-    ChannelDef { bit: CH_WFSOEX, name: "WaitForSingleObjectEx", module: ChannelModule::Kernel32, category: ChannelCategory::WaitObserved },
-    ChannelDef { bit: CH_WFMO, name: "WaitForMultipleObjects", module: ChannelModule::Kernel32, category: ChannelCategory::WaitObserved },
-    ChannelDef { bit: CH_WFMOEX, name: "WaitForMultipleObjectsEx", module: ChannelModule::Kernel32, category: ChannelCategory::WaitObserved },
-    ChannelDef { bit: CH_SOAW, name: "SignalObjectAndWait", module: ChannelModule::Kernel32, category: ChannelCategory::WaitObserved },
+    ChannelDef { bit: CH_WFSO, name: "WaitForSingleObject", module: ChannelModule::KernelBaseBehindKernel32, category: ChannelCategory::WaitObserved },
+    ChannelDef { bit: CH_WFSOEX, name: "WaitForSingleObjectEx", module: ChannelModule::KernelBaseBehindKernel32, category: ChannelCategory::WaitObserved },
+    ChannelDef { bit: CH_WFMO, name: "WaitForMultipleObjects", module: ChannelModule::KernelBaseBehindKernel32, category: ChannelCategory::WaitObserved },
+    ChannelDef { bit: CH_WFMOEX, name: "WaitForMultipleObjectsEx", module: ChannelModule::KernelBaseBehindKernel32, category: ChannelCategory::WaitObserved },
+    ChannelDef { bit: CH_SOAW, name: "SignalObjectAndWait", module: ChannelModule::KernelBaseBehindKernel32, category: ChannelCategory::WaitObserved },
     ChannelDef { bit: CH_MWFMO, name: "MsgWaitForMultipleObjects", module: ChannelModule::User32, category: ChannelCategory::WaitObserved },
     ChannelDef { bit: CH_MWFMOEX, name: "MsgWaitForMultipleObjectsEx", module: ChannelModule::User32, category: ChannelCategory::WaitObserved },
-    ChannelDef { bit: CH_SWT, name: "SetWaitableTimer", module: ChannelModule::Kernel32, category: ChannelCategory::Duration },
-    ChannelDef { bit: CH_SWTEX, name: "SetWaitableTimerEx", module: ChannelModule::Kernel32, category: ChannelCategory::Duration },
+    ChannelDef { bit: CH_SWT, name: "SetWaitableTimer", module: ChannelModule::KernelBaseBehindKernel32, category: ChannelCategory::Duration },
+    ChannelDef { bit: CH_SWTEX, name: "SetWaitableTimerEx", module: ChannelModule::KernelBaseBehindKernel32, category: ChannelCategory::Duration },
     ChannelDef { bit: CH_SETTIMER, name: "SetTimer", module: ChannelModule::User32, category: ChannelCategory::Duration },
     ChannelDef { bit: CH_TIMESETEVENT, name: "timeSetEvent", module: ChannelModule::Winmm, category: ChannelCategory::TimerObserved },
-    ChannelDef { bit: CH_TPTIMER, name: "SetThreadpoolTimer", module: ChannelModule::Kernel32, category: ChannelCategory::Duration },
-    ChannelDef { bit: CH_TPTIMEREX, name: "SetThreadpoolTimerEx", module: ChannelModule::Kernel32, category: ChannelCategory::Duration },
+    ChannelDef { bit: CH_TPTIMER, name: "SetThreadpoolTimer", module: ChannelModule::KernelBaseBehindKernel32, category: ChannelCategory::Duration },
+    ChannelDef { bit: CH_TPTIMEREX, name: "SetThreadpoolTimerEx", module: ChannelModule::KernelBaseBehindKernel32, category: ChannelCategory::Duration },
     ChannelDef { bit: CH_NTCUP, name: "NtCreateUserProcess", module: ChannelModule::Ntdll, category: ChannelCategory::SpawnObserved },
     ChannelDef { bit: CH_CONNECT, name: "connect", module: ChannelModule::Ws2_32, category: ChannelCategory::SourceObserved },
-    ChannelDef { bit: CH_QPC, name: "QueryPerformanceCounter", module: ChannelModule::Kernel32, category: ChannelCategory::Qpc },
+    ChannelDef { bit: CH_QPC, name: "QueryPerformanceCounter", module: ChannelModule::KernelBaseBehindKernel32, category: ChannelCategory::Qpc },
     ChannelDef { bit: CH_TIMEGETTIME, name: "timeGetTime", module: ChannelModule::Winmm, category: ChannelCategory::Duration },
     ChannelDef { bit: CH_SCVSRW, name: "SleepConditionVariableSRW", module: ChannelModule::KernelBase, category: ChannelCategory::WaitObserved },
     ChannelDef { bit: CH_SCVCS, name: "SleepConditionVariableCS", module: ChannelModule::KernelBase, category: ChannelCategory::WaitObserved },

@@ -226,6 +226,14 @@ pub(crate) fn describe_warning(key: &str) -> String {
             "some waits were too short to divide by the full speed factor and ran at this tool's \
              shortest step (1 ms) instead - that part of the application did not accelerate"
         }
+        // Sits next to the object-wait line on purpose: that one says an I/O timeout is not shortened,
+        // and for a library that measures its own timeout from the tick count this one says otherwise.
+        "wait.network_timeouts_scaled" => {
+            "this application has the network stack loaded - a network library that measures its own \
+             timeout from the tick count (WinHTTP, for one) follows the session speed, so a server slower \
+             than that timeout divided by the speed makes a request fail, even though the waits \
+             underneath stay real"
+        }
         "timer.multimedia_not_scaled" => "the multimedia timer (timeSetEvent) is observed but not scaled",
         // The coverage has a cost, so it is named - the same shape as the QPC opt-in's warning. winmm is
         // also the audio path, and the scheduler timeSetEvent stays untouched, so this is about a clock
