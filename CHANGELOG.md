@@ -40,6 +40,14 @@ Notable changes to Chrono Mock, newest first. The format follows
 
 ### Fixed
 
+- **Java applications kept the machine's time zone.** A Java application under a session read the
+  session date but showed it in the machine's own time zone, on every Java version from 8 on and on
+  both 32 and 64 bit, while the session reported success. The zone the session hands out did not say
+  that it has no daylight saving time, so Java took it for a named zone, looked the name up, found
+  nothing, and fell back to the machine's current offset from the registry. The zone now says so,
+  and Java builds it from the session offset, under a name like `GMT+05:30`. Node.js and Deno name a
+  whole-hour session zone the same way now (`Etc/GMT-5`, and `UTC` for +00:00), where until now they
+  gave it no name at all. The offset they use is unchanged.
 - **The network caution missed most applications that go online.** The audit is meant to say when
   an application opened a network connection, because it may then take the time from a server,
   which no local substitution reaches. It watched one Windows function for that, and two of the

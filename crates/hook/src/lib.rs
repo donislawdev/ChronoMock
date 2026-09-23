@@ -908,8 +908,8 @@ unsafe extern "system" fn h_ntqsi(class: i32, info: *mut c_void, len: u32, retle
 }}
 
 // --- Session zone -------------------------------------------------------------
-// Report the session zone (Bias = tz_bias, no DST) so a target's notion of "which
-// zone am I in" agrees with the shifted GetLocalTime.
+// Report the session zone (Bias = tz_bias, no DST, and in the dynamic form DST explicitly
+// disabled) so a target's notion of "which zone am I in" agrees with the shifted GetLocalTime.
 
 const SESSION_ZONE_NAME: &str = "Chrono Session";
 const TIME_ZONE_ID_INVALID: u32 = 0xFFFF_FFFF;
@@ -937,7 +937,19 @@ unsafe extern "system" fn h_gdtzi(lp: *mut DYNAMIC_TIME_ZONE_INFORMATION) -> u32
         return O_GDTZI.get().map(|o| o(lp)).unwrap_or(TIME_ZONE_ID_INVALID);
     }
     if !lp.is_null() {
-        let mut d = DYNAMIC_TIME_ZONE_INFORMATION { Bias: cur_tz_bias(), ..Default::default() };
+        // DynamicDaylightTimeDisabled is TRUE because the session zone has no daylight saving time, and
+        // TRUE with both transition dates cleared is how MS Learn says a zone without it is described.
+        // FALSE would claim dynamic transition data exists under a registry key that does not. It is
+        // also the field a runtime reads to decide whether the zone can be built from Bias alone: the
+        // JVM (every line from 8 to the current one) does exactly that when it is TRUE, and otherwise
+        // looks the key name up in its own table, misses, and falls back to ActiveTimeBias from the
+        // REAL registry, which is how Java kept the host zone under every session. ICU names a
+        // whole-hour offset Etc/GMT-N on the same flag. .NET, the C runtime and Go do not read it.
+        let mut d = DYNAMIC_TIME_ZONE_INFORMATION {
+            Bias: cur_tz_bias(),
+            DynamicDaylightTimeDisabled: true,
+            ..Default::default()
+        };
         set_wide(&mut d.StandardName, SESSION_ZONE_NAME);
         set_wide(&mut d.TimeZoneKeyName, SESSION_ZONE_NAME);
         *lp = d;

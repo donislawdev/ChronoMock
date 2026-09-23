@@ -95,8 +95,9 @@ Chrono Mock - date calculator
           registry knows. Anything mapping that name back to a zone - .NET's
           <code>TimeZoneInfo.Local</code> among them - falls back to the offset instead, which
           is the right answer. An application insisting on a registry name will not find one.</li>
-        <li><strong>Java does not pick the session zone up.</strong> The wall clock and elapsed
-          time are covered, the zone is not. It is a known gap, stated rather than hidden.</li>
+        <li><strong>Java picks the session zone up as an offset.</strong> The session zone has
+          no daylight saving time and no city behind it, so Java names it after its offset -
+          <code>GMT+05:30</code> for a session at +05:30.</li>
         <li><strong>In Chromium and Electron mode the zone follows the host.</strong> The
           instant is faked, the local-time getters are not.</li>
         <li><strong>Offsets run from -14:00 to +14:00</strong> in whole minutes. Anything
