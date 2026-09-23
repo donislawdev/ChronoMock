@@ -1628,6 +1628,10 @@ fn xaml_names(text: &str) -> Vec<(usize, String)> {
 /// in one pull request (2026-09-23) with every gate green, and a review found them. This reads every
 /// name the Rust and C# sources declare or use, and every `x:Name` and `x:Key` of the XAML, against
 /// the Polish letters and the vocabulary above. Reversal probes in `CHANGELOG-DEV.md`.
+///
+/// Not read, said rather than left to be discovered: the names in the PowerShell scripts (a handful of
+/// build and release scripts, whose comments the language scan does read) and the names inside a C#
+/// interpolation hole (see `source_names`).
 #[test]
 fn every_name_in_the_code_is_english() {
     let vocabulary = polish_vocabulary();
