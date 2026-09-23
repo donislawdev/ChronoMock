@@ -1,6 +1,7 @@
 <UserControl x:Class="ChronoMock.App.Views.ResultPhaseView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="clr-namespace:ChronoMock.App.Controls"
              xmlns:views="clr-namespace:ChronoMock.App.Views"
              Background="{DynamicResource BrushBgBase}">
 
@@ -167,10 +168,10 @@
                        Margin="{StaticResource StackGapSm}"
                        Text="{Binding LastError}"
                        Visibility="{Binding HasLastError, Converter={StaticResource BoolToVis}}" />
-            <HeaderedItemsControl Style="{StaticResource PartNoteList}"
-                                  Header="{DynamicResource report.cleanup}"
-                                  ItemsSource="{Binding ResidueKeys}"
-                                  Visibility="{Binding HasResidue, Converter={StaticResource BoolToVis}}" />
+            <controls:TextNamedList Style="{StaticResource PartNoteList}"
+                                    Header="{DynamicResource report.cleanup}"
+                                    ItemsSource="{Binding ResidueKeys}"
+                                    Visibility="{Binding HasResidue, Converter={StaticResource BoolToVis}}" />
 
             <!--
               THE ACTIONS ON THE ANSWER. Copy the paste-ready summary, and for a session that did not cleanly

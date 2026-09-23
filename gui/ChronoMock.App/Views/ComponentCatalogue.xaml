@@ -454,13 +454,13 @@
                  Text="One row per function the session saw: the name, where it read its time from as a word in the meaning ink, and how many times. Every status the fold can produce, a name longer than any real one, a count past six digits, and rows with no count at all - the columns share their widths, so the header and the rows agree wherever a column starts." />
 
       <Border Style="{StaticResource PartCard}" Margin="{StaticResource StackGapSm}">
-        <HeaderedItemsControl Style="{StaticResource PartTable}"
-                              ItemTemplate="{StaticResource AuditRowTemplate}"
-                              ItemsSource="{Binding SampleAuditRows, RelativeSource={RelativeSource AncestorType=UserControl}}">
-          <HeaderedItemsControl.Header>
+        <controls:TextNamedList Style="{StaticResource PartTable}"
+                                ItemTemplate="{StaticResource AuditRowTemplate}"
+                                ItemsSource="{Binding SampleAuditRows, RelativeSource={RelativeSource AncestorType=UserControl}}">
+          <controls:TextNamedList.Header>
             <ContentControl Template="{StaticResource AuditTableHeader}" Focusable="False" IsTabStop="False" />
-          </HeaderedItemsControl.Header>
-        </HeaderedItemsControl>
+          </controls:TextNamedList.Header>
+        </controls:TextNamedList>
       </Border>
 
       <!-- ============ Process table ============ -->
@@ -470,13 +470,13 @@
                  Text="One row per executable and role among the processes the hook never got into, counted. The renderer row in the failure ink because it means the pages read the real clock, every other role in the secondary ink, a process with no role at all, a name longer than any real one, a count past six digits, and last the one row for the processes gone before they could be named. The same table shell as the audit table (PartTable)." />
 
       <Border Style="{StaticResource PartCard}" Margin="{StaticResource StackGapSm}">
-        <HeaderedItemsControl Style="{StaticResource PartTable}"
-                              ItemTemplate="{StaticResource ProcessRowTemplate}"
-                              ItemsSource="{Binding SampleProcessRows, RelativeSource={RelativeSource AncestorType=UserControl}}">
-          <HeaderedItemsControl.Header>
+        <controls:TextNamedList Style="{StaticResource PartTable}"
+                                ItemTemplate="{StaticResource ProcessRowTemplate}"
+                                ItemsSource="{Binding SampleProcessRows, RelativeSource={RelativeSource AncestorType=UserControl}}">
+          <controls:TextNamedList.Header>
             <ContentControl Template="{StaticResource ProcessTableHeader}" Focusable="False" IsTabStop="False" />
-          </HeaderedItemsControl.Header>
-        </HeaderedItemsControl>
+          </controls:TextNamedList.Header>
+        </controls:TextNamedList>
       </Border>
 
       <!-- ============ Engine table ============ -->
@@ -486,13 +486,13 @@
                  Text="One row per web engine inside the application whose debugging port the session reached: what the engine calls itself, and the port. An engine that named nothing takes the word instead, in the secondary ink, the way the process table treats a process gone before it could be named. Two columns rather than three - the pid is in the copied summary, where the CLI report puts it, and has nothing on screen to match it against. The extremes: a name far longer than any engine reports, and the highest port number there is. The same table shell as the two above (PartTable)." />
 
       <Border Style="{StaticResource PartCard}" Margin="{StaticResource StackGapSm}">
-        <HeaderedItemsControl Style="{StaticResource PartTable}"
-                              ItemTemplate="{StaticResource EngineRowTemplate}"
-                              ItemsSource="{Binding SampleEngineRows, RelativeSource={RelativeSource AncestorType=UserControl}}">
-          <HeaderedItemsControl.Header>
+        <controls:TextNamedList Style="{StaticResource PartTable}"
+                                ItemTemplate="{StaticResource EngineRowTemplate}"
+                                ItemsSource="{Binding SampleEngineRows, RelativeSource={RelativeSource AncestorType=UserControl}}">
+          <controls:TextNamedList.Header>
             <ContentControl Template="{StaticResource EngineTableHeader}" Focusable="False" IsTabStop="False" />
-          </HeaderedItemsControl.Header>
-        </HeaderedItemsControl>
+          </controls:TextNamedList.Header>
+        </controls:TextNamedList>
       </Border>
 
       <!-- ============ Note list ============ -->
@@ -505,25 +505,25 @@
         <StackPanel>
           <!-- Empty, which is a state and not a mistake: a session can leave nothing behind, and the count
                has to say zero rather than the list vanishing and leaving the reader to guess. -->
-          <HeaderedItemsControl Style="{StaticResource PartNoteList}" Header="Cleanup">
-            <HeaderedItemsControl.ItemsSource>
+          <controls:TextNamedList Style="{StaticResource PartNoteList}" Header="Cleanup">
+            <controls:TextNamedList.ItemsSource>
               <x:Array Type="sys:String" />
-            </HeaderedItemsControl.ItemsSource>
-          </HeaderedItemsControl>
+            </controls:TextNamedList.ItemsSource>
+          </controls:TextNamedList>
 
-          <HeaderedItemsControl Style="{StaticResource PartNoteList}" Header="Cleanup">
-            <HeaderedItemsControl.ItemsSource>
+          <controls:TextNamedList Style="{StaticResource PartNoteList}" Header="Cleanup">
+            <controls:TextNamedList.ItemsSource>
               <x:Array Type="sys:String">
                 <sys:String>cleanup.chromium_profile_left</sys:String>
               </x:Array>
-            </HeaderedItemsControl.ItemsSource>
-          </HeaderedItemsControl>
+            </controls:TextNamedList.ItemsSource>
+          </controls:TextNamedList>
 
           <!-- The NOTE variant: same list, prose rows. The extremes together - more rows than the cap
                allows, and sentences far longer than the card, which is what the wrapping is for. -->
-          <HeaderedItemsControl Style="{StaticResource PartNoteList}" Header="Warnings"
-                                ItemTemplate="{StaticResource CalloutRow}">
-            <HeaderedItemsControl.ItemsSource>
+          <controls:TextNamedList Style="{StaticResource PartNoteList}" Header="Warnings"
+                                  ItemTemplate="{StaticResource CalloutRow}">
+            <controls:TextNamedList.ItemsSource>
               <x:Array Type="sys:String">
                 <sys:String>coverage.channel_installed_late</sys:String>
                 <sys:String>wait.timeout_collapsed</sys:String>
@@ -532,7 +532,7 @@
                 <sys:String>coverage.contexts_note</sys:String>
                 <sys:String>runtime.python_monotonic_qpc</sys:String>
                 <sys:String>runtime.java_nanotime_qpc</sys:String>
-                <sys:String>chromium.interval_queued_before_change</sys:String>
+                <sys:String>chromium.rate_change_affects_running_timers</sys:String>
                 <!-- 🔴 These six exist to make the cap ENGAGE. The first render of this block had eight
                      rows, which fitted inside the 140 px the part allows, so the catalogue claimed to be
                      showing a scrolling list and was showing a short one - promising a state it did not
@@ -549,8 +549,8 @@
                 <sys:String>runtime.dotnet_stopwatch_qpc</sys:String>
                 <sys:String>warning.no.such.key.exists</sys:String>
               </x:Array>
-            </HeaderedItemsControl.ItemsSource>
-          </HeaderedItemsControl>
+            </controls:TextNamedList.ItemsSource>
+          </controls:TextNamedList>
         </StackPanel>
       </Border>
 

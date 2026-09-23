@@ -43,6 +43,12 @@ Notable changes to Chrono Mock, newest first. The format follows
 
 ### Fixed
 
+- **A screen reader read the result's rows as code.** Every row of the audit's tables, every
+  warning, the cleanup list, the speed and jump buttons and the calculator's lists told assistive
+  technology what the row was built from rather than what it showed: a warning announced itself as
+  `runtime.dotnet_stopwatch_qpc`, and an audit row as a dump of its fields, while the screen showed
+  a sentence and three cells. Each row now reads out exactly what is on screen - "GetTickCount64,
+  fake clock, 44910" - and a row made of inputs, such as a calculator step, reads out what they hold.
 - **Java applications kept the machine's time zone.** A Java application under a session read the
   session date but showed it in the machine's own time zone, on every Java version from 8 on and on
   both 32 and 64 bit, while the session reported success. The zone the session hands out did not say
