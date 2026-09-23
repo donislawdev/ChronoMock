@@ -2065,8 +2065,9 @@ fn log(msg: &str) {
 /// resolved to it, or a stub one indirect jump away), and kernel32's entry otherwise.
 ///
 /// Falling back is the safety argument. An entry of a shape nobody measured keeps the detour exactly
-/// where it was before this function existed, so the worst a Windows build we have never seen can do
-/// is the old coverage, never less, and the log says which channel it was. The slot read cannot fault:
+/// where it was before this function existed, and `make_hook` does the same when the detour cannot be
+/// created at the address returned here. So the worst a Windows build we have never seen can do is
+/// the old coverage, never less, and the log says which channel it was. The slot read cannot fault:
 /// it is the very pointer the CPU loads whenever it executes this entry.
 ///
 /// # Safety
@@ -2177,11 +2178,26 @@ unsafe fn make_hook<T: Copy>(
             return;
         }
     };
-    let mut at = target as *const () as usize;
+    let entry = target as *const () as usize;
+    let mut at = entry;
     if ch.module == ChannelModule::KernelBaseBehindKernel32 {
-        at = code_behind_kernel32(at, PCSTR(cname.as_ptr() as *const u8), ch.name);
+        at = code_behind_kernel32(entry, PCSTR(cname.as_ptr() as *const u8), ch.name);
     }
-    match MinHook::create_hook(at as *mut c_void, detour) {
+    // A detour that cannot be created in kernelbase (a prologue MinHook cannot relocate, another
+    // hooking library there first) retries on kernel32's entry, which is where it stood before the
+    // move. Without this the channel would install nowhere, and the kernel32 callers it covered
+    // before would lose it - the one outcome the move promises never to cause.
+    let created = match MinHook::create_hook(at as *mut c_void, detour) {
+        Err(e) if at != entry => {
+            log(&format!(
+                "[chrono_hook] create_hook {} in kernelbase failed: {e:?}, retrying on kernel32's entry",
+                ch.name
+            ));
+            MinHook::create_hook(entry as *mut c_void, detour)
+        }
+        other => other,
+    };
+    match created {
         Ok(original) => {
             let _ = slot.set(std::mem::transmute_copy::<*mut c_void, T>(&original));
             *pending |= ch.bit;

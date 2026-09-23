@@ -308,8 +308,9 @@ pub enum ChannelModule {
     ///
     /// The decision is taken per process, at install, not in this table (`indirect_jump_slot`). When
     /// kernel32's entry does NOT lead to kernelbase's export (another Windows build, or a stub someone
-    /// else already patched), the hook stays on kernel32 exactly as before and logs it. A change of
-    /// shape can then cost the api-set callers, never the callers this build already covered.
+    /// else already patched), the hook stays on kernel32 exactly as before and logs it, and so it does
+    /// when the detour cannot be created in kernelbase. A change of shape can then cost the api-set
+    /// callers, never the callers this build already covered.
     KernelBaseBehindKernel32,
 }
 
