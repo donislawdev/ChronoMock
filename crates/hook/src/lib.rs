@@ -64,7 +64,7 @@ use std::sync::OnceLock;
 
 use chrono_ctl::{
     bump_calls, bump_uninjected_children, cov_at_mut, dur_qpc_at, dur_quit_at, dur_tick_at,
-    header_is_ours, record_uncovered_child,
+    header_is_ours, indirect_jump_slot, record_uncovered_child,
     publish_pid, read_anchor, read_core_pid, read_dur, read_qpc, read_scale_dur, read_scale_qpc,
     bump_waits_at_floor, delay_hit_floor, read_installed, read_late_installed, read_tz_bias, reserve_cov_slot,
     scale_delay_interval, scale_timer_due, scale_timer_elapse, scale_timer_period,
@@ -2060,6 +2060,43 @@ fn log(msg: &str) {
     }
 }
 
+/// Where the code behind a kernel32 export actually runs, for `ChannelModule::KernelBaseBehindKernel32`:
+/// kernelbase's own export of the same name when kernel32's entry leads there (a forwarder already
+/// resolved to it, or a stub one indirect jump away), and kernel32's entry otherwise.
+///
+/// Falling back is the safety argument. An entry of a shape nobody measured keeps the detour exactly
+/// where it was before this function existed, so the worst a Windows build we have never seen can do
+/// is the old coverage, never less, and the log says which channel it was. The slot read cannot fault:
+/// it is the very pointer the CPU loads whenever it executes this entry.
+///
+/// # Safety
+/// `entry` must be the address of a function exported by kernel32 in this process.
+unsafe fn code_behind_kernel32(entry: usize, name: PCSTR, label: &str) -> usize { unsafe {
+    let Ok(kernelbase) = GetModuleHandleA(s!("kernelbase.dll")) else {
+        log(&format!("[chrono_hook] kernelbase not loaded, {label} stays on kernel32"));
+        return entry;
+    };
+    let Some(own) = GetProcAddress(kernelbase, name) else {
+        log(&format!("[chrono_hook] kernelbase does not export {label}, it stays on kernel32"));
+        return entry;
+    };
+    let own = own as *const () as usize;
+    if entry == own {
+        return own;
+    }
+    let code = core::ptr::read_unaligned(entry as *const [u8; 12]);
+    if let Some(slot) = indirect_jump_slot(&code, entry, cfg!(target_pointer_width = "64"))
+        && core::ptr::read_unaligned(slot as *const usize) == own
+    {
+        return own;
+    }
+    log(&format!(
+        "[chrono_hook] kernel32's {label} does not lead to kernelbase, so it stays hooked on kernel32 \
+         and a caller that goes through the api-set is not covered"
+    ));
+    entry
+}}
+
 /// Resolve, create, and record one channel's detour. Best-effort: a missing export
 /// or a failed hook logs and leaves the bit unset (honest partial), never aborts the
 /// rest. The export name and module come from `CHANNELS[idx]` - single source.
@@ -2083,7 +2120,9 @@ unsafe fn make_hook<T: Copy>(
 ) { unsafe {
     let ch = &CHANNELS[idx];
     let module = match ch.module {
-        ChannelModule::Kernel32 => k32,
+        // Resolved in kernel32 first either way. The second kind then follows the entry into
+        // kernelbase below, once there is an address to follow.
+        ChannelModule::Kernel32 | ChannelModule::KernelBaseBehindKernel32 => k32,
         ChannelModule::Ntdll => ntdll,
         // user32 may be absent in a console/service target - resolve it here rather than force-load it
         // (forcing a DLL the target never needed would change its behavior). Absent -> honest partial.
@@ -2138,7 +2177,11 @@ unsafe fn make_hook<T: Copy>(
             return;
         }
     };
-    match MinHook::create_hook(target as *const () as *mut c_void, detour) {
+    let mut at = target as *const () as usize;
+    if ch.module == ChannelModule::KernelBaseBehindKernel32 {
+        at = code_behind_kernel32(at, PCSTR(cname.as_ptr() as *const u8), ch.name);
+    }
+    match MinHook::create_hook(at as *mut c_void, detour) {
         Ok(original) => {
             let _ = slot.set(std::mem::transmute_copy::<*mut c_void, T>(&original));
             *pending |= ch.bit;

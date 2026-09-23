@@ -161,6 +161,13 @@ const ALLOWED: &[(&str, &str, &str)] = &[
          first can fail. Neither reaches past this machine",
     ),
     (
+        "crates/cli/tests/session_clock.rs",
+        "spawn",
+        "runs the command interpreter twice, once alone as the control and once under a session \
+         through the built binary, and reads the date it wrote to a scratch file. Neither reaches \
+         past this machine",
+    ),
+    (
         "crates/hook/src/lib.rs",
         "winsock",
         "the injected library resolves ws2_32 to INTERCEPT the target's own connect and count it. \
