@@ -112,6 +112,44 @@ public class LocalizationTests
         Assert.True(missing.Count == 0, "core wire keys with no resource: " + string.Join(", ", missing));
     }
 
+    // A text that tells the user when an option matters names that option by its label, so it can be
+    // found in the window. A label renamed later leaves such a text pointing at a control that no
+    // longer exists under that name, and nothing else notices. Each pair is (the text, the label it
+    // quotes), checked in every language the folder holds.
+    private static readonly (string Text, string Label)[] QuotedLabels =
+    [
+        ("runtime.dotnet_stopwatch_qpc", "setup.opt_duration"),
+    ];
+
+    [Fact]
+    public void A_text_that_names_an_option_quotes_its_current_label()
+    {
+        var cultures = LocalizationService.AvailableCultures();
+        var stale = WpfTestHost.Invoke(() =>
+        {
+            var gaps = new List<string>();
+            foreach (var culture in cultures)
+            {
+                var strings = LocalizationService.Load(culture);
+                foreach (var (text, label) in QuotedLabels)
+                {
+                    // An empty label is contained in every text, so it would pass without quoting anything.
+                    if (strings[text] is not string body || strings[label] is not string name
+                        || name.Length == 0 || !body.Contains(name, StringComparison.Ordinal))
+                    {
+                        gaps.Add($"{text} does not quote {label} ({culture})");
+                    }
+                }
+            }
+
+            return gaps;
+        });
+
+        // Over no languages at all the loop above finds nothing wrong, which is not the same as right.
+        Assert.True(cultures.Count >= 2, "expected at least English and Polish, found: " + string.Join(", ", cultures));
+        Assert.True(stale.Count == 0, "texts quoting a label that has changed: " + string.Join(", ", stale));
+    }
+
     private static HashSet<string> KeysOf(ResourceDictionary dictionary)
         => dictionary.Keys.Cast<object>().Select(key => key.ToString()!).ToHashSet(StringComparer.Ordinal);
 
