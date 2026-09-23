@@ -1780,7 +1780,7 @@ unsafe extern "system" fn h_ntdiocf(
 ) -> i32 { unsafe {
     let o = match O_NTDIOCF.get() {
         Some(o) => o,
-        None => return 0xC000_0001_u32 as i32,
+        None => return STATUS_UNSUCCESSFUL,
     };
     if is_connection_attempt(code) {
         bump(IDX_CONNECT);
