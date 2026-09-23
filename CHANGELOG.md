@@ -14,9 +14,10 @@ Notable changes to Chrono Mock, newest first. The format follows
   `dotnet app.dll` have no .NET runtime files beside the executable. Those files were how the
   session recognised .NET, so none of these got the caution that a `Stopwatch` timer does not follow
   the session speed. The session now also reads the marks .NET leaves inside the executable itself -
-  the runtime's own exports, the signature every .NET launcher carries, and the header of a .NET
-  Framework program - and recognises the `dotnet` host by name. One build carries none of them and
-  is still not recognised: a NativeAOT application published with debugger support turned off.
+  the runtime's own exports, the signature every .NET launcher carries, the header of a .NET
+  Framework program and the module header every NativeAOT program starts from - and recognises the
+  `dotnet` host by name. One build is still not recognised: a NativeAOT application published with
+  debugger support turned off that also exports functions of its own.
 - **A caution when the application was built with Go.** The Go runtime reads the date straight
   from shared system memory rather than asking Windows for it, so a Go application sees the real
   date and nothing this tool can do will change that. The session time zone does reach it, which
