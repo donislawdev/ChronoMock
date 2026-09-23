@@ -454,18 +454,21 @@ fn fingerprint_target(target_path: &std::path::Path) -> Vec<String> {
         add(&mut keys, "runtime.go_wall_clock_unreachable");
     }
 
-    // A .NET application that carries its runtime inside the executable (NativeAOT, self-contained
-    // single-file) leaves no DLL beside it for the loop below to find, yet its Stopwatch reads QPC
-    // exactly like the one in `coreclr.dll` - the class lives in the shared part of CoreLib.
-    if crate::pe::embeds_dotnet_runtime(target_path) {
+    // A .NET executable that leaves no runtime file beside it for the loop below to find: NativeAOT,
+    // any apphost including a framework-dependent single file, and .NET Framework, whose runtime lives
+    // in the Windows directory. Its Stopwatch reads QPC all the same - in .NET the class lives in the
+    // shared part of CoreLib, and in .NET Framework it calls QueryPerformanceCounter directly.
+    if crate::pe::is_dotnet_executable(target_path) {
         add(&mut keys, "runtime.dotnet_stopwatch_qpc");
     }
 
-    // The target executable's own name is a strong signal - a plain interpreter launcher.
+    // The target executable's own name is a strong signal - a plain interpreter launcher, or the .NET
+    // host that runs `dotnet app.dll` with the shared runtime, which sits nowhere near it on disk.
     if let Some(name) = target_path.file_name().and_then(|n| n.to_str()) {
         match name.to_ascii_lowercase().as_str() {
             "python.exe" | "pythonw.exe" => add(&mut keys, "runtime.python_perfcounter_qpc"),
             "java.exe" | "javaw.exe" => add(&mut keys, "runtime.java_nanotime_qpc"),
+            "dotnet.exe" => add(&mut keys, "runtime.dotnet_stopwatch_qpc"),
             _ => {}
         }
     }
