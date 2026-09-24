@@ -305,9 +305,11 @@ pub(crate) fn describe_warning(key: &str) -> String {
         // The session does not stop the application (docs/01 section 8.4), so the tester is left with
         // one that changed clocks under their hands. Says which way each clock went, because "back to
         // real time" alone reads as "the counters went back too" - and it was exactly that, a 316 s
-        // step back at x60, that letting go used to do.
+        // step back at x60, that letting go used to do. A repeating timer is the exception, and it is
+        // named: its period was shortened once, when it was set, and the release changes only what is
+        // read or set from then on.
         "session.left_running" => {
-            "the application was still running when the session ended, so it is back on the real date and time now - its timers and elapsed-time counters carry on at normal speed from where the session left them instead of jumping back, and a restart gives it a clean run on the real clock"
+            "the application was still running when the session ended, so it is back on the real date and time now - its tick counts and elapsed-time counters carry on at normal speed from where the session left them instead of jumping back, a repeating timer it set while its timers were sped up keeps the shorter interval it was given, and a restart gives it a clean run on the real clock"
         }
         "embedded.pages_not_released" => {
             "a page inside the application did not confirm it was handed back to the real clock when the session ended, so it may keep the session date until it is reloaded or closed"
