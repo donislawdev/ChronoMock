@@ -337,6 +337,29 @@ impl Attacher {
         }
     }
 
+    /// Evaluate the release expression in every live context and count the ones that did not confirm
+    /// it. `ok` is a context let go, `no-shim` one that was never on the shim and has nothing to let go
+    /// of. Anything else - an error, no answer - is a page that may still be on the session clock,
+    /// which the caller has to say (rule 6).
+    pub(crate) fn release(&mut self, expr: &str) -> u32 {
+        let mut unconfirmed = 0;
+        for ctx in &self.contexts {
+            let reply = self.client.call(
+                "Runtime.evaluate",
+                json!({ "expression": expr, "returnByValue": true }),
+                Some(&ctx.session_id),
+            );
+            let confirmed = reply
+                .ok()
+                .and_then(|r| r["result"]["value"].as_str().map(|v| v == "ok" || v == "no-shim"))
+                .unwrap_or(false);
+            if !confirmed {
+                unconfirmed += 1;
+            }
+        }
+        unconfirmed
+    }
+
     /// Evaluate a JS expression in one live context and return the string it produced, if any.
     /// For a probe reading what a page shows - `document.title` - not for the session.
     pub(crate) fn evaluate_string(&mut self, index: u32, expr: &str) -> Option<String> {

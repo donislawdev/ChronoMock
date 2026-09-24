@@ -56,8 +56,10 @@ public class LocalizationTests
         // The embedded-engine channel (docs/09 section 12): the pages inside the application.
         "embedded.web_engine_reached", "embedded.debug_port_open", "embedded.engine_unreachable",
         "embedded.discovery_unavailable", "embedded.qt_port_taken", "embedded.zone_is_host",
-        "embedded.registry_arguments_hidden",
+        "embedded.registry_arguments_hidden", "embedded.pages_not_released",
         "time.fake_clock_clamped", "time.duration_axis_clamped",
+        // The application outlived the session and was let go (docs/01 section 8.4).
+        "session.left_running",
         "chromium.launched_with_debug_port", "chromium.app_closed_before_audit",
         "chromium.rate_change_affects_running_timers", "chromium.context_ceiling_reached",
         // Runtime detection warnings the driver appends to coverage (B1): a Python/.NET/Java target whose

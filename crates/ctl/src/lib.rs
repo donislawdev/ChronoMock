@@ -1116,6 +1116,61 @@ pub fn freeze_qpc(dur_qpc_c0: i64, dur_qpc_q0: i64, old_m: i64, now: i64) -> i64
     dur_qpc_at(dur_qpc_c0, dur_qpc_q0, old_m, now)
 }
 
+/// Where the three duration axes stood when the session let go of a process, and the real instants
+/// they carry on from at rate 1. Built by [`release_axes`], read by the hook once its core is gone.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ReleasedAxes {
+    tick_c0: u64,
+    quit_c0: i64,
+    q0: i64,
+    qpc_c0: i64,
+    qpc_q0: i64,
+}
+
+/// Freeze every duration axis at the instant the session lets go of a process, so that it carries on
+/// from there at rate 1 instead of snapping back to the real value.
+///
+/// Snapping back is what the hook did until 2026-09-24, and it was measured rather than supposed: a
+/// session at x60 that ended after 5.4 s while its target kept running sent GetTickCount64,
+/// GetTickCount, timeGetTime, QueryUnbiasedInterruptTime and QPC back by 316 s in one step, on x64 and
+/// x86 alike. The axis untouchable rule 3 says never rewinds was rewound by the tool leaving.
+///
+/// This is `freeze_dur` and `freeze_qpc` applied one last time, with rate 1 for good: the value right
+/// after equals the value right before, and from then on it moves at the real speed. The wall clock is
+/// not part of it - it goes back to the real one, which a wall may do and the report says it did.
+///
+/// `dur` and `qpc` are exactly what [`read_dur`] and [`read_qpc`] return, and `now_quit` / `now_qpc`
+/// the real clocks at the instant of the release.
+pub fn release_axes(dur: (u64, i64, i64, i64), qpc: (i64, i64, i64), now_quit: i64, now_qpc: i64) -> ReleasedAxes {
+    let (tick_c0, quit_c0, dur_q0, dur_m) = dur;
+    let (qpc_c0, qpc_q0, qpc_m) = qpc;
+    let (tick, quit) = freeze_dur(tick_c0, quit_c0, dur_q0, dur_m, now_quit);
+    ReleasedAxes {
+        tick_c0: tick,
+        quit_c0: quit,
+        q0: now_quit,
+        qpc_c0: freeze_qpc(qpc_c0, qpc_q0, qpc_m, now_qpc),
+        qpc_q0: now_qpc,
+    }
+}
+
+impl ReleasedAxes {
+    /// `GetTickCount64` after the release, in milliseconds, from the real QUIT.
+    pub fn tick_at(&self, real_quit: i64) -> u64 {
+        dur_tick_at(self.tick_c0, self.q0, 1, real_quit)
+    }
+
+    /// `QueryUnbiasedInterruptTime` after the release, in 100 ns, from the real QUIT.
+    pub fn quit_at(&self, real_quit: i64) -> i64 {
+        dur_quit_at(self.quit_c0, self.q0, 1, real_quit)
+    }
+
+    /// `QueryPerformanceCounter` after the release, in raw ticks, from the real QPC.
+    pub fn qpc_at(&self, real_qpc: i64) -> i64 {
+        dur_qpc_at(self.qpc_c0, self.qpc_q0, 1, real_qpc)
+    }
+}
+
 /// Write the session zone bias (stable field, outside the seqlock). Mechanism side.
 ///
 /// # Safety
@@ -1753,6 +1808,68 @@ mod tests {
         let a = dur_tick_at(1_000, 0, 0, 5_000_000);
         let b = dur_tick_at(1_000, 0, 0, 6_000_000);
         assert!(b > a, "a frozen wall clock must not stop the monotonic duration axis (rule 3)");
+    }
+
+    #[test]
+    fn releasing_a_process_neither_rewinds_nor_stops_its_duration_axes() {
+        // The measured case (2026-09-24): x60, the session ends after 5.4 s of real time and the target
+        // lives on. Before the release the axes ran at the session rate, after it they must carry on
+        // from the same value at the real rate. The real value itself stands 5.4 s x 59 = 318.6 s behind
+        // by then (the measured run lasted 5.36 s, hence the 316 s on record).
+        let tick_c0: u64 = 1_000_000; // ms
+        let quit_c0: i64 = 10_000_000_000; // 100 ns
+        let q0: i64 = 10_000_000_000; // real QUIT base, 100 ns
+        let qpc_c0: i64 = 50_000_000; // raw ticks, a 10 MHz counter
+        let qpc_q0: i64 = 50_000_000;
+        let end = q0 + 54_000_000; // 5.4 s later
+        let end_qpc = qpc_q0 + 54_000_000;
+        for m in [60i64, 1, 0, 1440] {
+            let r = release_axes((tick_c0, quit_c0, q0, m), (qpc_c0, qpc_q0, m), end, end_qpc);
+            assert_eq!(r.tick_at(end), dur_tick_at(tick_c0, q0, m, end), "tick jumped at the release (x{m})");
+            assert_eq!(r.quit_at(end), dur_quit_at(quit_c0, q0, m, end), "quit jumped at the release (x{m})");
+            assert_eq!(
+                r.qpc_at(end_qpc),
+                dur_qpc_at(qpc_c0, qpc_q0, m, end_qpc),
+                "qpc jumped at the release (x{m})"
+            );
+            // Rate 1 afterwards: one real second is one second on every axis, whatever the session ran at.
+            assert_eq!(r.tick_at(end + 10_000_000) - r.tick_at(end), 1_000, "tick rate after the release (x{m})");
+            assert_eq!(r.quit_at(end + 10_000_000) - r.quit_at(end), 10_000_000, "quit rate after the release (x{m})");
+            assert_eq!(
+                r.qpc_at(end_qpc + 10_000_000) - r.qpc_at(end_qpc),
+                10_000_000,
+                "qpc rate after the release (x{m})"
+            );
+        }
+
+        // Dense sampling across the release at x60, 1 ms of real time a step: never a step down.
+        let r = release_axes((tick_c0, quit_c0, q0, 60), (qpc_c0, qpc_q0, 60), end, end_qpc);
+        let mut last_tick = 0u64;
+        let mut last_quit = i64::MIN;
+        let mut last_qpc = i64::MIN;
+        for step in 0..10_800i64 {
+            let now = q0 + step * 10_000;
+            let now_qpc = qpc_q0 + step * 10_000;
+            let (tick, quit, qpc) = if now < end {
+                (dur_tick_at(tick_c0, q0, 60, now), dur_quit_at(quit_c0, q0, 60, now), dur_qpc_at(qpc_c0, qpc_q0, 60, now_qpc))
+            } else {
+                (r.tick_at(now), r.quit_at(now), r.qpc_at(now_qpc))
+            };
+            assert!(tick >= last_tick, "GetTickCount64 rewound at the release: {last_tick} -> {tick} (step {step})");
+            assert!(quit >= last_quit, "QUIT rewound at the release: {last_quit} -> {quit} (step {step})");
+            assert!(qpc >= last_qpc, "QPC rewound at the release: {last_qpc} -> {qpc} (step {step})");
+            (last_tick, last_quit, last_qpc) = (tick, quit, qpc);
+        }
+        // What the old behaviour handed back instead: the base started at the real tick, so the real
+        // value at the end is the base plus 5.4 s, which is 318.6 s under what the target had just read.
+        let real_at_end = tick_c0 + 5_400;
+        assert_eq!(r.tick_at(end) - real_at_end, 318_600, "the gap the release closes (5.4 s x 59)");
+
+        // An axis already standing at the end of its range stays where it stood and moves on at rate 1,
+        // rather than wrapping or dropping (see `dur_axis_at_range_end`).
+        let far = release_axes((tick_c0, quit_c0, 0, i64::MAX), (qpc_c0, 0, i64::MAX), end, end_qpc);
+        assert!(far.tick_at(end + 10_000_000) > far.tick_at(end), "a saturated tick axis must keep moving after the release");
+        assert!(far.quit_at(end + 10_000_000) >= far.quit_at(end), "a saturated quit axis must not drop after the release");
     }
 
     #[test]

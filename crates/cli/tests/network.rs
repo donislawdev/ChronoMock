@@ -185,6 +185,13 @@ const ALLOWED: &[(&str, &str, &str)] = &[
          Neither reaches past this machine",
     ),
     (
+        "crates/cli/tests/session_end.rs",
+        "spawn",
+        "runs this test binary's own ignored probe twice, once alone as the control and once under a \
+         session that ends before the probe does, and reads the rates and steps it wrote to a scratch \
+         file. Neither reaches past this machine",
+    ),
+    (
         "crates/cli/tests/network_observer.rs",
         "spawn",
         "runs this test binary's own ignored probe twice, once alone as the control and once under a \

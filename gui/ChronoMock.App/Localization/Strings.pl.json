@@ -425,6 +425,7 @@
   "embedded.qt_port_taken": "Port zarezerwowany dla silnika Qt tej aplikacji został zajęty przez coś innego, zanim silnik mógł go użyć. Jego stron nie dało się osiągnąć i biegły na realnym zegarze.",
   "embedded.zone_is_host": "Strony wewnątrz tej aplikacji czytają strefę czasową tego komputera, nie sesji. Pokazywany przez nie czas lokalny różni się od reszty aplikacji o przesunięcie strefy.",
   "embedded.registry_arguments_hidden": "Ta aplikacja ma w rejestrze ustawione argumenty przeglądarki WebView2. Sesja przesłoniła je na czas swojego trwania, więc to, co ustawiały (na przykład własny port debugowania), nie zadziałało.",
+  "embedded.pages_not_released": "Strona wewnątrz tej aplikacji nie potwierdziła powrotu na prawdziwy zegar, gdy sesja się skończyła, więc może trzymać datę sesji, dopóki jej nie odświeżysz albo nie zamkniesz.",
   "embedded.web_engine_processes_uncovered": "Są wśród nich procesy osadzonego silnika web (WebView2 albo Qt WebEngine), więc część tego silnika działała na prawdziwym zegarze. Czy jego strony też - nie da się ustalić: wśród nazwanych procesów nie było renderera.",
   // R2-S9. Session-level, not per-process: it is about processes that never got a coverage slot,
   // so it arrives on session_verdict rather than on any one coverage event.
@@ -440,6 +441,7 @@
   "coverage.session_clock_never_read": "Żaden proces w tej sesji ani razu nie odczytał zegara, który sesja podmienia, więc nic z tego, co zrobiła aplikacja, nie wzięło się z fałszywej daty. Kanały powyżej są założone i działają - aplikacja po prostu wzięła czas skądinąd, na przykład ze źródła spoza tego komputera.",
   "time.fake_clock_clamped": "Fałszywy zegar doszedł do ostatniej daty, jaką ta wersja potrafi wyrazić (rok 30828), i stanął tam do końca sesji. Późniejsze odczyty nie są momentami, które dałaby wybrana prędkość.",
   "time.duration_axis_clamped": "Liczniki monotoniczne (licznik tyknięć, nieobciążony czas przerwań oraz QPC, gdy skalowany) doszły do końca swojego zakresu i stanęły, więc czas, jaki upłynął wewnątrz aplikacji, przestał rosnąć, mimo że sesja trwała dalej. Mniejsza prędkość albo krótsza sesja tego unika.",
+  "session.left_running": "Aplikacja nadal działała, gdy sesja się skończyła. Jest już z powrotem na prawdziwej dacie i godzinie, a jej liczniki i odliczania biegną dalej w normalnym tempie od miejsca, w którym zostawiła je sesja, zamiast się cofnąć. Żeby wystartowała od zera na prawdziwym zegarze, uruchom ją ponownie.",
   "target.single_instance_suspected": "zakończył się zaraz po uruchomieniu, zanim podmianę dało się potwierdzić",
 
   // Runtime detected statically from the target's files (B1): its monotonic/elapsed clocks stand on QueryPerformanceCounter, which stays real (ADR-2), so a timer built on them does not scale even though the wall clock does. Wording mirrors the CLI describe_warning.

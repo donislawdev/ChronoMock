@@ -302,6 +302,16 @@ pub(crate) fn describe_warning(key: &str) -> String {
         "time.duration_axis_clamped" => {
             "the monotonic counters (tick count, unbiased interrupt time, and QPC when scaled) reached the end of their range and stood there, so elapsed time inside the target stopped advancing even though the session went on"
         }
+        // The session does not stop the application (docs/01 section 8.4), so the tester is left with
+        // one that changed clocks under their hands. Says which way each clock went, because "back to
+        // real time" alone reads as "the counters went back too" - and it was exactly that, a 316 s
+        // step back at x60, that letting go used to do.
+        "session.left_running" => {
+            "the application was still running when the session ended, so it is back on the real date and time now - its timers and elapsed-time counters carry on at normal speed from where the session left them instead of jumping back, and a restart gives it a clean run on the real clock"
+        }
+        "embedded.pages_not_released" => {
+            "a page inside the application did not confirm it was handed back to the real clock when the session ended, so it may keep the session date until it is reloaded or closed"
+        }
         "inheritance.child_not_injected" => {
             "a child process could not be covered and ran on the REAL clock - usually a child of the other bitness; the process count below is short by that many"
         }
