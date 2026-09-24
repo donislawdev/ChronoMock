@@ -64,7 +64,7 @@ use std::sync::OnceLock;
 
 use chrono_ctl::{
     bump_calls, bump_uninjected_children, cov_at_mut, dur_qpc_at, dur_quit_at, dur_tick_at,
-    header_is_ours, indirect_jump_slot, record_uncovered_child,
+    header_is_ours, indirect_jump_slot, record_uncovered_child, release_axes, ReleasedAxes,
     publish_pid, read_anchor, read_core_pid, read_dur, read_qpc, read_scale_dur, read_scale_qpc,
     bump_waits_at_floor, delay_hit_floor, read_installed, read_late_installed, read_tz_bias, reserve_cov_slot,
     scale_delay_interval, scale_timer_due, scale_timer_elapse, scale_timer_period,
@@ -344,11 +344,13 @@ const STILL_ACTIVE_CODE: u32 = 259;
 /// it is wedged, is already broken on its own account.
 const CHILD_INJECT_TIMEOUT_MS: u32 = 10_000;
 
-// --- Self-detach: revert to real time when the core vanishes --------------------
+// --- Self-detach: let go of the target when the core vanishes -------------------
 // The core writes its PID into the control block - we open a SYNCHRONIZE handle to it.
 // On the first time call we spawn a watcher that blocks on that handle. When the core
-// dies (clean end, crash, or kill -9) the OS signals it, we flip DETACHED, and every
-// detour falls through to the original - the target's clock returns to real time.
+// dies (clean end, crash, or kill -9) the OS signals it, we flip DETACHED, and the
+// target is let go: the wall clock and the zone return to the real ones, and the
+// duration axes carry on at rate 1 from where they stood (`RELEASED`), because handing
+// back the real value there would rewind them (untouchable rule 3, measured 2026-09-24).
 
 /// `WAIT_TIMEOUT` as the raw value the wait returns. Spelled out because the wait goes through the
 /// `WaitForSingleObject` TRAMPOLINE (`O_WFSO`), which hands back a bare `u32`, not the typed
@@ -418,9 +420,53 @@ unsafe extern "system" fn watcher_proc(_p: *mut c_void) -> u32 { unsafe {
             }
         }
     }
+    release_duration_axes();
     DETACHED.store(true, Ordering::SeqCst);
     0
 }}
+
+/// Where the duration axes stood when the core went away, set once by the watcher. `None` for as long
+/// as the session holds, and for good when the block had already been reclaimed by the time the watcher
+/// read it - then the detours hand back the real value, as they all did before 2026-09-24.
+static RELEASED: OnceLock<ReleasedAxes> = OnceLock::new();
+
+/// Freeze the duration axes where they stand, for good, before the flag that sends every detour to its
+/// released branch goes up (untouchable rule 3, `chrono_ctl::release_axes`).
+///
+/// Runs on the watcher, once, after the core is gone - so nothing writes the anchors any more and the
+/// read cannot race a rate change. What it can race is a NEW core reclaiming the block, which zeroes it:
+/// ownership is checked after the read (R2-S6), and a block that is no longer ours releases nothing, so
+/// the detours fall back to the real value. Unreachable today by the measurement kept at `still_ours`,
+/// and stated because it is the one road left to the old snap-back.
+///
+/// The order is the whole guarantee: `RELEASED` is set BEFORE `DETACHED` is raised, so a detour that
+/// sees the flag also sees where the axes stood. A detour that read the anchors just before the flag
+/// went up may still answer at the session rate for the few instructions between the watcher reading
+/// the clock and raising the flag. At a clean end the core has already put the rate to 1, which makes
+/// that window answer exactly what the release does.
+fn release_duration_axes() {
+    let Some(p) = ctl_ptr() else {
+        return;
+    };
+    let p = p as *const Ctl;
+    let now_quit = real_quit();
+    let now_qpc = real_qpc();
+    let (dur, qpc) = unsafe { (read_dur(p), read_qpc(p)) };
+    if still_ours(p) {
+        let _ = RELEASED.set(release_axes(dur, qpc, now_quit, now_qpc));
+    }
+}
+
+/// `GetTickCount64` after the session let go of this process, or `None` while it holds it (and when
+/// nothing could be released).
+fn released_tick() -> Option<u64> {
+    RELEASED.get().map(|r| r.tick_at(real_quit()))
+}
+
+/// `QueryUnbiasedInterruptTime` after the session let go of this process, as `released_tick`.
+fn released_quit() -> Option<i64> {
+    RELEASED.get().map(|r| r.quit_at(real_quit()))
+}
 
 // --- Late module arrival --------------------------------------------------------
 //
@@ -693,6 +739,20 @@ fn real_quit() -> i64 {
             let _ = QueryUnbiasedInterruptTime(&mut t);
         }
         t as i64
+    }
+}
+
+/// The real `QueryPerformanceCounter`, through the trampoline. Only the release reads it, and only a
+/// hooked counter has anything to release - an unhooked one is never answered from `RELEASED` - so
+/// without the trampoline the answer is 0 rather than a second road to the export.
+fn real_qpc() -> i64 {
+    match O_QPC.get() {
+        Some(o) => {
+            let mut t: i64 = 0;
+            unsafe { o(&mut t) };
+            t
+        }
+        None => 0,
     }
 }
 
@@ -1150,8 +1210,11 @@ unsafe extern "system" fn h_stslex(
 /// `original` must hold this channel's trampoline, if anything.
 unsafe fn tick64_or(original: &OnceLock<TickFn>) -> u64 { unsafe {
     bump(IDX_GTC64);
+    // Once the session has let go: on from where the axis stood (rule 3), the real value only when
+    // nothing could be released.
+    let after = || released_tick().unwrap_or_else(|| original.get().map(|o| o()).unwrap_or(0));
     if detached() {
-        return original.get().map(|o| o()).unwrap_or(0);
+        return after();
     }
     match ctl_ptr() {
         Some(p) => {
@@ -1162,7 +1225,7 @@ unsafe fn tick64_or(original: &OnceLock<TickFn>) -> u64 { unsafe {
             if still_ours(p as *const Ctl) {
                 fake
             } else {
-                original.get().map(|o| o()).unwrap_or(0)
+                after()
             }
         }
         None => original.get().map(|o| o()).unwrap_or(0),
@@ -1178,8 +1241,10 @@ unsafe fn tick64_or(original: &OnceLock<TickFn>) -> u64 { unsafe {
 /// `original` must hold this channel's trampoline, if anything.
 unsafe fn tick32_or(original: &OnceLock<Tick32Fn>) -> u32 { unsafe {
     bump(IDX_GTC);
+    // The low 32 bits of the released 64-bit axis, exactly as in session.
+    let after = || released_tick().map(|t| t as u32).unwrap_or_else(|| original.get().map(|o| o()).unwrap_or(0));
     if detached() {
-        return original.get().map(|o| o()).unwrap_or(0);
+        return after();
     }
     match ctl_ptr() {
         Some(p) => {
@@ -1188,7 +1253,7 @@ unsafe fn tick32_or(original: &OnceLock<Tick32Fn>) -> u32 { unsafe {
             if still_ours(p as *const Ctl) {
                 fake
             } else {
-                original.get().map(|o| o()).unwrap_or(0)
+                after()
             }
         }
         None => original.get().map(|o| o()).unwrap_or(0),
@@ -1200,10 +1265,25 @@ unsafe extern "system" fn h_tick_kb() -> u64 { unsafe { tick64_or(&O_TICK_KB) } 
 unsafe extern "system" fn h_tick32() -> u32 { unsafe { tick32_or(&O_TICK32) } }
 unsafe extern "system" fn h_tick32_kb() -> u32 { unsafe { tick32_or(&O_TICK32_KB) } }
 
+/// `QueryUnbiasedInterruptTime` once the session has let go: on from where the axis stood (rule 3), the
+/// real call when nothing could be released or there is nowhere to write the answer.
+///
+/// # Safety
+/// `lp` is the caller's out pointer, null or writable, as the API itself requires.
+unsafe fn quit_after_session(lp: *mut u64) -> i32 { unsafe {
+    match released_quit() {
+        Some(v) if !lp.is_null() => {
+            *lp = v as u64;
+            1
+        }
+        _ => O_QUIT.get().map(|o| o(lp)).unwrap_or(0),
+    }
+}}
+
 unsafe extern "system" fn h_quit(lp: *mut u64) -> i32 { unsafe {
     bump(IDX_QUIT);
     if detached() {
-        return O_QUIT.get().map(|o| o(lp)).unwrap_or(0);
+        return quit_after_session(lp);
     }
     if !lp.is_null() {
         match ctl_ptr() {
@@ -1211,7 +1291,7 @@ unsafe extern "system" fn h_quit(lp: *mut u64) -> i32 { unsafe {
                 let (_tick_c0, dur_quit_c0, dur_q0, m) = read_dur(p as *const Ctl);
                 let fake = dur_quit_at(dur_quit_c0, dur_q0, m, real_quit()) as u64;
                 if !still_ours(p as *const Ctl) {
-                    return O_QUIT.get().map(|o| o(lp)).unwrap_or(0);
+                    return quit_after_session(lp);
                 }
                 *lp = fake;
             }
@@ -1233,6 +1313,21 @@ unsafe extern "system" fn h_quit(lp: *mut u64) -> i32 { unsafe {
 // (E4's QPC hang did not recur with the bounded seqlock reader H-2).
 type QpcFn = unsafe extern "system" fn(*mut i64) -> i32;
 static O_QPC: OnceLock<QpcFn> = OnceLock::new();
+
+/// `QueryPerformanceCounter` once the session has let go: on from where the axis stood (rule 3), the
+/// real counter when nothing could be released.
+///
+/// # Safety
+/// `lp` must be non-null and writable - `h_qpc` has already sent a null one to the original.
+unsafe fn qpc_after_session(o: QpcFn, lp: *mut i64) -> i32 { unsafe {
+    let Some(r) = RELEASED.get() else {
+        return o(lp);
+    };
+    let mut real: i64 = 0;
+    o(&mut real);
+    *lp = r.qpc_at(real);
+    1
+}}
 
 unsafe extern "system" fn h_qpc(lp: *mut i64) -> i32 { unsafe {
     // Counted like every other channel (R2-S3). QPC is the hottest clock a process calls, so the cost
@@ -1256,13 +1351,15 @@ unsafe extern "system" fn h_qpc(lp: *mut i64) -> i32 { unsafe {
             let (qpc_c0, qpc_q0, m) = read_qpc(p as *const Ctl);
             let fake = dur_qpc_at(qpc_c0, qpc_q0, m, real);
             if !still_ours(p as *const Ctl) {
-                return o(lp); // reclaimed mid-read (R2-S6): real QPC
+                return qpc_after_session(o, lp); // reclaimed mid-read (R2-S6)
             }
             *lp = fake;
             1
         }
-        // Detached (core gone) or no control block -> real QPC, so the target reverts to real time cleanly.
-        _ => o(lp),
+        // Detached (core gone): on from where the axis stood, never back to the real counter (rule 3).
+        Some(_) => qpc_after_session(o, lp),
+        // No control block (unreachable: CTL_PTR is set before these hooks install) - the real counter.
+        None => o(lp),
     }
 }}
 
@@ -1725,22 +1822,24 @@ unsafe extern "system" fn h_timesetevent(
 // Wraps at 2^32 ms like the real one, and sooner under acceleration, which is the honest behaviour of a
 // fast 32-bit counter.
 //
-// Detached or without a control block it returns the REAL value through the trampoline, so a target
-// reverts cleanly when the core goes away - the same shape as h_tick32. The None arm is unreachable
-// (make_hook fills the slot before any hook is enabled) and returns the real value too rather than
-// inventing a reading.
+// Once the core has gone it carries on from where the shared axis stood, at rate 1 - the same shape as
+// h_tick32, so the two still agree after the session. Handing back the real value there rewound it by
+// the whole acceleration (rule 3, measured 2026-09-24). The real value only when nothing could be
+// released. The None arm is unreachable (make_hook fills the slot before any hook is enabled) and
+// returns the real value rather than inventing a reading.
 unsafe extern "system" fn h_timegettime() -> u32 { unsafe {
     let real = || O_TIMEGETTIME.get().map(|o| o()).unwrap_or(0);
+    let after = || released_tick().map(|t| t as u32).unwrap_or_else(real);
     bump(IDX_TIMEGETTIME);
     if detached() {
-        return real();
+        return after();
     }
     match ctl_ptr() {
         Some(p) => {
             let (dur_tick_c0, _quit_c0, dur_q0, m) = read_dur(p as *const Ctl);
             let fake = dur_tick_at(dur_tick_c0, dur_q0, m, real_quit()) as u32;
             // Ownership checked after the read (R2-S6), exactly as the tick detours do.
-            if still_ours(p as *const Ctl) { fake } else { real() }
+            if still_ours(p as *const Ctl) { fake } else { after() }
         }
         None => real(),
     }

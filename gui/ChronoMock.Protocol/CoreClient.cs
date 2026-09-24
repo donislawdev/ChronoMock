@@ -49,6 +49,9 @@ public sealed class CoreClient : IAsyncDisposable
     private readonly object _stdinLock = new();
     private readonly Task _readLoop;
     private readonly Task _stderrDrain;
+    /// <summary>Set once the read loop has handed on the core's <c>ended</c>, the last line a core that
+    /// ended cleanly writes. Dispose waits on it before it closes the event stream.</summary>
+    private readonly TaskCompletionSource _endedRead = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private int _disposed;
 
     private CoreClient(Process process)
@@ -193,6 +196,10 @@ public sealed class CoreClient : IAsyncDisposable
                 if (evt is not null)
                 {
                     await _events.Writer.WriteAsync(evt).ConfigureAwait(false);
+                    if (evt is EndedEvent)
+                    {
+                        _endedRead.TrySetResult();
+                    }
                 }
             }
         }
@@ -274,6 +281,14 @@ public sealed class CoreClient : IAsyncDisposable
         // ends, then falls back to its 15 s idle watchdog), so the target's lifetime must not be what
         // decides when a stopped session looks stopped. Already-written events stay readable - completing
         // a channel closes it to WRITERS, not to a reader draining what is left.
+        //
+        // But only once the read loop has taken what the core wrote before it exited. Closing at once
+        // lost the tail, and the tail is the part that matters: the core writes the session verdict and
+        // `ended` last, and an event the read loop takes out of the pipe after the close is dropped.
+        // Measured over this Stop path (2026-09-24, eight runs): one lost the verdict and everything after
+        // it, another lost `ended`. `ended` is the last line of a clean end, so it is the exact signal, and
+        // a core that never wrote it costs the bounded wait instead.
+        await Task.WhenAny(_endedRead.Task, Task.Delay(DrainTimeout)).ConfigureAwait(false);
         _events.Writer.TryComplete();
 
         // Bounded join for the same reason: the read loop can be parked on ReadLineAsync for as long as
@@ -324,6 +339,12 @@ public sealed class CoreClient : IAsyncDisposable
     /// can be parked on a pipe the target still holds, so this is a bound on OUR shutdown, not on the
     /// reader - the process dispose that follows closes the stream underneath it.</summary>
     private static readonly TimeSpan JoinTimeout = TimeSpan.FromSeconds(2);
+
+    /// <summary>How long dispose lets the read loop hand on what the core wrote before it exited, when the
+    /// core's <c>ended</c> has not been read yet. Only a core that was killed, or died, before writing
+    /// <c>ended</c> waits this long - a core that ended cleanly releases the wait as soon as its last line
+    /// is read, which is a matter of milliseconds because it is already in the pipe.</summary>
+    private static readonly TimeSpan DrainTimeout = TimeSpan.FromMilliseconds(500);
 
     private async Task AwaitQuietly(Task task, TimeSpan? timeout = null)
     {

@@ -43,6 +43,21 @@ Notable changes to Chrono Mock, newest first. The format follows
 
 ### Fixed
 
+- **Ending a session sent the application's timers back, and left its web pages on the session
+  date.** A session often ends while the application keeps running: `--ticks` ran out, or the
+  session was stopped from the window. The application was then handed back the real value of every
+  clock. For the date that is the point, but with timers sped up (`--scale-duration`, or "Also speed
+  up timers and countdowns inside the application", and `--scale-qpc`) the tick count, the
+  interrupt-time counter, `timeGetTime` and the high-resolution counter went back in one step by all
+  the time the session had added - 316 seconds after a five-second session at x60, on both 32 and
+  64 bit. Web pages inside the application (WebView2, Qt WebEngine) stayed on the session date and
+  kept running at the session speed for as long as they were open, even with no option set. Now the
+  application is let go properly: the date and the time zone return to the real ones, its tick
+  counts and elapsed-time counters carry on at normal speed from where the session left them, and
+  its pages are handed back to the real clock as well. A repeating timer set while timers were sped
+  up keeps its shorter interval until it is set again. The session says that it left the
+  application running and what that means, and warns when a page did not confirm it was handed
+  back.
 - **A screen reader read the result's rows as code.** Every row of the audit's tables, every
   warning, the cleanup list, the speed and jump buttons and the calculator's lists told assistive
   technology what the row was built from rather than what it showed: a warning announced itself as

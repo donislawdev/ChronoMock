@@ -182,6 +182,15 @@ pub(crate) fn cdp_set_multiplier_expr(fake0: i64, real0: i64, mult: i64, dur: i6
     )
 }
 
+/// The JS that lets a page go when the session ends and the application lives on: the wall back on the
+/// real clock and the duration axis on from where it stands at rate 1, the same thing the hook does for
+/// the host once its core is gone. It is a rate change like any other, so `performance.now` is
+/// re-anchored at the old rate first and never steps back (rule 3). The origin is `0` on both sides on
+/// purpose: with the rate at 1, any instant where fake equals real puts the wall on the real clock.
+pub(crate) fn cdp_release_expr() -> String {
+    cdp_set_multiplier_expr(0, 0, 1, 1)
+}
+
 /// The JS to push a new wall origin into a context's `__chronomock` for a jump - wall only - the rate
 /// and the duration axis are untouched, so a backward jump never rewinds elapsed time (rule 3).
 pub(crate) fn cdp_jump_expr(fake0: i64, real0: i64) -> String {

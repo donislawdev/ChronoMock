@@ -25,7 +25,7 @@ use chrono_proto::{ReachedEngine, TargetSpec};
 
 use crate::cdp;
 use crate::cdp_attach::{Attacher, AttacherOutcome, Pumped, ShimOrigin};
-use crate::cdp_clock::{cdp_jump_expr, cdp_set_multiplier_expr, drift_ms};
+use crate::cdp_clock::{cdp_jump_expr, cdp_release_expr, cdp_set_multiplier_expr, drift_ms};
 use crate::cdp_discover::{Discovered, Discovery, Notice};
 use crate::embedded::engine_env;
 
@@ -59,6 +59,9 @@ pub(crate) const KEY_QT_PORT_TAKEN: &str = "embedded.qt_port_taken";
 pub(crate) const KEY_ZONE_IS_HOST: &str = "embedded.zone_is_host";
 /// A WebView2 policy value in the registry was hidden by the session's variable for its duration.
 pub(crate) const KEY_REGISTRY_ARGUMENTS_HIDDEN: &str = "embedded.registry_arguments_hidden";
+/// A page still open when the session ended did not confirm it was let go, so it may keep the session
+/// clock until it is reloaded or closed.
+const KEY_PAGES_NOT_RELEASED: &str = "embedded.pages_not_released";
 
 /// What a native start needs from the channel before the target launches: the variables that make
 /// an engine open its port, the port reserved for a Qt engine, and what there already is to say.
@@ -385,6 +388,23 @@ impl EmbeddedBridge {
         self.pushed = Some(fresh);
     }
 
+    /// Let every page go before the connections close, the way the hook lets the host go: the wall
+    /// back on the real clock and the duration axis on from where it stands at rate 1. For a session
+    /// whose application outlives it - the caller decides that, a page of an application that has
+    /// exited is gone and has nothing to let go of.
+    ///
+    /// Measured before this existed (2026-09-24, WebView2 host at x60): the host went back to the real
+    /// clock at `end` and its page stayed on the session date, running on at the session rate for as
+    /// long as it lived - also with no opt-in at all, because this channel is on by default. A page
+    /// that does not confirm is named in the report rather than assumed let go (rule 6).
+    pub(crate) fn release_pages(&mut self) {
+        let expr = cdp_release_expr();
+        let unconfirmed: u32 = self.attachers.iter_mut().map(|a| a.release(&expr)).sum();
+        if unconfirmed > 0 {
+            self.warn(KEY_PAGES_NOT_RELEASED);
+        }
+    }
+
     fn broadcast(&mut self, expr: &str) {
         for attacher in &mut self.attachers {
             attacher.broadcast(expr);
@@ -397,8 +417,10 @@ impl EmbeddedBridge {
         }
     }
 
-    /// Hand over what the channel covered. Closes every connection - the shims stay in the pages,
-    /// which follow the host, and the host keeps its hooks past `end` as well.
+    /// Hand over what the channel covered. Closes every connection. A page still open keeps its shim,
+    /// which is why an application that outlives the session gets `release_pages` first. A document
+    /// loaded after this starts without the shim: its registration dies with the connection (measured
+    /// 2026-09-24, a reload after the session came back on the real clock).
     pub(crate) fn finish(mut self) -> Outcome {
         self.poll_counts();
         let mut outcome = Outcome {

@@ -579,18 +579,36 @@ pub(crate) fn native_session_warnings(
     warnings
 }
 
+/// The application was still running when the session ended: it is back on the real date, and its
+/// timers and elapsed-time counters carry on at normal speed from where the session left them.
+const KEY_LEFT_RUNNING: &str = "session.left_running";
+
+/// Whether any process of the family the hook reached is still running as the session ends - the
+/// application the tester is left with. A recycled pid reads as alive, which errs toward saying so
+/// once too often, never toward keeping quiet about a process left behind.
+fn family_left_running(session: &chrono_mech::Session, family_pids: &HashSet<u32>) -> bool {
+    session.is_alive() || family_pids.iter().any(|&pid| chrono_mech::process_is_alive(pid))
+}
+
 /// End the session and state what it did: one last fold so a late child still counts, the coverage
 /// every process ENDED with, the family verdict and `ended`. Returns the family's exit code.
 pub(crate) fn close_session(
     mut session: chrono_mech::Session,
     mut ledger: SessionLedger,
-    bridge: EmbeddedBridge,
+    mut bridge: EmbeddedBridge,
     target_exit: Option<i32>,
 ) -> i32 {
     // Final fold so a child that joined since the last heartbeat still counts in the family.
     ledger.poll(&mut session);
     let SessionLedger { mut family, family_pids, uncovered_children, clock_clamped, duration_clamped } =
         ledger;
+    // The application may outlive the session - a `--ticks` cutoff, a Stop in the panel - and the
+    // session does not stop it (docs/01 section 8.4). It lets it go instead, and the pages have to be
+    // let go while their connections are still open, so this comes before `finish`.
+    let left_running = family_left_running(&session, &family_pids);
+    if left_running {
+        bridge.release_pages();
+    }
     // What the pages inside the application did, folded into the family like any process: a page
     // shimmed and reading time is covered, one refused or failed is not, and none at all judges
     // nothing (docs/09 section 12.7).
@@ -632,6 +650,13 @@ pub(crate) fn close_session(
         }
     }
     let zone_differs = session.state().tz_bias != chrono_mech::host_tz_bias_min();
+    // Rate 1 before the core leaves, after everything `ended` reports has been read. Each process of
+    // the family freezes its duration axes when its hook sees the core gone (`release_duration_axes`),
+    // and at rate 1 every one of them freezes on the same line whenever its watcher happens to wake -
+    // at the session rate they would disagree by the rate times the gap between two wake-ups.
+    if left_running {
+        session.set_multiplier(1);
+    }
     session.end();
     // The sticky flag OR the final sample, so a session too short to have emitted a heartbeat still
     // reports a clamped clock.
@@ -645,6 +670,9 @@ pub(crate) fn close_session(
     reconcile_engine_warnings(&mut children_warnings, pages.pages_reached());
     session_warnings.extend(children_warnings);
     session_warnings.extend(pages.session_warnings(zone_differs));
+    if left_running {
+        session_warnings.push(KEY_LEFT_RUNNING.to_string());
+    }
     // The wire names the first UNCOVERED_CHILDREN_WIRE_MAX and carries the true total beside them.
     // The image name is text from the target's world, so it passes the same sieve as everything
     // else the target writes before it reaches a terminal or the panel.
