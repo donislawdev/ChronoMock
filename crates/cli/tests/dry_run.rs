@@ -15,6 +15,19 @@
 
 use std::path::PathBuf;
 use std::process::Command;
+use std::sync::{Mutex, MutexGuard};
+
+/// Held by every test here that drives a REAL session. The core allows one session at a time, and
+/// the tests of one file run on parallel threads, so two real runs side by side had the second
+/// refused with "another session's core is running" - seen on the third run of this file after the
+/// second real session came in, having passed the two before it.
+static REAL_SESSION: Mutex<()> = Mutex::new(());
+
+/// The lock, whether or not a test holding it before has failed - a failure there says nothing
+/// about the next session, and a poisoned lock would turn one red test into several.
+fn one_real_session_at_a_time() -> MutexGuard<'static, ()> {
+    REAL_SESSION.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+}
 
 /// The command interpreter, by full path.
 fn command_interpreter() -> String {
@@ -100,6 +113,7 @@ fn the_same_command_line_without_the_flag_does_start_the_target() {
         library.display()
     );
 
+    let _session = one_real_session_at_a_time();
     let dir = scratch("starts-something");
     let marker = dir.join("the-target-ran");
 
@@ -192,6 +206,101 @@ fn every_committed_runner_builds_the_debug_artifacts_before_it_runs_the_tests() 
              not building them: the session probe reads the directory as it is when it runs"
         );
     }
+}
+
+/// A plan refuses what the run would refuse, with the code the run gives for it (docs/08 section 8):
+/// a moment the core cannot read exits 1 in the core's own words, and a file Windows will not start
+/// exits 2. Both used to exit 0 with a plan calling them sound - measured, while the real run refused
+/// both. A batch script is the control: `CreateProcessW` starts one through the command interpreter,
+/// so a plan that refused it would be wrong the other way.
+#[test]
+fn a_plan_refuses_what_the_run_would_refuse_and_nothing_else() {
+    let target = command_interpreter();
+    for (at, words) in [
+        ("2038-13-45T00:00:00", "month out of range"),
+        ("2030-02-30T00:00:00", "day 30 out of range for month 2"),
+        ("2030-02-28T25:61:00", "hour 25 out of range"),
+    ] {
+        let out = Command::new(env!("CARGO_BIN_EXE_chrono"))
+            .args(["run", &target, "--at", at, "--dry-run"])
+            .output()
+            .expect("the tool must run");
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert_eq!(out.status.code(), Some(1), "{at}: {stderr}");
+        assert!(stderr.contains(words), "{at}: the refusal must name the field: {stderr}");
+        assert!(
+            !String::from_utf8_lossy(&out.stdout).contains("Nothing was started"),
+            "{at}: no plan is printed for a moment that cannot be"
+        );
+    }
+
+    let dir = scratch("not-a-program");
+    let note = dir.join("note.txt");
+    std::fs::write(&note, "a note, not a program").expect("a text file");
+    let out = Command::new(env!("CARGO_BIN_EXE_chrono"))
+        .args(["run", &note.display().to_string(), "--at", "2038-01-19T03:14:07", "--dry-run"])
+        .output()
+        .expect("the tool must run");
+    assert_eq!(out.status.code(), Some(2), "{}", String::from_utf8_lossy(&out.stdout));
+    assert!(
+        String::from_utf8_lossy(&out.stderr).contains("not a program Windows can start"),
+        "the reason must be on stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    let script = dir.join("script.bat");
+    std::fs::write(&script, "@echo off\r\n").expect("a batch script");
+    let out = Command::new(env!("CARGO_BIN_EXE_chrono"))
+        .args(["run", &script.display().to_string(), "--at", "2038-01-19T03:14:07", "--dry-run"])
+        .output()
+        .expect("the tool must run");
+    assert_eq!(out.status.code(), Some(0), "a batch script is started by Windows: {}", String::from_utf8_lossy(&out.stderr));
+
+    // A library is a whole PE image, and still not a program: its header says so, and Windows
+    // refuses it. The state, not only the code, because a missing file exits 2 as well.
+    let library = injected_library();
+    assert!(library.is_file(), "this needs {}, which `cargo test` does not build", library.display());
+    let out = Command::new(env!("CARGO_BIN_EXE_chrono"))
+        .args(["run", &library.display().to_string(), "--at", "2038-01-19T03:14:07", "--dry-run", "--json"])
+        .output()
+        .expect("the tool must run");
+    let plan = String::from_utf8_lossy(&out.stdout);
+    assert_eq!(out.status.code(), Some(2), "{plan}");
+    assert!(plan.contains(r#""state":"not_a_program""#), "a library is not a program: {plan}");
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// The premise under the refusal above, checked on a real run: the text file and the library really
+/// do fail to launch with exit 2. Should the core ever start such a file, the plan's refusal would
+/// become the lie, and this is what would say so.
+#[test]
+fn a_real_run_of_a_file_windows_will_not_start_exits_two() {
+    let library = injected_library();
+    assert!(
+        library.is_file(),
+        "this probe drives a real session and needs {}, which `cargo test` does not build. \
+         Run `cargo build --workspace` first - CI and tools/gates.ps1 both do that now.",
+        library.display()
+    );
+    let _session = one_real_session_at_a_time();
+    let dir = scratch("real-not-a-program");
+    let note = dir.join("note.txt");
+    std::fs::write(&note, "a note, not a program").expect("a text file");
+    for target in [note.display().to_string(), library.display().to_string()] {
+        let out = Command::new(env!("CARGO_BIN_EXE_chrono"))
+            .args(["run", &target, "--at", "2038-01-19T03:14:07", "--ticks", "1"])
+            .output()
+            .expect("the tool must run");
+        assert_eq!(
+            out.status.code(),
+            Some(2),
+            "{target}: stdout: {} stderr: {}",
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr)
+        );
+    }
+    let _ = std::fs::remove_dir_all(&dir);
 }
 
 /// A path with a directory component that holds no file is a fact the plan can establish without

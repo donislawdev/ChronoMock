@@ -158,9 +158,16 @@ const ALLOWED: &[(&str, &str, &str)] = &[
     (
         "crates/cli/tests/dry_run.rs",
         "spawn",
-        "the dry-run guard runs the built binary twice over: once with --dry-run, which must start \
-         nothing, and once without it, which must start the target - the second is what proves the \
-         first can fail. Neither reaches past this machine",
+        "the dry-run guard runs the built binary: with --dry-run, which must start nothing and must \
+         refuse what a real run refuses, and without it, which must start the target or fail to \
+         launch a file Windows will not start - the real runs are what prove the plans can fail. \
+         None reaches past this machine",
+    ),
+    (
+        "crates/cli/tests/usage.rs",
+        "spawn",
+        "runs the built binary to ask it for help and to give it a flag without a value, and reads \
+         what it answers. It starts no target and reaches nothing past this machine",
     ),
     (
         "crates/cli/tests/session_clock.rs",

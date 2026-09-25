@@ -56,6 +56,11 @@ const LABEL: usize = 12;
 enum TargetPath {
     /// A file is there, at the absolute path the session would use.
     Found(PathBuf),
+    /// A file is there, and Windows will not start it: its header is missing, cut short or a
+    /// library's, and it is not a batch script. Measured: the real run exits 2 with `CreateProcessW`
+    /// failing on a text file, an empty `.exe`, two bytes of `MZ` and this tool's own hook library,
+    /// while this plan used to call all four sound and exit 0.
+    NotAProgram(PathBuf),
     /// No file of that name, and the mechanism that would run it does not search anywhere else.
     Missing,
     /// A bare name on the Chromium path, which resolves it through PATH itself.
@@ -67,6 +72,7 @@ impl TargetPath {
     fn key(&self) -> &'static str {
         match self {
             TargetPath::Found(_) => "found",
+            TargetPath::NotAProgram(_) => "not_a_program",
             TargetPath::Missing => "missing",
             TargetPath::Unchecked => "unchecked",
         }
@@ -86,14 +92,35 @@ fn inspect_target(target: &str, chromium: bool) -> TargetPath {
     if path.is_file() {
         // The absolute path, so the plan names the file the session would open rather than whatever
         // the shell's current directory made of it.
-        let canonical = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
-        return TargetPath::Found(readable(canonical));
+        let canonical = readable(std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf()));
+        return if windows_would_start(path) { TargetPath::Found(canonical) } else { TargetPath::NotAProgram(canonical) };
     }
     if chromium && is_bare_name(target) {
         TargetPath::Unchecked
     } else {
         TargetPath::Missing
     }
+}
+
+/// Whether `CreateProcessW` would start this file, which both mechanisms end in: a program's PE image,
+/// or a batch script. A file that could not be read gets the benefit of the doubt - the plan does not
+/// know, so it does not refuse (untouchable rule 4).
+///
+/// A batch script it starts through the command interpreter itself, although Microsoft Learn says the
+/// caller must start `cmd.exe /c` for it. Measured with a script that writes down what it received:
+/// it runs and gets its arguments, spaces in its path or name included. Except when an argument
+/// carries quotes - the interpreter Windows starts then strips the first quote and the last one on
+/// the line, and cannot find the script. That is a fact about the launch, not about the file, so the
+/// plan does not refuse it here.
+///
+/// Only WHETHER it is a program, never its bitness - see `mechanism_text` for why the header's
+/// machine field is not trusted here.
+fn windows_would_start(path: &Path) -> bool {
+    let batch = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|e| e.eq_ignore_ascii_case("bat") || e.eq_ignore_ascii_case("cmd"));
+    batch || crate::pe::is_pe_image(path) != Some(false)
 }
 
 /// The canonical path without the extended-length prefix Windows answers `canonicalize` with. That
@@ -129,8 +156,9 @@ struct Plan<'a> {
     zone_bias_min: i32,
 }
 
-/// Print the plan and start nothing. Exit 0, except for a path that definitely leads to no file,
-/// which exits 2 - the code a real run would give for the same fact (docs/08 section 8).
+/// Print the plan and start nothing. Exit 0, except for a path that definitely leads to no file or
+/// to a file Windows will not start, which exits 2 - the code a real run gives for the same fact
+/// (docs/08 section 8).
 pub(super) fn dry_run(ra: &RunArgs, spec: &TimeSpec, origin: &TimeOrigin, now_bias: i32) -> i32 {
     // The same pure function the core calls, so the plan names the mechanism the core would choose
     // and not one worked out a second way (ADR-9).
@@ -160,6 +188,13 @@ pub(super) fn dry_run(ra: &RunArgs, spec: &TimeSpec, origin: &TimeOrigin, now_bi
         );
         return 2;
     }
+    if let TargetPath::NotAProgram(path) = &plan.target {
+        eprintln!(
+            "chrono: '{}' is not a program Windows can start - its header is missing, cut short or a library's, and it is not a batch script - so a real run would fail to launch it (exit 2)",
+            path.display()
+        );
+        return 2;
+    }
     0
 }
 
@@ -177,6 +212,10 @@ fn target_block(p: &Plan) -> String {
     let mut out = String::new();
     match &p.target {
         TargetPath::Found(path) => out.push_str(&line("target", &path.display().to_string())),
+        TargetPath::NotAProgram(path) => {
+            out.push_str(&line("target", &path.display().to_string()));
+            out.push_str(&note("not a program Windows can start - its header is missing, cut short or a library's, and it is not a batch script"));
+        }
         TargetPath::Missing => {
             out.push_str(&line("target", &p.ra.target));
             out.push_str(&note("there is no file here by that name"));
@@ -207,6 +246,9 @@ fn target_block(p: &Plan) -> String {
 fn mechanism_text(p: &Plan) -> String {
     if p.target == TargetPath::Missing {
         return "not decided - a mechanism is chosen from the target's own folder".to_string();
+    }
+    if matches!(p.target, TargetPath::NotAProgram(_)) {
+        return "none - neither mechanism can start this file".to_string();
     }
     if p.chromium {
         return "Chromium or Electron over CDP - the folder carries the Chromium runtime".to_string();
@@ -428,7 +470,7 @@ fn render_json(p: &Plan) -> String {
         target: TargetJson {
             path: &p.ra.target,
             resolved: match &p.target {
-                TargetPath::Found(path) => Some(path.display().to_string()),
+                TargetPath::Found(path) | TargetPath::NotAProgram(path) => Some(path.display().to_string()),
                 _ => None,
             },
             state: p.target.key(),
@@ -544,6 +586,27 @@ mod tests {
     /// name through PATH and so declined to judge one. It does not: the native mechanism passes the
     /// target to CreateProcessW as lpApplicationName, which Microsoft documents as never using the
     /// search path, and `chrono run notepad` exits 2 on this machine with notepad.exe on PATH twice.
+    /// A file that is there but that Windows will not start is its own state, and a batch script is
+    /// not one of them - `CreateProcessW` starts it through the command interpreter, measured.
+    #[test]
+    fn a_file_windows_will_not_start_is_not_a_program_and_a_batch_script_is() {
+        let dir = crate::testutil::unique_temp_dir("chrono-plan-not-a-program");
+        std::fs::create_dir_all(&dir).expect("scratch dir");
+        let note = dir.join("note.txt");
+        std::fs::write(&note, "not a program").expect("text file");
+        assert!(matches!(inspect_target(&note.display().to_string(), false), TargetPath::NotAProgram(_)));
+        assert!(matches!(inspect_target(&note.display().to_string(), true), TargetPath::NotAProgram(_)));
+        for script in ["run.bat", "RUN.CMD"] {
+            let path = dir.join(script);
+            std::fs::write(&path, "@echo off\r\n").expect("batch file");
+            assert!(
+                matches!(inspect_target(&path.display().to_string(), false), TargetPath::Found(_)),
+                "{script} is started by CreateProcessW, so the plan must not refuse it"
+            );
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     #[test]
     fn a_name_that_is_not_a_file_here_is_missing_whether_or_not_it_looks_like_a_path() {
         assert_eq!(inspect_target(r"C:\definitely\not\here\nothing.exe", false), TargetPath::Missing);
