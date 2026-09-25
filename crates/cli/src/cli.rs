@@ -235,10 +235,15 @@ pub(crate) fn print_usage() {
     eprintln!("usage: chrono license [--components]   (also --license)   the licence, the warranty disclaimer, and every bundled component with its version");
 }
 
+/// Whether a word is the help flag, which every command answers.
+pub(crate) fn is_help_flag(word: &str) -> bool {
+    matches!(word, "--help" | "-h")
+}
+
 /// Whether the words after a command ask for its help: `run --help`, `calc -h`. Only the FIRST word
 /// counts, because `--help` further along can be meant for the target (`--args --help`).
 pub(crate) fn asks_for_help(rest: &[String]) -> bool {
-    matches!(rest.first().map(String::as_str), Some("--help" | "-h"))
+    rest.first().is_some_and(|word| is_help_flag(word))
 }
 
 /// The usage a command was asked for, and exit 0 - it is an answer, not a refusal. `calc --help`

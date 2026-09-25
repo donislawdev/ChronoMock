@@ -209,8 +209,9 @@ pub(super) fn resolve_time_spec(ra: &RunArgs, now_bias: i32) -> Result<ResolvedT
 pub(crate) fn resolve_at(raw: &str, tz_bias_min: Option<i32>) -> Result<String, String> {
     // `--at` takes the next word whatever it is, so `--at --dry-run` handed the flag over as the
     // moment, and its leading '-' made that a relative one: the refusal then spoke of a "shift"
-    // nobody had written. No moment starts with two dashes, so the word is named as what it is.
-    if raw.starts_with("--") {
+    // nobody had written. No moment starts with two dashes, and none is spelled like the help flag
+    // (`-h` has no number), so the word is named as what it is.
+    if raw.starts_with("--") || crate::cli::is_help_flag(raw) {
         return Err(format!(
             "--at needs a moment after it, but the next word is the flag '{raw}' - write --at YYYY-MM-DDTHH:MM:SS, or a relative +N<unit>"
         ));
@@ -293,12 +294,16 @@ mod tests {
         assert_eq!(resolve_at("2038-01-19 03:14:07", Some(0)).unwrap(), "2038-01-19 03:14:07");
     }
 
-    /// `--at --dry-run` took the flag as the moment and answered with a sentence about a "shift".
+    /// `--at --dry-run` took the flag as the moment and answered with a sentence about a "shift", and
+    /// so did `--at -h`. A relative moment with a number stays one.
     #[test]
     fn a_flag_where_the_moment_should_be_is_named_as_a_flag() {
-        let e = resolve_at("--dry-run", Some(0)).unwrap_err();
-        assert!(e.contains("--at needs a moment") && e.contains("'--dry-run'"), "{e}");
-        assert!(!e.contains("shift"), "{e}");
+        for flag in ["--dry-run", "-h", "--help"] {
+            let e = resolve_at(flag, Some(0)).unwrap_err();
+            assert!(e.contains("--at needs a moment") && e.contains(&format!("'{flag}'")), "{flag}: {e}");
+            assert!(!e.contains("shift"), "{flag}: {e}");
+        }
+        assert!(resolve_at("-5h", Some(0)).is_ok(), "five hours back is a moment");
     }
 
     #[test]

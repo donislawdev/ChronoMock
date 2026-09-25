@@ -1120,26 +1120,29 @@ mod tests {
 
     /// The file date is a DATE: midnight of the day the file was created, in the session zone, the
     /// same value `--param install_date=YYYY-MM-DD` gives. It used to carry the time of day too.
+    ///
+    /// The file is given a creation time half an hour from midnight UTC on either side, so the day
+    /// itself moves with the zone: a date that ignored the zone, or read its sign backwards, lands on
+    /// the wrong day for at least one of the three.
     #[test]
     fn the_target_file_date_is_midnight_of_the_day_it_was_created() {
-        use std::os::windows::fs::MetadataExt;
-        let dir =crate::testutil::unique_temp_dir("chrono-preset-file-date");
+        use std::os::windows::fs::FileTimesExt;
+        use std::time::{Duration, UNIX_EPOCH};
+        let dir = crate::testutil::unique_temp_dir("chrono-preset-file-date");
         std::fs::create_dir_all(&dir).expect("scratch dir");
         let file = dir.join("app.exe");
         std::fs::write(&file, b"MZ").expect("file");
-        for bias in [0, -330, 480] {
-            let d = read_target_creation_date(&file.display().to_string(), Some(bias)).expect("a creation date");
-            assert_eq!((d.hour, d.minute, d.second), (0, 0, 0), "bias {bias}: {d:?}");
+        // 2030-06-15T23:30:00Z and 2030-06-15T00:30:00Z. Bias is UTC minus local: -330 is UTC+05:30,
+        // 480 is UTC-08:00.
+        let late = 1_907_796_600;
+        for (created, days) in [(late, [(0, 15), (-330, 16), (480, 15)]), (late - 23 * 3600, [(0, 15), (-330, 15), (480, 14)])] {
+            let times = std::fs::FileTimes::new().set_created(UNIX_EPOCH + Duration::from_secs(created));
+            std::fs::File::options().write(true).open(&file).expect("open").set_times(times).expect("set the creation time");
+            for (bias, day) in days {
+                let d = read_target_creation_date(&file.display().to_string(), Some(bias)).expect("a creation date");
+                assert_eq!((d.year, d.month, d.day, d.hour, d.minute, d.second), (2030, 6, day, 0, 0, 0), "created {created}, bias {bias}");
+            }
         }
-        // The day itself still follows the session zone: the file was created a moment ago, so in UTC
-        // the date is today's UTC date.
-        let today_utc = chrono_core::calc::parse_civil_datetime(&filetime_utc_to_wall(
-            std::fs::metadata(&file).unwrap().creation_time() as i64,
-            0,
-        ))
-        .unwrap();
-        let d = read_target_creation_date(&file.display().to_string(), Some(0)).unwrap();
-        assert_eq!((d.year, d.month, d.day), (today_utc.year, today_utc.month, today_utc.day));
         let _ = std::fs::remove_dir_all(&dir);
     }
 

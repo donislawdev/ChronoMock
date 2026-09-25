@@ -1,6 +1,6 @@
 //! A bounded, read-only look inside the target's own executable, for the facts the file names around
 //! it cannot give: whether the Go toolchain linked it, whether it is a .NET executable that leaves
-//! no runtime file beside it to say so, and whether it is a PE image at all.
+//! no runtime file beside it to say so, and whether its header describes a program at all.
 //!
 //! Every read is capped and every offset goes through `get`, so a truncated or hostile file answers
 //! "no" rather than panicking, and a half-gigabyte target costs a few kilobytes to ask. The one read
@@ -14,9 +14,29 @@ use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
 
-/// How much of the PE headers to read. The section table sits right behind the optional header, and
-/// four kilobytes covers it with room to spare on every binary we have measured.
+/// How much of the PE header to read, counted from where the DOS header points. The section table sits
+/// right behind the optional header, and four kilobytes covers it with room to spare on every binary
+/// we have measured.
 const HEADER_WINDOW: u64 = 4096;
+
+/// The DOS header, whose last field says where the PE header starts.
+const DOS_HEADER: u64 = 0x40;
+
+/// The four bytes the PE header starts with.
+const PE_SIGNATURE: &[u8; 4] = b"PE\0\0";
+
+/// Where the optional header starts inside the PE header: behind the signature and the twenty-byte
+/// file header.
+const OPTIONAL_AT: usize = 24;
+
+/// How much of the PE header `is_pe_image` reads: the signature, the file header, and the optional
+/// header's first field, its magic.
+const PROGRAM_HEADER: u64 = 26;
+
+/// The two file header flags that say what kind of image this is, `IMAGE_FILE_EXECUTABLE_IMAGE` and
+/// `IMAGE_FILE_DLL` in the PE format.
+const FILE_IS_EXECUTABLE: u16 = 0x0002;
+const FILE_IS_LIBRARY: u16 = 0x2000;
 
 /// The size of one section header, and of one data directory entry, as the PE format fixes them.
 const SECTION_HEADER: usize = 40;
@@ -224,60 +244,103 @@ struct ImageSpan {
     pointer: usize,
 }
 
-/// Whether the file is a PE image at all. `Some(false)` only for a file that was READ and does not
-/// carry the two signatures, `None` for one that could not be read.
+/// Whether the file's header describes a program Windows can start. `Some(false)` only for a file that
+/// was READ and whose header is missing, cut short, or a library's, `None` for one that could not be
+/// read.
+///
+/// Every refusal here is one Windows makes too, measured on synthetic images through the real run
+/// (`CreateProcessW` failing with 0x800700C1 or 0x800700D8): no `MZ`, no `PE\0\0` where the DOS header
+/// points, a file ending inside the file header, an optional header declared shorter than its magic,
+/// a magic other than PE32 or PE32+, the executable flag missing, the library flag set, a section
+/// table the file does not hold in full. The header is read where the DOS header points, however far
+/// in: Windows starts an image whose header is 4 KiB, 32 KiB and 1 MiB into the file, which the first
+/// version of this check, reading only the first four kilobytes, called "not a program". What it leaves
+/// to the real run: the machine (`run::plan` explains why that field is not trusted), the subsystem,
+/// and whether the sections behind the header are all there.
 ///
 /// The questions above lean to "no" on any doubt, because a false fingerprint accuses a target of
 /// something it does not do. This one is asked in order to REFUSE a target, so its doubt leans the
-/// other way: a file this could not read is not called "not a program" (untouchable rule 4). What it
-/// does not say is the bitness - `run::plan` explains why the header's machine field is not trusted.
+/// other way: a file this could not read is not called "not a program" (untouchable rule 4).
 pub(crate) fn is_pe_image(target_path: &Path) -> Option<bool> {
-    let (_, head) = read_head(target_path)?;
-    Some(pe_header_offset(&head).is_some())
+    let mut file = File::open(target_path).ok()?;
+    let Some(pe) = pe_pointer(&read_bytes(&mut file, 0, DOS_HEADER)?) else {
+        return Some(false);
+    };
+    let header = read_bytes(&mut file, pe, PROGRAM_HEADER)?;
+    let length = file.metadata().ok()?.len();
+    Some(names_a_program(&header, pe, length))
 }
 
-/// The file and the first `HEADER_WINDOW` bytes of it.
-fn read_head(path: &Path) -> Option<(File, Vec<u8>)> {
-    let mut file = File::open(path).ok()?;
-    let mut head: Vec<u8> = Vec::new();
-    // `take` + `read_to_end` rather than one `read`: a single read may return fewer bytes than
-    // asked for, and a short header would send the section-table offsets somewhere arbitrary.
-    file.by_ref().take(HEADER_WINDOW).read_to_end(&mut head).ok()?;
-    Some((file, head))
+/// Whether `header`, read at file offset `pe`, starts the PE header of a program: see `is_pe_image`
+/// for what each condition is and that Windows refuses a file failing it. A header shorter than
+/// `PROGRAM_HEADER` is a file ending inside it, which is a "no".
+fn names_a_program(header: &[u8], pe: u64, length: u64) -> bool {
+    names_a_program_checked(header, pe, length) == Some(true)
 }
 
-/// Where the PE header starts, when `head` carries the two signatures every PE image has: `MZ` at
-/// the front and `PE\0\0` where the DOS header's pointer says. One definition for both questions this
-/// module asks of the start of a file.
-fn pe_header_offset(head: &[u8]) -> Option<usize> {
-    if head.get(..2)? != b"MZ" {
+/// `names_a_program` with every read that can fail spelled `?`, so a short header is a "no".
+fn names_a_program_checked(header: &[u8], pe: u64, length: u64) -> Option<bool> {
+    let sections = u64::from(u16_at(header, 6)?);
+    let optional_size = u16_at(header, 20)?;
+    let flags = u16_at(header, 22)?;
+    let magic = u16_at(header, OPTIONAL_AT)?;
+    let table_end = pe + OPTIONAL_AT as u64 + u64::from(optional_size) + sections * SECTION_HEADER as u64;
+    Some(
+        header.get(..4)? == PE_SIGNATURE
+            && optional_size >= 2
+            && matches!(magic, 0x10B | 0x20B)
+            && flags & FILE_IS_EXECUTABLE != 0
+            && flags & FILE_IS_LIBRARY == 0
+            && table_end <= length,
+    )
+}
+
+/// Where the PE header starts, when `dos` begins with `MZ` and holds the DOS header's pointer.
+fn pe_pointer(dos: &[u8]) -> Option<u64> {
+    if dos.get(..2)? != b"MZ" {
         return None;
     }
-    let pe = u32_at(head, 0x3C)? as usize;
-    (head.get(pe..pe.checked_add(4)?)? == b"PE\0\0").then_some(pe)
+    u32_at(dos, 0x3C).map(u64::from)
 }
 
-/// The first four kilobytes of a PE file, checked for the two signatures, plus the open handle so the
-/// sections and directories they describe can be read.
+/// Up to `limit` bytes of the file from `offset`: fewer where the file ends first, `None` when it
+/// cannot be read.
+fn read_bytes(file: &mut File, offset: u64, limit: u64) -> Option<Vec<u8>> {
+    let mut bytes: Vec<u8> = Vec::new();
+    file.seek(SeekFrom::Start(offset)).ok()?;
+    // `take` + `read_to_end` rather than one `read`: a single read may return fewer bytes than
+    // asked for, and a short header would send the section-table offsets somewhere arbitrary.
+    file.by_ref().take(limit).read_to_end(&mut bytes).ok()?;
+    Some(bytes)
+}
+
+/// The first four kilobytes of the PE header, read from where the DOS header points and checked for
+/// its signature, plus the open handle so the sections and directories it describes can be read.
+///
+/// Offsets into `head` count from the signature. The ones the header stores (a section's raw data)
+/// count from the start of the file, and are read through the handle. The header is usually a few
+/// hundred bytes in, but Windows starts an image whose header is a megabyte in (measured), and reading
+/// from where it is rather than from the start of the file keeps such a target fingerprinted.
 struct PeFile {
     file: File,
     head: Vec<u8>,
-    optional: usize,
     optional_size: usize,
     section_count: usize,
 }
 
 impl PeFile {
     fn open(path: &Path) -> Option<Self> {
-        let (file, head) = read_head(path)?;
-        let pe = pe_header_offset(&head)?;
-        let section_count = u16_at(&head, pe.checked_add(6)?)? as usize;
-        let optional_size = u16_at(&head, pe.checked_add(20)?)? as usize;
-        let optional = pe.checked_add(24)?;
+        let mut file = File::open(path).ok()?;
+        let pe = pe_pointer(&read_bytes(&mut file, 0, DOS_HEADER)?)?;
+        let head = read_bytes(&mut file, pe, HEADER_WINDOW)?;
+        if head.get(..4)? != PE_SIGNATURE {
+            return None;
+        }
+        let section_count = u16_at(&head, 6)? as usize;
+        let optional_size = u16_at(&head, 20)? as usize;
         Some(Self {
             file,
             head,
-            optional,
             optional_size,
             section_count,
         })
@@ -285,7 +348,7 @@ impl PeFile {
 
     /// The section headers in table order, up to the first one the header window does not hold.
     fn sections(&self) -> impl Iterator<Item = Section> + '_ {
-        let table = self.optional.saturating_add(self.optional_size);
+        let table = OPTIONAL_AT.saturating_add(self.optional_size);
         (0..self.section_count).map_while(move |index| {
             let entry = table.checked_add(index.checked_mul(SECTION_HEADER)?)?;
             Some(Section {
@@ -301,12 +364,12 @@ impl PeFile {
     /// The image base and size from the optional header. PE32 keeps a four-byte base at offset 28 and
     /// PE32+ an eight-byte one at 24, and both keep the size of the image at 56.
     fn image_span(&self) -> Option<ImageSpan> {
-        let (base, pointer) = match u16_at(&self.head, self.optional)? {
-            0x10B => (u64::from(u32_at(&self.head, self.optional.checked_add(28)?)?), 4),
-            0x20B => (u64_at(&self.head, self.optional.checked_add(24)?)?, 8),
+        let (base, pointer) = match u16_at(&self.head, OPTIONAL_AT)? {
+            0x10B => (u64::from(u32_at(&self.head, OPTIONAL_AT + 28)?), 4),
+            0x20B => (u64_at(&self.head, OPTIONAL_AT + 24)?, 8),
             _ => return None,
         };
-        let size = u32_at(&self.head, self.optional.checked_add(56)?)?;
+        let size = u32_at(&self.head, OPTIONAL_AT + 56)?;
         Some(ImageSpan {
             base,
             end: base.checked_add(u64::from(size))?,
@@ -326,20 +389,17 @@ impl PeFile {
     /// four stack and heap sizes before it are eight bytes wide in PE32+. Any other magic is a shape
     /// this module does not know, so it has no directories.
     fn directory(&self, index: usize) -> Option<(u32, u32)> {
-        let (count_at, table_at) = match u16_at(&self.head, self.optional)? {
+        let (count_at, table_at) = match u16_at(&self.head, OPTIONAL_AT)? {
             0x10B => (92, 96),
             0x20B => (108, 112),
             _ => return None,
         };
-        if index >= u32_at(&self.head, self.optional.checked_add(count_at)?)? as usize {
+        if index >= u32_at(&self.head, OPTIONAL_AT + count_at)? as usize {
             return None;
         }
-        let entry = self
-            .optional
-            .checked_add(table_at)?
-            .checked_add(index.checked_mul(DATA_DIRECTORY_ENTRY)?)?;
+        let entry = (OPTIONAL_AT + table_at).checked_add(index.checked_mul(DATA_DIRECTORY_ENTRY)?)?;
         // The table lives inside the optional header, so an entry past its declared size is not one.
-        if entry.checked_add(DATA_DIRECTORY_ENTRY)? > self.optional.checked_add(self.optional_size)? {
+        if entry.checked_add(DATA_DIRECTORY_ENTRY)? > OPTIONAL_AT + self.optional_size {
             return None;
         }
         Some((u32_at(&self.head, entry)?, u32_at(&self.head, entry.checked_add(4)?)?))
@@ -358,10 +418,7 @@ impl PeFile {
     }
 
     fn read_at(&mut self, offset: u64, limit: usize) -> Option<Vec<u8>> {
-        let mut bytes: Vec<u8> = Vec::new();
-        self.file.seek(SeekFrom::Start(offset)).ok()?;
-        self.file.by_ref().take(limit as u64).read_to_end(&mut bytes).ok()?;
-        Some(bytes)
+        read_bytes(&mut self.file, offset, limit as u64)
     }
 
     /// Up to `window` bytes from the start of the named section, or `None` when there is no such
@@ -695,27 +752,91 @@ mod tests {
         }
     }
 
-    /// The one question here whose doubt leans the other way: a file read in full and missing either
-    /// signature is "not a PE", and a file that could not be read is "do not know" - never "not a PE".
+    /// A synthetic image whose file header says what a linker says about a program: an executable
+    /// image, not a library.
+    fn program(magic: u16) -> Vec<u8> {
+        let mut pe = synthetic_pe(magic, b".text\0\0\0", b"\x31\xc0\xc3", None);
+        pe[0x80 + 22..0x80 + 24].copy_from_slice(&FILE_IS_EXECUTABLE.to_le_bytes());
+        pe
+    }
+
+    /// The same image with its PE header moved to `to`, where the DOS header then points. The section
+    /// table still names the section where it was, so only the header's place changes - the shape of
+    /// an image Windows starts with its header 4 KiB, 32 KiB and 1 MiB in (measured).
+    fn header_moved(pe: &[u8], to: usize) -> Vec<u8> {
+        let header = pe[0x80..RAW].to_vec();
+        let mut moved = pe.to_vec();
+        moved[0x80..RAW].fill(0);
+        moved.resize(moved.len().max(to + header.len()), 0);
+        moved[to..to + header.len()].copy_from_slice(&header);
+        moved[0x3C..0x40].copy_from_slice(&(to as u32).to_le_bytes());
+        moved
+    }
+
+    /// The one question here whose doubt leans the other way: a file read in full whose header is
+    /// missing, cut short or a library's is "not a program", every one of them a file Windows refuses
+    /// to start (measured), and a file that could not be read is "do not know" - never "not a program".
     #[test]
-    fn only_a_file_read_in_full_is_called_not_a_pe_image() {
-        let pe = write_probe("is-pe", &synthetic_pe(0, b".data\0\0\0", b"anything", None));
-        assert_eq!(is_pe_image(&pe), Some(true));
-        let text = write_probe("text", b"this is a note, not a program");
-        assert_eq!(is_pe_image(&text), Some(false));
-        let empty = write_probe("empty", b"");
-        assert_eq!(is_pe_image(&empty), Some(false));
-        // Both signatures are required: `MZ` alone is a DOS stub or a truncated file, and Windows
-        // refuses to start either (measured: two bytes of MZ exit 2 with 0x800700D8).
-        let stub = write_probe("mz-only", b"MZ\0\0");
-        assert_eq!(is_pe_image(&stub), Some(false));
-        let mut no_pe = synthetic_pe(0, b".data\0\0\0", b"anything", None);
-        let at = u32_at(&no_pe, 0x3C).unwrap() as usize;
-        no_pe[at..at + 4].copy_from_slice(b"NE\0\0");
-        let no_pe = write_probe("mz-without-pe", &no_pe);
-        assert_eq!(is_pe_image(&no_pe), Some(false));
+    fn only_a_file_whose_header_describes_a_program_is_called_one() {
+        let mut probes = Vec::new();
+        let mut says = |name: &str, bytes: &[u8], expected: Option<bool>| {
+            let path = write_probe(name, bytes);
+            assert_eq!(is_pe_image(&path), expected, "{name}");
+            probes.push(path);
+        };
+        says("pe32plus", &program(0x20B), Some(true));
+        says("pe32", &program(0x10B), Some(true));
+        // Wherever the DOS header points: the first version read only the first four kilobytes, and
+        // called an image Windows starts "not a program".
+        says("header-at-4k", &header_moved(&program(0x20B), 0x1100), Some(true));
+        says("header-at-1m", &header_moved(&program(0x20B), 0x10_0000), Some(true));
+
+        says("text", b"this is a note, not a program", Some(false));
+        says("empty", b"", Some(false));
+        // `MZ` alone is a DOS stub or a truncated file (measured: 0x800700D8).
+        says("mz-only", b"MZ\0\0", Some(false));
+        let mut ne = program(0x20B);
+        ne[0x80..0x84].copy_from_slice(b"NE\0\0");
+        says("mz-without-pe", &ne, Some(false));
+
+        // Cut short: right behind the signature, inside the file header, inside the section table.
+        let whole = program(0x20B);
+        says("cut-after-signature", &whole[..0x80 + 4], Some(false));
+        says("cut-in-file-header", &whole[..0x80 + 20], Some(false));
+        says("cut-in-section-table", &whole[..0x80 + 24 + 240 + 20], Some(false));
+
+        // Whole, and not a program.
+        let with_flags = |flags: u16| {
+            let mut pe = program(0x20B);
+            pe[0x80 + 22..0x80 + 24].copy_from_slice(&flags.to_le_bytes());
+            pe
+        };
+        says("library", &with_flags(FILE_IS_EXECUTABLE | FILE_IS_LIBRARY), Some(false));
+        says("not-executable", &with_flags(0x0020), Some(false));
+        for magic in [0u16, 0x107] {
+            let mut other = program(0x20B);
+            other[0x80 + 24..0x80 + 26].copy_from_slice(&magic.to_le_bytes());
+            says(&format!("magic-{magic:x}"), &other, Some(false));
+        }
+        let mut no_optional = program(0x20B);
+        no_optional[0x80 + 20..0x80 + 22].copy_from_slice(&0u16.to_le_bytes());
+        says("optional-size-zero", &no_optional, Some(false));
+
         assert_eq!(is_pe_image(Path::new("no such file anywhere.exe")), None);
-        for p in [pe, text, empty, stub, no_pe] {
+        for p in probes {
+            let _ = std::fs::remove_file(p);
+        }
+    }
+
+    /// The fingerprints read the header where the DOS header points too. Reading only the first four
+    /// kilobytes left an image Windows starts, with its header further in, without its caution.
+    #[test]
+    fn a_header_far_into_the_file_is_still_fingerprinted() {
+        let go = write_probe("go-far", &header_moved(&synthetic_pe(0, b".data\0\0\0", &go_blob(), None), 0x1100));
+        assert!(is_go_binary(&go), "the header 4 KiB in");
+        let aot = write_probe("aot-far", &header_moved(&exporting(0x20B, &[b"DotNetRuntimeDebugHeader"]), 0x8000));
+        assert!(is_dotnet_executable(&aot), "the header 32 KiB in");
+        for p in [go, aot] {
             let _ = std::fs::remove_file(p);
         }
     }

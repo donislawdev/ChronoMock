@@ -56,9 +56,10 @@ const LABEL: usize = 12;
 enum TargetPath {
     /// A file is there, at the absolute path the session would use.
     Found(PathBuf),
-    /// A file is there, and Windows will not start it: no PE image and no batch script. Measured:
-    /// the real run exits 2 with `CreateProcessW` failing on a text file, an empty `.exe` and two
-    /// bytes of `MZ`, while this plan used to call all three sound and exit 0.
+    /// A file is there, and Windows will not start it: its header is missing, cut short or a
+    /// library's, and it is not a batch script. Measured: the real run exits 2 with `CreateProcessW`
+    /// failing on a text file, an empty `.exe`, two bytes of `MZ` and this tool's own hook library,
+    /// while this plan used to call all four sound and exit 0.
     NotAProgram(PathBuf),
     /// No file of that name, and the mechanism that would run it does not search anywhere else.
     Missing,
@@ -101,12 +102,18 @@ fn inspect_target(target: &str, chromium: bool) -> TargetPath {
     }
 }
 
-/// Whether `CreateProcessW` would start this file, which both mechanisms end in: a PE image, or a
-/// batch script, which it hands to the command interpreter itself (measured: `chrono run x.bat` starts
-/// the script and exits 12 when it ends at once). A file that could not be read gets the benefit of
-/// the doubt - the plan does not know, so it does not refuse (untouchable rule 4).
+/// Whether `CreateProcessW` would start this file, which both mechanisms end in: a program's PE image,
+/// or a batch script. A file that could not be read gets the benefit of the doubt - the plan does not
+/// know, so it does not refuse (untouchable rule 4).
 ///
-/// Only WHETHER it is a PE image, never its bitness - see `mechanism_text` for why the header's
+/// A batch script it starts through the command interpreter itself, although Microsoft Learn says the
+/// caller must start `cmd.exe /c` for it. Measured with a script that writes down what it received:
+/// it runs and gets its arguments, spaces in its path or name included. Except when an argument
+/// carries quotes - the interpreter Windows starts then strips the first quote and the last one on
+/// the line, and cannot find the script. That is a fact about the launch, not about the file, so the
+/// plan does not refuse it here.
+///
+/// Only WHETHER it is a program, never its bitness - see `mechanism_text` for why the header's
 /// machine field is not trusted here.
 fn windows_would_start(path: &Path) -> bool {
     let batch = path
@@ -183,7 +190,7 @@ pub(super) fn dry_run(ra: &RunArgs, spec: &TimeSpec, origin: &TimeOrigin, now_bi
     }
     if let TargetPath::NotAProgram(path) = &plan.target {
         eprintln!(
-            "chrono: '{}' is not a program Windows can start - no executable header, and not a batch script - so a real run would fail to launch it (exit 2)",
+            "chrono: '{}' is not a program Windows can start - its header is missing, cut short or a library's, and it is not a batch script - so a real run would fail to launch it (exit 2)",
             path.display()
         );
         return 2;
@@ -207,7 +214,7 @@ fn target_block(p: &Plan) -> String {
         TargetPath::Found(path) => out.push_str(&line("target", &path.display().to_string())),
         TargetPath::NotAProgram(path) => {
             out.push_str(&line("target", &path.display().to_string()));
-            out.push_str(&note("not a program Windows can start - no executable header, and not a batch script"));
+            out.push_str(&note("not a program Windows can start - its header is missing, cut short or a library's, and it is not a batch script"));
         }
         TargetPath::Missing => {
             out.push_str(&line("target", &p.ra.target));

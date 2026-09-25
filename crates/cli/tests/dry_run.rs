@@ -256,12 +256,24 @@ fn a_plan_refuses_what_the_run_would_refuse_and_nothing_else() {
         .expect("the tool must run");
     assert_eq!(out.status.code(), Some(0), "a batch script is started by Windows: {}", String::from_utf8_lossy(&out.stderr));
 
+    // A library is a whole PE image, and still not a program: its header says so, and Windows
+    // refuses it. The state, not only the code, because a missing file exits 2 as well.
+    let library = injected_library();
+    assert!(library.is_file(), "this needs {}, which `cargo test` does not build", library.display());
+    let out = Command::new(env!("CARGO_BIN_EXE_chrono"))
+        .args(["run", &library.display().to_string(), "--at", "2038-01-19T03:14:07", "--dry-run", "--json"])
+        .output()
+        .expect("the tool must run");
+    let plan = String::from_utf8_lossy(&out.stdout);
+    assert_eq!(out.status.code(), Some(2), "{plan}");
+    assert!(plan.contains(r#""state":"not_a_program""#), "a library is not a program: {plan}");
+
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-/// The premise under the refusal above, checked on a real run: the text file really does fail to
-/// launch with exit 2. Should the core ever start such a file, the plan's refusal would become the
-/// lie, and this is what would say so.
+/// The premise under the refusal above, checked on a real run: the text file and the library really
+/// do fail to launch with exit 2. Should the core ever start such a file, the plan's refusal would
+/// become the lie, and this is what would say so.
 #[test]
 fn a_real_run_of_a_file_windows_will_not_start_exits_two() {
     let library = injected_library();
@@ -275,17 +287,19 @@ fn a_real_run_of_a_file_windows_will_not_start_exits_two() {
     let dir = scratch("real-not-a-program");
     let note = dir.join("note.txt");
     std::fs::write(&note, "a note, not a program").expect("a text file");
-    let out = Command::new(env!("CARGO_BIN_EXE_chrono"))
-        .args(["run", &note.display().to_string(), "--at", "2038-01-19T03:14:07", "--ticks", "1"])
-        .output()
-        .expect("the tool must run");
-    assert_eq!(
-        out.status.code(),
-        Some(2),
-        "stdout: {} stderr: {}",
-        String::from_utf8_lossy(&out.stdout),
-        String::from_utf8_lossy(&out.stderr)
-    );
+    for target in [note.display().to_string(), library.display().to_string()] {
+        let out = Command::new(env!("CARGO_BIN_EXE_chrono"))
+            .args(["run", &target, "--at", "2038-01-19T03:14:07", "--ticks", "1"])
+            .output()
+            .expect("the tool must run");
+        assert_eq!(
+            out.status.code(),
+            Some(2),
+            "{target}: stdout: {} stderr: {}",
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr)
+        );
+    }
     let _ = std::fs::remove_dir_all(&dir);
 }
 

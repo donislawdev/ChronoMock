@@ -43,24 +43,27 @@ fn every_way_of_asking_for_help_is_answered_with_usage_and_exit_zero() {
 }
 
 /// Only the first word after a command asks for its help. Further along, `--help` can belong to the
-/// target, and taking it as a question would replace the session with a usage text.
+/// target, and taking it as a question would replace the session with a usage text. The plan names
+/// the arguments the application would receive, so it shows `--help` arriving there - the tool itself
+/// as the target, because the plan has to find a program to print one.
 #[test]
 fn a_help_flag_meant_for_the_target_is_passed_on_and_not_answered() {
-    let out = chrono(&["run", r"C:\definitely\not\here\app.exe", "--args", "--help", "--dry-run"]);
-    assert_eq!(
-        out.status.code(),
-        Some(2),
-        "the plan must be resolved (and refuse the missing target), not replaced by usage: {}",
-        text(&out)
-    );
+    let out = chrono(&["run", env!("CARGO_BIN_EXE_chrono"), "--args", "--help", "--dry-run", "--json"]);
+    let said = text(&out);
+    assert_eq!(out.status.code(), Some(0), "the plan, not the usage: {said}");
+    assert!(said.contains(r#""args":["--help"]"#), "the application must be handed --help: {said}");
+    assert!(!said.contains("usage:"), "{said}");
 }
 
-/// `--at` takes the next word, so `--at --dry-run` gave it a flag. The refusal names the flag.
+/// `--at` takes the next word, so `--at --dry-run` gave it a flag, and `--at -h` the help flag, whose
+/// dash made it a relative moment. The refusal names the flag.
 #[test]
 fn a_flag_where_the_moment_should_be_is_named_as_a_flag() {
-    let out = chrono(&["run", r"C:\definitely\not\here\app.exe", "--at", "--dry-run"]);
-    let said = text(&out);
-    assert_eq!(out.status.code(), Some(1), "{said}");
-    assert!(said.contains("--at needs a moment") && said.contains("'--dry-run'"), "{said}");
-    assert!(!said.contains("shift needs"), "{said}");
+    for flag in ["--dry-run", "-h"] {
+        let out = chrono(&["run", r"C:\definitely\not\here\app.exe", "--at", flag]);
+        let said = text(&out);
+        assert_eq!(out.status.code(), Some(1), "{flag}: {said}");
+        assert!(said.contains("--at needs a moment") && said.contains(&format!("'{flag}'")), "{flag}: {said}");
+        assert!(!said.contains("shift needs"), "{flag}: {said}");
+    }
 }
