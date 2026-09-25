@@ -256,6 +256,19 @@ fn a_plan_refuses_what_the_run_would_refuse_and_nothing_else() {
         .expect("the tool must run");
     assert_eq!(out.status.code(), Some(0), "a batch script is started by Windows: {}", String::from_utf8_lossy(&out.stderr));
 
+    // The same script given a launch the interpreter would not run (a line break that cuts its line
+    // short, a line longer than it takes): the plan refuses both too, with the code the run gives
+    // (batch_script.rs).
+    for (args, why) in [("\"a\nb\"".to_string(), "line break"), ("a".repeat(8200), "8191")] {
+        let out = Command::new(env!("CARGO_BIN_EXE_chrono"))
+            .args(["run", &script.display().to_string(), "--args", &args, "--at", "2038-01-19T03:14:07", "--dry-run"])
+            .output()
+            .expect("the tool must run");
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert_eq!(out.status.code(), Some(2), "{why}: {stderr}");
+        assert!(stderr.contains(why), "{why}: {stderr}");
+    }
+
     // A library is a whole PE image, and still not a program: its header says so, and Windows
     // refuses it. The state, not only the code, because a missing file exits 2 as well.
     let library = injected_library();

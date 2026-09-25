@@ -11,11 +11,13 @@
 //! The tool injects its OWN probes on the host - injecting into third-party or system
 //! processes stays on the VM or requires explicit consent.
 
+mod batch;
 mod environment;
 mod listeners;
 mod policy;
 mod tree;
 
+pub use batch::{batch_launch_problem, is_batch_script};
 pub use environment::{current_environment, encode_block, environment_block, merge_entries};
 pub use listeners::{listening_sockets, Listener, IPV4_ANY_ADDR, IPV4_LOOPBACK_ADDR};
 pub use policy::webview2_arguments_policy_present;
@@ -645,11 +647,10 @@ impl Drop for PlainChild {
 /// hooked launch builds, the working folder, and the same environment treatment. The one way a
 /// probe starts a host the channel then has to find.
 pub fn launch_plain(target: &Target) -> Result<PlainChild, String> {
+    let (mut app, mut cmdline) = launch_line(target)?;
     // SAFETY: the same call `prepare` makes with the same buffers, minus the suspend flag. The
     // thread handle is closed at once - nothing here resumes or inspects the thread.
     unsafe {
-        let mut app = to_wide(target.path);
-        let mut cmdline = build_command_line(target.path, target.args);
         let cwd_wide = target.cwd.map(to_wide);
         let cwd_ptr = cwd_wide
             .as_ref()
@@ -678,6 +679,17 @@ pub fn launch_plain(target: &Target) -> Result<PlainChild, String> {
         let _ = CloseHandle(pi.hThread);
         Ok(PlainChild { pid: pi.dwProcessId, handle: pi.hProcess })
     }
+}
+
+/// The application and the command line `CreateProcessW` is given for a target: the target itself
+/// with its arguments quoted for the C runtime, or, for a batch script, the command interpreter with
+/// the script and its arguments quoted for it (see `batch`). One definition for both launches.
+fn launch_line(target: &Target) -> Result<(Vec<u16>, Vec<u16>), String> {
+    if is_batch_script(Path::new(target.path)) {
+        let (app, line) = batch::interpreter_line(target.path, target.args)?;
+        return Ok((to_wide(&app), to_wide(&line)));
+    }
+    Ok((to_wide(target.path), build_command_line(target.path, target.args)))
 }
 
 /// The `lpEnvironment` argument and its creation flag for a launch: null and no flag when there is
@@ -1109,6 +1121,9 @@ pub fn prepare(spec: &SessionSpec, target: &Target, hook_dll: &Path) -> Result<P
         TimeMode::Multiplier(m) => m,
     };
     let dll_wide = to_wide(&hook_dll.to_string_lossy());
+    // Before the lock and the control block, so a target that cannot be given its command line leaves
+    // nothing behind to undo.
+    let (mut app, mut cmdline) = launch_line(target).map_err(PrepareError::Launch)?;
 
     unsafe {
         // 0. Session lock, before anything shared is touched. Everything below - the decision to
@@ -1183,8 +1198,6 @@ pub fn prepare(spec: &SessionSpec, target: &Target, hook_dll: &Path) -> Result<P
         write_core_pid(ctl, GetCurrentProcessId());
 
         // 2. Launch SUSPENDED so the hook lands before the first instruction.
-        let mut app = to_wide(target.path);
-        let mut cmdline = build_command_line(target.path, target.args);
         let cwd_wide = target.cwd.map(to_wide);
         let cwd_ptr = cwd_wide
             .as_ref()

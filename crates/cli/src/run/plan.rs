@@ -102,25 +102,15 @@ fn inspect_target(target: &str, chromium: bool) -> TargetPath {
     }
 }
 
-/// Whether `CreateProcessW` would start this file, which both mechanisms end in: a program's PE image,
-/// or a batch script. A file that could not be read gets the benefit of the doubt - the plan does not
+/// Whether the session can start this file: a program's PE image, or a batch script, which both
+/// mechanisms start through the command interpreter (`chrono_mech::is_batch_script`, the same test
+/// the launch makes). A file that could not be read gets the benefit of the doubt - the plan does not
 /// know, so it does not refuse (untouchable rule 4).
-///
-/// A batch script it starts through the command interpreter itself, although Microsoft Learn says the
-/// caller must start `cmd.exe /c` for it. Measured with a script that writes down what it received:
-/// it runs and gets its arguments, spaces in its path or name included. Except when an argument
-/// carries quotes - the interpreter Windows starts then strips the first quote and the last one on
-/// the line, and cannot find the script. That is a fact about the launch, not about the file, so the
-/// plan does not refuse it here.
 ///
 /// Only WHETHER it is a program, never its bitness - see `mechanism_text` for why the header's
 /// machine field is not trusted here.
 fn windows_would_start(path: &Path) -> bool {
-    let batch = path
-        .extension()
-        .and_then(|e| e.to_str())
-        .is_some_and(|e| e.eq_ignore_ascii_case("bat") || e.eq_ignore_ascii_case("cmd"));
-    batch || crate::pe::is_pe_image(path) != Some(false)
+    chrono_mech::is_batch_script(path) || crate::pe::is_pe_image(path) != Some(false)
 }
 
 /// The canonical path without the extended-length prefix Windows answers `canonicalize` with. That
@@ -156,9 +146,9 @@ struct Plan<'a> {
     zone_bias_min: i32,
 }
 
-/// Print the plan and start nothing. Exit 0, except for a path that definitely leads to no file or
-/// to a file Windows will not start, which exits 2 - the code a real run gives for the same fact
-/// (docs/08 section 8).
+/// Print the plan and start nothing. Exit 0, except for a path that definitely leads to no file, to a
+/// file Windows will not start, or to a batch script its launch would refuse, which exits 2 - the code
+/// a real run gives for the same fact (docs/08 section 8).
 pub(super) fn dry_run(ra: &RunArgs, spec: &TimeSpec, origin: &TimeOrigin, now_bias: i32) -> i32 {
     // The same pure function the core calls, so the plan names the mechanism the core would choose
     // and not one worked out a second way (ADR-9).
@@ -193,6 +183,15 @@ pub(super) fn dry_run(ra: &RunArgs, spec: &TimeSpec, origin: &TimeOrigin, now_bi
             "chrono: '{}' is not a program Windows can start - its header is missing, cut short or a library's, and it is not a batch script - so a real run would fail to launch it (exit 2)",
             path.display()
         );
+        return 2;
+    }
+    // The launch refuses some batch launches (a line break in an argument, a line longer than the
+    // interpreter runs), so the plan does too, through the same checks and with the same code.
+    if matches!(plan.target, TargetPath::Found(_))
+        && chrono_mech::is_batch_script(Path::new(&ra.target))
+        && let Some(problem) = chrono_mech::batch_launch_problem(&ra.target, &ra.args)
+    {
+        eprintln!("chrono: {problem}, so a real run would refuse to start it (exit 2)");
         return 2;
     }
     0
@@ -252,6 +251,14 @@ fn mechanism_text(p: &Plan) -> String {
     }
     if p.chromium {
         return "Chromium or Electron over CDP - the folder carries the Chromium runtime".to_string();
+    }
+    // The process started is the command interpreter from the system folder, whose bitness is this
+    // core's, and what the audit then reports is that interpreter and whatever the script starts.
+    if chrono_mech::is_batch_script(Path::new(&p.ra.target)) {
+        return format!(
+            "native injection into the command interpreter that runs the script, from the {} core",
+            this_bitness()
+        );
     }
     // The bitness named here is THIS executable's, never the target's. The target's is read from the
     // running process by chrono-mech, because a .NET AnyCPU image carries IMAGE_FILE_MACHINE_I386 in
@@ -687,5 +694,23 @@ mod tests {
         plan_for(&["notepad"], |plan| {
             assert!(mechanism_text(plan).contains("not decided"), "{}", mechanism_text(plan));
         });
+    }
+
+    /// A batch script is started through the command interpreter, so that is what the plan says the
+    /// hook goes into - and not that a 32-bit script needs the other build, which means nothing for
+    /// a script.
+    #[test]
+    fn a_batch_script_is_planned_as_the_command_interpreter_that_runs_it() {
+        let dir = crate::testutil::unique_temp_dir("chrono-plan-batch");
+        std::fs::create_dir_all(&dir).expect("scratch dir");
+        let script = dir.join("run.cmd");
+        std::fs::write(&script, "@echo off\r\n").expect("batch file");
+        plan_for(&[&script.display().to_string(), "--at", "2030-01-01T00:00:00"], |plan| {
+            let text = mechanism_text(plan);
+            assert!(text.contains("command interpreter that runs the script"), "{text}");
+            assert!(text.contains(this_bitness()), "{text}");
+            assert!(!text.contains("32-bit target"), "{text}");
+        });
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
