@@ -43,6 +43,23 @@ Notable changes to Chrono Mock, newest first. The format follows
 
 ### Fixed
 
+- **`--dry-run` approved sessions the real run refuses.** An impossible `--at` (month 13, 30 February,
+  25:61) was printed as the plan and exited 0, while the real run was refused by the core with exit
+  1. A file Windows will not start (a text file, an empty or truncated `.exe`) was planned as "native
+  injection" and exited 0, while the real run failed to launch it with exit 2. The plan now refuses
+  both with the code the real run gives, the moment in the core's own words. A batch script is still
+  planned, because Windows starts it through the command interpreter. `chronomock.plan/1` names that
+  target state `not_a_program`.
+- **A preset that dates from the application's file carried the time of day the file was written.**
+  `chrono run --preset date-before-install` without `--param` set the session to 23:00:35 the day
+  before installation, where the same preset given the date by hand sets midnight. A date parameter
+  is a date, so the file's creation date now arrives as midnight too. The trial presets were not
+  affected, because they set their own time.
+- **Asking for help was answered as a mistake.** `chrono help` said "unknown command", and
+  `chrono calc --help` said "unknown flag" and exited 1, while `chrono --help` exited 0. `help`,
+  `run --help` and `calc --help` (and `-h`) now print the usage and exit 0. `--help` further along the
+  command line is still passed to the application. `--at` followed by another flag now says that
+  `--at` is missing its moment, instead of a sentence about a "shift".
 - **Ending a session sent the application's timers back, and left its web pages on the session
   date.** A session often ends while the application keeps running: `--ticks` ran out, or the
   session was stopped from the window. The application was then handed back the real value of every

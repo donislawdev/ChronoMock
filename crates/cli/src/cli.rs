@@ -235,6 +235,23 @@ pub(crate) fn print_usage() {
     eprintln!("usage: chrono license [--components]   (also --license)   the licence, the warranty disclaimer, and every bundled component with its version");
 }
 
+/// Whether the words after a command ask for its help: `run --help`, `calc -h`. Only the FIRST word
+/// counts, because `--help` further along can be meant for the target (`--args --help`).
+pub(crate) fn asks_for_help(rest: &[String]) -> bool {
+    matches!(rest.first().map(String::as_str), Some("--help" | "-h"))
+}
+
+/// The usage a command was asked for, and exit 0 - it is an answer, not a refusal. `calc --help`
+/// used to say "unknown flag" and exit 1 while `chrono --help` beside it exited 0.
+pub(crate) fn print_help_for(command: &str) -> i32 {
+    if command == "calc" {
+        print_calc_usage();
+    } else {
+        print_usage();
+    }
+    0
+}
+
 pub(crate) fn print_calc_usage() {
     eprintln!("usage: chrono calc [--base <today|now|YYYY-MM-DDTHH:MM:SS>] [--base-utc <YYYY-MM-DDTHH:MM:SS[Z]>] [--shift <±N<unit>>]... [--set-time <HH:MM:SS>] [--snap <target>] [--nearest <target>] [--to-zone <+HH:MM>] [--zone <+HH:MM>] [--calendar <us-banking|us-federal|pl>] [--format <mask>] [--json]");
     eprintln!("       or: chrono calc --preset <id> [--param id=value]...   (named moment, e.g. month-end, trial-first-day-after)");

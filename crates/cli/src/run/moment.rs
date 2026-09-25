@@ -201,16 +201,29 @@ pub(super) fn resolve_time_spec(ra: &RunArgs, now_bias: i32) -> Result<ResolvedT
 /// absolute moment). A leading `+`/`-` marks a relative moment - now plus one shift
 /// step - resolved through the SHARED calc evaluator, so `--at` accepts exactly the
 /// units the calculator does, including months, quarters, and years, which fold onto
-/// the civil date (a fixed-tick delta cannot express them). Anything else passes
-/// through as an absolute moment.
+/// the civil date (a fixed-tick delta cannot express them). Anything else is an absolute
+/// moment, checked here by the parser the core itself uses.
 ///
 /// One grammar, not two: `--at`, `jump`, and the calculator all resolve through the same
 /// step evaluator. The old `parse_relative_delta` (fixed-tick only) is gone entirely.
 pub(crate) fn resolve_at(raw: &str, tz_bias_min: Option<i32>) -> Result<String, String> {
+    // `--at` takes the next word whatever it is, so `--at --dry-run` handed the flag over as the
+    // moment, and its leading '-' made that a relative one: the refusal then spoke of a "shift"
+    // nobody had written. No moment starts with two dashes, so the word is named as what it is.
+    if raw.starts_with("--") {
+        return Err(format!(
+            "--at needs a moment after it, but the next word is the flag '{raw}' - write --at YYYY-MM-DDTHH:MM:SS, or a relative +N<unit>"
+        ));
+    }
     if raw.starts_with(['+', '-']) {
         let now = resolve_now_civil(tz_bias_min)?;
         resolve_relative_at(raw, now)
     } else {
+        // The core parses this same string with this same function before it starts anything, and
+        // refused 2038-13-45 there - AFTER the driver had already let a dry run approve it with exit
+        // 0 and a plan naming that moment. Docs/08 section 8 says a dry run's 0 means "this plan is
+        // sound", so a moment the run would refuse is refused here, in the core's own words.
+        chrono_core::calc::parse_civil_datetime(raw)?;
         Ok(raw.to_string())
     }
 }
@@ -262,6 +275,30 @@ mod tests {
             resolve_at("2038-01-19T03:14:07", Some(0)).unwrap(),
             "2038-01-19T03:14:07"
         );
+    }
+
+    /// A moment the core would refuse is refused here, before anything starts, and in the core's own
+    /// words - the three impossible fields a dry run used to approve with exit 0.
+    #[test]
+    fn an_absolute_at_the_core_would_refuse_is_refused_before_anything_starts() {
+        for (raw, words) in [
+            ("2038-13-45T00:00:00", "month out of range"),
+            ("2030-02-30T00:00:00", "day 30 out of range for month 2"),
+            ("2030-02-28T25:61:00", "hour 25 out of range"),
+        ] {
+            let e = resolve_at(raw, Some(0)).expect_err(raw);
+            assert!(e.contains(words), "{raw}: {e}");
+        }
+        // The space the core accepts in place of the T stays accepted - one parser, one answer.
+        assert_eq!(resolve_at("2038-01-19 03:14:07", Some(0)).unwrap(), "2038-01-19 03:14:07");
+    }
+
+    /// `--at --dry-run` took the flag as the moment and answered with a sentence about a "shift".
+    #[test]
+    fn a_flag_where_the_moment_should_be_is_named_as_a_flag() {
+        let e = resolve_at("--dry-run", Some(0)).unwrap_err();
+        assert!(e.contains("--at needs a moment") && e.contains("'--dry-run'"), "{e}");
+        assert!(!e.contains("shift"), "{e}");
     }
 
     #[test]

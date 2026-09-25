@@ -1,6 +1,6 @@
 //! A bounded, read-only look inside the target's own executable, for the facts the file names around
-//! it cannot give: whether the Go toolchain linked it, and whether it is a .NET executable that leaves
-//! no runtime file beside it to say so.
+//! it cannot give: whether the Go toolchain linked it, whether it is a .NET executable that leaves
+//! no runtime file beside it to say so, and whether it is a PE image at all.
 //!
 //! Every read is capped and every offset goes through `get`, so a truncated or hostile file answers
 //! "no" rather than panicking, and a half-gigabyte target costs a few kilobytes to ask. The one read
@@ -224,6 +224,39 @@ struct ImageSpan {
     pointer: usize,
 }
 
+/// Whether the file is a PE image at all. `Some(false)` only for a file that was READ and does not
+/// carry the two signatures, `None` for one that could not be read.
+///
+/// The questions above lean to "no" on any doubt, because a false fingerprint accuses a target of
+/// something it does not do. This one is asked in order to REFUSE a target, so its doubt leans the
+/// other way: a file this could not read is not called "not a program" (untouchable rule 4). What it
+/// does not say is the bitness - `run::plan` explains why the header's machine field is not trusted.
+pub(crate) fn is_pe_image(target_path: &Path) -> Option<bool> {
+    let (_, head) = read_head(target_path)?;
+    Some(pe_header_offset(&head).is_some())
+}
+
+/// The file and the first `HEADER_WINDOW` bytes of it.
+fn read_head(path: &Path) -> Option<(File, Vec<u8>)> {
+    let mut file = File::open(path).ok()?;
+    let mut head: Vec<u8> = Vec::new();
+    // `take` + `read_to_end` rather than one `read`: a single read may return fewer bytes than
+    // asked for, and a short header would send the section-table offsets somewhere arbitrary.
+    file.by_ref().take(HEADER_WINDOW).read_to_end(&mut head).ok()?;
+    Some((file, head))
+}
+
+/// Where the PE header starts, when `head` carries the two signatures every PE image has: `MZ` at
+/// the front and `PE\0\0` where the DOS header's pointer says. One definition for both questions this
+/// module asks of the start of a file.
+fn pe_header_offset(head: &[u8]) -> Option<usize> {
+    if head.get(..2)? != b"MZ" {
+        return None;
+    }
+    let pe = u32_at(head, 0x3C)? as usize;
+    (head.get(pe..pe.checked_add(4)?)? == b"PE\0\0").then_some(pe)
+}
+
 /// The first four kilobytes of a PE file, checked for the two signatures, plus the open handle so the
 /// sections and directories they describe can be read.
 struct PeFile {
@@ -236,18 +269,8 @@ struct PeFile {
 
 impl PeFile {
     fn open(path: &Path) -> Option<Self> {
-        let mut file = File::open(path).ok()?;
-        let mut head: Vec<u8> = Vec::new();
-        // `take` + `read_to_end` rather than one `read`: a single read may return fewer bytes than
-        // asked for, and a short header would send the section-table offsets somewhere arbitrary.
-        file.by_ref().take(HEADER_WINDOW).read_to_end(&mut head).ok()?;
-        if head.get(..2)? != b"MZ" {
-            return None;
-        }
-        let pe = u32_at(&head, 0x3C)? as usize;
-        if head.get(pe..pe.checked_add(4)?)? != b"PE\0\0" {
-            return None;
-        }
+        let (file, head) = read_head(path)?;
+        let pe = pe_header_offset(&head)?;
         let section_count = u16_at(&head, pe.checked_add(6)?)? as usize;
         let optional_size = u16_at(&head, pe.checked_add(20)?)? as usize;
         let optional = pe.checked_add(24)?;
@@ -668,6 +691,31 @@ mod tests {
         assert!(!is_go_binary(&tail), "fourteen bytes with no header behind them prove nothing");
 
         for p in [go, plain, neighbour, tail] {
+            let _ = std::fs::remove_file(p);
+        }
+    }
+
+    /// The one question here whose doubt leans the other way: a file read in full and missing either
+    /// signature is "not a PE", and a file that could not be read is "do not know" - never "not a PE".
+    #[test]
+    fn only_a_file_read_in_full_is_called_not_a_pe_image() {
+        let pe = write_probe("is-pe", &synthetic_pe(0, b".data\0\0\0", b"anything", None));
+        assert_eq!(is_pe_image(&pe), Some(true));
+        let text = write_probe("text", b"this is a note, not a program");
+        assert_eq!(is_pe_image(&text), Some(false));
+        let empty = write_probe("empty", b"");
+        assert_eq!(is_pe_image(&empty), Some(false));
+        // Both signatures are required: `MZ` alone is a DOS stub or a truncated file, and Windows
+        // refuses to start either (measured: two bytes of MZ exit 2 with 0x800700D8).
+        let stub = write_probe("mz-only", b"MZ\0\0");
+        assert_eq!(is_pe_image(&stub), Some(false));
+        let mut no_pe = synthetic_pe(0, b".data\0\0\0", b"anything", None);
+        let at = u32_at(&no_pe, 0x3C).unwrap() as usize;
+        no_pe[at..at + 4].copy_from_slice(b"NE\0\0");
+        let no_pe = write_probe("mz-without-pe", &no_pe);
+        assert_eq!(is_pe_image(&no_pe), Some(false));
+        assert_eq!(is_pe_image(Path::new("no such file anywhere.exe")), None);
+        for p in [pe, text, empty, stub, no_pe] {
             let _ = std::fs::remove_file(p);
         }
     }

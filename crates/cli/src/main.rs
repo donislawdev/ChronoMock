@@ -63,7 +63,7 @@ mod zone;
 
 use calc::calc_run;
 use cdp_probe::{cdp_date_probe, cdp_launch_probe, cdp_probe, cdp_shim_probe};
-use cli::{print_license, print_usage, print_version};
+use cli::{asks_for_help, print_help_for, print_license, print_usage, print_version};
 use core::core_mode;
 use run::driver_run;
 
@@ -71,6 +71,7 @@ fn main() {
     let args: Vec<String> = std::env::args().collect();
     let code = match args.get(1).map(String::as_str) {
         Some("__core") => core_mode(),
+        Some(command @ ("run" | "calc")) if asks_for_help(&args[2..]) => print_help_for(command),
         Some("run") => driver_run(&args[2..]),
         Some("calc") => calc_run(&args[2..]),
         Some("__cdp-probe") => cdp_probe(&args[2..]),
@@ -83,7 +84,7 @@ fn main() {
             0
         }
         Some("license") | Some("--license") => print_license(&args[2..]),
-        Some("--help") | Some("-h") | None => {
+        Some("--help") | Some("-h") | Some("help") | None => {
             print_usage();
             0
         }
