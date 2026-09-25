@@ -111,6 +111,26 @@ internal static class PhaseStates
         return model;
     }
 
+    /// <summary>
+    /// A session that outlived the program it launched: a launcher, or a script running <c>start app.exe</c>,
+    /// ended and left the application running, and the session went on for it (ADR-16). The warning is what
+    /// tells the tester why the session lasted longer than the program they chose.
+    /// </summary>
+    public static SessionViewModel ResultWorksAfterHandOff()
+    {
+        var model = ResultRunning();
+        model.Apply(new SessionVerdictEvent
+        {
+            V = ProtocolJson.ProtocolVersion,
+            Verdict = "works",
+            ReasonKey = "session.family_covered",
+            ProcessCount = 2,
+            WarningKeys = ["session.followed_family"],
+        });
+        model.Apply(Ended());
+        return model;
+    }
+
     /// <summary>A session that only partly worked: the reason and the meaning both have to show under the word.</summary>
     public static SessionViewModel ResultPartial()
     {
@@ -311,7 +331,16 @@ internal static class PhaseStates
     /// model ignores - rather than on the panel's fixture, which puts a heartbeat first. A heartbeat cannot
     /// precede a vanish (the session is never entered), and with one the first render of this state showed
     /// an hour of fake time passing on an application that lived 180 ms.</remarks>
-    public static SessionViewModel ResultVanished()
+    public static SessionViewModel ResultVanished() => Vanished("target.single_instance_suspected", 180);
+
+    /// <summary>
+    /// The target gone after starting a program the hook could not enter, usually one of the other bitness,
+    /// which runs on the real clock - a hand-off, not a single-instance application (ADR-16). Lived 14 ms, as
+    /// measured on a 64-bit launcher starting a 32-bit program.
+    /// </summary>
+    public static SessionViewModel ResultVanishedHandedOff() => Vanished("target.handed_off_uncovered", 14);
+
+    private static SessionViewModel Vanished(string reasonKey, long livedMs)
     {
         var model = WithTarget(new SessionViewModel(SeededHistory()));
         model.Apply(new CoverageEvent
@@ -328,8 +357,8 @@ internal static class PhaseStates
         {
             V = ProtocolJson.ProtocolVersion,
             Pid = 4242,
-            ReasonKey = "target.single_instance_suspected",
-            LivedMs = 180,
+            ReasonKey = reasonKey,
+            LivedMs = livedMs,
         });
         model.Apply(new EndedEvent { V = ProtocolJson.ProtocolVersion, Clean = true });
         return model;

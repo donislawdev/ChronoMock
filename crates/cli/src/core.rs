@@ -16,9 +16,9 @@ use std::time::{Duration, Instant};
 use chrono_core::{
     filetime_utc_to_wall, verdict_from_coverage, Coverage, Moment, SessionSpec, TimeMode, Verdict,
 };
-use chrono_mech::UncoveredChild;
+use chrono_mech::{FamilyMember, UncoveredChild};
 use chrono_proto::{
-    parse_command, Command, Event, MomentSpec, TargetSpec, TimeSpec, PROTOCOL_VERSION,
+    parse_command, Command, Event, FollowedProcess, MomentSpec, TargetSpec, TimeSpec, PROTOCOL_VERSION,
     UNCOVERED_CHILDREN_WIRE_MAX,
 };
 
@@ -139,7 +139,7 @@ pub(crate) fn core_mode() -> i32 {
     }
 
     match chrono_mech::prepare(&spec, &m_target, &hook) {
-        Ok(prepared) => {
+        Ok(mut prepared) => {
             // Surface an orphan reclaim so it is not silent (a prior core had died and left its
             // control block behind). Human diagnostic on stderr, never on the protocol stdout.
             if prepared.orphan_reclaimed {
@@ -152,12 +152,17 @@ pub(crate) fn core_mode() -> i32 {
 
             // Single-instance vanish (ADR-4): the target exited within the guard
             // window right after injection. Report it honestly with exit 12 rather
-            // than trusting the install bits into a false verdict.
-            if let Some(lived_ms) = prepared.vanished_lived_ms {
+            // than trusting the install bits into a false verdict. A target that exited leaving a
+            // process on the session clock running is a launcher, not a vanish: the session goes on
+            // for that process (ADR-16).
+            if let Some(lived_ms) = prepared.vanished_lived_ms
+                && !prepared.session.family_alive()
+            {
+                let reason_key = vanish_reason_key(&mut prepared.session);
                 emit(&Event::Vanished {
                     v: PROTOCOL_VERSION,
                     pid: prepared.session.pid,
-                    reason_key: "target.single_instance_suspected".into(),
+                    reason_key: reason_key.into(),
                     lived_ms,
                 });
                 prepared.session.end();
@@ -302,6 +307,9 @@ pub(crate) struct SessionLedger {
     /// Sticky for the same reason as the wall flag: readings taken while the duration axis stood
     /// there were held, and a later re-anchor does not make them untrue.
     duration_clamped: bool,
+    /// The processes the session went on for once the target had closed (ADR-16), noted the first
+    /// time the target is seen gone. `None` while it runs, empty when nothing outlived it.
+    followed: Option<Vec<FamilyMember>>,
 }
 
 impl SessionLedger {
@@ -313,13 +321,19 @@ impl SessionLedger {
             uncovered_children: Vec::new(),
             clock_clamped: false,
             duration_clamped: false,
+            followed: None,
         }
     }
 
-    /// Poll for children that joined and for children the hook could not follow into.
+    /// Poll for children that joined and for children the hook could not follow into, and keep
+    /// the watch on the processes the session lasts for current.
     pub(crate) fn poll(&mut self, session: &mut chrono_mech::Session) {
         fold_children(session, &mut self.family, &mut self.family_pids);
         self.uncovered_children.extend(session.poll_uncovered_children());
+        session.refresh_family();
+        if self.followed.is_none() && !session.is_alive() {
+            self.followed = Some(session.living_family());
+        }
     }
 
     /// Note whether either clock stands at the end of its range in this sample.
@@ -405,7 +419,10 @@ pub(crate) fn run_session(
             let st = session.state();
             ledger.sample(&st);
             emit(&state_event_from(&st));
-            if !session.is_alive() {
+            // The session lasts for the family on its clock, not for the process it launched: a
+            // launcher ends on purpose and leaves the application running (ADR-16). The exit code
+            // is the launched process's, the one the tester named.
+            if !session.family_alive() {
                 target_exit = session.exit_code();
                 break;
             }
@@ -583,6 +600,33 @@ pub(crate) fn native_session_warnings(
 /// timers and elapsed-time counters carry on at normal speed from where the session left them.
 const KEY_LEFT_RUNNING: &str = "session.left_running";
 
+/// The target closed while processes it had started were still running on the session clock, and
+/// the session went on for them (ADR-16). Said because a session that outlives the program the
+/// tester named is a surprise unless it is explained, and a helper that never ends keeps it open.
+const KEY_FOLLOWED_FAMILY: &str = "session.followed_family";
+
+/// The target vanished inside the guard window after starting a process the hook could not enter,
+/// usually one of the other bitness, which runs on the real clock (ADR-16).
+const KEY_HANDED_OFF_UNCOVERED: &str = "target.handed_off_uncovered";
+
+/// Why a target vanished inside the guard window with nothing on the session clock left running.
+/// Asked only after the family was found gone, so a process it started is either one the hook never
+/// entered or none at all.
+fn vanish_reason_key(session: &mut chrono_mech::Session) -> &'static str {
+    let children = session.poll_uncovered_children();
+    vanish_reason(session.pid, &children, chrono_mech::process_is_alive)
+}
+
+/// The reason for a vanish, from the children the hook could not enter: a hand-off when one the
+/// target started is still running, otherwise the single-instance suspicion ADR-4 was written for.
+fn vanish_reason(root: u32, children: &[UncoveredChild], alive: impl Fn(u32) -> bool) -> &'static str {
+    if children.iter().any(|c| c.parent_pid == root && alive(c.pid)) {
+        KEY_HANDED_OFF_UNCOVERED
+    } else {
+        "target.single_instance_suspected"
+    }
+}
+
 /// Whether any process of the family the hook reached is still running as the session ends - the
 /// application the tester is left with. A recycled pid reads as alive, which errs toward saying so
 /// once too often, never toward keeping quiet about a process left behind.
@@ -600,8 +644,9 @@ pub(crate) fn close_session(
 ) -> i32 {
     // Final fold so a child that joined since the last heartbeat still counts in the family.
     ledger.poll(&mut session);
-    let SessionLedger { mut family, family_pids, uncovered_children, clock_clamped, duration_clamped } =
+    let SessionLedger { mut family, family_pids, uncovered_children, clock_clamped, duration_clamped, followed } =
         ledger;
+    let followed = followed.unwrap_or_default();
     // The application may outlive the session - a `--ticks` cutoff, a Stop in the panel - and the
     // session does not stop it (docs/01 section 8.4). It lets it go instead, and the pages have to be
     // let go while their connections are still open, so this comes before `finish`.
@@ -670,6 +715,9 @@ pub(crate) fn close_session(
     reconcile_engine_warnings(&mut children_warnings, pages.pages_reached());
     session_warnings.extend(children_warnings);
     session_warnings.extend(pages.session_warnings(zone_differs));
+    if !followed.is_empty() {
+        session_warnings.push(KEY_FOLLOWED_FAMILY.to_string());
+    }
     if left_running {
         session_warnings.push(KEY_LEFT_RUNNING.to_string());
     }
@@ -696,6 +744,12 @@ pub(crate) fn close_session(
         uncovered_children_total,
         context_count: pages.seen.len() as u32,
         engines: pages.engines,
+        // The image name comes from the process list, text from the target's world like the
+        // uncovered children's, and passes the same sieve.
+        followed: followed
+            .iter()
+            .map(|m| FollowedProcess { pid: m.pid, image: m.image.as_deref().map(crate::cdp::sanitise_target_text) })
+            .collect(),
     });
     emit(&Event::Ended {
         v: PROTOCOL_VERSION,
@@ -1281,5 +1335,18 @@ mod tests {
         assert_eq!(session_reason_key(Verdict::Fails, true), "session.family_uncovered_children");
         assert_eq!(Verdict::Works.combine(Verdict::Fails), Verdict::Partial);
         assert_eq!(Verdict::Undetermined.combine(Verdict::Fails), Verdict::Fails);
+    }
+
+    /// A target that vanished leaving a program it started running, one the hook could not enter,
+    /// handed off to it - measured with a 64-bit launcher starting a 32-bit program, which the report
+    /// called a single-instance application (ADR-16). Anything else is still the ADR-4 suspicion.
+    #[test]
+    fn a_vanish_that_left_an_uncovered_program_running_is_a_hand_off() {
+        let child = |pid, parent_pid| UncoveredChild { pid, parent_pid, image: None, command_line: None };
+        assert_eq!(vanish_reason(10, &[child(11, 10)], |_| true), KEY_HANDED_OFF_UNCOVERED);
+        // Ended already, started by another process of the family, or nothing started at all.
+        assert_eq!(vanish_reason(10, &[child(11, 10)], |_| false), "target.single_instance_suspected");
+        assert_eq!(vanish_reason(10, &[child(12, 11)], |_| true), "target.single_instance_suspected");
+        assert_eq!(vanish_reason(10, &[], |_| true), "target.single_instance_suspected");
     }
 }

@@ -461,7 +461,11 @@
   "time.duration_axis_clamped": "The monotonic counters (tick count, unbiased interrupt time, and QPC when scaled) reached the end of their range and stood there, so elapsed time inside the application stopped advancing even though the session went on. A lower speed or a shorter session avoids it.",
   // The session does not stop the application, so it says which way each clock went once it lets go: "back to real time" alone reads as "the counters went back too", which is what letting go used to do.
   "session.left_running": "The application was still running when the session ended. It is back on the real date and time now, and its tick counts and elapsed-time counters carry on at normal speed from where the session left them instead of jumping back. A repeating timer it set while its timers were sped up keeps the shorter interval it was given. Restart it for a clean run on the real clock.",
-  "target.single_instance_suspected": "exited right after it started, before the substitution could be confirmed",
+  // A launcher, a restart after an update, a script that runs "start app.exe": the program the tester chose ends on purpose and the session goes on for what it started (ADR-16). Says why the session outlived it, and the one way that can surprise.
+  "session.followed_family": "The program you started closed while programs it had started were still running on the fake clock, so the session went on until the last of them closed. A program that keeps running after the application closes keeps the session open too - stop the session when you are done.",
+  // The vanish reasons complete the sentence under "The application ran for N ms and then vanished", and each carries its own suspicion, because report.vanish_detail no longer names one for all of them.
+  "target.single_instance_suspected": "exited right after it started, before the substitution could be confirmed - usually a single-instance application handing over to a copy that is already running",
+  "target.handed_off_uncovered": "closed right after starting another program that could not be given the fake clock - usually one of a different bitness - so that program runs on the real one",
 
   // Runtime detected statically from the target's files (B1): its monotonic/elapsed clocks stand on QueryPerformanceCounter, which stays real (ADR-2), so a timer built on them does not scale even though the wall clock does. Wording mirrors the CLI describe_warning.
   "runtime.python_monotonic_qpc": "This Python app measures time with perf_counter and monotonic - both use QueryPerformanceCounter on Python 3.13+, which is left real, so a timer built on them does not scale (time.time and the wall clock do).",
@@ -500,7 +504,7 @@
   "report.verdict": "verdict",
   "report.no_verdict": "no verdict emitted",
   "report.did_not_take_effect": "DID NOT TAKE EFFECT - the target vanished right after injection",
-  "report.vanish_detail": "suspected single-instance app: {0} - lived {1} ms",
+  "report.vanish_detail": "{0} - lived {1} ms",
   "report.processes": "processes: {0}",
   "report.session": "session",
   "report.session_reached": "fake clock reached {0}",

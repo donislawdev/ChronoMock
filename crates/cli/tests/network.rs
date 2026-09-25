@@ -167,8 +167,10 @@ const ALLOWED: &[(&str, &str, &str)] = &[
         "crates/cli/tests/batch_script.rs",
         "spawn",
         "runs the built binary on a batch script in a scratch folder, to see the arguments reach the \
-         script as they were given and a launch the interpreter would not run refused before anything \
-         starts. The script only writes a file beside itself, and nothing reaches past this machine",
+         script as they were given, a launch the interpreter would not run refused before anything \
+         starts, and a script that starts a program and ends leave the session to that program. The \
+         scripts only write files beside themselves and wait by pinging the loopback address, and \
+         nothing reaches past this machine",
     ),
     (
         "crates/cli/tests/usage.rs",
