@@ -56,6 +56,18 @@ Notable changes to Chrono Mock, newest first. The format follows
   script is started any other way. An argument holding a line break, and a command line longer
   than the interpreter's 8191 characters, are refused before anything starts, with exit 2, and
   `--dry-run` refuses them too.
+- **A launcher, or a script that starts a program and ends, took the session down with it.** The
+  session lasted only as long as the program it launched. A script that runs `start app.exe`, a
+  launcher, or an application that restarts itself ends that program on purpose and leaves the real
+  application running, and the session ended at that moment and put the application back on the
+  real clock within a second. Ending at once, it was reported as a single-instance application that
+  did not take effect. Ending a moment later, it was reported as working, over an application that
+  saw the real date almost the whole time. The session now lasts until the last program on the
+  session clock closes, and the report names the programs it went on for (`followed:` in the report,
+  `followed` in `session_verdict` under `--json`). A helper that keeps running after the application
+  closes keeps the session open too, and is named the same way. A target that hands off to a program
+  the session could not enter, usually one of the other bitness, is no longer called a
+  single-instance application.
 - **`--dry-run` approved sessions the real run refuses.** An impossible `--at` (month 13, 30 February,
   25:61) was printed as the plan and exited 0, while the real run was refused by the core with
   exit 1. A file Windows will not start (a text file, an empty `.exe`, one cut short inside its

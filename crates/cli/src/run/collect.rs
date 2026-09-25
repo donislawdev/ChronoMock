@@ -34,6 +34,8 @@ pub(super) struct Collector {
     // from `session_verdict` (docs/09).
     context_count: u32,
     engines: Vec<chrono_proto::ReachedEngine>,
+    // The processes the session went on for after the target closed, from `session_verdict` (ADR-16).
+    followed: Vec<chrono_proto::FollowedProcess>,
     timing: Option<(String, i64, i64)>,  // (fake wall reached, real ms, fake ms) from `ended`
     // The target's own exit code and whatever teardown could not remove, both from `ended`. The wire
     // has carried them since the session report grew a duration, and the GUI panel has shown them
@@ -63,6 +65,7 @@ impl Collector {
                 uncovered_children_total,
                 context_count,
                 engines,
+                followed,
                 ..
             } => {
                 self.session_line = Some((verdict, reason_key, process_count));
@@ -71,6 +74,7 @@ impl Collector {
                 self.uncovered_children_total = uncovered_children_total;
                 self.context_count = context_count;
                 self.engines = engines;
+                self.followed = followed;
             }
             Event::Vanished { reason_key, lived_ms, .. } => {
                 self.vanished = Some((reason_key, lived_ms));
@@ -193,6 +197,7 @@ impl Collector {
             uncovered_children_total: self.uncovered_children_total,
             context_count: self.context_count,
             engines: self.engines,
+            followed: self.followed,
             cdp,
             stopped_early,
         }
@@ -266,10 +271,13 @@ mod tests {
             uncovered_children_total: 0,
             context_count: 0,
             engines: Vec::new(),
+            followed: vec![chrono_proto::FollowedProcess { pid: 200, image: Some("app.exe".into()) }],
         });
 
         let report = c.into_report("app.exe".into(), false, None);
         assert_eq!(report.warnings, vec!["runtime.qpc_elapsed", "session.pid_registry_full"]);
+        // The processes the session went on for reach the report as the core named them (ADR-16).
+        assert_eq!(report.followed, vec![chrono_proto::FollowedProcess { pid: 200, image: Some("app.exe".into()) }]);
     }
 
     /// Only `ended` ends the read, and it is the one event carrying the target's own exit code and

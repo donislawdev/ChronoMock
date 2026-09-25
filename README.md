@@ -28,7 +28,8 @@ it exists.
   resyncing with a time server, which breaks anything measuring elapsed time without a guard.
 - **Its own time zone** - a fixed offset for that process only, while the system zone stays put.
 - **Child processes come along** - installers and launchers spawn children, and without that the test
-  covers only half of what ran.
+  covers only half of what ran. A launcher or a script that starts the application and ends does not
+  end the session: it lasts until the last program on the session clock closes.
 - **Tells you if it worked** - a verdict, the channels covered with call counts, the channels missed,
   and warnings with consequences. [See below](#how-do-you-know-it-worked---the-time-source-audit) - this
   is the part no other tool does.

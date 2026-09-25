@@ -21,15 +21,23 @@ use windows::Win32::System::Diagnostics::ToolHelp::{
 /// snapshot's own word, so the caller can say the family could not be read rather than pretend it
 /// is the root alone.
 pub fn family_of(root: u32) -> Result<Vec<u32>, String> {
-    let edges = parent_edges()?;
+    let edges: Vec<(u32, u32)> = process_entries()?.iter().map(|e| (e.pid, e.parent)).collect();
     Ok(descendants(root, &edges))
 }
 
-/// Every `(pid, parent pid)` pair the snapshot holds. The walk ends only on the one error that means
-/// "no more entries" - any other failure is reported, because a list cut short would be handed on
-/// as a family with members missing, and a family missing the process that holds the port is a
-/// search that quietly finds nothing.
-fn parent_edges() -> Result<Vec<(u32, u32)>, String> {
+/// One process as the snapshot lists it: its pid, the pid of the process that started it, and the
+/// file name of its executable.
+pub(crate) struct ProcessEntry {
+    pub(crate) pid: u32,
+    pub(crate) parent: u32,
+    pub(crate) image: String,
+}
+
+/// Every process the snapshot holds. The walk ends only on the one error that means "no more
+/// entries" - any other failure is reported, because a list cut short would be handed on as a
+/// family with members missing, and a family missing the process that holds the port is a search
+/// that quietly finds nothing.
+pub(crate) fn process_entries() -> Result<Vec<ProcessEntry>, String> {
     // SAFETY: the snapshot handle is closed on every path out, and the entry structure carries its
     // own size as the API requires. The last error is read right after the failing call, before
     // anything else can overwrite it.
@@ -40,7 +48,7 @@ fn parent_edges() -> Result<Vec<(u32, u32)>, String> {
             dwSize: std::mem::size_of::<PROCESSENTRY32W>() as u32,
             ..Default::default()
         };
-        let mut edges = Vec::new();
+        let mut entries = Vec::new();
         let mut step = Process32FirstW(snapshot, &mut entry);
         let outcome = loop {
             if step.is_err() {
@@ -51,12 +59,22 @@ fn parent_edges() -> Result<Vec<(u32, u32)>, String> {
                     Err(format!("the process snapshot ended with error {}", error.0))
                 };
             }
-            edges.push((entry.th32ProcessID, entry.th32ParentProcessID));
+            entries.push(ProcessEntry {
+                pid: entry.th32ProcessID,
+                parent: entry.th32ParentProcessID,
+                image: text_up_to_nul(&entry.szExeFile),
+            });
             step = Process32NextW(snapshot, &mut entry);
         };
         let _ = CloseHandle(snapshot);
-        outcome.map(|()| edges)
+        outcome.map(|()| entries)
     }
+}
+
+/// A fixed-size UTF-16 buffer as the text before its first zero.
+fn text_up_to_nul(units: &[u16]) -> String {
+    let end = units.iter().position(|&u| u == 0).unwrap_or(units.len());
+    String::from_utf16_lossy(&units[..end])
 }
 
 /// The root and everything under it, each pid once. Pure over the edge list, so the walk is tested

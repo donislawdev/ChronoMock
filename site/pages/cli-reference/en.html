@@ -86,7 +86,9 @@
           <tr>
             <td><code>--ticks N</code></td>
             <td>End the session after N heartbeats, one real second each, and report. Without it
-              the tool stays attached until the target exits.</td>
+              the tool stays attached until the target, and every program it started that runs on the
+              session clock, has exited - a launcher that ends at once leaves the session to the
+              application it started.</td>
           </tr>
           <tr>
             <td><code>--timeout &lt;s&gt;</code></td>
@@ -185,7 +187,7 @@
           <tr><td>10</td><td>works partially - some channels covered, some not</td></tr>
           <tr><td class="n">11</td><td>does not work - the substitution did not reach the key channels</td></tr>
           <tr><td>4</td><td>undetermined - coverage could not be established. An honest "cannot tell", never a pretended pass</td></tr>
-          <tr><td>12</td><td>the target vanished right after injection, which suggests a single-instance application handing over to a copy already running</td></tr>
+          <tr><td>12</td><td>the target vanished right after injection and left nothing running on the session clock, which suggests a single-instance application handing over to a copy already running, or a hand-off to a program the session could not enter, usually one of the other bitness. A target that starts the application and ends is a launcher, and the session goes on for the application</td></tr>
           <tr><td>1</td><td>usage error - a bad flag, a bad expression, or a preset this command will not accept</td></tr>
           <tr><td>2</td><td>the target could not be launched or injected</td></tr>
           <tr><td>3</td><td>internal error - the engine could not start or hit an unexpected state</td></tr>

@@ -13,12 +13,14 @@
 
 mod batch;
 mod environment;
+mod family;
 mod listeners;
 mod policy;
 mod tree;
 
 pub use batch::{batch_launch_problem, is_batch_script};
 pub use environment::{current_environment, encode_block, environment_block, merge_entries};
+pub use family::FamilyMember;
 pub use listeners::{listening_sockets, Listener, IPV4_ANY_ADDR, IPV4_LOOPBACK_ADDR};
 pub use policy::webview2_arguments_policy_present;
 pub use tree::family_of;
@@ -149,6 +151,9 @@ pub struct Session {
     /// and for the same reason. An entry claimed but not yet written (pid 0) stops the walk for that
     /// slot until the next poll - the writer fills it within a few instructions of claiming it.
     consumed_children: Vec<u32>,
+    /// The other processes on the session clock, watched so the session lasts as long as any of them
+    /// runs and not only as long as the one it launched (ADR-16).
+    family: family::Family,
     /// The session lock, held for as long as the session lives. Dropped last, so a second core
     /// cannot start until this one has released the control block it was using.
     _lock: SessionLock,
@@ -349,6 +354,30 @@ impl Session {
     /// Whether the target process is still running.
     pub fn is_alive(&self) -> bool {
         unsafe { WaitForSingleObject(self.hprocess, 0) == WAIT_TIMEOUT }
+    }
+
+    /// Start watching the processes that joined the session since the last call, and stop watching
+    /// the ones that ended. Cheap enough for the child poll: a new member costs one open and one
+    /// process snapshot, a known one a zero-length wait.
+    pub fn refresh_family(&mut self) {
+        let published: Vec<(usize, u32)> = (0..MAX_COV_PIDS)
+            .map(|slot| (slot, unsafe { read_pid(self.ctl(), slot) }))
+            .filter(|&(_, pid)| pid != 0)
+            .collect();
+        self.family.refresh(self.pid, &published);
+    }
+
+    /// Whether any process on the session clock is still running: the launched one, or any the hook
+    /// followed into. A launcher that started the application and ended leaves the session running
+    /// for the application (ADR-16).
+    pub fn family_alive(&mut self) -> bool {
+        self.refresh_family();
+        self.is_alive() || !self.family.living().is_empty()
+    }
+
+    /// The processes besides the launched one that were running when the family was last refreshed.
+    pub fn living_family(&self) -> Vec<FamilyMember> {
+        self.family.living()
     }
 
     /// The target's exit code, once it has exited.
@@ -1317,6 +1346,7 @@ pub fn prepare(spec: &SessionSpec, target: &Target, hook_dll: &Path) -> Result<P
             scale_qpc: spec.scale_qpc,
             reported_slots,
             consumed_children: vec![0; MAX_COV_PIDS],
+            family: family::Family::new(MAX_COV_PIDS, parent_slot),
             _lock: lock,
         };
         Ok(Prepared { coverage, session, vanished_lived_ms, orphan_reclaimed })

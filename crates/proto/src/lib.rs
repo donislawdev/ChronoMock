@@ -113,6 +113,15 @@ pub struct UncoveredChild {
     pub role: Option<String>,
 }
 
+/// A process on the session clock that was still running when the target closed, so the session
+/// went on for it (ADR-16). `image` is the executable's file name when the process list had it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FollowedProcess {
+    pub pid: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub image: Option<String>,
+}
+
 /// The most uncovered children one `session_verdict` names. A parent's ring holds 32 and the
 /// registry has 256 slots, so the unbounded list could be thousands of entries in one NDJSON line
 /// for a family that fans out - the total still travels, the names past this point do not.
@@ -275,6 +284,11 @@ pub enum Event {
         /// Empty for a session that found none, and for a Chromium session, which opened its own.
         #[serde(default)]
         engines: Vec<ReachedEngine>,
+        /// The processes the session went on for after the target closed (ADR-16) - a launcher's
+        /// application, or a helper that kept the session open. Empty when nothing outlived the
+        /// target, and for a session that ended while the target ran. Additive.
+        #[serde(default)]
+        followed: Vec<FollowedProcess>,
     },
     Ended {
         v: u32,
@@ -492,11 +506,17 @@ mod tests {
             uncovered_children_total: 3,
             context_count: 2,
             engines: vec![ReachedEngine { pid: 8072, port: 51234, browser: "Engine/1.0".into() }],
+            followed: vec![
+                FollowedProcess { pid: 5150, image: Some("app.exe".into()) },
+                FollowedProcess { pid: 5151, image: None },
+            ],
         };
         let line = ev.to_ndjson();
         assert!(line.starts_with(r#"{"type":"session_verdict""#), "got {line}");
         assert!(line.contains(r#""context_count":2"#), "got {line}");
         assert!(line.contains(r#""engines":[{"pid":8072,"port":51234,"browser":"Engine/1.0"}]"#), "got {line}");
+        // A process the list did not name carries no `image` key, as an unnamed child does.
+        assert!(line.contains(r#""followed":[{"pid":5150,"image":"app.exe"},{"pid":5151}]"#), "got {line}");
         // An unnamed child carries no `image` key at all, rather than a null the panel would render.
         assert!(line.contains(r#"{"pid":4243,"parent_pid":100}"#), "got {line}");
         match parse_event(&line).unwrap() {
@@ -521,9 +541,12 @@ mod tests {
             _ => panic!("wrong event variant"),
         }
         match parse_event(&line).unwrap() {
-            Event::SessionVerdict { context_count, engines, .. } => {
+            Event::SessionVerdict { context_count, engines, followed, .. } => {
                 assert_eq!(context_count, 2);
                 assert_eq!(engines, vec![ReachedEngine { pid: 8072, port: 51234, browser: "Engine/1.0".into() }]);
+                assert_eq!(followed.len(), 2);
+                assert_eq!(followed[0], FollowedProcess { pid: 5150, image: Some("app.exe".into()) });
+                assert_eq!(followed[1].image, None);
             }
             _ => panic!("wrong event variant"),
         }
@@ -546,11 +569,13 @@ mod tests {
             }
             _ => panic!("wrong event variant"),
         }
-        // And for the two the embedded-engine channel added (docs/09 section 12.4).
+        // And for the two the embedded-engine channel added (docs/09 section 12.4), and the list of
+        // processes a session went on for (ADR-16).
         match parse_event(line).unwrap() {
-            Event::SessionVerdict { context_count, engines, .. } => {
+            Event::SessionVerdict { context_count, engines, followed, .. } => {
                 assert_eq!(context_count, 0);
                 assert!(engines.is_empty());
+                assert!(followed.is_empty());
             }
             _ => panic!("wrong event variant"),
         }

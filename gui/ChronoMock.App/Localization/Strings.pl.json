@@ -442,7 +442,9 @@
   "time.fake_clock_clamped": "Fałszywy zegar doszedł do ostatniej daty, jaką ta wersja potrafi wyrazić (rok 30828), i stanął tam do końca sesji. Późniejsze odczyty nie są momentami, które dałaby wybrana prędkość.",
   "time.duration_axis_clamped": "Liczniki monotoniczne (licznik tyknięć, nieobciążony czas przerwań oraz QPC, gdy skalowany) doszły do końca swojego zakresu i stanęły, więc czas, jaki upłynął wewnątrz aplikacji, przestał rosnąć, mimo że sesja trwała dalej. Mniejsza prędkość albo krótsza sesja tego unika.",
   "session.left_running": "Aplikacja nadal działała, gdy sesja się skończyła. Jest już z powrotem na prawdziwej dacie i godzinie, a jej liczniki czasu biegną dalej w normalnym tempie od miejsca, w którym zostawiła je sesja, zamiast się cofnąć. Timer cykliczny ustawiony, gdy jej timery były przyspieszone, zachowuje skrócony odstęp, który wtedy dostał. Żeby wystartowała od zera na prawdziwym zegarze, uruchom ją ponownie.",
-  "target.single_instance_suspected": "zakończył się zaraz po uruchomieniu, zanim podmianę dało się potwierdzić",
+  "session.followed_family": "Program wybrany do sesji zakończył się, gdy uruchomione przez niego programy nadal działały na fałszywym zegarze, więc sesja trwała dalej dla nich, zamiast skończyć się razem z nim. Program, który działa dalej po zamknięciu aplikacji, też trzyma sesję otwartą - zatrzymaj sesję, gdy skończysz.",
+  "target.single_instance_suspected": "zakończył się zaraz po uruchomieniu, zanim podmianę dało się potwierdzić - zwykle to aplikacja jednoinstancyjna, która przekazała pracę swojej działającej już kopii",
+  "target.handed_off_uncovered": "zakończył się zaraz po uruchomieniu innego programu, któremu nie udało się podać fałszywego zegara - zwykle programu o innej bitowości - więc ten program działa na prawdziwym",
 
   // Runtime detected statically from the target's files (B1): its monotonic/elapsed clocks stand on QueryPerformanceCounter, which stays real (ADR-2), so a timer built on them does not scale even though the wall clock does. Wording mirrors the CLI describe_warning.
   "runtime.python_monotonic_qpc": "Ta aplikacja Python mierzy czas przez perf_counter i monotonic - oba używają QueryPerformanceCounter w Pythonie 3.13+, który zostaje realny, więc licznik na nich oparty nie skaluje (time.time i zegar ścienny tak).",
@@ -481,7 +483,7 @@
   "report.verdict": "werdykt",
   "report.no_verdict": "brak werdyktu",
   "report.did_not_take_effect": "NIE ZADZIAŁAŁO - cel zniknął zaraz po wstrzyknięciu",
-  "report.vanish_detail": "podejrzenie aplikacji jednoinstancyjnej: {0} - działał {1} ms",
+  "report.vanish_detail": "{0} - działał {1} ms",
   "report.processes": "procesy: {0}",
   "report.session": "sesja",
   "report.session_reached": "fałszywy zegar osiągnął {0}",

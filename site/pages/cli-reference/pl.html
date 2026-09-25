@@ -85,7 +85,9 @@
           <tr>
             <td><code>--ticks N</code></td>
             <td>Kończy sesję po N biciach serca, każde po jednej realnej sekundzie, i raportuje.
-              Bez tej flagi narzędzie zostaje przy celu do jego wyjścia.</td>
+              Bez tej flagi narzędzie zostaje przy sesji, dopóki działa cel albo którykolwiek
+              uruchomiony przez niego program na zegarze sesji - launcher, który kończy się od razu,
+              zostawia sesję uruchomionej przez siebie aplikacji.</td>
           </tr>
           <tr>
             <td><code>--timeout &lt;s&gt;</code></td>
@@ -185,7 +187,7 @@
           <tr><td>10</td><td>działa częściowo - część kanałów objęta, część nie</td></tr>
           <tr><td class="n">11</td><td>nie działa - podmiana nie dosięgła kluczowych kanałów</td></tr>
           <tr><td>4</td><td>nieokreślony - nie dało się ustalić pokrycia. Uczciwe „nie wiem", nigdy udawane „działa"</td></tr>
-          <tr><td>12</td><td>cel zniknął zaraz po wstrzyknięciu, co wskazuje na aplikację jednoinstancyjną, która oddała robotę już działającej kopii</td></tr>
+          <tr><td>12</td><td>cel zniknął zaraz po wstrzyknięciu i nie zostawił niczego na zegarze sesji, co wskazuje na aplikację jednoinstancyjną, która oddała robotę już działającej kopii, albo na przekazanie programowi, do którego sesja nie mogła wejść, zwykle o innej bitowości. Cel, który uruchamia aplikację i się kończy, to launcher - sesja idzie dalej za aplikacją</td></tr>
           <tr><td>1</td><td>błąd użycia - zła flaga, złe wyrażenie albo preset, którego ta komenda nie przyjmuje</td></tr>
           <tr><td>2</td><td>nie udało się uruchomić celu albo wstrzyknąć do niego biblioteki</td></tr>
           <tr><td>3</td><td>błąd wewnętrzny - rdzeń nie wystartował albo trafił na nieoczekiwany stan</td></tr>

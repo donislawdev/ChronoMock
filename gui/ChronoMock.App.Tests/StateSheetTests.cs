@@ -202,6 +202,8 @@ public class StateSheetTests
             total += RenderResult("result-embedded", PhaseStates.ResultPartialWithEmbeddedPages(), "AuditSection").Count;
             total += RenderResult("result-refused", PhaseStates.ResultRefused()).Count;
             total += RenderResult("result-vanished", PhaseStates.ResultVanished()).Count;
+            total += Shows(RenderResult("result-vanished-handoff", PhaseStates.ResultVanishedHandedOff()), "target.handed_off_uncovered");
+            total += Shows(RenderResult("result-followed", PhaseStates.ResultWorksAfterHandOff(), "AuditSection"), "session.followed_family");
             total += RenderResult("result-not-started", PhaseStates.ResultNotStarted()).Count;
             total += RenderResult("result-history", PhaseStates.ResultWithHistoryChosen(), "HistorySection").Count;
 
@@ -213,6 +215,19 @@ public class StateSheetTests
         });
 
         Assert.True(written > 0);
+    }
+
+    /// <summary>
+    /// The render shows the text <paramref name="key"/> translates to, on a visible element. A state whose
+    /// reason or warning went missing still lays out its card and its sections, so a non-empty render says
+    /// nothing about the one line the state exists to show (ADR-16).
+    /// </summary>
+    private static int Shows(IReadOnlyList<LaidOutElement> rendered, string key)
+    {
+        var text = Application.Current.TryFindResource(key) as string;
+        Assert.False(string.IsNullOrEmpty(text), $"{key} has no translation to look for");
+        Assert.Contains(rendered, e => e.IsVisible && e.Text.Contains(text!, StringComparison.Ordinal));
+        return rendered.Count;
     }
 
     private static IReadOnlyList<LaidOutElement> RenderResult(

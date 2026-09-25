@@ -261,8 +261,9 @@ pub(crate) fn driver_run(argv: &[String]) -> i32 {
                 }
                 // Everything else is evidence rather than a cue to act, so the collector owns
                 // it. Nothing happens on a verdict on purpose: with ticks == 0 the run stays
-                // attached until the target exits, because detaching early would revert it to
-                // real time (self-detach). With ticks > 0 the state arm above ends the session
+                // attached until the session ends by itself, when the target and everything it
+                // started on the session clock have exited (ADR-16), because detaching early would
+                // revert them to real time (self-detach). With ticks > 0 the state arm above ends the session
                 // after that many heartbeats. `ended` is the one event that stops the read.
                 Ok(event) => {
                     if collected.record(event) {

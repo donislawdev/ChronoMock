@@ -58,8 +58,9 @@ public class LocalizationTests
         "embedded.discovery_unavailable", "embedded.qt_port_taken", "embedded.zone_is_host",
         "embedded.registry_arguments_hidden", "embedded.pages_not_released",
         "time.fake_clock_clamped", "time.duration_axis_clamped",
-        // The application outlived the session and was let go (docs/01 section 8.4).
-        "session.left_running",
+        // The application outlived the session and was let go (docs/01 section 8.4), and the session
+        // outlived the program it launched and went on for what that program started (ADR-16).
+        "session.left_running", "session.followed_family",
         "chromium.launched_with_debug_port", "chromium.app_closed_before_audit",
         "chromium.rate_change_affects_running_timers", "chromium.context_ceiling_reached",
         // Runtime detection warnings the driver appends to coverage (B1): a Python/.NET/Java target whose
@@ -75,8 +76,8 @@ public class LocalizationTests
         "runtime.unity_delta_time_capped",
         // Cleanup residue (EndedEvent residue_keys) - a teardown that could not finish (CDP temp profile).
         "cleanup.chromium_profile_left",
-        // Vanish reason (VanishedEvent reason_key, shown inside report.vanish_detail).
-        "target.single_instance_suspected",
+        // Vanish reasons (VanishedEvent reason_key, shown inside report.vanish_detail).
+        "target.single_instance_suspected", "target.handed_off_uncovered",
         // Start/fatal error keys, surfaced as the status headline (RELEASE-001).
         "core.hook_dll_missing", "time.bad_mode", "time.bad_multiplier", "moment.invalid",
         // In-flight jump rejections (Event::Error answering a jump command). Both were missing from

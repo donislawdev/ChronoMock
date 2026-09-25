@@ -9,7 +9,9 @@
 //! command. The launch now starts the interpreter itself (`chrono_mech`, `batch.rs`, ADR-15).
 //!
 //! The evidence is the file the script writes, not the exit code: a script that ends at once can
-//! end inside the opening guard window, which is its own verdict (ADR-4).
+//! end inside the opening guard window, which is its own verdict (ADR-4). A script that starts a
+//! program and ends is the other thing a batch target is for, and the session goes on for the
+//! program it started (ADR-16).
 
 use std::path::PathBuf;
 use std::process::Command;
@@ -109,4 +111,45 @@ fn a_launch_the_interpreter_would_not_run_is_refused_before_anything_starts() {
         assert!(!dir.join("args.txt").exists(), "the script must not have run: {said}");
     }
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A script that starts a program and ends, the most common starter there is. The session used to end
+/// with the script: one that ended at once, inside the opening guard window, was reported as a
+/// single-instance application, and one that ended later as a session that worked - and either way the
+/// program it started was back on the real clock within a second (measured, both ways). The session
+/// now goes on for the program (ADR-16). The evidence is the date the program writes down two seconds
+/// after the script is gone, not the exit code.
+#[test]
+fn a_script_that_starts_a_program_and_ends_leaves_the_session_to_that_program() {
+    require_injected_library();
+    let _session = one_real_session_at_a_time();
+    // Ending at once takes the guard-window path, ending after a second the heartbeat's.
+    for (name, before) in [("at-once", ""), ("after-a-second", "ping -n 2 127.0.0.1 >nul")] {
+        let dir = std::env::temp_dir().join(format!("chrono-starter-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("a scratch directory");
+        let script = dir.join("starter.bat");
+        // `start /b` returns at once and opens no window. The program waits two seconds on the
+        // loopback address and writes the date it sees, by which time the script has long ended.
+        let body = [
+            "@echo off",
+            "cd /d \"%~dp0\"",
+            before,
+            "start \"\" /b cmd /c \"ping -n 3 127.0.0.1 >nul & date /t >seen.txt\"",
+            "",
+        ]
+        .join("\r\n");
+        std::fs::write(&script, body).expect("the script");
+        let out = Command::new(env!("CARGO_BIN_EXE_chrono"))
+            .args(["run", &script.display().to_string(), "--at", "2030-06-15T12:00:00"])
+            .output()
+            .expect("the tool must run");
+        let said = format!("stdout: {} stderr: {}", String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr));
+        let seen = std::fs::read_to_string(dir.join("seen.txt"))
+            .unwrap_or_else(|e| panic!("{name}: the program never wrote its date ({e}). {said}"));
+        assert!(seen.contains("2030"), "{name}: the program saw {seen:?} after the script ended, not the session's date. {said}");
+        assert_eq!(out.status.code(), Some(0), "{name}: {said}");
+        assert!(said.contains("followed:"), "{name}: the report must name what the session went on for. {said}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }

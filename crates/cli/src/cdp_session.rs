@@ -268,7 +268,8 @@ pub(crate) fn cdp_session(target: TargetSpec, time: TimeSpec, reader: BufReader<
 /// contexts, not injected processes, so its per-context warnings already travel on the coverage
 /// events, and it spawns nothing the hook could fail to follow - the two child fields stay empty.
 /// `process_count` has carried the context count since this session existed and keeps doing so for
-/// the clients that read it there. `context_count` says the same number under its own name.
+/// the clients that read it there. `context_count` says the same number under its own name. The
+/// session ends with the browser it launched, so it never goes on for anything (`followed`).
 fn emit_cdp_session_verdict(token: &str, reason: &str, contexts: u32) {
     emit(&Event::SessionVerdict {
         v: PROTOCOL_VERSION,
@@ -280,6 +281,7 @@ fn emit_cdp_session_verdict(token: &str, reason: &str, contexts: u32) {
         uncovered_children_total: 0,
         context_count: contexts,
         engines: Vec::new(),
+        followed: Vec::new(),
     });
 }
 

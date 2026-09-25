@@ -108,6 +108,9 @@ pub(crate) struct SessionReport {
     pub(crate) context_count: u32,
     /// The DevTools endpoints the session reached inside the application, one per engine.
     pub(crate) engines: Vec<chrono_proto::ReachedEngine>,
+    /// The processes the session went on for after the target closed, from `session_verdict.followed`
+    /// (ADR-16). Empty when nothing outlived the target.
+    pub(crate) followed: Vec<chrono_proto::FollowedProcess>,
     /// Session duration as the core states it in `ended`: (fake wall reached, real ms elapsed,
     /// fake ms elapsed), or None when `ended` carried no end wall (a session that never started).
     /// Authoritative, not sampled from the heartbeats - one source of truth (3d35a79).
@@ -310,6 +313,11 @@ pub(crate) fn describe_warning(key: &str) -> String {
         // read or set from then on.
         "session.left_running" => {
             "the application was still running when the session ended, so it is back on the real date and time now - its tick counts and elapsed-time counters carry on at normal speed from where the session left them instead of jumping back, a repeating timer it set while its timers were sped up keeps the shorter interval it was given, and a restart gives it a clean run on the real clock"
+        }
+        // A session that outlives the program the tester named is a surprise unless it is explained -
+        // a launcher is the case it exists for, a helper that never ends is the case it warns about.
+        "session.followed_family" => {
+            "the target closed while programs it had started were still running on the session clock, so the session went on for them instead of ending with it - the programs listed under 'followed' are the ones it went on for, and one that keeps running after the application closes keeps the session open too"
         }
         "embedded.pages_not_released" => {
             "a page inside the application did not confirm it was handed back to the real clock when the session ended, so it may keep the session date until it is reloaded or closed"
@@ -581,6 +589,36 @@ fn render_cut_short(stopped_early: Option<&'static str>) -> String {
     )
 }
 
+/// What a vanish is suspected to be, by its reason key. A target that started a program the hook
+/// could not enter and closed is a hand-off, not a single-instance application (ADR-16), and the
+/// line that used to say "single-instance" for every vanish said it of that one too.
+fn vanish_cause(reason_key: &str) -> &'static str {
+    match reason_key {
+        "target.handed_off_uncovered" => {
+            "it started a program the session could not enter, usually one of the other bitness, which runs on the real clock"
+        }
+        _ => "suspected single-instance app",
+    }
+}
+
+/// The processes the session went on for after the target closed (ADR-16), or nothing. Under the
+/// line that says the target closed, because that line alone reads as the end of the session.
+fn render_followed(followed: &[chrono_proto::FollowedProcess]) -> String {
+    if followed.is_empty() {
+        return String::new();
+    }
+    // "went on for", not "until they closed": a Stop or `--ticks` can end the session while one of them
+    // still runs, and `session.left_running` says so on its own line.
+    let mut out = String::from("  followed: the target had started these, and the session went on for them:\n");
+    for p in followed {
+        match &p.image {
+            Some(image) => out.push_str(&format!("            - {image} (pid {})\n", p.pid)),
+            None => out.push_str(&format!("            - pid {}\n", p.pid)),
+        }
+    }
+    out
+}
+
 /// One heading plus its pid-tagged channel names, or nothing when the list is empty. Shared by the
 /// two name-only buckets so `render_report` stays under its pinned complexity ceiling - the ceiling
 /// asked for this, and lifting a repeated shape out is the cheaper of its two answers.
@@ -670,9 +708,7 @@ pub(crate) fn render_report(r: &SessionReport) -> String {
     // parent verdict as a fallback for an older core, then nothing.
     if let Some((reason_key, lived_ms)) = &r.vanished {
         out.push_str("  verdict:  DID NOT TAKE EFFECT - the target vanished right after injection\n");
-        out.push_str(&format!(
-            "            (suspected single-instance app: {reason_key}; lived {lived_ms} ms)\n"
-        ));
+        out.push_str(&format!("            ({}: {reason_key}; lived {lived_ms} ms)\n", vanish_cause(reason_key)));
     } else if let Some((verdict, reason_key, count)) = &r.session_verdict {
         out.push_str(&format!(
             "  verdict:  {}  ({units}: {count}{}{})\n",
@@ -743,6 +779,7 @@ pub(crate) fn render_report(r: &SessionReport) -> String {
             exit_code_label(code)
         ));
     }
+    out.push_str(&render_followed(&r.followed));
 
     if !r.covered.is_empty() {
         // The total belongs in the heading, not under the rows. There are up to forty-one of these
@@ -883,6 +920,7 @@ mod tests {
             warnings: vec![],
             context_count: 0,
             engines: vec![],
+            followed: vec![],
             uncovered: vec![],
             unobserved: vec![],
             installed_late: vec![],
@@ -1020,6 +1058,45 @@ mod tests {
         let out = render_report(&r);
         assert!(out.contains("DID NOT TAKE EFFECT"), "got:\n{out}");
         assert!(out.contains("vanished"), "got:\n{out}");
+        assert!(out.contains("suspected single-instance app"), "got:\n{out}");
+    }
+
+    /// A target that started a program the hook could not enter and closed is a hand-off. The line
+    /// said "suspected single-instance app" for every vanish, this one included (ADR-16).
+    #[test]
+    fn a_hand_off_to_an_uncovered_program_is_not_called_single_instance() {
+        let r = SessionReport {
+            vanished: Some(("target.handed_off_uncovered".into(), 15)),
+            ..empty_report()
+        };
+        let out = render_report(&r);
+        assert!(out.contains("DID NOT TAKE EFFECT"), "got:\n{out}");
+        assert!(out.contains("could not enter"), "got:\n{out}");
+        assert!(!out.contains("single-instance"), "got:\n{out}");
+    }
+
+    /// The processes the session went on for stand under the line that says the target closed, named
+    /// when the process list had a name and by pid when it did not (ADR-16).
+    #[test]
+    fn the_processes_a_session_went_on_for_are_listed_under_the_exit() {
+        let r = SessionReport {
+            target_exit: Some(0),
+            followed: vec![
+                chrono_proto::FollowedProcess { pid: 5150, image: Some("app.exe".into()) },
+                chrono_proto::FollowedProcess { pid: 5151, image: None },
+            ],
+            ..empty_report()
+        };
+        let out = render_report(&r);
+        let exited = out.find("exited:").expect("the exit line");
+        let followed = out.find("followed:").expect("the followed line");
+        assert!(exited < followed, "got:\n{out}");
+        assert!(out.contains("- app.exe (pid 5150)"), "got:\n{out}");
+        assert!(out.contains("- pid 5151\n"), "got:\n{out}");
+        // A Stop can end the session while one of them still runs, so the heading never says they closed.
+        assert!(!out.contains("closed:"), "got:\n{out}");
+        // Nothing followed, no line.
+        assert!(!render_report(&empty_report()).contains("followed:"));
     }
 
     #[test]
