@@ -30,34 +30,57 @@ pub fn is_batch_script(path: &Path) -> bool {
         .is_some_and(|e| e.eq_ignore_ascii_case("bat") || e.eq_ignore_ascii_case("cmd"))
 }
 
-/// Why these arguments cannot be given to a batch script, or `None` when they can. A line break
-/// ends the interpreter's command line where it stands, and a zero character ends the string
-/// `CreateProcessW` reads, so either would hand the script less than it was given.
-pub fn batch_arguments_problem(args: &[String]) -> Option<String> {
-    let broken = args.iter().find(|a| a.contains(['\r', '\n', '\0']))?;
-    Some(format!(
-        "the argument {broken:?} holds a line break or a zero character, which would cut the command \
-         line of a batch script short"
-    ))
+/// The longest command line the interpreter runs, in UTF-16 units, counted before it expands
+/// anything. Measured through `CreateProcessW` (tools/probes/pe-edge): a line of 8 191 starts the
+/// script, one of 8 192 gets "The command line is too long." and the script never runs. A line of
+/// 8 200 made mostly of `%` handling, 1 200 once expanded, fails too, so the raw length is what counts.
+const INTERPRETER_LINE_MAX: usize = 8191;
+
+/// Why this script cannot be started with these arguments, or `None` when it can: the same checks
+/// the launch makes, for a plan to refuse what the launch would refuse.
+pub fn batch_launch_problem(script: &str, args: &[String]) -> Option<String> {
+    batch_line(script, args).err()
 }
 
 /// The application and the command line that start `script` through the command interpreter.
-///
-/// The script path is made absolute first. `CreateProcessW` resolved a relative one against this
-/// process's folder, while the interpreter would resolve it against the target's working folder,
-/// which `--cwd` can move.
 pub(crate) fn interpreter_line(script: &str, args: &[String]) -> Result<(String, String), String> {
-    if let Some(problem) = batch_arguments_problem(args) {
-        return Err(problem);
+    let line = batch_line(script, args)?;
+    Ok((command_interpreter()?, line))
+}
+
+/// The interpreter's command line for `script` and `args`, or why there is none.
+///
+/// A line break ends the line where it stands and a zero character ends the string `CreateProcessW`
+/// reads, so either would hand the script less than it was given. A line longer than the
+/// interpreter takes never starts the script. Both are refused here, before anything starts, instead
+/// of ending as a target that vanished.
+///
+/// The script path is made absolute. `CreateProcessW` resolved a relative one against this process's
+/// folder, while the interpreter would resolve it against the target's working folder, which `--cwd`
+/// can move. A `%` in the path gets the same handling as one in an argument, because the interpreter
+/// expands the whole line: a script in a folder named `%OS%` was not found (measured).
+fn batch_line(script: &str, args: &[String]) -> Result<String, String> {
+    if let Some(broken) = args.iter().find(|a| a.contains(['\r', '\n', '\0'])) {
+        return Err(format!(
+            "the argument {broken:?} holds a line break or a zero character, which would cut the \
+             command line of a batch script short"
+        ));
     }
-    let script = user_path(script)?;
+    let script = user_path(script)?.replace('%', "%%cd:~,%");
     let mut line = format!("cmd.exe /e:ON /v:OFF /c \"\"{script}\"");
     for arg in args {
         line.push(' ');
         push_batch_arg(&mut line, arg);
     }
     line.push('"');
-    Ok((command_interpreter()?, line))
+    let length = line.encode_utf16().count();
+    if length > INTERPRETER_LINE_MAX {
+        return Err(format!(
+            "the command line for this batch script is {length} characters, and the command \
+             interpreter runs at most {INTERPRETER_LINE_MAX} - shorten the arguments or the script's path"
+        ));
+    }
+    Ok(line)
 }
 
 /// The interpreter in the system folder, never one found by a search: a `cmd.exe` planted in the
@@ -197,9 +220,29 @@ mod tests {
     fn an_argument_that_would_cut_the_line_short_is_refused() {
         for bad in ["a\nb", "a\rb", "a\0b"] {
             let args = vec!["fine".to_string(), bad.to_string()];
-            assert!(batch_arguments_problem(&args).is_some(), "{bad:?}");
+            assert!(batch_launch_problem(r"C:\x\run.bat", &args).is_some(), "{bad:?}");
             assert!(interpreter_line(r"C:\x\run.bat", &args).is_err(), "{bad:?}");
         }
-        assert!(batch_arguments_problem(&["one a".to_string(), String::new()]).is_none());
+        assert!(batch_launch_problem(r"C:\x\run.bat", &["one a".to_string(), String::new()]).is_none());
+    }
+
+    /// The interpreter expands the whole line, the script's path included, so a folder named `%OS%`
+    /// gets the same handling as an argument that holds it.
+    #[test]
+    fn a_percent_sign_in_the_script_path_is_not_expanded() {
+        let line = batch_line(r"C:\T\%OS%\run.bat", &[]).expect("a line");
+        assert_eq!(line, r#"cmd.exe /e:ON /v:OFF /c ""C:\T\%%cd:~,%OS%%cd:~,%\run.bat"""#);
+    }
+
+    /// 8 191 units start the script and 8 192 do not (measured), so the refusal falls exactly between.
+    #[test]
+    fn a_line_longer_than_the_interpreter_runs_is_refused_and_one_at_the_limit_is_not() {
+        let script = r"C:\x\run.bat";
+        let empty = batch_line(script, &["a".to_string()]).expect("a line").encode_utf16().count() - 1;
+        let at_limit = vec!["a".repeat(INTERPRETER_LINE_MAX - empty)];
+        assert_eq!(batch_line(script, &at_limit).expect("the longest line").encode_utf16().count(), INTERPRETER_LINE_MAX);
+        let over = vec!["a".repeat(INTERPRETER_LINE_MAX - empty + 1)];
+        let refusal = batch_launch_problem(script, &over).expect("one unit too long");
+        assert!(refusal.contains("8192") && refusal.contains("8191"), "{refusal}");
     }
 }

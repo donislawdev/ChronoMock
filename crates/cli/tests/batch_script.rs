@@ -1,5 +1,5 @@
 //! A batch script as the target, run for real: its arguments reach it as they were given, from a
-//! folder whose name holds a space, an ampersand and brackets.
+//! folder whose name holds a space, an ampersand, brackets and a literal `%OS%`.
 //!
 //! Found 2026-09-25 by a script that writes down what it received. `CreateProcessW` starts the
 //! command interpreter for a batch file itself, with no quotes around the line, and the interpreter
@@ -41,7 +41,9 @@ fn require_injected_library() {
 /// A folder named the way that broke the launch, with a script in it that writes what it got. Six
 /// arguments, each read with `%~N`, which drops the quotes the launch put around it.
 fn script_folder(name: &str) -> (PathBuf, PathBuf) {
-    let dir = std::env::temp_dir().join(format!("chrono batch {name} R&D (x86) {}", std::process::id()));
+    // `%OS%` is part of the folder's name, not a variable: the interpreter expands the whole line, the
+    // script's path included, and a script in such a folder was not found (measured).
+    let dir = std::env::temp_dir().join(format!("chrono batch {name} R&D (x86) %OS% {}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).expect("a scratch directory");
     let script = dir.join("probe script.bat");
@@ -87,20 +89,24 @@ fn a_batch_script_gets_its_arguments_as_they_were_given() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-/// An argument with a line break would cut the interpreter's line short, so the launch refuses it
-/// with the code of a target that could not be started, and the script never runs.
+/// Two launches the interpreter would not run as given: an argument with a line break, which cuts
+/// its line short, and a line longer than the 8 191 units it takes, which it answers with "The
+/// command line is too long." Both used to end as a target that vanished. Both are refused before
+/// anything starts, with the code of a target that could not be started, and the script never runs.
 #[test]
-fn an_argument_that_would_cut_the_script_line_short_is_refused_before_anything_starts() {
+fn a_launch_the_interpreter_would_not_run_is_refused_before_anything_starts() {
     require_injected_library();
     let _session = one_real_session_at_a_time();
     let (dir, script) = script_folder("refused");
-    let out = Command::new(env!("CARGO_BIN_EXE_chrono"))
-        .args(["run", &script.display().to_string(), "--args", "\"a\nb\"", "--at", "2038-01-19T03:14:07"])
-        .output()
-        .expect("the tool must run");
-    let said = format!("stdout: {} stderr: {}", String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr));
-    assert_eq!(out.status.code(), Some(2), "{said}");
-    assert!(said.contains("line break"), "the refusal must say why: {said}");
-    assert!(!dir.join("args.txt").exists(), "the script must not have run: {said}");
+    for (args, why) in [("\"a\nb\"".to_string(), "line break"), ("a".repeat(8200), "8191")] {
+        let out = Command::new(env!("CARGO_BIN_EXE_chrono"))
+            .args(["run", &script.display().to_string(), "--args", &args, "--at", "2038-01-19T03:14:07"])
+            .output()
+            .expect("the tool must run");
+        let said = format!("stdout: {} stderr: {}", String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr));
+        assert_eq!(out.status.code(), Some(2), "{why}: {said}");
+        assert!(said.contains(why), "the refusal must say why: {said}");
+        assert!(!dir.join("args.txt").exists(), "the script must not have run: {said}");
+    }
     let _ = std::fs::remove_dir_all(&dir);
 }

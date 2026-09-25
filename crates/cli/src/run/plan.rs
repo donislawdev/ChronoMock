@@ -147,8 +147,8 @@ struct Plan<'a> {
 }
 
 /// Print the plan and start nothing. Exit 0, except for a path that definitely leads to no file, to a
-/// file Windows will not start, or to a batch script given an argument its launch refuses, which exits
-/// 2 - the code a real run gives for the same fact (docs/08 section 8).
+/// file Windows will not start, or to a batch script its launch would refuse, which exits 2 - the code
+/// a real run gives for the same fact (docs/08 section 8).
 pub(super) fn dry_run(ra: &RunArgs, spec: &TimeSpec, origin: &TimeOrigin, now_bias: i32) -> i32 {
     // The same pure function the core calls, so the plan names the mechanism the core would choose
     // and not one worked out a second way (ADR-9).
@@ -185,10 +185,11 @@ pub(super) fn dry_run(ra: &RunArgs, spec: &TimeSpec, origin: &TimeOrigin, now_bi
         );
         return 2;
     }
-    // The launch refuses these arguments for a batch script, so the plan does too, with the same code.
+    // The launch refuses some batch launches (a line break in an argument, a line longer than the
+    // interpreter runs), so the plan does too, through the same checks and with the same code.
     if matches!(plan.target, TargetPath::Found(_))
         && chrono_mech::is_batch_script(Path::new(&ra.target))
-        && let Some(problem) = chrono_mech::batch_arguments_problem(&ra.args)
+        && let Some(problem) = chrono_mech::batch_launch_problem(&ra.target, &ra.args)
     {
         eprintln!("chrono: {problem}, so a real run would refuse to start it (exit 2)");
         return 2;
