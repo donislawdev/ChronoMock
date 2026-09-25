@@ -63,7 +63,7 @@ fn batch_line(script: &str, args: &[String]) -> Result<String, String> {
     if let Some(broken) = args.iter().find(|a| a.contains(['\r', '\n', '\0'])) {
         return Err(format!(
             "the argument {broken:?} holds a line break or a zero character, which would cut the \
-             command line of a batch script short"
+             command line of a batch script short - remove that character from the argument"
         ));
     }
     let script = user_path(script)?.replace('%', "%%cd:~,%");
