@@ -313,7 +313,9 @@ fn session_block(p: &Plan) -> String {
     out.push_str(&line(
         "session",
         &match p.ra.ticks {
-            0 => "runs until the target exits".to_string(),
+            // The target and whatever it started on the session clock (ADR-16): a launcher that ends
+            // at once does not end the session.
+            0 => "runs until the target, and whatever it started on the session clock, has exited".to_string(),
             n => format!("ends after {n} state heartbeats, about {n} real seconds"),
         },
     ));

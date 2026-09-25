@@ -317,7 +317,7 @@ pub(crate) fn describe_warning(key: &str) -> String {
         // A session that outlives the program the tester named is a surprise unless it is explained -
         // a launcher is the case it exists for, a helper that never ends is the case it warns about.
         "session.followed_family" => {
-            "the target closed while programs it had started were still running on the session clock, so the session went on until the last of them closed - the programs listed under 'followed' are the ones it went on for, and one that keeps running after the application closes keeps the session open too"
+            "the target closed while programs it had started were still running on the session clock, so the session went on for them instead of ending with it - the programs listed under 'followed' are the ones it went on for, and one that keeps running after the application closes keeps the session open too"
         }
         "embedded.pages_not_released" => {
             "a page inside the application did not confirm it was handed back to the real clock when the session ended, so it may keep the session date until it is reloaded or closed"
@@ -607,7 +607,9 @@ fn render_followed(followed: &[chrono_proto::FollowedProcess]) -> String {
     if followed.is_empty() {
         return String::new();
     }
-    let mut out = String::from("  followed: the target had started these, and the session went on until they closed:\n");
+    // "went on for", not "until they closed": a Stop or `--ticks` can end the session while one of them
+    // still runs, and `session.left_running` says so on its own line.
+    let mut out = String::from("  followed: the target had started these, and the session went on for them:\n");
     for p in followed {
         match &p.image {
             Some(image) => out.push_str(&format!("            - {image} (pid {})\n", p.pid)),
@@ -1091,6 +1093,8 @@ mod tests {
         assert!(exited < followed, "got:\n{out}");
         assert!(out.contains("- app.exe (pid 5150)"), "got:\n{out}");
         assert!(out.contains("- pid 5151\n"), "got:\n{out}");
+        // A Stop can end the session while one of them still runs, so the heading never says they closed.
+        assert!(!out.contains("closed:"), "got:\n{out}");
         // Nothing followed, no line.
         assert!(!render_report(&empty_report()).contains("followed:"));
     }

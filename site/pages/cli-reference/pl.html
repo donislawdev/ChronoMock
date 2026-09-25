@@ -85,7 +85,9 @@
           <tr>
             <td><code>--ticks N</code></td>
             <td>Kończy sesję po N biciach serca, każde po jednej realnej sekundzie, i raportuje.
-              Bez tej flagi narzędzie zostaje przy celu do jego wyjścia.</td>
+              Bez tej flagi narzędzie zostaje przy sesji, dopóki działa cel albo którykolwiek
+              uruchomiony przez niego program na zegarze sesji - launcher, który kończy się od razu,
+              zostawia sesję uruchomionej przez siebie aplikacji.</td>
           </tr>
           <tr>
             <td><code>--timeout &lt;s&gt;</code></td>

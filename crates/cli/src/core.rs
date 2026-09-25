@@ -603,6 +603,8 @@ const KEY_LEFT_RUNNING: &str = "session.left_running";
 /// The target closed while processes it had started were still running on the session clock, and
 /// the session went on for them (ADR-16). Said because a session that outlives the program the
 /// tester named is a surprise unless it is explained, and a helper that never ends keeps it open.
+/// It says the session went on for them, never that it lasted until they closed: a Stop or `--ticks`
+/// can end it while one still runs, and `session.left_running` then says that beside it.
 const KEY_FOLLOWED_FAMILY: &str = "session.followed_family";
 
 /// The target vanished inside the guard window after starting a process the hook could not enter,

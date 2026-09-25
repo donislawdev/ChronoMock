@@ -17,9 +17,7 @@
 use std::collections::HashSet;
 
 use windows::Win32::Foundation::{CloseHandle, HANDLE, WAIT_TIMEOUT};
-use windows::Win32::System::Threading::{
-    OpenProcess, WaitForSingleObject, PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_SYNCHRONIZE,
-};
+use windows::Win32::System::Threading::{OpenProcess, WaitForSingleObject, PROCESS_SYNCHRONIZE};
 
 use crate::tree::{process_entries, ProcessEntry};
 
@@ -65,8 +63,12 @@ impl Family {
             if Some(slot) == self.root_slot {
                 continue;
             }
+            // Waiting is all the handle is for, so waiting is all it asks: a process that grants that and
+            // denies more stays watchable. One that denies even this cannot be told from one that ended
+            // (both fail to open), so it counts as ended - the session then ends as it did before ADR-16,
+            // rather than holding on to a process it can never see close.
             // SAFETY: a plain open by pid. The handle is closed below once the process ends, or in `Drop`.
-            match unsafe { OpenProcess(PROCESS_SYNCHRONIZE | PROCESS_QUERY_LIMITED_INFORMATION, false, pid) } {
+            match unsafe { OpenProcess(PROCESS_SYNCHRONIZE, false, pid) } {
                 Ok(handle) => opened.push((slot, pid, handle)),
                 Err(_) => self.watch[slot] = Watch::Done,
             }

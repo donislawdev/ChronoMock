@@ -86,7 +86,9 @@
           <tr>
             <td><code>--ticks N</code></td>
             <td>End the session after N heartbeats, one real second each, and report. Without it
-              the tool stays attached until the target exits.</td>
+              the tool stays attached until the target, and every program it started that runs on the
+              session clock, has exited - a launcher that ends at once leaves the session to the
+              application it started.</td>
           </tr>
           <tr>
             <td><code>--timeout &lt;s&gt;</code></td>
