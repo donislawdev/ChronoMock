@@ -43,6 +43,16 @@ Notable changes to Chrono Mock, newest first. The format follows
 
 ### Fixed
 
+- **A batch script as the target lost its arguments, or never started.** Windows starts the command
+  interpreter for a `.bat` or `.cmd` itself and strips quotes from the line it hands over. So an
+  argument with a space, or a script in a folder with `&` in its name, kept the script from starting,
+  and the session said the application vanished right after injection. An empty argument disappeared
+  and moved the others up one place, and `a&b` gave the script `a` and ran `b` as a separate command.
+  The session now starts the interpreter from the system folder itself, and every argument arrives
+  as it was given. `%OS%` stays those four characters, as it does for a program. AutoRun commands
+  from the registry still run, as they do when the script is started any other way. An argument
+  holding a line break is refused before anything starts, with exit 2, and `--dry-run` refuses it
+  too.
 - **`--dry-run` approved sessions the real run refuses.** An impossible `--at` (month 13, 30 February,
   25:61) was printed as the plan and exited 0, while the real run was refused by the core with
   exit 1. A file Windows will not start (a text file, an empty `.exe`, one cut short inside its

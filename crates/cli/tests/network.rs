@@ -164,6 +164,13 @@ const ALLOWED: &[(&str, &str, &str)] = &[
          None reaches past this machine",
     ),
     (
+        "crates/cli/tests/batch_script.rs",
+        "spawn",
+        "runs the built binary on a batch script in a scratch folder, to see the arguments reach the \
+         script as they were given and a line break refused before anything starts. The script only \
+         writes a file beside itself, and nothing reaches past this machine",
+    ),
+    (
         "crates/cli/tests/usage.rs",
         "spawn",
         "runs the built binary to ask it for help and to give it a flag without a value, and reads \
