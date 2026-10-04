@@ -164,7 +164,7 @@ fn reserved_port_taken(
 /// Ask a port on a loopback host whether it is a DevTools endpoint. The browser name is the
 /// engine's own text, cleaned on the way to the report.
 fn probe(host: &str, port: u16) -> Option<String> {
-    let reply = cdp::http_get_json(host, port, "/json/version").ok()?;
+    let reply = cdp::http_get_json(host, port, "/json/version", std::time::Instant::now() + cdp::CONNECT_DEADLINE).ok()?;
     is_devtools_version(&reply).then(|| {
         cdp::sanitise_target_text(reply.get("Browser").and_then(serde_json::Value::as_str).unwrap_or(""))
     })

@@ -181,9 +181,9 @@ pub(crate) fn cdp_embedded_probe(argv: &[String]) -> i32 {
                         found.pid,
                         found.browser
                     );
-                    match Attacher::connect(found.host, found.port) {
+                    match Attacher::connect(found.host, found.port, Instant::now() + cdp::CONNECT_DEADLINE) {
                         Ok(mut attacher) => {
-                            let existing = attacher.attach_existing(origin, &mut next_index).unwrap_or(0);
+                            let existing = attacher.attach_existing(origin, &mut next_index, Instant::now() + cdp::CONNECT_DEADLINE).unwrap_or(0);
                             outln!("attached port {}: {existing} existing context(s) shimmed by name", found.port);
                             attachers.push(attacher);
                         }

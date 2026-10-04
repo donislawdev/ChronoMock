@@ -15,90 +15,27 @@
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::io;
+use std::time::{Duration, Instant};
 
 use serde_json::json;
 
 use crate::cdp;
 use crate::cdp_audit::context_index_for;
+use crate::cdp_requests::{CdpContext, Requests};
 use crate::zone::{now_epoch_ms, WALL_MAX_MS};
 
-/// One shimmed JS context of a Chromium target: the coverage unit of a CDP session (rule 4 - never
-/// summed across contexts).
-pub(crate) struct CdpContext {
-    pub(crate) index: u32,
-    pub(crate) session_id: String,
-    pub(crate) ty: String,
-    /// The CDP targetId, kept because `Target.targetDestroyed` names a target, not a session.
-    pub(crate) target_id: String,
-    /// A page's new-document hooks, replaced whenever the clock moves (R4-W5). None for a worker,
-    /// which has no hook - one started later is a new target and is shimmed from the clock of then.
-    pub(crate) hooks: PageHooks,
-}
+/// How long a clock move waits for the pages' new hooks before the command is acknowledged (R4-S10,
+/// ADR-20). A page that has not answered by then still gets its move once its hook comes back - this
+/// bounds the wait, not the move.
+pub(crate) const MOVE_WAIT_MS: u64 = 2_000;
 
-/// The new-document hooks of one page: the one that carries the clock now, and earlier ones whose
-/// removal the page did not confirm. Those are still there as far as anyone knows, so every later
-/// move and the release try again - forgotten, one would put a document loaded after the release
-/// back on a session clock.
-#[derive(Debug, PartialEq, Eq)]
-pub(crate) struct PageHooks {
-    current: Option<String>,
-    unremoved: Vec<String>,
-}
+/// How long the end of a session waits for the release and the last counts together. A GUI gives the
+/// core two seconds after `end` (`CoreClient`), and the session has a verdict to write after this.
+pub(crate) const END_WAIT: Duration = Duration::from_millis(750);
 
-/// The two CDP calls a page's hooks take. A trait so the bookkeeping in [`PageHooks`] is tested
-/// without a browser.
-trait HookCalls {
-    /// Add a hook with this shim source and return its identifier, `None` when the page did not.
-    fn add(&mut self, shim: &str) -> Option<String>;
-    /// Remove a hook, and say whether the page confirmed it.
-    fn remove(&mut self, script: &str) -> bool;
-}
-
-/// [`HookCalls`] on one page of a live connection.
-struct PageCalls<'a> {
-    client: &'a mut cdp::CdpClient,
-    session_id: &'a str,
-}
-
-impl HookCalls for PageCalls<'_> {
-    fn add(&mut self, shim: &str) -> Option<String> {
-        cdp::add_page_script(self.client, self.session_id, shim)
-    }
-
-    fn remove(&mut self, script: &str) -> bool {
-        cdp::remove_page_script(self.client, self.session_id, script)
-    }
-}
-
-impl PageHooks {
-    fn new(current: Option<String>) -> PageHooks {
-        PageHooks { current, unremoved: Vec::new() }
-    }
-
-    /// Replace the current hook with one built on `shim`: the new one is added BEFORE any old one
-    /// goes (R4-W5), then every old one is removed, and the ones the page did not confirm are kept.
-    /// `false` when the page did not take the new hook: it keeps the one it had, which a later move
-    /// replaces. A page with no hook - a worker - has nothing to renew.
-    fn renew(&mut self, calls: &mut impl HookCalls, shim: &str) -> bool {
-        if self.current.is_none() {
-            return true;
-        }
-        let Some(new) = calls.add(shim) else {
-            return false;
-        };
-        self.unremoved.extend(self.current.replace(new));
-        self.unremoved.retain(|script| !calls.remove(script));
-        true
-    }
-
-    /// Remove every hook the page may still have, keeping the ones it did not confirm. `true` when
-    /// none is left.
-    fn remove_all(&mut self, calls: &mut impl HookCalls) -> bool {
-        self.unremoved.extend(self.current.take());
-        self.unremoved.retain(|script| !calls.remove(script));
-        self.unremoved.is_empty()
-    }
-}
+/// How long one pump turn goes on taking messages that are already here, so a burst of attaches
+/// cannot hold the loop from its heartbeat (R4-S10). The rest is taken on the next turn.
+const TURN_BUDGET: Duration = Duration::from_millis(100);
 
 /// The clock origin a shim is built from: fake start and real start (both Unix-epoch ms), the wall
 /// rate and the duration rate. A Chromium session runs both rates at the multiplier. A page inside a
@@ -199,11 +136,12 @@ const PUMP_DRAIN_MAX: usize = 256;
 
 /// The rest of a pump turn after its first message: `next_ready` handles the next message that is
 /// already here and says what it found, or `None` when nothing is. Stops at a closed connection, at
-/// the end of what is here, or at [`PUMP_DRAIN_MAX`], and reports the strongest outcome of the turn.
-fn drain_turn(first: Pumped, mut next_ready: impl FnMut() -> Option<Pumped>) -> Pumped {
+/// the end of what is here, at [`PUMP_DRAIN_MAX`], or once `in_budget` says the turn has run long
+/// enough, and reports the strongest outcome of the turn.
+fn drain_turn(first: Pumped, mut in_budget: impl FnMut() -> bool, mut next_ready: impl FnMut() -> Option<Pumped>) -> Pumped {
     let mut turn = first;
     for _ in 0..PUMP_DRAIN_MAX {
-        if turn == Pumped::Closed {
+        if turn == Pumped::Closed || !in_budget() {
             break;
         }
         match next_ready() {
@@ -222,6 +160,8 @@ pub(crate) struct AttacherOutcome {
     pub(crate) counts: BTreeMap<(u32, String), u64>,
     pub(crate) failed: usize,
     pub(crate) overflow: usize,
+    /// How many pages missed a clock move (`chromium.clock_move_missed`).
+    pub(crate) moves_missed: usize,
 }
 
 pub(crate) struct Attacher {
@@ -235,44 +175,47 @@ pub(crate) struct Attacher {
     /// The context indexes refused past the ceiling, each once: a refused target that detaches and
     /// re-attaches keeps its index and must not be counted again.
     refused: HashSet<u32>,
-    /// Who we still TALK to - polling or broadcasting to a dead session costs the full read
-    /// deadline inside the caller's loop.
-    contexts: Vec<CdpContext>,
+    /// Who we still TALK to, and every request in flight to them (ADR-20).
+    requests: Requests,
     /// Who this attacher ever COVERED, in attach order, append-only: the audit is a record of what
     /// happened, not of what is still open, so a context that reloaded or closed keeps its evidence
     /// (R2-W1). Once per CONTEXT rather than once per attach.
     seen: Vec<u32>,
-    counts: BTreeMap<(u32, String), u64>,
     failed: usize,
     overflow: usize,
     /// targetId -> context index, so a re-attached context keeps the identity it already had.
     index_by_target: HashMap<String, u32>,
+    /// The session is ending: a context that attaches now is let go without a shim. It would get a
+    /// clock nobody moves or releases any more, and shimming it would hold the end for an attach.
+    ending: bool,
 }
 
 impl Attacher {
     /// Connect to the browser endpoint on a loopback host and port and arm auto-attach, so every
     /// page and worker the browser creates from now on arrives as an `attachedToTarget` event,
-    /// paused until the shim is in. The pages that ALREADY exist are the caller's next call. The
-    /// host is `127.0.0.1` or `::1` - whichever family the listener was found on.
-    pub(crate) fn connect(host: &str, port: u16) -> io::Result<Attacher> {
-        let mut client = cdp::CdpClient::connect_to_port(host, port)?;
-        client.call(
+    /// paused until the shim is in, all of it by `deadline`. The pages that ALREADY exist are the
+    /// caller's next call. The host is `127.0.0.1` or `::1` - whichever family the listener was
+    /// found on.
+    pub(crate) fn connect(host: &str, port: u16, deadline: Instant) -> io::Result<Attacher> {
+        let mut client = cdp::CdpClient::connect_to_port(host, port, deadline)?;
+        client.call_until(
             "Target.setAutoAttach",
             json!({ "autoAttach": true, "waitForDebuggerOnStart": true, "flatten": true }),
             None,
+            deadline,
         )?;
         Ok(Attacher {
             client,
             port,
             probe_clock: false,
             native: 0,
-            contexts: Vec::new(),
+            requests: Requests::default(),
             seen: Vec::new(),
-            counts: BTreeMap::new(),
             failed: 0,
             overflow: 0,
             refused: HashSet::new(),
             index_by_target: HashMap::new(),
+            ending: false,
         })
     }
 
@@ -282,8 +225,8 @@ impl Attacher {
 
     /// Shorten the client's poll interval and call deadline - see `CdpClient::set_budgets`. For an
     /// attacher driven from a loop that has its own cadence to keep.
-    pub(crate) fn set_budgets(&mut self, poll: std::time::Duration, call: std::time::Duration) -> io::Result<()> {
-        self.client.set_budgets(poll, call)
+    pub(crate) fn set_budgets(&mut self, poll: Duration, call: Duration) {
+        self.client.set_budgets(poll, call);
     }
 
     /// Ask each context which clock it reads before shimming it (see [`ClockRead`]).
@@ -298,46 +241,64 @@ impl Attacher {
 
     /// Hand over what this attacher covered. The connection closes with it.
     pub(crate) fn into_outcome(self) -> AttacherOutcome {
-        AttacherOutcome { seen: self.seen, counts: self.counts, failed: self.failed, overflow: self.overflow }
+        let moves_missed = self.requests.moves_missed();
+        AttacherOutcome {
+            seen: self.seen,
+            counts: self.requests.into_counts(),
+            failed: self.failed,
+            overflow: self.overflow,
+            moves_missed,
+        }
     }
 
     /// Attach to every shimmable target the browser already has - the pages an embedded engine
-    /// opened before the session found its port. Whether auto-attach reaches existing targets is a
-    /// question this tool has never measured (docs/09 section 2), so this asks for them by name and
-    /// stays idempotent: a target the index map already knows is skipped, whichever road it came by.
-    /// Returns how many were newly shimmed.
-    pub(crate) fn attach_existing(&mut self, origin: ShimOrigin, next_index: &mut u32) -> io::Result<usize> {
-        let reply = self.client.call("Target.getTargets", json!({}), None)?;
+    /// opened before the session found its port. Auto-attach delivers them too (measured in slice
+    /// B), so this is the belt, asked for by name and idempotent: a target the index map already
+    /// knows is skipped, whichever road it came by. Stops starting new attaches at `deadline` and
+    /// leaves the rest to auto-attach. Returns how many were newly shimmed.
+    pub(crate) fn attach_existing(&mut self, origin: ShimOrigin, next_index: &mut u32, deadline: Instant) -> io::Result<usize> {
+        let reply = self.client.call_until("Target.getTargets", json!({}), None, deadline)?;
         let mut attached = 0;
         for (tid, ty) in new_targets(&reply, &self.index_by_target) {
-            let Ok(reply) = self.client.call("Target.attachToTarget", json!({ "targetId": tid, "flatten": true }), None)
-            else {
+            if Instant::now() >= deadline {
+                break;
+            }
+            let params = json!({ "targetId": tid, "flatten": true });
+            let Ok(reply) = self.client.call_until("Target.attachToTarget", params, None, deadline) else {
                 continue;
             };
             let sid = reply["sessionId"].as_str().unwrap_or("").to_string();
             if sid.is_empty() {
                 continue;
             }
-            self.shim(sid, ty, tid, origin, next_index);
+            self.shim(sid, ty, tid, origin, next_index, Some(deadline));
             attached += 1;
         }
         Ok(attached)
     }
 
     /// One turn: poll the connection (bounded by the client's poll interval), act on what came, then
-    /// on everything else that is already here, without waiting for more (R4-S14).
+    /// on everything else that is already here, without waiting for more (R4-S14) and for no longer
+    /// than [`TURN_BUDGET`].
     pub(crate) fn pump(&mut self, origin: ShimOrigin, next_index: &mut u32) -> Pumped {
         let polled = self.client.poll();
+        let started = Instant::now();
         let first = self.handle(polled, origin, next_index);
-        drain_turn(first, || match self.client.poll_ready() {
+        drain_turn(first, || started.elapsed() < TURN_BUDGET, || match self.client.poll_ready() {
             Ok(None) => None,
             ready => Some(self.handle(ready, origin, next_index)),
         })
     }
 
-    /// Act on one polled message.
+    /// Act on one polled message. Every answer goes to the request table, whatever it answers and
+    /// whenever it comes (ADR-20).
     fn handle(&mut self, polled: io::Result<Option<cdp::Msg>>, origin: ShimOrigin, next_index: &mut u32) -> Pumped {
         match polled {
+            Ok(Some(cdp::Msg::Response { id, result, error })) => {
+                let reply = if error.is_none() { Ok(result) } else { Err(()) };
+                self.requests.on_reply(id, reply, &mut self.client);
+                Pumped::Idle
+            }
             Ok(Some(cdp::Msg::Event { method, params, .. })) if method == "Target.attachedToTarget" => {
                 let sid = params["sessionId"].as_str().unwrap_or("").to_string();
                 let ty = params["targetInfo"]["type"].as_str().unwrap_or("").to_string();
@@ -345,47 +306,61 @@ impl Attacher {
                 if sid.is_empty() {
                     return Pumped::Idle;
                 }
-                if !cdp::is_shimmable(&ty) {
+                if self.ending || !cdp::is_shimmable(&ty) {
                     // Auto-attach paused it on start, like everything it delivers. A target with no
-                    // timer of ours to cover is let go at once - left as it arrived, it would stay
-                    // paused for as long as the session ran.
+                    // timer of ours to cover - or one that arrives as the session ends - is let go at
+                    // once: left as it arrived, it would stay paused.
                     self.resume(&sid);
                     return Pumped::Idle;
                 }
-                self.shim(sid, ty, tid, origin, next_index);
+                self.shim(sid, ty, tid, origin, next_index, None);
                 Pumped::Attached
             }
-            // A context that went away - a reload, a closed window, a recycled worker. Dropped from
-            // the live list only: its counts stay in `counts` and its index in `seen`.
+            // A context that went away - a closed window, a recycled worker. Dropped from the live
+            // list with its requests in flight: its counts stay in the table and its index in `seen`.
             Ok(Some(cdp::Msg::Event { method, params, .. }))
                 if method == "Target.detachedFromTarget" || method == "Target.targetDestroyed" =>
             {
                 let sid = params["sessionId"].as_str().unwrap_or("");
                 let tid = params["targetId"].as_str().unwrap_or("");
-                let before = self.contexts.len();
-                self.contexts.retain(|c| {
-                    let gone = (!sid.is_empty() && c.session_id == sid) || (!tid.is_empty() && c.target_id == tid);
-                    !gone
-                });
-                if self.contexts.len() < before { Pumped::Detached } else { Pumped::Idle }
+                if self.requests.forget(sid, tid) { Pumped::Detached } else { Pumped::Idle }
             }
             Ok(_) => Pumped::Idle,
             Err(_) => Pumped::Closed,
         }
     }
 
+    /// Handle what comes until `done` says so or `deadline` passes - the one place an attacher waits
+    /// for answers. Messages are handled exactly as a turn handles them, so an attach or a detach in
+    /// the meantime is not lost, and the deadline bounds the wait, never what is learned (ADR-20).
+    fn wait_until(&mut self, deadline: Instant, origin: ShimOrigin, next_index: &mut u32, done: impl Fn(&Requests) -> bool) {
+        while !done(&self.requests) {
+            let left = deadline.saturating_duration_since(Instant::now());
+            if left.is_zero() {
+                return;
+            }
+            let polled = self.client.poll_for(left);
+            if self.handle(polled, origin, next_index) == Pumped::Closed {
+                return;
+            }
+        }
+    }
+
     /// Give a newly attached context its index and its shim. The index is keyed by the CDP targetId,
     /// which Chromium keeps across re-attaches (R3-7). The shim is built from the clock's CURRENT
     /// origin, never the session's initial one.
-    fn shim(&mut self, sid: String, ty: String, tid: String, origin: ShimOrigin, next_index: &mut u32) {
+    fn shim(&mut self, sid: String, ty: String, tid: String, origin: ShimOrigin, next_index: &mut u32, cap: Option<Instant>) {
         // A target reached twice while it is live - auto-attach and the by-name attach can both
         // deliver the same page - stays one context: the shim itself is idempotent, but a second
         // session on the list would be polled and broadcast to twice. The second session is let go
         // so it does not sit paused.
-        if !tid.is_empty() && self.contexts.iter().any(|c| c.target_id == tid) {
+        if !tid.is_empty() && self.requests.contexts().iter().any(|c| c.target_id == tid) {
             self.resume(&sid);
             return;
         }
+        // One deadline for everything this attach asks the context (R4-S10): each call used to have
+        // its own, so one context in a busy renderer could hold the session for several of them.
+        let deadline = attach_deadline(Instant::now(), self.client.call_budget(), cap);
         let index = context_index_for(&tid, &mut self.index_by_target, next_index);
         if past_ceiling(&self.seen, index) {
             // Counted once per context, said by the caller (rule 4), and released: a context refused
@@ -397,7 +372,7 @@ impl Attacher {
             self.resume(&sid);
             return;
         }
-        if self.probe_clock && self.reads_session_clock_natively(&sid, origin) {
+        if self.probe_clock && self.reads_session_clock_natively(&sid, origin, deadline) {
             // Covered by the native mechanism already: it has a row of its own under its pid, and a
             // shim here would scale the fake wall twice. Released, and not counted as a context.
             self.native += 1;
@@ -406,9 +381,9 @@ impl Attacher {
         }
         let shim = origin.shim();
         let injected = if cdp::is_worker(&ty) {
-            cdp::inject_worker(&mut self.client, &sid, &shim)
+            cdp::inject_worker(&mut self.client, &sid, &shim, deadline)
         } else {
-            cdp::inject_page(&mut self.client, &sid, &shim)
+            cdp::inject_page(&mut self.client, &sid, &shim, deadline)
         };
         match injected {
             Ok(cdp::Injected { script, children }) => {
@@ -421,16 +396,9 @@ impl Attacher {
                 if !self.seen.contains(&index) {
                     self.seen.push(index);
                 }
-                self.contexts.push(CdpContext {
-                    index,
-                    session_id: sid,
-                    // The target named its own context type, and that name becomes a coverage key
-                    // in the report and on the wire. Cleaned here, at the one place a context is
-                    // built.
-                    ty: cdp::sanitise_target_text(&ty),
-                    target_id: tid,
-                    hooks: PageHooks::new(script),
-                });
+                // The target named its own context type, and that name becomes a coverage key in the
+                // report and on the wire. Cleaned here, at the one place a context is built.
+                self.requests.push(CdpContext::new(index, sid, cdp::sanitise_target_text(&ty), tid, script));
             }
             Err(_) => {
                 // The shim did not take, and the injection stopped before its own resume call: let
@@ -442,88 +410,81 @@ impl Attacher {
     }
 
     /// Ask a context which clock it reads and judge the answer against the session clock projected
-    /// to now. One `Runtime.evaluate`, bounded by the client's call deadline - a context that does
-    /// not answer counts as real, and gets the shim.
-    fn reads_session_clock_natively(&mut self, sid: &str, origin: ShimOrigin) -> bool {
+    /// to now. One `Runtime.evaluate`, by the attach's deadline - a context that does not answer
+    /// counts as real, and gets the shim.
+    fn reads_session_clock_natively(&mut self, sid: &str, origin: ShimOrigin, deadline: Instant) -> bool {
         let real_now = now_epoch_ms();
         let fake_now = origin.fake0.saturating_add((real_now - origin.real0).saturating_mul(origin.mult));
-        let reply = self
-            .client
-            .call("Runtime.evaluate", json!({ "expression": CLOCK_PROBE_EXPR, "returnByValue": true }), Some(sid))
-            .ok();
+        let params = json!({ "expression": CLOCK_PROBE_EXPR, "returnByValue": true });
+        let reply = self.client.call_until("Runtime.evaluate", params, Some(sid), deadline).ok();
         let text = reply.as_ref().and_then(|r| r["result"]["value"].as_str());
         classify_clock_read(text, fake_now, real_now) == ClockRead::Native
     }
 
-    /// Release a target that auto-attach paused on start. Best effort: a target that is not paused
-    /// answers the same, and one that is already gone errors harmlessly.
+    /// Release a target that auto-attach paused on start. Not waited for: its answer changes nothing,
+    /// a target that is not paused answers the same, and one that is already gone errors harmlessly.
     fn resume(&mut self, sid: &str) {
-        let _ = self.client.call("Runtime.runIfWaitingForDebugger", json!({}), Some(sid));
+        let _ = self.client.send("Runtime.runIfWaitingForDebugger", json!({}), Some(sid));
     }
 
-    /// The clock moved - a rate change, a jump, a resync: give every page a new-document hook built
-    /// on `origin`, then push `expr` to every live document. The hook first, so a page that loads a
-    /// new document meanwhile already gets the new clock (R4-W5), a scheduled change included - which
-    /// is why a Chromium session schedules its rate changes far enough ahead to cover both (R4-S17).
+    /// The clock moved - a rate change, a jump, a resync: give every page a new-document hook built on
+    /// `origin`, and `expr` to every live document, a page's once its new hook is back - so a page
+    /// that loads a new document meanwhile already gets the new clock (R4-W5), a scheduled change
+    /// included, which is why a Chromium session schedules its rate changes far enough ahead to cover
+    /// both (R4-S17).
     ///
-    /// Returns how many pages did not take the move in time, each counted once: one that did not take
-    /// the new hook, so a reload brings back the clock of the hook it kept, or one that answered
-    /// anything but `ok` - `late` from a page that got a scheduled change after its instant, an error
-    /// or nothing from one that did not get the move at all. The caller says so (rule 6).
-    pub(crate) fn move_clock(&mut self, expr: &str, origin: ShimOrigin) -> usize {
+    /// Waits for the new hooks at most [`MOVE_WAIT_MS`] and then returns, all pages or not (R4-S10).
+    /// A page that answers later still gets its move. Whether a page missed the move is read from its
+    /// answers whenever they come, and handed over at the end ([`Attacher::moves_missed`]).
+    pub(crate) fn move_clock(&mut self, expr: &str, origin: ShimOrigin, next_index: &mut u32) {
         let shim = origin.shim();
-        let client = &mut self.client;
-        let hooked: Vec<bool> = self
-            .contexts
-            .iter_mut()
-            .map(|ctx| ctx.hooks.renew(&mut PageCalls { client: &mut *client, session_id: &ctx.session_id }, &shim))
-            .collect();
-        let answered = self.broadcast(expr);
-        failed_either(&hooked, &answered)
+        let hooks = self.requests.start_move(expr, &shim, &mut self.client);
+        let deadline = Instant::now() + Duration::from_millis(MOVE_WAIT_MS);
+        self.wait_until(deadline, origin, next_index, |r| r.answered(&hooks));
     }
 
-    /// Evaluate a JS expression in every live context and say, for each in list order, whether it
-    /// confirmed (see [`confirmed`]). A context that just closed errors and is skipped, so an
-    /// in-flight update stays honest for the rest.
-    fn broadcast(&mut self, expr: &str) -> Vec<bool> {
-        let client = &mut self.client;
-        self.contexts
-            .iter()
-            .map(|ctx| {
-                confirmed(client.call(
-                    "Runtime.evaluate",
-                    json!({ "expression": expr, "returnByValue": true }),
-                    Some(&ctx.session_id),
-                ))
-            })
-            .collect()
+    /// Ask every context for its call counts, without waiting - the answers are merged as they come.
+    /// A context still answering the last request is not asked again (R4-S10).
+    pub(crate) fn request_counts(&mut self) {
+        self.requests.request_counts(&mut self.client);
     }
 
-    /// Evaluate the release expression in every live context and count the ones that did not confirm
-    /// it (see [`confirmed`]), each once: a page that answered anything else, or one that still has a
-    /// hook whose removal it did not confirm, may still be on the session clock, which the caller has
-    /// to say (rule 6).
-    pub(crate) fn release(&mut self, expr: &str) -> u32 {
-        // The hooks go first, every one the page may still have. They die with the connection
-        // (measured: a page reloaded after the session comes up with no shim), but the connection
-        // outlives the release by the last look at the host's tree, and a page that navigated then
-        // loaded its next document on the session clock again and kept it after the session with no
-        // warning (R4-W5). A page that loads one meanwhile has no shim, and answers `no-shim` below.
-        let client = &mut self.client;
-        let unhooked: Vec<bool> = self
-            .contexts
-            .iter_mut()
-            .map(|ctx| ctx.hooks.remove_all(&mut PageCalls { client: &mut *client, session_id: &ctx.session_id }))
-            .collect();
-        let let_go = self.broadcast(expr);
-        let unconfirmed = failed_either(&unhooked, &let_go);
-        u32::try_from(unconfirmed).unwrap_or(u32::MAX)
+    /// Let every live context go and ask for its last counts, then wait for both until `deadline`, and
+    /// count the contexts that did not confirm they were let go, each once: a page that answered
+    /// anything but `ok` or `no-shim`, one that did not answer by the deadline, and one that may still
+    /// have a hook - those may still be on the session clock, which the caller has to say (rule 6).
+    ///
+    /// The hooks go with the release. They die with the connection (measured: a page reloaded after
+    /// the session comes up with no shim), but the connection outlives the release by the last look at
+    /// the host's tree, and a page that navigated then loaded its next document on the session clock
+    /// again and kept it after the session with no warning (R4-W5).
+    pub(crate) fn release(&mut self, expr: &str, origin: ShimOrigin, next_index: &mut u32, deadline: Instant) -> u32 {
+        self.ending = true;
+        self.requests.request_counts(&mut self.client);
+        self.requests.start_release(expr, &mut self.client);
+        self.wait_until(deadline, origin, next_index, |r| r.release_settled() && r.counts_settled());
+        self.requests.unreleased()
+    }
+
+    /// The end of the session: ask for the last counts and wait for them until `deadline`, then take
+    /// every clock move a live page has not answered as one it missed. A context that attaches from
+    /// here on is let go without a shim.
+    pub(crate) fn settle(&mut self, origin: ShimOrigin, next_index: &mut u32, deadline: Instant) {
+        self.ending = true;
+        self.requests.request_counts(&mut self.client);
+        self.wait_until(deadline, origin, next_index, Requests::counts_settled);
+        self.requests.settle_moves();
+    }
+
+    /// How many pages missed at least one clock move so far.
+    pub(crate) fn moves_missed(&self) -> usize {
+        self.requests.moves_missed()
     }
 
     /// Evaluate a JS expression in one live context and return the string it produced, if any.
     /// For a probe reading what a page shows - `document.title` - not for the session.
     pub(crate) fn evaluate_string(&mut self, index: u32, expr: &str) -> Option<String> {
-        let sid = self.contexts.iter().find(|c| c.index == index)?.session_id.clone();
+        let sid = self.requests.contexts().iter().find(|c| c.index == index)?.session_id.clone();
         let reply = self
             .client
             .call("Runtime.evaluate", json!({ "expression": expr, "returnByValue": true }), Some(&sid))
@@ -531,35 +492,9 @@ impl Attacher {
         reply["result"]["value"].as_str().map(str::to_string)
     }
 
-    /// Read each live context's per-API call counts and merge them (by max, so a peak survives a
-    /// reload) into the counts, keyed by `(context index, "type api")`. Returns whether any context
-    /// answered - a dead context simply errors and is skipped, so the audit stays honest.
-    pub(crate) fn poll_counts(&mut self) -> bool {
-        let mut any = false;
-        for c in &self.contexts {
-            let read = self.client.call(
-                "Runtime.evaluate",
-                json!({ "expression": cdp::COUNTS_EXPR, "returnByValue": true }),
-                Some(&c.session_id),
-            );
-            if let Ok(v) = read
-                && let Some(obj) = v.get("result").and_then(|x| x.get("value")).and_then(serde_json::Value::as_object)
-            {
-                any = true;
-                for (api, key) in cdp::COUNTED_APIS {
-                    if let Some(n) = obj.get(key).and_then(serde_json::Value::as_u64) {
-                        let entry = self.counts.entry((c.index, format!("{} {}", c.ty, api))).or_insert(0);
-                        *entry = (*entry).max(n);
-                    }
-                }
-            }
-        }
-        any
-    }
-
     /// The live contexts, in attach order.
     pub(crate) fn contexts(&self) -> &[CdpContext] {
-        &self.contexts
+        self.requests.contexts()
     }
 
     /// Every context index this attacher ever shimmed, in attach order.
@@ -569,7 +504,7 @@ impl Attacher {
 
     /// The counts, handed over for the end-of-session fold.
     pub(crate) fn into_counts(self) -> BTreeMap<(u32, String), u64> {
-        self.counts
+        self.requests.into_counts()
     }
 
     /// How many contexts attached and could not be shimmed, plus the ones shimmed that refused to
@@ -584,24 +519,20 @@ impl Attacher {
     }
 }
 
+/// The deadline of one attach: its own budget from `now`, or the caller's deadline when that comes
+/// first. The pages that already exist are attached under the deadline of the session's start, and an
+/// attach made there that took a fresh budget of its own could double the silence before the first
+/// heartbeat - ten seconds to connect, ten more for one busy page (CodeRabbit on #85).
+fn attach_deadline(now: Instant, budget: Duration, cap: Option<Instant>) -> Instant {
+    let own = now + budget;
+    cap.map_or(own, |cap| cap.min(own))
+}
+
 /// Whether a context with this index is one too many: the ceiling is on contexts ever seen, so a
 /// re-attach of a known context (same index) always gets back in, and only a NEW one past the
 /// ceiling is refused.
 fn past_ceiling(seen: &[u32], index: u32) -> bool {
     !seen.contains(&index) && seen.len() >= MAX_CONTEXTS
-}
-
-/// How many contexts failed either of two steps, each counted once. Both lists are in context order:
-/// the hooks, then the answer to the evaluate that followed.
-fn failed_either(first: &[bool], second: &[bool]) -> usize {
-    first.iter().zip(second).filter(|&(&a, &b)| !a || !b).count()
-}
-
-/// Whether a context confirmed an evaluate that moves or lets go of its clock: `ok`, or `no-shim`
-/// from one with no shim to move. Anything else did not take it - `late` from a page that got a
-/// scheduled rate change after its instant (R4-S17), an error, or no answer at all.
-fn confirmed(reply: io::Result<serde_json::Value>) -> bool {
-    reply.ok().is_some_and(|r| matches!(r["result"]["value"].as_str(), Some("ok" | "no-shim")))
 }
 
 /// The targets in a `Target.getTargets` reply worth attaching to: shimmable, named, and not yet
@@ -628,108 +559,13 @@ fn new_targets(reply: &serde_json::Value, known: &HashMap<String, u32>) -> Vec<(
 mod tests {
     use super::*;
 
-    /// A page that answers the hook calls as told: the identifiers `add` hands out in order (`None`
-    /// = the page did not take it), and the hooks whose removal it does not confirm.
-    struct Page {
-        adds: Vec<Option<&'static str>>,
-        refuses: Vec<&'static str>,
-        calls: Vec<String>,
-    }
-
-    impl HookCalls for Page {
-        fn add(&mut self, _shim: &str) -> Option<String> {
-            self.calls.push("add".to_string());
-            self.adds.remove(0).map(str::to_string)
-        }
-
-        fn remove(&mut self, script: &str) -> bool {
-            self.calls.push(format!("remove {script}"));
-            !self.refuses.contains(&script)
-        }
-    }
-
-    fn page(adds: Vec<Option<&'static str>>, refuses: Vec<&'static str>) -> Page {
-        Page { adds, refuses, calls: Vec::new() }
-    }
-
-    fn hooks(current: Option<&str>, unremoved: &[&str]) -> PageHooks {
-        PageHooks { current: current.map(str::to_string), unremoved: unremoved.iter().map(|s| s.to_string()).collect() }
-    }
-
-    /// R4-W5 under the review of #84: the new hook is added before the old one goes, a hook whose
-    /// removal the page did not confirm is kept and tried again at the next move, and one ADD per
-    /// move however many old hooks are waiting.
-    #[test]
-    fn a_renewed_hook_keeps_every_old_one_the_page_did_not_confirm_gone() {
-        let mut h = hooks(Some("a"), &[]);
-        let mut p = page(vec![Some("b"), Some("c")], vec!["a"]);
-        assert!(h.renew(&mut p, "shim"));
-        assert_eq!(h, hooks(Some("b"), &["a"]), "a is still on the page as far as anyone knows");
-        p.refuses.clear();
-        assert!(h.renew(&mut p, "shim"));
-        assert_eq!(h, hooks(Some("c"), &[]));
-        assert_eq!(p.calls, ["add", "remove a", "add", "remove a", "remove b"]);
-    }
-
-    /// A page that did not take the new hook keeps the one it had, nothing is removed, and the move
-    /// is reported as missed. A worker has no hook and nothing to renew.
-    #[test]
-    fn a_hook_the_page_did_not_take_leaves_the_old_one_and_is_reported() {
-        let mut h = hooks(Some("a"), &[]);
-        let mut p = page(vec![None], vec![]);
-        assert!(!h.renew(&mut p, "shim"));
-        assert_eq!(h, hooks(Some("a"), &[]));
-        assert_eq!(p.calls, ["add"], "the old hook is not removed when there is no new one");
-
-        let mut worker = hooks(None, &[]);
-        let mut p = page(vec![], vec![]);
-        assert!(worker.renew(&mut p, "shim"));
-        assert!(p.calls.is_empty());
-    }
-
-    /// The release removes every hook the page may still have, the current one and the old ones, and
-    /// says when one stays.
-    #[test]
-    fn the_release_removes_every_hook_and_says_when_one_stays() {
-        let mut h = hooks(Some("c"), &["a", "b"]);
-        let mut p = page(vec![], vec!["b"]);
-        assert!(!h.remove_all(&mut p));
-        assert_eq!(h, hooks(None, &["b"]));
-        assert_eq!(p.calls, ["remove a", "remove b", "remove c"]);
-        let mut p = page(vec![], vec![]);
-        assert!(h.remove_all(&mut p));
-        assert_eq!(h, hooks(None, &[]));
-    }
-
-    /// A page that failed the hook or the answer counts once, and one that failed both counts once
-    /// too - the count is of pages, which the warning and `embedded.pages_not_released` are about.
-    #[test]
-    fn a_page_that_missed_a_step_counts_once() {
-        assert_eq!(failed_either(&[true, false, true, true], &[true, true, false, true]), 2);
-        assert_eq!(failed_either(&[false], &[false]), 1);
-        assert_eq!(failed_either(&[true, true], &[true, true]), 0);
-    }
-
-    /// Only `ok`, and `no-shim` from a context with no shim to move, confirm a clock move or a
-    /// release. `late` from a page that got a scheduled change after its instant does not (R4-S17),
-    /// nor an error or a reply with no value.
-    #[test]
-    fn only_ok_and_no_shim_confirm_a_clock_move() {
-        let reply = |v: &str| Ok(json!({ "result": { "type": "string", "value": v } }));
-        assert!(confirmed(reply("ok")));
-        assert!(confirmed(reply("no-shim")));
-        assert!(!confirmed(reply("late")));
-        assert!(!confirmed(Ok(json!({ "result": {} }))));
-        assert!(!confirmed(Err(io::Error::other("timed out"))));
-    }
-
     /// R4-S14: a turn takes everything that is already here, not one message - and reports what
     /// mattered most in it, so an attach in the middle of a burst of other events is not lost.
     #[test]
     fn a_pump_turn_takes_the_whole_burst_and_reports_its_strongest_outcome() {
         let mut burst = vec![Pumped::Idle, Pumped::Attached, Pumped::Detached, Pumped::Idle].into_iter();
         let mut taken = 0;
-        let turn = drain_turn(Pumped::Idle, || {
+        let turn = drain_turn(Pumped::Idle, || true, || {
             let next = burst.next();
             taken += usize::from(next.is_some());
             next
@@ -739,13 +575,46 @@ mod tests {
 
         // A closed connection ends the turn at once and is what the turn reports.
         let mut after_close = 0;
-        assert_eq!(drain_turn(Pumped::Closed, || { after_close += 1; Some(Pumped::Attached) }), Pumped::Closed);
+        assert_eq!(drain_turn(Pumped::Closed, || true, || { after_close += 1; Some(Pumped::Attached) }), Pumped::Closed);
         assert_eq!(after_close, 0, "nothing is read after the connection closed");
 
         // A target that never stops talking cannot keep the turn going.
         let mut endless = 0;
-        assert_eq!(drain_turn(Pumped::Idle, || { endless += 1; Some(Pumped::Idle) }), Pumped::Idle);
+        assert_eq!(drain_turn(Pumped::Idle, || true, || { endless += 1; Some(Pumped::Idle) }), Pumped::Idle);
         assert_eq!(endless, PUMP_DRAIN_MAX);
+    }
+
+    /// An attach under the caller's deadline ends by it, and one with no deadline of the caller's -
+    /// or a later one - keeps its own budget.
+    #[test]
+    fn an_attach_ends_by_the_callers_deadline_when_that_comes_first() {
+        let now = Instant::now();
+        let budget = Duration::from_secs(10);
+        let soon = now + Duration::from_secs(1);
+        assert_eq!(attach_deadline(now, budget, Some(soon)), soon);
+        assert_eq!(attach_deadline(now, budget, None), now + budget);
+        assert_eq!(attach_deadline(now, budget, Some(now + Duration::from_secs(30))), now + budget);
+    }
+
+    /// R4-S10: a turn that has run out of its time stops taking messages, however many are here - a
+    /// burst of attaches cannot hold the loop from its heartbeat. The rest waits for the next turn.
+    #[test]
+    fn a_pump_turn_stops_when_its_time_is_spent() {
+        let mut budget = 3;
+        let mut taken = 0;
+        let turn = drain_turn(
+            Pumped::Idle,
+            || {
+                budget -= 1;
+                budget >= 0
+            },
+            || {
+                taken += 1;
+                Some(Pumped::Attached)
+            },
+        );
+        assert_eq!(turn, Pumped::Attached);
+        assert_eq!(taken, 3, "three messages fitted in the turn, the fourth waits");
     }
 
     /// The probe decides whether a page inside a natively hooked application gets the shim. Our own

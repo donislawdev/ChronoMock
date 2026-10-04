@@ -8,8 +8,20 @@
 //! more than the tidier directory. These probes are the product USING that client.
 
 
+use std::time::{Duration, Instant};
+
 use crate::cdp;
 use crate::output::{diag, outln};
+
+/// The deadline a probe gives reaching the endpoint - the same the session gives it.
+fn reach_by() -> Instant {
+    Instant::now() + cdp::CONNECT_DEADLINE
+}
+
+/// The deadline a probe gives one shim injection - the same the session gives it.
+fn inject_by() -> Instant {
+    Instant::now() + Duration::from_secs(cdp::CALL_DEADLINE_SECS)
+}
 use crate::zone::{moment_epoch_ms, now_epoch_ms, WALL_MAX_MS};
 /// Hidden probe (CDP slice C1 verification): connect to a running Chromium/Electron debug port and
 /// print what CDP sees. Not a user command - it proves the WebSocket + JSON-RPC transport against a
@@ -22,7 +34,7 @@ pub(crate) fn cdp_probe(argv: &[String]) -> i32 {
             return 1;
         }
     };
-    let mut client = match cdp::CdpClient::connect_to_port("127.0.0.1", port) {
+    let mut client = match cdp::CdpClient::connect_to_port("127.0.0.1", port, reach_by()) {
         Ok(c) => c,
         Err(e) => {
             diag!("chrono: cannot connect to CDP on port {port}: {e}");
@@ -81,7 +93,7 @@ pub(crate) fn cdp_launch_probe(argv: &[String]) -> i32 {
     };
     outln!("debug port: {}", launched.port);
 
-    let code = match cdp::CdpClient::connect_to_port("127.0.0.1", launched.port) {
+    let code = match cdp::CdpClient::connect_to_port("127.0.0.1", launched.port, reach_by()) {
         Ok(mut c) => match c.call("Browser.getVersion", serde_json::json!({}), None) {
             Ok(v) => {
                 outln!(
@@ -132,7 +144,7 @@ pub(crate) fn cdp_shim_probe(argv: &[String]) -> i32 {
             return 3;
         }
     };
-    let mut client = match cdp::CdpClient::connect_to_port("127.0.0.1", launched.port) {
+    let mut client = match cdp::CdpClient::connect_to_port("127.0.0.1", launched.port, reach_by()) {
         Ok(c) => c,
         Err(e) => {
             diag!("chrono: connect: {e}");
@@ -169,9 +181,9 @@ pub(crate) fn cdp_shim_probe(argv: &[String]) -> i32 {
                     continue;
                 }
                 let r = if cdp::is_worker(&ty) {
-                    cdp::inject_worker(&mut client, &sid, &shim)
+                    cdp::inject_worker(&mut client, &sid, &shim, inject_by())
                 } else {
-                    cdp::inject_page(&mut client, &sid, &shim)
+                    cdp::inject_page(&mut client, &sid, &shim, inject_by())
                 };
                 match r {
                     Ok(_) => outln!("{}", probe_target_line("shimmed", &ty, &url)),
@@ -264,7 +276,7 @@ pub(crate) fn cdp_date_probe(argv: &[String]) -> i32 {
             return 3;
         }
     };
-    let mut client = match cdp::CdpClient::connect_to_port("127.0.0.1", launched.port) {
+    let mut client = match cdp::CdpClient::connect_to_port("127.0.0.1", launched.port, reach_by()) {
         Ok(c) => c,
         Err(e) => {
             diag!("chrono: connect: {e}");
@@ -287,7 +299,7 @@ pub(crate) fn cdp_date_probe(argv: &[String]) -> i32 {
             Ok(Some(cdp::Msg::Event { method, params, .. })) if method == "Target.attachedToTarget" => {
                 let sid = params["sessionId"].as_str().unwrap_or("").to_string();
                 let ty = params["targetInfo"]["type"].as_str().unwrap_or("").to_string();
-                if ty == "page" && !sid.is_empty() && cdp::inject_page(&mut client, &sid, &shim).is_ok() {
+                if ty == "page" && !sid.is_empty() && cdp::inject_page(&mut client, &sid, &shim, inject_by()).is_ok() {
                     page_sid = Some(sid);
                 }
             }

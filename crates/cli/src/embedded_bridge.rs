@@ -581,7 +581,7 @@ impl EmbeddedBridge {
         let tx = self.connects_tx.clone();
         let port = found.port;
         let spawned = thread::Builder::new().name("chrono-attach".into()).spawn(move || {
-            let result = Attacher::connect(found.host, found.port);
+            let result = Attacher::connect(found.host, found.port, Instant::now() + cdp::CONNECT_DEADLINE);
             let _ = tx.send((found, result));
         });
         match spawned {
@@ -602,14 +602,12 @@ impl EmbeddedBridge {
                     self.connecting.remove(&found.port);
                     // Budgets that keep the loop's cadence, and the probe that keeps a page the hook
                     // already covers from being shimmed a second time.
-                    if let Err(e) = attacher.set_budgets(POLL, CALL) {
-                        diag!("chrono core: engine on port {}: {e}", found.port);
-                    }
+                    attacher.set_budgets(POLL, CALL);
                     attacher.probe_clock_before_shim();
                     if self.pushed.is_none() {
                         self.pushed = Some(origin);
                     }
-                    if let Err(e) = attacher.attach_existing(origin, &mut self.next_index) {
+                    if let Err(e) = attacher.attach_existing(origin, &mut self.next_index, Instant::now() + CALL) {
                         diag!("chrono core: engine on port {}: {e}", found.port);
                     }
                     self.reached = true;
@@ -626,10 +624,11 @@ impl EmbeddedBridge {
         }
     }
 
-    /// Read every live context's call counts (once a second, like the Chromium session).
-    pub(crate) fn poll_counts(&mut self) {
+    /// Ask every live context for its call counts (once a second, like the Chromium session), without
+    /// waiting - the answers are taken by the next turns (R4-S10).
+    pub(crate) fn request_counts(&mut self) {
         for attacher in &mut self.attachers {
-            attacher.poll_counts();
+            attacher.request_counts();
         }
     }
 
@@ -675,21 +674,26 @@ impl EmbeddedBridge {
     /// clock at `end` and its page stayed on the session date, running on at the session rate for as
     /// long as it lived - also with no opt-in at all, because this channel is on by default. A page
     /// that does not confirm is named in the report rather than assumed let go (rule 6).
-    pub(crate) fn release_pages(&mut self) {
+    ///
+    /// Waits until `end_by` at the latest - the same deadline as [`EmbeddedBridge::finish`], because
+    /// a GUI gives the core two seconds after `end` and both have to fit in them (ADR-20).
+    pub(crate) fn release_pages(&mut self, origin: ShimOrigin, end_by: Instant) {
         let expr = cdp_release_expr();
-        let unconfirmed: u32 = self.attachers.iter_mut().map(|a| a.release(&expr)).sum();
+        let next_index = &mut self.next_index;
+        let unconfirmed: u32 = self.attachers.iter_mut().map(|a| a.release(&expr, origin, next_index, end_by)).sum();
         if unconfirmed > 0 {
             self.warn(KEY_PAGES_NOT_RELEASED);
         }
     }
 
     /// Every page of every engine onto `origin`: new-document hooks renewed, live documents told. A
-    /// page that did not take the move stands apart from the host until the next jump - the resync
-    /// does not see it, because it measures the drift of what was pushed - so it is said (rule 6).
+    /// page that does not take the move stands apart from the host until the next jump - the resync
+    /// does not see it, because it measures the drift of what was pushed - so it is said at the end
+    /// (rule 6, [`EmbeddedBridge::finish`]).
     fn move_clock(&mut self, expr: &str, origin: ShimOrigin) {
-        let missed: usize = self.attachers.iter_mut().map(|attacher| attacher.move_clock(expr, origin)).sum();
-        if missed > 0 {
-            self.warn(KEY_CLOCK_MOVE_MISSED);
+        let next_index = &mut self.next_index;
+        for attacher in &mut self.attachers {
+            attacher.move_clock(expr, origin, next_index);
         }
     }
 
@@ -699,12 +703,21 @@ impl EmbeddedBridge {
         }
     }
 
-    /// Hand over what the channel covered. Closes every connection. A page still open keeps its shim,
-    /// which is why an application that outlives the session gets `release_pages` first. A document
-    /// loaded after this starts without the shim: its registration dies with the connection (measured
-    /// 2026-09-24, a reload after the session came back on the real clock).
-    pub(crate) fn finish(mut self) -> Outcome {
-        self.poll_counts();
+    /// Hand over what the channel covered, after the last counts and every clock move a page has not
+    /// answered by `end_by` (taken as missed). Closes every connection. A page still open keeps its
+    /// shim, which is why an application that outlives the session gets `release_pages` first. A
+    /// document loaded after this starts without the shim: its registration dies with the connection
+    /// (measured 2026-09-24, a reload after the session came back on the real clock).
+    pub(crate) fn finish(mut self, origin: ShimOrigin, end_by: Instant) -> Outcome {
+        let next_index = &mut self.next_index;
+        for attacher in &mut self.attachers {
+            attacher.settle(origin, next_index, end_by);
+        }
+        let missed = self.closed.iter().map(|c| c.moves_missed).sum::<usize>()
+            + self.attachers.iter().map(Attacher::moves_missed).sum::<usize>();
+        if missed > 0 {
+            self.warn(KEY_CLOCK_MOVE_MISSED);
+        }
         let mut outcome = Outcome {
             seen: Vec::new(),
             counts: BTreeMap::new(),

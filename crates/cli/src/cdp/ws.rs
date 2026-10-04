@@ -4,109 +4,61 @@
 //! ships no async runtime or WebSocket crate. Scope is narrow on purpose - one connection, text
 //! frames, client-side masking, and the control frames a browser actually sends (ping/close).
 //!
-//! The receive side is buffer-based and pollable: bytes are accumulated and a frame is parsed only
-//! once it is complete, so a read timeout between frames never corrupts a partial frame. That lets a
-//! long-lived event loop wake periodically (to check whether the target is still alive) without
-//! ending the session on an idle gap.
+//! The receive side is a thread of its own (R4-N27). It reads with no timeout at all and hands each
+//! complete text message to the owner over a bounded channel, and the owner waits on that channel -
+//! never on the socket. A read that times out under `SO_RCVTIMEO` leaves the connection "in an
+//! indeterminate state" that "should be closed" (Microsoft Learn, SOL_SOCKET socket options), and
+//! this client used to time one out on purpose as its tick: every 500 ms in a Chromium session,
+//! every 10 ms beside a native one. Measured on loopback with a 1 ms tick: 39 timed-out reads in ten
+//! minutes ended in `os error 997` on the next read and lost the bytes the cancelled read had taken.
+//!
+//! The thread ends when the connection does. Nothing ends it sooner: measured, neither
+//! `shutdown(Both)` nor closing our own handle wakes a read waiting on a cloned handle while the
+//! peer stays silent - so dropping the client sends a WebSocket close frame and a FIN, and the
+//! browser closes its side. A browser that never does keeps the thread until the core exits, which
+//! is when the session ends anyway.
 //!
 //! What it does NOT do (unneeded for localhost CDP): TLS, permessage-deflate, the server-Accept
 //! check (a client MAY skip it - RFC 6455 4.1), or a cryptographically random key (the key only
 //! defeats caching proxies, irrelevant to a loopback debug port).
 
 use std::io::{self, Read, Write};
-use std::net::TcpStream;
-use std::time::Duration;
+use std::net::{Shutdown, TcpStream};
+use std::sync::mpsc::{self, Receiver, RecvTimeoutError, SyncSender, TryRecvError};
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
-/// Poll granularity for the receive socket: a blocked read wakes this often so an event loop can
-/// check target liveness. Frames still assemble across as many wakeups as they need.
+/// How long a poll waits for a message when the owner has not asked for another interval.
 const POLL_TIMEOUT: Duration = Duration::from_millis(500);
 
-/// One read attempt's outcome.
-enum Fill {
-    Data,
-    Timeout,
-    Closed,
+/// How long one write may wait for the browser to take it. A write that times out leaves the
+/// connection as indeterminate as a read does, so it ends the connection - the browser stopped
+/// reading it, which only a hung browser does.
+const WRITE_TIMEOUT: Duration = Duration::from_secs(2);
+
+/// Messages the reader thread holds for an owner that is busy. Past this it stops reading, and the
+/// browser holds what it has not sent - TCP flow control, rather than memory growing on our side.
+const INBOX: usize = 1024;
+
+/// What the reader thread hands over: a message, or the end of the connection and why.
+enum Incoming {
+    Text(String),
+    Closed(io::Error),
 }
 
-/// A framed text-message WebSocket over one TCP connection to a loopback CDP endpoint.
-pub struct WsClient {
+/// The write half: the owner sends commands, the reader thread answers pings, and the lock keeps
+/// their frames from interleaving.
+struct Writer {
     stream: TcpStream,
-    writer: TcpStream,
     mask_counter: u32,
-    /// Unparsed bytes read from the socket.
-    rbuf: Vec<u8>,
-    /// A message being reassembled across continuation frames.
-    msg: Vec<u8>,
 }
 
-impl WsClient {
-    /// Connect to `host:port` and perform the HTTP upgrade handshake for `path` (the
-    /// `webSocketDebuggerUrl` path from `/json/version`). Fails loudly if the server does not answer
-    /// `101 Switching Protocols`.
-    pub fn connect(host: &str, port: u16, path: &str) -> io::Result<WsClient> {
-        let stream = TcpStream::connect((super::bare_host(host), port))?;
-        stream.set_nodelay(true).ok();
-        // Generous timeout for the handshake, then the fine-grained poll timeout for operation.
-        stream.set_read_timeout(Some(Duration::from_secs(10)))?;
-        let writer = stream.try_clone()?;
-        let mut client = WsClient { stream, writer, mask_counter: 0x9e37_79b9, rbuf: Vec::new(), msg: Vec::new() };
-
-        let host = super::header_host(host);
-        let request = format!(
-            "GET {path} HTTP/1.1\r\n\
-             Host: {host}:{port}\r\n\
-             Upgrade: websocket\r\n\
-             Connection: Upgrade\r\n\
-             Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n\
-             Sec-WebSocket-Version: 13\r\n\r\n"
-        );
-        (&client.writer).write_all(request.as_bytes())?;
-        (&client.writer).flush()?;
-
-        // Read until the header terminator, then verify the 101 status and drop the headers.
-        let end = loop {
-            if let Some(pos) = find_subslice(&client.rbuf, b"\r\n\r\n") {
-                break pos;
-            }
-            match client.fill()? {
-                Fill::Data => {}
-                Fill::Timeout => {
-                    return Err(io::Error::new(io::ErrorKind::TimedOut, "websocket handshake timed out"))
-                }
-                Fill::Closed => {
-                    return Err(io::Error::new(io::ErrorKind::ConnectionAborted, "closed during handshake"))
-                }
-            }
-        };
-        let status_end = find_subslice(&client.rbuf, b"\r\n").unwrap_or(end);
-        let status = String::from_utf8_lossy(&client.rbuf[..status_end]).into_owned();
-        if !status.contains(" 101") {
-            return Err(io::Error::new(
-                io::ErrorKind::ConnectionRefused,
-                format!("websocket upgrade refused: {status}"),
-            ));
-        }
-        client.rbuf.drain(..end + 4);
-
-        client.stream.set_read_timeout(Some(POLL_TIMEOUT))?;
-        Ok(client)
-    }
-
-    /// Change how often a blocked read wakes. The default is [`POLL_TIMEOUT`], sized for a loop that
-    /// does nothing else. A loop with its own cadence - the native session, polling children every
-    /// 100 ms - asks for a shorter one, so a quiet socket costs it a tenth of that rather than five
-    /// times it.
-    pub fn set_poll_interval(&mut self, interval: Duration) -> io::Result<()> {
-        self.stream.set_read_timeout(Some(interval))
-    }
-
-    /// Send one text message as a single masked frame (FIN + opcode 0x1). CDP messages are small
-    /// enough that fragmenting the client side buys nothing.
-    pub fn send_text(&mut self, text: &str) -> io::Result<()> {
-        let payload = text.as_bytes();
+impl Writer {
+    /// One masked frame (FIN set). The mask varies frame by frame, which is all RFC 6455 asks of a
+    /// client.
+    fn frame(&mut self, opcode: u8, payload: &[u8]) -> io::Result<()> {
         let mut frame = Vec::with_capacity(payload.len() + 14);
-        frame.push(0x81); // FIN | text
-
+        frame.push(0x80 | opcode);
         let len = payload.len();
         if len < 126 {
             frame.push(0x80 | len as u8);
@@ -117,132 +69,257 @@ impl WsClient {
             frame.push(0x80 | 127);
             frame.extend_from_slice(&(len as u64).to_be_bytes());
         }
-
-        let mask = self.next_mask();
+        self.mask_counter = self.mask_counter.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+        let mask = self.mask_counter.to_be_bytes();
         frame.extend_from_slice(&mask);
         for (i, byte) in payload.iter().enumerate() {
             frame.push(byte ^ mask[i & 3]);
         }
-
-        (&self.writer).write_all(&frame)?;
-        (&self.writer).flush()
+        self.stream.write_all(&frame)?;
+        self.stream.flush()
     }
+}
 
-    /// Return the next complete text message, or `None` if the poll interval elapsed with no message
-    /// ready (the caller can then do other work, e.g. check whether the target exited). Pings are
-    /// answered transparently - a close frame or EOF is an error so the caller can end the session.
-    pub fn poll_text(&mut self) -> io::Result<Option<String>> {
-        loop {
-            if let Some(text) = self.take_message()? {
-                return Ok(Some(text));
-            }
-            match self.fill()? {
-                Fill::Data => {}
-                Fill::Timeout => return Ok(None),
-                Fill::Closed => {
-                    return Err(io::Error::new(io::ErrorKind::ConnectionAborted, "websocket closed"))
-                }
-            }
-        }
-    }
+/// A framed text-message WebSocket over one TCP connection to a loopback CDP endpoint.
+pub struct WsClient {
+    writer: Arc<Mutex<Writer>>,
+    inbox: Receiver<Incoming>,
+    poll: Duration,
+    /// Set once the connection is known to be over - the reader said so, or a write failed - so every
+    /// later poll and send says so too, instead of waiting on a connection nobody reads.
+    over: bool,
+}
 
-    /// The next complete text message that is already here - assembled from bytes read earlier, or
-    /// from what the socket holds right now - without waiting for more. `None` at once when there is
-    /// none. One non-blocking read: a message longer than it completes on the next [`poll_text`].
+impl WsClient {
+    /// Connect to `host:port` and perform the HTTP upgrade handshake for `path` (the
+    /// `webSocketDebuggerUrl` path from `/json/version`), all of it by `deadline` (R4-N26). Fails
+    /// loudly if the server does not answer `101 Switching Protocols`.
     ///
-    /// For a loop that has just handled one message and wants the rest of a burst in the same turn
-    /// (R4-S14) without adding a poll interval of waiting to every turn that has traffic.
-    pub fn poll_text_ready(&mut self) -> io::Result<Option<String>> {
-        if let Some(text) = self.take_message()? {
-            return Ok(Some(text));
+    /// The handshake reads with a timeout - the time left to the deadline - which is allowed because a
+    /// timeout ends this socket: it is dropped and never read again. Once the upgrade is through, the
+    /// socket has no read timeout for the rest of its life.
+    pub fn connect(host: &str, port: u16, path: &str, deadline: Instant) -> io::Result<WsClient> {
+        let mut stream = super::connect_by(host, port, deadline)?;
+        stream.set_nodelay(true).ok();
+        stream.set_write_timeout(Some(WRITE_TIMEOUT))?;
+
+        let host = super::header_host(host);
+        let request = format!(
+            "GET {path} HTTP/1.1\r\n\
+             Host: {host}:{port}\r\n\
+             Upgrade: websocket\r\n\
+             Connection: Upgrade\r\n\
+             Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n\
+             Sec-WebSocket-Version: 13\r\n\r\n"
+        );
+        stream.write_all(request.as_bytes())?;
+        stream.flush()?;
+
+        // Read until the header terminator, then verify the 101 status and drop the headers.
+        let mut rbuf = Vec::new();
+        let end = loop {
+            if let Some(pos) = find_subslice(&rbuf, b"\r\n\r\n") {
+                break pos;
+            }
+            if rbuf.len() > MAX_HANDSHAKE_BYTES {
+                return Err(io::Error::new(io::ErrorKind::InvalidData, "websocket handshake exceeds the size cap"));
+            }
+            if super::read_some_by(&mut stream, &mut rbuf, deadline)? == 0 {
+                return Err(io::Error::new(io::ErrorKind::ConnectionAborted, "closed during handshake"));
+            }
+        };
+        let status_end = find_subslice(&rbuf, b"\r\n").unwrap_or(end);
+        let status = String::from_utf8_lossy(&rbuf[..status_end]).into_owned();
+        if !status.contains(" 101") {
+            return Err(io::Error::new(
+                io::ErrorKind::ConnectionRefused,
+                format!("websocket upgrade refused: {status}"),
+            ));
         }
-        self.stream.set_nonblocking(true)?;
-        let filled = self.fill();
-        // Back to blocking whatever the read did, so the next `poll_text` waits its interval again.
-        self.stream.set_nonblocking(false)?;
-        match filled? {
-            Fill::Data => self.take_message(),
-            Fill::Timeout => Ok(None),
-            Fill::Closed => Err(io::Error::new(io::ErrorKind::ConnectionAborted, "websocket closed")),
+        // What came with the 101 is the start of the first frame, and the reader begins from it.
+        let leftover = rbuf.split_off(end + 4);
+
+        stream.set_read_timeout(None)?;
+        let reader = stream.try_clone()?;
+        let writer = Arc::new(Mutex::new(Writer { stream, mask_counter: 0x9e37_79b9 }));
+        let (tx, inbox) = mpsc::sync_channel(INBOX);
+        let pongs = Arc::clone(&writer);
+        std::thread::Builder::new()
+            .name("chrono-cdp-read".into())
+            .spawn(move || read_loop(reader, leftover, &tx, &pongs))?;
+        Ok(WsClient { writer, inbox, poll: POLL_TIMEOUT, over: false })
+    }
+
+    /// Change how long a poll waits for a message. The default is [`POLL_TIMEOUT`], sized for a loop
+    /// that does nothing else. A loop with its own cadence - the native session, polling children
+    /// every 100 ms - asks for a shorter one, so a quiet connection costs it a tenth of that rather
+    /// than five times it.
+    pub fn set_poll_interval(&mut self, interval: Duration) {
+        self.poll = interval;
+    }
+
+    /// Send one text message as a single masked frame. CDP messages are small enough that
+    /// fragmenting the client side buys nothing. A write that fails or times out ends the connection.
+    pub fn send_text(&mut self, text: &str) -> io::Result<()> {
+        if self.over {
+            return Err(closed());
+        }
+        let sent = match self.writer.lock() {
+            Ok(mut writer) => writer.frame(0x1, text.as_bytes()),
+            // The reader thread panicked while it held the lock, answering a ping: the connection
+            // cannot be trusted to be in step any more.
+            Err(_) => Err(io::Error::other("websocket writer was left mid-frame")),
+        };
+        if sent.is_err() {
+            self.over = true;
+        }
+        sent
+    }
+
+    /// The next complete text message, waiting at most the poll interval for it. `None` when the
+    /// interval passed with nothing - the caller can then do other work. An error once the
+    /// connection is over, so the caller can end the session.
+    pub fn poll_text(&mut self) -> io::Result<Option<String>> {
+        self.poll_text_for(self.poll)
+    }
+
+    /// The same, waiting at most `wait` - for a caller with a deadline nearer than one interval.
+    pub fn poll_text_for(&mut self, wait: Duration) -> io::Result<Option<String>> {
+        if self.over {
+            return Err(closed());
+        }
+        let got = self.inbox.recv_timeout(wait);
+        match got {
+            Ok(incoming) => self.take(incoming),
+            Err(RecvTimeoutError::Timeout) => Ok(None),
+            Err(RecvTimeoutError::Disconnected) => self.take(Incoming::Closed(closed())),
         }
     }
 
-    /// Read whatever is available into the buffer, distinguishing data / idle timeout / close.
-    fn fill(&mut self) -> io::Result<Fill> {
+    /// The next complete message that is already here, without waiting. `None` at once when there is
+    /// none. For a loop that has just handled one message and wants the rest of a burst in the same
+    /// turn (R4-S14) without adding a poll interval of waiting to every turn that has traffic.
+    pub fn poll_text_ready(&mut self) -> io::Result<Option<String>> {
+        if self.over {
+            return Err(closed());
+        }
+        let got = self.inbox.try_recv();
+        match got {
+            Ok(incoming) => self.take(incoming),
+            Err(TryRecvError::Empty) => Ok(None),
+            Err(TryRecvError::Disconnected) => self.take(Incoming::Closed(closed())),
+        }
+    }
+
+    fn take(&mut self, incoming: Incoming) -> io::Result<Option<String>> {
+        match incoming {
+            Incoming::Text(text) => Ok(Some(text)),
+            Incoming::Closed(why) => {
+                self.over = true;
+                Err(why)
+            }
+        }
+    }
+
+    /// The read timeout the socket has, for the test that pins it at none once connected.
+    #[cfg(test)]
+    fn read_timeout(&self) -> io::Result<Option<Duration>> {
+        self.writer.lock().map_err(|_| io::Error::other("poisoned"))?.stream.read_timeout()
+    }
+}
+
+impl Drop for WsClient {
+    /// Close the connection the way RFC 6455 does - a close frame - and send a FIN, so the browser
+    /// closes its side and the reader thread, which nothing else can wake, sees the end. Best effort:
+    /// a browser that has stopped reading costs the write timeout, once.
+    fn drop(&mut self) {
+        if let Ok(mut writer) = self.writer.lock() {
+            if !self.over {
+                let _ = writer.frame(0x8, &[]);
+            }
+            let _ = writer.stream.shutdown(Shutdown::Write);
+        }
+    }
+}
+
+/// The error a poll or a send gets once the connection is over.
+fn closed() -> io::Error {
+    io::Error::new(io::ErrorKind::ConnectionAborted, "websocket closed")
+}
+
+/// Cap on the handshake response: the DevTools server answers in a few hundred bytes.
+const MAX_HANDSHAKE_BYTES: usize = 64 * 1024;
+
+/// The reader thread: read with no timeout, hand over every complete text message, answer pings,
+/// and say once, at the end, why the connection ended. Stops early when the owner is gone.
+fn read_loop(mut stream: TcpStream, mut rbuf: Vec<u8>, inbox: &SyncSender<Incoming>, writer: &Mutex<Writer>) {
+    let mut msg = Vec::new();
+    let end = loop {
+        match take_message(&mut rbuf, &mut msg, writer) {
+            Ok(Some(text)) => {
+                if inbox.send(Incoming::Text(text)).is_err() {
+                    return;
+                }
+                continue;
+            }
+            Ok(None) => {}
+            Err(why) => break why,
+        }
         let mut tmp = [0u8; 8192];
-        match self.stream.read(&mut tmp) {
-            Ok(0) => Ok(Fill::Closed),
+        match stream.read(&mut tmp) {
+            Ok(0) => break closed(),
             Ok(n) => {
-                self.rbuf.extend_from_slice(&tmp[..n]);
-                if self.rbuf.len() > MAX_WS_BYTES {
+                rbuf.extend_from_slice(&tmp[..n]);
+                if rbuf.len() > MAX_WS_BYTES {
                     // A frame claiming a huge payload would otherwise grow this buffer toward that size
                     // (P3, pre-release audit): bound it so a hostile or runaway peer cannot exhaust memory.
-                    return Err(io::Error::new(io::ErrorKind::InvalidData, "websocket frame exceeds the size cap"));
-                }
-
-                Ok(Fill::Data)
-            }
-            Err(e) if matches!(e.kind(), io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut) => Ok(Fill::Timeout),
-            Err(e) => Err(e),
-        }
-    }
-
-    /// Assemble a complete text message from buffered frames, answering pings along the way. Returns
-    /// `None` when the buffer does not yet hold a full frame (the caller reads more).
-    fn take_message(&mut self) -> io::Result<Option<String>> {
-        while let Some((fin, opcode, payload)) = take_frame(&mut self.rbuf)? {
-            match opcode {
-                0x0..=0x2 => {
-                    // continuation (0x0) | text (0x1) | binary (0x2) - accumulate until FIN.
-                    self.msg.extend_from_slice(&payload);
-                    if self.msg.len() > MAX_WS_BYTES {
-                        // Many fragmented frames must not accumulate without bound either (P3).
-                        return Err(io::Error::new(io::ErrorKind::InvalidData, "websocket message exceeds the size cap"));
-                    }
-                    if fin {
-                        let bytes = std::mem::take(&mut self.msg);
-                        return String::from_utf8(bytes)
-                            .map(Some)
-                            .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "websocket text was not UTF-8"));
-                    }
-                }
-                0x9 => self.write_control(0xA, &payload)?, // ping -> pong (echo)
-                0xA => {}                                  // pong - ignore
-                0x8 => return Err(io::Error::new(io::ErrorKind::ConnectionAborted, "websocket closed")),
-                other => {
-                    return Err(io::Error::new(
-                        io::ErrorKind::InvalidData,
-                        format!("unexpected websocket opcode {other:#x}"),
-                    ))
+                    break io::Error::new(io::ErrorKind::InvalidData, "websocket frame exceeds the size cap");
                 }
             }
+            Err(e) if e.kind() == io::ErrorKind::Interrupted => {}
+            Err(e) => break e,
         }
-        Ok(None)
-    }
+    };
+    let _ = inbox.send(Incoming::Closed(end));
+}
 
-    /// Send a masked control frame (pong) with a small payload.
-    fn write_control(&mut self, opcode: u8, payload: &[u8]) -> io::Result<()> {
-        // RFC 6455 caps a control payload at 125 bytes, but a peer can break that and `take_frame` does
-        // not check it - and `len as u8` then wrapped, so the pong announced a length it did not carry
-        // and the byte stream went out of step from there on. Echo only what fits.
-        let payload = &payload[..payload.len().min(125)];
-        let mut frame = Vec::with_capacity(payload.len() + 6);
-        frame.push(0x80 | opcode);
-        frame.push(0x80 | payload.len() as u8);
-        let mask = self.next_mask();
-        frame.extend_from_slice(&mask);
-        for (i, byte) in payload.iter().enumerate() {
-            frame.push(byte ^ mask[i & 3]);
+/// Assemble a complete text message from buffered frames, answering pings along the way. Returns
+/// `None` when the buffer does not yet hold a full frame (the caller reads more).
+fn take_message(rbuf: &mut Vec<u8>, msg: &mut Vec<u8>, writer: &Mutex<Writer>) -> io::Result<Option<String>> {
+    while let Some((fin, opcode, payload)) = take_frame(rbuf)? {
+        match opcode {
+            0x0..=0x2 => {
+                // continuation (0x0) | text (0x1) | binary (0x2) - accumulate until FIN.
+                msg.extend_from_slice(&payload);
+                if msg.len() > MAX_WS_BYTES {
+                    // Many fragmented frames must not accumulate without bound either (P3).
+                    return Err(io::Error::new(io::ErrorKind::InvalidData, "websocket message exceeds the size cap"));
+                }
+                if fin {
+                    let bytes = std::mem::take(msg);
+                    return String::from_utf8(bytes)
+                        .map(Some)
+                        .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "websocket text was not UTF-8"));
+                }
+            }
+            0x9 => {
+                // ping -> pong (echo). RFC 6455 caps a control payload at 125 bytes, but a peer can
+                // break that, and a pong announcing a length it does not carry would put the byte
+                // stream out of step from there on. Echo only what fits.
+                let echo = &payload[..payload.len().min(125)];
+                writer.lock().map_err(|_| io::Error::other("websocket writer was left mid-frame"))?.frame(0xA, echo)?;
+            }
+            0xA => {} // pong - ignore
+            0x8 => return Err(closed()),
+            other => {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    format!("unexpected websocket opcode {other:#x}"),
+                ))
+            }
         }
-        (&self.writer).write_all(&frame)?;
-        (&self.writer).flush()
     }
-
-    /// A varying (not necessarily random) 4-byte mask satisfies the RFC client-masking rule.
-    fn next_mask(&mut self) -> [u8; 4] {
-        self.mask_counter = self.mask_counter.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
-        self.mask_counter.to_be_bytes()
-    }
+    Ok(None)
 }
 
 /// Cap on the read buffer and on an assembled message (P3, pre-release audit). CDP messages are small, so
@@ -402,9 +479,8 @@ pub(crate) mod tests {
         assert!(take_frame(&mut buf).unwrap().is_none());
     }
 
-    /// A loopback server that answers the upgrade and then sends `frames` in one write, the way a burst
-    /// of CDP events arrives. Kept open until `hold` passes so the client sees a live, quiet socket.
-    pub(crate) fn burst_server(frames: Vec<Vec<u8>>, hold: Duration) -> (u16, std::thread::JoinHandle<()>) {
+    /// A loopback server that reads the upgrade request and hands the connection to `then`.
+    fn server(then: impl FnOnce(TcpStream) + Send + 'static) -> (u16, std::thread::JoinHandle<()>) {
         let listener = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
         let port = listener.local_addr().unwrap().port();
         let handle = std::thread::spawn(move || {
@@ -413,14 +489,192 @@ pub(crate) mod tests {
             let mut b = [0u8; 1024];
             while find_subslice(&seen, b"\r\n\r\n").is_none() {
                 let n = s.read(&mut b).unwrap();
+                if n == 0 {
+                    return;
+                }
                 seen.extend_from_slice(&b[..n]);
             }
-            s.write_all(b"HTTP/1.1 101 Switching Protocols\r\n\r\n").unwrap();
+            then(s);
+        });
+        (port, handle)
+    }
+
+    const UPGRADED: &[u8] = b"HTTP/1.1 101 Switching Protocols\r\n\r\n";
+
+    fn soon() -> Instant {
+        Instant::now() + Duration::from_secs(5)
+    }
+
+    /// A loopback server that answers the upgrade and then sends `frames` in one write, the way a burst
+    /// of CDP events arrives. Kept open until `hold` passes so the client sees a live, quiet socket.
+    pub(crate) fn burst_server(frames: Vec<Vec<u8>>, hold: Duration) -> (u16, std::thread::JoinHandle<()>) {
+        server(move |mut s| {
+            s.write_all(UPGRADED).unwrap();
             let all: Vec<u8> = frames.concat();
             s.write_all(&all).unwrap();
             std::thread::sleep(hold);
+        })
+    }
+
+    /// A loopback browser: answers each CDP request `answer` has an answer for (and leaves the rest
+    /// unanswered, like a busy context), and hands back every request it read, in order, once the
+    /// client closes the connection.
+    pub(crate) fn fake_browser(
+        answer: impl Fn(&serde_json::Value) -> Option<serde_json::Value> + Send + 'static,
+    ) -> (u16, std::thread::JoinHandle<Vec<serde_json::Value>>) {
+        fake_browser_holding(move |request| answer(request).map(|result| vec![(request["id"].clone(), result)]).unwrap_or_default())
+    }
+
+    /// The same, but `answer` may hold a reply back and give it with a later request: it returns the
+    /// replies to write now, each an id and a result - like a renderer busy until a later command.
+    pub(crate) fn fake_browser_holding(
+        mut answer: impl FnMut(&serde_json::Value) -> Vec<(serde_json::Value, serde_json::Value)> + Send + 'static,
+    ) -> (u16, std::thread::JoinHandle<Vec<serde_json::Value>>) {
+        let (tx, rx) = std::sync::mpsc::channel();
+        let (port, server) = server(move |mut s| {
+            s.write_all(UPGRADED).unwrap();
+            let mut log = Vec::new();
+            let mut buf = Vec::new();
+            let mut b = [0u8; 8192];
+            'read: loop {
+                while let Ok(Some((_, opcode, payload))) = take_frame(&mut buf) {
+                    if opcode == 0x8 {
+                        break 'read;
+                    }
+                    let Ok(request) = serde_json::from_slice::<serde_json::Value>(&payload) else {
+                        continue;
+                    };
+                    for (id, result) in answer(&request) {
+                        let reply = serde_json::json!({ "id": id, "result": result }).to_string();
+                        s.write_all(&server_frame(reply.as_bytes(), true)).unwrap();
+                    }
+                    log.push(request);
+                }
+                match s.read(&mut b) {
+                    Ok(0) | Err(_) => break,
+                    Ok(n) => buf.extend_from_slice(&b[..n]),
+                }
+            }
+            let _ = tx.send(log);
         });
-        (port, handle)
+        let log = std::thread::spawn(move || {
+            server.join().unwrap();
+            rx.recv().unwrap_or_default()
+        });
+        (port, log)
+    }
+
+    /// R4-N27: once the upgrade is through, the socket has no read timeout. A read that times out
+    /// leaves a connection indeterminate (Microsoft Learn), and a timeout used as the tick lost bytes
+    /// on this machine (os error 997, `tools/probes/r4-15b`). The waiting is on the reader's channel.
+    #[test]
+    fn a_connected_socket_has_no_read_timeout() {
+        let (port, server) = burst_server(vec![server_frame(b"{}", true)], Duration::from_millis(300));
+        let ws = WsClient::connect("127.0.0.1", port, "/", soon()).unwrap();
+        assert_eq!(ws.read_timeout().unwrap(), None);
+        drop(ws);
+        server.join().unwrap();
+    }
+
+    /// R4-N26: a message whose bytes trickle in no longer holds a poll until it is complete - the
+    /// poll returns at its interval, and the message arrives whole when its last byte does.
+    #[test]
+    fn a_message_that_trickles_in_does_not_hold_a_poll_past_its_interval() {
+        let frame = server_frame(b"{\"slow\":true}", true);
+        let (port, server) = server(move |mut s| {
+            s.write_all(UPGRADED).unwrap();
+            for byte in frame {
+                s.write_all(&[byte]).unwrap();
+                std::thread::sleep(Duration::from_millis(60));
+            }
+            std::thread::sleep(Duration::from_millis(300));
+        });
+        let mut ws = WsClient::connect("127.0.0.1", port, "/", soon()).unwrap();
+        ws.set_poll_interval(Duration::from_millis(100));
+        let started = Instant::now();
+        assert_eq!(ws.poll_text().unwrap(), None, "nothing whole yet");
+        assert!(started.elapsed() < Duration::from_millis(400), "the poll waited for the message: {:?}", started.elapsed());
+        let mut got = None;
+        for _ in 0..40 {
+            if let Some(text) = ws.poll_text().unwrap() {
+                got = Some(text);
+                break;
+            }
+        }
+        assert_eq!(got.as_deref(), Some("{\"slow\":true}"));
+        server.join().unwrap();
+    }
+
+    /// R4-N26: a server that takes the connection and never answers the upgrade costs the deadline,
+    /// once - not ten seconds per read.
+    #[test]
+    fn a_handshake_that_never_answers_ends_at_its_deadline() {
+        let (port, server) = server(|_s| std::thread::sleep(Duration::from_millis(1200)));
+        let started = Instant::now();
+        let err = WsClient::connect("127.0.0.1", port, "/", Instant::now() + Duration::from_millis(300)).err();
+        assert_eq!(err.map(|e| e.kind()), Some(io::ErrorKind::TimedOut));
+        assert!(started.elapsed() < Duration::from_millis(900), "{:?}", started.elapsed());
+        server.join().unwrap();
+    }
+
+    /// The bytes that came in the same write as the 101 are the start of the first message, not lost.
+    #[test]
+    fn the_frame_that_came_with_the_upgrade_is_the_first_message() {
+        let (port, server) = server(|mut s| {
+            let mut both = UPGRADED.to_vec();
+            both.extend_from_slice(&server_frame(b"{\"first\":1}", true));
+            s.write_all(&both).unwrap();
+            std::thread::sleep(Duration::from_millis(500));
+        });
+        let mut ws = WsClient::connect("127.0.0.1", port, "/", soon()).unwrap();
+        assert_eq!(ws.poll_text_for(Duration::from_secs(2)).unwrap().as_deref(), Some("{\"first\":1}"));
+        server.join().unwrap();
+    }
+
+    /// Dropping the client closes the connection the way RFC 6455 does - a close frame - and ends our
+    /// side with a FIN, which is what lets the reader thread see the end: nothing on this side can
+    /// wake a read the peer keeps waiting (measured, `tools/probes/r4-15b`).
+    #[test]
+    fn dropping_the_client_sends_a_close_frame_and_ends_its_side() {
+        let (tx, rx) = std::sync::mpsc::channel();
+        let (port, server) = server(move |mut s| {
+            s.write_all(UPGRADED).unwrap();
+            let mut got = Vec::new();
+            let _ = s.read_to_end(&mut got);
+            let _ = tx.send(got);
+        });
+        let ws = WsClient::connect("127.0.0.1", port, "/", soon()).unwrap();
+        drop(ws);
+        let got = rx.recv_timeout(Duration::from_secs(3)).expect("the server saw the end of the stream");
+        assert_eq!(got.first(), Some(&0x88), "a close frame, FIN set: {got:?}");
+        server.join().unwrap();
+    }
+
+    /// A browser that stops reading the socket ends the connection at the write timeout, and every
+    /// later poll says it is over - a write that times out leaves the connection as indeterminate as
+    /// a read does (Microsoft Learn), so it is not used again.
+    #[test]
+    fn a_browser_that_stops_reading_ends_the_connection() {
+        let (port, server) = server(|mut s| {
+            s.write_all(UPGRADED).unwrap();
+            std::thread::sleep(Duration::from_secs(6));
+        });
+        let mut ws = WsClient::connect("127.0.0.1", port, "/", soon()).unwrap();
+        let big = "x".repeat(1024 * 1024);
+        let started = Instant::now();
+        let mut failed = false;
+        for _ in 0..256 {
+            if ws.send_text(&big).is_err() {
+                failed = true;
+                break;
+            }
+        }
+        assert!(failed, "256 MB went into a socket nobody reads");
+        assert!(started.elapsed() < WRITE_TIMEOUT + Duration::from_secs(2), "{:?}", started.elapsed());
+        assert!(ws.poll_text_for(Duration::from_millis(10)).is_err(), "the connection is over");
+        assert!(ws.send_text("{}").is_err());
+        drop(ws);
+        server.join().unwrap();
     }
 
     /// R4-S14: after one message, the rest of a burst is taken in the same turn and nothing is waited
@@ -429,8 +683,10 @@ pub(crate) mod tests {
     fn a_burst_is_taken_without_waiting_and_the_end_of_it_is_seen_at_once() {
         let frames: Vec<Vec<u8>> = (0..5).map(|n| server_frame(format!("{{\"n\":{n}}}").as_bytes(), true)).collect();
         let (port, server) = burst_server(frames, Duration::from_millis(1500));
-        let mut ws = WsClient::connect("127.0.0.1", port, "/").unwrap();
-        ws.set_poll_interval(Duration::from_millis(800)).unwrap();
+        let mut ws = WsClient::connect("127.0.0.1", port, "/", soon()).unwrap();
+        ws.set_poll_interval(Duration::from_millis(800));
+        // The burst is in once the first message is: the reader hands them over as they come.
+        std::thread::sleep(Duration::from_millis(100));
         assert_eq!(ws.poll_text().unwrap().as_deref(), Some("{\"n\":0}"));
         for n in 1..5 {
             assert_eq!(ws.poll_text_ready().unwrap(), Some(format!("{{\"n\":{n}}}")), "message {n} of the burst");

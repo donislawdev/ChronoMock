@@ -31,6 +31,8 @@ mod cdp_discover;
 mod cdp_embedded;
 /// Hidden diagnostic probes for the Chromium path.
 mod cdp_probe;
+/// The contexts an attacher drives and every request in flight to them.
+mod cdp_requests;
 /// The Chromium/Electron session - the second substitution mechanism.
 mod cdp_session;
 /// The command surface: version, bitness, usage texts.

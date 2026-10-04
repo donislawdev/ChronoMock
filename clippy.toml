@@ -65,7 +65,13 @@
 # it the checks of flags that cannot stand together moved out to `check_combinations`, which took the
 # function to 159. The holder is now `cdp_session` at 160, `parse_run_args` second at 159, then
 # `report::describe_warning` at 148 (measured by `tools/margin.ps1 -Rust`).
-too-many-lines-threshold = 160
+#
+# Lowered 2026-10-03 (CDP input and output that never stall the session loop, ADR-20): the command
+# handling of `cdp_session` moved out to `apply_command`, so the heartbeat can be looked at after
+# every command, and `cdp_session` left the top of the ranking. The holder is now
+# `run::args::parse_run_args` at 159, then `hook::install` at 153 and `report::describe_warning` at
+# 149 (measured by `tools/margin.ps1 -Rust`).
+too-many-lines-threshold = 159
 
 # A tie at 25: `run::driver_run` and `report::render_report`. This happens to be clippy's own
 # default, which is worth saying out loud rather than leaving to look like a copied number - it

@@ -11,14 +11,14 @@ mod session;
 mod ws;
 
 use serde_json::Value;
-use std::io::{self, BufRead, Read, Write};
-use std::net::TcpStream;
+use std::io::{self, Read, Write};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, TcpStream};
 use std::time::{Duration, Instant};
 
 pub use launch::{is_chromium_target, launch_chromium};
 pub use session::{
-    add_page_script, build_shim, inject_page, inject_worker, is_shimmable, is_worker, remove_page_script, scheduled_js,
-    starts_workers, Injected, ScheduledRate, COUNTED_APIS, COUNTS_EXPR,
+    build_shim, inject_page, inject_worker, is_shimmable, is_worker, script_identifier, set_expr, starts_workers,
+    Injected, ScheduledRate, COUNTED_APIS, COUNTS_EXPR,
 };
 pub use ws::WsClient;
 
@@ -44,6 +44,11 @@ pub enum Msg {
 /// at most ten seconds of silence, and `RustTimeoutMirrorTests` fails the build if the watchdog is
 /// ever moved below this.
 pub const CALL_DEADLINE_SECS: u64 = 10;
+
+/// How long reaching a DevTools endpoint may take as a whole: the connect, `/json/version` and the
+/// WebSocket upgrade, under one deadline (R4-N26). Each read used to get these ten seconds of its own,
+/// so a peer answering a byte at a time had no bound at all.
+pub const CONNECT_DEADLINE: Duration = Duration::from_secs(10);
 
 pub struct CdpClient {
     ws: WsClient,
@@ -171,6 +176,65 @@ fn header_host(host: &str) -> String {
     if bare.contains(':') { format!("[{bare}]") } else { bare.to_string() }
 }
 
+/// The addresses a loopback host names, without asking a resolver: an address written out is itself,
+/// and `localhost` is both loopback addresses. Anything else is refused - every endpoint this client
+/// speaks to is one the tool checked to be on this machine, and a name that needs a lookup is not.
+fn loopback_addrs(host: &str, port: u16) -> io::Result<Vec<SocketAddr>> {
+    let bare = bare_host(host);
+    if bare.eq_ignore_ascii_case("localhost") {
+        return Ok(vec![(Ipv4Addr::LOCALHOST, port).into(), (Ipv6Addr::LOCALHOST, port).into()]);
+    }
+    match bare.parse::<IpAddr>() {
+        Ok(ip) if ip.is_loopback() => Ok(vec![SocketAddr::new(ip, port)]),
+        _ => Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!("not a loopback host: {}", sanitise_target_text(host)),
+        )),
+    }
+}
+
+/// The time left before `deadline`, or a timeout error when none is left - so a socket is never given
+/// a zero timeout, which the standard library refuses.
+fn remaining(deadline: Instant) -> io::Result<Duration> {
+    let left = deadline.saturating_duration_since(Instant::now());
+    if left.is_zero() {
+        return Err(io::Error::new(io::ErrorKind::TimedOut, "the browser's debugging port did not answer in time"));
+    }
+    Ok(left)
+}
+
+/// Connect to a loopback endpoint by `deadline` (R4-N26). A plain connect has no bound of its own.
+fn connect_by(host: &str, port: u16, deadline: Instant) -> io::Result<TcpStream> {
+    let mut last = io::Error::new(io::ErrorKind::NotFound, "no address to connect to");
+    for addr in loopback_addrs(host, port)? {
+        match TcpStream::connect_timeout(&addr, remaining(deadline)?) {
+            Ok(stream) => return Ok(stream),
+            Err(e) => last = e,
+        }
+    }
+    Err(last)
+}
+
+/// One read into `buf`, waiting at most until `deadline`, for a socket used once - the HTTP request,
+/// the WebSocket handshake. The timeout is the time left, so however many reads it takes, the whole
+/// exchange ends by the deadline (R4-N26). A read that times out leaves the socket indeterminate
+/// (Microsoft Learn), and that is why only a socket that is then dropped may use this. Returns the
+/// number of bytes read, 0 at the end of the stream.
+fn read_some_by(stream: &mut TcpStream, buf: &mut Vec<u8>, deadline: Instant) -> io::Result<usize> {
+    stream.set_read_timeout(Some(remaining(deadline)?))?;
+    let mut tmp = [0u8; 8192];
+    match stream.read(&mut tmp) {
+        Ok(n) => {
+            buf.extend_from_slice(&tmp[..n]);
+            Ok(n)
+        }
+        Err(e) if matches!(e.kind(), io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut) => {
+            Err(io::Error::new(io::ErrorKind::TimedOut, "the browser's debugging port did not answer in time"))
+        }
+        Err(e) => Err(e),
+    }
+}
+
 /// Fold text the TARGET supplied into something that cannot forge output.
 ///
 /// Everything this tool prints about a CDP session carries words the target chose: an error it
@@ -220,10 +284,10 @@ fn target_error(method: &str, error: &Value) -> io::Error {
 
 impl CdpClient {
     /// Discover the browser-level WebSocket endpoint from `http://host:port/json/version` and connect
-    /// to it. This is the endpoint that carries the `Target` domain, so it can reach every page and
-    /// worker in the target.
-    pub fn connect_to_port(host: &str, port: u16) -> io::Result<CdpClient> {
-        let version = http_get_json(host, port, "/json/version")?;
+    /// to it, all of it by `deadline` (R4-N26). This is the endpoint that carries the `Target` domain,
+    /// so it can reach every page and worker in the target.
+    pub fn connect_to_port(host: &str, port: u16, deadline: Instant) -> io::Result<CdpClient> {
+        let version = http_get_json(host, port, "/json/version", deadline)?;
         let url = version
             .get("webSocketDebuggerUrl")
             .and_then(Value::as_str)
@@ -235,7 +299,7 @@ impl CdpClient {
                 format!("ws url is not the endpoint we opened: {}", sanitise_target_text(url)),
             ));
         }
-        let ws = WsClient::connect(&ws_host, ws_port, &ws_path)?;
+        let ws = WsClient::connect(&ws_host, ws_port, &ws_path, deadline)?;
         Ok(CdpClient {
             ws,
             next_id: 1,
@@ -266,18 +330,23 @@ impl CdpClient {
     /// the target, its children and a heartbeat beside it (docs/09 section 12.17), so it asks for
     /// budgets that keep those cadences - a renderer busy with its own JS does not answer
     /// `Runtime.evaluate`, and ten seconds of standing on it once a second would be the heartbeat gone.
-    pub fn set_budgets(&mut self, poll: Duration, call: Duration) -> io::Result<()> {
-        self.ws.set_poll_interval(poll)?;
+    pub fn set_budgets(&mut self, poll: Duration, call: Duration) {
+        self.ws.set_poll_interval(poll);
         self.call_deadline = call;
-        Ok(())
     }
 
-    /// Send a command and block until its reply arrives, queuing any events seen in between. Returns
-    /// the `result` object (or an error carrying the CDP `error.message`).
-    pub fn call(&mut self, method: &str, params: Value, session_id: Option<&str>) -> io::Result<Value> {
+    /// How long a call may wait for its reply, from now - for a caller that runs several calls under
+    /// one deadline.
+    pub fn call_budget(&self) -> Duration {
+        self.call_deadline
+    }
+
+    /// Send a command and return its id without waiting for the reply, which comes back from
+    /// [`CdpClient::poll`] as a [`Msg::Response`] with that id (R4-S10). For requests to many contexts
+    /// at once, whose replies are handled as they come.
+    pub fn send(&mut self, method: &str, params: Value, session_id: Option<&str>) -> io::Result<u64> {
         let id = self.next_id;
         self.next_id += 1;
-
         let mut req = serde_json::Map::new();
         req.insert("id".into(), Value::from(id));
         req.insert("method".into(), Value::from(method));
@@ -286,22 +355,49 @@ impl CdpClient {
             req.insert("sessionId".into(), Value::from(sid));
         }
         self.ws.send_text(&Value::Object(req).to_string())?;
+        Ok(id)
+    }
 
-        // A reply should come promptly - poll until it does, bounded so a hung target cannot block us.
+    /// Send a command and block until its reply arrives, at most the call budget, queuing anything
+    /// else seen in between. Returns the `result` object (or an error carrying the CDP
+    /// `error.message`).
+    pub fn call(&mut self, method: &str, params: Value, session_id: Option<&str>) -> io::Result<Value> {
         let deadline = Instant::now() + self.call_deadline;
+        self.call_until(method, params, session_id, deadline)
+    }
+
+    /// The same, by a deadline the caller sets - one for a whole sequence of calls, so a sequence of
+    /// five is bounded like one (R4-S10).
+    pub fn call_until(&mut self, method: &str, params: Value, session_id: Option<&str>, deadline: Instant) -> io::Result<Value> {
+        let id = self.send(method, params, session_id)?;
+        self.reply_until(id, method, deadline)
+    }
+
+    /// Wait by `deadline` for the reply to a command already sent with [`CdpClient::send`], queuing
+    /// anything else seen in between. For a few commands sent together to one session and then
+    /// answered in turn: a reply that came while an earlier one was awaited is taken from the queue.
+    pub fn reply_until(&mut self, id: u64, method: &str, deadline: Instant) -> io::Result<Value> {
+        let queued = self.queued.iter().position(|m| matches!(m, Msg::Response { id: rid, .. } if *rid == id));
+        if let Some(Msg::Response { result, error, .. }) = queued.and_then(|at| self.queued.remove(at)) {
+            return match error {
+                Some(e) => Err(target_error(method, &e)),
+                None => Ok(result),
+            };
+        }
         loop {
-            // Checked every pass, not only when the socket goes quiet. A target that keeps pushing
+            // Checked every pass, not only when the connection goes quiet. A target that keeps pushing
             // events - a page logging in a loop, a worker chattering - would otherwise never let the
             // deadline branch run, and a command whose reply never comes (a dead sessionId, say)
             // would block the whole session loop indefinitely: no heartbeat, no `end`, no liveness
             // check, and the GUI's 15 s watchdog calling a healthy core unresponsive.
-            if Instant::now() >= deadline {
+            let left = deadline.saturating_duration_since(Instant::now());
+            if left.is_zero() {
                 return Err(io::Error::new(
                     io::ErrorKind::TimedOut,
                     format!("CDP {method} timed out waiting for a reply"),
                 ));
             }
-            match self.poll_msg()? {
+            match self.poll_msg_for(left)? {
                 Some(Msg::Response { id: rid, result, error }) if rid == id => {
                     return match error {
                         Some(e) => Err(target_error(method, &e)),
@@ -349,7 +445,18 @@ impl CdpClient {
         if let Some(m) = self.queued.pop_front() {
             return Ok(Some(m));
         }
-        self.poll_msg()
+        let Some(text) = self.ws.poll_text()? else {
+            return Ok(None);
+        };
+        Ok(self.decode(&text))
+    }
+
+    /// The same, waiting at most `wait` - for a caller whose deadline is nearer than one interval.
+    pub fn poll_for(&mut self, wait: Duration) -> io::Result<Option<Msg>> {
+        if let Some(m) = self.queued.pop_front() {
+            return Ok(Some(m));
+        }
+        self.poll_msg_for(wait)
     }
 
     /// The next message that is already here, without waiting: a queued one, or one the socket holds
@@ -364,8 +471,8 @@ impl CdpClient {
         }
     }
 
-    fn poll_msg(&mut self) -> io::Result<Option<Msg>> {
-        let Some(text) = self.ws.poll_text()? else {
+    fn poll_msg_for(&mut self, wait: Duration) -> io::Result<Option<Msg>> {
+        let Some(text) = self.ws.poll_text_for(wait)? else {
             return Ok(None);
         };
         Ok(self.decode(&text))
@@ -464,66 +571,70 @@ pub fn free_loopback_port() -> io::Result<u16> {
     Ok(listener.local_addr()?.port())
 }
 
-/// A tiny blocking HTTP/1.1 GET that returns the JSON body. Only for the loopback CDP HTTP endpoints
-/// (`/json/version`, `/json`). Reads the body by `Content-Length` - the DevTools HTTP server keeps
-/// the connection alive despite `Connection: close`, so reading to EOF would block forever. A read
-/// timeout guards against an unresponsive endpoint hanging the tool.
-pub fn http_get_json(host: &str, port: u16, path: &str) -> io::Result<Value> {
-    let stream = TcpStream::connect((bare_host(host), port))?;
-    stream.set_read_timeout(Some(std::time::Duration::from_secs(10)))?;
-    let writer = stream.try_clone()?;
+/// Cap on the HTTP header block. A peer that never sends the blank line must not be read without
+/// bound (R2-N9) - the peer is our own Chromium, so this is defence in depth, not a hole, but "the
+/// peer is trustworthy" is exactly the assumption the body cap declines to make too.
+const MAX_HTTP_HEADERS: usize = 64 * 1024;
+
+/// Cap on the body (P3, pre-release audit): a hostile or broken peer's Content-Length must not drive a
+/// huge allocation, and a bodiless response must not read without bound. The DevTools JSON we fetch
+/// (the target list, the WS URL) is tiny, so this ceiling is generous.
+const MAX_HTTP_BODY: usize = 16 * 1024 * 1024;
+
+/// A tiny blocking HTTP/1.1 GET that returns the JSON body, all of it by `deadline` (R4-N26). Only
+/// for the loopback CDP HTTP endpoints (`/json/version`, `/json`). Reads the body by
+/// `Content-Length` - the DevTools HTTP server keeps the connection alive despite `Connection:
+/// close`, so reading to EOF would block until the deadline. The deadline bounds the whole exchange,
+/// not each read: a peer sending a byte at a time used to keep it going ten seconds per byte.
+pub fn http_get_json(host: &str, port: u16, path: &str, deadline: Instant) -> io::Result<Value> {
+    let mut stream = connect_by(host, port, deadline)?;
     let host = header_host(host);
     let request = format!(
         "GET {path} HTTP/1.1\r\nHost: {host}:{port}\r\nAccept: application/json\r\nConnection: close\r\n\r\n"
     );
-    (&writer).write_all(request.as_bytes())?;
-    (&writer).flush()?;
+    stream.set_write_timeout(Some(remaining(deadline)?))?;
+    stream.write_all(request.as_bytes())?;
+    stream.flush()?;
 
-    let mut reader = std::io::BufReader::new(stream);
-    let mut content_length: Option<usize> = None;
-    // The body is capped below, and the header block gets the same treatment (R2-N9): a peer that
-    // never sends the blank line would otherwise be read header by header without bound. The peer is
-    // our own Chromium, so this is defence in depth, not a hole - but "the peer is trustworthy" is
-    // exactly the assumption the body cap already declined to make.
-    const MAX_HEADERS: usize = 200;
-    const MAX_HEADER_LINE: usize = 8 * 1024;
-    for _ in 0..MAX_HEADERS {
-        let mut line = String::new();
-        let n = reader.by_ref().take(MAX_HEADER_LINE as u64).read_line(&mut line)?;
-        if n == 0 {
-            break; // EOF before the blank line
+    let mut buf = Vec::new();
+    let head_end = loop {
+        if let Some(pos) = buf.windows(4).position(|w| w == b"\r\n\r\n") {
+            break pos + 4;
         }
-        let trimmed = line.trim_end();
-        if trimmed.is_empty() {
-            break; // end of headers
+        if buf.len() > MAX_HTTP_HEADERS {
+            return Err(io::Error::new(io::ErrorKind::InvalidData, "HTTP headers exceed the cap"));
         }
-        if let Some(rest) = trimmed.to_ascii_lowercase().strip_prefix("content-length:") {
-            content_length = rest.trim().parse().ok();
-        }
-    }
-
-    // Cap the body (P3, pre-release audit): a hostile or broken peer's Content-Length must not drive a huge
-    // up-front allocation, and a bodiless response must not read without bound. The DevTools JSON we fetch
-    // (the target list, the WS URL) is tiny, so this ceiling is generous.
-    const MAX_HTTP_BODY: usize = 16 * 1024 * 1024;
-    let body = match content_length {
-        Some(len) => {
-            if len > MAX_HTTP_BODY {
-                return Err(io::Error::new(io::ErrorKind::InvalidData, "HTTP Content-Length exceeds the cap"));
-            }
-
-            let mut b = vec![0u8; len];
-            reader.read_exact(&mut b)?;
-            b
-        }
-        None => {
-            let mut b = Vec::new();
-            reader.by_ref().take(MAX_HTTP_BODY as u64).read_to_end(&mut b)?;
-            b
+        if read_some_by(&mut stream, &mut buf, deadline)? == 0 {
+            return Err(io::Error::new(io::ErrorKind::UnexpectedEof, "HTTP response ended before its headers did"));
         }
     };
-    serde_json::from_slice(&body)
+    let content_length = content_length(&buf[..head_end]);
+    let body_end = match content_length {
+        Some(len) if len > MAX_HTTP_BODY => {
+            return Err(io::Error::new(io::ErrorKind::InvalidData, "HTTP Content-Length exceeds the cap"))
+        }
+        Some(len) => head_end + len,
+        None => head_end + MAX_HTTP_BODY,
+    };
+    while buf.len() < body_end {
+        if read_some_by(&mut stream, &mut buf, deadline)? == 0 {
+            if content_length.is_some() {
+                return Err(io::Error::new(io::ErrorKind::UnexpectedEof, "HTTP body ended before its length"));
+            }
+            break;
+        }
+    }
+    let body = &buf[head_end..buf.len().min(body_end)];
+    serde_json::from_slice(body)
         .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, format!("HTTP body was not JSON: {e}")))
+}
+
+/// The `Content-Length` a header block declares, if it declares one that is a number.
+fn content_length(head: &[u8]) -> Option<usize> {
+    String::from_utf8_lossy(head).lines().find_map(|line| {
+        let lower = line.to_ascii_lowercase();
+        lower.strip_prefix("content-length:").and_then(|rest| rest.trim().parse().ok())
+    })
 }
 
 #[cfg(test)]
@@ -710,7 +821,7 @@ mod tests {
             frame(r#"{"method":"Target.attachedToTarget","params":{"t":"\uD83D"}}"#),
         ];
         let (port, server) = ws::tests::burst_server(frames, Duration::from_millis(1500));
-        let ws = WsClient::connect("127.0.0.1", port, "/").unwrap();
+        let ws = WsClient::connect("127.0.0.1", port, "/", Instant::now() + Duration::from_secs(5)).unwrap();
         let mut client = CdpClient::from_ws(ws);
         let mut got = Vec::new();
         for _ in 0..4 {
@@ -727,6 +838,85 @@ mod tests {
         assert_eq!(got[0].0, "Target.attachedToTarget");
         assert_eq!(got[0].1["t"], "\u{fffd}");
         server.join().unwrap();
+    }
+
+    /// R4-S10: a command sent without waiting comes back from `poll` as a reply with its id, for
+    /// whoever asked - and a call made meanwhile still gets its own reply, with the other one kept.
+    #[test]
+    fn a_reply_to_a_command_nobody_waited_on_comes_back_by_its_id() {
+        let frame = |text: &str| {
+            let mut f = vec![0x81u8, text.len() as u8];
+            f.extend_from_slice(text.as_bytes());
+            f
+        };
+        // The reply nobody waits on comes first, while the call is waiting for its own - so the call
+        // has to keep it for later rather than drop it.
+        let frames = vec![frame(r#"{"id":1,"result":{"value":"sent"}}"#), frame(r#"{"id":2,"result":{"value":"call"}}"#)];
+        let (port, server) = ws::tests::burst_server(frames, Duration::from_millis(1500));
+        let ws = WsClient::connect("127.0.0.1", port, "/", Instant::now() + Duration::from_secs(5)).unwrap();
+        let mut client = CdpClient::from_ws(ws);
+        assert_eq!(client.send("Runtime.evaluate", Value::Null, Some("S")).unwrap(), 1);
+        let call = client.call("Runtime.evaluate", Value::Null, Some("S")).unwrap();
+        assert_eq!(call["value"], "call");
+        match client.poll().unwrap() {
+            Some(Msg::Response { id: 1, result, error: None }) => assert_eq!(result["value"], "sent"),
+            _ => panic!("the reply to the command sent first was not kept"),
+        }
+        server.join().unwrap();
+    }
+
+    /// R4-N26: a peer that answers a byte at a time cannot keep a request past its deadline - the
+    /// deadline bounds the whole exchange. Each read used to get ten seconds of its own.
+    #[test]
+    fn a_peer_answering_a_byte_at_a_time_cannot_keep_a_request_past_its_deadline() {
+        let listener = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let server = std::thread::spawn(move || {
+            let (mut s, _) = listener.accept().unwrap();
+            let mut b = [0u8; 1024];
+            let _ = s.read(&mut b);
+            for byte in b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\n{}" {
+                if s.write_all(&[*byte]).is_err() {
+                    return;
+                }
+                std::thread::sleep(Duration::from_millis(100));
+            }
+        });
+        let started = Instant::now();
+        let err = http_get_json("127.0.0.1", port, "/json/version", Instant::now() + Duration::from_millis(500)).err();
+        assert_eq!(err.map(|e| e.kind()), Some(io::ErrorKind::TimedOut));
+        assert!(started.elapsed() < Duration::from_millis(900), "{:?}", started.elapsed());
+        server.join().unwrap();
+    }
+
+    /// The same exchange at the speed a DevTools server answers is read whole, by its length.
+    #[test]
+    fn a_whole_answer_is_read_by_its_length() {
+        let listener = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let server = std::thread::spawn(move || {
+            let (mut s, _) = listener.accept().unwrap();
+            let mut b = [0u8; 1024];
+            let _ = s.read(&mut b);
+            s.write_all(b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\ncontent-length: 13\r\n\r\n{\"Browser\":1}").unwrap();
+            // Kept open, as the DevTools server keeps it: the length is what ends the read.
+            std::thread::sleep(Duration::from_millis(800));
+        });
+        let v = http_get_json("127.0.0.1", port, "/json/version", Instant::now() + Duration::from_secs(5)).unwrap();
+        assert_eq!(v["Browser"], 1);
+        server.join().unwrap();
+    }
+
+    /// Every endpoint this client connects to is on this machine: an address written out must be a
+    /// loopback one, and no name is looked up - `localhost` is both loopback addresses.
+    #[test]
+    fn only_a_loopback_host_is_connected_to_and_no_name_is_looked_up() {
+        assert_eq!(loopback_addrs("127.0.0.1", 9).unwrap(), vec![SocketAddr::from((Ipv4Addr::LOCALHOST, 9))]);
+        assert_eq!(loopback_addrs("[::1]", 9).unwrap(), vec![SocketAddr::from((Ipv6Addr::LOCALHOST, 9))]);
+        assert_eq!(loopback_addrs("LocalHost", 9).unwrap().len(), 2);
+        for host in ["10.0.0.5", "169.254.169.254", "evil.example.com", "127.0.0.1.evil.com", ""] {
+            assert!(loopback_addrs(host, 9).is_err(), "{host} was accepted");
+        }
     }
 
     fn event(n: u64) -> Msg {

@@ -23,7 +23,7 @@ use crate::events::{
     command_id, emit, ended_after_launch, ended_clean, unsupported_command,
 };
 use crate::wire::spawn_command_reader;
-use crate::cdp_attach::{Attacher, Pumped};
+use crate::cdp_attach::{Attacher, Pumped, END_WAIT};
 use crate::cdp_clock::{cdp_resolve_jump, cdp_schedule_expr, cdp_set_expr, CdpClock};
 use crate::cdp_audit::{
     covered_channels, coverage_events, cdp_verdict, session_warnings,
@@ -66,8 +66,6 @@ pub(crate) fn cdp_session(target: TargetSpec, time: TimeSpec, reader: BufReader<
         }
     };
     let mut rate_changed_in_flight = false;
-    // Pages that took a clock move late or not at all (`chromium.clock_move_missed`, rule 6).
-    let mut moves_missed = 0;
 
     // Launch under our own isolated profile + debug port, then attach. Any failure is an honest error
     // event plus exit 2 (could not launch/attach), never a faked verdict.
@@ -103,8 +101,10 @@ pub(crate) fn cdp_session(target: TargetSpec, time: TimeSpec, reader: BufReader<
     // The attacher connects to the browser endpoint, arms auto-attach and attaches by name to the
     // pages the browser already has - measured, auto-attach delivers those too, and the by-name pass
     // is the belt for an engine where it does not. Any failure is one honest error here, as before.
-    let mut attacher = match Attacher::connect("127.0.0.1", launched.port)
-        .and_then(|mut a| a.attach_existing(clock.shim_origin(), &mut next_index).map(|_| a))
+    // One deadline for all of it: no heartbeat beats in here (R4-N26).
+    let start_by = Instant::now() + cdp::CONNECT_DEADLINE;
+    let mut attacher = match Attacher::connect("127.0.0.1", launched.port, start_by)
+        .and_then(|mut a| a.attach_existing(clock.shim_origin(), &mut next_index, start_by).map(|_| a))
     {
         Ok(a) => a,
         Err(e) => {
@@ -142,84 +142,40 @@ pub(crate) fn cdp_session(target: TargetSpec, time: TimeSpec, reader: BufReader<
             app_closed = true;
             break;
         }
-        // Drain protocol commands without blocking.
+        // Drain protocol commands without blocking. A clock move waits for the pages up to
+        // `MOVE_WAIT_MS`, so the heartbeat is looked at after every command rather than once the
+        // queue is empty - commands back to back cannot add their waits into one silence (R4-S10).
         loop {
             match rx.try_recv() {
                 Ok(Command::End { .. }) => break 'session,
-                Ok(Command::Query { id, .. }) => {
-                    emit(&clock.state_event_at(now_epoch_ms()));
-                    emit(&Event::Ack { v: PROTOCOL_VERSION, id });
+                Ok(command) => {
+                    let moved = apply_command(command, &mut clock, &mut attacher, &mut next_index);
+                    rate_changed_in_flight |= moved;
+                    beat(&clock, &mut deadline, heartbeat);
                 }
-                Ok(Command::SetMultiplier { id, multiplier, .. }) => {
-                    // Schedule the new rate for one instant shortly ahead, on the panel and in every
-                    // context alike, so a page takes it over from its own segment at the panel's moment
-                    // and its wall never steps at the change (R4-S17). From that instant
-                    // Date.now/new Date/performance.now and new timers run at the new rate - only an
-                    // already-queued setInterval keeps its old cadence, which the end report warns about
-                    // (rule 4).
-                    if !chrono_core::multiplier_in_range(multiplier) {
-                        emit(&Event::Error {
-                            v: PROTOCOL_VERSION,
-                            id: Some(id),
-                            code: 1,
-                            key: "time.bad_multiplier".into(),
-                            origin: "core".into(),
-                        });
-                        continue;
-                    }
-                    let next = clock.set_multiplier_at(multiplier, now_epoch_ms());
-                    moves_missed += attacher.move_clock(&cdp_schedule_expr(next), clock.shim_origin());
-                    rate_changed_in_flight = true;
-                    emit(&Event::Ack { v: PROTOCOL_VERSION, id });
-                    emit(&clock.state_event_at(now_epoch_ms()));
-                }
-                Ok(Command::Jump { id, to, .. }) => {
-                    // Move the wall to a new fake instant (absolute, or a relative delta on the current
-                    // fake time), leaving the duration axis untouched (rule 3). A bad moment is an honest
-                    // error, never a silent no-op (rule 6).
-                    let now = now_epoch_ms();
-                    match cdp_resolve_jump(&clock, &to, now) {
-                        Ok(new_fake) => {
-                            clock.jump_to_at(new_fake, now);
-                            moves_missed += attacher.move_clock(&cdp_set_expr(clock.shim_origin()), clock.shim_origin());
-                            emit(&Event::Ack { v: PROTOCOL_VERSION, id });
-                            emit(&clock.state_event_at(now_epoch_ms()));
-                        }
-                        Err(key) => emit(&Event::Error {
-                            v: PROTOCOL_VERSION,
-                            id: Some(id),
-                            code: 1,
-                            key: key.into(),
-                            origin: "core".into(),
-                        }),
-                    }
-                }
-                // A command this loop does not handle here (a second `start`, say). Answered rather
-                // than dropped, and with the id, so a client waiting on `ack` learns the outcome.
-                Ok(other) => emit(&unsupported_command(command_id(&other))),
                 Err(mpsc::TryRecvError::Empty) => break,
                 Err(mpsc::TryRecvError::Disconnected) => break 'session, // stdin closed (EOF)
             }
         }
-        // Poll CDP (bounded by the WS read timeout) for a newly attached context and shim it, or
-        // drop one that went away. The shim is built from the clock's CURRENT origin, so a context
-        // attaching after an in-flight rate change or jump starts on the same clock as every other
-        // context (one absolute origin - rule 3).
+        // Poll CDP (bounded by the poll interval) for a newly attached context and shim it, drop one
+        // that went away, and take the answers that came. The shim is built from the clock's CURRENT
+        // origin, so a context attaching after an in-flight rate change or jump starts on the same
+        // clock as every other context (one absolute origin - rule 3).
         if attacher.pump(clock.shim_origin(), &mut next_index) == Pumped::Closed {
             app_closed = true; // the connection dropped, i.e. the app exited
             break;
         }
-        // ~1 s heartbeat (also when frozen) and ~1 s coverage sampling.
-        if Instant::now() >= deadline {
-            emit(&clock.state_event_at(now_epoch_ms()));
-            deadline = Instant::now() + heartbeat;
-        }
+        // ~1 s heartbeat (also when frozen) and ~1 s coverage sampling, asked for without waiting.
+        beat(&clock, &mut deadline, heartbeat);
         if last_audit.elapsed() >= Duration::from_secs(1) {
-            attacher.poll_counts();
+            attacher.request_counts();
             last_audit = Instant::now();
         }
     }
-    attacher.poll_counts(); // final best-effort read
+    // The last counts, and every clock move a page has not answered taken as missed.
+    attacher.settle(clock.shim_origin(), &mut next_index, Instant::now() + END_WAIT);
+    // Pages that took a clock move late or not at all (`chromium.clock_move_missed`, rule 6).
+    let moves_missed = attacher.moves_missed();
     let seen = attacher.seen().to_vec();
     // A context the shim did not take in and a context refused past the ceiling are the same fact
     // to the verdict: a context that ran on the real clock (untouchable rule 4). The ceiling gets
@@ -267,6 +223,69 @@ pub(crate) fn cdp_session(target: TargetSpec, time: TimeSpec, reader: BufReader<
 
 
 
+
+/// Emit `state` when the heartbeat is due - between commands as well as at the end of a turn.
+fn beat(clock: &CdpClock, deadline: &mut Instant, every: Duration) {
+    if Instant::now() >= *deadline {
+        emit(&clock.state_event_at(now_epoch_ms()));
+        *deadline = Instant::now() + every;
+    }
+}
+
+/// Answer one command that arrived mid-session (`end` is the loop's own business). Returns whether
+/// it changed the rate, for the end report's note about timers that were already running.
+fn apply_command(command: Command, clock: &mut CdpClock, attacher: &mut Attacher, next_index: &mut u32) -> bool {
+    match command {
+        Command::Query { id, .. } => {
+            emit(&clock.state_event_at(now_epoch_ms()));
+            emit(&Event::Ack { v: PROTOCOL_VERSION, id });
+            false
+        }
+        Command::SetMultiplier { id, multiplier, .. } => {
+            // Schedule the new rate for one instant shortly ahead, on the panel and in every context
+            // alike, so a page takes it over from its own segment at the panel's moment and its wall
+            // never steps at the change (R4-S17). From that instant Date.now/new Date/performance.now
+            // and new timers run at the new rate - only an already-queued setInterval keeps its old
+            // cadence, which the end report warns about (rule 4).
+            if !chrono_core::multiplier_in_range(multiplier) {
+                emit(&command_error(id, "time.bad_multiplier"));
+                return false;
+            }
+            let next = clock.set_multiplier_at(multiplier, now_epoch_ms());
+            attacher.move_clock(&cdp_schedule_expr(next), clock.shim_origin(), next_index);
+            emit(&Event::Ack { v: PROTOCOL_VERSION, id });
+            emit(&clock.state_event_at(now_epoch_ms()));
+            true
+        }
+        Command::Jump { id, to, .. } => {
+            // Move the wall to a new fake instant (absolute, or a relative delta on the current fake
+            // time), leaving the duration axis untouched (rule 3). A bad moment is an honest error,
+            // never a silent no-op (rule 6).
+            let now = now_epoch_ms();
+            match cdp_resolve_jump(clock, &to, now) {
+                Ok(new_fake) => {
+                    clock.jump_to_at(new_fake, now);
+                    attacher.move_clock(&cdp_set_expr(clock.shim_origin()), clock.shim_origin(), next_index);
+                    emit(&Event::Ack { v: PROTOCOL_VERSION, id });
+                    emit(&clock.state_event_at(now_epoch_ms()));
+                }
+                Err(key) => emit(&command_error(id, key)),
+            }
+            false
+        }
+        // A command this loop does not handle here (a second `start`, say). Answered rather than
+        // dropped, and with the id, so a client waiting on `ack` learns the outcome.
+        other => {
+            emit(&unsupported_command(command_id(&other)));
+            false
+        }
+    }
+}
+
+/// The honest error for a command that could not be applied (rule 6).
+fn command_error(id: u64, key: &str) -> Event {
+    Event::Error { v: PROTOCOL_VERSION, id: Some(id), code: 1, key: key.into(), origin: "core".into() }
+}
 
 /// The family verdict of a CDP session. No PID registry on this path: a CDP session tracks JS
 /// contexts, not injected processes, so its per-context warnings already travel on the coverage

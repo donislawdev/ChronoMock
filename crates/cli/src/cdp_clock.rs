@@ -10,7 +10,7 @@ use chrono_core::calc::{Base, EvalContext, MomentExpr};
 use chrono_core::TimeMode;
 use chrono_proto::{Clock, Event, MomentSpec, TimeSpec, PROTOCOL_VERSION};
 
-use crate::cdp::{scheduled_js, ScheduledRate};
+use crate::cdp::{self, ScheduledRate};
 use crate::cdp_attach::ShimOrigin;
 use crate::events::{jump_error_key, moment_error_key, start_time_mode};
 use crate::grammar::parse_shift;
@@ -297,14 +297,7 @@ pub(crate) fn drift_ms(pushed: ShimOrigin, fresh: ShimOrigin) -> i64 {
 /// identical for every context, so all contexts stay in step. The duration rate is floored at 1 like
 /// the shim itself.
 pub(crate) fn cdp_set_expr(origin: ShimOrigin) -> String {
-    format!(
-        "(function(){{var S=globalThis.__chronomock;if(!S)return 'no-shim';return S.set({},{},{},{},{});}})()",
-        origin.fake0,
-        origin.real0,
-        origin.mult,
-        origin.dur.max(1),
-        scheduled_js(origin.scheduled)
-    )
+    cdp::set_expr(origin.fake0, origin.real0, origin.mult, origin.dur, origin.scheduled)
 }
 
 /// The JS that schedules a rate change in a context, through the shim's own `schedule` (R4-S17). Only

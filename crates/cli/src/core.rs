@@ -23,7 +23,7 @@ use chrono_proto::{
 };
 
 use crate::cdp;
-use crate::cdp_attach::ShimOrigin;
+use crate::cdp_attach::{ShimOrigin, END_WAIT};
 use crate::cdp_audit::{coverage_events, covered_channels, embedded_verdict};
 use crate::cdp_clock::shim_origin_from_state;
 use crate::cdp_session::cdp_session;
@@ -512,7 +512,7 @@ pub(crate) fn run_session(
                 target_exit = session.exit_code();
                 break;
             }
-            bridge.poll_counts();
+            bridge.request_counts();
             bridge.resync(shim_origin_from_state(&st, scale_duration));
 
             deadline = now + heartbeat;
@@ -796,8 +796,12 @@ pub(crate) fn close_session(
     // session does not stop it (docs/01 section 8.4). It lets it go instead, and the pages have to be
     // let go while their connections are still open, so this comes before `finish`.
     let left_running = family_left_running(&session, &family_pids);
+    // One deadline for everything the pages are still asked at the end - the release and the last
+    // counts - because a GUI gives the core two seconds after `end` (ADR-20).
+    let end_by = Instant::now() + END_WAIT;
+    let origin = host_origin(&session, bridge.scale_duration());
     if left_running {
-        bridge.release_pages();
+        bridge.release_pages(origin, end_by);
     }
     // What the pages inside the application did, folded into the family like any process: a page
     // shimmed and reading time is covered, one refused or failed is not, and none at all judges
@@ -807,7 +811,7 @@ pub(crate) fn close_session(
     // One last look at the tree under an elevated host, for what appeared in the final second.
     let known: Vec<u32> = hosts.iter().copied().chain(uncovered_children.iter().map(|c| c.pid)).collect();
     uncovered_children.extend(bridge.follow_host_tree_last(&known));
-    let pages = bridge.finish();
+    let pages = bridge.finish(origin, end_by);
     // The engine is let go of, so the registry value that let the session reach it goes too - before
     // the verdict, so the verdict can say how that went.
     let policy_keys = policy.finish();

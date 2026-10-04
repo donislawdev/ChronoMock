@@ -54,6 +54,51 @@ public class RustTimeoutMirrorTests
     }
 
     /// <summary>
+    /// The longest silence a Chromium session can have since its waits were bounded (R4-S10, ADR-20):
+    /// a clock move waits for the pages' new hooks, and a context that attaches during that wait is
+    /// shimmed by its own deadline before the wait looks at the clock again. One of each, plus the
+    /// heartbeat that comes next, must stay under the watchdog - or a busy page makes a healthy core
+    /// look hung again, which is what the measurement before the change showed (the driver stopped
+    /// the core after fifteen silent seconds with a page and two workers busy).
+    /// </summary>
+    [Fact]
+    public void A_clock_move_with_an_attach_inside_it_is_shorter_than_the_client_watchdog()
+    {
+        var attach = ReadRustSource("crates", "cli", "src", "cdp_attach.rs");
+        var move = CaptureSeconds(attach, @"pub\(crate\) const MOVE_WAIT_MS: u64 = ([\d_]+);", "MOVE_WAIT_MS", 1000);
+        var mod = ReadRustSource("crates", "cli", "src", "cdp", "mod.rs");
+        var call = CaptureSeconds(mod, @"pub const CALL_DEADLINE_SECS: u64 = (\d+);", "CALL_DEADLINE_SECS");
+        const double Heartbeat = 1.0;
+
+        Assert.True(
+            move + call + Heartbeat < SessionViewModel.IdleTimeout.TotalSeconds,
+            $"a clock move ({move}s) with an attach inside it ({call}s) and the next heartbeat ({Heartbeat}s) "
+                + $"outlast the client's watchdog ({SessionViewModel.IdleTimeout.TotalSeconds}s)");
+    }
+
+    /// <summary>
+    /// The start of a Chromium session: connecting to the browser and attaching to the pages it already
+    /// has run under one deadline, with no heartbeat in between - the last one beat during the wait for
+    /// the debug port. That deadline and one heartbeat must stay under the watchdog. An attach used to
+    /// take a fresh budget of its own inside it, which could double the silence (CodeRabbit on #85).
+    /// </summary>
+    [Fact]
+    public void The_start_of_a_chromium_session_is_shorter_than_the_client_watchdog()
+    {
+        var mod = ReadRustSource("crates", "cli", "src", "cdp", "mod.rs");
+        var connect = CaptureSeconds(
+            mod,
+            @"pub const CONNECT_DEADLINE: Duration = Duration::from_secs\((\d+)\);",
+            "CONNECT_DEADLINE");
+        const double Heartbeat = 1.0;
+
+        Assert.True(
+            connect + Heartbeat < SessionViewModel.IdleTimeout.TotalSeconds,
+            $"the start of a session ({connect}s) and a heartbeat ({Heartbeat}s) outlast the client's watchdog "
+                + $"({SessionViewModel.IdleTimeout.TotalSeconds}s)");
+    }
+
+    /// <summary>
     /// Preparing a native session: injecting the hook, then the guard window before the first
     /// coverage event. Nothing reaches the client during either.
     /// </summary>

@@ -129,6 +129,34 @@ Notable changes to Chrono Mock, newest first. The format follows
 
 ### Fixed
 
+- **A busy web page no longer stops a Chromium or Electron session.** Once a second the session
+  asked every page and worker for its call counts and waited for each answer in turn, up to ten
+  seconds each. A page busy with its own work - a long script, an `alert` - does not answer, so every
+  busy page or worker added ten seconds of silence, and a client that hears nothing for fifteen
+  seconds stops the session. Measured on an Electron page: a busy page kept the session silent for
+  10.5 seconds at a time, and with two busy workers beside it the session was stopped with no
+  verdict. The pages are now asked all at once and their answers are taken as they come: counts are
+  merged on arrival, a page still answering the last question is not asked again, and a speed change
+  or a jump waits at most two seconds for the pages before it is acknowledged - a page that takes it
+  later still gets it, and whether it missed the change is read from what it answered. The pages of
+  an application that embeds a web engine had the same wait, two seconds a page, and it also delayed
+  the session's look for new child processes.
+- **The connection to a browser no longer reads with a timeout.** It waited for messages by letting a
+  read time out every half second, or every 10 ms beside a native session, and a read that times out
+  leaves a Windows socket in a state it should not be used in again. Measured on loopback with a 1 ms
+  timeout: in ten minutes, 39 timed-out reads ended in an error on the next read and lost the bytes
+  they had taken, and the session took such an error for the application closing. A thread of its
+  own now reads the connection with no timeout, and connecting, `/json/version` and the WebSocket
+  upgrade have one deadline for the whole exchange instead of ten seconds for every read.
+- **A page that is already loading when a Chromium or Electron session reaches it now gets the
+  session clock ahead of its own scripts.** The browser can answer the session only once the
+  application's first window is loading, and that page is then reached halfway through, when
+  nothing can hold it any more. The session sent it three setup commands one after another, each
+  after the answer to the one before, and the page's startup scripts could run in between: a page
+  that reads the date once at start kept the real one for the whole session, and the verdict was
+  "undetermined". Measured on an Electron application, about one session in ten ended that way. The
+  three commands now go out together, and in every measured run the page reached halfway through
+  took the clock before its startup scripts ran.
 - **A speed change no longer moves a page's clock backwards.** In a Chromium or Electron session, a
   speed change took effect in the window's clock at once and in each page only when the change
   reached it, so the page's clock jumped at that moment by the delay times the change in speed -
