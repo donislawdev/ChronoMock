@@ -1,0 +1,178 @@
+# The weekly search: every random property with many more cases than a gate gives it, from a fresh
+# seed each week.
+#
+# The properties stand beside the code they search, each in a `mod properties` (crates/*/src/search.rs
+# says what they share). On a pull request they draw 256 cases from one fixed seed (ci.yml), which
+# replays every case found before and keeps a gate answering for its own change. That is the right
+# size for a gate and too small to find anything rare. This is the other half: never on a push of
+# ordinary work, a fresh seed and tens of thousands of cases a property, and red when one does not
+# hold. Pull requests are not blocked by it.
+#
+# A red run is a finding. proptest shrinks the failing input to the smallest it can and prints it in
+# the log, and saves the case to a proptest-regressions file beside the source - that file is in the
+# part's artifact. The next session commits it, which makes every gate replay the case, and only then
+# fixes the code (docs/PROJEKT-FUZZING-20261017.md, owner's decision of 2026-10-17).
+#
+# Four states, each said rather than left to be guessed:
+#
+#   - found nothing: each part first runs the canary property with CHRONO_SEARCH_CANARY set and stops
+#     unless it sees it fail, so a part that then reports nothing found has shown it would have said.
+#   - found something: the part is red, with the shrunk input in the log and the case in the artifact.
+#   - cut short (the time limit, a cancel): no part is green without its summary line, and the
+#     artifact is uploaded whatever happened.
+#   - searched nothing: a filter that ran no property is a failure, never a quiet week.
+#
+# Three ways in:
+#
+#   - Sunday 00:47 UTC, ahead of two other projects of the same account whose Sunday runs start at
+#     01:37 and 02:17 and share the twenty jobs a free plan runs at once.
+#   - by hand from the Actions tab, with the number of cases as an input.
+#   - a pull request that touches the search itself, with a few cases a property. That proves the
+#     wiring and searches very little, and it is red for the same reasons a Sunday is.
+#
+# Every `uses:` is pinned to a full commit SHA, with its release in the comment beside it, as in ci.yml.
+name: search
+
+on:
+  schedule:
+    - cron: "47 0 * * 0"
+  workflow_dispatch:
+    inputs:
+      cases:
+        description: Cases a property (empty = each part's own number). The command-line part runs a quarter of it.
+        required: false
+        default: ""
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/search.yml
+      - crates/core/src/search.rs
+      - crates/cli/src/search.rs
+
+permissions:
+  contents: read
+
+concurrency:
+  group: search-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  part:
+    name: ${{ matrix.part }}
+    runs-on: windows-latest
+    # The first Sunday is the measurement: the cases below were set from one machine's numbers
+    # (about 1.5 ms a case in the core, 2 ms in the command line's unit properties, 60 ms a run of the
+    # built calculator), aiming at ten to fifteen minutes a part. The ceiling is far above that, so a
+    # hang ends as a part without its summary rather than as six hours of a held machine.
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - part: core
+            package: chrono-core
+            target: --lib
+            canary: --lib
+            cases: 200000
+          - part: command-line units
+            package: chrono-cli
+            target: --bins
+            canary: --bins
+            cases: 50000
+          # The integration test runs the built binary once a case, so it takes a quarter of the cases
+          # (calc_cli.rs says how). It has no canary of its own - the crate's canary proves the same
+          # steps of this file see a failure.
+          - part: calculator binary
+            package: chrono-cli
+            target: --test calc_cli
+            canary: --bins
+            cases: 40000
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          shared-key: search
+          save-if: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' }}
+
+      - name: Build the tests
+        shell: pwsh
+        env:
+          PACKAGE: ${{ matrix.package }}
+          TARGET: ${{ matrix.target }}
+          CANARY: ${{ matrix.canary }}
+        run: |
+          cargo test -q -p $env:PACKAGE @($env:TARGET -split ' ') --no-run
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test -q -p $env:PACKAGE @($env:CANARY -split ' ') --no-run
+          exit $LASTEXITCODE
+
+      # Red is the expected answer here, and the message is checked as well as the exit code, so a
+      # build failure or a missing test cannot pass for the canary.
+      - name: The canary fails when asked to
+        shell: pwsh
+        env:
+          PACKAGE: ${{ matrix.package }}
+          CANARY: ${{ matrix.canary }}
+          CHRONO_SEARCH_CANARY: '1'
+          PROPTEST_DISABLE_FAILURE_PERSISTENCE: '1'
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $false
+          $said = cargo test -q -p $env:PACKAGE @($env:CANARY -split ' ') search::properties::the_canary_fails_only_when_asked_to -- --exact 2>&1 | Out-String
+          if ($LASTEXITCODE -eq 0 -or $said -notmatch 'the canary failed, as it was asked to') {
+            Write-Host $said
+            Write-Host "::error::The canary did not fail, so this part could not have reported a finding either."
+            exit 1
+          }
+          Write-Host "The canary failed as it was asked to - a finding in this part would be seen."
+          exit 0
+
+      - name: The search
+        shell: pwsh
+        env:
+          PACKAGE: ${{ matrix.package }}
+          TARGET: ${{ matrix.target }}
+          PART: ${{ matrix.part }}
+          PROPTEST_CASES: ${{ inputs.cases || (github.event_name == 'pull_request' && '512') || matrix.cases }}
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $false
+          $started = Get-Date
+          cargo test -q -p $env:PACKAGE @($env:TARGET -split ' ') properties 2>&1 | Tee-Object -FilePath search.log
+          $code = $LASTEXITCODE
+          $minutes = [math]::Round(((Get-Date) - $started).TotalMinutes, 1)
+          $passed = 0
+          $failed = 0
+          foreach ($line in Get-Content search.log) {
+            if ($line -match 'test result: \w+\. (\d+) passed; (\d+) failed') {
+              $passed += [int]$Matches[1]
+              $failed += [int]$Matches[2]
+            }
+          }
+          $ran = $passed + $failed
+          "| $env:PART | $env:PROPTEST_CASES cases | $ran properties | $failed red | $minutes min |" >> $env:GITHUB_STEP_SUMMARY
+          if ($ran -eq 0) {
+            Write-Host "::error::No property ran in this part, so it searched nothing - the filter or the build is wrong."
+            exit 1
+          }
+          if ($code -ne 0) {
+            Write-Host "::error::A property does not hold. The shrunk input is in the log above, and the case is in this part's artifact: commit its proptest-regressions file first, then fix the code."
+            exit 1
+          }
+          Write-Host "$ran properties held for $env:PROPTEST_CASES cases each, in $minutes minutes."
+          exit 0
+
+      # Where proptest writes a failing case: beside `src` for the tests in `src`, and BESIDE THE
+      # FILE for a test in `tests/` - it looks upward for a `lib.rs` or `main.rs`, finds none above
+      # `tests/calc_cli.rs`, and falls back to `calc_cli.proptest-regressions` next to it.
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: search-${{ strategy.job-index }}
+          path: |
+            search.log
+            crates/*/proptest-regressions/
+            crates/*/tests/*.proptest-regressions
+          if-no-files-found: ignore
+          retention-days: 30

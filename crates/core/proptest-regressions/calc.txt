@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 67aafc5f4dfb2d9b592ecab1b92e89c4c37daec17e241c58e1a5c1b7f00ce3d8 # shrinks to base = Today, steps = [Zone(-2147483648)], now = CivilDateTime { year: 1600, month: 1, day: 1, hour: 0, minute: 0, second: 0 }, zone = 0, cal = None

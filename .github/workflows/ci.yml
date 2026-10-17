@@ -176,7 +176,14 @@ jobs:
       - name: Debug artifacts the tests drive
         run: cargo build --workspace
 
+      # The random properties (each in a `mod properties`) draw from one fixed seed on a pull
+      # request: a gate answers for the change it was given, and a draw that lands on an old defect
+      # elsewhere would turn one pull request red for another's sake. The searching is the weekly
+      # run's work (search.yml), with a fresh seed and many more cases. Cases found before are
+      # replayed here first, from the proptest-regressions files in the tree.
       - name: Rust tests
+        env:
+          PROPTEST_RNG_SEED: '20261017'
         run: cargo test --workspace
 
       # The website, built the way the publishing workflow builds it. --strict turns a dead

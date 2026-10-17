@@ -780,4 +780,193 @@ pub(crate) mod tests {
         let (_, _, got) = take_frame(&mut buf).unwrap().unwrap();
         assert_eq!(got, payload);
     }
+
+    /// Random properties of the frame parser. Its bytes come from a port that any application on
+    /// the machine may own, so nothing about them can be assumed.
+    mod properties {
+        use super::*;
+        use crate::search::{edge_u64, near};
+        use proptest::collection::vec;
+        use proptest::prelude::*;
+
+        /// What `take_frame` must answer for some bytes, worked out apart from it - in u128, so no
+        /// claimed length can overflow the arithmetic that judges the parser.
+        #[derive(Debug)]
+        enum Answer {
+            More,
+            Refused,
+            Frame { fin: bool, opcode: u8, payload: Vec<u8>, taken: usize },
+        }
+
+        fn answer(bytes: &[u8]) -> Answer {
+            if bytes.len() < 2 {
+                return Answer::More;
+            }
+            let (claim, header): (u128, usize) = match bytes[1] & 0x7f {
+                126 if bytes.len() < 4 => return Answer::More,
+                126 => (u128::from(u16::from_be_bytes([bytes[2], bytes[3]])), 4),
+                127 if bytes.len() < 10 => return Answer::More,
+                127 => {
+                    let mut wide = [0u8; 8];
+                    wide.copy_from_slice(&bytes[2..10]);
+                    (u128::from(u64::from_be_bytes(wide)), 10)
+                }
+                short => (u128::from(short), 2),
+            };
+            if claim > MAX_WS_BYTES as u128 {
+                return Answer::Refused;
+            }
+            let masked = bytes[1] & 0x80 != 0;
+            let body = header + if masked { 4 } else { 0 };
+            if (bytes.len() as u128) < body as u128 + claim {
+                return Answer::More;
+            }
+            let taken = body + claim as usize;
+            let payload = bytes[body..taken]
+                .iter()
+                .enumerate()
+                .map(|(i, byte)| if masked { byte ^ bytes[header + (i & 3)] } else { *byte })
+                .collect();
+            Answer::Frame { fin: bytes[0] & 0x80 != 0, opcode: bytes[0] & 0x0f, payload, taken }
+        }
+
+        /// A claimed length: any, the edges of the 64-bit range, the cap and either side of it.
+        fn claim() -> impl Strategy<Value = u64> {
+            prop_oneof![edge_u64(), near(MAX_WS_BYTES as u64, 2), 0u64..=200]
+        }
+
+        /// The first bytes of a frame in each length form - seven bits, sixteen, sixty-four - with
+        /// the mask bit either way.
+        fn header() -> impl Strategy<Value = Vec<u8>> {
+            let length = prop_oneof![
+                (0u8..=125).prop_map(|n| vec![n]),
+                prop_oneof![any::<u16>(), Just(u16::MAX), 0u16..=300]
+                    .prop_map(|n| [vec![126u8], n.to_be_bytes().to_vec()].concat()),
+                claim().prop_map(|n| [vec![127u8], n.to_be_bytes().to_vec()].concat()),
+            ];
+            (any::<u8>(), any::<bool>(), length).prop_map(|(first, masked, mut length)| {
+                if masked {
+                    length[0] |= 0x80;
+                }
+                [vec![first], length].concat()
+            })
+        }
+
+        /// A header and whatever chance puts behind it.
+        fn shaped() -> impl Strategy<Value = Vec<u8>> {
+            (header(), vec(any::<u8>(), 0..300)).prop_map(|(h, tail)| [h, tail].concat())
+        }
+
+        /// What the reader may hold: a shaped frame, the same cut anywhere, or bytes with no shape
+        /// at all.
+        fn held() -> impl Strategy<Value = Vec<u8>> {
+            prop_oneof![
+                1 => vec(any::<u8>(), 0..64),
+                3 => shaped(),
+                1 => shaped().prop_flat_map(|bytes| {
+                    let len = bytes.len();
+                    (Just(bytes), 0..=len)
+                })
+                .prop_map(|(bytes, cut)| bytes[..cut].to_vec()),
+            ]
+        }
+
+        /// One frame to send: any opcode, the mask or none, a payload that crosses each length
+        /// form's edge now and then, and a length written in that form or any longer one.
+        #[derive(Debug, Clone)]
+        struct Sent {
+            fin: bool,
+            opcode: u8,
+            mask: Option<[u8; 4]>,
+            payload: Vec<u8>,
+            form: u8,
+        }
+
+        fn sent() -> impl Strategy<Value = Sent> {
+            let payload = prop_oneof![
+                6 => vec(any::<u8>(), 0..=130),
+                1 => (65_534usize..=65_537).prop_flat_map(|len| vec(any::<u8>(), len)),
+            ];
+            (any::<bool>(), 0u8..16, proptest::option::of(any::<[u8; 4]>()), payload, 0u8..3).prop_map(
+                |(fin, opcode, mask, payload, form)| Sent { fin, opcode, mask, payload, form },
+            )
+        }
+
+        fn encode(frame: &Sent) -> Vec<u8> {
+            let len = frame.payload.len();
+            let shortest = if len < 126 { 0 } else if len < 65_536 { 1 } else { 2 };
+            let mask_bit = if frame.mask.is_some() { 0x80 } else { 0 };
+            let mut out = vec![if frame.fin { 0x80 } else { 0 } | frame.opcode];
+            match frame.form.max(shortest) {
+                0 => out.push(mask_bit | len as u8),
+                1 => {
+                    out.push(mask_bit | 126);
+                    out.extend_from_slice(&(len as u16).to_be_bytes());
+                }
+                _ => {
+                    out.push(mask_bit | 127);
+                    out.extend_from_slice(&(len as u64).to_be_bytes());
+                }
+            }
+            match frame.mask {
+                Some(mask) => {
+                    out.extend_from_slice(&mask);
+                    out.extend(frame.payload.iter().enumerate().map(|(i, byte)| byte ^ mask[i & 3]));
+                }
+                None => out.extend_from_slice(&frame.payload),
+            }
+            out
+        }
+
+        proptest! {
+            /// S-4's class. Whatever the reader holds, the parser answers what the header says: wait
+            /// for more and keep every byte, refuse a claim past the cap (the bytes will never come),
+            /// or hand over exactly one frame and leave the rest. Never a panic - a claim near
+            /// u64::MAX used to overflow the sum of the frame's parts and take the core down.
+            #[test]
+            fn any_bytes_are_one_frame_a_wait_or_a_refusal(bytes in held()) {
+                let mut buf = bytes.clone();
+                let got = take_frame(&mut buf);
+                match (answer(&bytes), got) {
+                    (Answer::More, Ok(None)) => prop_assert_eq!(&buf, &bytes),
+                    (Answer::Refused, Err(e)) => {
+                        prop_assert_eq!(e.kind(), io::ErrorKind::InvalidData);
+                        prop_assert_eq!(&buf, &bytes);
+                    }
+                    (Answer::Frame { fin, opcode, payload, taken }, Ok(Some(frame))) => {
+                        prop_assert_eq!(frame, (fin, opcode, payload));
+                        prop_assert_eq!(&buf[..], &bytes[taken..]);
+                    }
+                    (want, got) => prop_assert!(false, "wanted {:?}, the parser said {:?}", want, got),
+                }
+            }
+
+            /// Frames sent one after another and read in pieces of any size come back whole, in
+            /// order, once each - the way the reader thread meets them, a read at a time.
+            #[test]
+            fn frames_read_in_any_pieces_come_back_whole_and_in_order(
+                frames in vec(sent(), 1..4),
+                pieces in vec(1usize..5_000, 1..12),
+            ) {
+                let wire: Vec<u8> = frames.iter().flat_map(encode).collect();
+                let mut buf = Vec::new();
+                let mut got = Vec::new();
+                let mut at = 0;
+                for piece in pieces.iter().cycle() {
+                    if at == wire.len() {
+                        break;
+                    }
+                    let end = (at + piece).min(wire.len());
+                    buf.extend_from_slice(&wire[at..end]);
+                    at = end;
+                    while let Some(frame) = take_frame(&mut buf).map_err(|e| TestCaseError::fail(e.to_string()))? {
+                        got.push(frame);
+                    }
+                }
+                prop_assert!(buf.is_empty(), "{} bytes left over", buf.len());
+                let want: Vec<_> = frames.into_iter().map(|f| (f.fin, f.opcode, f.payload)).collect();
+                prop_assert_eq!(got, want);
+            }
+        }
+    }
 }

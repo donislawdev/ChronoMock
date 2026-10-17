@@ -515,16 +515,61 @@ fn unreferenced(definitions: &[Definition], mentions: &BTreeMap<String, Vec<Site
 /// not a guard, it is a place to put things.
 const KNOWN_UNUSED: &[(&str, &str)] = &[];
 
+/// What follows `#[cfg(test)]`, with its visibility taken off.
+///
+/// 🔴 Without this, `pub(crate) mod tests` - which a module writes when a sibling's tests share its
+/// fakes - was not seen as a test module at all, and the whole of it counted as production. Its
+/// mentions kept alive whatever they named. Found 2026-10-17 in `cdp/ws.rs`, when a helper that
+/// only its tests call survived the scan and an identical one in another file did not.
+fn after_test_attribute(text: &str) -> &str {
+    let rest = text.trim_start();
+    ["pub(crate) ", "pub(super) ", "pub "]
+        .iter()
+        .find_map(|visibility| rest.strip_prefix(visibility))
+        .unwrap_or(rest)
+}
+
 fn production_rust(text: &str) -> &str {
     let mut from = 0;
     while let Some(hit) = text[from..].find("#[cfg(test)]") {
         let at = from + hit;
-        if text[at + "#[cfg(test)]".len()..].trim_start().starts_with("mod tests") {
+        if after_test_attribute(&text[at + "#[cfg(test)]".len()..]).starts_with("mod tests") {
             return &text[..at];
         }
         from = at + "#[cfg(test)]".len();
     }
     text
+}
+
+/// The files a source compiles for tests only - each `#[cfg(test)] mod name;` - as paths from the
+/// repository root, both places the language allows (`name.rs` and `name/mod.rs`).
+///
+/// 🔴 Such a file lives in `src/` and is a test tree all the same: a helper there that only the
+/// tests call is doing its job, not dead, and a call it makes is a test mention, not life. Before
+/// this, the scan read these files as production, and which helper it accused came down to whether
+/// its name happened to be an ordinary word somewhere else (`near`, `year` survived, `edge_i64` did
+/// not). A source file that is neither `lib.rs`, `main.rs` nor `mod.rs` keeps its children in a
+/// directory of its own name, so `run.rs` declaring `mod plan;` means `run/plan.rs`.
+fn test_only_files(rel_path: &str, text: &str) -> Vec<String> {
+    let (dir, file) = rel_path.rsplit_once('/').unwrap_or(("", rel_path));
+    let children = match file {
+        "lib.rs" | "main.rs" | "mod.rs" => dir.to_string(),
+        other => format!("{dir}/{}", other.trim_end_matches(".rs")),
+    };
+    let mut out = Vec::new();
+    let mut from = 0;
+    while let Some(hit) = text[from..].find("#[cfg(test)]") {
+        from += hit + "#[cfg(test)]".len();
+        let Some(rest) = after_test_attribute(&text[from..]).strip_prefix("mod ") else {
+            continue;
+        };
+        let name: String = rest.chars().take_while(|c| is_identifier_char(*c)).collect();
+        if !name.is_empty() && rest[name.len()..].trim_start().starts_with(';') {
+            out.push(format!("{children}/{name}.rs"));
+            out.push(format!("{children}/{name}/mod.rs"));
+        }
+    }
+    out
 }
 
 /// Top-level `pub` definitions of a Rust source, with the line each one starts on.
@@ -627,10 +672,15 @@ fn identifiers(line: &str) -> Vec<&str> {
     out
 }
 
-/// Collect the whole workspace: definitions, and where every name is mentioned from.
-fn collect_rust() -> (Vec<Definition>, BTreeMap<String, Vec<Site>>, usize) {
-    let root = repo_root();
-    let mut definitions = Vec::new();
+/// A file every mention in which is a test's: a test directory, a C# test project, and a file in
+/// `src/` compiled for tests only (`test_only_files`).
+fn is_test_tree(rel_path: &str, test_only: &std::collections::BTreeSet<String>) -> bool {
+    rel_path.contains("/tests/") || rel_path.contains(".Tests/") || test_only.contains(rel_path)
+}
+
+/// Every Rust source as `(path, text, is production)`, and the files compiled for tests only - which
+/// live in `src/` and are marked as not production here.
+fn rust_sources() -> (Vec<(String, String, bool)>, std::collections::BTreeSet<String>) {
     let mut sources = Vec::new();
     for path in tracked_files(&["rs"]) {
         let r = rel(&path);
@@ -638,10 +688,31 @@ fn collect_rust() -> (Vec<Definition>, BTreeMap<String, Vec<Site>>, usize) {
             continue;
         };
         let is_production_source = r.starts_with("crates/") && r.contains("/src/");
-        if is_production_source {
-            definitions.extend(pub_definitions(&r, production_rust(&text)));
-        }
         sources.push((r, text, is_production_source));
+    }
+    let test_only: std::collections::BTreeSet<String> = sources
+        .iter()
+        .filter(|(_, _, is_production_source)| *is_production_source)
+        .flat_map(|(r, text, _)| test_only_files(r, text))
+        .collect();
+    for (r, _, is_production_source) in &mut sources {
+        if test_only.contains(r.as_str()) {
+            *is_production_source = false;
+        }
+    }
+    (sources, test_only)
+}
+
+/// Collect the whole workspace: definitions, and where every name is mentioned from.
+fn collect_rust() -> (Vec<Definition>, BTreeMap<String, Vec<Site>>, usize, usize) {
+    let root = repo_root();
+    let (mut sources, test_only) = rust_sources();
+    let test_only_read = sources.iter().filter(|(r, _, _)| test_only.contains(r)).count();
+    let mut definitions = Vec::new();
+    for (r, text, is_production_source) in &sources {
+        if *is_production_source {
+            definitions.extend(pub_definitions(r, production_rust(text)));
+        }
     }
     // Non-Rust consumers: the GUI mirrors two Rust constants by name, the workflows name binaries,
     // the packaging script names files.
@@ -699,7 +770,7 @@ fn collect_rust() -> (Vec<Definition>, BTreeMap<String, Vec<Site>>, usize) {
             usize::MAX
         };
         // A test tree is read but its mentions are marked, never counted as life.
-        let whole_file_is_tests = r.contains("/tests/") || r.contains(".Tests/");
+        let whole_file_is_tests = is_test_tree(r, &test_only);
         let mut offset = 0usize;
         for (index, line) in text.lines().enumerate() {
             let in_tests = whole_file_is_tests || offset > test_region;
@@ -727,7 +798,7 @@ fn collect_rust() -> (Vec<Definition>, BTreeMap<String, Vec<Site>>, usize) {
             }
         }
     }
-    (definitions, mentions, files_read)
+    (definitions, mentions, files_read, test_only_read)
 }
 
 /// Nothing in the workspace is left over from a change that moved on without it.
@@ -736,7 +807,7 @@ fn collect_rust() -> (Vec<Definition>, BTreeMap<String, Vec<Site>>, usize) {
 /// being read as something that matters, and the only thing that notices is a scan.
 #[test]
 fn no_public_definition_in_the_workspace_is_unreferenced() {
-    let (definitions, mentions, files) = collect_rust();
+    let (definitions, mentions, files, test_only) = collect_rust();
     let dead = unreferenced(&definitions, &mentions);
 
     // The canary: a scan that read nothing finds no dead code and looks exactly like one that works.
@@ -745,6 +816,16 @@ fn no_public_definition_in_the_workspace_is_unreferenced() {
         "the dead-code scan read {files} files and found {} definitions - it is reading the wrong \
          place, which is worse than not reading at all",
         definitions.len()
+    );
+    // Four files in `src/` are compiled for tests only today (two `search.rs`, `testutil.rs`,
+    // `shim_exec.rs`), declared from a `lib.rs`, a `main.rs` and a `mod.rs`. Pinned to that count, so
+    // a reader that breaks for ONE of those layouts is red too - with a floor of one it would still
+    // find the others, and the file it lost would be judged as production again.
+    assert!(
+        test_only >= 4,
+        "the dead-code scan found {test_only} files compiled for tests only, where there were four on \
+         2026-10-18 - either it no longer reads `#[cfg(test)] mod name;` in some layout, or one was \
+         removed and this number has to come down with it"
     );
 
     let known: Vec<&str> = KNOWN_UNUSED.iter().map(|(n, _)| *n).collect();
@@ -767,7 +848,7 @@ fn no_public_definition_in_the_workspace_is_unreferenced() {
 /// rule. The cheap direction is free, the other one is a decision.
 #[test]
 fn the_known_unused_list_only_ever_shrinks() {
-    let (definitions, mentions, _files) = collect_rust();
+    let (definitions, mentions, _files, _test_only) = collect_rust();
     let dead: Vec<&str> = unreferenced(&definitions, &mentions)
         .iter()
         .map(|i| definitions[*i].name.as_str())
@@ -840,6 +921,56 @@ fn a_definition_that_only_names_itself_is_reported() {
         vec![0],
         "recursion is being counted as life"
     );
+}
+
+#[test]
+fn a_test_module_is_cut_off_whatever_its_visibility() {
+    for opening in ["mod tests {", "pub(crate) mod tests {", "pub(super) mod tests {", "pub mod tests {"] {
+        let text = format!("pub fn kept() {{}}\n#[cfg(test)]\n{opening}\n    use super::*;\n}}\n");
+        assert_eq!(
+            production_rust(&text),
+            "pub fn kept() {}\n",
+            "`{opening}` is read as production, so its mentions count as life"
+        );
+    }
+    let gated = "pub fn kept() {}\n#[cfg(test)]\nfn only_for_tests() {}\n";
+    assert_eq!(production_rust(gated), gated, "a gated item is not the test module");
+}
+
+#[test]
+fn a_file_compiled_only_for_tests_is_found_from_its_declaration() {
+    let root = "#[cfg(test)]\nmod search;\nmod live;\n#[cfg(test)]\npub(crate) mod helpers;\n";
+    assert_eq!(
+        test_only_files("crates/x/src/lib.rs", root),
+        [
+            "crates/x/src/search.rs",
+            "crates/x/src/search/mod.rs",
+            "crates/x/src/helpers.rs",
+            "crates/x/src/helpers/mod.rs"
+        ]
+    );
+    assert_eq!(
+        test_only_files("crates/x/src/cdp/mod.rs", "#[cfg(test)]\nmod shim;\n")[0],
+        "crates/x/src/cdp/shim.rs"
+    );
+    assert_eq!(
+        test_only_files("crates/x/src/run.rs", "#[cfg(test)]\nmod plan;\n")[0],
+        "crates/x/src/run/plan.rs",
+        "a child of `run.rs` lives in `run/`"
+    );
+    assert!(
+        test_only_files("crates/x/src/lib.rs", "#[cfg(test)]\nmod tests {\n}\n").is_empty(),
+        "an inline test module is not a file"
+    );
+
+    let found: std::collections::BTreeSet<String> =
+        test_only_files("crates/x/src/lib.rs", root).into_iter().collect();
+    assert!(
+        is_test_tree("crates/x/src/search.rs", &found),
+        "a call from a file compiled for tests only is counted as life"
+    );
+    assert!(!is_test_tree("crates/x/src/live.rs", &found));
+    assert!(is_test_tree("crates/x/tests/guard.rs", &found));
 }
 
 // ---------------------------------------------------------------------------------------------

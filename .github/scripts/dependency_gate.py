@@ -44,11 +44,18 @@ import os
 import sys
 import tomllib
 
-# Packages whose licence GitHub cannot resolve and which a person has already
-# looked at. A name here is a decision with a reason, not a way to make a red
-# build green - and it names the package, never a whole ecosystem.
+# Packages a person has already looked at: a licence GitHub cannot resolve, or
+# an expression whose choices are not all allowed although the one taken is. A
+# name here is a decision with a reason, not a way to make a red build green -
+# and it names the package, never a whole ecosystem.
 EXCEPTIONS = {
-    # (empty on purpose - add "name": "why this is fine" when it happens)
+    # "MIT OR Apache-2.0 OR LGPL-2.1-or-later", and `verdict` reads an OR as
+    # "every part", so the LGPL choice alone blocks it. It reaches the tree under
+    # getrandom, under proptest, which only the tests build (the components guard
+    # in crates/cli/tests/components.rs lists that tree as test-only), and
+    # getrandom asks for it on UEFI targets only, which this project never
+    # builds. Taken under MIT. Decided 2026-10-17, with the random properties.
+    "r-efi": "a UEFI-only dependency of the test-only proptest tree, taken under MIT",
 }
 
 

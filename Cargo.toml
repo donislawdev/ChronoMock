@@ -23,6 +23,13 @@ publish = false
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 minhook = "0.9"
+# Test-only: the random properties (a `mod properties` beside the code they search, and the weekly
+# long run in .github/workflows/search.yml). Never linked into anything shipped - the components
+# guard lists its tree as test-only. The default features add a forking runner and a temp-file
+# crate nothing here uses, so `std` alone. Rule 8 licence sieve: MIT OR Apache-2.0 for the whole
+# tree, except r-efi (UEFI targets only), which offers LGPL-2.1-or-later as a third choice - the
+# exception and its reason are in .github/scripts/dependency_gate.py.
+proptest = { version = "1.12", default-features = false, features = ["std"] }
 windows = { version = "0.62", features = [
     "Win32_Foundation",
     "Win32_Security",

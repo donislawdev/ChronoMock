@@ -18,6 +18,10 @@ pub mod calendar;
 /// and for quoting what a target says (R5-B1).
 pub mod text;
 
+/// What the random properties share - edges, a drawn calendar, a deadline, the weekly canary.
+#[cfg(test)]
+mod search;
+
 /// How the session expresses the target moment.
 ///
 /// Semantics (docs/01 section 4, untouchable rule 2): the entered moment is in
@@ -609,7 +613,9 @@ pub(crate) fn weekday(days_since_epoch: i64) -> u32 {
 /// A session bias (minutes, UTC = local + bias) as the `+HH:MM` label every surface prints - the
 /// offset is the bias with its sign turned. The command line and the calculator each had a copy.
 pub fn bias_label(tz_bias_min: i32) -> String {
-    let offset = -tz_bias_min;
+    // Widened before the sign turns: i32::MIN has no positive twin, and the label of any bias the
+    // type can hold must not take the report down with it (found by the random properties).
+    let offset = -i64::from(tz_bias_min);
     let sign = if offset < 0 { '-' } else { '+' };
     format!("{sign}{:02}:{:02}", offset.abs() / 60, offset.abs() % 60)
 }

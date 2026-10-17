@@ -166,4 +166,81 @@ mod tests {
             "with no zone named, both surfaces read the host's"
         );
     }
+
+    /// Random properties of the zone reader - the text after `--zone` and `--to-zone`, typed by
+    /// whoever runs the command.
+    mod properties {
+        use super::*;
+        use proptest::prelude::*;
+
+        /// What the reader must make of `raw`, worked out apart from it: a sign, digits, a colon and
+        /// digits, hours up to 14 and minutes up to 59, read in u128 so no length of digits can
+        /// overflow the judge. `None` is a refusal.
+        fn bias_of(raw: &str) -> Option<i32> {
+            let sign: i128 = match raw.as_bytes().first()? {
+                b'+' => 1,
+                b'-' => -1,
+                _ => return None,
+            };
+            let (hours, minutes) = raw[1..].split_once(':')?;
+            let value = |digits: &str| -> Option<u128> {
+                if digits.is_empty() || !digits.bytes().all(|b| b.is_ascii_digit()) {
+                    return None;
+                }
+                digits.bytes().try_fold(0u128, |n, b| n.checked_mul(10)?.checked_add(u128::from(b - b'0')))
+            };
+            let (hours, minutes) = (value(hours)?, value(minutes)?);
+            if hours > 14 || minutes > 59 {
+                return None;
+            }
+            i32::try_from(-sign * (hours as i128 * 60 + minutes as i128)).ok()
+        }
+
+        /// A number as a zone writes one: at its limit and one past it far more often than chance
+        /// would give, with or without the leading zero, no digits at all, or more than any integer
+        /// holds.
+        fn number(limit: u32) -> impl Strategy<Value = String> {
+            prop_oneof![
+                3 => (0..=limit + 1).prop_map(|n| format!("{n:02}")),
+                1 => (0..=limit + 1).prop_map(|n| n.to_string()),
+                1 => "[0-9]{0,4}",
+                1 => "[0-9]{12,30}",
+            ]
+        }
+
+        /// A sign inside the text, where none belongs - mostly absent.
+        fn inner_sign() -> impl Strategy<Value = String> {
+            prop_oneof![6 => Just(String::new()), 1 => "[-+]"]
+        }
+
+        /// Text a zone is written with, built from its parts so that the shapes the reader has to
+        /// judge come up often. A pattern over the characters alone gave `++05:00` and an hour of
+        /// exactly 15 so rarely that putting back R4-N34 and widening the band to fifteen hours both
+        /// passed 256 cases (measured 2026-10-17, MISSED twice).
+        fn written() -> impl Strategy<Value = String> {
+            let sign = prop_oneof![4 => "[-+]", 1 => "", 1 => "[-+]{2}", 1 => "[^-+0-9]"];
+            let colon = prop_oneof![6 => Just(":".to_string()), 1 => Just(String::new()), 1 => Just("::".to_string())];
+            let tail = prop_oneof![6 => Just(String::new()), 1 => "[: 0-9a-z]{1,3}"];
+            let built = (sign, inner_sign(), number(14), colon, inner_sign(), number(59), tail)
+                .prop_map(|(s, before_hours, h, c, before_minutes, m, t)| format!("{s}{before_hours}{h}{c}{before_minutes}{m}{t}"));
+            prop_oneof![8 => built, 1 => ".{0,10}"]
+        }
+
+        proptest! {
+            /// R4-N34 and the wrapped bias. Any text is a bias inside the band, exactly the one its
+            /// digits say, or a refusal - `++05:00` was taken as a zone, and a huge hour count once
+            /// wrapped to a silently wrong session time (untouchable rule 2).
+            #[test]
+            fn any_text_is_the_bias_it_writes_or_a_refusal(raw in written()) {
+                prop_assert_eq!(parse_zone_to_bias(&raw).ok(), bias_of(&raw), "for {:?}", raw);
+            }
+
+            /// Every bias in the band reads back from the label every surface prints for it - the
+            /// sign convention (UTC = local + bias) holds in both directions.
+            #[test]
+            fn every_bias_in_the_band_reads_back_from_its_label(bias in -(14 * 60 + 59)..=(14 * 60 + 59)) {
+                prop_assert_eq!(parse_zone_to_bias(&format_bias(bias)), Ok(bias));
+            }
+        }
+    }
 }

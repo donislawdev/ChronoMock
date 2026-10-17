@@ -28,9 +28,11 @@ serde_json = { workspace = true }
 # crate and version the native layers already use (rule 8), one more feature.
 windows = { workspace = true }
 
-# Only for the Rule 16 architecture guard test (reads chrono-core's manifest).
+# toml only for the Rule 16 architecture guard test (reads chrono-core's manifest), proptest only for
+# the random properties (see the workspace manifest).
 [dev-dependencies]
 toml = "1.1"
+proptest = { workspace = true }
 
 # Build-time only: embeds the application icon into chrono.exe via the Windows SDK resource
 # compiler. Not linked into the shipped binary (like cc), so it needs no third-party notice.

@@ -16,3 +16,7 @@ name = "chrono_core"
 # (chrono-proto, chrono-mech, chrono-cli) or any UI/IO library.
 # The architecture guard test enforces an empty forbidden set here.
 [dependencies]
+
+# The random properties only (see proptest in the workspace manifest).
+[dev-dependencies]
+proptest = { workspace = true }

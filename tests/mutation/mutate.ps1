@@ -119,6 +119,13 @@ $env:DOTNET_CLI_UI_LANGUAGE = 'en'
 $env:DOTNET_NOLOGO = '1'
 $env:CARGO_TERM_COLOR = 'never'
 
+# The random properties (each in a `mod properties`) draw from one fixed seed here, so an entry is
+# caught or MISSED by the change it plants and never by the draw - a verdict that flips between two
+# runs of one entry is no verdict. And a caught mutant must leave no failure file in the tree the
+# next entry builds from: proptest writes one beside the source unless it is told not to.
+$env:PROPTEST_RNG_SEED = '20261017'
+$env:PROPTEST_DISABLE_FAILURE_PERSISTENCE = '1'
+
 # The files that make every verdict. A change to any of them selects every entry, because a change to
 # the judge is a change to every judgement.
 $runnerFiles = @('tests/mutation/mutate.ps1', 'tests/mutation/json.ps1', 'tests/mutation/report.ps1', '.github/workflows/mutation.yml')

@@ -196,6 +196,14 @@ const ALLOWED: &[(&str, &str, &str)] = &[
          zone it counts today in and how it loads or refuses a calendar and a preset",
     ),
     (
+        "crates/cli/tests/components.rs",
+        "spawn",
+        "runs `cargo metadata --locked` to read which dependency edges are normal, so that nothing \
+         excused as build-time or test-only is found in what ships. Cargo reads its local registry \
+         and fetches from crates.io only a package the lockfile pins and the cache lacks, as the \
+         build before it does. The product's binary is not involved",
+    ),
+    (
         "crates/cli/tests/closed_output.rs",
         "spawn",
         "runs the built binary with its output or its error stream closed, to see it keep the exit \

@@ -1132,4 +1132,109 @@ mod tests {
         assert!(!outdated(&checked, &dt(2029, 1, 1), &dt(2032, 3, 10)));
         assert!(!outdated(&us(Observed::SunToMon), &dt(2032, 3, 1), &dt(2032, 3, 10)));
     }
+
+    /// Random properties of the business-day walk. A calendar is the one file outsiders are invited
+    /// to write, so the walk meets every shape of week a file can state.
+    mod properties {
+        use super::*;
+        use crate::search::{calendar, edge_i64, within};
+        use proptest::prelude::*;
+        use std::time::Duration;
+
+        /// A start day in the years calendars are written for, at any time of day.
+        fn start() -> impl Strategy<Value = CivilDateTime> {
+            (1850i64..=2250, 1u32..=12, 1u32..=28, 0u32..=23, 0u32..=59, 0u32..=59).prop_map(
+                |(year, month, day, hour, minute, second)| CivilDateTime { year, month, day, hour, minute, second },
+            )
+        }
+
+        /// How many business days to walk: mostly a few, sometimes just past the limit, sometimes any
+        /// number at all. A count AT the limit is a walk of a million business days, a second or more
+        /// on a sparse week, so it is left out - past it is refused at once and is what is drawn.
+        fn count() -> impl Strategy<Value = i64> {
+            prop_oneof![
+                12 => -60i64..=60,
+                1 => (MAX_BUSINESS_DAYS + 1)..=(MAX_BUSINESS_DAYS + 3),
+                1 => -(MAX_BUSINESS_DAYS + 3)..=-(MAX_BUSINESS_DAYS + 1),
+                2 => edge_i64().prop_filter("a walk, not a refusal, is drawn above", |n| {
+                    n.unsigned_abs() > MAX_BUSINESS_DAYS as u64 || n.unsigned_abs() <= 1_000
+                }),
+            ]
+        }
+
+        /// Business days from `from` up to `to`, the start not counted - each day judged on its own,
+        /// apart from the walk's cache.
+        fn business_days_between(from: &CivilDateTime, to: &CivilDateTime, cal: &Calendar) -> i64 {
+            let (a, b) = (days(from.year, from.month, from.day), days(to.year, to.month, to.day));
+            let span = if a <= b { (a + 1)..=b } else { b..=(a - 1) };
+            span.filter(|day| is_business_day_days(*day, cal)).count() as i64
+        }
+
+        proptest! {
+            #![proptest_config(ProptestConfig { max_shrink_iters: 64, max_shrink_time: 20_000, ..ProptestConfig::default() })]
+
+            /// S-1 and R2-S10. On every calendar a file can write the walk ends, and with the answer
+            /// that fits: a count past the limit is refused as one, a calendar without a working day
+            /// is named degenerate (never walked for ever), a calendar is asked nothing before its
+            /// first year, and a day reached keeps the start's time on the side the sign points to.
+            #[test]
+            fn the_walk_ends_with_the_answer_that_fits_on_every_calendar(
+                cal in calendar(),
+                from in start(),
+                n in count(),
+            ) {
+                let walked = cal.clone();
+                let got = within(Duration::from_secs(5), "add_business_days", move || {
+                    add_business_days(&from, n, &walked)
+                });
+                let too_many = n.unsigned_abs() > MAX_BUSINESS_DAYS as u64;
+                match got {
+                    Err(BusinessDayLimit::TooManyDays) => prop_assert!(too_many),
+                    Err(BusinessDayLimit::DegenerateCalendar) => prop_assert!(!too_many && n != 0),
+                    Err(BusinessDayLimit::BeforeCalendar) => {
+                        prop_assert!(!too_many && n != 0 && cal.valid_from.is_some());
+                    }
+                    Ok(day) => {
+                        prop_assert!(!too_many);
+                        prop_assert!(
+                            cal.weekend.len() < 7 || n == 0,
+                            "a calendar without a working day walked {} business days to {:?}", n, day
+                        );
+                        prop_assert_eq!((day.hour, day.minute, day.second), (from.hour, from.minute, from.second));
+                        let moved = days(day.year, day.month, day.day) - days(from.year, from.month, from.day);
+                        prop_assert_eq!(moved.signum(), n.signum());
+                        prop_assert!(n == 0 || cal.judges_year(day.year));
+                    }
+                }
+            }
+
+            /// The count itself, on calendars that keep a working day every week: the day reached is
+            /// a business day, and exactly |n| business days lie after the start up to it. A sparse
+            /// week - six days off and holidays on top - walks as far as a full one, only slower
+            /// (R4-N41: such a calendar ran the walk's budget dry and was refused `+1000bd`).
+            #[test]
+            fn every_business_day_between_is_counted_once(
+                cal in calendar().prop_filter("a working day every week, every year judged", |c| {
+                    c.weekend.len() < 7 && c.valid_from.is_none()
+                }),
+                from in start(),
+                n in prop_oneof![4 => -40i64..=40, 1 => 1_000i64..=1_200, 1 => -1_200i64..=-1_000],
+            ) {
+                let walked = cal.clone();
+                let got = within(Duration::from_secs(5), "add_business_days", move || {
+                    add_business_days(&from, n, &walked)
+                });
+                let day = match got {
+                    Ok(day) => day,
+                    Err(why) => {
+                        return Err(TestCaseError::fail(format!(
+                            "{n} business days refused ({why:?}) on a calendar with a working day every week"
+                        )));
+                    }
+                };
+                prop_assert_eq!(business_days_between(&from, &day, &cal), n.abs());
+                prop_assert!(n == 0 || is_business_day(&day, &cal), "the walk ended on a day off: {:?}", day);
+            }
+        }
+    }
 }

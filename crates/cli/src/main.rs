@@ -63,6 +63,9 @@ mod preset_catalogue;
 mod report;
 /// `chrono run` - the friendly driver.
 mod run;
+/// What the random properties share - edges, a deadline, the weekly canary.
+#[cfg(test)]
+mod search;
 /// Test-only helpers shared by more than one module.
 #[cfg(test)]
 mod testutil;

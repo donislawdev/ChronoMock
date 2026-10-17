@@ -16348,5 +16348,552 @@
     "match": "method",
     "build": "",
     "notHere": ""
+  },
+  {
+    "name": "prop-k1 S-1 a calendar without a working day is walked for ever",
+    "edits": [
+      {
+        "file": "crates/core/src/calendar.rs",
+        "from": "            if days_off_in_a_row >= DEGENERATE_GAP_DAYS {\n                return Err(BusinessDayLimit::DegenerateCalendar);",
+        "to": "            if days_off_in_a_row >= i64::MAX {\n                return Err(BusinessDayLimit::DegenerateCalendar);"
+      }
+    ],
+    "runner": "rust",
+    "package": "chrono-core",
+    "target": [
+      "--lib"
+    ],
+    "test": "calendar::tests::properties::the_walk_ends_with_the_answer_that_fits_on_every_calendar",
+    "match": "exact",
+    "build": "",
+    "notHere": ""
+  },
+  {
+    "name": "prop-k1 a count just past the limit is walked",
+    "edits": [
+      {
+        "file": "crates/core/src/calendar.rs",
+        "from": "    if n.unsigned_abs() > MAX_BUSINESS_DAYS as u64 {\n        return Err(BusinessDayLimit::TooManyDays);",
+        "to": "    if n.unsigned_abs() > MAX_BUSINESS_DAYS as u64 + 3 {\n        return Err(BusinessDayLimit::TooManyDays);"
+      }
+    ],
+    "runner": "rust",
+    "package": "chrono-core",
+    "target": [
+      "--lib"
+    ],
+    "test": "calendar::tests::properties::the_walk_ends_with_the_answer_that_fits_on_every_calendar",
+    "match": "exact",
+    "build": "",
+    "notHere": ""
+  },
+  {
+    "name": "prop-k1 R4-N41 the days off are counted over the whole walk",
+    "edits": [
+      {
+        "file": "crates/core/src/calendar.rs",
+        "from": "            remaining -= 1;\n            days_off_in_a_row = 0;\n",
+        "to": "            remaining -= 1;\n"
+      }
+    ],
+    "runner": "rust",
+    "package": "chrono-core",
+    "target": [
+      "--lib"
+    ],
+    "test": "calendar::tests::properties::every_business_day_between_is_counted_once",
+    "match": "exact",
+    "build": "",
+    "notHere": ""
+  },
+  {
+    "name": "prop-k1 R3-1 a step may leave the year band",
+    "edits": [
+      {
+        "file": "crates/core/src/calc.rs",
+        "from": "        if !crate::civil_year_in_band(cur.year) {\n            return Err(EvalError::YearOutOfRange { index: i });",
+        "to": "        if false {\n            return Err(EvalError::YearOutOfRange { index: i });"
+      }
+    ],
+    "runner": "rust",
+    "package": "chrono-core",
+    "target": [
+      "--lib"
+    ],
+    "test": "calc::tests::properties::any_chain_of_steps_ends_in_a_moment_inside_the_band_or_says_why",
+    "match": "exact",
+    "build": "",
+    "notHere": ""
+  },
+  {
+    "name": "prop-k1 R3-1 a step may leave the year band, through the command line",
+    "edits": [
+      {
+        "file": "crates/core/src/calc.rs",
+        "from": "        if !crate::civil_year_in_band(cur.year) {\n            return Err(EvalError::YearOutOfRange { index: i });",
+        "to": "        if false {\n            return Err(EvalError::YearOutOfRange { index: i });"
+      }
+    ],
+    "runner": "rust",
+    "package": "chrono-cli",
+    "target": [
+      "--test",
+      "calc_cli"
+    ],
+    "test": "properties::any_command_line_ends_with_a_documented_exit_code_and_a_keyed_refusal",
+    "match": "exact",
+    "build": "",
+    "notHere": ""
+  },
+  {
+    "name": "prop-k1 the bias label turns the sign in 32 bits",
+    "edits": [
+      {
+        "file": "crates/core/src/lib.rs",
+        "from": "    let offset = -i64::from(tz_bias_min);",
+        "to": "    let offset = i64::from(-tz_bias_min);"
+      }
+    ],
+    "runner": "rust",
+    "package": "chrono-core",
+    "target": [
+      "--lib"
+    ],
+    "test": "calc::tests::properties::any_chain_of_steps_ends_in_a_moment_inside_the_band_or_says_why",
+    "match": "exact",
+    "build": "",
+    "notHere": ""
+  },
+  {
+    "name": "prop-k1 S-4 a claim past the cap is waited for",
+    "edits": [
+      {
+        "file": "crates/cli/src/cdp/ws.rs",
+        "from": "    if payload_len > MAX_WS_BYTES as u64 {\n        return Err(io::Error::new(",
+        "to": "    if false {\n        return Err(io::Error::new("
+      }
+    ],
+    "runner": "rust",
+    "package": "chrono-cli",
+    "target": [
+      "--bins"
+    ],
+    "test": "cdp::ws::tests::properties::any_bytes_are_one_frame_a_wait_or_a_refusal",
+    "match": "exact",
+    "build": "",
+    "notHere": ""
+  },
+  {
+    "name": "prop-k1 the mask is taken three bytes at a time",
+    "edits": [
+      {
+        "file": "crates/cli/src/cdp/ws.rs",
+        "from": "            *byte ^= mask[i & 3];",
+        "to": "            *byte ^= mask[i % 3];"
+      }
+    ],
+    "runner": "rust",
+    "package": "chrono-cli",
+    "target": [
+      "--bins"
+    ],
+    "test": "cdp::ws::tests::properties::frames_read_in_any_pieces_come_back_whole_and_in_order",
+    "match": "exact",
+    "build": "",
+    "notHere": ""
+  },
+  {
+    "name": "prop-k1 a taken frame takes the next one's bytes with it",
+    "edits": [
+      {
+        "file": "crates/cli/src/cdp/ws.rs",
+        "from": "    buf.drain(..total);\n    Ok(Some((fin, opcode, payload)))",
+        "to": "    buf.clear();\n    Ok(Some((fin, opcode, payload)))"
+      }
+    ],
+    "runner": "rust",
+    "package": "chrono-cli",
+    "target": [
+      "--bins"
+    ],
+    "test": "cdp::ws::tests::properties::frames_read_in_any_pieces_come_back_whole_and_in_order",
+    "match": "exact",
+    "build": "",
+    "notHere": ""
+  },
+  {
+    "name": "prop-k1 R4-N34 an inner plus is read as a digit",
+    "edits": [
+      {
+        "file": "crates/cli/src/zone.rs",
+        "from": "    if !chrono_core::is_ascii_digits(h) {",
+        "to": "    if h.is_empty() {"
+      }
+    ],
+    "runner": "rust",
+    "package": "chrono-cli",
+    "target": [
+      "--bins"
+    ],
+    "test": "zone::tests::properties::any_text_is_the_bias_it_writes_or_a_refusal",
+    "match": "exact",
+    "build": "",
+    "notHere": ""
+  },
+  {
+    "name": "prop-k1 the zone band reaches fifteen hours",
+    "edits": [
+      {
+        "file": "crates/cli/src/zone.rs",
+        "from": "    if hours > 14 {",
+        "to": "    if hours > 15 {"
+      }
+    ],
+    "runner": "rust",
+    "package": "chrono-cli",
+    "target": [
+      "--bins"
+    ],
+    "test": "zone::tests::properties::any_text_is_the_bias_it_writes_or_a_refusal",
+    "match": "exact",
+    "build": "",
+    "notHere": ""
+  },
+  {
+    "name": "prop-k1 the zone reader turns the sign the wrong way",
+    "edits": [
+      {
+        "file": "crates/cli/src/zone.rs",
+        "from": "    Ok(-offset)\n}",
+        "to": "    Ok(offset)\n}"
+      }
+    ],
+    "runner": "rust",
+    "package": "chrono-cli",
+    "target": [
+      "--bins"
+    ],
+    "test": "zone::tests::properties::every_bias_in_the_band_reads_back_from_its_label",
+    "match": "exact",
+    "build": "",
+    "notHere": ""
+  },
+  {
+    "name": "prop-k1 a calendar not found is refused without its key",
+    "edits": [
+      {
+        "file": "crates/cli/src/calc.rs",
+        "from": "format!(\"chrono calc: {e} (calc.calendar_not_found)\")",
+        "to": "format!(\"chrono calc: {e}\")"
+      }
+    ],
+    "runner": "rust",
+    "package": "chrono-cli",
+    "target": [
+      "--test",
+      "calc_cli"
+    ],
+    "test": "properties::any_command_line_ends_with_a_documented_exit_code_and_a_keyed_refusal",
+    "match": "exact",
+    "build": "",
+    "notHere": ""
+  },
+  {
+    "name": "prop-k1 the core canary fails without being asked",
+    "edits": [
+      {
+        "file": "crates/core/src/search.rs",
+        "from": "prop_assert!(!asked,",
+        "to": "prop_assert!(asked,"
+      }
+    ],
+    "runner": "rust",
+    "package": "chrono-core",
+    "target": [
+      "--lib"
+    ],
+    "test": "search::properties::the_canary_fails_only_when_asked_to",
+    "match": "exact",
+    "build": "",
+    "notHere": ""
+  },
+  {
+    "name": "prop-k1 the cli canary fails without being asked",
+    "edits": [
+      {
+        "file": "crates/cli/src/search.rs",
+        "from": "prop_assert!(!asked,",
+        "to": "prop_assert!(asked,"
+      }
+    ],
+    "runner": "rust",
+    "package": "chrono-cli",
+    "target": [
+      "--bins"
+    ],
+    "test": "search::properties::the_canary_fails_only_when_asked_to",
+    "match": "exact",
+    "build": "",
+    "notHere": ""
+  },
+  {
+    "name": "prop-k1 the random properties runner is built into the product",
+    "edits": [
+      {
+        "file": "crates/core/Cargo.toml",
+        "from": "[dev-dependencies]\nproptest = { workspace = true }",
+        "to": "[build-dependencies]\nproptest = { workspace = true }"
+      }
+    ],
+    "runner": "rust",
+    "package": "chrono-cli",
+    "target": [
+      "--test",
+      "components"
+    ],
+    "test": "the_random_properties_runner_is_a_dev_dependency_and_nothing_else",
+    "match": "exact",
+    "build": "",
+    "notHere": ""
+  },
+  {
+    "name": "prop-k1 the random properties runner ships through a per-target table",
+    "edits": [
+      {
+        "file": "crates/cli/Cargo.toml",
+        "from": "toml = \"1.1\"\nproptest = { workspace = true }\n",
+        "to": "toml = \"1.1\"\n\n[target.'cfg(windows)'.dependencies]\nproptest = { workspace = true }\n"
+      }
+    ],
+    "runner": "rust",
+    "package": "chrono-cli",
+    "target": [
+      "--test",
+      "components"
+    ],
+    "test": "the_random_properties_runner_is_a_dev_dependency_and_nothing_else",
+    "match": "exact",
+    "build": "",
+    "notHere": ""
+  },
+  {
+    "name": "prop-k1 the test-only list excuses a crate that is gone",
+    "edits": [
+      {
+        "file": "crates/cli/tests/components.rs",
+        "from": "    (\"unarray\", \"array building inside proptest's array strategies\"),",
+        "to": "    (\"unarray-gone\", \"array building inside proptest's array strategies\"),"
+      }
+    ],
+    "runner": "rust",
+    "package": "chrono-cli",
+    "target": [
+      "--test",
+      "components"
+    ],
+    "test": "the_test_only_list_names_no_crate_that_is_gone",
+    "match": "exact",
+    "build": "",
+    "notHere": ""
+  },
+  {
+    "name": "prop-k1 a crate only the tests build is left unexcused",
+    "edits": [
+      {
+        "file": "crates/cli/tests/components.rs",
+        "from": "    (\"regex-syntax\", \"reads the patterns proptest draws text from\"),\n",
+        "to": ""
+      }
+    ],
+    "runner": "rust",
+    "package": "chrono-cli",
+    "target": [
+      "--test",
+      "components"
+    ],
+    "test": "every_third_party_crate_in_the_lockfile_is_declared_or_excused",
+    "match": "exact",
+    "build": "",
+    "notHere": ""
+  },
+  {
+    "name": "prop-k1 a crate-visible test module is read as production",
+    "edits": [
+      {
+        "file": "crates/cli/tests/hygiene.rs",
+        "from": "        if after_test_attribute(&text[at + \"#[cfg(test)]\".len()..]).starts_with(\"mod tests\") {",
+        "to": "        if text[at + \"#[cfg(test)]\".len()..].trim_start().starts_with(\"mod tests\") {"
+      }
+    ],
+    "runner": "rust",
+    "package": "chrono-cli",
+    "target": [
+      "--test",
+      "hygiene"
+    ],
+    "test": "a_test_module_is_cut_off_whatever_its_visibility",
+    "match": "exact",
+    "build": "",
+    "notHere": ""
+  },
+  {
+    "name": "prop-k1 a test-only child of a plain source file is looked for beside it",
+    "edits": [
+      {
+        "file": "crates/cli/tests/hygiene.rs",
+        "from": "        other => format!(\"{dir}/{}\", other.trim_end_matches(\".rs\")),",
+        "to": "        _ => dir.to_string(),"
+      }
+    ],
+    "runner": "rust",
+    "package": "chrono-cli",
+    "target": [
+      "--test",
+      "hygiene"
+    ],
+    "test": "a_file_compiled_only_for_tests_is_found_from_its_declaration",
+    "match": "exact",
+    "build": "",
+    "notHere": ""
+  },
+  {
+    "name": "prop-k1 a call from a test-only file is counted as life",
+    "edits": [
+      {
+        "file": "crates/cli/tests/hygiene.rs",
+        "from": "    rel_path.contains(\"/tests/\") || rel_path.contains(\".Tests/\") || test_only.contains(rel_path)",
+        "to": "    rel_path.contains(\"/tests/\") || rel_path.contains(\".Tests/\")"
+      }
+    ],
+    "runner": "rust",
+    "package": "chrono-cli",
+    "target": [
+      "--test",
+      "hygiene"
+    ],
+    "test": "a_file_compiled_only_for_tests_is_found_from_its_declaration",
+    "match": "exact",
+    "build": "",
+    "notHere": ""
+  },
+  {
+    "name": "prop-k1 a helper in a test-only file is judged as production",
+    "edits": [
+      {
+        "file": "crates/cli/tests/hygiene.rs",
+        "from": "            *is_production_source = false;",
+        "to": "            *is_production_source = true;"
+      }
+    ],
+    "runner": "rust",
+    "package": "chrono-cli",
+    "target": [
+      "--test",
+      "hygiene"
+    ],
+    "test": "no_public_definition_in_the_workspace_is_unreferenced",
+    "match": "exact",
+    "build": "",
+    "notHere": ""
+  },
+  {
+    "name": "prop-k1 the test-only declarations are not read at all",
+    "edits": [
+      {
+        "file": "crates/cli/tests/hygiene.rs",
+        "from": "        .flat_map(|(r, text, _)| test_only_files(r, text))",
+        "to": "        .flat_map(|(r, text, _)| test_only_files(r, text).into_iter().take(0))"
+      }
+    ],
+    "runner": "rust",
+    "package": "chrono-cli",
+    "target": [
+      "--test",
+      "hygiene"
+    ],
+    "test": "no_public_definition_in_the_workspace_is_unreferenced",
+    "match": "exact",
+    "build": "",
+    "notHere": ""
+  },
+  {
+    "name": "prop-k1 a crate only the tests build ships with the product",
+    "edits": [
+      {
+        "file": "crates/core/Cargo.toml",
+        "from": "[dev-dependencies]\nproptest = { workspace = true }",
+        "to": "[target.'cfg(windows)'.dependencies]\nproptest = { workspace = true }"
+      }
+    ],
+    "runner": "rust",
+    "package": "chrono-cli",
+    "target": [
+      "--test",
+      "components"
+    ],
+    "test": "no_excused_crate_is_in_what_ships",
+    "match": "exact",
+    "build": "",
+    "notHere": ""
+  },
+  {
+    "name": "prop-k1 a crate only the build uses ships with the product",
+    "edits": [
+      {
+        "file": "crates/cli/Cargo.toml",
+        "from": "windows = { workspace = true }\n",
+        "to": "windows = { workspace = true }\ntoml = \"1.1\"\n"
+      }
+    ],
+    "runner": "rust",
+    "package": "chrono-cli",
+    "target": [
+      "--test",
+      "components"
+    ],
+    "test": "no_excused_crate_is_in_what_ships",
+    "match": "exact",
+    "build": "",
+    "notHere": ""
+  },
+  {
+    "name": "prop-k1 the walk over what ships stays at its roots",
+    "edits": [
+      {
+        "file": "crates/cli/tests/components.rs",
+        "from": "                stack.push(next.to_string());",
+        "to": "                let _ = next;"
+      }
+    ],
+    "runner": "rust",
+    "package": "chrono-cli",
+    "target": [
+      "--test",
+      "components"
+    ],
+    "test": "no_excused_crate_is_in_what_ships",
+    "match": "exact",
+    "build": "",
+    "notHere": ""
+  },
+  {
+    "name": "prop-k1 a test-only child of a mod.rs is looked for in a directory of its own",
+    "edits": [
+      {
+        "file": "crates/cli/tests/hygiene.rs",
+        "from": "        \"lib.rs\" | \"main.rs\" | \"mod.rs\" => dir.to_string(),",
+        "to": "        \"lib.rs\" | \"main.rs\" => dir.to_string(),"
+      }
+    ],
+    "runner": "rust",
+    "package": "chrono-cli",
+    "target": [
+      "--test",
+      "hygiene"
+    ],
+    "test": "no_public_definition_in_the_workspace_is_unreferenced",
+    "match": "exact",
+    "build": "",
+    "notHere": ""
   }
 ]

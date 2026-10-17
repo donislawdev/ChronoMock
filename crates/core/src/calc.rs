@@ -3039,4 +3039,128 @@ mod tests {
         assert_eq!(open.text, "2008 text");
         assert_eq!(open.unknown, vec!["'".to_string()]);
     }
+
+    /// Random properties of the evaluation - the engine every `--shift`, `--snap`, `--nearest` and
+    /// `--to-zone` a command line can write goes through, from any base the calculator accepts.
+    mod properties {
+        use super::*;
+        use crate::search::{calendar, edge_i64, within, year};
+        use proptest::prelude::*;
+        use std::time::Duration;
+
+        /// A moment that is one, in any year of the band.
+        fn moment() -> impl Strategy<Value = CivilDateTime> {
+            (year(), 1u32..=12, 1u32..=28, 0u32..=23, 0u32..=59, 0u32..=59)
+                .prop_map(|(y, mo, d, h, mi, s)| dt(y, mo, d, h, mi, s))
+        }
+
+        /// Fields that may name no moment at all - month 13, day 32, hour 24.
+        fn fields() -> impl Strategy<Value = CivilDateTime> {
+            (year(), 0u32..=13, 0u32..=32, 0u32..=24, 0u32..=60, 0u32..=60)
+                .prop_map(|(y, mo, d, h, mi, s)| dt(y, mo, d, h, mi, s))
+        }
+
+        /// A base as the calculator may be handed one - mostly a moment, sometimes mere fields.
+        fn base() -> impl Strategy<Value = Base> {
+            prop_oneof![
+                1 => Just(Base::Today),
+                1 => Just(Base::Now),
+                4 => moment().prop_map(Base::Absolute),
+                2 => moment().prop_map(Base::AbsoluteUtc),
+                2 => fields().prop_map(Base::Absolute),
+                1 => fields().prop_map(Base::AbsoluteUtc),
+            ]
+        }
+
+        /// A zone offset in minutes: mostly one `--zone` accepts, sometimes any 32-bit value.
+        fn bias() -> impl Strategy<Value = i32> {
+            prop_oneof![
+                6 => -(14 * 60 + 59)..=(14 * 60 + 59),
+                1 => Just(i32::MAX),
+                1 => Just(i32::MIN),
+                1 => any::<i32>(),
+            ]
+        }
+
+        fn step() -> impl Strategy<Value = Step> {
+            let sign = prop_oneof![Just(Sign::Plus), Just(Sign::Minus)];
+            let unit = prop_oneof![
+                Just(Unit::Seconds),
+                Just(Unit::Minutes),
+                Just(Unit::Hours),
+                Just(Unit::Days),
+                Just(Unit::Weeks),
+                Just(Unit::Months),
+                Just(Unit::Quarters),
+                Just(Unit::Years),
+                Just(Unit::BusinessDays),
+            ];
+            let snap = prop_oneof![
+                Just(SnapTarget::StartOfMonth),
+                Just(SnapTarget::EndOfMonth),
+                Just(SnapTarget::StartOfQuarter),
+                Just(SnapTarget::EndOfQuarter),
+                Just(SnapTarget::StartOfYear),
+                Just(SnapTarget::EndOfYear),
+            ];
+            let nearest = prop_oneof![
+                Just(NearestTarget::NextBusinessDay),
+                Just(NearestTarget::PrevBusinessDay),
+                Just(NearestTarget::NextLeapDay),
+            ];
+            prop_oneof![
+                5 => (sign, edge_i64(), unit).prop_map(|(sign, amount, unit)| Step::Shift { sign, amount, unit }),
+                1 => (0u32..=25, 0u32..=61, 0u32..=61)
+                    .prop_map(|(hour, minute, second)| Step::SetTime { hour, minute, second }),
+                1 => snap.prop_map(Step::Snap),
+                1 => nearest.prop_map(Step::Nearest),
+                1 => bias().prop_map(Step::Zone),
+            ]
+        }
+
+        proptest! {
+            // The shrink is capped in time as well as in steps: a case that hangs costs `within`'s
+            // whole limit at every step and leaves its thread spinning (see `within`).
+            #![proptest_config(ProptestConfig {
+                max_shrink_iters: 256,
+                max_shrink_time: 20_000,
+                ..ProptestConfig::default()
+            })]
+
+            /// R3-1 and P2. Any chain of steps from any base ends in a real moment inside the year
+            /// band, one per step, or says why not - and everything the calculator then shows for
+            /// that moment is defined for it. `--snap end-of-month` panicked in the metadata, not in
+            /// the step, and `--shift +25252734927766000y` in the arithmetic after it.
+            #[test]
+            fn any_chain_of_steps_ends_in_a_moment_inside_the_band_or_says_why(
+                base in base(),
+                steps in proptest::collection::vec(step(), 0..6),
+                now in moment(),
+                zone in bias(),
+                cal in proptest::option::of(calendar()),
+            ) {
+                let count = steps.len();
+                let expr = MomentExpr { base, steps };
+                let reached = within(Duration::from_secs(5), "eval", move || {
+                    let ctx = EvalContext { now, zone_bias_min: zone, calendar: cal.as_ref() };
+                    eval(&expr, &ctx).map(|outcome| {
+                        let result = outcome.result();
+                        // What `chrono calc` prints for a result, each of which must hold for it.
+                        let _ = formats(&result, outcome.result_bias);
+                        let _ = metadata(&result, &now);
+                        let _ = significance(&result, outcome.result_bias, cal.as_ref());
+                        let _ = format_with_mask(&result, "yyyy-MM-dd HH:mm:ss dddd");
+                        (outcome.base, outcome.after_each)
+                    })
+                });
+                if let Ok((first, after_each)) = reached {
+                    prop_assert_eq!(after_each.len(), count);
+                    for moment in std::iter::once(&first).chain(after_each.iter()) {
+                        prop_assert!(crate::civil_year_in_band(moment.year), "left the band: {:?}", moment);
+                        prop_assert!(is_a_civil_moment(moment), "not a moment: {:?}", moment);
+                    }
+                }
+            }
+        }
+    }
 }
