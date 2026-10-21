@@ -458,7 +458,7 @@ mod tests {
             ("serde ", "MIT"),
             ("MinHook ", "BSD-2-Clause"),
             ("WPF-UI ", "MIT"),
-            ("Microsoft.Windows.SDK.NET.Ref ", "LicenseRef-Microsoft-Windows-SDK"),
+            ("Microsoft.WindowsDesktop.App.Runtime.win-x64 ", "MIT"),
         ] {
             assert!(text.contains(component), "'{component}' is missing from the list");
             assert!(text.contains(licence), "licence '{licence}' is missing from the list");
@@ -467,10 +467,11 @@ mod tests {
         // The one component with no version of its own says so rather than printing an empty gap.
         assert!(text.contains("(no version of its own)"), "{text}");
 
-        // A literal floor: the register held 28 components when this was written, and a list that
-        // quietly shrank to nothing would otherwise pass every assertion above that it still matched.
+        // A literal floor: the register held 28 components when this was written and 27 once the
+        // Windows Runtime projection left the window package (R5/8b), and a list that quietly shrank to
+        // nothing would otherwise pass every assertion above that it still matched.
         let named = lines.iter().filter(|l| l.starts_with("  ") && !l.starts_with("      ")).count();
-        assert!(named >= 28, "only {named} components listed - the register or the grouping lost some");
+        assert!(named >= 27, "only {named} components listed - the register or the grouping lost some");
     }
 
     /// The failure that must never be silent. An unreadable register would otherwise print an empty

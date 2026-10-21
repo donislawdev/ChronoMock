@@ -6,6 +6,8 @@
     The Windows support floor is pinned in the TFM (Win10 1809 / Server 2019) - a compile-time
     floor beats a sentence in a doc (method from the betterwindowsservices project). The exact
     floor ties to the open "minimum Windows version" decision (chrono-mock.md 9.4, question 7).
+    A TFM version from 10.0 up would also bring the Windows Runtime projection, which nothing here uses -
+    gui/Directory.Build.props keeps it out of the package (R5/8b).
   -->
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
@@ -73,11 +75,10 @@
        48 ms sooner with the files cached (995 to 947 ms) and 69 ms sooner from a fresh copy (1695 to
        1626 ms), with 918 fewer methods compiled before it. Publish only - a build and the tests are
        untouched - and the lock file does not change: a restore with this set leaves it as it was, measured
-       (the SDK fetches its ahead-of-time compiler as a download, which a lock file does not record).
-
-       The two Windows projection assemblies stay as they are: the window never loads them at start (they
-       are not among the assemblies loaded by the first idle), and compiled ahead they would add 29.8 MB to
-       the package for nothing. With them left out the package grows by 1.1 MB.
+       (the SDK fetches its ahead-of-time compiler as a download, which a lock file does not record). The
+       package grows by 1.1 MB. Measured while the package still carried the Windows Runtime projection,
+       which compiled ahead would have added 29.8 MB more - it no longer ships at all (R5/8b, see
+       gui/Directory.Build.props).
 
        🔴 Only for the shipped layout, like the layout marker above. ReadyToRun adds the restoring machine's
        own runtime identifier to the project's, to fetch a compiler that runs there: win-x64 on Windows,
@@ -87,8 +88,5 @@
   <PropertyGroup Condition="'$(ChronoMockLayout)' != ''">
     <PublishReadyToRun>true</PublishReadyToRun>
   </PropertyGroup>
-  <ItemGroup>
-    <PublishReadyToRunExclude Include="Microsoft.Windows.SDK.NET.dll;WinRT.Runtime.dll" />
-  </ItemGroup>
 
 </Project>

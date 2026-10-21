@@ -280,6 +280,11 @@ Notable changes to Chrono Mock, newest first. The format follows
   rather than before the window first shows. Measured on the published window, to its first frame:
   0.96 s to 0.80 s with the files already read once, and 1.53 s to 1.31 s on the first start after
   unzipping. The package grows by about 1 MB.
+- **The window package is 23 MB smaller.** It no longer carries the Windows Runtime projection
+  (`Microsoft.Windows.SDK.NET.dll` and `WinRT.Runtime.dll`), which nothing in it used: 170 MB to 147 MB
+  unpacked, and about 6 MB less to download. It is still built for Windows 10 1809 and Windows Server
+  2019 and later. The projection was the one component in the package without an SPDX licence, and it
+  leaves the SBOM and the third-party notices with it.
 
 ### Fixed
 

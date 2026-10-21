@@ -212,23 +212,26 @@ if (-not (Test-PortableLayout (Join-Path $publish 'ChronoMock.dll'))) {
         'publish again without -SkipPublish')
 }
 
-# The window's own code ships compiled ahead and the Windows projection does not (R5/8, R5-D88 - see
-# gui/ChronoMock.App/ChronoMock.App.csproj for what was measured). Checked on the published files rather
-# than read from the project: a setting that stopped applying would ship a window that starts slower, or a
-# package 29.8 MB larger, and say nothing.
-foreach ($expected in @(
-        @{ File = 'ChronoMock.dll'; Ahead = $true },
-        @{ File = 'ChronoMock.Protocol.dll'; Ahead = $true },
-        @{ File = 'Wpf.Ui.dll'; Ahead = $true },
-        @{ File = 'Microsoft.Windows.SDK.NET.dll'; Ahead = $false },
-        @{ File = 'WinRT.Runtime.dll'; Ahead = $false })) {
-    $dll = Join-Path $publish $expected.File
+# The window's own code ships compiled ahead (R5/8, R5-D88) and the Windows Runtime projection does not
+# ship at all (R5/8b) - see gui/ChronoMock.App/ChronoMock.App.csproj and gui/Directory.Build.props for what
+# was measured. Checked on the published files rather than read from the project: a setting that stopped
+# applying would ship a window that starts slower, or a package 23 MB larger, and say nothing.
+foreach ($file in 'ChronoMock.dll', 'ChronoMock.Protocol.dll', 'Wpf.Ui.dll') {
+    $dll = Join-Path $publish $file
     Assert-Exists $dll 'publish again without -SkipPublish'
-    if ((Test-ReadyToRun $dll) -ne $expected.Ahead) {
-        $state = if ($expected.Ahead) { 'carries no code compiled ahead' } else { 'carries code compiled ahead' }
-        throw ("the GUI publish under $publish has $($expected.File), which $state - PublishReadyToRun and " +
-            'PublishReadyToRunExclude in ChronoMock.App.csproj no longer apply as measured; publish again ' +
-            'without -SkipPublish, or measure the start again before changing them')
+    if (-not (Test-ReadyToRun $dll)) {
+        throw ("the GUI publish under $publish has $file, which carries no code compiled ahead - " +
+            'PublishReadyToRun in ChronoMock.App.csproj no longer applies as measured. Publish again ' +
+            'without -SkipPublish, or measure the start again before changing it')
+    }
+}
+# Ahead of the register check below on purpose: that one would ask for the projection to be declared,
+# which is the wrong repair when nothing uses it.
+foreach ($file in 'Microsoft.Windows.SDK.NET.dll', 'WinRT.Runtime.dll') {
+    if (Test-Path -LiteralPath (Join-Path $publish $file)) {
+        throw ("the GUI publish under $publish carries $file, the Windows Runtime projection no project " +
+            'here uses - IncludeWindowsSDKRefFrameworkReferences in gui/Directory.Build.props no longer ' +
+            'keeps it out. Publish again without -SkipPublish, and if it stays, find what the SDK now reads')
     }
 }
 

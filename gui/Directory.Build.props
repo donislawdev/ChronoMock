@@ -17,6 +17,24 @@
          be downloaded when cross-targeting, so a build on Windows is unaffected - and the
          same doc asks that releases be built on Windows, which is where ours are built. -->
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <!-- No project here uses the Windows Runtime projection, so none carries it (R5/8b). The 10.0.17763 in
+         the window's TFM pins the support floor (see ChronoMock.App.csproj), and any TFM version from 10.0 up
+         also makes the SDK add the projection: Microsoft.Windows.SDK.NET.dll and WinRT.Runtime.dll, 23.6 MB
+         and 0.5 MB in every package. Of the 225 managed assemblies in the package, none but the projection
+         itself referenced either of them, and no start loaded them. Measured with this switched off: the
+         unpacked package fell from 169.6 to 146.6 MB, every method of ChronoMock.dll kept its IL, and the
+         floor stayed in the assembly as SupportedOSPlatform Windows10.0.17763.0. It also took out the one
+         component in the package that carried no SPDX licence. A restore still downloads the pack into the
+         NuGet cache, as it does the ASP.NET Core runtime pack, and neither ships.
+
+         🔴 The switch is the SDK's own (Microsoft.NET.Windows.targets sets it to true only when a project
+         leaves it empty), but it has no page on learn.microsoft.com. The documented way out, a TFM with no
+         version, drops the floor to Windows 7.0, and a higher SupportedOSPlatformVersion beside it is
+         refused (NETSDK1135). So the effect is checked where it ships: packaging/build-dist.ps1 stops when
+         either file is in the publish, which is what an SDK that stopped honouring this would cause. A
+         project that does need a Windows Runtime API sets it to true and declares the projection in
+         packaging/components.json and THIRD-PARTY-NOTICES.md. -->
+    <IncludeWindowsSDKRefFrameworkReferences>false</IncludeWindowsSDKRefFrameworkReferences>
     <!-- Record the exact bytes of every NuGet package these projects restore, in a packages.lock.json
          beside each csproj. Until 2026-09-08 the managed half had no integrity record at all: Cargo.lock
          carries a checksum for all 44 third-party crates, while `WPF-UI 4.3.0` was fetched fresh on every
