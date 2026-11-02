@@ -18,10 +18,13 @@
     order and the reasons stand in the templates, beside the lines they are about.
 
     Every value comes from one place. The release folder is the one a person downloads from the release
-    page, and nothing in it is taken on trust: each file is hashed here and has to match its line in
-    SHA256SUMS, the installer has to carry the tag's version, the UpgradeCode build-msi.ps1 builds with and
-    a valid signature by the certificate packaging/codesign.json pins, and each archive has to hold the
-    programs the manifests start, at the version of the tag. Our file names carry no version, so this is what tells a release folder of another release apart.
+    page. Its SHA256SUMS is the one file taken as it is: every other file is hashed here and has to match
+    its line in it, and what ties those files to this project is their signature, not the sums. The
+    installer, and every binary sign-release.ps1 signs in the two archives, has to be signed by the
+    certificate packaging/codesign.json pins, with a timestamp, the way verify-release.yml checks a
+    published release. The installer has to carry the tag's version and the UpgradeCode build-msi.ps1 builds
+    with, and each archive has to hold the programs the manifests start, at the version of the tag. Our file
+    names carry no version, so these checks are what tell a folder of another release apart.
     The names and addresses come from packaging/components.json, the installer's name, UpgradeCode and
     shortcut sentence from build-msi.ps1 (its -SourceOnly output, the source the installer was built
     from), the release date from CHANGELOG.md, the templates from packaging/winget and packaging/chocolatey.
@@ -30,7 +33,8 @@
       winget/manifests/d/DonislawDev/ChronoMock/<version>/       the three files of one WinGet pull request
       winget/manifests/d/DonislawDev/ChronoMock/CLI/<version>/   and the three of the other
       chocolatey/chrono-mock/ and chocolatey/chrono-mock-cli/   one folder per `choco pack`
-    Rendered into a working folder beside it and renamed at the end, so a refused run leaves nothing.
+    Rendered into a working folder beside it and renamed at the end, so a refused run leaves nothing, and a
+    second run given the same -OutDir is refused rather than mixed into the first.
 
     Nothing here submits anything. A pull request to microsoft/winget-pkgs and a `choco push` publish under
     the project's name to feeds somebody else moderates, so they stay a person's step.
@@ -72,6 +76,14 @@ $WingetSchema = '1.28.0'
 function Stop-Render([string] $message) {
     [Console]::Error.WriteLine("build-feeds: $message")
     exit 1
+}
+
+# What went wrong in a .NET or COM call, without the line PowerShell wraps it in (in the language of the
+# machine, which is not always English).
+function Get-Reason([System.Management.Automation.ErrorRecord] $record) {
+    $exception = $record.Exception
+    if ($exception.InnerException) { $exception = $exception.InnerException }
+    return $exception.Message
 }
 
 # --- what the release has to be ------------------------------------------------------------------------
@@ -140,7 +152,7 @@ function Read-MsiProperties([string] $msi) {
         [void]$view.Close()
     }
     catch {
-        Stop-Render "$msi could not be read as an installer database: $($_.Exception.Message)"
+        Stop-Render "$msi could not be read as an installer database: $(Get-Reason $_)"
     }
     finally {
         foreach ($held in @($view, $database, $installer)) {
@@ -152,27 +164,83 @@ function Read-MsiProperties([string] $msi) {
     return $properties
 }
 
-# Every program a manifest starts has to be in the archive at that path, at the tag's version - an archive of
-# another release would be refused here and not by the person who installs it.
-function Assert-ArchiveHolds([string] $zip, [string[]] $programs, [string] $version, [string] $scratch) {
-    Add-Type -AssemblyName System.IO.Compression.FileSystem
-    $archive = [System.IO.Compression.ZipFile]::OpenRead($zip)
+# The binaries the release signs, per archive, as name in the archive. Read out of sign-release.ps1, the
+# script that signs them, by the PowerShell parser: the script is parsed and never run, and SafeGetValue
+# gives the value of a constant and refuses anything else.
+function Get-SignedBinaries {
+    $script = Join-Path $PSScriptRoot 'sign-release.ps1'
+    $tokens = $null
+    $errors = $null
+    $ast = [System.Management.Automation.Language.Parser]::ParseFile($script, [ref]$tokens, [ref]$errors)
+    if ($errors) { Stop-Render "sign-release.ps1 does not parse, so what it signs is not known: $($errors[0].Message)" }
+    $assignments = @($ast.FindAll({
+                param($node)
+                $node -is [System.Management.Automation.Language.AssignmentStatementAst] -and $node.Left.Extent.Text -eq '$OURS'
+            }, $true))
+    if ($assignments.Count -ne 1) { Stop-Render "sign-release.ps1 assigns `$OURS $($assignments.Count) times, and what it signs is read from one" }
     try {
-        foreach ($program in $programs) {
-            $entryName = $program.Replace('\', '/')
-            $entry = $archive.GetEntry($entryName)
-            if ($null -eq $entry) { Stop-Render "$(Split-Path -Leaf $zip) holds no $entryName, which a package starts" }
-            $copy = Join-Path $scratch ([guid]::NewGuid().ToString('N') + '.exe')
-            [System.IO.Compression.ZipFileExtensions]::ExtractToFile($entry, $copy)
-            $found = (Get-Item -LiteralPath $copy).VersionInfo.ProductVersion
-            if ($found -ne $version) {
-                Stop-Render "$entryName in $(Split-Path -Leaf $zip) is version '$found', and the tag is $version"
+        $ours = $assignments[0].Right.Expression.SafeGetValue()
+    }
+    catch {
+        Stop-Render "the `$OURS of sign-release.ps1 is not a constant, so what it signs is not known: $(Get-Reason $_)"
+    }
+    if ($ours -isnot [hashtable]) { Stop-Render 'the $OURS of sign-release.ps1 is not a table of archive -> binaries' }
+    return $ours
+}
+
+# Every program a manifest starts has to be in the archive at that path and at the tag's version, and every
+# binary the release signs in it has to be there too. Each is copied out into the scratch folder so that its
+# signature can be asked, and returned as its name in the archive -> the copy. An archive of another release
+# is refused here and not by the person who installs it.
+function Expand-Checked([string] $zip, [string[]] $programs, [string[]] $signed, [string] $version, [string] $scratch) {
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    $zipName = Split-Path -Leaf $zip
+    $copies = [ordered]@{}
+    $archive = $null
+    try {
+        try {
+            $archive = [System.IO.Compression.ZipFile]::OpenRead($zip)
+        }
+        catch {
+            Stop-Render "$zipName could not be read as an archive: $(Get-Reason $_)"
+        }
+        foreach ($name in @($programs) + @($signed)) {
+            if ($copies.Contains($name)) { continue }
+            $entry = $archive.GetEntry($name)
+            if ($null -eq $entry) {
+                $why = if ($name -in $programs) { 'which a package starts' } else { 'which the release signs' }
+                Stop-Render "$zipName holds no $name, $why"
             }
+            $copy = Join-Path $scratch ([guid]::NewGuid().ToString('N') + [System.IO.Path]::GetExtension($name))
+            try {
+                [System.IO.Compression.ZipFileExtensions]::ExtractToFile($entry, $copy)
+            }
+            catch {
+                Stop-Render "$name could not be read out of $zipName`: $(Get-Reason $_)"
+            }
+            $copies[$name] = $copy
         }
     }
     finally {
-        $archive.Dispose()
+        if ($null -ne $archive) { $archive.Dispose() }
     }
+    foreach ($program in $programs) {
+        $found = (Get-Item -LiteralPath $copies[$program]).VersionInfo.ProductVersion
+        if ($found -ne $version) { Stop-Render "$program in $zipName is version '$found', and the tag is $version" }
+    }
+    return $copies
+}
+
+# Why a file is not signed the way a published release is, or nothing when it is. The questions
+# verify-release.yml asks: Valid says only that somebody's certificate signed it, so the certificate has to
+# be the one packaging/codesign.json pins, and without a timestamp a signature dies with the certificate.
+function Get-SignatureFault([string] $path, [string] $pin) {
+    $signature = Get-AuthenticodeSignature -LiteralPath $path
+    if ($signature.Status -ne 'Valid') { return "signature status $($signature.Status)" }
+    $signer = [Convert]::ToHexString([System.Security.Cryptography.SHA256]::HashData($signature.SignerCertificate.RawData)).ToLowerInvariant()
+    if ($signer -ne $pin) { return "signed by a certificate with SHA-256 $signer" }
+    if (-not $signature.TimeStamperCertificate) { return 'signed with no timestamp' }
+    return ''
 }
 
 # What build-msi.ps1 builds the installer from, asked of the script itself rather than copied out of it.
@@ -273,6 +341,10 @@ function Write-Rendered([string] $path, [string] $text) {
 # --- the run -------------------------------------------------------------------------------------------
 
 $version = Get-ReleaseVersion $Tag
+# Against the location of this session, as PowerShell resolves a path. .NET resolves a relative path against
+# the process folder, which Set-Location does not move, so `out` given after a cd would be another folder.
+$OutDir = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($OutDir)
+$Release = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Release)
 Assert-Destination $OutDir
 $releaseDir = [System.IO.Path]::GetFullPath($Release)
 if (-not (Test-Path -LiteralPath $releaseDir -PathType Container)) { Stop-Render "$Release is not a folder. Download the release files into one" }
@@ -299,38 +371,56 @@ $sums = Read-Sums (Join-Path $releaseDir 'SHA256SUMS')
 $msiHash = Assert-Hashed $sums $releaseDir $msiName
 $appZipHash = Assert-Hashed $sums $releaseDir $appZipName
 $cliZipHash = Assert-Hashed $sums $releaseDir $cliZipName
-
-$msiPath = Join-Path $releaseDir $msiName
-$signature = Get-AuthenticodeSignature -LiteralPath $msiPath
-if ($signature.Status -ne 'Valid') { Stop-Render "$msiName has signature status $($signature.Status). A published installer is signed" }
-# Valid says only that somebody's certificate signed it. Ours is pinned in packaging/codesign.json, the pin
-# sign-release.ps1 signs against.
+$signedBinaries = Get-SignedBinaries
+foreach ($zipName in @($appZipName, $cliZipName)) {
+    if (-not $signedBinaries.ContainsKey($zipName) -or -not @($signedBinaries[$zipName])) {
+        Stop-Render "sign-release.ps1 signs nothing in $zipName, and each archive holds binaries this project builds"
+    }
+}
 $pin = (Get-Content -Raw -LiteralPath (Join-Path $PSScriptRoot 'codesign.json') | ConvertFrom-Json).certificate_sha256
-$signer = [Convert]::ToHexString([System.Security.Cryptography.SHA256]::HashData($signature.SignerCertificate.RawData)).ToLowerInvariant()
-if (-not $pin -or $signer -ne $pin) { Stop-Render "$msiName is signed by a certificate with SHA-256 $signer, and packaging/codesign.json pins $pin" }
-$msiProperties = Read-MsiProperties $msiPath
-if ($msiProperties['ProductVersion'] -ne $version) {
-    Stop-Render "$msiName is version '$($msiProperties['ProductVersion'])', and the tag is $version"
-}
-$upgradeCode = "{$($identity.UpgradeCode)}"
-if ($msiProperties['UpgradeCode'] -ne $upgradeCode) {
-    Stop-Render "$msiName carries UpgradeCode $($msiProperties['UpgradeCode']), and build-msi.ps1 builds with $upgradeCode"
-}
-
-# The Chocolatey icon. Moderation takes a CDN address and refuses raw.githubusercontent.com and
-# github.com/.../raw alike, and an address on a branch would change the icon of an approved package with
-# every commit, so it is jsDelivr pinned to the tag. The file has to be in the tag for that to answer.
-$iconPath = 'site/assets/icon.png'
-& git -C $root cat-file -e "$($Tag):$iconPath" 2>$null
-if ($LASTEXITCODE -ne 0) { Stop-Render "$iconPath is not in $Tag in this clone, so the icon address would not answer. Fetch the tag" }
-$repoPath = ([uri]$product.source).AbsolutePath.Trim('/')
+if ($pin -notmatch '^[0-9a-f]{64}$') { Stop-Render 'packaging/codesign.json carries no usable certificate_sha256' }
+$msiPath = Join-Path $releaseDir $msiName
 
 $scratch = Join-Path ([System.IO.Path]::GetTempPath()) ('chrono-feeds-' + [guid]::NewGuid().ToString('N'))
 $work = Join-Path (Split-Path -Parent ([System.IO.Path]::GetFullPath($OutDir))) ('.' + (Split-Path -Leaf $OutDir) + '.partial-' + [guid]::NewGuid().ToString('N').Substring(0, 8))
 try {
     New-Item -ItemType Directory -Force -Path $scratch | Out-Null
-    Assert-ArchiveHolds (Join-Path $releaseDir $appZipName) @($appZipExe) $version $scratch
-    Assert-ArchiveHolds (Join-Path $releaseDir $cliZipName) @($cliZipExe, $cliX86Exe) $version $scratch
+    # The archives first, so that one of another release is refused by what it holds before its signatures
+    # are asked. The names in an archive are written with forward slashes.
+    $appCopies = Expand-Checked (Join-Path $releaseDir $appZipName) @($appZipExe.Replace('\', '/')) @($signedBinaries[$appZipName]) $version $scratch
+    $cliCopies = Expand-Checked (Join-Path $releaseDir $cliZipName) @($cliZipExe.Replace('\', '/'), $cliX86Exe.Replace('\', '/')) @($signedBinaries[$cliZipName]) $version $scratch
+
+    # Every signature is asked before any is refused, so one refusal names every file that is not ours.
+    $faults = [System.Collections.Generic.List[string]]::new()
+    $fault = Get-SignatureFault $msiPath $pin
+    if ($fault) { $faults.Add("$msiName ($fault)") }
+    $extracted = [ordered]@{ $appZipName = $appCopies; $cliZipName = $cliCopies }
+    foreach ($zipName in $extracted.Keys) {
+        foreach ($name in $extracted[$zipName].Keys) {
+            $fault = Get-SignatureFault $extracted[$zipName][$name] $pin
+            if ($fault) { $faults.Add("$name in $zipName ($fault)") }
+        }
+    }
+    if ($faults.Count) {
+        Stop-Render "not signed by the certificate packaging/codesign.json pins ($pin), with a timestamp: $($faults -join ', ')"
+    }
+
+    $msiProperties = Read-MsiProperties $msiPath
+    if ($msiProperties['ProductVersion'] -ne $version) {
+        Stop-Render "$msiName is version '$($msiProperties['ProductVersion'])', and the tag is $version"
+    }
+    $upgradeCode = "{$($identity.UpgradeCode)}"
+    if ($msiProperties['UpgradeCode'] -ne $upgradeCode) {
+        Stop-Render "$msiName carries UpgradeCode $($msiProperties['UpgradeCode']), and build-msi.ps1 builds with $upgradeCode"
+    }
+
+    # The Chocolatey icon. Moderation takes a CDN address and refuses raw.githubusercontent.com and
+    # github.com/.../raw alike, and an address on a branch would change the icon of an approved package with
+    # every commit, so it is jsDelivr pinned to the tag. The file has to be in the tag for that to answer.
+    $iconPath = 'site/assets/icon.png'
+    & git -C $root cat-file -e "$($Tag):$iconPath" 2>$null
+    if ($LASTEXITCODE -ne 0) { Stop-Render "$iconPath is not in $Tag in this clone, so the icon address would not answer. Fetch the tag" }
+    $repoPath = ([uri]$product.source).AbsolutePath.Trim('/')
 
     $download = "$($product.source)/releases/download/$Tag"
     $shared = [ordered]@{
@@ -460,7 +550,15 @@ try {
         if ($unused) { Stop-Render "no template of the $($package.Kind) package asks for $($unused -join ', ')" }
     }
 
-    Move-Item -LiteralPath $work -Destination $OutDir
+    # A rename, which fails when the destination is there. Move-Item would put the folder INSIDE an existing
+    # one, so a second run given the same -OutDir, past the check at the start while this one rendered,
+    # would nest its packages in this run's and still say rendered.
+    try {
+        [System.IO.Directory]::Move($work, $OutDir)
+    }
+    catch {
+        Stop-Render "$OutDir could not be made from the rendered folder, so nothing was put there: $(Get-Reason $_)"
+    }
     $work = $null
 }
 finally {

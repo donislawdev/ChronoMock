@@ -4,7 +4,8 @@
 //! here does (tools/feeds has the probes). These guards hold what such a measurement cannot see coming: the
 //! shape the measurement rests on, the names that are public for good, the one source of the UpgradeCode,
 //! the paths several files must agree on, and the refusals of the script. Rendering a real release needs its
-//! signed installer, so every refusal asked here comes before the script looks for a signature.
+//! files signed by our certificate, so every refusal asked here comes before the signatures or is theirs, on
+//! release folders built here: this build's chrono.exe in two archives and a copy of pwsh.exe as the installer.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -255,30 +256,120 @@ fn build_feeds(tag: &str, release: &Path, out: &Path) -> Run {
     Run { code: output.status.code().unwrap_or(-1), said }
 }
 
-/// SHA-256 of a file, lower case, from the same cmdlet the script hashes with.
-fn sha256(path: &Path) -> String {
-    let output = Command::new(pwsh())
-        .args(["-NoProfile", "-NonInteractive", "-Command"])
-        .arg(format!("(Get-FileHash -LiteralPath '{}' -Algorithm SHA256).Hash.ToLowerInvariant()", path.display()))
-        .output()
-        .expect("pwsh could not be started");
-    String::from_utf8_lossy(&output.stdout).trim().to_string()
-}
-
 const MSI: &str = "ChronoMock-app-win-x64.msi";
 const APP_ZIP: &str = "ChronoMock-app-win-x64.zip";
 const CLI_ZIP: &str = "ChronoMock-cli-win.zip";
 
-/// A release folder of three stand-in files, and a SHA256SUMS that lists them as they are.
-fn release_folder(dir: &Path) {
-    std::fs::create_dir_all(dir).expect("a release folder");
-    let mut sums = String::new();
-    for name in [MSI, APP_ZIP, CLI_ZIP] {
-        let path = dir.join(name);
-        std::fs::write(&path, format!("stand-in for {name}")).expect("a stand-in file");
-        sums.push_str(&format!("{}  {name}\n", sha256(&path)));
+/// The tag of the version this build carries. The archives below hold this build's chrono.exe, whose version
+/// resource is the workspace's, and the release commit that moves the version dates it in CHANGELOG.md, which
+/// the script reads.
+fn tag() -> String {
+    format!("v{}", env!("CARGO_PKG_VERSION"))
+}
+
+/// The binaries sign-release.ps1 signs, per archive, out of its `$OURS` table: each archive name, then the
+/// quoted names with a slash under it. Enough PowerShell for that table, not a parser.
+fn signed_binaries() -> Vec<(String, Vec<String>)> {
+    let script = active_powershell(&read("packaging/sign-release.ps1"));
+    let start = script.find("$OURS = @{").expect("sign-release.ps1 assigns $OURS");
+    let mut archives: Vec<(String, Vec<String>)> = Vec::new();
+    for line in script[start..].lines().skip(1) {
+        if line.trim() == "}" {
+            break;
+        }
+        for name in line.split('\'').skip(1).step_by(2) {
+            if name.ends_with(".zip") {
+                archives.push((name.to_string(), Vec::new()));
+            } else if name.contains('/') {
+                archives.last_mut().expect("an archive named before its binaries").1.push(name.to_string());
+            }
+        }
     }
-    std::fs::write(dir.join("SHA256SUMS"), sums).expect("a SHA256SUMS");
+    assert!(archives.len() == 2 && archives.iter().all(|(_, b)| b.len() >= 2), "read {archives:?} out of the $OURS of sign-release.ps1");
+    archives
+}
+
+/// The programs the packages start, as names in their archives.
+fn started_programs() -> Vec<String> {
+    let feeds = read("packaging/build-feeds.ps1");
+    ["appZipExe", "cliZipExe", "cliX86Exe"].iter().map(|v| powershell_literal(&feeds, v).replace('\\', "/")).collect()
+}
+
+/// Builds a release folder that gets as far as the signatures: the installer as a copy of the pwsh.exe that
+/// runs this, validly signed by a certificate that is not ours, both archives holding every binary the
+/// release signs - this build's chrono.exe for each program a package starts and a line of text for the
+/// rest - and a SHA256SUMS that lists the three as they are. -Change builds one thing otherwise. It prints how
+/// many entries it packed, so a fixture that packed nothing cannot pass for one that worked.
+const RELEASE_FIXTURE: &str = r#"
+param([string] $Release, [string] $Program, [string] $Programs, [string] $Archives, [string] $Change)
+$ErrorActionPreference = 'Stop'
+Set-StrictMode -Version Latest
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+New-Item -ItemType Directory -Force -Path $Release | Out-Null
+$kind, $what = $Change.Split(':', 2)
+$signed = Join-Path $PSHOME 'pwsh.exe'
+if ((Get-AuthenticodeSignature -LiteralPath $signed).Status -ne 'Valid') {
+    throw "$signed has no valid signature, and the installer stands in as a file somebody else signed"
+}
+Copy-Item -LiteralPath $signed -Destination (Join-Path $Release 'ChronoMock-app-win-x64.msi')
+$started = $Programs.Split(',')
+$packed = 0
+foreach ($archive in $Archives.Split(';')) {
+    $zipName, $list = $archive.Split('=', 2)
+    $zipPath = Join-Path $Release $zipName
+    if ($kind -eq 'not-an-archive' -and $what -eq $zipName) {
+        [System.IO.File]::WriteAllText($zipPath, "stand-in for $zipName")
+        continue
+    }
+    $zip = [System.IO.Compression.ZipFile]::Open($zipPath, 'Create')
+    try {
+        foreach ($entry in $list.Split(',')) {
+            if ($kind -eq 'without' -and $what -eq $entry) { continue }
+            if ($entry -in $started -and -not ($kind -eq 'as-text' -and $what -eq $entry)) {
+                [void][System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile($zip, $Program, $entry, 'NoCompression')
+            }
+            else {
+                $writer = [System.IO.StreamWriter]::new($zip.CreateEntry($entry).Open())
+                try { $writer.Write("stand-in for $entry") } finally { $writer.Dispose() }
+            }
+            $packed++
+        }
+    }
+    finally { $zip.Dispose() }
+}
+$sums = foreach ($name in 'ChronoMock-app-win-x64.msi', 'ChronoMock-app-win-x64.zip', 'ChronoMock-cli-win.zip') {
+    "$((Get-FileHash -LiteralPath (Join-Path $Release $name) -Algorithm SHA256).Hash.ToLowerInvariant())  $name"
+}
+[System.IO.File]::WriteAllText((Join-Path $Release 'SHA256SUMS'), ($sums -join "`n") + "`n")
+"packed $packed"
+"#;
+
+fn release_folder(dir: &Path, change: &str) {
+    let fixture = std::env::temp_dir().join(format!("chrono-feeds-guard-{}-fixture.ps1", std::process::id()));
+    std::fs::write(&fixture, RELEASE_FIXTURE).expect("the fixture script");
+    let archives = signed_binaries();
+    let packed: usize = archives
+        .iter()
+        .filter(|(zip, _)| change != format!("not-an-archive:{zip}"))
+        .flat_map(|(_, binaries)| binaries)
+        .filter(|binary| change != format!("without:{binary}"))
+        .count();
+    let listed = archives.iter().map(|(zip, binaries)| format!("{zip}={}", binaries.join(","))).collect::<Vec<_>>().join(";");
+    let output = Command::new(pwsh())
+        .args(["-NoProfile", "-NonInteractive", "-File"])
+        .arg(&fixture)
+        .arg("-Release")
+        .arg(dir)
+        .args(["-Program", env!("CARGO_BIN_EXE_chrono"), "-Programs", &started_programs().join(","), "-Archives", &listed, "-Change", change])
+        .output()
+        .expect("pwsh could not be started");
+    let said = format!("{}{}", String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr));
+    assert!(output.status.success() && said.contains(&format!("packed {packed}")), "the release fixture ({change}) should pack {packed} entries:\n{said}");
+}
+
+/// Which archive a binary is in, by the folder it unpacks to.
+fn archive_of(binary: &str) -> &'static str {
+    if binary.starts_with("ChronoMock/") { APP_ZIP } else { CLI_ZIP }
 }
 
 fn temp_case(name: &str) -> PathBuf {
@@ -288,62 +379,83 @@ fn temp_case(name: &str) -> PathBuf {
     dir
 }
 
-/// One way a release folder or a destination differs from one that gets through: what it is, how the folder
-/// is changed, and the words the refusal must contain.
-type FeedCase = (&'static str, fn(&Path), &'static str);
+/// One way a release folder or a destination differs from one that gets as far as the signatures: what it
+/// is, how the fixture builds it otherwise, how the built folder is changed, and the words the refusal must
+/// contain.
+type FeedCase = (&'static str, &'static str, fn(&Path), &'static str);
 
 /// The script renders from a published release or not at all, and a refusal leaves nothing behind. A folder
-/// of stand-ins that list their own hashes is asked first: it gets past every check of the folder and stops
-/// at the installer's signature, which no stand-in has. So each refusal below is the refusal of what the case
-/// changed, not of something the fixture got wrong.
+/// that gets past every check of the folder and of the archives is asked first. It stops at the signatures,
+/// which nothing here has from our certificate, and that one refusal names every file that is not ours - the
+/// installer for its signer and each binary the release signs for its status. So each refusal below is the
+/// refusal of what the case changed, not of something the fixture got wrong.
 #[test]
 fn the_packages_are_rendered_from_a_published_release_or_not_at_all() {
+    let tag = tag();
     let base = temp_case("base");
-    release_folder(&base.join("release"));
-    let run = build_feeds("v0.5.0", &base.join("release"), &base.join("out"));
-    assert!(run.code == 1 && run.said.contains("has signature status"), "the stand-ins should stop at the signature, exited {}:\n{}", run.code, run.said);
+    release_folder(&base.join("release"), "none");
+    let run = build_feeds(&tag, &base.join("release"), &base.join("out"));
+    assert!(run.code == 1 && run.said.contains("not signed by the certificate packaging/codesign.json pins"), "the fixture should stop at the signatures, exited {}:\n{}", run.code, run.said);
+    assert!(run.said.contains(&format!("{MSI} (signed by a certificate with SHA-256 ")), "the installer, validly signed by somebody else, is refused for its signer:\n{}", run.said);
+    let mut named = 0;
+    for (archive, binaries) in signed_binaries() {
+        for binary in binaries {
+            assert!(run.said.contains(&format!("{binary} in {archive} (signature status ")), "the refusal names {binary} in {archive}:\n{}", run.said);
+            named += 1;
+        }
+    }
+    for program in started_programs() {
+        let unsigned = format!("{program} in {} (signature status NotSigned)", archive_of(&program));
+        assert!(run.said.contains(&unsigned), "the program a package starts is asked its own signature (`{unsigned}`):\n{}", run.said);
+    }
+    assert!(named >= 11, "the refusal was checked for {named} binaries, so this is not reading what the release signs");
     assert!(!base.join("out").exists(), "a refused run leaves no destination");
 
-    let cases: [FeedCase; 7] = [
-        ("no sums", |r| std::fs::remove_file(r.join("SHA256SUMS")).expect("remove"), "is not there"),
-        ("a file the sums do not list", |r| {
+    let cases: [FeedCase; 11] = [
+        ("no sums", "none", |r| std::fs::remove_file(r.join("SHA256SUMS")).expect("remove"), "is not there"),
+        ("a file the sums do not list", "none", |r| {
             let sums = std::fs::read_to_string(r.join("SHA256SUMS")).expect("sums");
             std::fs::write(r.join("SHA256SUMS"), sums.lines().filter(|l| !l.ends_with(MSI)).collect::<Vec<_>>().join("\n")).expect("write");
         }, "has no line for ChronoMock-app-win-x64.msi"),
-        ("a listed file that is missing", |r| std::fs::remove_file(r.join(CLI_ZIP)).expect("remove"), "is not in"),
-        ("a file of other bytes", |r| std::fs::write(r.join(APP_ZIP), b"other bytes").expect("write"), "hashes to"),
-        ("a line of no known form", |r| {
+        ("a listed file that is missing", "none", |r| std::fs::remove_file(r.join(CLI_ZIP)).expect("remove"), "is not in"),
+        ("a file of other bytes", "none", |r| std::fs::write(r.join(APP_ZIP), b"other bytes").expect("write"), "hashes to"),
+        ("a line of no known form", "none", |r| {
             let sums = std::fs::read_to_string(r.join("SHA256SUMS")).expect("sums");
             std::fs::write(r.join("SHA256SUMS"), format!("{sums}not a sum\n")).expect("write");
         }, "has a line that is not"),
-        ("a file listed twice", |r| {
+        ("a file listed twice", "none", |r| {
             let sums = std::fs::read_to_string(r.join("SHA256SUMS")).expect("sums");
             let first = sums.lines().next().expect("a line").to_string();
             std::fs::write(r.join("SHA256SUMS"), format!("{sums}{first}\n")).expect("write");
         }, "twice"),
-        ("no release folder", |r| std::fs::remove_dir_all(r).expect("remove"), "is not a folder"),
+        ("no release folder", "none", |r| std::fs::remove_dir_all(r).expect("remove"), "is not a folder"),
+        ("an archive that is not one", "not-an-archive:ChronoMock-cli-win.zip", |_| {}, "ChronoMock-cli-win.zip could not be read as an archive"),
+        ("an archive without a program a package starts", "without:chrono-cli/x86/chrono.exe", |_| {}, "ChronoMock-cli-win.zip holds no chrono-cli/x86/chrono.exe, which a package starts"),
+        ("an archive without a binary the release signs", "without:ChronoMock/core/x86/chrono_hook.dll", |_| {}, "ChronoMock-app-win-x64.zip holds no ChronoMock/core/x86/chrono_hook.dll, which the release signs"),
+        ("a program of no version", "as-text:ChronoMock/ChronoMock.exe", |_| {}, "ChronoMock/ChronoMock.exe in ChronoMock-app-win-x64.zip is version ''"),
     ];
-    for (what, change, says) in cases {
+    for (what, built, change, says) in cases {
         let dir = temp_case("case");
-        release_folder(&dir.join("release"));
+        release_folder(&dir.join("release"), built);
         change(&dir.join("release"));
-        let run = build_feeds("v0.5.0", &dir.join("release"), &dir.join("out"));
+        let run = build_feeds(&tag, &dir.join("release"), &dir.join("out"));
         assert!(run.code == 1 && run.said.contains(says), "{what}: exited {} and said:\n{}\nwant exit 1 and {says:?}", run.code, run.said);
         let left: Vec<String> = std::fs::read_dir(&dir).expect("the case folder").flatten().map(|e| e.file_name().to_string_lossy().into_owned()).filter(|n| n != "release").collect();
         assert!(left.is_empty(), "{what}: a refused run left {left:?} beside the release folder");
     }
 
-    for (tag, says) in [("v0.5.0-rc.1", "is a release candidate"), ("0.5.0", "is not a release tag")] {
-        let run = build_feeds(tag, &base.join("release"), &base.join("out"));
-        assert!(run.code == 1 && run.said.contains(says), "-Tag {tag} exited {} and said:\n{}", run.code, run.said);
+    for (asked, says) in [("v0.5.0-rc.1", "is a release candidate"), ("0.5.0", "is not a release tag")] {
+        let run = build_feeds(asked, &base.join("release"), &base.join("out"));
+        assert!(run.code == 1 && run.said.contains(says), "-Tag {asked} exited {} and said:\n{}", run.code, run.said);
     }
     let inside = repo_root().join("target").join("feeds-guard-out");
-    let run = build_feeds("v0.5.0", &base.join("release"), &inside);
+    let run = build_feeds(&tag, &base.join("release"), &inside);
     assert!(run.code == 1 && run.said.contains("is inside the repository"), "a destination in the repository exited {}:\n{}", run.code, run.said);
     assert!(!inside.exists(), "nothing was written into the repository");
     std::fs::create_dir_all(base.join("taken")).expect("a folder");
-    let run = build_feeds("v0.5.0", &base.join("release"), &base.join("taken"));
+    let run = build_feeds(&tag, &base.join("release"), &base.join("taken"));
     assert!(run.code == 1 && run.said.contains("exists already"), "a destination that exists exited {}:\n{}", run.code, run.said);
 
     let _ = std::fs::remove_dir_all(&base);
+    let _ = std::fs::remove_file(std::env::temp_dir().join(format!("chrono-feeds-guard-{}-fixture.ps1", std::process::id())));
 }
