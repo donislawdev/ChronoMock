@@ -1,0 +1,27 @@
+# Rendered by packaging/build-feeds.ps1 - do not edit the generated copy.
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.installer.{{WINGET_SCHEMA}}.schema.json
+
+PackageIdentifier: {{WINGET_ID}}
+PackageVersion: {{VERSION}}
+ReleaseDate: {{RELEASE_DATE}}
+InstallerType: zip
+NestedInstallerType: portable
+NestedInstallerFiles:
+- RelativeFilePath: {{CLI_ZIP_EXE}}
+# Load-bearing. Without it WinGet starts chrono through a link in its own
+# links folder, and chrono looks for chrono_hook.dll, the calendars and the
+# presets beside the path it was started by - the link - and finds none of
+# them: every session stops with core.hook_dll_missing (tools/feeds/
+# symlink-probe.ps1 on Windows Server 2025, 2026-11-02). With it, WinGet makes
+# no link and puts the folder chrono.exe is in on PATH instead
+# (PortableInstaller.cpp in winget-cli, read 2026-11-02). That folder holds
+# only our own files.
+ArchiveBinariesDependOnPath: true
+Commands:
+- chrono
+Installers:
+- Architecture: x64
+  InstallerUrl: {{CLI_ZIP_URL}}
+  InstallerSha256: {{CLI_ZIP_SHA256}}
+ManifestType: installer
+ManifestVersion: {{WINGET_SCHEMA}}
