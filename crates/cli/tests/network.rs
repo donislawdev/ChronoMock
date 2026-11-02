@@ -359,6 +359,14 @@ const ALLOWED: &[(&str, &str, &str)] = &[
          Nothing is built, installed or downloaded, and WiX is kept out of its reach",
     ),
     (
+        "crates/cli/tests/feeds.rs",
+        "spawn",
+        "the packages guard runs packaging/build-feeds.ps1 under PowerShell 7 to ask its refusals, and \
+         PowerShell to build the release folders it asks them of, in a scratch folder: this build's \
+         chrono.exe packed into two archives and a copy of pwsh.exe as the installer. Nothing is \
+         downloaded, installed or submitted",
+    ),
+    (
         "gui/ChronoMock.Protocol/CoreClient.cs",
         "spawn",
         "the window launches the core process, exactly as the command line does",

@@ -1,0 +1,33 @@
+# Rendered by packaging/build-feeds.ps1 - do not edit the generated copy.
+#
+# The installer is found by its UpgradeCode, the product's identity for good,
+# and not by its name in Installed apps: a name can match another program, and
+# the UpgradeCode finds the copy whichever build of it is installed - this
+# package's, or one installed from the release page by hand. Windows Installer
+# then takes away everything it put down, the Start menu entry and the PATH
+# entry included, and leaves the per-user folder of the window alone.
+#
+# Windows PowerShell 5.1 is what Chocolatey runs package scripts with, so this
+# file is ASCII and uses no PowerShell 7 syntax.
+$ErrorActionPreference = 'Stop'
+
+$upgradeCode = '{{MSI_UPGRADE_CODE}}'
+$installer = New-Object -ComObject WindowsInstaller.Installer
+$products = @($installer.RelatedProducts($upgradeCode))
+
+if ($products.Count -eq 0) {
+    # Removed already, in Settings or with msiexec. Nothing is left to take
+    # away, and refusing here would leave Chocolatey listing a package that is
+    # not on the machine.
+    Write-Warning '{{TITLE}} was not installed any more, so there was nothing to uninstall.'
+    return
+}
+
+foreach ($productCode in $products) {
+    # 1605 and 1614: the product went away between the lookup and the uninstall.
+    Uninstall-ChocolateyPackage `
+        -PackageName $env:ChocolateyPackageName `
+        -FileType 'msi' `
+        -SilentArgs "$productCode /qn /norestart" `
+        -ValidExitCodes @(0, 3010, 1605, 1614, 1641)
+}

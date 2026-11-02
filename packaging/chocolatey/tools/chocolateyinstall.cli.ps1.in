@@ -1,0 +1,30 @@
+# Rendered by packaging/build-feeds.ps1 - do not edit the generated copy.
+#
+# The package DOWNLOADS the release archive instead of carrying it: the archive
+# is the same file, checksum and all, that the release page publishes, and a
+# package with no binaries inside owes the moderators no VERIFICATION.txt.
+#
+# Windows PowerShell 5.1 is what Chocolatey runs package scripts with, so this
+# file is ASCII and uses no PowerShell 7 syntax.
+$ErrorActionPreference = 'Stop'
+$toolsDir = Split-Path -Parent $MyInvocation.MyCommand.Definition
+
+# Exactly as the archive holds it: chrono finds chrono_hook.dll, the calendars
+# and the presets beside itself, and only when they stay together.
+Install-ChocolateyZipPackage `
+    -PackageName $env:ChocolateyPackageName `
+    -Url64bit '{{CLI_ZIP_URL}}' `
+    -Checksum64 '{{CLI_ZIP_SHA256}}' `
+    -ChecksumType64 'sha256' `
+    -UnzipLocation $toolsDir
+
+# Chocolatey makes a shim on PATH for every program in the package, and the
+# archive holds two named chrono.exe: the 64-bit one and the 32-bit one in x86.
+# Two shims of one name would fight over the command, so the 32-bit one gets
+# none - an empty file named after it with .ignore on the end tells Chocolatey
+# so - and is run by its path, as a refusal for a 32-bit target says.
+New-Item -ItemType File -Path (Join-Path $toolsDir '{{CLI_X86_EXE}}.ignore') -Force | Out-Null
+
+Write-Host ''
+Write-Host 'Type chrono --help to see the commands.'
+Write-Host "For a 32-bit application run $(Join-Path $toolsDir '{{CLI_X86_EXE}}')."

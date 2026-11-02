@@ -1,0 +1,32 @@
+# Rendered by packaging/build-feeds.ps1 - do not edit the generated copy.
+#
+# The package runs the Windows installer of the release - the same signed file,
+# checksum and all, that the release page publishes and that WinGet installs
+# first. Everything this package puts on the machine comes from that installer:
+# the Start menu entry for every account, chrono on the machine's PATH and the
+# entry in Installed apps. So the two feeds install one thing in one shape, and
+# the Start menu entry is the one crates/cli/tests/msi.rs holds and the
+# installer test in ci.yml installs, rather than one a script of ours makes
+# and has to take away again. The package carries no binaries, so it owes the
+# moderators no VERIFICATION.txt, and makes no shims.
+#
+# Windows PowerShell 5.1 is what Chocolatey runs package scripts with, so this
+# file is ASCII and uses no PowerShell 7 syntax.
+$ErrorActionPreference = 'Stop'
+
+$packageArgs = @{
+    packageName    = $env:ChocolateyPackageName
+    fileType       = 'msi'
+    url64bit       = '{{MSI_URL}}'
+    checksum64     = '{{MSI_SHA256}}'
+    checksumType64 = 'sha256'
+    softwareName   = '{{TITLE}}'
+    silentArgs     = "/qn /norestart /l*v `"$env:TEMP\$env:ChocolateyPackageName.$env:ChocolateyPackageVersion.install.log`""
+    # 3010 is a success that asks for a restart. The installer answers it when a
+    # file of ours is in use - most often chrono_hook.dll, still loaded in an
+    # application that outlived its session. It closes nothing: the file in use
+    # is set aside, the new version is in place at once, and the old copy goes
+    # at the next restart.
+    validExitCodes = @(0, 3010, 1641)
+}
+Install-ChocolateyPackage @packageArgs

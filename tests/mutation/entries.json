@@ -22007,5 +22007,385 @@
     "match": "substring",
     "build": "",
     "notHere": ""
+  },
+  {
+    "name": "feeds the archive comes first",
+    "edits": [
+      {
+        "file": "packaging/winget/installer.window.yaml.in",
+        "from": "  InstallerType: wix\n",
+        "to": "  InstallerType: zip\n"
+      }
+    ],
+    "runner": "rust",
+    "package": "chrono-cli",
+    "target": [
+      "--test",
+      "feeds"
+    ],
+    "test": "the_window_installs_the_installer_first_and_the_archive_second",
+    "match": "exact",
+    "build": "",
+    "notHere": ""
+  },
+  {
+    "name": "feeds the archive gets a scope",
+    "edits": [
+      {
+        "file": "packaging/winget/installer.window.yaml.in",
+        "from": "  InstallerType: zip\n",
+        "to": "  InstallerType: zip\n  Scope: user\n"
+      }
+    ],
+    "runner": "rust",
+    "package": "chrono-cli",
+    "target": [
+      "--test",
+      "feeds"
+    ],
+    "test": "the_window_installs_the_installer_first_and_the_archive_second",
+    "match": "exact",
+    "build": "",
+    "notHere": ""
+  },
+  {
+    "name": "feeds the window puts its folder on PATH",
+    "edits": [
+      {
+        "file": "packaging/winget/installer.window.yaml.in",
+        "from": "  Commands:\n  - ChronoMock\n",
+        "to": "  ArchiveBinariesDependOnPath: true\n  Commands:\n  - ChronoMock\n"
+      }
+    ],
+    "runner": "rust",
+    "package": "chrono-cli",
+    "target": [
+      "--test",
+      "feeds"
+    ],
+    "test": "the_window_installs_the_installer_first_and_the_archive_second",
+    "match": "exact",
+    "build": "",
+    "notHere": ""
+  },
+  {
+    "name": "feeds the command line through a link",
+    "edits": [
+      {
+        "file": "packaging/winget/installer.cli.yaml.in",
+        "from": "ArchiveBinariesDependOnPath: true",
+        "to": "ArchiveBinariesDependOnPath: false"
+      }
+    ],
+    "runner": "rust",
+    "package": "chrono-cli",
+    "target": [
+      "--test",
+      "feeds"
+    ],
+    "test": "the_command_line_is_reached_through_its_own_folder_on_path",
+    "match": "exact",
+    "build": "",
+    "notHere": ""
+  },
+  {
+    "name": "feeds chocolatey runs no installer",
+    "edits": [
+      {
+        "file": "packaging/chocolatey/tools/chocolateyinstall.window.ps1.in",
+        "from": "fileType       = 'msi'",
+        "to": "fileType       = 'exe'"
+      }
+    ],
+    "runner": "rust",
+    "package": "chrono-cli",
+    "target": [
+      "--test",
+      "feeds"
+    ],
+    "test": "the_chocolatey_window_runs_the_installer_and_finds_it_by_its_upgrade_code",
+    "match": "exact",
+    "build": "",
+    "notHere": ""
+  },
+  {
+    "name": "feeds chocolatey uninstall finds nothing",
+    "edits": [
+      {
+        "file": "packaging/chocolatey/tools/chocolateyuninstall.window.ps1.in",
+        "from": "$products = @($installer.RelatedProducts($upgradeCode))",
+        "to": "$products = @()"
+      }
+    ],
+    "runner": "rust",
+    "package": "chrono-cli",
+    "target": [
+      "--test",
+      "feeds"
+    ],
+    "test": "the_chocolatey_window_runs_the_installer_and_finds_it_by_its_upgrade_code",
+    "match": "exact",
+    "build": "",
+    "notHere": ""
+  },
+  {
+    "name": "feeds chocolatey shims the 32-bit chrono",
+    "edits": [
+      {
+        "file": "packaging/chocolatey/tools/chocolateyinstall.cli.ps1.in",
+        "from": "'{{CLI_X86_EXE}}.ignore'",
+        "to": "'{{CLI_X86_EXE}}.keep'"
+      }
+    ],
+    "runner": "rust",
+    "package": "chrono-cli",
+    "target": [
+      "--test",
+      "feeds"
+    ],
+    "test": "the_chocolatey_command_line_shims_only_the_64_bit_chrono",
+    "match": "exact",
+    "build": "",
+    "notHere": ""
+  },
+  {
+    "name": "feeds a copy of the upgrade code",
+    "edits": [
+      {
+        "file": "packaging/chocolatey/tools/chocolateyuninstall.window.ps1.in",
+        "from": "$upgradeCode = '{{MSI_UPGRADE_CODE}}'",
+        "to": "$upgradeCode = '{5F0CEAC5-75A7-4EE1-8C4B-B20E1012999D}'"
+      }
+    ],
+    "runner": "rust",
+    "package": "chrono-cli",
+    "target": [
+      "--test",
+      "feeds"
+    ],
+    "test": "the_upgrade_code_is_written_nowhere_but_in_build_msi",
+    "match": "exact",
+    "build": "",
+    "notHere": ""
+  },
+  {
+    "name": "feeds the command line moved",
+    "edits": [
+      {
+        "file": "packaging/build-feeds.ps1",
+        "from": "$cliZipExe = 'chrono-cli\\chrono.exe'",
+        "to": "$cliZipExe = 'chrono\\chrono.exe'"
+      }
+    ],
+    "runner": "rust",
+    "package": "chrono-cli",
+    "target": [
+      "--test",
+      "feeds"
+    ],
+    "test": "the_program_paths_are_the_staged_ones",
+    "match": "exact",
+    "build": "",
+    "notHere": ""
+  },
+  {
+    "name": "feeds a package renamed",
+    "edits": [
+      {
+        "file": "packaging/build-feeds.ps1",
+        "from": "ChocoId    = 'chrono-mock-cli'",
+        "to": "ChocoId    = 'chronomock-cli'"
+      }
+    ],
+    "runner": "rust",
+    "package": "chrono-cli",
+    "target": [
+      "--test",
+      "feeds"
+    ],
+    "test": "the_package_names_are_the_published_ones",
+    "match": "exact",
+    "build": "",
+    "notHere": ""
+  },
+  {
+    "name": "feeds renders into the repository",
+    "edits": [
+      {
+        "file": "packaging/build-feeds.ps1",
+        "from": "if ($real -eq $repo -or $real.StartsWith(",
+        "to": "if ($false -and $real.StartsWith("
+      }
+    ],
+    "runner": "rust",
+    "package": "chrono-cli",
+    "target": [
+      "--test",
+      "feeds"
+    ],
+    "test": "the_packages_are_rendered_from_a_published_release_or_not_at_all",
+    "match": "exact",
+    "build": "",
+    "notHere": ""
+  },
+  {
+    "name": "feeds takes a file on trust",
+    "edits": [
+      {
+        "file": "packaging/build-feeds.ps1",
+        "from": "if ($hash -ne $sums[$name]) {",
+        "to": "if ($false) {"
+      }
+    ],
+    "runner": "rust",
+    "package": "chrono-cli",
+    "target": [
+      "--test",
+      "feeds"
+    ],
+    "test": "the_packages_are_rendered_from_a_published_release_or_not_at_all",
+    "match": "exact",
+    "build": "",
+    "notHere": ""
+  },
+  {
+    "name": "feeds a broken archive raises instead of refusing",
+    "edits": [
+      {
+        "file": "packaging/build-feeds.ps1",
+        "from": "Stop-Render \"$zipName could not be read as an archive: $(Get-Reason $_)\"",
+        "to": "throw"
+      }
+    ],
+    "runner": "rust",
+    "package": "chrono-cli",
+    "target": [
+      "--test",
+      "feeds"
+    ],
+    "test": "the_packages_are_rendered_from_a_published_release_or_not_at_all",
+    "match": "exact",
+    "build": "",
+    "notHere": ""
+  },
+  {
+    "name": "feeds an archive without its program",
+    "edits": [
+      {
+        "file": "packaging/build-feeds.ps1",
+        "from": "if ($null -eq $entry) {",
+        "to": "if ($false) {"
+      }
+    ],
+    "runner": "rust",
+    "package": "chrono-cli",
+    "target": [
+      "--test",
+      "feeds"
+    ],
+    "test": "the_packages_are_rendered_from_a_published_release_or_not_at_all",
+    "match": "exact",
+    "build": "",
+    "notHere": ""
+  },
+  {
+    "name": "feeds the signed binaries are not looked for",
+    "edits": [
+      {
+        "file": "packaging/build-feeds.ps1",
+        "from": "foreach ($name in @($programs) + @($signed)) {",
+        "to": "foreach ($name in @($programs)) {"
+      }
+    ],
+    "runner": "rust",
+    "package": "chrono-cli",
+    "target": [
+      "--test",
+      "feeds"
+    ],
+    "test": "the_packages_are_rendered_from_a_published_release_or_not_at_all",
+    "match": "exact",
+    "build": "",
+    "notHere": ""
+  },
+  {
+    "name": "feeds a program of another version",
+    "edits": [
+      {
+        "file": "packaging/build-feeds.ps1",
+        "from": "if ($found -ne $version) {",
+        "to": "if ($false) {"
+      }
+    ],
+    "runner": "rust",
+    "package": "chrono-cli",
+    "target": [
+      "--test",
+      "feeds"
+    ],
+    "test": "the_packages_are_rendered_from_a_published_release_or_not_at_all",
+    "match": "exact",
+    "build": "",
+    "notHere": ""
+  },
+  {
+    "name": "feeds signed by anybody",
+    "edits": [
+      {
+        "file": "packaging/build-feeds.ps1",
+        "from": "if ($signer -ne $pin) {",
+        "to": "if ($false) {"
+      }
+    ],
+    "runner": "rust",
+    "package": "chrono-cli",
+    "target": [
+      "--test",
+      "feeds"
+    ],
+    "test": "the_packages_are_rendered_from_a_published_release_or_not_at_all",
+    "match": "exact",
+    "build": "",
+    "notHere": ""
+  },
+  {
+    "name": "feeds the archived binaries are not asked their signature",
+    "edits": [
+      {
+        "file": "packaging/build-feeds.ps1",
+        "from": "$fault = Get-SignatureFault $extracted[$zipName][$name] $pin",
+        "to": "$fault = ''"
+      }
+    ],
+    "runner": "rust",
+    "package": "chrono-cli",
+    "target": [
+      "--test",
+      "feeds"
+    ],
+    "test": "the_packages_are_rendered_from_a_published_release_or_not_at_all",
+    "match": "exact",
+    "build": "",
+    "notHere": ""
+  },
+  {
+    "name": "feeds the installer is not asked its signature",
+    "edits": [
+      {
+        "file": "packaging/build-feeds.ps1",
+        "from": "$fault = Get-SignatureFault $msiPath $pin",
+        "to": "$fault = ''"
+      }
+    ],
+    "runner": "rust",
+    "package": "chrono-cli",
+    "target": [
+      "--test",
+      "feeds"
+    ],
+    "test": "the_packages_are_rendered_from_a_published_release_or_not_at_all",
+    "match": "exact",
+    "build": "",
+    "notHere": ""
   }
 ]
