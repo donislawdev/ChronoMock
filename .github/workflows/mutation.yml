@@ -110,7 +110,7 @@ jobs:
       # One cache for all the parts, written only by the weekly run on main, read by every run. The
       # parts leave the workspace crates built from mutations, which the action leaves out of what it
       # saves - only the dependencies are kept.
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           shared-key: mutation
           save-if: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' }}
