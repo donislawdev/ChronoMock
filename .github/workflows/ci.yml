@@ -58,7 +58,7 @@ jobs:
       - name: Add the 32-bit target
         run: rustup target add i686-pc-windows-msvc
 
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
 
       # Cheapest gate first: a whitespace slip should not wait out a four-minute Rust build.
       - name: C# format
@@ -257,7 +257,7 @@ jobs:
       - name: Add the 32-bit target
         run: rustup target add i686-pc-windows-msvc
 
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
 
       # Both cores and the window, packaged the way a release packages them. The gates are skipped on purpose:
       # clippy, the tests and the format check are the Gates job's, and running them twice would only slow
