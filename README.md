@@ -81,7 +81,10 @@ Grab the latest build from the **[Releases page](https://github.com/donislawdev/
 Unzip anywhere and run `ChronoMock.exe` (or `chrono.exe` for the CLI). The zips need no installer and
 no administrator rights, and they write nothing to the registry, with one exception you have to ask
 for: reaching the web pages of an application that itself runs as administrator (the paragraph on
-elevated applications, further down, says what it writes and what it costs).
+elevated applications, further down, says what it writes and what it costs). Windows keeps its own
+records of every program that runs, and these two are no exception: it notes, among other things,
+when each program last ran, and for a window the text input services and the graphics driver keep entries of their own. Those
+records belong to the system, not to Chrono Mock, which neither writes nor removes them.
 
 The `.msi` is the other way in. It installs the window and the command line for every account on the
 machine, into `Program Files\Chrono Mock`: a Start menu entry for the window and the 64-bit `chrono` on
