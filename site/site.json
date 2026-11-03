@@ -22,10 +22,10 @@
   "social_image_width": 1280,
   "social_image_height": 640,
 
-  "//download_sizes": "The size of each release download in MiB, as gh release view reports it in bytes divided by 1048576, rounded to two significant digits. Written with a decimal point - each page writes it with its own language's decimal mark (decimal_separator in i18n/<lang>.json) and types the unit beside the token, so a value here is a plain number and the build refuses anything else. Measured on v0.4.0: 73505506, 60792832 and 2481831 bytes. A release that changes them changes this block and no page.",
+  "//download_sizes": "The size of each release download in MiB, as gh release view reports it in bytes divided by 1048576, rounded to two significant digits. Written with a decimal point - each page writes it with its own language's decimal mark (decimal_separator in i18n/<lang>.json) and types the unit beside the token, so a value here is a plain number and the build refuses anything else. Measured on v0.5.0: 68075767, 56872960 and 2692333 bytes. A release that changes them changes this block and no page.",
   "download_sizes": {
-    "app_zip": "70",
-    "msi": "58",
-    "cli_zip": "2.4"
+    "app_zip": "65",
+    "msi": "54",
+    "cli_zip": "2.6"
   }
 }

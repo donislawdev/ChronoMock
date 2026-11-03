@@ -289,6 +289,57 @@ fn signed_binaries() -> Vec<(String, Vec<String>)> {
     archives
 }
 
+/// The binaries verify-release.yml asks the signature of, per archive of a release from 0.3.0 on: the archive
+/// name the workflow gives `$appArchive` or `$cliArchive` outside the legacy branch, then the quoted names in
+/// the `@( ... )` list it assigns to that archive. Enough PowerShell for those lines, not a parser.
+fn verified_binaries() -> Vec<(String, Vec<String>)> {
+    let workflow = active(&read(".github/workflows/verify-release.yml"), "#");
+    let mut archives = Vec::new();
+    for variable in ["appArchive", "cliArchive"] {
+        let named = workflow
+            .lines()
+            .find(|l| l.trim_start().starts_with(&format!("${variable} = if ($legacy)")))
+            .unwrap_or_else(|| panic!("verify-release.yml names no ${variable} for the legacy and the current release"));
+        let current = named.rsplit("else {").next().and_then(|tail| tail.split('\'').nth(1)).expect("a quoted archive name after else");
+        let open = format!("$ours[${variable}] = @(");
+        let start = workflow.find(&open).unwrap_or_else(|| panic!("verify-release.yml assigns no {open}"));
+        let list = &workflow[start + open.len()..];
+        let list = &list[..list.find(')').expect("the list closes")];
+        archives.push((current.to_string(), list.split('\'').skip(1).step_by(2).map(str::to_string).collect::<Vec<_>>()));
+    }
+    archives
+}
+
+/// The release is signed by one list and checked by another: sign-release.ps1 signs what its `$OURS` names,
+/// and verify-release.yml, the workflow that answers whether a published release is ours, asks the
+/// signature of what its `$ours` names (build-feeds.ps1 reads the first). A binary added to the signing
+/// list alone is signed and never checked, one added to the check alone fails every release. Both lists
+/// have to name the same archives with the same binaries.
+#[test]
+fn the_release_check_asks_the_signature_of_every_binary_the_release_signs() {
+    let sorted = |list: Vec<(String, Vec<String>)>| {
+        let mut list: Vec<(String, Vec<String>)> = list
+            .into_iter()
+            .map(|(archive, mut binaries)| {
+                binaries.sort();
+                (archive, binaries)
+            })
+            .collect();
+        list.sort();
+        list
+    };
+    let signed = sorted(signed_binaries());
+    let verified = sorted(verified_binaries());
+    assert!(
+        verified.len() == 2 && verified.iter().all(|(_, binaries)| binaries.len() >= 2),
+        "read {verified:?} out of the $ours of verify-release.yml"
+    );
+    assert_eq!(
+        verified, signed,
+        "verify-release.yml checks another set of binaries than sign-release.ps1 signs (left: checked, right: signed)"
+    );
+}
+
 /// The programs the packages start, as names in their archives.
 fn started_programs() -> Vec<String> {
     let feeds = read("packaging/build-feeds.ps1");

@@ -22389,6 +22389,26 @@
     "notHere": ""
   },
   {
+    "name": "signed lists the release check forgets a binary",
+    "edits": [
+      {
+        "file": ".github/workflows/verify-release.yml",
+        "from": "'chrono-cli/x86/chrono.exe', 'chrono-cli/x86/chrono_hook.dll')",
+        "to": "'chrono-cli/x86/chrono.exe')"
+      }
+    ],
+    "runner": "rust",
+    "package": "chrono-cli",
+    "target": [
+      "--test",
+      "feeds"
+    ],
+    "test": "the_release_check_asks_the_signature_of_every_binary_the_release_signs",
+    "match": "exact",
+    "build": "",
+    "notHere": ""
+  },
+  {
     "name": "own path the link is not followed",
     "edits": [
       {
