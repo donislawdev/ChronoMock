@@ -6,6 +6,15 @@ Notable changes to Chrono Mock, newest first. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- **`chrono` started through a symbolic link finds its own files.** Started through a link in another
+  folder - one made with `mklink`, or the one WinGet makes for a portable package when its manifest lets
+  it - `chrono` looked for the hook, the calendars, the presets and the licence files beside the link and
+  found none of them: every session stopped with `core.hook_dll_missing` and `chrono calendars` with
+  `calendars.folder_missing`. It now follows the link to the program and reads what lies beside the
+  program. A link to the folder the program is in always worked and still does.
+
 ## [0.5.0] - 2026-10-28
 
 ### Added

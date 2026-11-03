@@ -22407,5 +22407,110 @@
     "match": "exact",
     "build": "",
     "notHere": ""
+  },
+  {
+    "name": "own path the link is not followed",
+    "edits": [
+      {
+        "file": "crates/cli/src/own_path.rs",
+        "from": "    if !is_link {\n        return path.to_path_buf();\n    }",
+        "to": "    if !is_link || path.exists() {\n        return path.to_path_buf();\n    }"
+      }
+    ],
+    "runner": "rust",
+    "package": "chrono-cli",
+    "target": [
+      "--test",
+      "linked_start"
+    ],
+    "test": "chrono_started_through_a_link_reads_the_calendars_beside_the_program",
+    "match": "exact",
+    "build": "",
+    "notHere": ""
+  },
+  {
+    "name": "own path the hook looked up beside the link",
+    "edits": [
+      {
+        "file": "crates/cli/src/core.rs",
+        "from": "    let exe = crate::own_path::own_exe().ok()?;\n    hook_dll_in(exe.parent()?)",
+        "to": "    let exe = std::env::current_exe().ok()?;\n    hook_dll_in(exe.parent()?)"
+      },
+      {
+        "file": "crates/cli/src/run/mod.rs",
+        "from": "    let exe = match crate::own_path::own_exe() {",
+        "to": "    let exe = match std::env::current_exe() {"
+      }
+    ],
+    "runner": "rust",
+    "package": "chrono-cli",
+    "target": [
+      "--test",
+      "linked_start"
+    ],
+    "test": "a_session_started_through_a_link_finds_the_hook_beside_the_program",
+    "match": "exact",
+    "build": "",
+    "notHere": ""
+  },
+  {
+    "name": "own path one lookup skips the follower",
+    "edits": [
+      {
+        "file": "crates/cli/src/core.rs",
+        "from": "    let exe = crate::own_path::own_exe().ok()?;\n    hook_dll_in(exe.parent()?)",
+        "to": "    let exe = std::env::current_exe().ok()?;\n    hook_dll_in(exe.parent()?)"
+      }
+    ],
+    "runner": "rust",
+    "package": "chrono-cli",
+    "target": [
+      "--test",
+      "linked_start"
+    ],
+    "test": "the_program_asks_for_its_own_path_only_through_the_function_that_follows_a_link",
+    "match": "exact",
+    "build": "",
+    "notHere": ""
+  },
+  {
+    "name": "own path the scan stops at a test-only module",
+    "edits": [
+      {
+        "file": "crates/cli/src/main.rs",
+        "from": "    let args: Vec<String> = std::env::args().collect();",
+        "to": "    let args: Vec<String> = std::env::args().collect();\n    let _ = std::env::current_exe();"
+      }
+    ],
+    "runner": "rust",
+    "package": "chrono-cli",
+    "target": [
+      "--test",
+      "linked_start"
+    ],
+    "test": "the_program_asks_for_its_own_path_only_through_the_function_that_follows_a_link",
+    "match": "exact",
+    "build": "",
+    "notHere": ""
+  },
+  {
+    "name": "own path the scan stops at a test-only function",
+    "edits": [
+      {
+        "file": "crates/cli/src/cdp/ws.rs",
+        "from": "fn closed() -> io::Error {\n    io::Error::new(",
+        "to": "fn closed() -> io::Error {\n    let _ = std::env::current_exe();\n    io::Error::new("
+      }
+    ],
+    "runner": "rust",
+    "package": "chrono-cli",
+    "target": [
+      "--test",
+      "linked_start"
+    ],
+    "test": "the_program_asks_for_its_own_path_only_through_the_function_that_follows_a_link",
+    "match": "exact",
+    "build": "",
+    "notHere": ""
   }
 ]

@@ -193,7 +193,7 @@ pub(crate) fn driver_run(argv: &[String]) -> i32 {
     // like a native session. The only CDP-specific thing left here is labelling the report's coverage
     // unit as a JS "context" instead of a "pid" (the `cdp` flag on the report below).
 
-    let exe = match std::env::current_exe() {
+    let exe = match crate::own_path::own_exe() {
         Ok(p) => p,
         Err(e) => {
             diag!("chrono: cannot locate own executable: {e}");

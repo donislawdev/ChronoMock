@@ -84,7 +84,7 @@ pub(crate) fn core_mode() -> i32 {
             emit(&error_event(Some(start_id), 3, "core.hook_dll_missing", "core"));
             // Human-side detail on stderr (never on the protocol stdout), naming the folder we looked
             // in. For a portable tool unpacked anywhere, WHERE we looked is the actionable half.
-            let looked_in = std::env::current_exe()
+            let looked_in = crate::own_path::own_exe()
                 .ok()
                 .and_then(|e| e.parent().map(|d| d.display().to_string()))
                 .unwrap_or_else(|| "the folder holding chrono.exe".into());
@@ -1093,9 +1093,10 @@ fn moment_at(local: &str, bias: Option<i32>, session_bias: i32) -> Result<i64, &
     chrono_core::session_instant(&m).map(|(ft, _)| ft).map_err(|e| moment_error_key(&e))
 }
 
-/// The hook DLL sits next to the executable (same target dir, matching bitness).
+/// The hook DLL sits next to the executable (same target dir, matching bitness), the real one when chrono was
+/// started through a symbolic link (`own_path`).
 pub(crate) fn hook_dll_path() -> Option<std::path::PathBuf> {
-    let exe = std::env::current_exe().ok()?;
+    let exe = crate::own_path::own_exe().ok()?;
     hook_dll_in(exe.parent()?)
 }
 

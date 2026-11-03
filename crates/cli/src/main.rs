@@ -53,6 +53,7 @@ mod events;
 mod grammar;
 /// Writing to the caller without ever crashing on a reader that left.
 mod output;
+mod own_path;
 /// A bounded look inside the target's own executable: Go build info, a .NET runtime linked in.
 mod pe;
 /// What a session does about the machine registry for an application that runs as administrator
