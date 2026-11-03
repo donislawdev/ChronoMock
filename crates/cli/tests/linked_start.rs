@@ -155,32 +155,104 @@ fn probe_runs_under_the_linked_session() {
 
 /// Every lookup of the program's own path goes through `own_path::own_exe`, which follows a link. A new
 /// `std::env::current_exe()` anywhere else in the program's code would bring the bug back for whatever it
-/// looks up, so it is refused here with the file and the line. Test code after `#[cfg(test)]` may ask for
-/// the test binary's own path, which is no link.
+/// looks up, so it is refused here with the file and the line. Test code may ask for the test binary's own
+/// path, which is no link: an item marked `#[cfg(test)]` and the file of a module declared that way are
+/// skipped, and the program's code after such an item is read like the rest.
 #[test]
 fn the_program_asks_for_its_own_path_only_through_the_function_that_follows_a_link() {
     let src = repo().join("crates").join("cli").join("src");
     let mut files = Vec::new();
     collect_sources(&src, &mut files);
-    let mut asked = Vec::new();
-    let mut follower_asks = false;
+    let mut test_modules = Vec::new();
+    let mut programs = Vec::new();
     for path in &files {
         let text = std::fs::read_to_string(path).expect("a source file");
-        let program = text.lines().enumerate().take_while(|(_, line)| !line.trim_start().starts_with("#[cfg(test)]"));
-        for (number, line) in program {
+        let (kept, modules) = program_lines(path, &text);
+        test_modules.extend(modules.into_iter().map(|name| module_home(path).join(name)));
+        programs.push((path, kept));
+    }
+    let mut asked = Vec::new();
+    let mut follower_asks = false;
+    let mut read = 0;
+    for (path, kept) in &programs {
+        if test_modules.iter().any(|module| **path == module.with_extension("rs") || path.starts_with(module)) {
+            continue;
+        }
+        read += 1;
+        for (number, line) in kept {
             if line.trim_start().starts_with("//") || !line.contains("current_exe(") {
                 continue;
             }
             if path.file_name().is_some_and(|name| name == "own_path.rs") {
                 follower_asks = true;
             } else {
-                asked.push(format!("{}:{}", path.display(), number + 1));
+                asked.push(format!("{}:{number}", path.display()));
             }
         }
     }
-    assert!(files.len() >= 20, "the scan read {} source files under {} - not the program", files.len(), src.display());
+    assert!(read >= 20, "the scan read {read} source files under {} - not the program", src.display());
+    assert!(!test_modules.is_empty(), "no module declared #[cfg(test)] was found, so the scan no longer knows the layout it skips");
     assert!(follower_asks, "own_path.rs no longer asks for the path itself, so this scan would pass over nothing");
     assert!(asked.is_empty(), "the program's own path asked for without following a link (use own_path::own_exe): {asked:?}");
+}
+
+/// The lines of `text` that are the program's, numbered from 1, and the names of the modules it declares
+/// `#[cfg(test)]` without a body (their files hold test code only). An item marked `#[cfg(test)]` is left
+/// out: one line when it ends with `;`, a block opened on its line up to the line that closes it at the
+/// attribute's own indentation, the way every block in this crate is laid out. Any other shape, or a block
+/// that never closes, stops the test with its place, so a layout this cannot read hides nothing.
+fn program_lines(path: &Path, text: &str) -> (Vec<(usize, String)>, Vec<String>) {
+    let lines: Vec<&str> = text.lines().collect();
+    let mut kept = Vec::new();
+    let mut modules = Vec::new();
+    let mut at = 0;
+    while at < lines.len() {
+        let line = lines[at];
+        let trimmed = line.trim_start();
+        let Some(rest) = trimmed.strip_prefix("#[cfg(test)]") else {
+            kept.push((at + 1, line.to_string()));
+            at += 1;
+            continue;
+        };
+        let indent = &line[..line.len() - trimmed.len()];
+        let mut item = at;
+        if rest.trim().is_empty() {
+            item += 1;
+            while lines.get(item).is_some_and(|l| l.trim_start().starts_with("#[") || l.trim_start().starts_with("//")) {
+                item += 1;
+            }
+        }
+        let header = lines.get(item).map_or("", |l| l.trim());
+        let header = header.strip_prefix("#[cfg(test)]").map_or(header, str::trim);
+        if header.ends_with(';') {
+            let declared = header.trim_start_matches("pub(crate) ").trim_start_matches("pub ");
+            if let Some(name) = declared.strip_prefix("mod ").and_then(|tail| tail.strip_suffix(';')) {
+                modules.push(name.trim().to_string());
+            }
+            at = item + 1;
+            continue;
+        }
+        let place = format!("{}:{}", path.display(), at + 1);
+        assert!(
+            header.ends_with('{'),
+            "{place}: the #[cfg(test)] item opens neither a block nor ends with `;`, so this scan cannot tell where the program goes on"
+        );
+        let close = [format!("{indent}}}"), format!("{indent}}};")];
+        let end = (item + 1..lines.len()).find(|&n| close.iter().any(|c| lines[n].trim_end() == c.as_str()));
+        let end = end.unwrap_or_else(|| {
+            panic!("{place}: the #[cfg(test)] item never closes at its own indentation, so this scan cannot tell where the program goes on")
+        });
+        at = end + 1;
+    }
+    (kept, modules)
+}
+
+/// The folder that holds the files of the modules `path` declares: its own folder for `main.rs`, `lib.rs`
+/// and `mod.rs`, a folder named after it for any other file.
+fn module_home(path: &Path) -> PathBuf {
+    let folder = path.parent().expect("a source file lives in a folder");
+    let owns_its_folder = path.file_name().is_some_and(|name| name == "main.rs" || name == "lib.rs" || name == "mod.rs");
+    if owns_its_folder { folder.to_path_buf() } else { folder.join(path.file_stem().expect("a source file has a name")) }
 }
 
 fn collect_sources(dir: &Path, into: &mut Vec<PathBuf>) {
