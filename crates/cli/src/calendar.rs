@@ -265,7 +265,7 @@ pub(crate) fn find_catalogue_dir_in(exe_dir: Option<&std::path::Path>, cwd: &std
 
 /// [`find_catalogue_dir_in`] against this process's real executable and working directory.
 pub(crate) fn find_catalogue_dir(kind: &str) -> Option<std::path::PathBuf> {
-    let exe = std::env::current_exe().ok();
+    let exe = crate::own_path::own_exe().ok();
     let exe_dir = exe.as_ref().and_then(|e| e.parent());
     let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
     find_catalogue_dir_in(exe_dir, &cwd, kind)
@@ -273,7 +273,7 @@ pub(crate) fn find_catalogue_dir(kind: &str) -> Option<std::path::PathBuf> {
 
 /// [`find_catalogue_in`] against this process's real executable and working directory.
 pub(crate) fn find_catalogue_file(kind: &str, id: &str) -> Option<std::path::PathBuf> {
-    let exe = std::env::current_exe().ok();
+    let exe = crate::own_path::own_exe().ok();
     let exe_dir = exe.as_ref().and_then(|e| e.parent());
     let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
     find_catalogue_in(exe_dir, &cwd, kind, id)
@@ -283,7 +283,7 @@ pub(crate) fn find_catalogue_file(kind: &str, id: &str) -> Option<std::path::Pat
 /// `./<kind>` for an installed one that never consulted it would send the reader to fix the wrong
 /// folder - in the single message they have to act on (rule 6).
 pub(crate) fn catalogue_search_places(kind: &str) -> String {
-    let exe = std::env::current_exe().ok();
+    let exe = crate::own_path::own_exe().ok();
     let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
     catalogue_search_places_in(exe.as_ref().and_then(|e| e.parent()), &cwd, kind)
 }

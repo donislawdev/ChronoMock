@@ -77,7 +77,7 @@ pub(crate) struct LicenseFiles {
 /// Look for the licence files beside the running executable and in the directories above it.
 pub(crate) fn find_license_files() -> LicenseFiles {
     let mut dirs: Vec<PathBuf> = Vec::new();
-    if let Ok(exe) = std::env::current_exe() {
+    if let Ok(exe) = crate::own_path::own_exe() {
         let mut next = exe.parent().map(Path::to_path_buf);
         while dirs.len() < LICENSE_SEARCH_DEPTH {
             let Some(dir) = next else { break };

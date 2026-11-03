@@ -367,6 +367,13 @@ const ALLOWED: &[(&str, &str, &str)] = &[
          downloaded, installed or submitted",
     ),
     (
+        "crates/cli/tests/linked_start.rs",
+        "spawn",
+        "the link test runs this build's chrono.exe through a symbolic link to a scratch copy of the package, \
+         once for its calendars and once for a session on this test binary as the target. Nothing is \
+         downloaded or installed",
+    ),
+    (
         "gui/ChronoMock.Protocol/CoreClient.cs",
         "spawn",
         "the window launches the core process, exactly as the command line does",
