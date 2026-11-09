@@ -1117,7 +1117,7 @@
     "runner": "cs",
     "package": "gui/ChronoMock.App.Tests",
     "target": [],
-    "test": "ChronoMock.App.Tests.FormatRowTests.Every_format_value_stays_on_one_line_at_the_calculators_narrowest_in_every_language",
+    "test": "ChronoMock.App.Tests.WindowSizeTests.The_minimum_width_holds_the_calculator_s_three_columns",
     "match": "method",
     "build": "",
     "notHere": ""
@@ -1532,8 +1532,8 @@
     "edits": [
       {
         "file": "crates/hook/src/lib.rs",
-        "from": "        self.flag.set(self.was);\n",
-        "to": "        self.flag.set(false && self.was);\n"
+        "from": "            self.flag.set(was);\n",
+        "to": "            self.flag.set(false && was);\n"
       }
     ],
     "runner": "rust",
@@ -1551,8 +1551,8 @@
     "edits": [
       {
         "file": "crates/hook/src/lib.rs",
-        "from": "    if flag.get() {\n        return None;\n    }\n    Some(set_flag(flag, true))\n",
-        "to": "    if false && flag.get() {\n        return None;\n    }\n    Some(set_flag(flag, true))\n"
+        "from": "        Some(false) => Some(set_flag(flag, true)),\n",
+        "to": "        Some(_) => Some(set_flag(flag, true)),\n"
       }
     ],
     "runner": "rust",
@@ -22509,6 +22509,66 @@
       "linked_start"
     ],
     "test": "the_program_asks_for_its_own_path_only_through_the_function_that_follows_a_link",
+    "match": "exact",
+    "build": "",
+    "notHere": ""
+  },
+  {
+    "name": "help on stdout the tool's usage back on stderr",
+    "edits": [
+      {
+        "file": "crates/cli/src/main.rs",
+        "from": "            print_usage(Stream::Out);\n            0\n",
+        "to": "            print_usage(Stream::Err);\n            0\n"
+      }
+    ],
+    "runner": "rust",
+    "package": "chrono-cli",
+    "target": [
+      "--test",
+      "usage"
+    ],
+    "test": "every_way_of_asking_for_help_is_answered_with_usage_and_exit_zero",
+    "match": "exact",
+    "build": "",
+    "notHere": ""
+  },
+  {
+    "name": "help on stdout the calculator's usage back on stderr",
+    "edits": [
+      {
+        "file": "crates/cli/src/cli.rs",
+        "from": "        \"calc\" => print_calc_usage(Stream::Out),\n",
+        "to": "        \"calc\" => print_calc_usage(Stream::Err),\n"
+      }
+    ],
+    "runner": "rust",
+    "package": "chrono-cli",
+    "target": [
+      "--test",
+      "usage"
+    ],
+    "test": "every_way_of_asking_for_help_is_answered_with_usage_and_exit_zero",
+    "match": "exact",
+    "build": "",
+    "notHere": ""
+  },
+  {
+    "name": "help on stdout a refusal's usage on stdout",
+    "edits": [
+      {
+        "file": "crates/cli/src/main.rs",
+        "from": "            diag!(\"chrono: unknown command '{other}'\");\n            print_usage(Stream::Err);\n",
+        "to": "            diag!(\"chrono: unknown command '{other}'\");\n            print_usage(Stream::Out);\n"
+      }
+    ],
+    "runner": "rust",
+    "package": "chrono-cli",
+    "target": [
+      "--test",
+      "usage"
+    ],
+    "test": "a_refusal_keeps_the_usage_off_standard_output",
     "match": "exact",
     "build": "",
     "notHere": ""
