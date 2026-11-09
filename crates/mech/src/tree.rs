@@ -155,8 +155,24 @@ fn descendants(root: u32, edges: &[(u32, u32)], keep: impl Fn(u32) -> bool) -> V
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
+
+    /// The pid of a process named `image` that `parent` started, looked for in the process list for up
+    /// to five seconds - a parent can be told it started a child before the list shows the child. Shared
+    /// by the tests of the crate that start a tree and need its second level.
+    pub(crate) fn started_by(parent: u32, image: &str) -> Option<u32> {
+        (0..50).find_map(|_| {
+            let found = process_entries()
+                .ok()
+                .and_then(|entries| entries.into_iter().find(|e| e.parent == parent && e.image.eq_ignore_ascii_case(image)))
+                .map(|e| e.pid);
+            if found.is_none() {
+                std::thread::sleep(std::time::Duration::from_millis(100));
+            }
+            found
+        })
+    }
 
     #[test]
     fn the_family_is_the_root_and_everything_under_it_and_nothing_beside_it() {

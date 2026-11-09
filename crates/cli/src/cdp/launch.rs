@@ -9,17 +9,65 @@ use std::time::{Duration, Instant, SystemTime};
 
 use chrono_mech::{PlainChild, Target, TargetStdio};
 
-/// Whether the target exe looks like a Chromium/Electron app: its folder ships the Chromium runtime
-/// (`icudtl.dat` plus a V8 snapshot). Electron additionally carries `resources/app.asar`, but the
-/// runtime files alone are a strong signature that is stable across Chromium/Electron versions.
+/// Where a Chromium target keeps the Chromium runtime, which is what makes it one.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ChromiumLayout {
+    /// Beside the exe, as an Electron application or a portable Chromium ships it.
+    Beside,
+    /// In a folder named after its version beside the exe, as an installed Chromium browser keeps it.
+    Installed,
+}
+
+/// Whether the target exe looks like a Chromium/Electron app - see [`chromium_layout`].
 pub fn is_chromium_target(target: &str) -> bool {
-    let Some(dir) = Path::new(target).parent() else {
-        return false;
+    chromium_layout(target).is_some()
+}
+
+/// How the target exe looks like a Chromium/Electron app, if it does: its folder ships the Chromium
+/// runtime (`icudtl.dat` plus a V8 snapshot). Electron additionally carries `resources/app.asar`, but
+/// the runtime files alone are a strong signature that is stable across Chromium/Electron versions.
+///
+/// An installed Chromium browser keeps the runtime in a folder named after its version beside the exe
+/// (`150.0.1234.56\` beside `chrome.exe`, measured on two installed browsers), together with the
+/// library the exe loads the browser from: Chromium's own `chrome.dll`, or one named after the exe
+/// (`browser.dll` beside `browser.exe`). Looked for only beside the exe, so such a browser ran in a
+/// native session: it left the session within seconds and went on on the real clock while the report
+/// said `works`. The library is part of the signature, so an application that keeps a Chromium runtime
+/// of its own in a version folder is not taken for one.
+pub fn chromium_layout(target: &str) -> Option<ChromiumLayout> {
+    let exe = Path::new(target);
+    let dir = exe.parent()?;
+    let holds_runtime = |folder: &Path| {
+        folder.join("icudtl.dat").exists()
+            && (folder.join("v8_context_snapshot.bin").exists() || folder.join("snapshot_blob.bin").exists())
     };
-    let has_icu = dir.join("icudtl.dat").exists();
-    let has_snapshot =
-        dir.join("v8_context_snapshot.bin").exists() || dir.join("snapshot_blob.bin").exists();
-    has_icu && has_snapshot
+    if holds_runtime(dir) {
+        return Some(ChromiumLayout::Beside);
+    }
+    let own_library = exe.file_stem().map(|stem| format!("{}.dll", stem.to_string_lossy()));
+    let installed = version_folders(dir).any(|folder| {
+        holds_runtime(&folder)
+            && (folder.join("chrome.dll").exists() || own_library.as_ref().is_some_and(|dll| folder.join(dll).exists()))
+    });
+    installed.then_some(ChromiumLayout::Installed)
+}
+
+/// The folders in `dir` named after a version - digits and dots only, as `150.0.1234.56`. A folder
+/// that cannot be read has none.
+fn version_folders(dir: &Path) -> impl Iterator<Item = PathBuf> {
+    std::fs::read_dir(dir)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter(|entry| {
+            entry.file_type().is_ok_and(|kind| kind.is_dir()) && entry.file_name().to_str().is_some_and(is_version_name)
+        })
+        .map(|entry| entry.path())
+}
+
+/// Digits in at least two parts split by dots, every part non-empty: `150.0.1234.56`, not `app-1.2.3`.
+fn is_version_name(name: &str) -> bool {
+    name.contains('.') && name.split('.').all(|part| !part.is_empty() && part.bytes().all(|b| b.is_ascii_digit()))
 }
 
 /// Whether a Chromium target is an Electron application: its `resources` folder holds the packed app
@@ -90,13 +138,25 @@ impl LaunchedChromium {
             return Vec::new();
         }
         self.cleaned = true;
-        // The whole job, not only the process we started. Some launchers exit after handing off to
-        // another process - the wait loop above says so in as many words, because that shape still
-        // opens the debug port - and ending a launcher that already exited ends nothing.
-        self.child.terminate();
-        let _ = self.child.wait_exit(PROCESS_END_WAIT_MS);
-        remove_profile(&self.user_data_dir)
+        // The whole job, not only the process we started, and the wait is for all of it. Some launchers
+        // exit after handing off to another process - an installed Chromium browser does it as it
+        // starts - and ending or waiting for a launcher that already exited ends and waits for nothing:
+        // the profile was then removed while the browser was still closing its files, and left behind
+        // in about one session of eight (measured 2026-11-09).
+        let ended = self.child.terminate_and_wait(PROCESS_END_WAIT_MS);
+        cleanup_residue(ended, remove_profile(&self.user_data_dir))
     }
+}
+
+/// What the cleanup left behind: the profile when it could not be removed, and the browser when its
+/// processes could not be confirmed to have ended. A profile removed after all says nothing about them,
+/// so the session would have said `clean` over a browser it never saw end (rule 6). The removal is
+/// tried either way, because a process that did end has let the profile go.
+fn cleanup_residue(browser_ended: bool, mut profile: Vec<String>) -> Vec<String> {
+    if !browser_ended {
+        profile.push("cleanup.chromium_process_left".to_string());
+    }
+    profile
 }
 
 /// Remove a profile directory, and name what is left of it. Chromium's own child processes (renderer,
@@ -164,8 +224,9 @@ impl Drop for LaunchedChromium {
     }
 }
 
-/// How long the cleanup waits for the browser to end once its job has been told to end it, in real
-/// milliseconds. The profile can only be removed once the processes holding it are gone.
+/// How long the cleanup waits for the browser and every process of its job to end once the job has
+/// been told to end them, in real milliseconds. The profile can only be removed once the processes
+/// holding it are gone.
 const PROCESS_END_WAIT_MS: u32 = 2_000;
 
 /// The switches that stop a Chromium engine slowing the timers of a minimized, hidden or covered
@@ -186,11 +247,21 @@ pub fn with_background_timers(args: &[String], keep: bool) -> Vec<String> {
     switches.chain(args.iter().cloned()).collect()
 }
 
+/// The switch that keeps an installed browser from opening its first-run windows on the session's
+/// fresh profile. Without it every session opened a welcome window, and in the EU a choice that holds
+/// the browser's window, in front of the page (measured 2026-11-09).
+const NO_FIRST_RUN: &str = "--no-first-run";
+
 /// The arguments the browser starts with: the isolated profile and a debug port Chromium picks
-/// itself, ahead of the user's own. Separated from [`launch_chromium`] so they can be checked without
-/// a Chromium on the machine - there is no portable one to test against.
-fn chromium_arguments(user_data_dir: &Path, args: &[String]) -> Vec<String> {
+/// itself, then [`NO_FIRST_RUN`] for an installed browser, ahead of the user's own. An Electron
+/// application is not given it - it would arrive among the application's own arguments, which the
+/// application reads. Separated from [`launch_chromium`] so they can be checked without a Chromium on
+/// the machine - there is no portable one to test against.
+fn chromium_arguments(user_data_dir: &Path, layout: Option<ChromiumLayout>, args: &[String]) -> Vec<String> {
     let mut all = vec![format!("--user-data-dir={}", user_data_dir.display()), "--remote-debugging-port=0".to_string()];
+    if layout == Some(ChromiumLayout::Installed) {
+        all.push(NO_FIRST_RUN.to_string());
+    }
     all.extend(args.iter().cloned());
     all
 }
@@ -254,7 +325,7 @@ pub fn launch_chromium(
     let user_data_dir = unique_temp_dir();
     create_profile_dir(&user_data_dir)?;
 
-    let arguments = chromium_arguments(&user_data_dir, args);
+    let arguments = chromium_arguments(&user_data_dir, chromium_layout(target), args);
     let child = match chrono_mech::launch_plain(&chromium_target(target, &arguments, cwd)) {
         Ok(c) => c,
         Err(e) => {
@@ -539,7 +610,7 @@ mod tests {
     /// owns. Silently - which is the part that makes it worth a test rather than a comment.
     #[test]
     fn the_launch_starts_the_browser_in_the_requested_folder() {
-        let arguments = chromium_arguments(Path::new("C:/temp/profile"), &[]);
+        let arguments = chromium_arguments(Path::new("C:/temp/profile"), Some(ChromiumLayout::Beside), &[]);
         assert_eq!(chromium_target("app.exe", &arguments, Some("C:/work")).cwd, Some("C:/work"));
 
         // Absent means "wherever we are", not an empty directory.
@@ -552,10 +623,53 @@ mod tests {
     /// far (see the refusal test below).
     #[test]
     fn a_working_folder_does_not_move_the_isolated_profile() {
-        let arguments = chromium_arguments(Path::new("C:/temp/profile"), &["--mine".to_string()]);
+        let arguments = chromium_arguments(Path::new("C:/temp/profile"), Some(ChromiumLayout::Beside), &["--mine".to_string()]);
         let target = chromium_target("app.exe", &arguments, Some("C:/work"));
         assert_eq!(target.args, ["--user-data-dir=C:/temp/profile", "--remote-debugging-port=0", "--mine"]);
         assert_eq!(target.stdio, TargetStdio::Discarded, "the browser's output went somewhere it was not before");
+    }
+
+    /// A browser that could not be confirmed to have ended is named even when its profile was removed:
+    /// the profile says nothing about the processes, and `clean` would have said it of both.
+    #[test]
+    fn a_browser_not_seen_to_end_is_named_beside_the_profile() {
+        assert!(cleanup_residue(true, Vec::new()).is_empty(), "ended and removed is clean");
+        assert_eq!(cleanup_residue(false, Vec::new()), ["cleanup.chromium_process_left"]);
+        assert_eq!(
+            cleanup_residue(false, vec!["cleanup.chromium_profile_left".to_string()]),
+            ["cleanup.chromium_profile_left", "cleanup.chromium_process_left"]
+        );
+        assert_eq!(cleanup_residue(true, vec!["cleanup.chromium_profile_left".to_string()]), ["cleanup.chromium_profile_left"]);
+    }
+
+    /// An installed browser starts without its first-run windows, which every fresh profile opened in
+    /// front of the page, and the tester's own arguments still come last. An Electron application is not
+    /// given the switch: it would arrive among the arguments the application reads as its own.
+    #[test]
+    fn only_an_installed_browser_is_started_without_its_first_run() {
+        let mine = ["--mine".to_string()];
+        let installed = chromium_arguments(Path::new("C:/temp/profile"), Some(ChromiumLayout::Installed), &mine);
+        assert_eq!(installed, ["--user-data-dir=C:/temp/profile", "--remote-debugging-port=0", NO_FIRST_RUN, "--mine"]);
+        let beside = chromium_arguments(Path::new("C:/temp/profile"), Some(ChromiumLayout::Beside), &mine);
+        assert!(!beside.iter().any(|a| a == NO_FIRST_RUN), "{beside:?}");
+    }
+
+    /// The layout the launch reads the switch from: a runtime beside the exe is `Beside`, one in a
+    /// version folder `Installed`, and a plain folder none.
+    #[test]
+    fn the_layout_says_where_the_runtime_is() {
+        let dir = unique_temp_dir();
+        std::fs::create_dir_all(&dir).unwrap();
+        let installed = dir.join("chrome.exe");
+        std::fs::write(&installed, b"x").unwrap();
+        assert_eq!(chromium_layout(installed.to_str().unwrap()), None, "a plain folder");
+        folder_with(&dir, "150.0.1234.56", &["icudtl.dat", "v8_context_snapshot.bin", "chrome.dll"]);
+        assert_eq!(chromium_layout(installed.to_str().unwrap()), Some(ChromiumLayout::Installed));
+        for runtime in ["icudtl.dat", "snapshot_blob.bin"] {
+            std::fs::write(dir.join(runtime), b"x").unwrap();
+        }
+        assert_eq!(chromium_layout(installed.to_str().unwrap()), Some(ChromiumLayout::Beside), "beside wins");
+        std::fs::remove_dir_all(&dir).ok();
     }
 
     /// An Electron application is told by its `resources` folder, in any of the three shapes it ships in.
@@ -654,6 +768,77 @@ mod tests {
         std::fs::write(&exe, b"x").unwrap();
         assert!(is_chromium_target(exe.to_str().unwrap()));
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// A folder `name` under `dir` holding `files`, each empty.
+    fn folder_with(dir: &Path, name: &str, files: &[&str]) {
+        let folder = dir.join(name);
+        std::fs::create_dir_all(&folder).unwrap();
+        for file in files {
+            std::fs::write(folder.join(file), b"x").unwrap();
+        }
+    }
+
+    /// An installed Chromium browser, laid out as two installed browsers were measured (2026-11-09): the
+    /// exe alone beside a folder named after its version, which holds the runtime and the library the exe
+    /// loads - Chromium's own `chrome.dll`, or one named after the exe. An update can leave the previous
+    /// version's folder beside the new one, and either one is enough.
+    #[test]
+    fn an_installed_browser_is_told_by_the_version_folder_beside_it() {
+        let dir = unique_temp_dir();
+        std::fs::create_dir_all(&dir).unwrap();
+        let chromium = dir.join("chrome.exe");
+        std::fs::write(&chromium, b"x").unwrap();
+        folder_with(&dir, "150.0.1234.56", &["icudtl.dat", "v8_context_snapshot.bin", "chrome.dll"]);
+        assert!(is_chromium_target(chromium.to_str().unwrap()), "Chromium's own library");
+
+        let other_dir = dir.join("other");
+        std::fs::create_dir_all(&other_dir).unwrap();
+        let browser = other_dir.join("browser.exe");
+        std::fs::write(&browser, b"x").unwrap();
+        folder_with(&other_dir, "150.0.2345.67", &["icudtl.dat"]);
+        folder_with(&other_dir, "151.0.2400.10", &["icudtl.dat", "snapshot_blob.bin", "browser.dll"]);
+        assert!(is_chromium_target(browser.to_str().unwrap()), "a library named after the exe, an old version folder left beside");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// What does not make a version folder a browser: the runtime without the library the exe loads (an
+    /// application that keeps a Chromium runtime of its own), a folder named like an updater's
+    /// (`app-1.2.3`), the library without the runtime, a file with a version's name, or a library named
+    /// after neither Chromium nor the exe.
+    #[test]
+    fn a_version_folder_is_a_browser_only_with_the_runtime_and_the_library() {
+        let cases: [(&str, &str, &[&str]); 5] = [
+            ("app.exe", "1.2.3.4", &["icudtl.dat", "v8_context_snapshot.bin"]),
+            ("chrome.exe", "app-1.2.3", &["icudtl.dat", "v8_context_snapshot.bin", "chrome.dll"]),
+            ("chrome.exe", "150.0.1234.56", &["chrome.dll"]),
+            ("chrome.exe", "150.0.1234.56", &[]),
+            ("app.exe", "1.2.3.4", &["icudtl.dat", "snapshot_blob.bin", "libcef.dll"]),
+        ];
+        let root = unique_temp_dir();
+        for (index, (exe_name, folder, files)) in cases.iter().enumerate() {
+            let dir = root.join(index.to_string());
+            std::fs::create_dir_all(&dir).unwrap();
+            let exe = dir.join(exe_name);
+            std::fs::write(&exe, b"x").unwrap();
+            if files.is_empty() {
+                std::fs::write(dir.join(folder), b"x").unwrap();
+            } else {
+                folder_with(&dir, folder, files);
+            }
+            assert!(!is_chromium_target(exe.to_str().unwrap()), "{exe_name} beside {folder} holding {files:?}");
+        }
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn a_version_name_is_digits_and_dots() {
+        for name in ["150.0.1234.56", "1.2", "10.0.0.0"] {
+            assert!(is_version_name(name), "{name}");
+        }
+        for name in ["156", "app-1.2.3", "1..2", ".1.2", "1.2.", "1.2a.3", ""] {
+            assert!(!is_version_name(name), "{name}");
+        }
     }
 
     #[test]

@@ -96,8 +96,9 @@ public class LocalizationTests
         // Engine ceiling: a limit inside the target that no clock coverage lifts, so it survives
         // --scale-qpc alongside the caution above rather than being replaced by it.
         "runtime.unity_delta_time_capped",
-        // Cleanup residue (EndedEvent residue_keys) - a teardown that could not finish (CDP temp profile).
-        "cleanup.chromium_profile_left",
+        // Cleanup residue (EndedEvent residue_keys) - a teardown that could not finish (CDP temp profile,
+        // a browser whose processes could not be confirmed to have ended).
+        "cleanup.chromium_profile_left", "cleanup.chromium_process_left",
         // Vanish reasons (VanishedEvent reason_key, shown inside report.vanish_detail).
         "target.single_instance_suspected", "target.handed_off_uncovered",
         // Start/fatal error keys, surfaced as the status headline (RELEASE-001).
