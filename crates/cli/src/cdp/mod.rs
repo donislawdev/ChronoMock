@@ -74,6 +74,9 @@ pub struct CdpClient {
     /// a loop that has other work to do in the meantime - the native session's heartbeat and child
     /// poll - cannot afford ten seconds of standing on a renderer busy with its own JS.
     call_deadline: Duration,
+    /// The target the caller is putting the shim into, and the session it does that in, while it does:
+    /// another session of that target is let go as soon as it is announced ([`CdpClient::attaching`]).
+    attaching: Option<(String, String)>,
 }
 
 /// Cap on events parked while waiting for a command reply. CDP events are small and the session
@@ -333,6 +336,7 @@ impl CdpClient {
             target_drop_warned: false,
             bad_json_warned: false,
             call_deadline: Duration::from_secs(CALL_DEADLINE_SECS),
+            attaching: None,
         }
     }
 
@@ -356,6 +360,62 @@ impl CdpClient {
     /// one deadline.
     pub fn call_budget(&self) -> Duration {
         self.call_deadline
+    }
+
+    /// Say which target the caller is putting the shim into, and in which session, until it calls this
+    /// again with `None`. Meanwhile another session of that target is let go ([`CdpClient::let_go`]) as
+    /// soon as it is announced: one already queued at once, and one that comes while a reply is awaited
+    /// as it comes, rather than queued behind the attach.
+    ///
+    /// A target that two sessions hold paused on start runs nothing until both release it, a
+    /// `Runtime.evaluate` included, and a service worker a page registers is announced twice: by the
+    /// browser's auto-attach and by the page's own. Measured on two Chromium browsers (2026-11-09): the
+    /// shim in the first session waited for the second, which sat unread in this queue, until the
+    /// attach's deadline - ten seconds, then ten more for the second session, and the worker ran on the
+    /// real clock. With the second session released, the shim answered in 8 ms, still before the
+    /// worker's own script ran. The session the caller attaches in is never let go: a target attached by
+    /// name is announced again in that same session.
+    pub fn attaching(&mut self, attach: Option<(&str, &str)>) {
+        self.attaching = attach.filter(|(target, _)| !target.is_empty()).map(|(t, s)| (t.to_string(), s.to_string()));
+        if self.attaching.is_none() {
+            return;
+        }
+        let (second, rest): (std::collections::VecDeque<Msg>, std::collections::VecDeque<Msg>) =
+            std::mem::take(&mut self.queued).into_iter().partition(|m| self.is_second_session(m));
+        self.queued = rest;
+        for msg in second {
+            self.let_go_announced(msg);
+        }
+    }
+
+    /// Release a target the caller will not drive, and detach from it through the session that
+    /// announced it - `parent`, `None` for the browser's own. Chromium knows a session by the session
+    /// that made it: a detach sent to the browser for a session a page's auto-attach announced answers
+    /// "No session with given id" and leaves it attached (measured 2026-11-09). Not waited for: a target
+    /// that is not paused answers the same, and one already gone errors harmlessly.
+    pub fn let_go(&mut self, session_id: &str, parent: Option<&str>) {
+        let _ = self.send("Runtime.runIfWaitingForDebugger", serde_json::json!({}), Some(session_id));
+        let _ = self.send("Target.detachFromTarget", serde_json::json!({ "sessionId": session_id }), parent);
+    }
+
+    /// Whether `msg` announces the target being attached ([`CdpClient::attaching`]) in a session other
+    /// than the one it is attached in.
+    fn is_second_session(&self, msg: &Msg) -> bool {
+        let (Some((target, session)), Msg::Event { method, params, .. }) = (&self.attaching, msg) else {
+            return false;
+        };
+        method == "Target.attachedToTarget"
+            && params["targetInfo"]["targetId"].as_str() == Some(target.as_str())
+            && params["sessionId"].as_str().is_some_and(|s| s != session.as_str())
+    }
+
+    /// Let go the session an `attachedToTarget` announced, through the session that announced it.
+    fn let_go_announced(&mut self, msg: Msg) {
+        if let Msg::Event { params, session_id, .. } = msg
+            && let Some(sid) = params["sessionId"].as_str()
+        {
+            self.let_go(sid, session_id.as_deref());
+        }
     }
 
     /// Send a command and return its id without waiting for the reply, which comes back from
@@ -431,8 +491,13 @@ impl CdpClient {
     /// loop, but nothing guarantees it drains as fast as a chatty target fills it, so an unbounded
     /// deque would grow with the target's event rate. Past the cap the oldest message that is not a
     /// `Target.*` event is dropped, and a `Target.*` one only from a queue of nothing else at twice
-    /// the cap (see [`push_bounded`]). Each kind of drop says so once, rather than silently.
+    /// the cap (see [`push_bounded`]). Each kind of drop says so once, rather than silently. Another
+    /// session of the target being attached is let go instead of parked ([`CdpClient::attaching`]).
     fn queue_event(&mut self, msg: Msg) {
+        if self.is_second_session(&msg) {
+            self.let_go_announced(msg);
+            return;
+        }
         // Written by hand rather than with `eprintln!`, which panics on a closed standard error
         // (R4-S11). This module names nothing in the crate, so it does not reach for `diag!`.
         match push_bounded(&mut self.queued, msg) {
