@@ -24,6 +24,12 @@ Notable changes to Chrono Mock, newest first. The format follows
   for the engine only beside the program, so it started such a browser in a native session: the browser
   left the session within seconds and went on on the real clock, while the report said `works`. The
   command line and the window now also look in that folder and start the browser in Chromium mode.
+- **A Chromium session removes its browser profile after a handover too.** When the program the session
+  started handed the application to another process and ended - a launcher, or an installed Chromium
+  browser, which does that as it starts - the end of the session waited for the program it had started,
+  which had already ended, and removed the temporary profile while the browser was still closing. The
+  profile was then left behind until the next session removed it, and the report said so
+  (`cleanup.chromium_profile_left`). The end of a session now waits for every process of the browser.
 
 ## [0.5.0] - 2026-10-28
 
