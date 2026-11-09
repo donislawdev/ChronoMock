@@ -68,6 +68,12 @@ fn a_closed_window_does_not_erase_what_the_session_covered() {
         eprintln!("CHRONO_CDP_TARGET not set - skipping");
         return;
     };
+    // The windows are closed by the executable's name, so a browser of the tester's own running beside
+    // the session would have its windows closed too.
+    if running_count(&target) > 0 {
+        eprintln!("'{target}' is already running outside the session, and its windows would be closed - skipping");
+        return;
+    }
 
     let child = Command::new(env!("CARGO_BIN_EXE_chrono"))
         .args(["run", "--at", "2038-01-01T00:00:00", "--mode", "x60", "--ticks", "30", &target])
@@ -78,10 +84,21 @@ fn a_closed_window_does_not_erase_what_the_session_covered() {
 
     // Let the app attach, shim and actually call a time API, then close its window the polite way.
     std::thread::sleep(std::time::Duration::from_secs(12));
-    close_windows_of(&target);
+    let closing = std::time::Instant::now();
+    let all_closed = close_windows_of(&target);
+    let closed = std::time::Instant::now();
 
     let out = child.wait_with_output().expect("collect chrono output");
+    let after_close = closed.elapsed();
+    eprintln!("closing the windows took {:?}, and the session ended {after_close:?} after", closed - closing);
     let stdout = String::from_utf8_lossy(&out.stdout);
+    if !all_closed {
+        // Measured on an installed browser on a fresh profile: a welcome window, then a dialog that holds
+        // the browser's window open until the person makes a choice. The session rightly ran on, and
+        // nothing here says what a close would have done.
+        eprintln!("the browser kept a window open through 15 s of polite closing - skipping:\n{stdout}");
+        return;
+    }
 
     if stdout.contains("not a Chromium") || stdout.contains("launch_failed") {
         eprintln!("target is not Chromium-shaped or refused the debug port - skipping: {stdout}");
@@ -95,10 +112,18 @@ fn a_closed_window_does_not_erase_what_the_session_covered() {
     );
     assert_eq!(out.status.code(), Some(0), "a covered session must not exit as a failure:
 {stdout}");
-    // The browser it launched closed: that ends the session, and is not a handover to another program
-    // (R4-S18). Its connection drops within milliseconds of the exit, inside the margin.
-    assert!(!stdout.contains("followed:"), "a browser that closed handed nothing over:\n{stdout}");
-    assert!(!stdout.contains("handing the application over"), "and the report does not say it did:\n{stdout}");
+    // Closing the windows ends the session, well before its 30 ticks would have.
+    assert!(after_close < std::time::Duration::from_secs(10), "the session ran on {after_close:?} after the windows closed:\n{stdout}");
+    // A browser that runs from the process the session launched hands nothing over when it closes
+    // (R4-S18): its connection drops within milliseconds of the exit, inside the margin. An installed
+    // browser is not that browser - it hands its work to a new process of its own as it starts
+    // (measured on two installed browsers, 2026-11-09), so its session follows that one from the start,
+    // and the report rightly says so.
+    let runtime_beside = std::path::Path::new(&target).parent().is_some_and(|dir| dir.join("icudtl.dat").exists());
+    if runtime_beside {
+        assert!(!stdout.contains("followed:"), "a browser that closed handed nothing over:\n{stdout}");
+        assert!(!stdout.contains("handing the application over"), "and the report does not say it did:\n{stdout}");
+    }
 }
 
 /// The pages read the session's zone (R4/16). Every context is put on it through the engine's zone
@@ -284,14 +309,33 @@ fn a_launcher_that_hands_the_app_over_does_not_end_the_session() {
 }
 
 /// Ask every window of that executable to close, the way a user would - not a kill, which tears the
-/// socket down before Chromium sends the target-destroyed events this test is about.
-fn close_windows_of(target: &str) {
-    let name = std::path::Path::new(target)
-        .file_stem()
-        .and_then(|s| s.to_str())
-        .unwrap_or(target);
+/// socket down before Chromium sends the target-destroyed events this test is about. In rounds until no
+/// window is left, for up to 15 seconds: an installed browser on a fresh profile opens with a welcome
+/// window, and closing it opens the browser's own window (measured 2026-11-09), so one round closed the
+/// welcome and the browser ran on. Whether every window closed.
+fn close_windows_of(target: &str) -> bool {
     let script = format!(
-        "Get-Process -Name '{name}' -ErrorAction SilentlyContinue | ForEach-Object {{ $_.CloseMainWindow() | Out-Null }}"
+        "$deadline = (Get-Date).AddSeconds(15)
+         do {{
+             $open = @(Get-Process -Name '{name}' -ErrorAction SilentlyContinue | Where-Object {{ $_.MainWindowHandle -ne [IntPtr]::Zero }})
+             $open | ForEach-Object {{ $_.CloseMainWindow() | Out-Null }}
+             if ($open.Count -gt 0) {{ Start-Sleep -Milliseconds 1000 }}
+         }} while ($open.Count -gt 0 -and (Get-Date) -lt $deadline)
+         $open.Count",
+        name = image_stem(target)
     );
-    let _ = Command::new("powershell.exe").args(["-NoProfile", "-Command", &script]).output();
+    let out = Command::new("powershell.exe").args(["-NoProfile", "-Command", &script]).output().expect("run powershell");
+    String::from_utf8_lossy(&out.stdout).trim() == "0"
+}
+
+/// How many processes of that executable's name are running.
+fn running_count(target: &str) -> usize {
+    let script = format!("@(Get-Process -Name '{}' -ErrorAction SilentlyContinue).Count", image_stem(target));
+    let out = Command::new("powershell.exe").args(["-NoProfile", "-Command", &script]).output().expect("run powershell");
+    String::from_utf8_lossy(&out.stdout).trim().parse().unwrap_or(0)
+}
+
+/// The executable's name without its extension, as `Get-Process -Name` takes it.
+fn image_stem(target: &str) -> &str {
+    std::path::Path::new(target).file_stem().and_then(|s| s.to_str()).unwrap_or(target)
 }
