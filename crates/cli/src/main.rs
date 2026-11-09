@@ -86,7 +86,7 @@ use calc::calc_run;
 use cdp_probe::{cdp_date_probe, cdp_launch_probe, cdp_probe, cdp_shim_probe};
 use cli::{asks_for_help, print_help_for, print_license, print_usage, print_version};
 use core::core_mode;
-use output::diag;
+use output::{diag, Stream};
 use run::driver_run;
 
 fn main() {
@@ -109,12 +109,12 @@ fn main() {
         }
         Some("license") | Some("--license") => print_license(&args[2..]),
         Some("--help") | Some("-h") | Some("help") | None => {
-            print_usage();
+            print_usage(Stream::Out);
             0
         }
         Some(other) => {
             diag!("chrono: unknown command '{other}'");
-            print_usage();
+            print_usage(Stream::Err);
             1
         }
     };

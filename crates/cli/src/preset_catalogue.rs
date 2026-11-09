@@ -325,7 +325,7 @@ pub(crate) fn presets_run(args: &[String]) -> i32 {
         Ok(parsed) => parsed,
         Err(e) => {
             diag!("chrono presets: {e}");
-            crate::cli::print_presets_usage();
+            crate::cli::print_presets_usage(crate::output::Stream::Err);
             return 1;
         }
     };

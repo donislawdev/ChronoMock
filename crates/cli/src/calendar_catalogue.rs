@@ -128,7 +128,7 @@ pub(crate) fn calendars_run(args: &[String]) -> i32 {
         Ok(parsed) => parsed,
         Err(e) => {
             diag!("chrono calendars: {e}");
-            crate::cli::print_calendars_usage();
+            crate::cli::print_calendars_usage(crate::output::Stream::Err);
             return 1;
         }
     };

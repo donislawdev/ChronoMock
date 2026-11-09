@@ -54,7 +54,7 @@ fn the_calendar_ids_come_from_the_folder() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let run = |args: &[&str]| Command::new(env!("CARGO_BIN_EXE_chrono")).current_dir(&root).arg("calc").args(args).output().expect("runs");
 
-    let usage = stderr(&run(&["--help"]));
+    let usage = String::from_utf8_lossy(&run(&["--help"]).stdout).trim().to_string();
     assert!(usage.contains("[--calendar <id>]") && !usage.contains("<us-banking|"), "{usage}");
     assert!(usage.contains("--calendar ids: pl, us-banking, us-federal (from "), "{usage}");
 
@@ -587,6 +587,15 @@ mod properties {
         #[test]
         fn any_command_line_ends_with_a_documented_exit_code_and_a_keyed_refusal(argv in command_line()) {
             let ran = calc_within(&argv, Duration::from_secs(30));
+            // The first word alone asks for help, and whatever follows it - `--json` too - the answer is
+            // the calculator's usage, as text on standard output. It went to standard error with exit 0
+            // and an empty standard output (found by the weekly search, 2026-10-25).
+            if argv.first().is_some_and(|word| word == "-h" || word == "--help") {
+                prop_assert_eq!(ran.code, Some(0), "help refused for {:?}: {}", argv, ran.stderr);
+                prop_assert!(ran.stdout.starts_with("usage: chrono calc"), "no usage on stdout for {:?}: {}", argv, ran.stdout);
+                prop_assert!(ran.stderr.trim().is_empty(), "help said something on stderr for {:?}: {}", argv, ran.stderr);
+                return Ok(());
+            }
             match ran.code {
                 Some(0) => {
                     prop_assert!(!ran.stdout.trim().is_empty(), "exit 0 and no answer for {:?}", argv);

@@ -25,7 +25,7 @@ use chrono_core::filetime_utc_to_wall;
 
 use crate::cli::{flag_value, print_calc_usage};
 use crate::grammar::{parse_base, parse_nearest, parse_set_time, parse_shift, parse_snap};
-use crate::output::{diag, out, outln};
+use crate::output::{diag, out, outln, Stream};
 use crate::preset::{load_for, load_market_calendar, PresetRefusal, PresetStage, Surface};
 use crate::zone::{format_bias, now_filetime_utc, parse_zone_to_bias, session_zone_default};
 /// Parsed `chrono calc` arguments: a base, an ordered step list, and the session
@@ -62,7 +62,7 @@ pub(crate) fn calc_run(argv: &[String]) -> i32 {
             // always does) gets the line alone. Read from the words themselves, because the parser
             // that would have set `json` is the one that just failed.
             if !argv.iter().any(|word| word == "--json") {
-                print_calc_usage();
+                print_calc_usage(Stream::Err);
             }
             return 1;
         }

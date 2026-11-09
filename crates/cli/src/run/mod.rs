@@ -31,7 +31,7 @@ use collect::Collector;
 use moment::resolve_time_spec;
 use crate::cdp;
 use crate::cli::print_usage;
-use crate::output::{diag, out, outln};
+use crate::output::{diag, out, outln, Stream};
 use crate::report::{arguments_line, mode_label, render_evidence, render_report, CutShort, EvidenceParams, RunFacts};
 use crate::wire::{read_line_bytes, LineRead};
 use crate::zone::{format_bias, now_filetime_utc, session_zone_default};
@@ -150,7 +150,7 @@ pub(crate) fn driver_run(argv: &[String]) -> i32 {
         Ok(ra) => ra,
         Err(e) => {
             diag!("chrono: {e}");
-            print_usage();
+            print_usage(Stream::Err);
             return 1;
         }
     };

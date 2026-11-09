@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 
 use chrono_proto::PROTOCOL_VERSION;
 
-use crate::output::{diag, out, outln};
+use crate::output::{diag, out, outln, say, Stream};
 
 pub(crate) const CORE_VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -222,23 +222,25 @@ pub(crate) fn print_license(argv: &[String]) -> i32 {
     0
 }
 
-pub(crate) fn print_usage() {
-    diag!("usage: chrono run <target> [--at <local-moment>] [--preset <id>] [--param id=value]... [--zone <+HH:MM>] [--mode <flow|frozen|xN>] [--scale-duration] [--scale-qpc] [--ticks N] [--timeout <s>] [--set-after T:M] [--jump-after T:moment] [--args \"...\"] [--cwd <dir>] [--report <path> [--report-args]] [--force] [--no-embedded] [--elevated-embedded] [--keep-background-timers] [--dry-run] [--json]");
-    diag!("       --dry-run prints what the session would be and starts nothing - the resolved moment and zone, what a preset filled its parameters with, and which mechanism the target would take");
-    diag!("       without --at (or --preset) the session clock starts at the real current time, so `--mode xN` alone just runs the target faster");
-    diag!("       --scale-qpc also scales the high-resolution counter, which is where Python 3.13+ monotonic, .NET Stopwatch and Java nanoTime read elapsed time");
-    diag!("       --force runs on even when the opening verdict says the substitution did not take effect (the target is stopped otherwise)");
-    diag!("       --no-embedded leaves the web pages inside the app on the real clock and opens no debugging port. Without it, an app with a built-in web engine (WebView2, Qt WebEngine) is asked to open a local debugging port for the session and its pages follow the session clock through it - while it is open, any other program on this computer can use that port to reach those pages");
-    diag!("       --elevated-embedded is for an application that runs as administrator, which Chrono Mock must then do too: WebView2 ignores the setting the session reaches its pages through for such an application, so the session writes one WebView2 value to the machine registry (HKLM, named after the application's .exe) for its duration and removes it at the end. While the application runs, any other program on this computer can use the debugging port to reach its pages, and the application has administrator rights. Another program started under that file name by anybody gets the port too, for as long as the session lasts. Not with --no-embedded");
-    diag!("       --keep-background-timers starts the web engine - the browser of a Chromium or Electron app, or the engine inside an app - with its slowdown of timers in hidden windows switched off, so a minimised window keeps the session speed. The app then also works at full pace while it is hidden");
-    diag!("       --timeout gives up after N seconds and exits 6, for a pipeline that must not hang; a core that stops answering for 15 s exits 6 on its own");
-    diag!("       --cwd starts the target in that directory; without it the target inherits ours, and a directory that does not exist stops the session rather than looking like a broken target");
-    diag!("       (--preset supplies the moment and mode from presets/<id>.json, exclusive of --at/--mode/--scale-duration; --param fills its parameters, a trial start_date defaults to the target's file date)");
-    print_calc_usage();
-    print_presets_usage();
-    print_calendars_usage();
-    diag!("usage: chrono version  (also --version, -V)   the build, which core it is, and the protocol it speaks");
-    diag!("usage: chrono license [--components]   (also --license)   the licence, the warranty disclaimer, and every bundled component with its version");
+/// The whole tool's usage, on standard output when it was asked for and on standard error beside a
+/// refusal (`Stream`).
+pub(crate) fn print_usage(to: Stream) {
+    say!(to, "usage: chrono run <target> [--at <local-moment>] [--preset <id>] [--param id=value]... [--zone <+HH:MM>] [--mode <flow|frozen|xN>] [--scale-duration] [--scale-qpc] [--ticks N] [--timeout <s>] [--set-after T:M] [--jump-after T:moment] [--args \"...\"] [--cwd <dir>] [--report <path> [--report-args]] [--force] [--no-embedded] [--elevated-embedded] [--keep-background-timers] [--dry-run] [--json]");
+    say!(to, "       --dry-run prints what the session would be and starts nothing - the resolved moment and zone, what a preset filled its parameters with, and which mechanism the target would take");
+    say!(to, "       without --at (or --preset) the session clock starts at the real current time, so `--mode xN` alone just runs the target faster");
+    say!(to, "       --scale-qpc also scales the high-resolution counter, which is where Python 3.13+ monotonic, .NET Stopwatch and Java nanoTime read elapsed time");
+    say!(to, "       --force runs on even when the opening verdict says the substitution did not take effect (the target is stopped otherwise)");
+    say!(to, "       --no-embedded leaves the web pages inside the app on the real clock and opens no debugging port. Without it, an app with a built-in web engine (WebView2, Qt WebEngine) is asked to open a local debugging port for the session and its pages follow the session clock through it - while it is open, any other program on this computer can use that port to reach those pages");
+    say!(to, "       --elevated-embedded is for an application that runs as administrator, which Chrono Mock must then do too: WebView2 ignores the setting the session reaches its pages through for such an application, so the session writes one WebView2 value to the machine registry (HKLM, named after the application's .exe) for its duration and removes it at the end. While the application runs, any other program on this computer can use the debugging port to reach its pages, and the application has administrator rights. Another program started under that file name by anybody gets the port too, for as long as the session lasts. Not with --no-embedded");
+    say!(to, "       --keep-background-timers starts the web engine - the browser of a Chromium or Electron app, or the engine inside an app - with its slowdown of timers in hidden windows switched off, so a minimised window keeps the session speed. The app then also works at full pace while it is hidden");
+    say!(to, "       --timeout gives up after N seconds and exits 6, for a pipeline that must not hang; a core that stops answering for 15 s exits 6 on its own");
+    say!(to, "       --cwd starts the target in that directory; without it the target inherits ours, and a directory that does not exist stops the session rather than looking like a broken target");
+    say!(to, "       (--preset supplies the moment and mode from presets/<id>.json, exclusive of --at/--mode/--scale-duration; --param fills its parameters, a trial start_date defaults to the target's file date)");
+    print_calc_usage(to);
+    print_presets_usage(to);
+    print_calendars_usage(to);
+    say!(to, "usage: chrono version  (also --version, -V)   the build, which core it is, and the protocol it speaks");
+    say!(to, "usage: chrono license [--components]   (also --license)   the licence, the warranty disclaimer, and every bundled component with its version");
 }
 
 /// Whether a word is the help flag, which every command answers.
@@ -292,37 +294,39 @@ pub(crate) fn asks_for_help(rest: &[String]) -> bool {
     rest.first().is_some_and(|word| is_help_flag(word))
 }
 
-/// The usage a command was asked for, and exit 0 - it is an answer, not a refusal. `calc --help`
-/// used to say "unknown flag" and exit 1 while `chrono --help` beside it exited 0.
+/// The usage a command was asked for, on standard output, and exit 0 - it is an answer, not a refusal.
+/// `calc --help` used to say "unknown flag" and exit 1 while `chrono --help` beside it exited 0, and
+/// every usage asked for went to standard error, so `chrono --help | more` showed nothing and the weekly
+/// search found `calc -h` ending in 0 with no answer (2026-10-25).
 pub(crate) fn print_help_for(command: &str) -> i32 {
     match command {
-        "calc" => print_calc_usage(),
-        "presets" => print_presets_usage(),
-        "calendars" => print_calendars_usage(),
-        _ => print_usage(),
+        "calc" => print_calc_usage(Stream::Out),
+        "presets" => print_presets_usage(Stream::Out),
+        "calendars" => print_calendars_usage(Stream::Out),
+        _ => print_usage(Stream::Out),
     }
     0
 }
 
-pub(crate) fn print_presets_usage() {
-    diag!("usage: chrono presets [--dir <folder>] [--json]   every preset in the catalogue the way --preset reads it, and every file it would refuse, with the reason");
-    diag!("       without --dir it reads the folder --preset looks in (<exe>/presets, else ./presets)");
-    diag!("       --json emits machine output (chronomock.presets/1)");
+pub(crate) fn print_presets_usage(to: Stream) {
+    say!(to, "usage: chrono presets [--dir <folder>] [--json]   every preset in the catalogue the way --preset reads it, and every file it would refuse, with the reason");
+    say!(to, "       without --dir it reads the folder --preset looks in (<exe>/presets, else ./presets)");
+    say!(to, "       --json emits machine output (chronomock.presets/1)");
 }
 
-pub(crate) fn print_calendars_usage() {
-    diag!("usage: chrono calendars [--dir <folder>] [--json]   every calendar --calendar can count in, and every file it would refuse, with the reason");
-    diag!("       without --dir it reads the folder --calendar looks in (<exe>/calendars, else ./calendars)");
-    diag!("       --json emits machine output (chronomock.calendars/1)");
+pub(crate) fn print_calendars_usage(to: Stream) {
+    say!(to, "usage: chrono calendars [--dir <folder>] [--json]   every calendar --calendar can count in, and every file it would refuse, with the reason");
+    say!(to, "       without --dir it reads the folder --calendar looks in (<exe>/calendars, else ./calendars)");
+    say!(to, "       --json emits machine output (chronomock.calendars/1)");
 }
 
-pub(crate) fn print_calc_usage() {
-    diag!("usage: chrono calc [--base <today|now|YYYY-MM-DDTHH:MM:SS>] [--base-utc <YYYY-MM-DDTHH:MM:SS[Z]>] [--shift <±N<unit>>]... [--set-time <HH:MM:SS>] [--snap <target>] [--nearest <target>] [--to-zone <+HH:MM>] [--zone <+HH:MM>] [--calendar <id>] [--format <mask>] [--json]");
-    diag!("       {}", calendar_ids_line());
-    diag!("       or: chrono calc --preset <id> [--param id=value]...   (named moment, e.g. month-end, trial-first-day-after - a preset with a market counts business days in that market's calendar unless --calendar names another)");
-    diag!("       or: chrono calc --analyze <pasted-date>   (interpret a date, e.g. 04/08/2008 - shows both readings when ambiguous)");
-    diag!("       --json emits machine output (chronomock.calc/1) for any of the above");
-    diag!("       units: s m h d w mo q y bd (minute=m, month=mo)");
+pub(crate) fn print_calc_usage(to: Stream) {
+    say!(to, "usage: chrono calc [--base <today|now|YYYY-MM-DDTHH:MM:SS>] [--base-utc <YYYY-MM-DDTHH:MM:SS[Z]>] [--shift <±N<unit>>]... [--set-time <HH:MM:SS>] [--snap <target>] [--nearest <target>] [--to-zone <+HH:MM>] [--zone <+HH:MM>] [--calendar <id>] [--format <mask>] [--json]");
+    say!(to, "       {}", calendar_ids_line());
+    say!(to, "       or: chrono calc --preset <id> [--param id=value]...   (named moment, e.g. month-end, trial-first-day-after - a preset with a market counts business days in that market's calendar unless --calendar names another)");
+    say!(to, "       or: chrono calc --analyze <pasted-date>   (interpret a date, e.g. 04/08/2008 - shows both readings when ambiguous)");
+    say!(to, "       --json emits machine output (chronomock.calc/1) for any of the above");
+    say!(to, "       units: s m h d w mo q y bd (minute=m, month=mo)");
 }
 
 /// The ids `--calendar` can name here, read from the folder it reads them from (R5-F3). The usage

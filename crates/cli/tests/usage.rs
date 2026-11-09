@@ -18,10 +18,13 @@ fn text(out: &Output) -> String {
     format!("{}{}", String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr))
 }
 
-/// Asking is answered: usage, exit 0, no word about anything being unknown.
+/// Asking is answered: usage on standard output, nothing on standard error, exit 0, no word about
+/// anything being unknown. The usage went to standard error with exit 0, so `chrono --help | more`
+/// showed nothing and `chrono calc --help > usage.txt` wrote an empty file.
 #[test]
 fn every_way_of_asking_for_help_is_answered_with_usage_and_exit_zero() {
-    let asks: [&[&str]; 9] = [
+    let asks: [&[&str]; 12] = [
+        &[],
         &["--help"],
         &["-h"],
         &["help"],
@@ -31,12 +34,15 @@ fn every_way_of_asking_for_help_is_answered_with_usage_and_exit_zero() {
         &["calc", "-h"],
         &["calendars", "--help"],
         &["calendars", "-h"],
+        &["presets", "--help"],
+        &["presets", "-h"],
     ];
     for args in asks {
         let out = chrono(args);
         let said = text(&out);
         assert_eq!(out.status.code(), Some(0), "{args:?}: {said}");
-        assert!(said.contains("usage:"), "{args:?} must print the usage: {said}");
+        assert!(String::from_utf8_lossy(&out.stdout).starts_with("usage:"), "{args:?} must print the usage on stdout: {said}");
+        assert!(out.stderr.is_empty(), "{args:?} is answered on stdout alone: {said}");
         assert!(!said.contains("unknown"), "{args:?} is a question, not a mistake: {said}");
     }
     // The calculator's help is the calculator's usage, not the whole tool's.
@@ -44,6 +50,27 @@ fn every_way_of_asking_for_help_is_answered_with_usage_and_exit_zero() {
     assert!(calc.contains("chrono calc") && !calc.contains("chrono run <target>"), "{calc}");
     let calendars = text(&chrono(&["calendars", "--help"]));
     assert!(calendars.contains("chrono calendars") && !calendars.contains("chrono run <target>"), "{calendars}");
+}
+
+/// A refused command line is explained with the usage under the refusal, both on standard error, and
+/// standard output stays empty - a script that sends it to a file gets an empty file, not a usage text
+/// it would read as a result.
+#[test]
+fn a_refusal_keeps_the_usage_off_standard_output() {
+    let refused: [&[&str]; 5] = [
+        &["bogus"],
+        &["run"],
+        &["calc", "--shift", "+abcd"],
+        &["presets", "--bogus"],
+        &["calendars", "--bogus"],
+    ];
+    for args in refused {
+        let out = chrono(args);
+        let said = text(&out);
+        assert_eq!(out.status.code(), Some(1), "{args:?}: {said}");
+        assert!(out.stdout.is_empty(), "{args:?} wrote on stdout: {said}");
+        assert!(String::from_utf8_lossy(&out.stderr).contains("usage: chrono"), "{args:?} must explain itself with the usage: {said}");
+    }
 }
 
 /// Only the first word after a command asks for its help. Further along, `--help` can belong to the

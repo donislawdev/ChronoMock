@@ -14,6 +14,11 @@ Notable changes to Chrono Mock, newest first. The format follows
   found none of them: every session stopped with `core.hook_dll_missing` and `chrono calendars` with
   `calendars.folder_missing`. It now follows the link to the program and reads what lies beside the
   program. A link to the folder the program is in always worked and still does.
+- **Help is printed on standard output.** `chrono --help`, `chrono` alone and `--help` or `-h` after
+  `run`, `calc`, `presets` and `calendars` printed the usage on standard error, so `chrono --help | more`
+  showed nothing and `chrono calc --help > usage.txt` wrote an empty file. The usage you ask for now goes
+  to standard output, still with exit code 0. The usage printed under a refused command line stays on
+  standard error, and standard output stays empty then.
 
 ## [0.5.0] - 2026-10-28
 
