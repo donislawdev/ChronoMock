@@ -40,16 +40,20 @@ fn every_way_of_asking_for_help_is_answered_with_usage_and_exit_zero() {
     for args in asks {
         let out = chrono(args);
         let said = text(&out);
+        let usage = String::from_utf8_lossy(&out.stdout);
         assert_eq!(out.status.code(), Some(0), "{args:?}: {said}");
-        assert!(String::from_utf8_lossy(&out.stdout).starts_with("usage:"), "{args:?} must print the usage on stdout: {said}");
         assert!(out.stderr.is_empty(), "{args:?} is answered on stdout alone: {said}");
         assert!(!said.contains("unknown"), "{args:?} is a question, not a mistake: {said}");
+        // Each command answers with its own usage, and `run` and the tool itself with the whole tool's,
+        // which opens with `run` - a help routed to another command's usage is red here.
+        match args.first() {
+            Some(&command @ ("calc" | "presets" | "calendars")) => {
+                assert!(usage.starts_with(&format!("usage: chrono {command} ")), "{args:?} must print its own usage: {said}");
+                assert!(!usage.contains("chrono run <target>"), "{args:?} printed the whole tool's usage: {said}");
+            }
+            _ => assert!(usage.starts_with("usage: chrono run <target>"), "{args:?} must print the tool's usage: {said}"),
+        }
     }
-    // The calculator's help is the calculator's usage, not the whole tool's.
-    let calc = text(&chrono(&["calc", "--help"]));
-    assert!(calc.contains("chrono calc") && !calc.contains("chrono run <target>"), "{calc}");
-    let calendars = text(&chrono(&["calendars", "--help"]));
-    assert!(calendars.contains("chrono calendars") && !calendars.contains("chrono run <target>"), "{calendars}");
 }
 
 /// A refused command line is explained with the usage under the refusal, both on standard error, and
@@ -57,19 +61,23 @@ fn every_way_of_asking_for_help_is_answered_with_usage_and_exit_zero() {
 /// it would read as a result.
 #[test]
 fn a_refusal_keeps_the_usage_off_standard_output() {
-    let refused: [&[&str]; 5] = [
-        &["bogus"],
-        &["run"],
-        &["calc", "--shift", "+abcd"],
-        &["presets", "--bogus"],
-        &["calendars", "--bogus"],
+    // Each with the sentence that names what was wrong, first, so the usage under it cannot stand in for
+    // the refusal itself.
+    let refused: [(&[&str], &str); 5] = [
+        (&["bogus"], "chrono: unknown command 'bogus'"),
+        (&["run"], "chrono: missing <target>"),
+        (&["calc", "--shift", "+abcd"], "chrono calc: shift needs a number, got '+abcd' (calc.bad_argument)"),
+        (&["presets", "--bogus"], "chrono presets: unknown argument '--bogus' for presets"),
+        (&["calendars", "--bogus"], "chrono calendars: unknown argument '--bogus' for calendars"),
     ];
-    for args in refused {
+    for (args, why) in refused {
         let out = chrono(args);
         let said = text(&out);
+        let stderr = String::from_utf8_lossy(&out.stderr);
         assert_eq!(out.status.code(), Some(1), "{args:?}: {said}");
         assert!(out.stdout.is_empty(), "{args:?} wrote on stdout: {said}");
-        assert!(String::from_utf8_lossy(&out.stderr).contains("usage: chrono"), "{args:?} must explain itself with the usage: {said}");
+        assert_eq!(stderr.lines().next(), Some(why), "{args:?} must say what was wrong first: {said}");
+        assert!(stderr.contains("usage: chrono"), "{args:?} must explain itself with the usage: {said}");
     }
 }
 

@@ -22572,5 +22572,45 @@
     "match": "exact",
     "build": "",
     "notHere": ""
+  },
+  {
+    "name": "help on stdout the calculator's refusal usage on stdout",
+    "edits": [
+      {
+        "file": "crates/cli/src/calc.rs",
+        "from": "                print_calc_usage(Stream::Err);\n",
+        "to": "                print_calc_usage(Stream::Out);\n"
+      }
+    ],
+    "runner": "rust",
+    "package": "chrono-cli",
+    "target": [
+      "--test",
+      "usage"
+    ],
+    "test": "a_refusal_keeps_the_usage_off_standard_output",
+    "match": "exact",
+    "build": "",
+    "notHere": ""
+  },
+  {
+    "name": "help on stdout presets answered with the calculator's usage",
+    "edits": [
+      {
+        "file": "crates/cli/src/cli.rs",
+        "from": "        \"presets\" => print_presets_usage(Stream::Out),\n",
+        "to": "        \"presets\" => print_calc_usage(Stream::Out),\n"
+      }
+    ],
+    "runner": "rust",
+    "package": "chrono-cli",
+    "target": [
+      "--test",
+      "usage"
+    ],
+    "test": "every_way_of_asking_for_help_is_answered_with_usage_and_exit_zero",
+    "match": "exact",
+    "build": "",
+    "notHere": ""
   }
 ]
