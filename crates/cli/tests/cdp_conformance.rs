@@ -15,15 +15,31 @@
 //!   set CHRONO_CDP_TARGET=C:\path\to\electron-app.exe
 //!   cargo test -p chrono-cli --test cdp_conformance -- --ignored
 //!
+//! The tests take turns on their own (`one_browser`), so they need no `--test-threads=1`.
+//!
 //! The full chain was verified by hand against a real Electron application during the CDP bring-up - see
 //! the README support matrix, "Electron / Chromium ... measured by hand on an Electron app (x64)". This
 //! harness makes that repeatable against any permissive target.
 
 use std::process::Command;
+use std::sync::{Mutex, MutexGuard, PoisonError};
+
+/// Held by each test for as long as it runs, so the tests start one browser at a time whichever way they
+/// are run. Side by side they see each other: `page_reads` asks the newest session profile, which can be
+/// another test's - the zone test read a session in another zone - and the closed-window test skips
+/// while the target runs outside its session. Cargo runs tests in parallel unless told otherwise.
+static ONE_BROWSER: Mutex<()> = Mutex::new(());
+
+/// Take the one browser for this test. A test that panicked holding it leaves nothing behind the lock
+/// to protect, so the next test takes it all the same.
+fn one_browser() -> MutexGuard<'static, ()> {
+    ONE_BROWSER.lock().unwrap_or_else(PoisonError::into_inner)
+}
 
 #[test]
 #[ignore = "opt-in: set CHRONO_CDP_TARGET to a permissive Chromium/Electron exe; it launches that app"]
 fn cdp_shim_fakes_the_page_clock() {
+    let _one = one_browser();
     let Ok(target) = std::env::var("CHRONO_CDP_TARGET") else {
         eprintln!("CHRONO_CDP_TARGET not set - skipping (no portable CDP target ships with the repo)");
         return;
@@ -64,6 +80,7 @@ fn cdp_shim_fakes_the_page_clock() {
 #[test]
 #[ignore = "opt-in: set CHRONO_CDP_TARGET to a permissive Chromium/Electron exe; it launches and closes that app"]
 fn a_closed_window_does_not_erase_what_the_session_covered() {
+    let _one = one_browser();
     let Ok(target) = std::env::var("CHRONO_CDP_TARGET") else {
         eprintln!("CHRONO_CDP_TARGET not set - skipping");
         return;
@@ -136,6 +153,7 @@ fn a_closed_window_does_not_erase_what_the_session_covered() {
 #[test]
 #[ignore = "opt-in: set CHRONO_CDP_TARGET to a permissive Chromium/Electron exe; it launches that app"]
 fn the_pages_read_the_session_zone() {
+    let _one = one_browser();
     let Ok(target) = std::env::var("CHRONO_CDP_TARGET") else {
         eprintln!("CHRONO_CDP_TARGET not set - skipping");
         return;
@@ -168,6 +186,7 @@ fn the_pages_read_the_session_zone() {
 #[test]
 #[ignore = "opt-in: set CHRONO_CDP_TARGET to a permissive Chromium/Electron exe; it launches and minimizes that app"]
 fn a_hidden_window_is_said_unless_its_timers_were_kept() {
+    let _one = one_browser();
     let Ok(target) = std::env::var("CHRONO_CDP_TARGET") else {
         eprintln!("CHRONO_CDP_TARGET not set - skipping");
         return;
@@ -273,6 +292,7 @@ while ($true) {{
 #[test]
 #[ignore = "opt-in: set CHRONO_CDP_TARGET to a permissive Chromium/Electron exe; it launches that app through a script"]
 fn a_launcher_that_hands_the_app_over_does_not_end_the_session() {
+    let _one = one_browser();
     let Ok(target) = std::env::var("CHRONO_CDP_TARGET") else {
         eprintln!("CHRONO_CDP_TARGET not set - skipping");
         return;
