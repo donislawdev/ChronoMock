@@ -41,6 +41,23 @@ pub(crate) fn to_stderr(args: fmt::Arguments<'_>) {
     let _ = write_through(&mut io::stderr().lock(), args, true);
 }
 
+/// The stream a text that can be either an answer or a diagnostic is written to. A usage is the answer
+/// when it was asked for, so `chrono --help | more` shows it, and beside a refusal it explains the
+/// refusal, on standard error with standard output left empty.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Stream {
+    Out,
+    Err,
+}
+
+/// One line on `stream`, through the same writers as `outln!` and `diag!`. Use it through `say!`.
+pub(crate) fn to_stream(stream: Stream, args: fmt::Arguments<'_>) {
+    match stream {
+        Stream::Out => to_stdout(args, true),
+        Stream::Err => to_stderr(args),
+    }
+}
+
 /// Flushed on every call, because a line buffer holding the last of the answer would otherwise fail
 /// at exit, where nobody is left to say so.
 fn write_through(sink: &mut impl Write, args: fmt::Arguments<'_>, newline: bool) -> io::Result<()> {
@@ -72,7 +89,14 @@ macro_rules! out {
     };
 }
 
-pub(crate) use {diag, out, outln};
+/// `outln!` or `diag!`, chosen by the `Stream` given first.
+macro_rules! say {
+    ($stream:expr, $($arg:tt)*) => {
+        $crate::output::to_stream($stream, format_args!($($arg)*))
+    };
+}
+
+pub(crate) use {diag, out, outln, say};
 
 #[cfg(test)]
 mod tests {

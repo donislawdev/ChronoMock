@@ -1269,6 +1269,21 @@ mod tests {
             ]
         }
 
+        /// A calendar that keeps a working day every week and judges every year: any drawn calendar
+        /// with its first year taken away, and a week of seven days off given back the day `kept`.
+        /// Drawn that way, not filtered out of `calendar()`: the filter kept about three calendars in
+        /// five, and at the weekly run's 200 000 cases its 65 536 rejects ran out after about 107 000
+        /// - the property was aborted, not answered, every Sunday from the first (2026-10-25).
+        fn calendar_with_a_working_day() -> impl Strategy<Value = Calendar> {
+            (calendar(), 0u32..7).prop_map(|(mut cal, kept)| {
+                cal.valid_from = None;
+                if cal.weekend.len() >= 7 {
+                    cal.weekend.retain(|day| *day != kept);
+                }
+                cal
+            })
+        }
+
         /// Business days from `from` up to `to`, the start not counted - each day judged on its own,
         /// apart from the walk's cache.
         fn business_days_between(from: &CivilDateTime, to: &CivilDateTime, cal: &Calendar) -> i64 {
@@ -1321,9 +1336,7 @@ mod tests {
             /// (R4-N41: such a calendar ran the walk's budget dry and was refused `+1000bd`).
             #[test]
             fn every_business_day_between_is_counted_once(
-                cal in calendar().prop_filter("a working day every week, every year judged", |c| {
-                    c.weekend.len() < 7 && c.valid_from.is_none()
-                }),
+                cal in calendar_with_a_working_day(),
                 from in start(),
                 n in prop_oneof![4 => -40i64..=40, 1 => 1_000i64..=1_200, 1 => -1_200i64..=-1_000],
             ) {

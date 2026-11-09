@@ -13,7 +13,7 @@ use super::args::RunArgs;
 use crate::calc::{calc_error_exit_code, describe_calc_error, resolve_now_civil};
 use crate::cli::print_usage;
 use crate::grammar::parse_shift;
-use crate::output::diag;
+use crate::output::{diag, Stream};
 use crate::preset::{
     load_for, load_market_calendar, parameter_provenance, read_target_creation_date, PresetRefusal, Surface,
 };
@@ -126,7 +126,7 @@ pub(super) fn resolve_time_spec(ra: &RunArgs, now_bias: i32) -> Result<ResolvedT
                 Ok(s) => Some(s),
                 Err(e) => {
                     diag!("chrono: {e}");
-                    print_usage();
+                    print_usage(Stream::Err);
                     return Err(1);
                 }
             },
