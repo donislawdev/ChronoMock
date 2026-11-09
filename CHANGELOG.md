@@ -34,6 +34,13 @@ Notable changes to Chrono Mock, newest first. The format follows
   (`cleanup.chromium_profile_left`). The end of a session now waits for every process of the browser,
   and when one of them cannot be confirmed to have closed, the report says so in a new residue key,
   `cleanup.chromium_process_left`, even if the profile was removed.
+- **A page that registers a service worker no longer holds a Chromium session for twenty seconds.** The
+  browser announces such a worker twice, once for itself and once for the page, and keeps it waiting
+  until both announcements are answered. The session answered the first and waited for the worker until
+  its time ran out, then did the same with the second: the session stood still for about twenty seconds,
+  the worker ran on the real clock, and the result was `partial`. The second announcement is now released
+  at once, and the worker runs on the session clock from its first line. The new tab page of an installed
+  Chromium browser registers such a worker, so sessions with one often ran into this.
 
 ## [0.5.0] - 2026-10-28
 

@@ -419,7 +419,7 @@ impl Attacher {
                 continue;
             }
             // Attached by name, so not paused on start: a target that was there before the session.
-            self.shim(Arrival { sid, ty, tid, waiting: false }, origin, next_index, Some(deadline));
+            self.shim(Arrival { sid, ty, tid, waiting: false, parent: None }, origin, next_index, Some(deadline));
             attached += 1;
         }
         Ok(attached)
@@ -469,7 +469,7 @@ impl Attacher {
                 }
                 Pumped::Idle
             }
-            Ok(Some(cdp::Msg::Event { method, params, .. })) if method == "Target.attachedToTarget" => {
+            Ok(Some(cdp::Msg::Event { method, params, session_id: parent })) if method == "Target.attachedToTarget" => {
                 let sid = params["sessionId"].as_str().unwrap_or("").to_string();
                 let ty = params["targetInfo"]["type"].as_str().unwrap_or("").to_string();
                 let tid = params["targetInfo"]["targetId"].as_str().unwrap_or("").to_string();
@@ -480,11 +480,11 @@ impl Attacher {
                     // Auto-attach paused it on start, like everything it delivers. A target with no
                     // timer of ours to cover - or one that arrives as the session ends - is let go at
                     // once: left as it arrived, it would stay paused.
-                    self.let_go(&sid);
+                    self.let_go(&sid, parent.as_deref());
                     return Pumped::Idle;
                 }
                 let waiting = params["waitingForDebugger"].as_bool().unwrap_or(false);
-                self.shim(Arrival { sid, ty, tid, waiting }, origin, next_index, None);
+                self.shim(Arrival { sid, ty, tid, waiting, parent }, origin, next_index, None);
                 Pumped::Attached
             }
             // A context that went away - a closed window, a recycled worker. Dropped from the live
@@ -558,7 +558,7 @@ impl Attacher {
     /// which Chromium keeps across re-attaches (R3-7). The shim is built from the clock's CURRENT
     /// origin, never the session's initial one.
     fn shim(&mut self, arrival: Arrival, origin: ShimOrigin, next_index: &mut u32, cap: Option<Instant>) {
-        let Arrival { sid, ty, tid, waiting } = arrival;
+        let Arrival { sid, ty, tid, waiting, parent } = arrival;
         // The session this attacher drives already, announced again: a by-name attach is also announced
         // as an attach event (measured on Electron 44 in flatten mode), and it is the same session, not
         // a second one to let go - letting it go would detach the context the session covers.
@@ -570,7 +570,7 @@ impl Attacher {
         // session on the list would be polled and broadcast to twice. The second session is let go
         // so it does not sit paused.
         if !tid.is_empty() && self.requests.contexts().iter().any(|c| c.target_id == tid) {
-            self.let_go(&sid);
+            self.let_go(&sid, parent.as_deref());
             return;
         }
         // One deadline for everything this attach asks the context (R4-S10): each call used to have
@@ -578,19 +578,17 @@ impl Attacher {
         let deadline = attach_deadline(Instant::now(), self.client.call_budget(), cap);
         let known = !tid.is_empty() && self.index_by_target.contains_key(&tid);
         let index = context_index_for(&tid, &mut self.index_by_target, next_index);
-        if self.probe_clock && self.reads_session_clock_natively(&sid, origin, deadline) {
+        // A second session of this target announced meanwhile is let go as it comes: the target runs
+        // nothing, the shim included, until every session that holds it paused releases it.
+        self.client.attaching(Some((&tid, &sid)));
+        let put = self.put_shim_in(&sid, &ty, origin, deadline);
+        self.client.attaching(None);
+        let Some(injected) = put else {
             // Covered by the native mechanism already: it has a row of its own under its pid, and a
             // shim here would scale the fake wall twice. Released, and not counted as a context.
             self.native += 1;
-            self.let_go(&sid);
+            self.let_go(&sid, parent.as_deref());
             return;
-        }
-        let shim = origin.shim(self.zone);
-        let zone = self.zone.map(cdp::zone_id);
-        let injected = if cdp::is_worker(&ty) {
-            cdp::inject_worker(&mut self.client, &sid, &shim, zone.as_deref(), deadline)
-        } else {
-            cdp::inject_page(&mut self.client, &sid, &shim, zone.as_deref(), deadline)
         };
         match injected {
             Ok(cdp::Injected { script, children, running, awaiting }) => {
@@ -624,6 +622,21 @@ impl Attacher {
                 self.resume(&sid);
             }
         }
+    }
+
+    /// Put the shim into the context of session `sid`, by `deadline`: what the injection left, or `None`
+    /// when the context was asked first which clock it reads and reads the session's already.
+    fn put_shim_in(&mut self, sid: &str, ty: &str, origin: ShimOrigin, deadline: Instant) -> Option<io::Result<cdp::Injected>> {
+        if self.probe_clock && self.reads_session_clock_natively(sid, origin, deadline) {
+            return None;
+        }
+        let shim = origin.shim(self.zone);
+        let zone = self.zone.map(cdp::zone_id);
+        Some(if cdp::is_worker(ty) {
+            cdp::inject_worker(&mut self.client, sid, &shim, zone.as_deref(), deadline)
+        } else {
+            cdp::inject_page(&mut self.client, sid, &shim, zone.as_deref(), deadline)
+        })
     }
 
     /// Count a context the shim is in as covered: a row of its own, or past the ceiling of own rows the
@@ -669,10 +682,10 @@ impl Attacher {
     /// as long as the connection lives. Measured on Electron 44: a worker detached right after its
     /// release runs on - a chain of a hundred workers, each started by the one before, ran through. NOT
     /// for a context whose shim failed: its release is queued in its own session behind the shim
-    /// (`take_back`), and a detach could drop it.
-    fn let_go(&mut self, sid: &str) {
-        self.resume(sid);
-        let _ = self.client.send("Target.detachFromTarget", json!({ "sessionId": sid }), None);
+    /// (`take_back`), and a detach could drop it. The detach goes through `parent`, the session that
+    /// announced it ([`cdp::CdpClient::let_go`]).
+    fn let_go(&mut self, sid: &str, parent: Option<&str>) {
+        self.client.let_go(sid, parent);
     }
 
     /// Remember a target that went away for a while, so it keeps its index if it comes back, and forget
@@ -823,13 +836,15 @@ impl Attacher {
     }
 }
 
-/// A target as it arrived: its session, its type and id as the browser named them, and whether it was
-/// paused on start (`waitingForDebugger`) - a target attached by name was not.
+/// A target as it arrived: its session, its type and id as the browser named them, whether it was
+/// paused on start (`waitingForDebugger`) - a target attached by name was not - and the session that
+/// announced it, `None` for the browser's own, which a detach has to go through.
 struct Arrival {
     sid: String,
     ty: String,
     tid: String,
     waiting: bool,
+    parent: Option<String>,
 }
 
 /// The deadline of one attach: its own budget from `now`, or the caller's deadline when that comes
@@ -972,9 +987,12 @@ mod tests {
                         let params = json!({ "sessionId": sid, "targetInfo": { "targetId": tid, "type": ty }, "waitingForDebugger": true });
                         (serde_json::Value::Null, json!({ "method": "Target.attachedToTarget", "params": params }))
                     };
+                    // The target with no JS is announced by a page's own auto-attach.
+                    let (none, mut by_page) = attached("S-GPU", "T-GPU", "other");
+                    by_page["sessionId"] = json!("S-PAGE");
                     vec![
                         (id, json!({ "targetInfos": [] })),
-                        attached("S-GPU", "T-GPU", "other"),
+                        (none, by_page),
                         attached("S-W1", "T-W", "worker"),
                         attached("S-W2", "T-W", "worker"),
                     ]
@@ -1007,14 +1025,150 @@ mod tests {
         assert_eq!(live, vec!["S-W1"], "the duplicate going does not take the context with it");
         drop(attacher);
         let log = browser.join().unwrap();
-        let detached: Vec<&str> = log
+        let detached: Vec<(&str, &str)> = log
             .iter()
             .filter(|r| r["method"] == "Target.detachFromTarget")
-            .filter_map(|r| r["params"]["sessionId"].as_str())
+            .map(|r| (r["params"]["sessionId"].as_str().unwrap_or(""), r["sessionId"].as_str().unwrap_or("browser")))
             .collect();
-        assert_eq!(detached, vec!["S-GPU", "S-W2"], "the target with no JS and the second session, not the shimmed one");
+        // Each through the session that announced it: Chromium answers a detach sent to the browser for
+        // a session a page announced with "No session with given id" (measured 2026-11-09).
+        assert_eq!(
+            detached,
+            vec![("S-GPU", "S-PAGE"), ("S-W2", "browser")],
+            "the target with no JS and the second session, not the shimmed one"
+        );
         let resumed = |sid: &str| log.iter().any(|r| r["method"] == "Runtime.runIfWaitingForDebugger" && r["sessionId"] == sid);
         assert!(resumed("S-GPU") && resumed("S-W2"), "each released before it is let go");
+    }
+
+    /// A service worker a page registers is announced twice - by the browser's auto-attach and by the
+    /// page's own - and a target two sessions hold paused on start answers neither until both release
+    /// it, the shim included (measured on two Chromium browsers, 2026-11-09). The second session is let
+    /// go as soon as it is announced, through the session that announced it, whether it was queued
+    /// before the attach began or came while the shim was awaited. Before, the shim waited out the
+    /// attach's deadline, then once more in the second session, and the worker ran on the real clock.
+    /// The session the attach is made in, announced again, is not let go.
+    #[test]
+    fn a_second_session_of_a_target_being_attached_is_let_go_as_it_comes() {
+        for during_the_shim in [false, true] {
+            let announced = |sid: &str, parent: Option<&str>| {
+                let mut event = json!({
+                    "method": "Target.attachedToTarget",
+                    "params": { "sessionId": sid, "targetInfo": { "targetId": "T-SW", "type": "service_worker" }, "waitingForDebugger": true }
+                });
+                if let Some(parent) = parent {
+                    event["sessionId"] = json!(parent);
+                }
+                (serde_json::Value::Null, event)
+            };
+            let installed = json!({ "result": { "value": "installed" } });
+            let mut held = None;
+            let mut released = false;
+            let (port, browser) = crate::cdp::fake_browser_holding(move |request| {
+                let id = request["id"].clone();
+                let session = request["sessionId"].as_str().unwrap_or("").to_string();
+                match request["method"].as_str().unwrap_or("") {
+                    "Target.getTargets" if during_the_shim => vec![(id, json!({ "targetInfos": [] })), announced("S-SW1", None)],
+                    "Target.getTargets" => {
+                        vec![announced("S-SW1", None), announced("S-SW2", Some("S-PAGE")), (id, json!({ "targetInfos": [] }))]
+                    }
+                    // The worker runs nothing, the shim included, while the second session holds it.
+                    "Runtime.evaluate" if session == "S-SW1" && !released => {
+                        held = Some(id);
+                        if during_the_shim { vec![announced("S-SW1", None), announced("S-SW2", Some("S-PAGE"))] } else { Vec::new() }
+                    }
+                    "Runtime.runIfWaitingForDebugger" if session == "S-SW2" => {
+                        released = true;
+                        let mut out = vec![(id, json!({}))];
+                        out.extend(held.take().map(|shim| (shim, installed.clone())));
+                        out
+                    }
+                    "Runtime.evaluate" => vec![(id, installed.clone())],
+                    _ => vec![(id, json!({}))],
+                }
+            });
+            let ws = crate::cdp::WsClient::connect("127.0.0.1", port, "/", Instant::now() + Duration::from_secs(5)).unwrap();
+            let mut attacher = Attacher::over(cdp::CdpClient::from_ws(ws), port);
+            attacher.set_budgets(Duration::from_millis(20), Duration::from_secs(2));
+            let origin = ShimOrigin { fake0: 0, real0: 0, mult: 1, dur: 1, scheduled: None };
+            let mut next = 0;
+            attacher.attach_existing(origin, &mut next, Instant::now() + Duration::from_secs(2)).unwrap();
+            for _ in 0..10 {
+                attacher.pump(origin, &mut next);
+            }
+            let case = if during_the_shim { "announced while the shim was awaited" } else { "queued before the attach" };
+            assert_eq!((attacher.contexts_covered(), attacher.failed()), (1, 0), "{case}: the worker took the shim");
+            drop(attacher);
+            let log = browser.join().unwrap();
+            let detached: Vec<(&str, &str)> = log
+                .iter()
+                .filter(|r| r["method"] == "Target.detachFromTarget")
+                .map(|r| (r["params"]["sessionId"].as_str().unwrap_or(""), r["sessionId"].as_str().unwrap_or("browser")))
+                .collect();
+            assert_eq!(detached, vec![("S-SW2", "S-PAGE")], "{case}: the second session alone, through the page that announced it");
+        }
+    }
+
+    /// The two other targets the attach itself lets go are detached through the session that announced
+    /// them as well: a context found on the session clock natively, and a second session of a target
+    /// that is already covered - announced once the attach is over, so it is the attach that sees it,
+    /// not the client (CodeRabbit on #160). Both are announced by a page's own auto-attach here, whose
+    /// sessions Chromium does not know at the browser.
+    #[test]
+    fn a_target_the_attach_lets_go_is_detached_through_the_session_that_announced_it() {
+        let session_now = 2_147_483_647_000_i64;
+        let announced = |sid: &str, tid: &str, ty: &str, parent: Option<&str>| {
+            let mut event = json!({
+                "method": "Target.attachedToTarget",
+                "params": { "sessionId": sid, "targetInfo": { "targetId": tid, "type": ty }, "waitingForDebugger": true }
+            });
+            if let Some(parent) = parent {
+                event["sessionId"] = json!(parent);
+            }
+            (serde_json::Value::Null, event)
+        };
+        let (port, browser) = crate::cdp::fake_browser_holding(move |request| {
+            let id = request["id"].clone();
+            let session = request["sessionId"].as_str().unwrap_or("").to_string();
+            let probe = request["params"]["expression"] == CLOCK_PROBE_EXPR;
+            match request["method"].as_str().unwrap_or("") {
+                "Target.getTargets" => vec![
+                    (id, json!({ "targetInfos": [] })),
+                    announced("S-NATIVE", "T-NATIVE", "iframe", Some("S-PAGE")),
+                    announced("S-W1", "T-W", "worker", None),
+                ],
+                // The frame reads the session clock through the native hook, the worker the real one.
+                "Runtime.evaluate" if probe && session == "S-NATIVE" => vec![(id, json!({ "result": { "value": session_now.to_string() } }))],
+                "Runtime.evaluate" if probe => vec![(id, json!({ "result": { "value": now_epoch_ms().to_string() } }))],
+                "Runtime.evaluate" => vec![(id, json!({ "result": { "value": "installed" } }))],
+                // The worker is covered once released, and the page announces it again after that.
+                "Runtime.runIfWaitingForDebugger" if session == "S-W1" => {
+                    vec![(id, json!({})), announced("S-W2", "T-W", "worker", Some("S-PAGE"))]
+                }
+                _ => vec![(id, json!({}))],
+            }
+        });
+        let ws = crate::cdp::WsClient::connect("127.0.0.1", port, "/", Instant::now() + Duration::from_secs(5)).unwrap();
+        let mut attacher = Attacher::over(cdp::CdpClient::from_ws(ws), port);
+        attacher.set_budgets(Duration::from_millis(20), Duration::from_secs(2));
+        attacher.probe_clock_before_shim();
+        let origin = ShimOrigin { fake0: session_now, real0: now_epoch_ms(), mult: 1, dur: 1, scheduled: None };
+        let mut next = 0;
+        attacher.attach_existing(origin, &mut next, Instant::now() + Duration::from_secs(2)).unwrap();
+        for _ in 0..10 {
+            attacher.pump(origin, &mut next);
+        }
+        assert_eq!(attacher.native(), 1, "the frame on the session clock natively was left without the shim");
+        let live: Vec<&str> = attacher.contexts().iter().map(|c| c.session_id.as_str()).collect();
+        assert_eq!(live, vec!["S-W1"], "the worker is covered once, in its first session");
+        drop(attacher);
+        let log = browser.join().unwrap();
+        let detached: Vec<(&str, &str)> = log
+            .iter()
+            .filter(|r| r["method"] == "Target.detachFromTarget")
+            .map(|r| (r["params"]["sessionId"].as_str().unwrap_or(""), r["sessionId"].as_str().unwrap_or("browser")))
+            .collect();
+        assert_eq!(detached, vec![("S-NATIVE", "S-PAGE"), ("S-W2", "S-PAGE")], "each through the page that announced it");
     }
 
     /// R5-D6: a target the by-name pass could not attach to ran unreached, and counts as such - it used

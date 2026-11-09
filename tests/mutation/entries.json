@@ -22834,5 +22834,157 @@
     "match": "exact",
     "build": "",
     "notHere": ""
+  },
+  {
+    "name": "second session announced during the shim is parked",
+    "edits": [
+      {
+        "file": "crates/cli/src/cdp/mod.rs",
+        "from": "        if self.is_second_session(&msg) {\n",
+        "to": "        if false && self.is_second_session(&msg) {\n"
+      }
+    ],
+    "runner": "rust",
+    "package": "chrono-cli",
+    "target": [
+      "--bins"
+    ],
+    "test": "cdp_attach::tests::a_second_session_of_a_target_being_attached_is_let_go_as_it_comes",
+    "match": "exact",
+    "build": "",
+    "notHere": ""
+  },
+  {
+    "name": "second session already queued is kept",
+    "edits": [
+      {
+        "file": "crates/cli/src/cdp/mod.rs",
+        "from": "            std::mem::take(&mut self.queued).into_iter().partition(|m| self.is_second_session(m));\n",
+        "to": "            std::mem::take(&mut self.queued).into_iter().partition(|m| false && self.is_second_session(m));\n"
+      }
+    ],
+    "runner": "rust",
+    "package": "chrono-cli",
+    "target": [
+      "--bins"
+    ],
+    "test": "cdp_attach::tests::a_second_session_of_a_target_being_attached_is_let_go_as_it_comes",
+    "match": "exact",
+    "build": "",
+    "notHere": ""
+  },
+  {
+    "name": "second session detached through the browser",
+    "edits": [
+      {
+        "file": "crates/cli/src/cdp/mod.rs",
+        "from": "            self.let_go(sid, session_id.as_deref());\n",
+        "to": "            self.let_go(sid, None);\n"
+      }
+    ],
+    "runner": "rust",
+    "package": "chrono-cli",
+    "target": [
+      "--bins"
+    ],
+    "test": "cdp_attach::tests::a_second_session_of_a_target_being_attached_is_let_go_as_it_comes",
+    "match": "exact",
+    "build": "",
+    "notHere": ""
+  },
+  {
+    "name": "second session the session attached in is let go",
+    "edits": [
+      {
+        "file": "crates/cli/src/cdp/mod.rs",
+        "from": "            && params[\"sessionId\"].as_str().is_some_and(|s| s != session.as_str())\n",
+        "to": "            && params[\"sessionId\"].as_str().is_some_and(|s| !s.is_empty())\n"
+      }
+    ],
+    "runner": "rust",
+    "package": "chrono-cli",
+    "target": [
+      "--bins"
+    ],
+    "test": "cdp_attach::tests::a_second_session_of_a_target_being_attached_is_let_go_as_it_comes",
+    "match": "exact",
+    "build": "",
+    "notHere": ""
+  },
+  {
+    "name": "second session the attach names no target",
+    "edits": [
+      {
+        "file": "crates/cli/src/cdp_attach.rs",
+        "from": "        self.client.attaching(Some((&tid, &sid)));\n",
+        "to": "        self.client.attaching(None);\n"
+      }
+    ],
+    "runner": "rust",
+    "package": "chrono-cli",
+    "target": [
+      "--bins"
+    ],
+    "test": "cdp_attach::tests::a_second_session_of_a_target_being_attached_is_let_go_as_it_comes",
+    "match": "exact",
+    "build": "",
+    "notHere": ""
+  },
+  {
+    "name": "second session a target let go is detached through the browser",
+    "edits": [
+      {
+        "file": "crates/cli/src/cdp_attach.rs",
+        "from": "        self.client.let_go(sid, parent);\n",
+        "to": "        self.client.let_go(sid, None);\n"
+      }
+    ],
+    "runner": "rust",
+    "package": "chrono-cli",
+    "target": [
+      "--bins"
+    ],
+    "test": "cdp_attach::tests::a_target_the_session_will_not_drive_is_released_and_detached_from",
+    "match": "exact",
+    "build": "",
+    "notHere": ""
+  },
+  {
+    "name": "second session of a covered target detached through the browser",
+    "edits": [
+      {
+        "file": "crates/cli/src/cdp_attach.rs",
+        "from": "            self.let_go(&sid, parent.as_deref());\n            return;\n        }\n        // One deadline",
+        "to": "            self.let_go(&sid, None);\n            return;\n        }\n        // One deadline"
+      }
+    ],
+    "runner": "rust",
+    "package": "chrono-cli",
+    "target": [
+      "--bins"
+    ],
+    "test": "cdp_attach::tests::a_target_the_attach_lets_go_is_detached_through_the_session_that_announced_it",
+    "match": "exact",
+    "build": "",
+    "notHere": ""
+  },
+  {
+    "name": "second session a context on the session clock natively detached through the browser",
+    "edits": [
+      {
+        "file": "crates/cli/src/cdp_attach.rs",
+        "from": "            self.native += 1;\n            self.let_go(&sid, parent.as_deref());\n",
+        "to": "            self.native += 1;\n            self.let_go(&sid, None);\n"
+      }
+    ],
+    "runner": "rust",
+    "package": "chrono-cli",
+    "target": [
+      "--bins"
+    ],
+    "test": "cdp_attach::tests::a_target_the_attach_lets_go_is_detached_through_the_session_that_announced_it",
+    "match": "exact",
+    "build": "",
+    "notHere": ""
   }
 ]
