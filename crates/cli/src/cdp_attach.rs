@@ -1109,6 +1109,68 @@ mod tests {
         }
     }
 
+    /// The two other targets the attach itself lets go are detached through the session that announced
+    /// them as well: a context found on the session clock natively, and a second session of a target
+    /// that is already covered - announced once the attach is over, so it is the attach that sees it,
+    /// not the client (CodeRabbit on #160). Both are announced by a page's own auto-attach here, whose
+    /// sessions Chromium does not know at the browser.
+    #[test]
+    fn a_target_the_attach_lets_go_is_detached_through_the_session_that_announced_it() {
+        let session_now = 2_147_483_647_000_i64;
+        let announced = |sid: &str, tid: &str, ty: &str, parent: Option<&str>| {
+            let mut event = json!({
+                "method": "Target.attachedToTarget",
+                "params": { "sessionId": sid, "targetInfo": { "targetId": tid, "type": ty }, "waitingForDebugger": true }
+            });
+            if let Some(parent) = parent {
+                event["sessionId"] = json!(parent);
+            }
+            (serde_json::Value::Null, event)
+        };
+        let (port, browser) = crate::cdp::fake_browser_holding(move |request| {
+            let id = request["id"].clone();
+            let session = request["sessionId"].as_str().unwrap_or("").to_string();
+            let probe = request["params"]["expression"] == CLOCK_PROBE_EXPR;
+            match request["method"].as_str().unwrap_or("") {
+                "Target.getTargets" => vec![
+                    (id, json!({ "targetInfos": [] })),
+                    announced("S-NATIVE", "T-NATIVE", "iframe", Some("S-PAGE")),
+                    announced("S-W1", "T-W", "worker", None),
+                ],
+                // The frame reads the session clock through the native hook, the worker the real one.
+                "Runtime.evaluate" if probe && session == "S-NATIVE" => vec![(id, json!({ "result": { "value": session_now.to_string() } }))],
+                "Runtime.evaluate" if probe => vec![(id, json!({ "result": { "value": now_epoch_ms().to_string() } }))],
+                "Runtime.evaluate" => vec![(id, json!({ "result": { "value": "installed" } }))],
+                // The worker is covered once released, and the page announces it again after that.
+                "Runtime.runIfWaitingForDebugger" if session == "S-W1" => {
+                    vec![(id, json!({})), announced("S-W2", "T-W", "worker", Some("S-PAGE"))]
+                }
+                _ => vec![(id, json!({}))],
+            }
+        });
+        let ws = crate::cdp::WsClient::connect("127.0.0.1", port, "/", Instant::now() + Duration::from_secs(5)).unwrap();
+        let mut attacher = Attacher::over(cdp::CdpClient::from_ws(ws), port);
+        attacher.set_budgets(Duration::from_millis(20), Duration::from_secs(2));
+        attacher.probe_clock_before_shim();
+        let origin = ShimOrigin { fake0: session_now, real0: now_epoch_ms(), mult: 1, dur: 1, scheduled: None };
+        let mut next = 0;
+        attacher.attach_existing(origin, &mut next, Instant::now() + Duration::from_secs(2)).unwrap();
+        for _ in 0..10 {
+            attacher.pump(origin, &mut next);
+        }
+        assert_eq!(attacher.native(), 1, "the frame on the session clock natively was left without the shim");
+        let live: Vec<&str> = attacher.contexts().iter().map(|c| c.session_id.as_str()).collect();
+        assert_eq!(live, vec!["S-W1"], "the worker is covered once, in its first session");
+        drop(attacher);
+        let log = browser.join().unwrap();
+        let detached: Vec<(&str, &str)> = log
+            .iter()
+            .filter(|r| r["method"] == "Target.detachFromTarget")
+            .map(|r| (r["params"]["sessionId"].as_str().unwrap_or(""), r["sessionId"].as_str().unwrap_or("browser")))
+            .collect();
+        assert_eq!(detached, vec![("S-NATIVE", "S-PAGE"), ("S-W2", "S-PAGE")], "each through the page that announced it");
+    }
+
     /// R5-D6: a target the by-name pass could not attach to ran unreached, and counts as such - it used
     /// to be skipped without a word, and the verdict could say every context ran on the session clock.
     #[test]

@@ -377,7 +377,9 @@ impl CdpClient {
     /// name is announced again in that same session.
     pub fn attaching(&mut self, attach: Option<(&str, &str)>) {
         self.attaching = attach.filter(|(target, _)| !target.is_empty()).map(|(t, s)| (t.to_string(), s.to_string()));
-        if self.attaching.is_none() {
+        // Read first, and rebuilt only when a second session is there: the queue is usually empty, and
+        // an attach that finds nothing to let go moves nothing.
+        if !self.queued.iter().any(|m| self.is_second_session(m)) {
             return;
         }
         let (second, rest): (std::collections::VecDeque<Msg>, std::collections::VecDeque<Msg>) =

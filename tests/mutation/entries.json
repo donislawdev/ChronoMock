@@ -22948,5 +22948,43 @@
     "match": "exact",
     "build": "",
     "notHere": ""
+  },
+  {
+    "name": "second session of a covered target detached through the browser",
+    "edits": [
+      {
+        "file": "crates/cli/src/cdp_attach.rs",
+        "from": "            self.let_go(&sid, parent.as_deref());\n            return;\n        }\n        // One deadline",
+        "to": "            self.let_go(&sid, None);\n            return;\n        }\n        // One deadline"
+      }
+    ],
+    "runner": "rust",
+    "package": "chrono-cli",
+    "target": [
+      "--bins"
+    ],
+    "test": "cdp_attach::tests::a_target_the_attach_lets_go_is_detached_through_the_session_that_announced_it",
+    "match": "exact",
+    "build": "",
+    "notHere": ""
+  },
+  {
+    "name": "second session a context on the session clock natively detached through the browser",
+    "edits": [
+      {
+        "file": "crates/cli/src/cdp_attach.rs",
+        "from": "            self.native += 1;\n            self.let_go(&sid, parent.as_deref());\n",
+        "to": "            self.native += 1;\n            self.let_go(&sid, None);\n"
+      }
+    ],
+    "runner": "rust",
+    "package": "chrono-cli",
+    "target": [
+      "--bins"
+    ],
+    "test": "cdp_attach::tests::a_target_the_attach_lets_go_is_detached_through_the_session_that_announced_it",
+    "match": "exact",
+    "build": "",
+    "notHere": ""
   }
 ]
