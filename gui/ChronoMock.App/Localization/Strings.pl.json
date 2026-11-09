@@ -519,8 +519,9 @@
   "chromium.animations_real": "Strona odtwarzała animacje CSS albo Web Animations, gdy sesja biegła szybciej. Animacje grają z prawdziwą prędkością, więc szły wolniej niż zegar sesji.",
   "chromium.clock_move_missed": "Strona internetowa przyjęła zmianę prędkości albo skok z opóźnieniem albo wcale, zwykle dlatego, że była zajęta, więc jej zegar odbiega od zegara sesji do następnego skoku, a jej przeładowanie może przywrócić starszy.",
 
-  // Cleanup residue the core reports in `ended.residue_keys` when a teardown could not finish (rules 4, 6). Today only a CDP session raises one (the temporary browser profile could not be removed); a native session always ends clean. Rendered verbatim in the panel and the summary.
+  // Cleanup residue the core reports in `ended.residue_keys` when a teardown could not finish (rules 4, 6). Today only a CDP session raises one (the temporary browser profile could not be removed, or the browser could not be confirmed to have closed) - a native session always ends clean. Rendered verbatim in the panel and the summary.
   "cleanup.chromium_profile_left": "Nie udało się usunąć tymczasowego profilu Chromium - usuń go ręcznie, jeśli został w folderze tymczasowym.",
+  "cleanup.chromium_process_left": "Chrono Mock nie mógł potwierdzić, że uruchomiona przez niego przeglądarka się zamknęła - jeśli któryś jej proces nadal działa, zakończ go w Menedżerze zadań.",
 
   // Copy session summary (chrono-mock 7.2, 8.8). A paste-into-ticket report; a non-works session leads with the unreliable-evidence banner. Keys ending in a template carry {0}-style placeholders.
   "action.copy_summary": "Kopiuj podsumowanie",

@@ -952,7 +952,9 @@ impl PlainChild {
 
     /// End the process with everything it started, as [`terminate`](Self::terminate) does, and wait up
     /// to `timeout_ms` for every one of them to have ended - by then the files they held are closed.
-    /// True when all ended in time.
+    /// True when all ended in time. False also when a process of the job could not be opened to be
+    /// waited on, or the job's processes could not be listed: those cannot be confirmed to have ended,
+    /// and the files they held may still be held.
     ///
     /// The processes of the job are opened before it is ended, because a launcher that handed its work
     /// to a process of its own has ended already: waiting for it alone waited for nothing while the
@@ -960,9 +962,10 @@ impl PlainChild {
     /// it starts (measured on two, 2026-11-09), and the profile its session removes next was left behind
     /// in about one session of eight. Without a job, the launched process alone is waited for.
     pub fn terminate_and_wait(&self, timeout_ms: u32) -> bool {
-        let members = self.job.as_ref().map(job::Job::members).unwrap_or_default();
+        let (members, unconfirmed) = self.job.as_ref().map(job::Job::members).unwrap_or_default();
         self.terminate();
-        self.ended_with(&members, Instant::now() + std::time::Duration::from_millis(u64::from(timeout_ms)))
+        let ended = self.ended_with(&members, Instant::now() + std::time::Duration::from_millis(u64::from(timeout_ms)));
+        ended && unconfirmed == 0
     }
 
     /// Whether the process and `members` have all ended by `deadline`, waiting for them until then.
@@ -2418,18 +2421,7 @@ mod tests {
         assert!(child.job_note().is_none(), "the child runs without a job: {:?}", child.job_note());
 
         // The grandchild, once cmd.exe has started it.
-        let grandchild = (0..50).find_map(|_| {
-            let found = tree::process_entries()
-                .ok()?
-                .into_iter()
-                .find(|e| e.parent == child.pid && e.image.eq_ignore_ascii_case("PING.EXE"))
-                .map(|e| e.pid);
-            if found.is_none() {
-                std::thread::sleep(std::time::Duration::from_millis(100));
-            }
-            found
-        });
-        let Some(grandchild) = grandchild else {
+        let Some(grandchild) = tree::tests::started_by(child.pid, "PING.EXE") else {
             panic!("cmd.exe did not start ping within five seconds");
         };
 
@@ -2455,18 +2447,7 @@ mod tests {
 
     /// The process a launcher handed its work to, found by its parent.
     fn handed_to(child: &PlainChild) -> u32 {
-        let found = (0..50).find_map(|_| {
-            let found = tree::process_entries()
-                .ok()?
-                .into_iter()
-                .find(|e| e.parent == child.pid && e.image.eq_ignore_ascii_case("PING.EXE"))
-                .map(|e| e.pid);
-            if found.is_none() {
-                std::thread::sleep(std::time::Duration::from_millis(100));
-            }
-            found
-        });
-        found.expect("cmd.exe started ping within five seconds")
+        tree::tests::started_by(child.pid, "PING.EXE").expect("cmd.exe started ping within five seconds")
     }
 
     /// The wait covers the process a launcher handed over to, not only the launcher. Without the end, so
@@ -2477,7 +2458,8 @@ mod tests {
     fn the_wait_covers_the_process_a_launcher_handed_over_to() {
         let child = handing_over_to_ping("2");
         let handed_to = handed_to(&child);
-        let members = child.job.as_ref().expect("the child runs in a job").members();
+        let (members, unconfirmed) = child.job.as_ref().expect("the child runs in a job").members();
+        assert_eq!(unconfirmed, 0, "every process of the job could be opened");
         assert!(super::process_is_alive(handed_to), "ping ended before the wait began, so the wait proves nothing");
 
         let deadline = Instant::now() + std::time::Duration::from_secs(10);
@@ -2511,18 +2493,7 @@ mod tests {
             super::Target { path: &ping, args: &beside_args, cwd: None, env: &[], stdio: super::TargetStdio::Discarded };
         let beside = super::launch_plain(&beside_target).expect("ping launches");
 
-        let grandchild = (0..50).find_map(|_| {
-            let found = tree::process_entries()
-                .ok()?
-                .into_iter()
-                .find(|e| e.parent == child.pid && e.image.eq_ignore_ascii_case("PING.EXE"))
-                .map(|e| e.pid);
-            if found.is_none() {
-                std::thread::sleep(std::time::Duration::from_millis(100));
-            }
-            found
-        });
-        let Some(grandchild) = grandchild else {
+        let Some(grandchild) = tree::tests::started_by(child.pid, "PING.EXE") else {
             panic!("cmd.exe did not start ping within five seconds");
         };
         // The list shows a process from the moment its object exists, before its creator has let its

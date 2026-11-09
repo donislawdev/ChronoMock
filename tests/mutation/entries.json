@@ -22618,8 +22618,8 @@
     "edits": [
       {
         "file": "crates/cli/src/cdp/launch.rs",
-        "from": "    version_folders(dir).any(|folder| {\n",
-        "to": "    false && version_folders(dir).any(|folder| {\n"
+        "from": "    let installed = version_folders(dir).any(|folder| {\n",
+        "to": "    let installed = false && version_folders(dir).any(|folder| {\n"
       }
     ],
     "runner": "rust",
@@ -22709,8 +22709,8 @@
     "edits": [
       {
         "file": "crates/mech/src/job.rs",
-        "from": "        self.process_ids().into_iter().filter_map(|pid| self.open_member(pid)).collect()\n",
-        "to": "        Vec::new()\n"
+        "from": "        let Some(pids) = self.process_ids() else {\n",
+        "to": "        let Some(pids) = Some(Vec::<u32>::new()) else {\n"
       }
     ],
     "runner": "rust",
@@ -22728,8 +22728,8 @@
     "edits": [
       {
         "file": "crates/mech/src/job.rs",
-        "from": "        inside.as_bool().then_some(member)\n",
-        "to": "        Some(member)\n"
+        "from": "        if inside.as_bool() { Opened::Member(member) } else { Opened::NotHere }\n",
+        "to": "        Opened::Member(member)\n"
       }
     ],
     "runner": "rust",
@@ -22757,6 +22757,80 @@
       "--lib"
     ],
     "test": "tests::the_wait_covers_the_process_a_launcher_handed_over_to",
+    "match": "exact",
+    "build": "",
+    "notHere": ""
+  },
+  {
+    "name": "installed browser the window takes any folder name as a version",
+    "edits": [
+      {
+        "file": "gui/ChronoMock.App/Session/ChromiumTarget.cs",
+        "from": "        name.Contains('.', StringComparison.Ordinal)\n",
+        "to": "        true || name.Contains('.', StringComparison.Ordinal)\n"
+      }
+    ],
+    "runner": "cs",
+    "package": "gui/ChronoMock.App.Tests",
+    "target": [],
+    "test": "ChronoMock.App.Tests.ChromiumTargetTests.A_version_name_is_digits_and_dots",
+    "match": "method",
+    "build": "",
+    "notHere": ""
+  },
+  {
+    "name": "installed browser a runtime beside the exe is taken for an installed one",
+    "edits": [
+      {
+        "file": "crates/cli/src/cdp/launch.rs",
+        "from": "        return Some(ChromiumLayout::Beside);\n",
+        "to": "        return Some(ChromiumLayout::Installed);\n"
+      }
+    ],
+    "runner": "rust",
+    "package": "chrono-cli",
+    "target": [
+      "--bins"
+    ],
+    "test": "cdp::launch::tests::the_layout_says_where_the_runtime_is",
+    "match": "exact",
+    "build": "",
+    "notHere": ""
+  },
+  {
+    "name": "installed browser the first-run switch goes to an Electron application",
+    "edits": [
+      {
+        "file": "crates/cli/src/cdp/launch.rs",
+        "from": "    if layout == Some(ChromiumLayout::Installed) {\n",
+        "to": "    if layout == Some(ChromiumLayout::Beside) {\n"
+      }
+    ],
+    "runner": "rust",
+    "package": "chrono-cli",
+    "target": [
+      "--bins"
+    ],
+    "test": "cdp::launch::tests::only_an_installed_browser_is_started_without_its_first_run",
+    "match": "exact",
+    "build": "",
+    "notHere": ""
+  },
+  {
+    "name": "handed over a browser not seen to end is not named",
+    "edits": [
+      {
+        "file": "crates/cli/src/cdp/launch.rs",
+        "from": "    if !browser_ended {\n",
+        "to": "    if false && !browser_ended {\n"
+      }
+    ],
+    "runner": "rust",
+    "package": "chrono-cli",
+    "target": [
+      "--bins"
+    ],
+    "test": "cdp::launch::tests::a_browser_not_seen_to_end_is_named_beside_the_profile",
     "match": "exact",
     "build": "",
     "notHere": ""

@@ -18,7 +18,7 @@
 use std::time::Instant;
 
 use windows::core::BOOL;
-use windows::Win32::Foundation::{CloseHandle, HANDLE};
+use windows::Win32::Foundation::{CloseHandle, ERROR_INVALID_PARAMETER, HANDLE};
 use windows::Win32::System::JobObjects::{
     CreateJobObjectW, IsProcessInJob, JobObjectBasicProcessIdList, JobObjectExtendedLimitInformation,
     QueryInformationJobObject, SetInformationJobObject, TerminateJobObject, JOBOBJECT_BASIC_LIMIT_INFORMATION,
@@ -75,23 +75,34 @@ impl Job {
         }
     }
 
-    /// The processes in the job and in the jobs nested in it now, each opened to be waited on. A pid
-    /// from the list can name another process by the time it is opened - one that ended and gave its
-    /// number away - so a process is kept only when the system says it is in this job. One that would not
-    /// open has ended already, or cannot be waited on, and is left out.
-    pub(crate) fn members(&self) -> Vec<Member> {
-        self.process_ids().into_iter().filter_map(|pid| self.open_member(pid)).collect()
+    /// The processes in the job and in the jobs nested in it now, each opened to be waited on, and how
+    /// many of its processes could not be: one the system would not open, or all of them when it would
+    /// not list them. A pid from the list can name another process by the time it is opened - one that
+    /// ended and gave its number away - so a process is kept only when the system says it is in this
+    /// job, and one that has ended by then is not there to wait for.
+    pub(crate) fn members(&self) -> (Vec<Member>, usize) {
+        let Some(pids) = self.process_ids() else {
+            return (Vec::new(), 1);
+        };
+        let mut held = Vec::new();
+        let mut unconfirmed = 0;
+        for pid in pids {
+            match self.open_member(pid) {
+                Opened::Member(member) => held.push(member),
+                Opened::NotHere => {}
+                Opened::Refused => unconfirmed += 1,
+            }
+        }
+        (held, unconfirmed)
     }
 
-    /// The pids the job lists now. Empty when the system would not list them.
-    fn process_ids(&self) -> Vec<u32> {
+    /// The pids the job lists now. `None` when the system would not list them.
+    fn process_ids(&self) -> Option<Vec<u32>> {
         let header = std::mem::offset_of!(JOBOBJECT_BASIC_PROCESS_ID_LIST, ProcessIdList);
         let mut room = 64usize;
         for _ in 0..LIST_TRIES {
             let bytes = header + room * size_of::<usize>();
-            let Ok(length) = u32::try_from(bytes) else {
-                return Vec::new();
-            };
+            let length = u32::try_from(bytes).ok()?;
             // Eight-byte units, so the structure is aligned on either bitness.
             let mut buffer = vec![0u64; bytes.div_ceil(8)];
             let list = buffer.as_mut_ptr().cast::<JOBOBJECT_BASIC_PROCESS_ID_LIST>();
@@ -104,27 +115,33 @@ impl Job {
                 continue;
             }
             if asked.is_err() {
-                return Vec::new();
+                return None;
             }
             // SAFETY: `listed` ids follow the header, and the call wrote no more than the room it was given.
             let ids = unsafe {
                 std::slice::from_raw_parts(list.cast::<u8>().add(header).cast::<usize>(), (listed as usize).min(room))
             };
-            return ids.iter().filter_map(|&id| u32::try_from(id).ok()).collect();
+            return Some(ids.iter().filter_map(|&id| u32::try_from(id).ok()).collect());
         }
-        Vec::new()
+        None
     }
 
     /// The process `pid`, opened to be waited on, when it is in this job.
-    fn open_member(&self, pid: u32) -> Option<Member> {
-        // SAFETY: the handle belongs to the Member from the moment it opens, so every way out closes it.
-        let member = Member {
-            handle: unsafe { OpenProcess(PROCESS_SYNCHRONIZE | PROCESS_QUERY_LIMITED_INFORMATION, false, pid) }.ok()?,
+    fn open_member(&self, pid: u32) -> Opened {
+        // SAFETY: a handle that opens belongs to the Member from the next statement, so every way out closes it.
+        let handle = match unsafe { OpenProcess(PROCESS_SYNCHRONIZE | PROCESS_QUERY_LIMITED_INFORMATION, false, pid) } {
+            Ok(handle) => handle,
+            // No process under that number any more - it ended (also what the system answers for pid 0).
+            Err(e) if e.code() == ERROR_INVALID_PARAMETER.to_hresult() => return Opened::NotHere,
+            Err(_) => return Opened::Refused,
         };
+        let member = Member { handle };
         let mut inside = BOOL(0);
         // SAFETY: both handles are open, and the answer is written during the call only.
-        unsafe { IsProcessInJob(member.handle, Some(self.0), &raw mut inside) }.ok()?;
-        inside.as_bool().then_some(member)
+        if unsafe { IsProcessInJob(member.handle, Some(self.0), &raw mut inside) }.is_err() {
+            return Opened::Refused;
+        }
+        if inside.as_bool() { Opened::Member(member) } else { Opened::NotHere }
     }
 
     fn set_limits(&self, limits: JOB_OBJECT_LIMIT) -> Result<(), String> {
@@ -154,6 +171,16 @@ impl Drop for Job {
     }
 }
 
+/// What opening a pid from the job's list gave.
+enum Opened {
+    /// A process of the job, held to be waited on.
+    Member(Member),
+    /// No process of the job under that number: it ended, or the number is another process's now.
+    NotHere,
+    /// A process the system would not open or place in a job - it cannot be confirmed to have ended.
+    Refused,
+}
+
 /// A process of a job, opened to be waited on, closed when the value drops.
 pub(crate) struct Member {
     handle: HANDLE,
@@ -178,6 +205,8 @@ impl Drop for Member {
 
 #[cfg(test)]
 mod tests {
+    use super::Opened;
+
     /// The job lists the process a launcher handed its work to and not the launcher, which has ended:
     /// `cmd.exe` that starts `PING.EXE` with `start` and ends at once, the shape of an installed
     /// Chromium browser.
@@ -190,29 +219,19 @@ mod tests {
         let target = crate::Target { path: &path, args: &args, cwd: None, env: &[], stdio: crate::TargetStdio::Discarded };
         let child = crate::launch_plain(&target).expect("cmd.exe launches");
         assert!(child.wait_exit(5_000).is_some(), "cmd.exe hands over and ends");
-        let handed_to = (0..50)
-            .find_map(|_| {
-                let found = crate::tree::process_entries()
-                    .ok()?
-                    .into_iter()
-                    .find(|e| e.parent == child.pid && e.image.eq_ignore_ascii_case("PING.EXE"))
-                    .map(|e| e.pid);
-                if found.is_none() {
-                    std::thread::sleep(std::time::Duration::from_millis(100));
-                }
-                found
-            })
-            .expect("cmd.exe started ping within five seconds");
+        let handed_to = crate::tree::tests::started_by(child.pid, "PING.EXE").expect("cmd.exe started ping within five seconds");
 
         let listed = child.job.as_ref().expect("the child runs in a job").process_ids();
         child.terminate();
+        let listed = listed.expect("the system lists the job's processes");
         assert!(listed.contains(&handed_to), "the job lists the process it handed over to: {listed:?}");
         assert!(!listed.contains(&child.pid), "and not the launcher, which has ended: {listed:?}");
     }
 
     /// A pid from the job's list can name another process by the time it is opened, so a member is a
     /// process the system says is in the job: the child is, and this test's own process, which is not
-    /// in the job of the child it started, is not.
+    /// in the job of the child it started, is not there. Neither is a number no process has - pid 0,
+    /// which the system never opens - and neither is waited for or counted as unconfirmed.
     #[test]
     fn only_a_process_in_the_job_is_a_member() {
         let system_root = std::env::var("SystemRoot").unwrap_or_else(|_| r"C:\Windows".to_string());
@@ -221,8 +240,11 @@ mod tests {
         let target = crate::Target { path: &path, args: &args, cwd: None, env: &[], stdio: crate::TargetStdio::Discarded };
         let child = crate::launch_plain(&target).expect("ping launches");
         let job = child.job.as_ref().expect("the child runs in a job");
-        assert!(job.open_member(child.pid).is_some(), "the child is in its job");
-        assert!(job.open_member(std::process::id()).is_none(), "this test's own process is not");
+        assert!(matches!(job.open_member(child.pid), Opened::Member(_)), "the child is in its job");
+        assert!(matches!(job.open_member(std::process::id()), Opened::NotHere), "this test's own process is not");
+        assert!(matches!(job.open_member(0), Opened::NotHere), "a number no process has is not there");
+        let (members, unconfirmed) = job.members();
+        assert_eq!((members.len(), unconfirmed), (1, 0), "the child alone, confirmed");
         child.terminate();
     }
 }

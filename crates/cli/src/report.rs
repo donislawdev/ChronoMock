@@ -608,6 +608,9 @@ pub(crate) fn describe_residue(key: &str) -> String {
         "cleanup.chromium_profile_left" => {
             "the temporary Chromium profile could not be removed - delete it by hand if it lingers in your temp folder"
         }
+        "cleanup.chromium_process_left" => {
+            "Chrono Mock could not confirm that the browser it started had closed - if a process of it is still running, end it in Task Manager"
+        }
         "embedded.policy_value_left" => POLICY_VALUE_LEFT,
         _ => "",
     };
@@ -1793,7 +1796,11 @@ mod tests {
     fn cleanup_residue_is_reported_unknown_key_verbatim() {
         let r = SessionReport {
             session_verdict: Some(("works".into(), "chromium.contexts_covered".into(), 1)),
-            residue: vec!["cleanup.chromium_profile_left".into(), "cleanup.something_new".into()],
+            residue: vec![
+                "cleanup.chromium_profile_left".into(),
+                "cleanup.chromium_process_left".into(),
+                "cleanup.something_new".into(),
+            ],
             cdp: true,
             ..empty_report()
         };
@@ -1801,6 +1808,8 @@ mod tests {
         assert!(out.contains("not fully cleaned up"), "got:\n{out}");
         assert!(out.contains("temporary Chromium profile"), "got:\n{out}");
         assert!(out.contains("cleanup.chromium_profile_left"), "got:\n{out}");
+        assert!(out.contains("could not confirm that the browser it started had closed"), "got:\n{out}");
+        assert!(out.contains("end it in Task Manager (cleanup.chromium_process_left)"), "got:\n{out}");
         // Same rule as warnings: a key we cannot name is still shown, never swallowed.
         assert!(out.contains("cleanup.something_new"), "got:\n{out}");
     }
