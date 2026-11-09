@@ -22703,5 +22703,62 @@
     "match": "method",
     "build": "",
     "notHere": ""
+  },
+  {
+    "name": "handed over the job lists no process",
+    "edits": [
+      {
+        "file": "crates/mech/src/job.rs",
+        "from": "        self.process_ids().into_iter().filter_map(|pid| self.open_member(pid)).collect()\n",
+        "to": "        Vec::new()\n"
+      }
+    ],
+    "runner": "rust",
+    "package": "chrono-mech",
+    "target": [
+      "--lib"
+    ],
+    "test": "tests::the_wait_covers_the_process_a_launcher_handed_over_to",
+    "match": "exact",
+    "build": "",
+    "notHere": ""
+  },
+  {
+    "name": "handed over any process is a member",
+    "edits": [
+      {
+        "file": "crates/mech/src/job.rs",
+        "from": "        inside.as_bool().then_some(member)\n",
+        "to": "        Some(member)\n"
+      }
+    ],
+    "runner": "rust",
+    "package": "chrono-mech",
+    "target": [
+      "--lib"
+    ],
+    "test": "job::tests::only_a_process_in_the_job_is_a_member",
+    "match": "exact",
+    "build": "",
+    "notHere": ""
+  },
+  {
+    "name": "handed over the wait is for the launcher alone",
+    "edits": [
+      {
+        "file": "crates/mech/src/lib.rs",
+        "from": "        members.iter().fold(launched, |all, member| member.ended_by(deadline) && all)\n",
+        "to": "        launched\n"
+      }
+    ],
+    "runner": "rust",
+    "package": "chrono-mech",
+    "target": [
+      "--lib"
+    ],
+    "test": "tests::the_wait_covers_the_process_a_launcher_handed_over_to",
+    "match": "exact",
+    "build": "",
+    "notHere": ""
   }
 ]

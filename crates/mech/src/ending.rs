@@ -323,7 +323,7 @@ fn still_running(root: HANDLE, family: &[Known], opened: &Opened, images: &HashM
 }
 
 /// Whether the process is still running when `deadline` comes, waiting for it until then.
-fn waits_out(handle: HANDLE, deadline: Instant) -> bool {
+pub(crate) fn waits_out(handle: HANDLE, deadline: Instant) -> bool {
     let left_ms = deadline.saturating_duration_since(Instant::now()).as_millis().min(u128::from(u32::MAX)) as u32;
     // SAFETY: a process handle this module or its caller holds open until it returns.
     unsafe { WaitForSingleObject(handle, left_ms) == WAIT_TIMEOUT }

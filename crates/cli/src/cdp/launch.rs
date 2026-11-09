@@ -125,11 +125,12 @@ impl LaunchedChromium {
             return Vec::new();
         }
         self.cleaned = true;
-        // The whole job, not only the process we started. Some launchers exit after handing off to
-        // another process - the wait loop above says so in as many words, because that shape still
-        // opens the debug port - and ending a launcher that already exited ends nothing.
-        self.child.terminate();
-        let _ = self.child.wait_exit(PROCESS_END_WAIT_MS);
+        // The whole job, not only the process we started, and the wait is for all of it. Some launchers
+        // exit after handing off to another process - an installed Chromium browser does it as it
+        // starts - and ending or waiting for a launcher that already exited ends and waits for nothing:
+        // the profile was then removed while the browser was still closing its files, and left behind
+        // in about one session of eight (measured 2026-11-09).
+        let _ = self.child.terminate_and_wait(PROCESS_END_WAIT_MS);
         remove_profile(&self.user_data_dir)
     }
 }
@@ -199,8 +200,9 @@ impl Drop for LaunchedChromium {
     }
 }
 
-/// How long the cleanup waits for the browser to end once its job has been told to end it, in real
-/// milliseconds. The profile can only be removed once the processes holding it are gone.
+/// How long the cleanup waits for the browser and every process of its job to end once the job has
+/// been told to end them, in real milliseconds. The profile can only be removed once the processes
+/// holding it are gone.
 const PROCESS_END_WAIT_MS: u32 = 2_000;
 
 /// The switches that stop a Chromium engine slowing the timers of a minimized, hidden or covered
