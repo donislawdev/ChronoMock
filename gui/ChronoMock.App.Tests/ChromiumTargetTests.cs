@@ -30,6 +30,99 @@ public class ChromiumTargetTests
         }
     }
 
+    /// <summary>
+    /// An installed Chromium browser, laid out as two installed browsers were measured (2026-11-09): the
+    /// exe alone beside a folder named after its version, holding the runtime and the library the exe
+    /// loads - Chromium's own chrome.dll, or one named after the exe. An update can leave the previous
+    /// version's folder beside the new one. The same cases as the CLI's test.
+    /// </summary>
+    [Fact]
+    public void An_installed_browser_is_told_by_the_version_folder_beside_it()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "chrono-gui-browser-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var chromium = Exe(dir, "chrome.exe");
+            FolderWith(dir, "150.0.1234.56", "icudtl.dat", "v8_context_snapshot.bin", "chrome.dll");
+            Assert.True(ChromiumTarget.IsChromium(chromium), "Chromium's own library");
+
+            var otherDir = Path.Combine(dir, "other");
+            var browser = Exe(otherDir, "browser.exe");
+            FolderWith(otherDir, "150.0.2345.67", "icudtl.dat");
+            FolderWith(otherDir, "151.0.2400.10", "icudtl.dat", "snapshot_blob.bin", "browser.dll");
+            Assert.True(ChromiumTarget.IsChromium(browser), "a library named after the exe, an old version folder left beside");
+        }
+        finally
+        {
+            Directory.Delete(dir, true);
+        }
+    }
+
+    /// <summary>
+    /// What does not make a version folder a browser: the runtime without the library the exe loads, a
+    /// folder named like an updater's, the library without the runtime, a file with a version's name, or
+    /// a library named after neither Chromium nor the exe.
+    /// </summary>
+    [Theory]
+    [InlineData("app.exe", "1.2.3.4", "icudtl.dat|v8_context_snapshot.bin")]
+    [InlineData("chrome.exe", "app-1.2.3", "icudtl.dat|v8_context_snapshot.bin|chrome.dll")]
+    [InlineData("chrome.exe", "150.0.1234.56", "chrome.dll")]
+    [InlineData("chrome.exe", "150.0.1234.56", "")]
+    [InlineData("app.exe", "1.2.3.4", "icudtl.dat|snapshot_blob.bin|libcef.dll")]
+    public void A_version_folder_is_a_browser_only_with_the_runtime_and_the_library(string exeName, string folder, string files)
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "chrono-gui-browser-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var exe = Exe(dir, exeName);
+            if (files.Length == 0)
+            {
+                File.WriteAllText(Path.Combine(dir, folder), "x");
+            }
+            else
+            {
+                FolderWith(dir, folder, files.Split('|'));
+            }
+
+            Assert.False(ChromiumTarget.IsChromium(exe));
+        }
+        finally
+        {
+            Directory.Delete(dir, true);
+        }
+    }
+
+    [Theory]
+    [InlineData("150.0.1234.56", true)]
+    [InlineData("1.2", true)]
+    [InlineData("150", false)]
+    [InlineData("app-1.2.3", false)]
+    [InlineData("1..2", false)]
+    [InlineData(".1.2", false)]
+    [InlineData("1.2.", false)]
+    [InlineData("1.2a.3", false)]
+    [InlineData("", false)]
+    public void A_version_name_is_digits_and_dots(string name, bool expected) =>
+        Assert.Equal(expected, ChromiumTarget.IsVersionName(name));
+
+    private static string Exe(string dir, string name)
+    {
+        Directory.CreateDirectory(dir);
+        var exe = Path.Combine(dir, name);
+        File.WriteAllText(exe, "x");
+        return exe;
+    }
+
+    private static void FolderWith(string dir, string name, params string[] files)
+    {
+        var folder = Path.Combine(dir, name);
+        Directory.CreateDirectory(folder);
+        foreach (var file in files)
+        {
+            File.WriteAllText(Path.Combine(folder, file), "x");
+        }
+    }
+
     [Fact]
     public void A_plain_folder_is_not_chromium()
     {

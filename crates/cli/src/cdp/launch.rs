@@ -12,14 +12,49 @@ use chrono_mech::{PlainChild, Target, TargetStdio};
 /// Whether the target exe looks like a Chromium/Electron app: its folder ships the Chromium runtime
 /// (`icudtl.dat` plus a V8 snapshot). Electron additionally carries `resources/app.asar`, but the
 /// runtime files alone are a strong signature that is stable across Chromium/Electron versions.
+///
+/// An installed Chromium browser keeps the runtime in a folder named after its version beside the exe
+/// (`150.0.1234.56\` beside `chrome.exe`, measured on two installed browsers), together with the
+/// library the exe loads the browser from: Chromium's own `chrome.dll`, or one named after the exe
+/// (`browser.dll` beside `browser.exe`). Looked for only beside the exe, so such a browser ran in a
+/// native session: it left the session within seconds and went on on the real clock while the report
+/// said `works`. The library is part of the signature, so an application that keeps a Chromium runtime
+/// of its own in a version folder is not taken for one.
 pub fn is_chromium_target(target: &str) -> bool {
-    let Some(dir) = Path::new(target).parent() else {
+    let exe = Path::new(target);
+    let Some(dir) = exe.parent() else {
         return false;
     };
-    let has_icu = dir.join("icudtl.dat").exists();
-    let has_snapshot =
-        dir.join("v8_context_snapshot.bin").exists() || dir.join("snapshot_blob.bin").exists();
-    has_icu && has_snapshot
+    let holds_runtime = |folder: &Path| {
+        folder.join("icudtl.dat").exists()
+            && (folder.join("v8_context_snapshot.bin").exists() || folder.join("snapshot_blob.bin").exists())
+    };
+    if holds_runtime(dir) {
+        return true;
+    }
+    let own_library = exe.file_stem().map(|stem| format!("{}.dll", stem.to_string_lossy()));
+    version_folders(dir).any(|folder| {
+        holds_runtime(&folder)
+            && (folder.join("chrome.dll").exists() || own_library.as_ref().is_some_and(|dll| folder.join(dll).exists()))
+    })
+}
+
+/// The folders in `dir` named after a version - digits and dots only, as `150.0.1234.56`. A folder
+/// that cannot be read has none.
+fn version_folders(dir: &Path) -> impl Iterator<Item = PathBuf> {
+    std::fs::read_dir(dir)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter(|entry| {
+            entry.file_type().is_ok_and(|kind| kind.is_dir()) && entry.file_name().to_str().is_some_and(is_version_name)
+        })
+        .map(|entry| entry.path())
+}
+
+/// Digits in at least two parts split by dots, every part non-empty: `150.0.1234.56`, not `app-1.2.3`.
+fn is_version_name(name: &str) -> bool {
+    name.contains('.') && name.split('.').all(|part| !part.is_empty() && part.bytes().all(|b| b.is_ascii_digit()))
 }
 
 /// Whether a Chromium target is an Electron application: its `resources` folder holds the packed app
@@ -654,6 +689,77 @@ mod tests {
         std::fs::write(&exe, b"x").unwrap();
         assert!(is_chromium_target(exe.to_str().unwrap()));
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// A folder `name` under `dir` holding `files`, each empty.
+    fn folder_with(dir: &Path, name: &str, files: &[&str]) {
+        let folder = dir.join(name);
+        std::fs::create_dir_all(&folder).unwrap();
+        for file in files {
+            std::fs::write(folder.join(file), b"x").unwrap();
+        }
+    }
+
+    /// An installed Chromium browser, laid out as two installed browsers were measured (2026-11-09): the
+    /// exe alone beside a folder named after its version, which holds the runtime and the library the exe
+    /// loads - Chromium's own `chrome.dll`, or one named after the exe. An update can leave the previous
+    /// version's folder beside the new one, and either one is enough.
+    #[test]
+    fn an_installed_browser_is_told_by_the_version_folder_beside_it() {
+        let dir = unique_temp_dir();
+        std::fs::create_dir_all(&dir).unwrap();
+        let chromium = dir.join("chrome.exe");
+        std::fs::write(&chromium, b"x").unwrap();
+        folder_with(&dir, "150.0.1234.56", &["icudtl.dat", "v8_context_snapshot.bin", "chrome.dll"]);
+        assert!(is_chromium_target(chromium.to_str().unwrap()), "Chromium's own library");
+
+        let other_dir = dir.join("other");
+        std::fs::create_dir_all(&other_dir).unwrap();
+        let browser = other_dir.join("browser.exe");
+        std::fs::write(&browser, b"x").unwrap();
+        folder_with(&other_dir, "150.0.2345.67", &["icudtl.dat"]);
+        folder_with(&other_dir, "151.0.2400.10", &["icudtl.dat", "snapshot_blob.bin", "browser.dll"]);
+        assert!(is_chromium_target(browser.to_str().unwrap()), "a library named after the exe, an old version folder left beside");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// What does not make a version folder a browser: the runtime without the library the exe loads (an
+    /// application that keeps a Chromium runtime of its own), a folder named like an updater's
+    /// (`app-1.2.3`), the library without the runtime, a file with a version's name, or a library named
+    /// after neither Chromium nor the exe.
+    #[test]
+    fn a_version_folder_is_a_browser_only_with_the_runtime_and_the_library() {
+        let cases: [(&str, &str, &[&str]); 5] = [
+            ("app.exe", "1.2.3.4", &["icudtl.dat", "v8_context_snapshot.bin"]),
+            ("chrome.exe", "app-1.2.3", &["icudtl.dat", "v8_context_snapshot.bin", "chrome.dll"]),
+            ("chrome.exe", "150.0.1234.56", &["chrome.dll"]),
+            ("chrome.exe", "150.0.1234.56", &[]),
+            ("app.exe", "1.2.3.4", &["icudtl.dat", "snapshot_blob.bin", "libcef.dll"]),
+        ];
+        let root = unique_temp_dir();
+        for (index, (exe_name, folder, files)) in cases.iter().enumerate() {
+            let dir = root.join(index.to_string());
+            std::fs::create_dir_all(&dir).unwrap();
+            let exe = dir.join(exe_name);
+            std::fs::write(&exe, b"x").unwrap();
+            if files.is_empty() {
+                std::fs::write(dir.join(folder), b"x").unwrap();
+            } else {
+                folder_with(&dir, folder, files);
+            }
+            assert!(!is_chromium_target(exe.to_str().unwrap()), "{exe_name} beside {folder} holding {files:?}");
+        }
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn a_version_name_is_digits_and_dots() {
+        for name in ["150.0.1234.56", "1.2", "10.0.0.0"] {
+            assert!(is_version_name(name), "{name}");
+        }
+        for name in ["156", "app-1.2.3", "1..2", ".1.2", "1.2.", "1.2a.3", ""] {
+            assert!(!is_version_name(name), "{name}");
+        }
     }
 
     #[test]

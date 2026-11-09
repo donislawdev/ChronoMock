@@ -22612,5 +22612,96 @@
     "match": "exact",
     "build": "",
     "notHere": ""
+  },
+  {
+    "name": "installed browser the version folder is not looked in",
+    "edits": [
+      {
+        "file": "crates/cli/src/cdp/launch.rs",
+        "from": "    version_folders(dir).any(|folder| {\n",
+        "to": "    false && version_folders(dir).any(|folder| {\n"
+      }
+    ],
+    "runner": "rust",
+    "package": "chrono-cli",
+    "target": [
+      "--bins"
+    ],
+    "test": "cdp::launch::tests::an_installed_browser_is_told_by_the_version_folder_beside_it",
+    "match": "exact",
+    "build": "",
+    "notHere": ""
+  },
+  {
+    "name": "installed browser the runtime alone is enough",
+    "edits": [
+      {
+        "file": "crates/cli/src/cdp/launch.rs",
+        "from": "            && (folder.join(\"chrome.dll\").exists() || own_library",
+        "to": "            && (true || folder.join(\"chrome.dll\").exists() || own_library"
+      }
+    ],
+    "runner": "rust",
+    "package": "chrono-cli",
+    "target": [
+      "--bins"
+    ],
+    "test": "cdp::launch::tests::a_version_folder_is_a_browser_only_with_the_runtime_and_the_library",
+    "match": "exact",
+    "build": "",
+    "notHere": ""
+  },
+  {
+    "name": "installed browser any folder name is a version",
+    "edits": [
+      {
+        "file": "crates/cli/src/cdp/launch.rs",
+        "from": "    name.contains('.') && name.split('.').all(",
+        "to": "    true || name.contains('.') && name.split('.').all("
+      }
+    ],
+    "runner": "rust",
+    "package": "chrono-cli",
+    "target": [
+      "--bins"
+    ],
+    "test": "cdp::launch::tests::a_version_folder_is_a_browser_only_with_the_runtime_and_the_library",
+    "match": "exact",
+    "build": "",
+    "notHere": ""
+  },
+  {
+    "name": "installed browser the window does not look in the version folder",
+    "edits": [
+      {
+        "file": "gui/ChronoMock.App/Session/ChromiumTarget.cs",
+        "from": "        foreach (var folder in VersionFolders(dir))\n",
+        "to": "        foreach (var folder in new List<string>())\n"
+      }
+    ],
+    "runner": "cs",
+    "package": "gui/ChronoMock.App.Tests",
+    "target": [],
+    "test": "ChronoMock.App.Tests.ChromiumTargetTests.An_installed_browser_is_told_by_the_version_folder_beside_it",
+    "match": "method",
+    "build": "",
+    "notHere": ""
+  },
+  {
+    "name": "installed browser the window takes the runtime alone",
+    "edits": [
+      {
+        "file": "gui/ChronoMock.App/Session/ChromiumTarget.cs",
+        "from": "                && (File.Exists(Path.Combine(folder, \"chrome.dll\")) || File.Exists(Path.Combine(folder, ownLibrary))))\n",
+        "to": "                && (true || File.Exists(Path.Combine(folder, \"chrome.dll\")) || File.Exists(Path.Combine(folder, ownLibrary))))\n"
+      }
+    ],
+    "runner": "cs",
+    "package": "gui/ChronoMock.App.Tests",
+    "target": [],
+    "test": "ChronoMock.App.Tests.ChromiumTargetTests.A_version_folder_is_a_browser_only_with_the_runtime_and_the_library",
+    "match": "method",
+    "build": "",
+    "notHere": ""
   }
 ]

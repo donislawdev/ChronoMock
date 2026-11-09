@@ -1,9 +1,9 @@
 //! Opt-in end-to-end CDP conformance (RELEASE-005).
 //!
-//! No portable CDP target ships with the repo. The `is_chromium_target` detection keys off an
-//! Electron/Chromium app's runtime files (`icudtl.dat` + a V8 snapshot) sitting BESIDE the exe, which an
-//! installed browser does not satisfy - browsers keep those in a versioned subfolder, not next to the
-//! launcher - and some hardened Electron apps refuse the remote-debugging port outright. So there
+//! No portable CDP target ships with the repo. The `is_chromium_target` detection keys off the Chromium
+//! runtime files (`icudtl.dat` + a V8 snapshot) beside the exe, or, as an installed Chromium browser keeps
+//! them, in a folder named after its version beside the exe together with the library the exe loads -
+//! and some hardened Electron apps refuse the remote-debugging port outright. So there
 //! is no fixed target a CI job could rely on. This test is therefore PARAMETERISED: point it at a permissive
 //! Chromium/Electron target and it drives the shipped `chrono` binary end to end (launch -> attach -> shim
 //! -> the page's own JS `Date`), asserting the page reads the faked clock rather than the real one.
@@ -36,10 +36,10 @@ fn cdp_shim_fakes_the_page_clock() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
 
-    // The target was not Chromium-shaped (an installed browser, or the wrong exe): skip, do not fail - the
-    // runner simply pointed at a target this mode cannot drive.
+    // The target was not Chromium-shaped (the wrong exe): skip, do not fail - the runner simply pointed at
+    // a target this mode cannot drive.
     if stdout.contains("not a chromium target") {
-        eprintln!("'{target}' is not a Chromium/Electron app (runtime files not beside the exe) - skipping");
+        eprintln!("'{target}' is not a Chromium/Electron app (no Chromium runtime beside the exe or in its version folder) - skipping");
         return;
     }
 
