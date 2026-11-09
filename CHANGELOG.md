@@ -19,6 +19,11 @@ Notable changes to Chrono Mock, newest first. The format follows
   showed nothing and `chrono calc --help > usage.txt` wrote an empty file. The usage you ask for now goes
   to standard output, still with exit code 0. The usage printed under a refused command line stays on
   standard error, and standard output stays empty then.
+- **An installed Chromium browser runs in Chromium mode.** A browser built on Chromium and installed on
+  Windows keeps the engine in a folder named after its version, beside its program. Chrono Mock looked
+  for the engine only beside the program, so it started such a browser in a native session: the browser
+  left the session within seconds and went on on the real clock, while the report said `works`. The
+  command line and the window now also look in that folder and start the browser in Chromium mode.
 
 ## [0.5.0] - 2026-10-28
 
