@@ -8,4 +8,4 @@
 #
 # Installed only on a runner and never shipped, which is why the licence gate leaves this file out
 # (CI_ONLY_MANIFESTS in .github/scripts/dependency_gate.py).
-semgrep==1.182.1
+semgrep==1.183.0
