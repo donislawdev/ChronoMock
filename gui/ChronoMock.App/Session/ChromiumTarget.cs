@@ -15,7 +15,10 @@ internal static class ChromiumTarget
     /// a version-stable signature, mirroring the CLI so the two agree on what "Chromium" means. An installed
     /// Chromium browser keeps the runtime in a folder named after its version beside the exe, together with
     /// the library the exe loads (Chromium's own chrome.dll, or one named after the exe, as browser.dll
-    /// beside browser.exe), and is one too.</summary>
+    /// beside browser.exe), and is one too. So is an Electron application that keeps the runtime in a folder
+    /// beside the exe together with its packed application (resources\app or resources\app.asar) and no
+    /// program of its own in that folder - a starter keeping the application in a versioned folder has its
+    /// program there, and is not.</summary>
     public static bool IsChromium(string targetPath)
     {
         var dir = Path.GetDirectoryName(targetPath);
@@ -30,16 +33,11 @@ internal static class ChromiumTarget
         }
 
         var ownLibrary = Path.GetFileNameWithoutExtension(targetPath) + ".dll";
-        foreach (var folder in VersionFolders(dir))
-        {
-            if (HoldsRuntime(folder)
-                && (File.Exists(Path.Combine(folder, "chrome.dll")) || File.Exists(Path.Combine(folder, ownLibrary))))
-            {
-                return true;
-            }
-        }
-
-        return false;
+        var withRuntime = Subfolders(dir).Where(HoldsRuntime).ToList();
+        var installed = withRuntime.Any(folder =>
+            IsVersionName(Path.GetFileName(folder))
+            && (File.Exists(Path.Combine(folder, "chrome.dll")) || File.Exists(Path.Combine(folder, ownLibrary))));
+        return installed || withRuntime.Any(folder => HoldsPackedApp(folder) && HoldsNoProgram(folder));
     }
 
     private static bool HoldsRuntime(string folder) =>
@@ -47,15 +45,35 @@ internal static class ChromiumTarget
         && (File.Exists(Path.Combine(folder, "v8_context_snapshot.bin"))
             || File.Exists(Path.Combine(folder, "snapshot_blob.bin")));
 
-    /// <summary>The folders in <paramref name="dir"/> named after a version - digits and dots only, as
-    /// 150.0.1234.56. A folder that cannot be read has none.</summary>
-    private static List<string> VersionFolders(string dir)
+    /// <summary>Whether a folder holds an Electron application in its resources, packed (app.asar) or not
+    /// (app).</summary>
+    private static bool HoldsPackedApp(string folder)
+    {
+        var resources = Path.Combine(folder, "resources");
+        return File.Exists(Path.Combine(resources, "app.asar")) || Directory.Exists(Path.Combine(resources, "app"));
+    }
+
+    /// <summary>Whether a folder holds no program of its own: no .exe directly in it, whatever its subfolders
+    /// hold. A folder that cannot be read is not known to hold none.</summary>
+    private static bool HoldsNoProgram(string folder)
     {
         try
         {
-            return Directory.EnumerateDirectories(dir)
-                .Where(folder => IsVersionName(Path.GetFileName(folder)))
-                .ToList();
+            return !Directory.EnumerateFiles(folder)
+                .Any(file => string.Equals(Path.GetExtension(file), ".exe", StringComparison.OrdinalIgnoreCase));
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>The folders in <paramref name="dir"/>. A folder that cannot be read has none.</summary>
+    private static List<string> Subfolders(string dir)
+    {
+        try
+        {
+            return Directory.EnumerateDirectories(dir).ToList();
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {

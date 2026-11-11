@@ -16,6 +16,10 @@ pub enum ChromiumLayout {
     Beside,
     /// In a folder named after its version beside the exe, as an installed Chromium browser keeps it.
     Installed,
+    /// In a folder beside the exe together with the packed application, and no program in that folder:
+    /// an Electron application whose installer keeps each version of it in a folder of its own, with
+    /// the exe beside the folder being Electron itself.
+    Bundled,
 }
 
 /// Whether the target exe looks like a Chromium/Electron app - see [`chromium_layout`].
@@ -34,34 +38,63 @@ pub fn is_chromium_target(target: &str) -> bool {
 /// native session: it left the session within seconds and went on on the real clock while the report
 /// said `works`. The library is part of the signature, so an application that keeps a Chromium runtime
 /// of its own in a version folder is not taken for one.
+///
+/// An Electron application can keep its runtime in a folder beside the exe as well, named after the
+/// build rather than a version, with its packed application in that folder's `resources` and no program
+/// of its own there (`Bundled`). Its exe was taken for a native program and handed its work to the copy
+/// already running, outside the session (measured 2026-11-10). A starter that keeps the application in a
+/// versioned folder of its own has the application's program in that folder, so it is not one: it stays
+/// a native target, and the session follows the application it starts (ADR-16).
 pub fn chromium_layout(target: &str) -> Option<ChromiumLayout> {
     let exe = Path::new(target);
     let dir = exe.parent()?;
-    let holds_runtime = |folder: &Path| {
-        folder.join("icudtl.dat").exists()
-            && (folder.join("v8_context_snapshot.bin").exists() || folder.join("snapshot_blob.bin").exists())
-    };
     if holds_runtime(dir) {
         return Some(ChromiumLayout::Beside);
     }
     let own_library = exe.file_stem().map(|stem| format!("{}.dll", stem.to_string_lossy()));
-    let installed = version_folders(dir).any(|folder| {
-        holds_runtime(&folder)
+    let with_runtime: Vec<PathBuf> = subfolders(dir).filter(|folder| holds_runtime(folder)).collect();
+    let installed = with_runtime.iter().any(|folder| {
+        folder.file_name().and_then(|name| name.to_str()).is_some_and(is_version_name)
             && (folder.join("chrome.dll").exists() || own_library.as_ref().is_some_and(|dll| folder.join(dll).exists()))
     });
-    installed.then_some(ChromiumLayout::Installed)
+    if installed {
+        return Some(ChromiumLayout::Installed);
+    }
+    let bundled = with_runtime.iter().any(|folder| holds_packed_app(folder) && holds_no_program(folder));
+    bundled.then_some(ChromiumLayout::Bundled)
 }
 
-/// The folders in `dir` named after a version - digits and dots only, as `150.0.1234.56`. A folder
-/// that cannot be read has none.
-fn version_folders(dir: &Path) -> impl Iterator<Item = PathBuf> {
+/// Whether a folder ships the Chromium runtime: `icudtl.dat` and a V8 snapshot.
+fn holds_runtime(folder: &Path) -> bool {
+    folder.join("icudtl.dat").exists()
+        && (folder.join("v8_context_snapshot.bin").exists() || folder.join("snapshot_blob.bin").exists())
+}
+
+/// Whether a folder holds an Electron application in its `resources`, packed (`app.asar`) or not (`app`).
+fn holds_packed_app(folder: &Path) -> bool {
+    let resources = folder.join("resources");
+    resources.join("app.asar").exists() || resources.join("app").is_dir()
+}
+
+/// Whether a folder holds no program of its own: no `.exe` directly in it, whatever its subfolders hold.
+/// A folder that cannot be read is not known to hold none.
+fn holds_no_program(folder: &Path) -> bool {
+    let Ok(entries) = std::fs::read_dir(folder) else {
+        return false;
+    };
+    !entries.flatten().any(|entry| {
+        entry.file_type().is_ok_and(|kind| kind.is_file())
+            && Path::new(&entry.file_name()).extension().is_some_and(|ext| ext.eq_ignore_ascii_case("exe"))
+    })
+}
+
+/// The folders in `dir`. A folder that cannot be read has none.
+fn subfolders(dir: &Path) -> impl Iterator<Item = PathBuf> {
     std::fs::read_dir(dir)
         .into_iter()
         .flatten()
         .flatten()
-        .filter(|entry| {
-            entry.file_type().is_ok_and(|kind| kind.is_dir()) && entry.file_name().to_str().is_some_and(is_version_name)
-        })
+        .filter(|entry| entry.file_type().is_ok_and(|kind| kind.is_dir()))
         .map(|entry| entry.path())
 }
 
@@ -72,14 +105,17 @@ fn is_version_name(name: &str) -> bool {
 
 /// Whether a Chromium target is an Electron application: its `resources` folder holds the packed app
 /// (`app.asar`), the unpacked one (`app`), or Electron's own default app (`default_app.asar`, the bare
-/// runtime). Its main process then runs JavaScript in Node, outside every page the session reaches, on
-/// the real clock (R4-S19) - the report says so.
+/// runtime), beside the exe or in the folder the runtime is kept in (`ChromiumLayout::Bundled`). Its
+/// main process then runs JavaScript in Node, outside every page the session reaches, on the real clock
+/// (R4-S19) - the report says so.
 pub fn is_electron_target(target: &str) -> bool {
     let Some(dir) = Path::new(target).parent() else {
         return false;
     };
     let resources = dir.join("resources");
-    resources.join("app.asar").exists() || resources.join("app").is_dir() || resources.join("default_app.asar").exists()
+    resources.join("default_app.asar").exists()
+        || holds_packed_app(dir)
+        || chromium_layout(target) == Some(ChromiumLayout::Bundled)
 }
 
 /// A Chromium target we launched: an isolated profile and a debug port, both owned by us. The child
@@ -669,6 +705,34 @@ mod tests {
             std::fs::write(dir.join(runtime), b"x").unwrap();
         }
         assert_eq!(chromium_layout(installed.to_str().unwrap()), Some(ChromiumLayout::Beside), "beside wins");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// An Electron application that keeps its runtime and its packed application in a folder beside the
+    /// exe, with no program in that folder, is `Bundled`, and an Electron application. A folder with a
+    /// program of its own - a starter keeping the application in a versioned folder - is not, nor one
+    /// without the application. A program deeper down does not count, and the folder's name is no part
+    /// of it.
+    #[test]
+    fn a_runtime_kept_with_the_application_in_a_folder_beside_the_exe_is_bundled() {
+        let dir = unique_temp_dir();
+        std::fs::create_dir_all(&dir).unwrap();
+        let exe = dir.join("app.exe");
+        std::fs::write(&exe, b"x").unwrap();
+        let target = exe.to_str().unwrap();
+        folder_with(&dir, "0123abcdef", &["icudtl.dat", "snapshot_blob.bin"]);
+        let bundle = dir.join("0123abcdef");
+        assert_eq!(chromium_layout(target), None, "a runtime without the application");
+        std::fs::create_dir_all(bundle.join("resources").join("app")).unwrap();
+        std::fs::create_dir_all(bundle.join("tools")).unwrap();
+        std::fs::write(bundle.join("tools").join("updater.exe"), b"x").unwrap();
+        assert_eq!(chromium_layout(target), Some(ChromiumLayout::Bundled));
+        assert!(is_electron_target(target));
+        let arguments = chromium_arguments(Path::new("C:/temp/profile"), chromium_layout(target), &[]);
+        assert!(!arguments.iter().any(|a| a == NO_FIRST_RUN), "{arguments:?}");
+        std::fs::write(bundle.join("App.EXE"), b"x").unwrap();
+        assert_eq!(chromium_layout(target), None, "a folder with a program of its own is a starter's");
+        assert!(!is_electron_target(target));
         std::fs::remove_dir_all(&dir).ok();
     }
 

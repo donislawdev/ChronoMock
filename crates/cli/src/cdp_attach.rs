@@ -581,7 +581,7 @@ impl Attacher {
         // A second session of this target announced meanwhile is let go as it comes: the target runs
         // nothing, the shim included, until every session that holds it paused releases it.
         self.client.attaching(Some((&tid, &sid)));
-        let put = self.put_shim_in(&sid, &ty, origin, deadline);
+        let put = self.put_shim_in(&sid, &ty, waiting, origin, deadline);
         self.client.attaching(None);
         let Some(injected) = put else {
             // Covered by the native mechanism already: it has a row of its own under its pid, and a
@@ -614,8 +614,8 @@ impl Attacher {
                 self.cover(index, known, late);
             }
             Err(e) => {
-                // The shim did not take, and the injection stopped before its own resume call: let
-                // the context run unshimmed rather than paused, and count it as uncovered - and say
+                // The shim did not take, and the injection may have stopped before its own resume
+                // call: let the context run unshimmed rather than paused, and count it as uncovered - and say
                 // why, the text the target's engine gave being cleaned at its source (R5-D6).
                 self.failed += 1;
                 self.say("a page or worker could not take the time shim", &e);
@@ -625,8 +625,10 @@ impl Attacher {
     }
 
     /// Put the shim into the context of session `sid`, by `deadline`: what the injection left, or `None`
-    /// when the context was asked first which clock it reads and reads the session's already.
-    fn put_shim_in(&mut self, sid: &str, ty: &str, origin: ShimOrigin, deadline: Instant) -> Option<io::Result<cdp::Injected>> {
+    /// when the context was asked first which clock it reads and reads the session's already. `waiting`:
+    /// auto-attach delivered it paused on start, and a page so paused may answer nothing until it is
+    /// released (see [`cdp::inject_page`]).
+    fn put_shim_in(&mut self, sid: &str, ty: &str, waiting: bool, origin: ShimOrigin, deadline: Instant) -> Option<io::Result<cdp::Injected>> {
         if self.probe_clock && self.reads_session_clock_natively(sid, origin, deadline) {
             return None;
         }
@@ -635,7 +637,7 @@ impl Attacher {
         Some(if cdp::is_worker(ty) {
             cdp::inject_worker(&mut self.client, sid, &shim, zone.as_deref(), deadline)
         } else {
-            cdp::inject_page(&mut self.client, sid, &shim, zone.as_deref(), deadline)
+            cdp::inject_page(&mut self.client, sid, &shim, zone.as_deref(), waiting, deadline)
         })
     }
 
@@ -1192,6 +1194,56 @@ mod tests {
         let mut next = 0;
         assert_eq!(attacher.attach_existing(origin, &mut next, Instant::now() + Duration::from_secs(2)).unwrap(), 1);
         assert_eq!(attacher.failed(), 1, "the one it could not attach to");
+        drop(attacher);
+        drop(browser);
+    }
+
+    /// A page auto-attach delivers paused on start, before its first document, answers nothing until
+    /// it is released (measured on an Electron application whose window opened after the session armed
+    /// auto-attach). The attacher tells the injection the page is paused, so it is released with its
+    /// shim and covered, not waited for until the deadline and counted as unreached.
+    #[test]
+    fn a_page_delivered_paused_on_start_is_covered_though_it_answers_only_once_released() {
+        let mut held = Vec::new();
+        let (port, browser) = crate::cdp::fake_browser_holding(move |request| {
+            let id = request["id"].clone();
+            let session = request["sessionId"].as_str().unwrap_or("").to_string();
+            let answer = match request["method"].as_str().unwrap_or("") {
+                "Target.getTargets" => {
+                    let event = json!({
+                        "method": "Target.attachedToTarget",
+                        "params": { "sessionId": "S-P", "targetInfo": { "targetId": "T-P", "type": "page", "url": "" }, "waitingForDebugger": true }
+                    });
+                    return vec![(id, json!({ "targetInfos": [] })), (serde_json::Value::Null, event)];
+                }
+                "Page.addScriptToEvaluateOnNewDocument" => json!({ "identifier": "h1" }),
+                "Runtime.evaluate" => json!({ "result": { "value": "already" } }),
+                "Runtime.runIfWaitingForDebugger" if session == "S-P" => {
+                    let mut now = std::mem::take(&mut held);
+                    now.push((id, json!({})));
+                    return now;
+                }
+                _ => json!({}),
+            };
+            if session == "S-P" {
+                held.push((id, answer));
+                Vec::new()
+            } else {
+                vec![(id, answer)]
+            }
+        });
+        let ws = crate::cdp::WsClient::connect("127.0.0.1", port, "/", Instant::now() + Duration::from_secs(5)).unwrap();
+        let mut attacher = Attacher::over(cdp::CdpClient::from_ws(ws), port);
+        attacher.set_budgets(Duration::from_millis(20), Duration::from_secs(2));
+        let origin = ShimOrigin { fake0: 0, real0: 0, mult: 1, dur: 1, scheduled: None };
+        let mut next = 0;
+        attacher.attach_existing(origin, &mut next, Instant::now() + Duration::from_secs(2)).unwrap();
+        for _ in 0..10 {
+            attacher.pump(origin, &mut next);
+        }
+        let live: Vec<&str> = attacher.contexts().iter().map(|c| c.session_id.as_str()).collect();
+        assert_eq!(live, vec!["S-P"], "the paused page is covered");
+        assert_eq!(attacher.failed(), 0, "and not counted as unreached");
         drop(attacher);
         drop(browser);
     }

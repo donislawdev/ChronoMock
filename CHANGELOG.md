@@ -57,6 +57,23 @@ Notable changes to Chrono Mock, newest first. The format follows
   the worker ran on the real clock, and the result was `partial`. The second announcement is now released
   at once, and the worker runs on the session clock from its first line. The new tab page of an installed
   Chromium browser registers such a worker, so sessions with one often ran into this.
+- **A window that opens after a Chromium session started is put on the session clock.** The session
+  holds each new page for a moment, so the fake clock is in before the page's own scripts run. A window
+  that opened after the session had started, before its first page was loaded, could answer nothing while
+  it was held. The session waited ten seconds for an answer, then gave the page up: it ran on the real
+  clock, and an application whose only window opened that way ended with `fails` (exit code 11) and no
+  page reached. The session now lets such a page go on as soon as the fake clock is on its way to it,
+  and the page runs on the session clock from its first line.
+- **An Electron application that keeps its engine in a folder beside its program runs in Chromium mode.**
+  Some Electron applications keep the engine and the application itself in a folder beside their
+  program, named after the build, and the program beside that folder is the engine. Chrono Mock looked
+  for the engine only beside the program and in a folder named after a version, so it started such an
+  application in a native session, which does not reach the application's windows: their pages ran on
+  the real clock. The command line and the window now recognise that layout and start such an
+  application in Chromium mode. As with every Electron application in that mode, its main process stays
+  on the real clock, and the report says so. A starter that keeps the application in a versioned folder
+  with a program of its own there is still started natively, and the session follows the application it
+  starts.
 
 ### Security
 
