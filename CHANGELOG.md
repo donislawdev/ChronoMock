@@ -8,6 +8,19 @@ Notable changes to Chrono Mock, newest first. The format follows
 
 ### Fixed
 
+- **An application that crashes during a session is said to have crashed.** A program stopped by an
+  error it did not handle ends with that error's code (an access violation ends with 0xC0000005). The
+  session then said `works` and that the application "closed itself" with that number, which read as a
+  session that went well. Now the report says the application crashed, and the new warning
+  `session.target_crashed` says so on the result screen of the window too, with the advice to start the
+  application once without Chrono Mock to see whether it crashes there as well. The verdict still speaks
+  of the clock the application read until it crashed. A windowed application that crashes right after
+  it starts is no longer reported as a suspected single-instance application: the reason is the new
+  `target.crashed`. The application's exit code is now on the report and on the result screen also when
+  it ended right after it started, and when it ended while a program it started kept the session going
+  until the session was stopped. The window now shows a crash's exit code with
+  its hexadecimal form, as the command line report does. Ctrl+C, a closed console and a negative number
+  a program returns itself (-1, -2) are not counted as a crash.
 - **A program that passes its work to a copy already running is reported.** A program that allows only
   one copy of itself, started in a session while another copy of it runs outside the session, can hand
   its work to that copy and close. When it took more than a fraction of a second to do so, the session

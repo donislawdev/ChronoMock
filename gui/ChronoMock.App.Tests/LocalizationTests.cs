@@ -71,6 +71,8 @@ public class LocalizationTests
         "session.left_running", "session.followed_family",
         // A process of the session the core could not wait on (R5-D3).
         "session.member_unwatchable", "session.handed_to_copy", "session.copy_search_failed",
+        // An application that ended with the exit code of a crash, after the guard window.
+        "session.target_crashed",
         "chromium.launched_with_debug_port", "chromium.app_closed_before_audit",
         "chromium.rate_change_affects_running_timers", "chromium.contexts_pooled", "chromium.context_reached_running",
         // A timer the engine's 4 ms floor held back (R5-P6) and a frame the shim did not reach (R5-P5).
@@ -101,7 +103,7 @@ public class LocalizationTests
         // a browser whose processes could not be confirmed to have ended).
         "cleanup.chromium_profile_left", "cleanup.chromium_process_left",
         // Vanish reasons (VanishedEvent reason_key, shown inside report.vanish_detail).
-        "target.single_instance_suspected", "target.handed_off_uncovered",
+        "target.single_instance_suspected", "target.handed_off_uncovered", "target.crashed",
         // Start/fatal error keys, surfaced as the status headline (RELEASE-001).
         "core.hook_dll_missing", "time.bad_mode", "time.bad_multiplier", "moment.invalid",
         // The session gate (R4-S7, R4-S9): a moment the clock cannot hold, and a zone it cannot carry.

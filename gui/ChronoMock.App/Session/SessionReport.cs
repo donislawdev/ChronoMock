@@ -121,7 +121,7 @@ internal static class SessionReport
         if (r.TargetExitCode is int code)
         {
             sb.Append("  ").Append(translate("report.target_exit")).Append(' ')
-              .Append(code.ToString(CultureInfo.InvariantCulture)).Append('\n');
+              .Append(SessionResult.ExitCodeLabel(code)).Append('\n');
         }
 
         // What the session went on for after the application closed, under the line that says it closed -
@@ -197,13 +197,7 @@ internal static class SessionReport
         // nothing more (R4-S27). A negative one is an NTSTATUS, so it is shown in hex as well, as the CLI does.
         if (coreExit is { } code)
         {
-            sb.Append("  core exit: ").Append(code.ToString(CultureInfo.InvariantCulture));
-            if (code < 0)
-            {
-                sb.Append(" (0x").Append(unchecked((uint)code).ToString("X8", CultureInfo.InvariantCulture)).Append(')');
-            }
-
-            sb.Append('\n');
+            sb.Append("  core exit: ").Append(SessionResult.ExitCodeLabel(code)).Append('\n');
         }
 
         var target = setup.TargetPath;

@@ -172,8 +172,11 @@ pub(crate) fn core_mode() -> i32 {
                     reason_key: reason_key.into(),
                     lived_ms,
                 });
+                // The target ended on its own, so `ended` carries its code, as it does for a session that
+                // ran: a crash said without the code it ended with cannot be looked up.
+                let target_exit = prepared.session.exit_code();
                 prepared.session.end();
-                emit(&policy.ended_before_running());
+                emit(&with_target_exit(policy.ended_before_running(), target_exit));
                 return 12;
             }
 
@@ -536,7 +539,6 @@ pub(crate) fn run_session(
     let child_poll = Duration::from_millis(100);
     let mut deadline = Instant::now() + heartbeat;
     let mut child_deadline = Instant::now() + child_poll;
-    let mut target_exit: Option<i32> = None;
 
     loop {
         // Both deadlines are also checked after handling a command, not only when the wait times out.
@@ -582,13 +584,11 @@ pub(crate) fn run_session(
             }
             emit(&state_event_from(&st));
             // The session lasts for the family on its clock, not for the process it launched: a
-            // launcher ends on purpose and leaves the application running (ADR-16). The exit code
-            // is the launched process's, the one the tester named. Asked before the window, because
-            // asking refreshes the watch the window question reads its members from.
+            // launcher ends on purpose and leaves the application running (ADR-16). Asked before the
+            // window, because asking refreshes the watch the window question reads its members from.
             let family_alive = session.family_alive();
             ledger.look_for_window(&session);
             if !family_alive {
-                target_exit = session.exit_code();
                 ledger.note_family_ended(&session);
                 break;
             }
@@ -599,6 +599,11 @@ pub(crate) fn run_session(
         }
     }
 
+    // The exit code is the launched process's, the one the tester named, read whatever ended the session:
+    // the family's end, a Stop or a closed stdin. A launched process that ended while a process it started
+    // kept the session going ended on its own all the same - a launcher, or an application that crashed
+    // and left a helper running - and a crash is what the tester has to hear. `None` while it still runs.
+    let target_exit = session.exit_code();
     close_session(session, ledger, bridge, policy, target_exit)
 }
 
@@ -779,6 +784,16 @@ const KEY_COPY_SEARCH_FAILED: &str = "session.copy_search_failed";
 /// usually one of the other bitness, which runs on the real clock (ADR-16).
 const KEY_HANDED_OFF_UNCOVERED: &str = "target.handed_off_uncovered";
 
+/// The target vanished inside the guard window with the exit code of a crash (`report::ended_by_crash`).
+/// It used to be reported as a suspected single-instance application, whose remedy - close the copy that
+/// is running - does nothing for a program that crashes.
+const KEY_TARGET_CRASHED: &str = "target.crashed";
+
+/// The target ended with the exit code of a crash after the guard window. The verdict is about the clock
+/// it read until then and stays what the family earned, but under a verdict of works the crash read as a
+/// session that went well, and the session may be its cause.
+const KEY_SESSION_TARGET_CRASHED: &str = "session.target_crashed";
+
 /// End the application a refusal will not let run, with everything it started (R4-S5), and name what
 /// is still running afterwards for the verdict, with whether the family could be looked for in full. Why
 /// it could not goes to stderr, where the other human-side details of a start go - the verdict carries
@@ -827,6 +842,15 @@ fn session_zone_variable(target_path: &str, bias: Option<i32>) -> Option<(String
     Some(("TZ".to_string(), value))
 }
 
+/// `ended` with the exit code of a target that ended on its own. The other fields stay what the start
+/// that did not become a running session gives them.
+fn with_target_exit(mut ended: Event, code: Option<i32>) -> Event {
+    if let Event::Ended { target_exit_code, .. } = &mut ended {
+        *target_exit_code = code;
+    }
+    ended
+}
+
 /// Why a target vanished inside the guard window with nothing on the session clock left running, or
 /// `None` when it did not vanish but ended. Asked only after the family was found gone, so a process it
 /// started is either one the hook never entered or none at all.
@@ -835,26 +859,32 @@ fn session_zone_variable(target_path: &str, bias: Option<i32>) -> Option<(String
 /// once, and a family that ended without vanishing goes on to its report, which has to name them.
 fn vanish_reason_key(session: &mut chrono_mech::Session, ledger: &mut SessionLedger) -> Option<&'static str> {
     let children = session.poll_uncovered_children();
-    let reason = vanish_reason(session.pid, &children, chrono_mech::process_is_alive, session.family_only_console());
+    let crashed = session.exit_code().is_some_and(crate::report::ended_by_crash);
+    let reason = vanish_reason(session.pid, &children, chrono_mech::process_is_alive, session.family_only_console(), crashed);
     ledger.take_ring_children(children);
     reason
 }
 
-/// The reason for a vanish, from the children the hook could not enter and from what the family was: a
-/// hand-off when one the target started is still running, whatever the family was, because that child
-/// runs on the real clock. Otherwise the single-instance suspicion ADR-4 was written for, which needs a
-/// windowed program in the family (owner decision 2026-10-27, `Session::family_only_console`): a console
-/// tool that did its work in a few milliseconds used to be reported as a session that never took effect.
+/// The reason for a vanish, from the children the hook could not enter, from how the target ended and
+/// from what the family was: a hand-off when one the target started is still running, whatever the family
+/// was, because that child runs on the real clock. Then a crash, which a single-instance application is
+/// not. Otherwise the single-instance suspicion ADR-4 was written for, which needs a windowed program in
+/// the family (owner decision 2026-10-27, `Session::family_only_console`): a console tool that did its
+/// work in a few milliseconds used to be reported as a session that never took effect. A console family
+/// that crashed there ends its session the way any other does, and the session says the crash.
 fn vanish_reason(
     root: u32,
     children: &[UncoveredChild],
     alive: impl Fn(u32) -> bool,
     only_console: bool,
+    crashed: bool,
 ) -> Option<&'static str> {
     if children.iter().any(|c| c.parent_pid == root && alive(c.pid)) {
         Some(KEY_HANDED_OFF_UNCOVERED)
     } else if only_console {
         None
+    } else if crashed {
+        Some(KEY_TARGET_CRASHED)
     } else {
         Some("target.single_instance_suspected")
     }
@@ -1022,6 +1052,11 @@ pub(crate) fn close_session(
     reconcile_engine_warnings(&mut children_warnings, every_renderer_reached(&uncovered_children, &pages.engines));
     session_warnings.extend(children_warnings);
     session_warnings.extend(pages.session_warnings(left_running));
+    // First, as the policy value left behind is: the panel shows the list through a window shorter
+    // than the list, and a crash is what the tester has to read before anything about the clock.
+    if target_exit.is_some_and(crate::report::ended_by_crash) {
+        session_warnings.insert(0, KEY_SESSION_TARGET_CRASHED.to_string());
+    }
     place_policy_keys(&mut session_warnings, policy_keys);
     session_warnings.extend(hand_off_key.map(str::to_string));
     if !followed.is_empty() {
@@ -2144,12 +2179,34 @@ mod tests {
     #[test]
     fn a_vanish_that_left_an_uncovered_program_running_is_a_hand_off() {
         let child = |pid, parent_pid| UncoveredChild { pid, parent_pid, image: None, command_line: None };
-        assert_eq!(vanish_reason(10, &[child(11, 10)], |_| true, false), Some(KEY_HANDED_OFF_UNCOVERED));
+        assert_eq!(vanish_reason(10, &[child(11, 10)], |_| true, false, false), Some(KEY_HANDED_OFF_UNCOVERED));
         // Ended already, started by another process of the family, or nothing started at all.
         let suspected = Some("target.single_instance_suspected");
-        assert_eq!(vanish_reason(10, &[child(11, 10)], |_| false, false), suspected);
-        assert_eq!(vanish_reason(10, &[child(12, 11)], |_| true, false), suspected);
-        assert_eq!(vanish_reason(10, &[], |_| true, false), suspected);
+        assert_eq!(vanish_reason(10, &[child(11, 10)], |_| false, false, false), suspected);
+        assert_eq!(vanish_reason(10, &[child(12, 11)], |_| true, false, false), suspected);
+        assert_eq!(vanish_reason(10, &[], |_| true, false, false), suspected);
+    }
+
+    /// A windowed target that crashed inside the guard window was reported as a suspected single-instance
+    /// application, whose remedy - close the copy already running - does nothing for a crash. A program it
+    /// started and left running still makes it a hand-off, and a console family still did not vanish.
+    #[test]
+    fn a_target_that_crashed_inside_the_guard_window_is_said_to_have_crashed() {
+        let child = |pid, parent_pid| UncoveredChild { pid, parent_pid, image: None, command_line: None };
+        assert_eq!(vanish_reason(10, &[], |_| true, false, true), Some(KEY_TARGET_CRASHED));
+        assert_eq!(vanish_reason(10, &[child(11, 10)], |_| false, false, true), Some(KEY_TARGET_CRASHED));
+        assert_eq!(vanish_reason(10, &[child(11, 10)], |_| true, false, true), Some(KEY_HANDED_OFF_UNCOVERED));
+        assert_eq!(vanish_reason(10, &[], |_| true, true, true), None);
+    }
+
+    /// `ended` after a vanish carries the code the target ended with, and nothing else of it changes.
+    #[test]
+    fn the_end_of_a_vanish_carries_the_targets_exit_code() {
+        let ended = with_target_exit(crate::events::ended_after_launch(vec![]), Some(0xC000_0005u32 as i32));
+        let Event::Ended { target_exit_code, clean, elapsed_real_ms, .. } = ended else { panic!("not ended: {ended:?}") };
+        assert_eq!(target_exit_code, Some(0xC000_0005u32 as i32));
+        assert!(clean);
+        assert_eq!(elapsed_real_ms, 0);
     }
 
     /// ADR-4, owner decision 2026-10-27. A family of console programs that ended inside the guard window
@@ -2159,8 +2216,8 @@ mod tests {
     #[test]
     fn a_family_of_console_programs_that_ended_quickly_did_not_vanish() {
         let child = |pid, parent_pid| UncoveredChild { pid, parent_pid, image: None, command_line: None };
-        assert_eq!(vanish_reason(10, &[], |_| true, true), None);
-        assert_eq!(vanish_reason(10, &[child(11, 10)], |_| false, true), None, "its uncovered child ended too");
-        assert_eq!(vanish_reason(10, &[child(11, 10)], |_| true, true), Some(KEY_HANDED_OFF_UNCOVERED));
+        assert_eq!(vanish_reason(10, &[], |_| true, true, false), None);
+        assert_eq!(vanish_reason(10, &[child(11, 10)], |_| false, true, false), None, "its uncovered child ended too");
+        assert_eq!(vanish_reason(10, &[child(11, 10)], |_| true, true, false), Some(KEY_HANDED_OFF_UNCOVERED));
     }
 }
