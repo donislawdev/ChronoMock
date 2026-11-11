@@ -322,6 +322,29 @@ public class SessionViewModelTests
     }
 
     [Fact]
+    public void The_exit_code_after_a_vanish_is_kept_and_the_status_stays()
+    {
+        // `ended` after `vanished` carries how the target ended - a crash right after the start among them - and
+        // the result screen has to show it, while the session stays one that did not take effect.
+        var vm = new SessionViewModel();
+        vm.SetTarget(@"C:\apps\Ledger.exe");
+        vm.Apply(new VanishedEvent
+        {
+            V = ProtocolJson.ProtocolVersion,
+            Pid = 1234,
+            ReasonKey = "target.crashed",
+            LivedMs = 120,
+        });
+        vm.Apply(new EndedEvent { V = ProtocolJson.ProtocolVersion, Clean = true, TargetExitCode = unchecked((int)0xC0000005) });
+
+        Assert.Equal(SessionStatusKind.DidNotTakeEffect, vm.StatusKind);
+        Assert.True(vm.HasTargetExit);
+        Assert.Equal("-1073741819 (0xC0000005)", vm.TargetExitText);
+        Assert.Contains("target exited with code -1073741819 (0xC0000005)", vm.BuildSummary(T()), StringComparison.Ordinal);
+        Assert.Equal("undetermined", vm.BuildRecord().Verdict);
+    }
+
+    [Fact]
     public void Ended_marks_the_session_ended()
     {
         var vm = new SessionViewModel();

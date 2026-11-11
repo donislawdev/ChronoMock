@@ -1766,6 +1766,43 @@ public sealed class SessionViewModel : ObservableObject
     public bool HasHostSlept => _result.HostSleptMs > 0;
 
     /// <summary>
+    /// Fold <c>ended</c> into the view state. Guarded on the terminal state like <c>state</c> (M-9): a late
+    /// <c>ended</c> after a terminal outcome must not overwrite the honest outcome in the summary and history.
+    /// The one exception is the exit code after <c>vanished</c>: the core sends there how the target ended, a
+    /// crash among them (docs/08), and the status stays "did not take effect".
+    /// </summary>
+    private void ApplyEnded(EndedEvent e)
+    {
+        if (StatusKind == SessionStatusKind.DidNotTakeEffect)
+        {
+            TargetExitCode = e.TargetExitCode;
+            return;
+        }
+
+        if (SessionResult.IsTerminal(StatusKind))
+        {
+            return;
+        }
+
+        _result.EndedSeen = true;
+        if (e.FakeEndWall is not null)
+        {
+            // The core's authoritative end timing (docs/08 section 6) - prefer it over the last heartbeat.
+            _result.FakeEndWall = e.FakeEndWall;
+            _result.ElapsedRealMs = e.ElapsedRealMs;
+            _result.ElapsedFakeMs = e.ElapsedFakeMs;
+            PublishElapsed();
+        }
+
+        // Surface the target's own exit code and any cleanup residue the core reported, rather than
+        // dropping them (rule 6): the exit code tells a self-closed app from a stopped session, and
+        // residue names what a teardown left behind (a CDP temp profile that stayed locked).
+        TargetExitCode = e.TargetExitCode;
+        ResidueKeys = e.ResidueKeys;
+        SetStatus("status.ended", SessionStatusKind.Ended);
+    }
+
+    /// <summary>
     /// Fold one event into the view state. Pure and synchronous (no I/O, no threading) so the mapping is
     /// unit-testable - the live loop marshals each call onto the UI thread. A late <c>state</c> after a
     /// terminal outcome is ignored, so a finished session is never resurrected as "running".
@@ -1798,26 +1835,8 @@ public sealed class SessionViewModel : ObservableObject
                 RaisePropertyChanged(nameof(LivedMs));
                 SetStatus("status.did_not_take_effect", SessionStatusKind.DidNotTakeEffect);
                 break;
-            // Guarded on the terminal state like `state` above (M-9): a late `ended`/`error` after a
-            // terminal outcome (e.g. `ended` arriving right after `vanished` -> DidNotTakeEffect) must not
-            // overwrite the honest "did not take effect" verdict in the summary and history.
-            case EndedEvent e when !SessionResult.IsTerminal(StatusKind):
-                _result.EndedSeen = true;
-                if (e.FakeEndWall is not null)
-                {
-                    // The core's authoritative end timing (docs/08 section 6) - prefer it over the last heartbeat.
-                    _result.FakeEndWall = e.FakeEndWall;
-                    _result.ElapsedRealMs = e.ElapsedRealMs;
-                    _result.ElapsedFakeMs = e.ElapsedFakeMs;
-                    PublishElapsed();
-                }
-
-                // Surface the target's own exit code and any cleanup residue the core reported, rather than
-                // dropping them (rule 6): the exit code tells a self-closed app from a stopped session, and
-                // residue names what a teardown left behind (a CDP temp profile that stayed locked).
-                TargetExitCode = e.TargetExitCode;
-                ResidueKeys = e.ResidueKeys;
-                SetStatus("status.ended", SessionStatusKind.Ended);
+            case EndedEvent e:
+                ApplyEnded(e);
                 break;
             case ErrorEvent err when StatusKind == SessionStatusKind.Running && IsInFlightError(err):
                 // A per-command error (e.g. an invalid in-flight jump moment): the core rejects the one

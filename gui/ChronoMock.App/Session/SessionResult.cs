@@ -30,10 +30,11 @@ internal sealed class SessionResult
         ["runtime.go_wall_clock_unreachable", "coverage.session_clock_never_read"];
 
     /// <summary>
-    /// How an application's own exit code is spelled. A crash ends a program with the status of the error
-    /// that stopped it, which the wire carries as a negative number - an access violation reads -1073741819,
-    /// which tells a tester nothing - so a negative code also gets the hexadecimal form that can be looked up
-    /// (0xC0000005). The CLI report's <c>exit_code_label</c>, one spelling on both sides.
+    /// How an exit code is spelled - the application's own and the core's in the diagnostics. A crash ends a
+    /// program with the status of the error that stopped it, which the wire carries as a negative number - an
+    /// access violation reads -1073741819, which tells a tester nothing - so a negative code also gets the
+    /// hexadecimal form that can be looked up (0xC0000005). The CLI report's <c>exit_code_label</c>, one
+    /// spelling on both sides.
     /// </summary>
     internal static string ExitCodeLabel(int code) => code < 0
         ? string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{code} (0x{unchecked((uint)code):X8})")

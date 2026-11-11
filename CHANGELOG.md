@@ -16,8 +16,9 @@ Notable changes to Chrono Mock, newest first. The format follows
   application once without Chrono Mock to see whether it crashes there as well. The verdict still speaks
   of the clock the application read until it crashed. A windowed application that crashes right after
   it starts is no longer reported as a suspected single-instance application: the reason is the new
-  `target.crashed`. An application that ends right after it starts now has its exit code on the report
-  and on the result screen, as one that ends later always had. The window now shows a crash's exit code with
+  `target.crashed`. The application's exit code is now on the report and on the result screen also when
+  it ended right after it started, and when it ended while a program it started kept the session going
+  until the session was stopped. The window now shows a crash's exit code with
   its hexadecimal form, as the command line report does. Ctrl+C, a closed console and a negative number
   a program returns itself (-1, -2) are not counted as a crash.
 - **A program that passes its work to a copy already running is reported.** A program that allows only

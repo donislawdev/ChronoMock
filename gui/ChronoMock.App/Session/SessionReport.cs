@@ -197,13 +197,7 @@ internal static class SessionReport
         // nothing more (R4-S27). A negative one is an NTSTATUS, so it is shown in hex as well, as the CLI does.
         if (coreExit is { } code)
         {
-            sb.Append("  core exit: ").Append(code.ToString(CultureInfo.InvariantCulture));
-            if (code < 0)
-            {
-                sb.Append(" (0x").Append(unchecked((uint)code).ToString("X8", CultureInfo.InvariantCulture)).Append(')');
-            }
-
-            sb.Append('\n');
+            sb.Append("  core exit: ").Append(SessionResult.ExitCodeLabel(code)).Append('\n');
         }
 
         var target = setup.TargetPath;

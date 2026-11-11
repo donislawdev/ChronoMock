@@ -23726,5 +23726,42 @@
     "match": "method",
     "build": "",
     "notHere": ""
+  },
+  {
+    "name": "target crash a stop takes the code of a crashed target off",
+    "edits": [
+      {
+        "file": "crates/cli/src/core.rs",
+        "from": "    let target_exit = session.exit_code();\n    close_session(session, ledger, bridge, policy, target_exit)",
+        "to": "    let target_exit = session.exit_code().filter(|_| !session.family_alive());\n    close_session(session, ledger, bridge, policy, target_exit)"
+      }
+    ],
+    "runner": "rust",
+    "package": "chrono-cli",
+    "target": [
+      "--test",
+      "target_exit"
+    ],
+    "test": "an_application_that_crashed_before_a_stop_is_said_to_have_crashed",
+    "match": "exact",
+    "build": "debug",
+    "notHere": ""
+  },
+  {
+    "name": "target crash the window drops the code after a vanish",
+    "edits": [
+      {
+        "file": "gui/ChronoMock.App/Session/SessionViewModel.cs",
+        "from": "            TargetExitCode = e.TargetExitCode;\n            return;",
+        "to": "            return;"
+      }
+    ],
+    "runner": "cs",
+    "package": "gui/ChronoMock.App.Tests",
+    "target": [],
+    "test": "ChronoMock.App.Tests.SessionViewModelTests.The_exit_code_after_a_vanish_is_kept_and_the_status_stays",
+    "match": "method",
+    "build": "",
+    "notHere": ""
   }
 ]

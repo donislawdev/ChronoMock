@@ -65,6 +65,47 @@ fn probe_ends_with_the_code_of_an_access_violation() {
     std::process::exit(ACCESS_VIOLATION);
 }
 
+/// Set for the probe that crashes and leaves a helper running.
+const CRASH_WITH_HELPER_ON: &str = "CHRONO_TARGET_CRASH_WITH_HELPER_PROBE";
+
+/// Set for the helper that probe starts, which only outlives it.
+const HELPER_ON: &str = "CHRONO_TARGET_HELPER_PROBE";
+
+/// The probe that crashes and leaves a helper running, and its helper, by their own name.
+const CRASH_WITH_HELPER_PROBE: &str = "probe_crashes_and_leaves_a_helper_running";
+
+/// How long the helper outlives its start: past the heartbeats after which the session test stops the
+/// session, with room for a slow machine.
+const HELPER_MS: u64 = 10_000;
+
+/// Starts a copy of itself as a helper, which joins the session's family and keeps the session going, and
+/// ends with the code of an access violation while the helper still runs. The helper gets none of the
+/// probe's streams, and only reads the clock and waits.
+#[test]
+#[ignore = "the target of the session test in this file, not a test on its own"]
+fn probe_crashes_and_leaves_a_helper_running() {
+    if std::env::var_os(HELPER_ON).is_some() {
+        let _ = SystemTime::now();
+        std::thread::sleep(Duration::from_millis(HELPER_MS));
+        return;
+    }
+    if std::env::var_os(CRASH_WITH_HELPER_ON).is_none() {
+        return;
+    }
+    let _ = SystemTime::now();
+    let me = std::env::current_exe().expect("the probe knows its own path");
+    let helper = Command::new(me)
+        .args(["--ignored", "--exact", CRASH_WITH_HELPER_PROBE, "--test-threads", "1"])
+        .env(HELPER_ON, "1")
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn();
+    assert!(helper.is_ok(), "the probe could not start its helper");
+    std::thread::sleep(Duration::from_millis(1_500));
+    std::process::exit(ACCESS_VIOLATION);
+}
+
 /// The injected library, which `cargo test` does not build (`dry_run.rs` has the whole story).
 fn injected_library() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_chrono"))
@@ -138,6 +179,42 @@ fn an_application_that_crashed_is_said_to_have_crashed() {
     let context = || format!("stdout:\n{stdout}\nstderr:\n{}", String::from_utf8_lossy(&out.stderr));
 
     assert!(stdout.contains("verdict:  WORKS"), "the probe did not run under the session. {}", context());
+    assert!(stdout.contains("the target CRASHED - it ended with code -1073741819 (0xC0000005)"), "{}", context());
+    assert!(stdout.contains("(session.target_crashed)"), "the crash warning is missing. {}", context());
+}
+
+/// A crashed application whose helper kept the session going, and the session stopped after that: the
+/// session read the target's exit code only when the whole family had ended, so a Stop took the crash, and
+/// the exit code with it, off the report.
+#[test]
+fn an_application_that_crashed_before_a_stop_is_said_to_have_crashed() {
+    let _session = one_real_session_at_a_time();
+    let library = injected_library();
+    assert!(library.is_file(), "this test needs {} - run `cargo build --workspace` first", library.display());
+    let me = std::env::current_exe().expect("the test binary knows its own path");
+    // Stopped after four heartbeats: after the probe crashed at about 1.5 s, while its helper still runs.
+    let out = Command::new(env!("CARGO_BIN_EXE_chrono"))
+        .args([
+            "run",
+            &me.display().to_string(),
+            "--at",
+            "2077-01-01T00:00:00",
+            "--zone",
+            "+00:00",
+            "--ticks",
+            "4",
+            "--args",
+            &format!("--ignored --exact {CRASH_WITH_HELPER_PROBE} --test-threads 1"),
+        ])
+        .env(CRASH_WITH_HELPER_ON, "1")
+        .output()
+        .expect("the tool must run");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let context = || format!("stdout:\n{stdout}\nstderr:\n{}", String::from_utf8_lossy(&out.stderr));
+
+    // The helper was in the family and ran when the session stopped, or the session ended with the family
+    // and the lines below say nothing about a Stop.
+    assert!(stdout.contains("(session.left_running)"), "the session did not end with its helper running. {}", context());
     assert!(stdout.contains("the target CRASHED - it ended with code -1073741819 (0xC0000005)"), "{}", context());
     assert!(stdout.contains("(session.target_crashed)"), "the crash warning is missing. {}", context());
 }

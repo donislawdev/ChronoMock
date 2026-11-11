@@ -539,7 +539,6 @@ pub(crate) fn run_session(
     let child_poll = Duration::from_millis(100);
     let mut deadline = Instant::now() + heartbeat;
     let mut child_deadline = Instant::now() + child_poll;
-    let mut target_exit: Option<i32> = None;
 
     loop {
         // Both deadlines are also checked after handling a command, not only when the wait times out.
@@ -585,13 +584,11 @@ pub(crate) fn run_session(
             }
             emit(&state_event_from(&st));
             // The session lasts for the family on its clock, not for the process it launched: a
-            // launcher ends on purpose and leaves the application running (ADR-16). The exit code
-            // is the launched process's, the one the tester named. Asked before the window, because
-            // asking refreshes the watch the window question reads its members from.
+            // launcher ends on purpose and leaves the application running (ADR-16). Asked before the
+            // window, because asking refreshes the watch the window question reads its members from.
             let family_alive = session.family_alive();
             ledger.look_for_window(&session);
             if !family_alive {
-                target_exit = session.exit_code();
                 ledger.note_family_ended(&session);
                 break;
             }
@@ -602,6 +599,11 @@ pub(crate) fn run_session(
         }
     }
 
+    // The exit code is the launched process's, the one the tester named, read whatever ended the session:
+    // the family's end, a Stop or a closed stdin. A launched process that ended while a process it started
+    // kept the session going ended on its own all the same - a launcher, or an application that crashed
+    // and left a helper running - and a crash is what the tester has to hear. `None` while it still runs.
+    let target_exit = session.exit_code();
     close_session(session, ledger, bridge, policy, target_exit)
 }
 
