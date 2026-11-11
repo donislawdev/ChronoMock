@@ -249,6 +249,14 @@ const ALLOWED: &[(&str, &str, &str)] = &[
          copy told to exit, and rundll32 with nothing to run. None reaches past this machine",
     ),
     (
+        "crates/cli/tests/hand_off.rs",
+        "spawn",
+        "runs the built binary four times over the Windows Script Host from the system folder, with \
+         scripts this test writes that wait, or show a message box that closes itself, and end - plus a \
+         second copy of the same host waiting outside the session, and taskkill by pid for the one a \
+         cut-off session left running. None reaches past this machine",
+    ),
+    (
         "crates/cli/tests/duration_axis.rs",
         "spawn",
         "runs this test binary's own ignored probe twice, once alone as the control and once under a \

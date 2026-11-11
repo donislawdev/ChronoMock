@@ -132,6 +132,9 @@ pub(crate) struct SessionReport {
     /// The processes the session went on for after the target closed, from `session_verdict.followed`
     /// (ADR-16). Empty when nothing outlived the target.
     pub(crate) followed: Vec<chrono_proto::FollowedProcess>,
+    /// The copies outside the session the target most likely handed its work to, from
+    /// `session_verdict.copies_outside` (ADR-4, 2026-11-11). Empty for every other session.
+    pub(crate) copies_outside: Vec<chrono_proto::FollowedProcess>,
     /// Set when the opening verdict refused the session and the core ended the application, with the
     /// processes of it that could not be ended, from `verdict.left_running` (R4-S5). `None` for every
     /// session that was not refused.
@@ -202,6 +205,9 @@ pub(crate) fn describe_reason(key: &str) -> &'static str {
         }
         "session.family_uncovered_children" => {
             "no process read a covered time channel, and the ones this app spawned without the hook ran on the real clock"
+        }
+        "session.family_handed_to_copy" => {
+            "the target most likely handed its work to a copy of itself running outside the session, on the real clock"
         }
         "chromium.contexts_covered" => "every JS context ran on the session clock",
         "chromium.contexts_partial" => "some JS contexts ran on the session clock, some could not be reached",
@@ -394,6 +400,15 @@ fn describe_session_warning(key: &str) -> &'static str {
         // it without a word (R5-D3). Said, not fixed: nothing this side of the process can watch it.
         "session.member_unwatchable" => {
             "some processes of this session could not be watched (access denied), so the session may have ended while they still ran - from then on they ran on the real clock"
+        }
+        // The one finding that says the session may have tested nothing, so it says what to do (ADR-4,
+        // 2026-11-11). "Most likely": no process says what it handed on, the situation is what is read.
+        "session.handed_to_copy" => {
+            "the target ended without ever showing a window, and when it ended a copy of it was running outside the session - a single-instance application most likely handed its work to that copy, listed under 'copies', which runs on the real clock, so this session may not have tested anything - to test the program under the session, close every copy of it and start the session again"
+        }
+        // The same question left unanswered: said apart from a copy found, and with the same way out.
+        "session.copy_search_failed" => {
+            "the target ended without ever showing a window, and the process list could not be read, so the session could not check whether it handed its work to a copy of itself running outside the session - if the program did not open, close every copy of it and start the session again"
         }
         _ => "",
     }
@@ -857,13 +872,31 @@ fn render_followed(followed: &[chrono_proto::FollowedProcess]) -> String {
     // "went on for", not "until they closed": a Stop or `--ticks` can end the session while one of them
     // still runs, and `session.left_running` says so on its own line.
     let mut out = String::from("  followed: the target had started these, and the session went on for them:\n");
-    for p in followed {
+    push_processes(&mut out, followed);
+    out
+}
+
+/// The copies outside the session the target most likely handed its work to (ADR-4, 2026-11-11), or
+/// nothing. They are why the verdict is not `works`, and the line under the verdict says so in its reason.
+fn render_copies(copies: &[chrono_proto::FollowedProcess]) -> String {
+    if copies.is_empty() {
+        return String::new();
+    }
+    let mut out = String::from(
+        "  copies:   the target most likely handed its work to these copies of it, running outside the session on the REAL clock:\n",
+    );
+    push_processes(&mut out, copies);
+    out
+}
+
+/// One line per process under a heading, by name and pid, or by pid alone when the list had no name.
+fn push_processes(out: &mut String, processes: &[chrono_proto::FollowedProcess]) {
+    for p in processes {
         match &p.image {
             Some(image) => out.push_str(&format!("            - {image} (pid {})\n", p.pid)),
             None => out.push_str(&format!("            - pid {}\n", p.pid)),
         }
     }
-    out
 }
 
 /// What a refusal did to the application, or nothing when the session was not refused (R4-S5). The
@@ -881,12 +914,7 @@ fn render_refusal(refused: Option<&[chrono_proto::FollowedProcess]>, incomplete:
     if !left.is_empty() {
         out.push_str("            except these, which it could not end - they run on the REAL clock:\n");
     }
-    for p in left {
-        match &p.image {
-            Some(image) => out.push_str(&format!("            - {image} (pid {})\n", p.pid)),
-            None => out.push_str(&format!("            - pid {}\n", p.pid)),
-        }
-    }
+    push_processes(&mut out, left);
     // The way past the refusal, said where the refusal is (R5, D4-1). The window has the same choice as
     // a box on its start screen, with its own explanation there.
     out.push_str("            to run it anyway, start it again with --force - the report then marks the session unreliable\n");
@@ -1134,6 +1162,7 @@ pub(crate) fn render_report(r: &SessionReport) -> String {
         ));
     }
     out.push_str(&render_followed(&r.followed));
+    out.push_str(&render_copies(&r.copies_outside));
 
     out.push_str(&render_counted_channels(r));
 
@@ -1323,6 +1352,7 @@ mod tests {
             context_count: 0,
             engines: vec![],
             followed: vec![],
+            copies_outside: vec![],
             refused: None,
             refusal_incomplete: false,
             uncovered: vec![],
@@ -1594,6 +1624,31 @@ mod tests {
         assert!(!out.contains("closed:"), "got:\n{out}");
         // Nothing followed, no line.
         assert!(!render_report(&empty_report()).contains("followed:"));
+    }
+
+    /// ADR-4, 2026-11-11. The copies a single-instance application most likely handed its work to stand
+    /// under the processes the session went on for, each named, and say they ran on the real clock. The
+    /// reason and the warning are glossed, so the report never shows a bare key.
+    #[test]
+    fn the_copies_outside_the_session_are_listed_and_their_keys_explained() {
+        let r = SessionReport {
+            target_exit: Some(0),
+            copies_outside: vec![
+                chrono_proto::FollowedProcess { pid: 4600, image: Some("app.exe".into()) },
+                chrono_proto::FollowedProcess { pid: 4601, image: None },
+            ],
+            ..empty_report()
+        };
+        let out = render_report(&r);
+        let exited = out.find("exited:").expect("the exit line");
+        let copies = out.find("  copies:   ").expect("the copies line");
+        assert!(exited < copies, "got:\n{out}");
+        assert!(out[copies..].contains("REAL clock"), "got:\n{out}");
+        assert!(out[copies..].contains("- app.exe (pid 4600)\n            - pid 4601\n"), "got:\n{out}");
+        assert!(!render_report(&empty_report()).contains("copies:"));
+        assert!(!describe_reason("session.family_handed_to_copy").is_empty());
+        assert!(describe_warning("session.handed_to_copy").contains("start the session again"));
+        assert!(describe_warning("session.copy_search_failed").contains("could not be read"));
     }
 
     /// R4-S5: a refused session says the application was ended, right under the verdict, and names what

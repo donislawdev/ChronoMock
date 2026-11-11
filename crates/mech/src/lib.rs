@@ -18,6 +18,7 @@ mod batch;
 mod ending;
 mod environment;
 mod family;
+mod handoff;
 mod held;
 mod host_zone;
 mod job;
@@ -35,6 +36,7 @@ pub use batch::{batch_launch_problem, is_batch_script};
 pub use ending::FamilyEnd;
 pub use environment::{current_environment, environment_block};
 pub use family::FamilyMember;
+pub use handoff::RunningCopy;
 pub use host_zone::{host_zone_name, host_zone_sample, ZoneSample};
 pub use listeners::{listening_sockets, Listener, ListenerTable, IPV4_ANY_ADDR, IPV4_LOOPBACK_ADDR};
 pub use policy::webview2_arguments_policy_present;
@@ -217,6 +219,9 @@ pub struct Session {
     /// The other processes on the session clock, watched so the session lasts as long as any of them
     /// runs and not only as long as the one it launched (ADR-16).
     family: family::Family,
+    /// The full path of the launched process's executable, read while it runs: once it has ended the
+    /// system may no longer say (ADR-4, 2026-11-11). `None` when it would not say even then.
+    root_image: Option<String>,
     /// The session lock, held for as long as the session lives. Dropped last, so a second core
     /// cannot start until this one has released the control block it was using.
     _lock: SessionLock,
@@ -272,7 +277,7 @@ unsafe fn image_name_of(h: HANDLE) -> Option<String> { unsafe {
 
 /// # Safety
 /// `h` must be an open process handle with at least limited query access.
-unsafe fn image_path_of(h: HANDLE) -> Option<String> { unsafe {
+pub(crate) unsafe fn image_path_of(h: HANDLE) -> Option<String> { unsafe {
     let mut buf = [0u16; 1024];
     let mut len = buf.len() as u32;
     QueryFullProcessImageNameW(h, PROCESS_NAME_FORMAT(0), PWSTR(buf.as_mut_ptr()), &mut len).ok()?;
@@ -569,7 +574,12 @@ impl Session {
         let published: Vec<family::SignedIn> = (0..MAX_COV_PIDS)
             .map(|slot| (slot, unsafe { read_pid(self.ctl(), slot) }))
             .filter(|&(_, pid)| pid != 0)
-            .map(|(slot, pid)| family::SignedIn { slot, pid, created: unsafe { read_created(cov_at(self.ctl(), slot)) } })
+            .map(|(slot, pid)| family::SignedIn {
+                slot,
+                pid,
+                created: unsafe { read_created(cov_at(self.ctl(), slot)) },
+                windowed: unsafe { read_subsystem(cov_at(self.ctl(), slot)) } != SUBSYSTEM_CONSOLE,
+            })
             .collect();
         self.family.refresh(self.pid, &published);
     }
@@ -607,6 +617,48 @@ impl Session {
     /// The processes besides the launched one that were running when the family was last refreshed.
     pub fn living_family(&self) -> Vec<FamilyMember> {
         self.family.living()
+    }
+
+    /// The executables of the family's windowed processes, the launched one first. The launched process
+    /// counts as windowed unless its hook recorded the console subsystem - a process that never signed
+    /// in recorded nothing, and the doubt keeps it, as `only_console` does.
+    fn windowed_images(&self) -> Vec<String> {
+        let root_windowed = match self.family.root_slot() {
+            Some(slot) => (unsafe { read_subsystem(cov_at(self.ctl(), slot)) }) != SUBSYSTEM_CONSOLE,
+            None => true,
+        };
+        let root = self.root_image.clone().filter(|_| root_windowed);
+        root.into_iter().chain(self.family.windowed_images().iter().cloned()).collect()
+    }
+
+    /// The pids this session holds as its own: the launched process, whose handle it keeps for its whole
+    /// life, and the members it watches, each through a handle of its own. A held handle keeps the system
+    /// from handing the pid on, so each of these still names the process it was taken for - which a pid
+    /// noted once and kept does not (ADR-4, 2026-11-11). The watch is as fresh as the last `family_alive`.
+    fn held_pids(&self) -> HashSet<u32> {
+        std::iter::once(self.pid).chain(self.family.living().into_iter().map(|m| m.pid)).collect()
+    }
+
+    /// Whether a process of this session shows a visible window now (ADR-4, 2026-11-11): one the session
+    /// holds, or a child the hook never entered (`unhooked`) that still runs the executable it was named
+    /// with. A pid the session neither holds nor can confirm may belong to another program by now, and that
+    /// program's window is not one the tester saw of this application.
+    pub fn family_shows_window(&self, unhooked: &[UncoveredChild]) -> bool {
+        let owners = handoff::visible_window_owners();
+        !owners.is_empty() && handoff::owned_by_member(&owners, &self.held_pids(), unhooked, handoff::full_path_of)
+    }
+
+    /// The processes outside this session that run the executable of a windowed process of it: the copies
+    /// a single-instance application may have handed its work to (ADR-4, 2026-11-11). The session's own
+    /// processes are told apart the way `family_shows_window` tells them - held, or a child the hook never
+    /// entered (`unhooked`) that still runs the file it was named with - so a copy that came to hold the
+    /// pid of a child gone long ago is still a copy. An error is the process list's own.
+    pub fn running_copies(&self, unhooked: &[UncoveredChild]) -> Result<Vec<RunningCopy>, String> {
+        let mut members = self.held_pids();
+        members.extend(
+            unhooked.iter().filter(|child| handoff::still_the_child(child, &handoff::full_path_of)).map(|child| child.pid),
+        );
+        handoff::running_copies(&self.windowed_images(), &members)
     }
 
     /// The target's exit code, once it has exited. Whether it has is the signalled process object's to
@@ -1836,6 +1888,7 @@ pub fn prepare(spec: &SessionSpec, target: &Target, hook_dll: &Path) -> Result<P
         // marked reported, since its coverage is handed back right here in `Prepared` - without that
         // the first child poll would emit the parent a second time.
         let _ = CloseHandle(pi.hThread);
+        let root_image = image_path_of(pi.hProcess);
         let mut reported_slots = vec![false; MAX_COV_PIDS];
         if let Some(slot) = parent_slot {
             reported_slots[slot] = true;
@@ -1856,6 +1909,7 @@ pub fn prepare(spec: &SessionSpec, target: &Target, hook_dll: &Path) -> Result<P
             reported_slots,
             consumed_children: vec![0; MAX_COV_PIDS],
             family: family::Family::new(MAX_COV_PIDS, parent_slot),
+            root_image,
             _lock: lock,
         };
         Ok(Prepared { coverage, session, vanished_lived_ms, reclaimed, start_job_note })

@@ -1,7 +1,7 @@
 Chrono Mock - session report
   target:   app.exe
   verdict:  PARTIAL - time substitution took effect only in part  (processes: 3, plus 2 not covered, contexts: 1)
-            the session clock reached the processes listed as covered - the ones this app spawned without the hook ran on the real clock
+            the target most likely handed its work to a copy of itself running outside the session, on the real clock
   errors:
             - the requested speed is outside the range this core accepts [time.bad_multiplier]
   session:  fake clock reached 2038-01-19T03:14:09
@@ -9,6 +9,8 @@ Chrono Mock - session report
   exited:   the target closed itself with code 3
   followed: the target had started these, and the session went on for them:
             - app.exe (pid 4500)
+  copies:   the target most likely handed its work to these copies of it, running outside the session on the REAL clock:
+            - app.exe (pid 4600)
   covered channels (substituted, with call counts, at least 17 calls in all):
             - pid 4200: GetSystemTimePreciseAsFileTime (12 calls)
             - context 1: page Date.now (at least 5 calls)
@@ -28,5 +30,6 @@ Chrono Mock - session report
   warnings:
             - some waits were too short to divide by the full speed factor and ran at this tool's shortest step (1 ms) instead - that part of the application did not accelerate (wait.timeout_collapsed)
             - the computer slept for 1 h 30 min during the session - the session clock stood still while it slept, as during a pause (sleep is never multiplied by the speed factor) (time.host_slept)
+            - the target ended without ever showing a window, and when it ended a copy of it was running outside the session - a single-instance application most likely handed its work to that copy, listed under 'copies', which runs on the real clock, so this session may not have tested anything - to test the program under the session, close every copy of it and start the session again (session.handed_to_copy)
   not fully cleaned up:
             - cdp.profile_left

@@ -1321,6 +1321,12 @@
     into columns that can be scanned, and "GetTickCount64  x44910" in a proportional face is a ragged
     edge down the middle of the list. Capped in height and scrolling, because a family session can
     produce forty channels and this is a detail inside a folded section, not the subject of the screen.
+
+    🔴 THE ROWS WRAP, THEY ARE NEVER TRIMMED. The lists that use this part name processes, "app.exe (pid
+    4600)", and the pid closes the row: it is what the tester needs to find the process and close it. A
+    program file named past the width of the result trimmed the row at its end and took the pid with it
+    (measured 2026-11-11 on the result of a hand-off to a copy: the row needed 1807px and got 960). A
+    row that fits is drawn exactly as before, and one that does not takes a second line.
   -->
   <Style x:Key="PartFactList" TargetType="controls:TextNamedList">
     <Setter Property="Margin" Value="{StaticResource StackGapLg}" />
@@ -1335,8 +1341,7 @@
                it does not know (an honest "translation missing", never a blank). A covered-channel row is
                already rendered data - "GetTickCount64  ×44910" - and passes through untouched. Keys all
                carry dots and API names do not, so the two cannot be mistaken for each other. -->
-          <TextBlock Style="{StaticResource PartCaption}" TextWrapping="NoWrap"
-                     TextTrimming="CharacterEllipsis"
+          <TextBlock Style="{StaticResource PartCaption}" TextWrapping="Wrap"
                      FontFamily="{StaticResource FontFamilyMono}"
                      Text="{Binding Converter={StaticResource KeyToText}}" />
         </DataTemplate>

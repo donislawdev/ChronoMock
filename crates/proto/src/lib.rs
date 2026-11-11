@@ -401,6 +401,13 @@ pub enum Event {
         /// target, and for a session that ended while the target ran. Additive.
         #[serde(default)]
         followed: Vec<FollowedProcess>,
+        /// Processes outside the family running the same executable file as a windowed member, found
+        /// when the family ended on its own without ever showing a window: a single-instance application
+        /// most likely handed its work to one of them after the guard window, and it runs on the real
+        /// clock (ADR-4). Each counts against the verdict like an uncovered process. Empty for every other
+        /// session, and for a Chromium session. Additive, left out when empty.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        copies_outside: Vec<FollowedProcess>,
         /// How long the machine slept during the session, in milliseconds, when it slept at least a
         /// second (R5-P1, R5-D34) - the time the session clock stood still (ADR-5), said beside the
         /// `time.host_slept` warning. Absent when the machine did not sleep. Additive.
@@ -756,6 +763,7 @@ mod tests {
                 FollowedProcess { pid: 5150, image: Some("app.exe".into()) },
                 FollowedProcess { pid: 5151, image: None },
             ],
+            copies_outside: vec![],
             host_slept_ms: 0,
             browser: None,
         };
@@ -804,6 +812,38 @@ mod tests {
             }
             _ => panic!("wrong event variant"),
         }
+    }
+
+    /// ADR-4, 2026-11-11. The copies a single-instance application most likely handed its work to travel
+    /// like the processes a session went on for, a copy without a name carries no `image` key, and an
+    /// empty list stays off the wire, so the line of every other session is the one it was.
+    #[test]
+    fn the_copies_outside_travel_and_an_empty_list_stays_off_the_wire() {
+        let copies = vec![FollowedProcess { pid: 4600, image: Some("app.exe".into()) }, FollowedProcess { pid: 4601, image: None }];
+        let ev = Event::SessionVerdict {
+            v: PROTOCOL_VERSION,
+            verdict: "partial".into(),
+            reason_key: "session.family_handed_to_copy".into(),
+            process_count: 1,
+            warning_keys: vec!["session.handed_to_copy".into()],
+            uncovered_children: vec![],
+            uncovered_children_total: 0,
+            context_count: 0,
+            engines: vec![],
+            followed: vec![],
+            copies_outside: copies.clone(),
+            host_slept_ms: 0,
+            browser: None,
+        };
+        let line = ev.to_ndjson();
+        assert!(line.contains(r#""copies_outside":[{"pid":4600,"image":"app.exe"},{"pid":4601}]"#), "got {line}");
+        let Event::SessionVerdict { copies_outside, .. } = parse_event(&line).unwrap() else { panic!("wrong event variant") };
+        assert_eq!(copies_outside, copies);
+        let older = r#"{"type":"session_verdict","v":1,"verdict":"works","reason_key":"session.family_covered","process_count":1}"#;
+        let parsed = parse_event(older).unwrap();
+        let Event::SessionVerdict { copies_outside, .. } = &parsed else { panic!("wrong event variant") };
+        assert!(copies_outside.is_empty(), "absent means no copies, never a parse failure");
+        assert!(!parsed.to_ndjson().contains("copies_outside"), "an empty list went on the wire");
     }
 
     /// R5-P1, R5-D34, R5-WY11. The sleep travels as its own event and as a total on the verdict, which an
@@ -1034,11 +1074,12 @@ mod tests {
 
         fn session_verdict() -> impl Strategy<Value = Event> {
             let first = (edge_u32(), text(), text(), edge_u32(), few(text()), few(uncovered_child()));
-            let rest = (edge_u32(), edge_u32(), few(engine()), few(followed()), edge_u64(), option::of(text()));
+            let rest =
+                (edge_u32(), edge_u32(), few(engine()), few(followed()), few(followed()), edge_u64(), option::of(text()));
             (first, rest).prop_map(
                 |(
                     (v, verdict, reason_key, process_count, warning_keys, uncovered_children),
-                    (uncovered_children_total, context_count, engines, followed, host_slept_ms, browser),
+                    (uncovered_children_total, context_count, engines, followed, copies_outside, host_slept_ms, browser),
                 )| Event::SessionVerdict {
                     v,
                     verdict,
@@ -1050,6 +1091,7 @@ mod tests {
                     context_count,
                     engines,
                     followed,
+                    copies_outside,
                     host_slept_ms,
                     browser,
                 },

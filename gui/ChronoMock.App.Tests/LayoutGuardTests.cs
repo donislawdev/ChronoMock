@@ -861,6 +861,64 @@ public class LayoutGuardTests
     }
 
     /// <summary>
+    /// The copies a single-instance application most likely passed its work to stand on the result, under the
+    /// line that says the application closed and above the actions on the answer (ADR-4, 2026-11-11), with the
+    /// copy's row inside the list - measured on the arrange pass, as for the programs a session went on for.
+    /// They are why the verdict is not Works, and folded in the audit alone they would be found by nobody.
+    /// </summary>
+    [Fact]
+    public void The_copies_outside_the_session_stand_under_the_exit_code()
+    {
+        var (exit, list, copy, rowInside) = WpfTestHost.InvokeSettled(() =>
+        {
+            var view = new ResultPhaseView { DataContext = PhaseStates.ResultPartialHandedToCopy() };
+            LayoutProbe.Settle(view);
+            var elements = LayoutProbe.Walk(view);
+            var copies = elements.Single(e => e.Name == "CopiesOutsideList");
+            var row = elements.Any(e => e.IsVisible
+                && e.Text == "app.exe (pid 4600)"
+                && e.Bounds.Top >= copies.Bounds.Top
+                && e.Bounds.Bottom <= copies.Bounds.Bottom);
+            return (elements.Single(e => e.Name == "ExitCode"), copies, elements.Single(e => e.Name == "CopyRow"), row);
+        });
+
+        Assert.True(exit.IsVisible, "the exit code line the list explains is not on the result");
+        Assert.True(list.IsVisible, "the copies outside the session are not on the result");
+        Assert.True(exit.Bounds.Bottom <= list.Bounds.Top, $"the list starts at {list.Bounds.Top:F0}, above the exit code's end at {exit.Bounds.Bottom:F0}");
+        Assert.True(list.Bounds.Bottom <= copy.Bounds.Top, $"the list ends at {list.Bounds.Bottom:F0}, below the copy row's top at {copy.Bounds.Top:F0}");
+        Assert.True(rowInside, "the list is on the result without the copy it names");
+    }
+
+    /// <summary>
+    /// A copy whose program file has a name longer than the result is wide keeps its pid in view: the pid
+    /// closes the row, and it is the one part of it the tester needs to find the process and close it. The
+    /// row may take a second line, never an ellipsis - measured on the arrange pass, with the trimming rule
+    /// every screen sweep uses and the row's own bounds against the list's.
+    /// </summary>
+    [Fact]
+    public void A_long_program_name_does_not_hide_the_pid_of_its_copy()
+    {
+        var image = string.Concat(Enumerable.Repeat("a-program-with-a-long-file-name-", 8)) + "app.exe";
+        var (list, row, trimmed) = WpfTestHost.InvokeSettled(() =>
+        {
+            var view = new ResultPhaseView { DataContext = PhaseStates.ResultPartialHandedToCopy(image) };
+            LayoutProbe.Settle(view);
+            var elements = LayoutProbe.Walk(view);
+            var copies = elements.Single(e => e.Name == "CopiesOutsideList");
+            var inside = elements
+                .Where(e => e.Bounds.Top >= copies.Bounds.Top && e.Bounds.Bottom <= copies.Bounds.Bottom + 1)
+                .ToList();
+            return (copies, inside.SingleOrDefault(e => e.Text == $"{image} (pid 4600)"), LayoutRules.TrimmedAway(inside));
+        });
+
+        Assert.True(row is { IsVisible: true }, "the copy's row is not inside the list");
+        Assert.True(trimmed.Count == 0, "a row of the copies lost its end:\n" + string.Join("\n", trimmed));
+        Assert.True(
+            row.Bounds.Right <= list.Bounds.Right + 1,
+            $"the row runs to {row.Bounds.Right:F0}, past the list's edge at {list.Bounds.Right:F0}");
+    }
+
+    /// <summary>
     /// The programs a session went on for stand on the result, under the line that says the application closed
     /// and above the actions on the answer (R4-N53) - measured on the arrange pass, not read off the markup.
     /// </summary>
@@ -977,6 +1035,7 @@ public class LayoutGuardTests
         yield return ("result that did not start", ResultView(PhaseStates.ResultNotStarted()));
         yield return ("result whose application could not load", ResultView(PhaseStates.ResultLoaderFailed()));
         yield return ("result that went on for the programs the application started", ResultView(PhaseStates.ResultWorksAfterHandOff()));
+        yield return ("result whose application passed its work to a copy outside the session", ResultView(PhaseStates.ResultPartialHandedToCopy()));
         yield return ("result with the history open", ResultView(PhaseStates.ResultWithHistoryChosen(), "HistorySection"));
     }
 

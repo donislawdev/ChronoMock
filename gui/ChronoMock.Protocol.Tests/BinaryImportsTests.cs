@@ -212,6 +212,15 @@ public class BinaryImportsTests
             "bcryptprimitives, so it arrives here for these calls. Measured 2026-10-01 with dumpbin: eleven " +
             "imports by name, on both bitnesses"
         ),
+        (
+            "chrono.exe", "user32.dll",
+            "EnumWindows, IsWindowVisible and GetWindowThreadProcessId, and nothing else. One read-only " +
+            "question about the session's own processes (ADR-4): whether any of them shows a visible window, " +
+            "because a program that closes without ever showing one while a copy of it runs outside the " +
+            "session most likely handed its work to that copy. The core walks the top-level windows and " +
+            "asks who owns each - it creates no window, draws nothing and sends no message. Measured " +
+            "2026-11-11 with dumpbin: three imports by name, on both bitnesses"
+        ),
 
         (
             "chrono_hook.dll", "kernel32.dll",
@@ -325,6 +334,24 @@ public class BinaryImportsTests
                     "RegDeleteValueW", "RegEnumValueW", "RegGetValueW", "RegOpenKeyExW", "RegQueryInfoKeyW",
                     "RegSetValueExW",
                 ],
+                entry.Functions.Order(StringComparer.Ordinal));
+        }
+    }
+
+    /// <summary>
+    /// The same pin for the window question of the hand-off check (ADR-4): three calls that read which
+    /// process owns which visible top-level window. A call that draws, sends a message or hooks input
+    /// arriving under the same entry would be a different grant than the one written down.
+    /// </summary>
+    [Fact]
+    public void The_user32_module_is_imported_for_exactly_the_calls_the_register_allows()
+    {
+        foreach (var triple in new[] { X64, X86 })
+        {
+            var table = PeImportTable.Read(RepoPaths.ReleaseBinary(RepoPaths.RepoRoot(), triple, "chrono.exe"));
+            var entry = Assert.Single(table.Entries, e => SameModule(e.Name, "user32.dll"));
+            Assert.Equal(
+                ["EnumWindows", "GetWindowThreadProcessId", "IsWindowVisible"],
                 entry.Functions.Order(StringComparer.Ordinal));
         }
     }

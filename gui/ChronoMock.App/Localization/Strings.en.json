@@ -377,6 +377,7 @@
   // in those words rather than in terms of channels.
   "session.family_partial_children": "The fake clock reached the processes listed as covered. The ones this application started without it ran on the real clock.",
   "session.family_uncovered_children": "Nothing read the fake clock, and the processes this application started without it ran on the real clock.",
+  "session.family_handed_to_copy": "The program most likely passed its work to a copy of itself running outside the session, on the real clock.",
 
   // Coverage / audit preview (chrono-mock 7.2). Channel names are raw API identifiers, not translated.
   //
@@ -511,6 +512,9 @@
   // A launcher, a restart after an update, a script that runs "start app.exe": the program the tester chose ends on purpose and the session goes on for what it started (ADR-16). Says why the session outlived it, and the one way that can surprise.
   "session.followed_family": "The program you started closed while programs it had started were still running on the fake clock, so the session went on for them instead of ending with it. A program that keeps running after the application closes keeps the session open too - stop the session when you are done.",
   "session.member_unwatchable": "Some processes of this session could not be watched (access denied), so the session may have ended while they still ran - from then on they ran on the real clock.",
+  "session.handed_to_copy": "The program closed without ever showing a window, and when it closed, another copy of it was running outside the session. It most likely passed its work to that copy, which runs on the real clock, so this session may not have tested anything. To test the program under the session, close every copy of it and start the session again.",
+  // The same question left unanswered (ADR-4): the list of running programs could not be read. Nothing was found, so the verdict is untouched, and the way out is the same.
+  "session.copy_search_failed": "The program closed without ever showing a window, and the list of running programs could not be read, so the session could not check whether the program passed its work to a copy of itself running outside the session. If the program did not open, close every copy of it and start the session again.",
   // The vanish reasons complete the sentence under "The application ran for N ms and then vanished", and each carries its own suspicion, because report.vanish_detail no longer names one for all of them.
   "target.single_instance_suspected": "exited right after it started, before the fake clock could be confirmed - usually a single-instance application handing over to a copy that is already running, so close that copy and start again",
   "target.handed_off_uncovered": "closed right after starting another program that could not be given the fake clock - usually one of a different bitness - so that program runs on the real one",
@@ -588,6 +592,7 @@
   "report.cleanup": "not fully cleaned up",
   // The processes the session went on for after the target closed (ADR-16), under the exit line, in the CLI report's words. "Went on for", never "until they closed": a Stop can end the session while one still runs.
   "report.followed": "the application had started these, and the session went on for them",
+  "report.copies_outside": "the program most likely passed its work to these copies of it, running outside the session on the real clock",
   // What a refusal could not end (R4-S5), under the verdict in the copied summary, in the CLI report's words.
   "report.left_running": "could not be ended - they run on the real clock",
   // The processes the hook never got into, one line per pid the way the CLI report prints them (the screen
@@ -626,6 +631,7 @@
   "result.exit_code": "The application exited on its own with exit code",
   // The heading over the processes the session went on for after the application closed (ADR-16). The list composes the count after it: "... had started (2)". Same "went on for" rule as report.followed.
   "result.followed": "The session went on for the programs the application had started",
+  "result.copies_outside": "Copies of the program running outside the session, on the real clock",
   // The heading over the processes a refusal could not end (R4-S5), under the status that says the application was ended. The list composes the count after it.
   "result.left_running": "These could not be ended and run on the real clock",
   // Under the refused status when the core could not look for all of the application (R4-S5): some of it may still run without being named.

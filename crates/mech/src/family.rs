@@ -28,13 +28,15 @@ use windows::Win32::System::Threading::{
 use crate::process_created;
 use crate::tree::{process_entries, ProcessEntry};
 
-/// One process that signed in to the session: its registry slot, its pid, and the creation time its hook
-/// recorded (0 when it recorded none).
+/// One process that signed in to the session: its registry slot, its pid, the creation time its hook
+/// recorded (0 when it recorded none), and whether it may show windows - any subsystem its hook recorded
+/// but the console's, an unrecorded one included, as `only_console` keeps the doubt.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct SignedIn {
     pub(crate) slot: usize,
     pub(crate) pid: u32,
     pub(crate) created: u64,
+    pub(crate) windowed: bool,
 }
 
 /// What the creation time says about the process behind a handle opened by a member's pid.
@@ -85,11 +87,24 @@ pub(crate) struct Family {
     /// Members that signed in and would not let this process wait on them, so the session cannot see
     /// them close and may end while they run.
     unwatchable: u32,
+    /// The full paths of the executables of the windowed members, each once, taken when a member is
+    /// first opened: a process that has ended may no longer say its path (ADR-4, 2026-11-11).
+    windowed_images: Vec<String>,
 }
 
 impl Family {
     pub(crate) fn new(slots: usize, root_slot: Option<usize>) -> Self {
-        Family { watch: (0..slots).map(|_| Watch::Unseen).collect(), root_slot, unwatchable: 0 }
+        Family { watch: (0..slots).map(|_| Watch::Unseen).collect(), root_slot, unwatchable: 0, windowed_images: Vec::new() }
+    }
+
+    /// The launched process's own slot, when it signed in.
+    pub(crate) fn root_slot(&self) -> Option<usize> {
+        self.root_slot
+    }
+
+    /// The executables of the windowed members other than the launched process, as `refresh` found them.
+    pub(crate) fn windowed_images(&self) -> &[String] {
+        &self.windowed_images
     }
 
     /// How many members signed in that this session could not watch (R5-D3).
@@ -100,7 +115,7 @@ impl Family {
     /// Start watching every process that signed in since the last call, and stop watching the ones
     /// that ended. `published` is every process signed in so far, the launched one included.
     pub(crate) fn refresh(&mut self, root_pid: u32, published: &[SignedIn]) {
-        let mut opened: Vec<(usize, u32, HANDLE, Identity)> = Vec::new();
+        let mut opened: Vec<(SignedIn, HANDLE, Identity)> = Vec::new();
         for member in published {
             let slot = member.slot;
             let Some(Watch::Unseen) = self.watch.get(slot) else {
@@ -111,7 +126,7 @@ impl Family {
             }
             // SAFETY: plain opens by pid. The handle is closed below once the process ends, or in `Drop`.
             match unsafe { open_member(member.pid, member.created) } {
-                Ok((handle, id)) => opened.push((slot, member.pid, handle, id)),
+                Ok((handle, id)) => opened.push((*member, handle, id)),
                 Err(why) => {
                     if why == Unopened::Denied {
                         self.unwatchable += 1;
@@ -123,9 +138,13 @@ impl Family {
         if !opened.is_empty() {
             let known: HashSet<u32> = std::iter::once(root_pid).chain(published.iter().map(|m| m.pid)).collect();
             let entries = process_entries().ok();
-            for (slot, pid, handle, id) in opened {
+            for (member, handle, id) in opened {
+                let (slot, pid) = (member.slot, member.pid);
                 self.watch[slot] = match membership(id, pid, &known, entries.as_deref()) {
-                    Some(image) => Watch::Living { pid, handle, image },
+                    Some(image) => {
+                        self.note_windowed(member, handle);
+                        Watch::Living { pid, handle, image }
+                    }
                     None => {
                         // SAFETY: opened above and owned by nobody else.
                         unsafe {
@@ -147,6 +166,22 @@ impl Family {
                     *watch = Watch::Done;
                 }
             }
+        }
+    }
+
+    /// Keep the path of a windowed member's executable, once, read through the handle just opened on it.
+    /// The handle allows limited queries when the open could ask for them, and without them the path is
+    /// not there to read.
+    fn note_windowed(&mut self, member: SignedIn, handle: HANDLE) {
+        if !member.windowed {
+            return;
+        }
+        // SAFETY: an open process handle, which the caller keeps for as long as this call.
+        let path = unsafe { crate::image_path_of(handle) };
+        if let Some(path) = path
+            && !self.windowed_images.iter().any(|known| known.eq_ignore_ascii_case(&path))
+        {
+            self.windowed_images.push(path);
         }
     }
 
@@ -319,7 +354,7 @@ mod tests {
     }
 
     fn signed(slot: usize, pid: u32, created: u64) -> SignedIn {
-        SignedIn { slot, pid, created }
+        SignedIn { slot, pid, created, windowed: false }
     }
 
     #[test]
@@ -354,6 +389,28 @@ mod tests {
         stranger.refresh(u32::MAX - 1, &[signed(0, u32::MAX - 1, 0), signed(2, me, 0)]);
         assert!(stranger.living().is_empty());
         assert!(matches!(stranger.watch[2], Watch::Done));
+    }
+
+    /// ADR-4, 2026-11-11. A windowed member leaves the path of its executable when it is first opened,
+    /// once however many slots name the same file, and a console member leaves nothing: only a windowed
+    /// program hands its work to a copy.
+    #[test]
+    fn a_windowed_member_leaves_the_path_of_its_executable() {
+        let me = std::process::id();
+        // SAFETY: the pseudo-handle of this process.
+        let created = unsafe { process_created(windows::Win32::System::Threading::GetCurrentProcess()) }
+            .expect("this process can read its own creation time");
+        let windowed = |slot| SignedIn { slot, pid: me, created, windowed: true };
+        let mut family = Family::new(4, Some(0));
+        family.refresh(u32::MAX - 1, &[signed(0, u32::MAX - 1, 0), windowed(1), windowed(2)]);
+        let own = std::env::current_exe().expect("this test knows its executable").to_string_lossy().into_owned();
+        assert_eq!(family.windowed_images().len(), 1, "{:?}", family.windowed_images());
+        assert!(family.windowed_images()[0].eq_ignore_ascii_case(&own), "{:?} is not {own}", family.windowed_images());
+
+        let mut console = Family::new(4, Some(0));
+        console.refresh(u32::MAX - 1, &[signed(0, u32::MAX - 1, 0), signed(1, me, created)]);
+        assert_eq!(console.living().len(), 1, "the console member is watched all the same");
+        assert!(console.windowed_images().is_empty(), "a console member left a path");
     }
 
     /// A member whose parent the family never saw - started with a parent chosen for it - is still a

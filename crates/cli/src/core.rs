@@ -16,7 +16,7 @@ use std::time::{Duration, Instant};
 use chrono_core::{
     filetime_utc_to_wall, verdict_from_coverage, Coverage, Moment, SessionSpec, Verdict,
 };
-use chrono_mech::{FamilyMember, UncoveredChild};
+use chrono_mech::{FamilyMember, RunningCopy, UncoveredChild};
 use chrono_proto::{
     parse_command, Command, Event, FollowedProcess, ReachedEngine, TargetConsole, TargetSpec, TimeSpec,
     PROTOCOL_VERSION, UNCOVERED_CHILDREN_WIRE_MAX,
@@ -351,6 +351,15 @@ pub(crate) struct SessionLedger {
     /// Whether an absolute deadline had been converted when the session jumped or changed speed (R5-D2,
     /// R5-D35) - the one case in which such a deadline can fire at a moment the application did not mean.
     absolute_due_before_move: bool,
+    /// Whether a process of the family has shown a visible window (ADR-4, 2026-11-11). Looked for at every
+    /// heartbeat until the first one, then no more: one is enough to say the tester had the application.
+    window_seen: bool,
+    /// The copies of a windowed program of the family running outside it, looked for when the family
+    /// ended on its own without ever showing a window - where its work most likely went.
+    copies_outside: Vec<RunningCopy>,
+    /// Whether those copies were to be looked for and the process list could not be read, so the report
+    /// cannot say whether the work went to a copy - which it says, rather than nothing.
+    copy_search_failed: bool,
 }
 
 impl SessionLedger {
@@ -367,6 +376,44 @@ impl SessionLedger {
             unhooked_pids: HashSet::new(),
             slept_announced_ms: 0,
             absolute_due_before_move: false,
+            window_seen: false,
+            copies_outside: Vec::new(),
+            copy_search_failed: false,
+        }
+    }
+
+    /// Look for a visible window of the family, until one is seen (ADR-4, 2026-11-11). The children the
+    /// hook never entered count too: a window the tester saw is one, whichever process drew it. Whose a
+    /// process is, the session decides by identity, not by a pid it noted once (`family_shows_window`).
+    pub(crate) fn look_for_window(&mut self, session: &chrono_mech::Session) {
+        if !self.window_seen {
+            self.window_seen = session.family_shows_window(&self.uncovered_children);
+        }
+    }
+
+    /// The family ended on its own. When it never showed a window, a copy of one of its windowed programs
+    /// running outside it is where its work most likely went (ADR-4, 2026-11-11). A session the tester
+    /// stopped is not asked: an application cut off has handed nothing on, and `run_session` calls this
+    /// only on the way out that the family took by itself.
+    fn note_family_ended(&mut self, session: &chrono_mech::Session) {
+        self.family_ended(|unhooked| session.running_copies(unhooked));
+    }
+
+    /// `note_family_ended` with the search passed in, so what the ledger does with each answer is tested
+    /// without a session: a window seen asks nothing, copies found are kept, and a process list that
+    /// could not be read is remembered for the report instead of told to the log alone.
+    fn family_ended(&mut self, search: impl FnOnce(&[UncoveredChild]) -> Result<Vec<RunningCopy>, String>) {
+        if self.window_seen {
+            return;
+        }
+        match search(&self.uncovered_children) {
+            Ok(copies) => self.copies_outside = copies,
+            Err(why) => {
+                diag!(
+                    "chrono core: the process list could not be read, so a copy of the application running outside the session was not looked for: {why}"
+                );
+                self.copy_search_failed = true;
+            }
         }
     }
 
@@ -536,9 +583,13 @@ pub(crate) fn run_session(
             emit(&state_event_from(&st));
             // The session lasts for the family on its clock, not for the process it launched: a
             // launcher ends on purpose and leaves the application running (ADR-16). The exit code
-            // is the launched process's, the one the tester named.
-            if !session.family_alive() {
+            // is the launched process's, the one the tester named. Asked before the window, because
+            // asking refreshes the watch the window question reads its members from.
+            let family_alive = session.family_alive();
+            ledger.look_for_window(&session);
+            if !family_alive {
                 target_exit = session.exit_code();
+                ledger.note_family_ended(&session);
                 break;
             }
             bridge.request_counts();
@@ -709,6 +760,21 @@ const KEY_FOLLOWED_FAMILY: &str = "session.followed_family";
 /// not see it close and may have ended while it still ran (R5-D3). It used to count as ended, silently.
 const KEY_MEMBER_UNWATCHABLE: &str = "session.member_unwatchable";
 
+/// The family ended on its own without ever showing a window, while a copy of one of its windowed
+/// programs ran outside the session: a single-instance application most likely handed its work to that
+/// copy after the guard window, and the copy runs on the real clock (ADR-4, 2026-11-11). "Most likely",
+/// because no process says what it handed on - the situation is what is read.
+const KEY_HANDED_TO_COPY: &str = "session.handed_to_copy";
+
+/// The reason of a family verdict whose application most likely handed its work to a copy outside the
+/// session - before every other reason, because it is why the session may have tested nothing.
+const KEY_FAMILY_HANDED_TO_COPY: &str = "session.family_handed_to_copy";
+
+/// The family ended on its own without ever showing a window, and the process list could not be read,
+/// so whether its work went to a copy outside the session is not known (ADR-4, 2026-11-11). Said apart
+/// from `session.handed_to_copy`: nothing was found, and the verdict stays what the family earned.
+const KEY_COPY_SEARCH_FAILED: &str = "session.copy_search_failed";
+
 /// The target vanished inside the guard window after starting a process the hook could not enter,
 /// usually one of the other bitness, which runs on the real clock (ADR-16).
 const KEY_HANDED_OFF_UNCOVERED: &str = "target.handed_off_uncovered";
@@ -842,6 +908,9 @@ pub(crate) fn close_session(
         unhooked_pids: _,
         slept_announced_ms,
         absolute_due_before_move,
+        window_seen: _,
+        copies_outside,
+        copy_search_failed,
     } = ledger;
     let followed = followed.unwrap_or_default();
     // The application may outlive the session - a `--ticks` cutoff, a Stop in the panel - and the
@@ -889,6 +958,13 @@ pub(crate) fn close_session(
     // the same `combine` rule that rolls up channels rolls up processes.
     let any_uncovered_children = uncovered_children_total > 0 || !uncovered_children.is_empty();
     if any_uncovered_children {
+        family = family.combine(Verdict::Fails);
+    }
+    // The copy a single-instance application most likely handed its work to runs on the real clock, so
+    // it counts like a process nobody reached (ADR-4, 2026-11-11).
+    let (copies, hand_off_key) = hand_off_findings(copies_outside, copy_search_failed);
+    let handed_to_copy = !copies.is_empty();
+    if handed_to_copy {
         family = family.combine(Verdict::Fails);
     }
     // Capture the session clocks before ending so `ended` can state the duration and the fake wall
@@ -947,6 +1023,7 @@ pub(crate) fn close_session(
     session_warnings.extend(children_warnings);
     session_warnings.extend(pages.session_warnings(left_running));
     place_policy_keys(&mut session_warnings, policy_keys);
+    session_warnings.extend(hand_off_key.map(str::to_string));
     if !followed.is_empty() {
         session_warnings.push(KEY_FOLLOWED_FAMILY.to_string());
     }
@@ -972,7 +1049,7 @@ pub(crate) fn close_session(
     emit(&Event::SessionVerdict {
         v: PROTOCOL_VERSION,
         verdict: family.wire().into(),
-        reason_key: session_reason_key(family, any_uncovered_children).into(),
+        reason_key: session_reason_key(family, any_uncovered_children, handed_to_copy).into(),
         process_count: 1 + family_pids.len() as u32,
         warning_keys: session_warnings,
         uncovered_children: named,
@@ -985,6 +1062,7 @@ pub(crate) fn close_session(
             .iter()
             .map(|m| FollowedProcess { pid: m.pid, image: m.image.as_deref().map(crate::cdp::sanitise_target_text) })
             .collect(),
+        copies_outside: copies,
         host_slept_ms: reported_sleep_ms(final_state.host_slept_ms),
         // A native session drives no browser of its own - the engines it reached say what they are.
         browser: None,
@@ -1018,13 +1096,34 @@ pub(crate) fn fold_children(
     }
 }
 
+/// What the family's end says about a hand-off to a copy outside the session (ADR-4, 2026-11-11): the
+/// copies the verdict names, as the wire carries them, with the image name through the sieve every text
+/// from the target's world goes through, and the warning that goes with them. A search that could not
+/// read the process list names nothing and has a warning of its own. The copies are already the ones
+/// outside the session: the mechanism left out every process it could tell was the session's own,
+/// a child the hook never entered included.
+fn hand_off_findings(copies: Vec<RunningCopy>, search_failed: bool) -> (Vec<FollowedProcess>, Option<&'static str>) {
+    let named: Vec<FollowedProcess> = copies
+        .into_iter()
+        .map(|copy| FollowedProcess { pid: copy.pid, image: Some(crate::cdp::sanitise_target_text(&copy.image)) })
+        .collect();
+    let key = if named.is_empty() { search_failed.then_some(KEY_COPY_SEARCH_FAILED) } else { Some(KEY_HANDED_TO_COPY) };
+    (named, key)
+}
+
 /// Stable reason key for the family (session) verdict, scoped to the whole family.
 ///
 /// With uncovered children the family is `partial` or `fails` by construction (`close_session`
 /// folds a `Fails` in), and the reason has to say WHY in words a tester can act on: not "some
 /// channels were queried but not covered" - which is about what a hooked process read - but that a
 /// process of this application ran with no hook in it at all.
-pub(crate) fn session_reason_key(v: Verdict, uncovered_children: bool) -> &'static str {
+///
+/// A hand-off to a copy outside the session comes first (ADR-4, 2026-11-11): it is why the session may
+/// have tested nothing at all, which no other reason says.
+pub(crate) fn session_reason_key(v: Verdict, uncovered_children: bool, handed_to_copy: bool) -> &'static str {
+    if handed_to_copy {
+        return KEY_FAMILY_HANDED_TO_COPY;
+    }
     match (v, uncovered_children) {
         (Verdict::Works | Verdict::Partial, true) => "session.family_partial_children",
         (Verdict::Fails | Verdict::Undetermined, true) => "session.family_uncovered_children",
@@ -1978,11 +2077,65 @@ mod tests {
     /// unreachable otherwise: a family with such a child is partial or fails, never works.
     #[test]
     fn the_family_reason_names_the_uncovered_children() {
-        assert_eq!(session_reason_key(Verdict::Works, false), "session.family_covered");
-        assert_eq!(session_reason_key(Verdict::Partial, true), "session.family_partial_children");
-        assert_eq!(session_reason_key(Verdict::Fails, true), "session.family_uncovered_children");
+        assert_eq!(session_reason_key(Verdict::Works, false, false), "session.family_covered");
+        assert_eq!(session_reason_key(Verdict::Partial, true, false), "session.family_partial_children");
+        assert_eq!(session_reason_key(Verdict::Fails, true, false), "session.family_uncovered_children");
         assert_eq!(Verdict::Works.combine(Verdict::Fails), Verdict::Partial);
         assert_eq!(Verdict::Undetermined.combine(Verdict::Fails), Verdict::Fails);
+    }
+
+    /// ADR-4, 2026-11-11. A hand-off to a copy outside the session is the reason whatever else the family
+    /// did, because it is why the session may have tested nothing - uncovered children included.
+    #[test]
+    fn a_hand_off_to_a_copy_is_the_reason_before_every_other() {
+        for verdict in [Verdict::Partial, Verdict::Fails] {
+            for children in [false, true] {
+                assert_eq!(session_reason_key(verdict, children, true), "session.family_handed_to_copy");
+            }
+        }
+    }
+
+    /// Copies found are named with the image through the sieve, under the warning that says what to do.
+    /// A search that could not read the process list names nothing and says so under a key of its own, and
+    /// a search that found nothing says nothing.
+    #[test]
+    fn the_hand_off_findings_name_the_copies_or_say_the_search_failed() {
+        let copies = vec![
+            RunningCopy { pid: 4600, image: "app.exe".into() },
+            RunningCopy { pid: 4700, image: "app\u{1b}[2J.exe".into() },
+        ];
+        let (named, key) = hand_off_findings(copies, false);
+        assert_eq!(named.iter().map(|c| c.pid).collect::<Vec<_>>(), vec![4600, 4700]);
+        assert!(named.iter().all(|c| c.image.as_deref().is_some_and(|i| !i.contains('\u{1b}'))), "{named:?}");
+        assert_eq!(key, Some("session.handed_to_copy"));
+        assert_eq!(hand_off_findings(Vec::new(), true), (Vec::new(), Some("session.copy_search_failed")));
+        assert_eq!(hand_off_findings(Vec::new(), false), (Vec::new(), None));
+    }
+
+    /// The ledger at the family's end: a window seen asks for no copies at all, copies found are kept, and
+    /// a process list that could not be read is kept for the report rather than lost in the log.
+    #[test]
+    fn the_ledger_looks_for_copies_only_when_no_window_was_seen() {
+        let copy = || vec![RunningCopy { pid: 4600, image: "app.exe".into() }];
+
+        let mut seen = SessionLedger::new(Verdict::Works);
+        seen.window_seen = true;
+        seen.family_ended(|_| panic!("a family that showed a window was searched for copies"));
+        assert!(seen.copies_outside.is_empty() && !seen.copy_search_failed);
+
+        let mut found = SessionLedger::new(Verdict::Works);
+        found.uncovered_children.push(child(4300, Some("helper.exe"), None));
+        found.family_ended(|unhooked| {
+            assert_eq!(unhooked.iter().map(|c| c.pid).collect::<Vec<_>>(), vec![4300], "the children were not passed on");
+            Ok(copy())
+        });
+        assert_eq!(found.copies_outside, copy());
+        assert!(!found.copy_search_failed);
+
+        let mut unread = SessionLedger::new(Verdict::Works);
+        unread.family_ended(|_| Err("snapshot refused".into()));
+        assert!(unread.copies_outside.is_empty());
+        assert!(unread.copy_search_failed, "an unread process list was told to the log alone");
     }
 
     /// A target that vanished leaving a program it started running, one the hook could not enter,

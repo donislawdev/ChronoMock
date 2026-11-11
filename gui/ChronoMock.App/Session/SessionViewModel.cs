@@ -1668,6 +1668,18 @@ public sealed class SessionViewModel : ObservableObject
 
     public bool HasFollowed => _result.FollowedRows.Count > 0;
 
+    /// <summary>The copies of the program running outside the session that the application most likely
+    /// passed its work to (ADR-4, 2026-11-11), in the spelling of <see cref="FollowedRows"/>. They run on the
+    /// real clock and are why the verdict is not Works, so they stand on the result itself, under the exit
+    /// code, where the tester looks for what happened to the application. Empty for every other session.</summary>
+    public IReadOnlyList<string> CopiesOutsideRows
+    {
+        get => _result.CopiesOutsideRows;
+        private set { if (Set(ref _result.CopiesOutsideRows, value)) { RaisePropertyChanged(nameof(HasCopiesOutside)); } }
+    }
+
+    public bool HasCopiesOutside => _result.CopiesOutsideRows.Count > 0;
+
     /// <summary>The processes of the application a refusal could not end, from <c>verdict.left_running</c>
     /// (R4-S5), in the spelling of <see cref="FollowedRows"/>. They run on the real clock, which the status
     /// line alone would hide - it says the application was ended. Empty for every session not refused.</summary>
@@ -1849,6 +1861,7 @@ public sealed class SessionViewModel : ObservableObject
                 Engines = sv.Engines;
                 EnginePagesReached = sv.ContextCount > 0;
                 FollowedRows = SessionReport.ProcessLines(sv.Followed);
+                CopiesOutsideRows = SessionReport.ProcessLines(sv.CopiesOutside);
                 // Session-level warnings join the per-process ones (R2-S9). They are about the family,
                 // not about any one process, so the panel shows them in the same list - a warning the
                 // reader has to attribute to an event type is a warning they will not read.
@@ -2299,6 +2312,7 @@ public sealed class SessionViewModel : ObservableObject
         _result.LivedMs = 0;
         TargetExitCode = null;
         FollowedRows = [];
+        CopiesOutsideRows = [];
         LeftRunningRows = [];
         RefusalIncomplete = false;
         ResidueKeys = [];

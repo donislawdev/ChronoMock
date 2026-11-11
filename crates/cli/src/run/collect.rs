@@ -36,6 +36,9 @@ pub(super) struct Collector {
     engines: Vec<chrono_proto::ReachedEngine>,
     // The processes the session went on for after the target closed, from `session_verdict` (ADR-16).
     followed: Vec<chrono_proto::FollowedProcess>,
+    // The copies outside the session the target most likely handed its work to, from `session_verdict`
+    // (ADR-4, 2026-11-11).
+    copies_outside: Vec<chrono_proto::FollowedProcess>,
     // How long the machine slept during the session, from `session_verdict` (R5-P1).
     host_slept_ms: u64,
     // What the browser of a Chromium session calls itself, from `session_verdict` (R5-D44).
@@ -87,6 +90,7 @@ impl Collector {
                 context_count,
                 engines,
                 followed,
+                copies_outside,
                 host_slept_ms,
                 browser,
                 ..
@@ -98,6 +102,7 @@ impl Collector {
                 self.context_count = context_count;
                 self.engines = engines;
                 self.followed = followed;
+                self.copies_outside = copies_outside;
                 self.host_slept_ms = host_slept_ms;
                 self.browser = browser;
             }
@@ -248,6 +253,7 @@ impl Collector {
             context_count: self.context_count,
             engines: self.engines,
             followed: self.followed,
+            copies_outside: self.copies_outside,
             refused: self.refused,
             refusal_incomplete: self.refusal_incomplete,
             cdp,
@@ -324,6 +330,7 @@ mod tests {
             context_count: 0,
             engines: Vec::new(),
             followed: vec![chrono_proto::FollowedProcess { pid: 200, image: Some("app.exe".into()) }],
+            copies_outside: Vec::new(),
             host_slept_ms: 0,
             browser: None,
         });
@@ -527,12 +534,18 @@ mod tests {
                 elapsed_real_ms: 1000,
             },
             Event::Error { v: 1, id: Some(12), code: 2, key: "time.bad_multiplier".into(), origin: "core".into() },
+            // A session with a copy outside has the reason and the warning that go with it, as the core
+            // sends them, so the window's test reads the warning in the report and in the summary both.
             Event::SessionVerdict {
                 v: 1,
                 verdict: "partial".into(),
-                reason_key: "session.family_partial_children".into(),
+                reason_key: "session.family_handed_to_copy".into(),
                 process_count: 3,
-                warning_keys: vec!["wait.timeout_collapsed".into(), "time.host_slept".into()],
+                warning_keys: vec![
+                    "wait.timeout_collapsed".into(),
+                    "time.host_slept".into(),
+                    "session.handed_to_copy".into(),
+                ],
                 uncovered_children: vec![chrono_proto::UncoveredChild {
                     pid: 4300,
                     parent_pid: 4200,
@@ -548,6 +561,7 @@ mod tests {
                     context_count: 1,
                 }],
                 followed: vec![chrono_proto::FollowedProcess { pid: 4500, image: Some("app.exe".into()) }],
+                copies_outside: vec![chrono_proto::FollowedProcess { pid: 4600, image: Some("app.exe".into()) }],
                 host_slept_ms: 5_400_000,
                 browser: None,
             },

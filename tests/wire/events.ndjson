@@ -4,7 +4,7 @@
 {"type":"ack","v":1,"id":11}
 {"type":"state","v":1,"fake":{"wall":"2038-01-19T03:14:08","zone_bias_min":-60},"real":{"wall":"2026-10-20T10:00:01","zone_bias_min":-120},"multiplier":60,"elapsed_fake_ms":60000,"elapsed_real_ms":1000}
 {"type":"vanished","v":1,"pid":4200,"reason_key":"target.single_instance_suspected","lived_ms":40}
-{"type":"session_verdict","v":1,"verdict":"partial","reason_key":"session.family_partial_children","process_count":3,"warning_keys":["time.host_slept"],"uncovered_children":[{"pid":4300,"parent_pid":4200,"image":"helper.exe","role":"renderer"}],"uncovered_children_total":2,"context_count":2,"engines":[{"pid":4400,"port":9333,"browser":"Engine/1.0","context_count":2}],"followed":[{"pid":4500,"image":"app.exe"}],"host_slept_ms":7200000,"browser":"Engine/1.0"}
+{"type":"session_verdict","v":1,"verdict":"partial","reason_key":"session.family_partial_children","process_count":3,"warning_keys":["time.host_slept"],"uncovered_children":[{"pid":4300,"parent_pid":4200,"image":"helper.exe","role":"renderer"}],"uncovered_children_total":2,"context_count":2,"engines":[{"pid":4400,"port":9333,"browser":"Engine/1.0","context_count":2}],"followed":[{"pid":4500,"image":"app.exe"}],"copies_outside":[{"pid":4600,"image":"app.exe"}],"host_slept_ms":7200000,"browser":"Engine/1.0"}
 {"type":"host_slept","v":1,"slept_ms":3600000,"total_slept_ms":7200000}
 {"type":"ended","v":1,"clean":true,"residue_keys":["cdp.profile_left"],"target_exit_code":3,"elapsed_real_ms":2000,"elapsed_fake_ms":120000,"fake_end_wall":"2038-01-19T03:16:07"}
 {"type":"error","v":1,"id":12,"code":2,"key":"time.bad_multiplier","origin":"core"}

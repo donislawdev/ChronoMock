@@ -134,6 +134,12 @@ public sealed record SessionVerdictEvent : ChronoEvent
     /// session that ended while the target ran, and in messages from an older core.</summary>
     [JsonPropertyName("followed")] public IReadOnlyList<FollowedProcess> Followed { get; init; } = [];
 
+    /// <summary>Processes outside the session running the same program file as a windowed process of it,
+    /// found when the application ended on its own without ever showing a window: a single-instance
+    /// application most likely passed its work to one of them, and it runs on the real clock (ADR-4,
+    /// 2026-11-11). Empty for every other session, and in messages from an older core.</summary>
+    [JsonPropertyName("copies_outside")] public IReadOnlyList<FollowedProcess> CopiesOutside { get; init; } = [];
+
     /// <summary>How long the machine slept during the session, in milliseconds (R5-D34) - the session clock
     /// stood still meanwhile. Zero when it did not sleep, and in messages from an older core.</summary>
     [JsonPropertyName("host_slept_ms")] public long HostSleptMs { get; init; }

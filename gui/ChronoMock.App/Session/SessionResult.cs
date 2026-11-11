@@ -91,6 +91,7 @@ internal sealed class SessionResult
     // could not remove (today only a CDP temp profile). Surfaced honestly, never dropped (rule 6).
     internal int? TargetExitCode;
     internal IReadOnlyList<string> FollowedRows = [];
+    internal IReadOnlyList<string> CopiesOutsideRows = [];
     internal IReadOnlyList<string> LeftRunningRows = [];
     internal bool RefusalIncomplete;
     internal IReadOnlyList<string> ResidueKeys = [];
