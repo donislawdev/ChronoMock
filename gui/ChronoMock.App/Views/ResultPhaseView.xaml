@@ -191,7 +191,7 @@
             <TextBlock x:Name="ExitCode" Style="{StaticResource PartNote}"
                        Margin="{StaticResource StackGapSm}"
                        Visibility="{Binding HasTargetExit, Converter={StaticResource BoolToVis}}">
-              <Run Text="{DynamicResource result.exit_code}" /><Run Text="{Binding TargetExitCode, StringFormat=' {0}.', Mode=OneWay}" />
+              <Run Text="{DynamicResource result.exit_code}" /><Run Text="{Binding TargetExitText, StringFormat=' {0}.', Mode=OneWay}" />
             </TextBlock>
             <!-- What the session went on for after the application closed (ADR-16), right under the line
                  that says it closed: for a launcher that line alone reads as the end of the session, and the

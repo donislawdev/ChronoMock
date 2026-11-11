@@ -121,7 +121,7 @@ internal static class SessionReport
         if (r.TargetExitCode is int code)
         {
             sb.Append("  ").Append(translate("report.target_exit")).Append(' ')
-              .Append(code.ToString(CultureInfo.InvariantCulture)).Append('\n');
+              .Append(SessionResult.ExitCodeLabel(code)).Append('\n');
         }
 
         // What the session went on for after the application closed, under the line that says it closed -

@@ -410,6 +410,12 @@ fn describe_session_warning(key: &str) -> &'static str {
         "session.copy_search_failed" => {
             "the target ended without ever showing a window, and the process list could not be read, so the session could not check whether it handed its work to a copy of itself running outside the session - if the program did not open, close every copy of it and start the session again"
         }
+        // The verdict is about the clock and stays what the family earned, but a crash under a verdict of
+        // works read as a session that went well. The session may be the cause, and only a run without it
+        // can tell.
+        "session.target_crashed" => {
+            "the application crashed - it ended with the code Windows gives a program stopped by an error it did not handle (the exit code is above) - the verdict speaks only of the clock it read until then - start it once without Chrono Mock to see whether it crashes there too"
+        }
         _ => "",
     }
 }
@@ -648,6 +654,30 @@ pub(crate) fn exit_code_label(code: i32) -> String {
     }
 }
 
+/// The code a program ends with when Windows ends it on Ctrl+C or a closed console: an error status,
+/// but the program was stopped, not broken.
+const STATUS_CONTROL_C_EXIT: u32 = 0xC000_013A;
+
+/// The code a program ends with when it hit a breakpoint no debugger took - a warning status, and still
+/// a crash.
+const STATUS_BREAKPOINT: u32 = 0x8000_0003;
+
+/// Whether a process that ended with `code` crashed: Windows ends a program stopped by an exception it
+/// did not handle with that exception's status as its exit code. An error status of Windows itself
+/// (0xC0000005 an access violation, 0xC0000409 a fail-fast, 0xC00000FD a stack overflow, 0xC0000374 a
+/// corrupted heap), an error status of a runtime (0xE06D7363 a C++ exception, 0xE0434352 a .NET one) and
+/// a breakpoint nobody took are all a crash. A program may end with such a number on purpose, and that
+/// is read as a crash too - outside the process nothing tells the two apart.
+///
+/// Not a crash: Ctrl+C or a closed console, and a negative number a program returns itself (-1, -2),
+/// whose reserved bit no status has.
+pub(crate) fn ended_by_crash(code: i32) -> bool {
+    let status = code as u32;
+    let windows_error = status & 0xF000_0000 == 0xC000_0000 && status != STATUS_CONTROL_C_EXIT;
+    let runtime_error = status & 0xF000_0000 == 0xE000_0000;
+    windows_error || runtime_error || status == STATUS_BREAKPOINT
+}
+
 /// Statically detect what the target is built on and warn about the limits that follow from it. Two
 /// families today: a language runtime whose monotonic/elapsed clocks stand on QueryPerformanceCounter,
 /// which is left real by default (ADR-2) and so does not scale, and a game engine that caps its own
@@ -850,6 +880,9 @@ fn vanish_cause(reason_key: &str) -> &'static str {
         "target.handed_off_uncovered" => {
             "it started a program the session could not enter, usually one of the other bitness, which runs on the real clock"
         }
+        "target.crashed" => {
+            "it crashed - it ended with the code Windows gives a program stopped by an error it did not handle (the exit code is below) - start it once without Chrono Mock to see whether it crashes there too"
+        }
         _ => "",
     }
 }
@@ -860,6 +893,19 @@ fn vanish_detail(reason_key: &str) -> String {
     match vanish_cause(reason_key) {
         "" => reason_key.to_string(),
         cause => format!("{cause}: {reason_key}"),
+    }
+}
+
+/// The line for the target's own exit code. A crash is said as one: "closed itself" read as a program
+/// that ended the way it meant to, under a verdict of works, for one stopped by an access violation.
+fn render_target_exit(code: i32) -> String {
+    if ended_by_crash(code) {
+        format!(
+            "  exited:   the target CRASHED - it ended with code {}, the code Windows gives a program stopped by an error it did not handle\n",
+            exit_code_label(code)
+        )
+    } else {
+        format!("  exited:   the target closed itself with code {}\n", exit_code_label(code))
     }
 }
 
@@ -1156,10 +1202,7 @@ pub(crate) fn render_report(r: &SessionReport) -> String {
     // because the report already carries a second number that means something else entirely: this
     // tool's exit code is the verdict (docs/08 section 8), never the target's.
     if let Some(code) = r.target_exit {
-        out.push_str(&format!(
-            "  exited:   the target closed itself with code {}\n",
-            exit_code_label(code)
-        ));
+        out.push_str(&render_target_exit(code));
     }
     out.push_str(&render_followed(&r.followed));
     out.push_str(&render_copies(&r.copies_outside));
@@ -1845,6 +1888,26 @@ mod tests {
         };
         let out = render_report(&r);
         assert!(out.contains("-1073741819 (0xC0000005)"), "got:\n{out}");
+        assert!(out.contains("the target CRASHED"), "an access violation read as a program that closed itself:\n{out}");
+        assert!(!out.contains("closed itself"), "got:\n{out}");
+    }
+
+    /// The codes a crash ends a program with, and the ones that only look like one (measured: a program
+    /// stopped by an access violation under a session ended with 0xC0000005 and a verdict of works).
+    #[test]
+    fn a_crash_is_told_from_an_ordinary_exit_by_its_code() {
+        for crash in [0xC000_0005u32, 0xC000_0409, 0xC000_00FD, 0xC000_0374, 0xC000_0142, 0xE06D_7363, 0xE043_4352, 0x8000_0003] {
+            assert!(ended_by_crash(crash as i32), "0x{crash:08X} is a crash");
+        }
+        // Ctrl+C or a closed console, a program's own -1 and -2, and the ordinary codes.
+        for exit in [0xC000_013Au32, 0xFFFF_FFFF, 0xFFFF_FFFE, 0, 1, 2, 259, 0x8000_0004, 0x4001_0004] {
+            assert!(!ended_by_crash(exit as i32), "0x{exit:08X} is not a crash");
+        }
+        let ordinary = render_target_exit(1);
+        assert!(ordinary.contains("closed itself with code 1"), "{ordinary}");
+        let said = describe_warning("session.target_crashed");
+        assert!(said.starts_with("the application crashed") && said.contains("without Chrono Mock"), "{said}");
+        assert!(vanish_detail("target.crashed").starts_with("it crashed"));
     }
 
     #[test]

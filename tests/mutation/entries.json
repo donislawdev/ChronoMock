@@ -23594,5 +23594,137 @@
     "match": "exact",
     "build": "",
     "notHere": ""
+  },
+  {
+    "name": "target crash a crash read as an ordinary exit",
+    "edits": [
+      {
+        "file": "crates/cli/src/report.rs",
+        "from": "    windows_error || runtime_error || status == STATUS_BREAKPOINT",
+        "to": "    windows_error && runtime_error && status == STATUS_BREAKPOINT"
+      }
+    ],
+    "runner": "rust",
+    "package": "chrono-cli",
+    "target": [
+      "--bins"
+    ],
+    "test": "report::tests::a_crash_is_told_from_an_ordinary_exit_by_its_code",
+    "match": "exact",
+    "build": "",
+    "notHere": ""
+  },
+  {
+    "name": "target crash ctrl c read as a crash",
+    "edits": [
+      {
+        "file": "crates/cli/src/report.rs",
+        "from": "0xC000_0000 && status != STATUS_CONTROL_C_EXIT;",
+        "to": "0xC000_0000 && status != STATUS_CONTROL_C_EXIT + 1;"
+      }
+    ],
+    "runner": "rust",
+    "package": "chrono-cli",
+    "target": [
+      "--bins"
+    ],
+    "test": "report::tests::a_crash_is_told_from_an_ordinary_exit_by_its_code",
+    "match": "exact",
+    "build": "",
+    "notHere": ""
+  },
+  {
+    "name": "target crash the exit line says closed itself",
+    "edits": [
+      {
+        "file": "crates/cli/src/report.rs",
+        "from": "fn render_target_exit(code: i32) -> String {\n    if ended_by_crash(code) {",
+        "to": "fn render_target_exit(code: i32) -> String {\n    if ended_by_crash(code) && code == 0 {"
+      }
+    ],
+    "runner": "rust",
+    "package": "chrono-cli",
+    "target": [
+      "--bins"
+    ],
+    "test": "report::tests::a_crash_exit_code_carries_the_hex_form",
+    "match": "exact",
+    "build": "",
+    "notHere": ""
+  },
+  {
+    "name": "target crash no warning at the end of the session",
+    "edits": [
+      {
+        "file": "crates/cli/src/core.rs",
+        "from": "    if target_exit.is_some_and(crate::report::ended_by_crash) {",
+        "to": "    if target_exit.is_some_and(crate::report::ended_by_crash) && target_exit.is_none() {"
+      }
+    ],
+    "runner": "rust",
+    "package": "chrono-cli",
+    "target": [
+      "--test",
+      "target_exit"
+    ],
+    "test": "an_application_that_crashed_is_said_to_have_crashed",
+    "match": "exact",
+    "build": "debug",
+    "notHere": ""
+  },
+  {
+    "name": "target crash a vanish said to be a single instance",
+    "edits": [
+      {
+        "file": "crates/cli/src/core.rs",
+        "from": "    } else if crashed {",
+        "to": "    } else if crashed && only_console {"
+      }
+    ],
+    "runner": "rust",
+    "package": "chrono-cli",
+    "target": [
+      "--bins"
+    ],
+    "test": "core::tests::a_target_that_crashed_inside_the_guard_window_is_said_to_have_crashed",
+    "match": "exact",
+    "build": "",
+    "notHere": ""
+  },
+  {
+    "name": "target crash the end of a vanish without the code",
+    "edits": [
+      {
+        "file": "crates/cli/src/core.rs",
+        "from": "        *target_exit_code = code;",
+        "to": "        *target_exit_code = code.filter(|_| false);"
+      }
+    ],
+    "runner": "rust",
+    "package": "chrono-cli",
+    "target": [
+      "--bins"
+    ],
+    "test": "core::tests::the_end_of_a_vanish_carries_the_targets_exit_code",
+    "match": "exact",
+    "build": "",
+    "notHere": ""
+  },
+  {
+    "name": "target crash the window shows the code without its hex form",
+    "edits": [
+      {
+        "file": "gui/ChronoMock.App/Session/SessionResult.cs",
+        "from": "$\"{code} (0x{unchecked((uint)code):X8})\"",
+        "to": "$\"{code}\""
+      }
+    ],
+    "runner": "cs",
+    "package": "gui/ChronoMock.App.Tests",
+    "target": [],
+    "test": "ChronoMock.App.Tests.SessionViewModelTests.A_crash_exit_code_is_shown_with_the_form_that_can_be_looked_up",
+    "match": "method",
+    "build": "",
+    "notHere": ""
   }
 ]

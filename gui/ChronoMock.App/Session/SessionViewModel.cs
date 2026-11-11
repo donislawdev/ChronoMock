@@ -1650,10 +1650,21 @@ public sealed class SessionViewModel : ObservableObject
     public int? TargetExitCode
     {
         get => _result.TargetExitCode;
-        private set { if (Set(ref _result.TargetExitCode, value)) { RaisePropertyChanged(nameof(HasTargetExit)); } }
+        private set
+        {
+            if (Set(ref _result.TargetExitCode, value))
+            {
+                RaisePropertyChanged(nameof(HasTargetExit));
+                RaisePropertyChanged(nameof(TargetExitText));
+            }
+        }
     }
 
     public bool HasTargetExit => _result.TargetExitCode.HasValue;
+
+    /// <summary>The exit code as the panel shows it, with the hexadecimal form of a crash (see
+    /// <see cref="SessionResult.ExitCodeLabel"/>), or empty when there is none.</summary>
+    public string TargetExitText => _result.TargetExitCode is int code ? SessionResult.ExitCodeLabel(code) : string.Empty;
 
     /// <summary>The processes the session went on for after the application closed (ADR-16), one line each
     /// in the CLI report's own spelling: "app.exe (pid 5150)", or "pid 5151" for one the process list could

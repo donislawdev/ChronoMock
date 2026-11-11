@@ -1108,7 +1108,21 @@ public class SessionViewModelTests
 
         Assert.True(vm.HasTargetExit);
         Assert.Equal(3, vm.TargetExitCode!.Value);
+        Assert.Equal("3", vm.TargetExitText);
         Assert.Contains("target exited with code 3", vm.BuildSummary(T()), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_crash_exit_code_is_shown_with_the_form_that_can_be_looked_up()
+    {
+        // An access violation arrives as -1073741819, which tells a tester nothing until it reads 0xC0000005 -
+        // the CLI report spells it so, and the panel and the copied summary now do too.
+        var vm = new SessionViewModel();
+        vm.SetTarget(@"C:\apps\Ledger.exe");
+        vm.Apply(new EndedEvent { V = ProtocolJson.ProtocolVersion, Clean = true, TargetExitCode = unchecked((int)0xC0000005) });
+
+        Assert.Equal("-1073741819 (0xC0000005)", vm.TargetExitText);
+        Assert.Contains("target exited with code -1073741819 (0xC0000005)", vm.BuildSummary(T()), StringComparison.Ordinal);
     }
 
     [Fact]
