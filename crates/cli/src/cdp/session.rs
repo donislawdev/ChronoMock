@@ -1090,10 +1090,10 @@ mod tests {
         });
         let ws = super::super::WsClient::connect("127.0.0.1", port, "/", Instant::now() + Duration::from_secs(5)).unwrap();
         let mut client = CdpClient::from_ws(ws);
-        let started = Instant::now();
-        let injected = inject_page(&mut client, "P", "SHIM", Some("GMT+01:00"), true, started + Duration::from_secs(2))
+        // A page that answers only once released never answers an injection that waits first: the deadline
+        // passes, and the injection fails.
+        let injected = inject_page(&mut client, "P", "SHIM", Some("GMT+01:00"), true, Instant::now() + Duration::from_secs(2))
             .expect("the paused page took the shim");
-        assert!(started.elapsed() < Duration::from_secs(1), "it waited for a page that answers only once released");
         assert_eq!(injected.script.as_deref(), Some("h1"));
         assert!(injected.children, "its workers are attached");
         assert!(!injected.running && !injected.awaiting, "the hook put the shim in before the page's own scripts");

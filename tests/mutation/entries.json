@@ -23539,5 +23539,60 @@
     "match": "method",
     "build": "",
     "notHere": ""
+  },
+  {
+    "name": "bundled layout a folder named like a program taken for one",
+    "edits": [
+      {
+        "file": "crates/cli/src/cdp/launch.rs",
+        "from": "            Ok(kind) if kind.is_dir() => {}",
+        "to": "            Ok(kind) if false && kind.is_dir() => {}"
+      }
+    ],
+    "runner": "rust",
+    "package": "chrono-cli",
+    "target": [
+      "--bins"
+    ],
+    "test": "cdp::launch::tests::a_runtime_kept_with_the_application_in_a_folder_beside_the_exe_is_bundled",
+    "match": "exact",
+    "build": "",
+    "notHere": ""
+  },
+  {
+    "name": "bundled layout the window takes a folder named like a program for one",
+    "edits": [
+      {
+        "file": "gui/ChronoMock.App/Session/ChromiumTarget.cs",
+        "from": "            return !Directory.EnumerateFiles(folder)",
+        "to": "            return !Directory.EnumerateFileSystemEntries(folder)"
+      }
+    ],
+    "runner": "cs",
+    "package": "gui/ChronoMock.App.Tests",
+    "target": [],
+    "test": "ChronoMock.App.Tests.ChromiumTargetTests.An_electron_application_with_its_runtime_in_a_folder_beside_the_exe_is_chromium",
+    "match": "method",
+    "build": "",
+    "notHere": ""
+  },
+  {
+    "name": "paused page a probe takes every attach for a paused one",
+    "edits": [
+      {
+        "file": "crates/cli/src/cdp_probe.rs",
+        "from": "    params[\"waitingForDebugger\"].as_bool().unwrap_or(false)",
+        "to": "    params[\"waitingForDebugger\"].as_bool().unwrap_or(true)"
+      }
+    ],
+    "runner": "rust",
+    "package": "chrono-cli",
+    "target": [
+      "--bins"
+    ],
+    "test": "cdp_probe::tests::a_probe_reads_the_pause_from_the_attach_event",
+    "match": "exact",
+    "build": "",
+    "notHere": ""
   }
 ]

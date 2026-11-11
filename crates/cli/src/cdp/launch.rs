@@ -77,15 +77,26 @@ fn holds_packed_app(folder: &Path) -> bool {
 }
 
 /// Whether a folder holds no program of its own: no `.exe` directly in it, whatever its subfolders hold.
-/// A folder that cannot be read is not known to hold none.
+/// Anything named so that is not a folder counts, a link to a program included - the window's mirror
+/// lists files the same way. A folder that cannot be read, or holds an entry that cannot be, is not
+/// known to hold none.
 fn holds_no_program(folder: &Path) -> bool {
     let Ok(entries) = std::fs::read_dir(folder) else {
         return false;
     };
-    !entries.flatten().any(|entry| {
-        entry.file_type().is_ok_and(|kind| kind.is_file())
-            && Path::new(&entry.file_name()).extension().is_some_and(|ext| ext.eq_ignore_ascii_case("exe"))
-    })
+    for entry in entries {
+        let Ok(entry) = entry else {
+            return false;
+        };
+        if !Path::new(&entry.file_name()).extension().is_some_and(|ext| ext.eq_ignore_ascii_case("exe")) {
+            continue;
+        }
+        match entry.file_type() {
+            Ok(kind) if kind.is_dir() => {}
+            _ => return false,
+        }
+    }
+    true
 }
 
 /// The folders in `dir`. A folder that cannot be read has none.
@@ -711,8 +722,8 @@ mod tests {
     /// An Electron application that keeps its runtime and its packed application in a folder beside the
     /// exe, with no program in that folder, is `Bundled`, and an Electron application. A folder with a
     /// program of its own - a starter keeping the application in a versioned folder - is not, nor one
-    /// without the application. A program deeper down does not count, and the folder's name is no part
-    /// of it.
+    /// without the application. A program deeper down does not count, nor a folder named like one, and
+    /// the folder's name is no part of it.
     #[test]
     fn a_runtime_kept_with_the_application_in_a_folder_beside_the_exe_is_bundled() {
         let dir = unique_temp_dir();
@@ -726,6 +737,7 @@ mod tests {
         std::fs::create_dir_all(bundle.join("resources").join("app")).unwrap();
         std::fs::create_dir_all(bundle.join("tools")).unwrap();
         std::fs::write(bundle.join("tools").join("updater.exe"), b"x").unwrap();
+        std::fs::create_dir_all(bundle.join("cache.exe")).unwrap();
         assert_eq!(chromium_layout(target), Some(ChromiumLayout::Bundled));
         assert!(is_electron_target(target));
         let arguments = chromium_arguments(Path::new("C:/temp/profile"), chromium_layout(target), &[]);

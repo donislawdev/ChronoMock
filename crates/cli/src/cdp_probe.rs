@@ -373,6 +373,17 @@ pub(crate) fn probe_target_line(label: &str, ty: &str, url: &str) -> String {
 mod tests {
     use super::*;
 
+    /// The probes hand the injection the pause an attach event announced, as the session does: a page
+    /// paused on start is released with its shim. An event that says nothing of a pause, or says it
+    /// in a form that is not a boolean, is not one.
+    #[test]
+    fn a_probe_reads_the_pause_from_the_attach_event() {
+        assert!(waiting_for_debugger(&serde_json::json!({ "sessionId": "S", "waitingForDebugger": true })));
+        assert!(!waiting_for_debugger(&serde_json::json!({ "sessionId": "S", "waitingForDebugger": false })));
+        assert!(!waiting_for_debugger(&serde_json::json!({ "sessionId": "S" })));
+        assert!(!waiting_for_debugger(&serde_json::json!({ "sessionId": "S", "waitingForDebugger": "true" })));
+    }
+
     /// A moment outside what a session can hold is refused before anything starts. The target is a
     /// folder that looks like a Chromium build (the two files `is_chromium_target` asks for) with no
     /// program in it, so the answer tells the two paths apart: 1 is the refusal, and 3 is what the

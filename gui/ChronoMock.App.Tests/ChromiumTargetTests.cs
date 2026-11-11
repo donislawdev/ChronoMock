@@ -94,8 +94,9 @@ public class ChromiumTargetTests
 
     /// <summary>
     /// An Electron application that keeps the runtime and its packed application in a folder beside the exe,
-    /// with no program in that folder, is one. A program deeper down does not count, the folder's name is
-    /// no part of it, and a program of its own in the folder - a starter's versioned folder - or a folder
+    /// with no program in that folder, is one. A program deeper down does not count, nor a folder named like
+    /// one, the folder's name is no part of it, and a program of its own in the folder - a starter's
+    /// versioned folder - or a folder
     /// without the application makes it not one. The same cases as the CLI's test.
     /// </summary>
     [Fact]
@@ -111,6 +112,7 @@ public class ChromiumTargetTests
 
             Directory.CreateDirectory(Path.Combine(bundle, "resources", "app"));
             FolderWith(bundle, "tools", "updater.exe");
+            Directory.CreateDirectory(Path.Combine(bundle, "cache.exe"));
             Assert.True(ChromiumTarget.IsChromium(exe), "the runtime with the application and no program beside it");
 
             File.WriteAllText(Path.Combine(bundle, "App.EXE"), "x");
