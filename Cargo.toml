@@ -59,6 +59,11 @@ windows = { version = "0.62", features = [
     # stderr, read with `GetStdHandle`. Both are local devices and handles, nothing on the network.
     "Win32_Storage_FileSystem",
     "Win32_System_Console",
+    # Whether a process of the family ever showed a window, which tells a single-instance application
+    # that handed its work to a copy already running from one the tester used and closed (ADR-4,
+    # crates/mech/src/handoff.rs). Read only, one walk over the top-level windows of this desktop. The
+    # hook never calls it.
+    "Win32_UI_WindowsAndMessaging",
 ] }
 chrono-core = { path = "crates/core" }
 chrono-ctl = { path = "crates/ctl" }

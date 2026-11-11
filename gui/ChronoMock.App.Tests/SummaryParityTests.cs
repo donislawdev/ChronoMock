@@ -21,6 +21,7 @@ public class SummaryParityTests
         ["session"] = "report.session",
         ["exited"] = "report.target_exit",
         ["followed"] = "report.followed",
+        ["copies"] = "report.copies_outside",
         ["covered channels"] = "coverage.covered",
         ["observed channels"] = "coverage.observed",
         ["uncovered channels"] = "coverage.uncovered",

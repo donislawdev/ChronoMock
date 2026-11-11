@@ -78,6 +78,7 @@ fn every_event() -> Vec<Event> {
             context_count: 2,
             engines: vec![engine],
             followed: vec![followed],
+            copies_outside: vec![FollowedProcess { pid: 4600, image: Some("app.exe".into()) }],
             host_slept_ms: 7_200_000,
             browser: Some("Engine/1.0".into()),
         },

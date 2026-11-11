@@ -9,6 +9,8 @@ Chrono Mock - session report
   exited:   the target closed itself with code 3
   followed: the target had started these, and the session went on for them:
             - app.exe (pid 4500)
+  copies:   the target most likely handed its work to these copies of it, already running outside the session on the REAL clock:
+            - app.exe (pid 4600)
   covered channels (substituted, with call counts, at least 17 calls in all):
             - pid 4200: GetSystemTimePreciseAsFileTime (12 calls)
             - context 1: page Date.now (at least 5 calls)

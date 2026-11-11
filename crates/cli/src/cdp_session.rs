@@ -388,6 +388,8 @@ fn emit_cdp_session_verdict(token: &str, reason: &str, contexts: u32, facts: Ver
         context_count: contexts,
         engines: Vec::new(),
         followed: facts.followed,
+        // A hand-off to a copy is a native session's finding: this session owns its browser.
+        copies_outside: Vec::new(),
         host_slept_ms: facts.host_slept_ms,
         browser: facts.browser,
     });

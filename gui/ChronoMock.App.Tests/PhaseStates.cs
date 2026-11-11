@@ -270,6 +270,28 @@ internal static class PhaseStates
     }
 
     /// <summary>
+    /// A session whose application closed without showing a window while a copy of it ran outside the
+    /// session (ADR-4, 2026-11-11): a single-instance application that most likely passed its work to that
+    /// copy after the guard window. Partial, with the copy named under the exit code and the warning that
+    /// says what to do.
+    /// </summary>
+    public static SessionViewModel ResultPartialHandedToCopy()
+    {
+        var model = ResultRunning();
+        model.Apply(new SessionVerdictEvent
+        {
+            V = ProtocolJson.ProtocolVersion,
+            Verdict = "partial",
+            ReasonKey = "session.family_handed_to_copy",
+            ProcessCount = 1,
+            WarningKeys = ["session.handed_to_copy"],
+            CopiesOutside = [new FollowedProcess { Pid = 4600, Image = "app.exe" }],
+        });
+        model.Apply(Ended());
+        return model;
+    }
+
+    /// <summary>
     /// A session that works as a mechanism and proves nothing about time (R5-D3): a Go program, whose wall
     /// clock no hook reaches, and no process read a clock the session replaces. Both warnings at once, because
     /// the two are raised independently and a Go program that reads only the shared page gets both. The

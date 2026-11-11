@@ -200,6 +200,13 @@
                                     Header="{DynamicResource result.followed}"
                                     ItemsSource="{Binding FollowedRows}"
                                     Visibility="{Binding HasFollowed, Converter={StaticResource BoolToVis}}" />
+            <!-- The copies the application most likely passed its work to (ADR-4): they run on the real clock
+                 and are why the verdict is not Works, so they stand here, beside what happened to the
+                 application, not only in the folded audit. The same fact list as the programs above. -->
+            <controls:TextNamedList x:Name="CopiesOutsideList" Style="{StaticResource PartFactList}"
+                                    Header="{DynamicResource result.copies_outside}"
+                                    ItemsSource="{Binding CopiesOutsideRows}"
+                                    Visibility="{Binding HasCopiesOutside, Converter={StaticResource BoolToVis}}" />
             <!-- The raw failure detail, verbatim, so a failure is never silent - in the error ink, at the size
                  of prose, because it is a sentence somebody has to act on. -->
             <TextBlock x:Name="LastErrorNote" Style="{StaticResource PartErrorNote}"

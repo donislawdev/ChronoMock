@@ -8,6 +8,16 @@ Notable changes to Chrono Mock, newest first. The format follows
 
 ### Fixed
 
+- **A program that passes its work to a copy already running is reported.** A program that allows only
+  one copy of itself, started in a session while another copy of it runs outside the session, can hand
+  its work to that copy and close. When it took more than a fraction of a second to do so, the session
+  ended with `works` and said nothing, while the work went on in the copy, on the real clock. Now, when
+  the program closes on its own without ever showing a window and a copy of the same program file runs
+  outside the session, the session reports it: the verdict is at most `partial` (exit code 10), the
+  reason is `session.family_handed_to_copy`, the warning `session.handed_to_copy` says what to do, and
+  the copies are listed by name and process id - in the command line report under `copies:`, on the
+  result screen of the window, and in a new `session_verdict.copies_outside` field. A program that
+  showed a window, and a session you stopped yourself, are not reported this way.
 - **`chrono` started through a symbolic link finds its own files.** Started through a link in another
   folder - one made with `mklink`, or the one WinGet makes for a portable package when its manifest lets
   it - `chrono` looked for the hook, the calendars, the presets and the licence files beside the link and

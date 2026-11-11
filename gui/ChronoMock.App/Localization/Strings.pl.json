@@ -366,6 +366,7 @@
   // in those words rather than in terms of channels.
   "session.family_partial_children": "Fałszywy zegar dotarł do procesów wymienionych jako objęte. Te, które aplikacja uruchomiła bez niego, działały na prawdziwym.",
   "session.family_uncovered_children": "Nic nie odczytało fałszywego zegara, a procesy, które aplikacja uruchomiła bez niego, działały na prawdziwym.",
+  "session.family_handed_to_copy": "Program najpewniej przekazał pracę swojej kopii, która działała już poza sesją, na prawdziwym zegarze.",
 
   // Coverage / audit preview (chrono-mock 7.2). Channel names are raw API identifiers, not translated.
   //
@@ -485,6 +486,7 @@
   "session.left_running": "Aplikacja nadal działała, gdy sesja się skończyła. Jest już z powrotem na prawdziwej dacie i godzinie, a jej liczniki czasu biegną dalej w normalnym tempie od miejsca, w którym zostawiła je sesja, zamiast się cofnąć. Timer cykliczny ustawiony, gdy jej timery były przyspieszone, zachowuje skrócony odstęp, który wtedy dostał. Żeby wystartowała od zera na prawdziwym zegarze, uruchom ją ponownie.",
   "session.followed_family": "Program wybrany do sesji zakończył się, gdy uruchomione przez niego programy nadal działały na fałszywym zegarze, więc sesja trwała dalej dla nich, zamiast skończyć się razem z nim. Program, który działa dalej po zamknięciu aplikacji, też trzyma sesję otwartą - zatrzymaj sesję, gdy skończysz.",
   "session.member_unwatchable": "Części procesów sesji nie dało się obserwować (odmowa dostępu), więc sesja mogła się skończyć, gdy one jeszcze działały - od tej chwili działały na prawdziwym zegarze.",
+  "session.handed_to_copy": "Program zakończył się, nie pokazując żadnego okna, a poza sesją działała już inna jego kopia. Najpewniej przekazał pracę tej kopii, która działa na prawdziwym zegarze, więc ta sesja mogła niczego nie przetestować. Żeby przetestować program pod sesją, zamknij wszystkie jego kopie i uruchom sesję ponownie.",
   "target.single_instance_suspected": "zakończył się zaraz po uruchomieniu, zanim fałszywy zegar dało się potwierdzić - zwykle to aplikacja jednoinstancyjna, która przekazała pracę swojej działającej już kopii, więc zamknij tę kopię i uruchom ponownie",
   "target.handed_off_uncovered": "zakończył się zaraz po uruchomieniu innego programu, któremu nie udało się podać fałszywego zegara - zwykle programu o innej bitowości - więc ten program działa na prawdziwym",
 
@@ -558,6 +560,7 @@
   "report.cleanup": "nie sprzątnięto do końca",
   // The processes the session went on for after the target closed, see the English file.
   "report.followed": "aplikacja uruchomiła te programy, a sesja trwała dalej dla nich",
+  "report.copies_outside": "program najpewniej przekazał pracę tym swoim kopiom, działającym już poza sesją na prawdziwym zegarze",
   // What a refusal could not end, see the English file.
   "report.left_running": "nie udało się ich zakończyć - działają na realnym zegarze",
   // The processes the hook never got into, see the English file.
@@ -591,6 +594,7 @@
   "result.exit_code": "Aplikacja zakończyła się sama, z kodem wyjścia",
   // The heading over the processes the session went on for, see the English file.
   "result.followed": "Sesja trwała dalej dla programów uruchomionych przez aplikację",
+  "result.copies_outside": "Kopie programu działające poza sesją, na prawdziwym zegarze",
   // The heading over the processes a refusal could not end, see the English file.
   "result.left_running": "Tych programów nie udało się zakończyć - działają na realnym zegarze",
   // Under the refused status when the search was not complete, see the English file.

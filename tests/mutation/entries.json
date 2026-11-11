@@ -22986,5 +22986,231 @@
     "match": "exact",
     "build": "",
     "notHere": ""
+  },
+  {
+    "name": "copy outside a hand-off no longer the first reason",
+    "edits": [
+      {
+        "file": "crates/cli/src/core.rs",
+        "from": "    if handed_to_copy {\n        return KEY_FAMILY_HANDED_TO_COPY;\n    }\n",
+        "to": ""
+      }
+    ],
+    "runner": "rust",
+    "package": "chrono-cli",
+    "target": [
+      "--bins"
+    ],
+    "test": "core::tests::a_hand_off_to_a_copy_is_the_reason_before_every_other",
+    "match": "exact",
+    "build": "",
+    "notHere": ""
+  },
+  {
+    "name": "copy outside an uncovered child named again as a copy",
+    "edits": [
+      {
+        "file": "crates/cli/src/core.rs",
+        "from": "        .filter(|copy| !children.iter().any(|child| child.pid == copy.pid))\n",
+        "to": ""
+      }
+    ],
+    "runner": "rust",
+    "package": "chrono-cli",
+    "target": [
+      "--bins"
+    ],
+    "test": "core::tests::a_copy_already_named_as_an_uncovered_child_is_not_named_again",
+    "match": "exact",
+    "build": "",
+    "notHere": ""
+  },
+  {
+    "name": "copy outside image not sieved",
+    "edits": [
+      {
+        "file": "crates/cli/src/core.rs",
+        "from": "image: Some(crate::cdp::sanitise_target_text(&copy.image))",
+        "to": "image: Some(copy.image)"
+      }
+    ],
+    "runner": "rust",
+    "package": "chrono-cli",
+    "target": [
+      "--bins"
+    ],
+    "test": "core::tests::a_copy_already_named_as_an_uncovered_child_is_not_named_again",
+    "match": "exact",
+    "build": "",
+    "notHere": ""
+  },
+  {
+    "name": "copy outside a member of the family taken for a copy",
+    "edits": [
+      {
+        "file": "crates/mech/src/handoff.rs",
+        "from": ".filter(|e| e.pid != 0 && e.pid != me && !family.contains(&e.pid))",
+        "to": ".filter(|e| e.pid != 0 && e.pid != me)"
+      }
+    ],
+    "runner": "rust",
+    "package": "chrono-mech",
+    "target": [
+      "--lib"
+    ],
+    "test": "handoff::tests::a_copy_is_the_same_file_running_outside_the_family",
+    "match": "exact",
+    "build": "",
+    "notHere": ""
+  },
+  {
+    "name": "copy outside another file of the same name taken for a copy",
+    "edits": [
+      {
+        "file": "crates/mech/src/handoff.rs",
+        "from": ".filter(|e| path_of(e.pid).is_some_and(|path| wanted.contains(&fold_case(&path))))",
+        "to": ".filter(|e| path_of(e.pid).is_some())"
+      }
+    ],
+    "runner": "rust",
+    "package": "chrono-mech",
+    "target": [
+      "--lib"
+    ],
+    "test": "handoff::tests::a_copy_is_the_same_file_running_outside_the_family",
+    "match": "exact",
+    "build": "",
+    "notHere": ""
+  },
+  {
+    "name": "copy outside paths compared with their case",
+    "edits": [
+      {
+        "file": "crates/mech/src/handoff.rs",
+        "from": "(Some(one), None) => one,",
+        "to": "(Some(_), None) => c,"
+      }
+    ],
+    "runner": "rust",
+    "package": "chrono-mech",
+    "target": [
+      "--lib"
+    ],
+    "test": "handoff::tests::a_copy_is_the_same_file_running_outside_the_family",
+    "match": "exact",
+    "build": "",
+    "notHere": ""
+  },
+  {
+    "name": "copy outside a console member leaves its path",
+    "edits": [
+      {
+        "file": "crates/mech/src/family.rs",
+        "from": "        if !member.windowed {\n            return;\n        }\n",
+        "to": ""
+      }
+    ],
+    "runner": "rust",
+    "package": "chrono-mech",
+    "target": [
+      "--lib"
+    ],
+    "test": "family::tests::a_windowed_member_leaves_the_path_of_its_executable",
+    "match": "exact",
+    "build": "",
+    "notHere": ""
+  },
+  {
+    "name": "copy outside a path kept once per slot",
+    "edits": [
+      {
+        "file": "crates/mech/src/family.rs",
+        "from": "            && !self.windowed_images.iter().any(|known| known.eq_ignore_ascii_case(&path))\n",
+        "to": ""
+      }
+    ],
+    "runner": "rust",
+    "package": "chrono-mech",
+    "target": [
+      "--lib"
+    ],
+    "test": "family::tests::a_windowed_member_leaves_the_path_of_its_executable",
+    "match": "exact",
+    "build": "",
+    "notHere": ""
+  },
+  {
+    "name": "copy outside the report line left out",
+    "edits": [
+      {
+        "file": "crates/cli/src/report.rs",
+        "from": "    out.push_str(&render_copies(&r.copies_outside));\n",
+        "to": ""
+      }
+    ],
+    "runner": "rust",
+    "package": "chrono-cli",
+    "target": [
+      "--bins"
+    ],
+    "test": "report::tests::the_copies_outside_the_session_are_listed_and_their_keys_explained",
+    "match": "exact",
+    "build": "",
+    "notHere": ""
+  },
+  {
+    "name": "copy outside an empty list on the wire",
+    "edits": [
+      {
+        "file": "crates/proto/src/lib.rs",
+        "from": "#[serde(default, skip_serializing_if = \"Vec::is_empty\")]\n        copies_outside",
+        "to": "#[serde(default)]\n        copies_outside"
+      }
+    ],
+    "runner": "rust",
+    "package": "chrono-proto",
+    "target": [
+      "--lib"
+    ],
+    "test": "tests::the_copies_outside_travel_and_an_empty_list_stays_off_the_wire",
+    "match": "exact",
+    "build": "",
+    "notHere": ""
+  },
+  {
+    "name": "copy outside not on the result",
+    "edits": [
+      {
+        "file": "gui/ChronoMock.App/Session/SessionViewModel.cs",
+        "from": "                CopiesOutsideRows = SessionReport.ProcessLines(sv.CopiesOutside);\n",
+        "to": ""
+      }
+    ],
+    "runner": "cs",
+    "package": "gui/ChronoMock.App.Tests",
+    "target": [],
+    "test": "ChronoMock.App.Tests.LayoutGuardTests.The_copies_outside_the_session_stand_under_the_exit_code",
+    "match": "method",
+    "build": "",
+    "notHere": ""
+  },
+  {
+    "name": "copy outside every helper of a copy named",
+    "edits": [
+      {
+        "file": "crates/mech/src/handoff.rs",
+        "from": "        .filter(|e| e.parent == e.pid || !pids.contains(&e.parent))\n",
+        "to": ""
+      }
+    ],
+    "runner": "rust",
+    "package": "chrono-mech",
+    "target": [
+      "--lib"
+    ],
+    "test": "handoff::tests::a_copy_is_named_by_its_topmost_process_only",
+    "match": "exact",
+    "build": "",
+    "notHere": ""
   }
 ]

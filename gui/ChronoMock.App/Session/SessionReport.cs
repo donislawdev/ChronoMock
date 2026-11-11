@@ -127,6 +127,8 @@ internal static class SessionReport
         // What the session went on for after the application closed, under the line that says it closed -
         // where the CLI report puts it, for the reason SessionViewModel.FollowedRows gives.
         AppendList(sb, translate, "report.followed", r.FollowedRows, translateItems: false);
+        // The copies the application most likely passed its work to, where the CLI report puts them (ADR-4).
+        AppendList(sb, translate, "report.copies_outside", r.CopiesOutsideRows, translateItems: false);
 
         // Channel names are raw API identifiers (not translated) - warnings are keys the core raised.
         AppendList(sb, translate, "coverage.covered", r.Covered.Select(ch => FormatReadRow(ch, translate)).ToList(), translateItems: false);
