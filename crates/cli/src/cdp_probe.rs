@@ -22,6 +22,12 @@ fn reach_by() -> Instant {
 fn inject_by() -> Instant {
     Instant::now() + Duration::from_secs(cdp::CALL_DEADLINE_SECS)
 }
+
+/// Whether an `attachedToTarget` says its target waits for the debugger - paused on start, as the
+/// session reads it.
+fn waiting_for_debugger(params: &serde_json::Value) -> bool {
+    params["waitingForDebugger"].as_bool().unwrap_or(false)
+}
 use crate::zone::{moment_epoch_ms, now_epoch_ms, WALL_MAX_MS};
 /// Hidden probe (CDP slice C1 verification): connect to a running Chromium/Electron debug port and
 /// print what CDP sees. Not a user command - it proves the WebSocket + JSON-RPC transport against a
@@ -183,7 +189,7 @@ pub(crate) fn cdp_shim_probe(argv: &[String]) -> i32 {
                 let r = if cdp::is_worker(&ty) {
                     cdp::inject_worker(&mut client, &sid, &shim, None, inject_by())
                 } else {
-                    cdp::inject_page(&mut client, &sid, &shim, None, inject_by())
+                    cdp::inject_page(&mut client, &sid, &shim, None, waiting_for_debugger(&params), inject_by())
                 };
                 match r {
                     Ok(_) => outln!("{}", probe_target_line("shimmed", &ty, &url)),
@@ -299,7 +305,8 @@ pub(crate) fn cdp_date_probe(argv: &[String]) -> i32 {
             Ok(Some(cdp::Msg::Event { method, params, .. })) if method == "Target.attachedToTarget" => {
                 let sid = params["sessionId"].as_str().unwrap_or("").to_string();
                 let ty = params["targetInfo"]["type"].as_str().unwrap_or("").to_string();
-                if ty == "page" && !sid.is_empty() && cdp::inject_page(&mut client, &sid, &shim, None, inject_by()).is_ok() {
+                let paused = waiting_for_debugger(&params);
+                if ty == "page" && !sid.is_empty() && cdp::inject_page(&mut client, &sid, &shim, None, paused, inject_by()).is_ok() {
                     page_sid = Some(sid);
                 }
             }
@@ -365,6 +372,17 @@ pub(crate) fn probe_target_line(label: &str, ty: &str, url: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The probes hand the injection the pause an attach event announced, as the session does: a page
+    /// paused on start is released with its shim. An event that says nothing of a pause, or says it
+    /// in a form that is not a boolean, is not one.
+    #[test]
+    fn a_probe_reads_the_pause_from_the_attach_event() {
+        assert!(waiting_for_debugger(&serde_json::json!({ "sessionId": "S", "waitingForDebugger": true })));
+        assert!(!waiting_for_debugger(&serde_json::json!({ "sessionId": "S", "waitingForDebugger": false })));
+        assert!(!waiting_for_debugger(&serde_json::json!({ "sessionId": "S" })));
+        assert!(!waiting_for_debugger(&serde_json::json!({ "sessionId": "S", "waitingForDebugger": "true" })));
+    }
 
     /// A moment outside what a session can hold is refused before anything starts. The target is a
     /// folder that looks like a Chromium build (the two files `is_chromium_target` asks for) with no

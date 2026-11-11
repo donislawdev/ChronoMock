@@ -200,12 +200,13 @@ public class RustConstantMirrorTests
     public void The_chromium_signature_files_match_the_ones_the_core_looks_for()
     {
         var launch = ReadRustSource("crates", "cli", "src", "cdp", "launch.rs");
-        // The files are asked for in chromium_layout, which is_chromium_target answers from.
+        // The files are asked for in holds_runtime, which chromium_layout asks of the exe's own folder
+        // first, and is_chromium_target answers from.
         var body = Regex.Match(
             launch,
-            @"pub fn chromium_layout.*?\n\}",
+            @"fn holds_runtime.*?\n\}",
             RegexOptions.Singleline);
-        Assert.True(body.Success, "could not find chromium_layout in the Rust source");
+        Assert.True(body.Success, "could not find holds_runtime in the Rust source");
 
         var rustFiles = Regex.Matches(body.Value, @"join\(""([^""]+)""\)")
             .Select(m => m.Groups[1].Value)
