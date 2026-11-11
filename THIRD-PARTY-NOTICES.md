@@ -57,8 +57,8 @@ formality: both are MIT, and MIT asks that its notice travel with every copy.
 
 | Pack | Version | Licence | Copyright |
 |---|---|---|---|
-| `Microsoft.NETCore.App.Runtime.win-x64` | 10.0.14 | MIT | Copyright (c) .NET Foundation and Contributors |
-| `Microsoft.WindowsDesktop.App.Runtime.win-x64` | 10.0.14 | MIT | Copyright (c) .NET Foundation and Contributors |
+| `Microsoft.NETCore.App.Runtime.win-x64` | 10.0.15 | MIT | Copyright (c) .NET Foundation and Contributors |
+| `Microsoft.WindowsDesktop.App.Runtime.win-x64` | 10.0.15 | MIT | Copyright (c) .NET Foundation and Contributors |
 
 The licences are read from each pack's own `.nuspec` rather than assumed. The MIT text is the
 one reproduced below for the Rust crates. Two names appear for the same holder and both are

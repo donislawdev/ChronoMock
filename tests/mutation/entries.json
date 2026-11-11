@@ -23007,63 +23007,6 @@
     "notHere": ""
   },
   {
-    "name": "copy outside an uncovered child named again as a copy",
-    "edits": [
-      {
-        "file": "crates/cli/src/core.rs",
-        "from": "        .filter(|copy| !children.iter().any(|child| child.pid == copy.pid))\n",
-        "to": ""
-      }
-    ],
-    "runner": "rust",
-    "package": "chrono-cli",
-    "target": [
-      "--bins"
-    ],
-    "test": "core::tests::a_copy_already_named_as_an_uncovered_child_is_not_named_again",
-    "match": "exact",
-    "build": "",
-    "notHere": ""
-  },
-  {
-    "name": "copy outside image not sieved",
-    "edits": [
-      {
-        "file": "crates/cli/src/core.rs",
-        "from": "image: Some(crate::cdp::sanitise_target_text(&copy.image))",
-        "to": "image: Some(copy.image)"
-      }
-    ],
-    "runner": "rust",
-    "package": "chrono-cli",
-    "target": [
-      "--bins"
-    ],
-    "test": "core::tests::a_copy_already_named_as_an_uncovered_child_is_not_named_again",
-    "match": "exact",
-    "build": "",
-    "notHere": ""
-  },
-  {
-    "name": "copy outside a member of the family taken for a copy",
-    "edits": [
-      {
-        "file": "crates/mech/src/handoff.rs",
-        "from": ".filter(|e| e.pid != 0 && e.pid != me && !family.contains(&e.pid))",
-        "to": ".filter(|e| e.pid != 0 && e.pid != me)"
-      }
-    ],
-    "runner": "rust",
-    "package": "chrono-mech",
-    "target": [
-      "--lib"
-    ],
-    "test": "handoff::tests::a_copy_is_the_same_file_running_outside_the_family",
-    "match": "exact",
-    "build": "",
-    "notHere": ""
-  },
-  {
     "name": "copy outside another file of the same name taken for a copy",
     "edits": [
       {
@@ -23211,6 +23154,218 @@
     "test": "handoff::tests::a_copy_is_named_by_its_topmost_process_only",
     "match": "exact",
     "build": "",
+    "notHere": ""
+  },
+  {
+    "name": "copy outside image not sieved",
+    "edits": [
+      {
+        "file": "crates/cli/src/core.rs",
+        "from": "image: Some(crate::cdp::sanitise_target_text(&copy.image))",
+        "to": "image: Some(copy.image)"
+      }
+    ],
+    "runner": "rust",
+    "package": "chrono-cli",
+    "target": [
+      "--bins"
+    ],
+    "test": "core::tests::the_hand_off_findings_name_the_copies_or_say_the_search_failed",
+    "match": "exact",
+    "build": "",
+    "notHere": ""
+  },
+  {
+    "name": "copy outside a failed search said nothing",
+    "edits": [
+      {
+        "file": "crates/cli/src/core.rs",
+        "from": "search_failed.then_some(KEY_COPY_SEARCH_FAILED)",
+        "to": "None"
+      }
+    ],
+    "runner": "rust",
+    "package": "chrono-cli",
+    "target": [
+      "--bins"
+    ],
+    "test": "core::tests::the_hand_off_findings_name_the_copies_or_say_the_search_failed",
+    "match": "exact",
+    "build": "",
+    "notHere": ""
+  },
+  {
+    "name": "copy outside a window seen and searched all the same",
+    "edits": [
+      {
+        "file": "crates/cli/src/core.rs",
+        "from": "        if self.window_seen {\n            return;\n        }\n",
+        "to": ""
+      }
+    ],
+    "runner": "rust",
+    "package": "chrono-cli",
+    "target": [
+      "--bins"
+    ],
+    "test": "core::tests::the_ledger_looks_for_copies_only_when_no_window_was_seen",
+    "match": "exact",
+    "build": "",
+    "notHere": ""
+  },
+  {
+    "name": "copy outside an unread process list told to the log alone",
+    "edits": [
+      {
+        "file": "crates/cli/src/core.rs",
+        "from": "                self.copy_search_failed = true;\n",
+        "to": ""
+      }
+    ],
+    "runner": "rust",
+    "package": "chrono-cli",
+    "target": [
+      "--bins"
+    ],
+    "test": "core::tests::the_ledger_looks_for_copies_only_when_no_window_was_seen",
+    "match": "exact",
+    "build": "",
+    "notHere": ""
+  },
+  {
+    "name": "copy outside a member taken for a copy",
+    "edits": [
+      {
+        "file": "crates/mech/src/handoff.rs",
+        "from": "        .filter(|e| !members.contains(&e.pid))\n",
+        "to": ""
+      }
+    ],
+    "runner": "rust",
+    "package": "chrono-mech",
+    "target": [
+      "--lib"
+    ],
+    "test": "handoff::tests::a_copy_is_the_same_file_running_outside_the_family",
+    "match": "exact",
+    "build": "",
+    "notHere": ""
+  },
+  {
+    "name": "copy outside the helpers of a member taken for copies",
+    "edits": [
+      {
+        "file": "crates/mech/src/handoff.rs",
+        "from": "        .filter(|e| e.pid != 0 && e.pid != me)\n        .filter(|e| names.contains(&fold_case(&e.image)))",
+        "to": "        .filter(|e| e.pid != 0 && e.pid != me && !members.contains(&e.pid))\n        .filter(|e| names.contains(&fold_case(&e.image)))"
+      }
+    ],
+    "runner": "rust",
+    "package": "chrono-mech",
+    "target": [
+      "--lib"
+    ],
+    "test": "handoff::tests::the_helpers_of_a_member_are_not_copies",
+    "match": "exact",
+    "build": "",
+    "notHere": ""
+  },
+  {
+    "name": "copy outside a pid handed on taken for the child",
+    "edits": [
+      {
+        "file": "crates/mech/src/handoff.rs",
+        "from": "        (Some(then), Some(now)) => fold_case(file_name(&now)) == fold_case(file_name(then)),",
+        "to": "        (Some(_), Some(_)) => true,"
+      }
+    ],
+    "runner": "rust",
+    "package": "chrono-mech",
+    "target": [
+      "--lib"
+    ],
+    "test": "handoff::tests::a_pid_handed_on_is_not_the_child",
+    "match": "exact",
+    "build": "",
+    "notHere": ""
+  },
+  {
+    "name": "copy outside a window of a pid handed on counted",
+    "edits": [
+      {
+        "file": "crates/mech/src/handoff.rs",
+        "from": "owners.contains(&child.pid) && still_the_child(child, &image_now)",
+        "to": "owners.contains(&child.pid)"
+      }
+    ],
+    "runner": "rust",
+    "package": "chrono-mech",
+    "target": [
+      "--lib"
+    ],
+    "test": "handoff::tests::a_window_counts_for_the_session_only_when_its_owner_is_the_sessions",
+    "match": "exact",
+    "build": "",
+    "notHere": ""
+  },
+  {
+    "name": "copy outside never looked for at the end of the family",
+    "edits": [
+      {
+        "file": "crates/cli/src/core.rs",
+        "from": "                ledger.note_family_ended(&session);\n",
+        "to": ""
+      }
+    ],
+    "runner": "rust",
+    "package": "chrono-cli",
+    "target": [
+      "--test",
+      "hand_off"
+    ],
+    "test": "a_windowless_program_that_ends_while_a_copy_runs_outside_names_the_copy",
+    "match": "exact",
+    "build": "debug",
+    "notHere": ""
+  },
+  {
+    "name": "copy outside the window never looked for",
+    "edits": [
+      {
+        "file": "crates/cli/src/core.rs",
+        "from": "            ledger.look_for_window(&session);\n",
+        "to": ""
+      }
+    ],
+    "runner": "rust",
+    "package": "chrono-cli",
+    "target": [
+      "--test",
+      "hand_off"
+    ],
+    "test": "a_program_that_showed_a_window_is_not_reported_with_a_copy_outside",
+    "match": "exact",
+    "build": "debug",
+    "notHere": ""
+  },
+  {
+    "name": "copy outside a session cut off searched all the same",
+    "edits": [
+      {
+        "file": "crates/cli/src/core.rs",
+        "from": "    ledger.poll(&mut session);\n    let SessionLedger {",
+        "to": "    ledger.poll(&mut session);\n    ledger.note_family_ended(&session);\n    let SessionLedger {"
+      }
+    ],
+    "runner": "rust",
+    "package": "chrono-cli",
+    "target": [
+      "--test",
+      "hand_off"
+    ],
+    "test": "a_session_cut_off_while_the_program_runs_names_no_copy",
+    "match": "exact",
+    "build": "debug",
     "notHere": ""
   }
 ]

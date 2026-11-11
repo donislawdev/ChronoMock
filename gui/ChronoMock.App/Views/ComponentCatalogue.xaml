@@ -609,6 +609,23 @@
         </controls:TextNamedList>
       </Border>
 
+      <!-- ============ Fact list ============ -->
+      <TextBlock Text="Fact list" Style="{StaticResource PartHeading}" Margin="{StaticResource StackGapLg}" />
+
+      <TextBlock Style="{StaticResource PartCaption}" Margin="{StaticResource StackGapSm}"
+                 Text="A named list of processes, counted by the list itself, in a monospaced face because the rows are data. The pid closes every row, so a row too long for the card wraps instead of losing its end: the second row's program file is named past the width of the card." />
+
+      <Border Style="{StaticResource PartCard}" Margin="{StaticResource StackGapSm}">
+        <controls:TextNamedList Style="{StaticResource PartFactList}" Header="Copies outside the session">
+          <controls:TextNamedList.ItemsSource>
+            <x:Array Type="sys:String">
+              <sys:String>app.exe (pid 4600)</sys:String>
+              <sys:String>a-program-with-a-long-file-name-a-program-with-a-long-file-name-a-program-with-a-long-file-name-a-program-with-a-long-file-name-app.exe (pid 4700)</sys:String>
+            </x:Array>
+          </controls:TextNamedList.ItemsSource>
+        </controls:TextNamedList>
+      </Border>
+
       <!-- ============ Note list ============ -->
       <TextBlock Text="Note list" Style="{StaticResource PartHeading}" Margin="{StaticResource StackGapLg}" />
 

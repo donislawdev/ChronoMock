@@ -62,9 +62,10 @@ public class StateSheetTests
     /// one step, not the measurement. Doubling to 8 192 would have doubled the cost of every render of it
     /// for 269 px of content. The verdict headline took it to 5 397, so one more step: 6 144. The process
     /// table took it to 6 266, so one more: 7 168. The amount-and-unit input and the recent-application row
-    /// took it to 7 553, so one more: 8 192.
+    /// took it to 7 553, so one more: 8 192. The fact list of processes, with a row too long for the card,
+    /// took it to 8 198, so one more: 9 216.
     /// </remarks>
-    private const int CatalogueHeight = 8192;
+    private const int CatalogueHeight = 9216;
 
     /// <summary>
     /// The rebuilt setup phase, in the three states that decide whether it works.

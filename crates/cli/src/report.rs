@@ -207,7 +207,7 @@ pub(crate) fn describe_reason(key: &str) -> &'static str {
             "no process read a covered time channel, and the ones this app spawned without the hook ran on the real clock"
         }
         "session.family_handed_to_copy" => {
-            "the target most likely handed its work to a copy of itself already running outside the session, on the real clock"
+            "the target most likely handed its work to a copy of itself running outside the session, on the real clock"
         }
         "chromium.contexts_covered" => "every JS context ran on the session clock",
         "chromium.contexts_partial" => "some JS contexts ran on the session clock, some could not be reached",
@@ -404,7 +404,11 @@ fn describe_session_warning(key: &str) -> &'static str {
         // The one finding that says the session may have tested nothing, so it says what to do (ADR-4,
         // 2026-11-11). "Most likely": no process says what it handed on, the situation is what is read.
         "session.handed_to_copy" => {
-            "the target ended without ever showing a window while a copy of it was already running outside the session - a single-instance application most likely handed its work to that copy, listed under 'copies', which runs on the real clock, so this session may not have tested anything - to test the program under the session, close every copy of it and start the session again"
+            "the target ended without ever showing a window, and when it ended a copy of it was running outside the session - a single-instance application most likely handed its work to that copy, listed under 'copies', which runs on the real clock, so this session may not have tested anything - to test the program under the session, close every copy of it and start the session again"
+        }
+        // The same question left unanswered: said apart from a copy found, and with the same way out.
+        "session.copy_search_failed" => {
+            "the target ended without ever showing a window, and the process list could not be read, so the session could not check whether it handed its work to a copy of itself running outside the session - if the program did not open, close every copy of it and start the session again"
         }
         _ => "",
     }
@@ -879,7 +883,7 @@ fn render_copies(copies: &[chrono_proto::FollowedProcess]) -> String {
         return String::new();
     }
     let mut out = String::from(
-        "  copies:   the target most likely handed its work to these copies of it, already running outside the session on the REAL clock:\n",
+        "  copies:   the target most likely handed its work to these copies of it, running outside the session on the REAL clock:\n",
     );
     push_processes(&mut out, copies);
     out
@@ -1644,6 +1648,7 @@ mod tests {
         assert!(!render_report(&empty_report()).contains("copies:"));
         assert!(!describe_reason("session.family_handed_to_copy").is_empty());
         assert!(describe_warning("session.handed_to_copy").contains("start the session again"));
+        assert!(describe_warning("session.copy_search_failed").contains("could not be read"));
     }
 
     /// R4-S5: a refused session says the application was ended, right under the verdict, and names what

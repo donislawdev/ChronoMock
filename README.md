@@ -346,12 +346,15 @@ cover something is worse than one that says what it cannot do.
   its work to the copy already running, which the session never reached. A console program that ends
   that quickly has simply done its work, and its session ends with a verdict like any other. A windowed
   program that ends that fast on purpose, without showing a window, is suspected all the same
-- **A hand-off that comes later is recognised by the copy it went to.** A program that closes on its
-  own after its first 300 ms, without ever showing a window, while a copy of the same program file runs
-  outside the session, most likely passed its work to that copy: the verdict is at most `partial`, and
-  the report names the copy (`session.handed_to_copy`). A hand-off to another installation of the
+- **A hand-off that comes later is recognised by the copy it went to.** A windowed program that closes
+  on its own after its first 300 ms, without ever showing a window, while a copy of the same program file
+  runs outside the session, most likely passed its work to that copy: the verdict is at most `partial`,
+  and the report names the copy (`session.handed_to_copy`). A hand-off to another installation of the
   program - another program file - is not recognised, and neither is one by a program that showed a
-  window first
+  window first. The session looks for a window about once a second, so a window that opens and closes
+  again within that second can go unseen, and the program then counts as one that never showed a
+  window. When the list of running programs cannot be read, the report says that the copies were not
+  looked for (`session.copy_search_failed`)
 - **A child started under another user token is not followed.** Children started through
   `CreateProcessW` or `CreateProcessA`, whichever system library the call goes through, `WinExec`,
   the C runtime's `system`, spawn and `_popen` functions or `ShellExecuteEx` join the session. One

@@ -890,6 +890,35 @@ public class LayoutGuardTests
     }
 
     /// <summary>
+    /// A copy whose program file has a name longer than the result is wide keeps its pid in view: the pid
+    /// closes the row, and it is the one part of it the tester needs to find the process and close it. The
+    /// row may take a second line, never an ellipsis - measured on the arrange pass, with the trimming rule
+    /// every screen sweep uses and the row's own bounds against the list's.
+    /// </summary>
+    [Fact]
+    public void A_long_program_name_does_not_hide_the_pid_of_its_copy()
+    {
+        var image = string.Concat(Enumerable.Repeat("a-program-with-a-long-file-name-", 8)) + "app.exe";
+        var (list, row, trimmed) = WpfTestHost.InvokeSettled(() =>
+        {
+            var view = new ResultPhaseView { DataContext = PhaseStates.ResultPartialHandedToCopy(image) };
+            LayoutProbe.Settle(view);
+            var elements = LayoutProbe.Walk(view);
+            var copies = elements.Single(e => e.Name == "CopiesOutsideList");
+            var inside = elements
+                .Where(e => e.Bounds.Top >= copies.Bounds.Top && e.Bounds.Bottom <= copies.Bounds.Bottom + 1)
+                .ToList();
+            return (copies, inside.SingleOrDefault(e => e.Text == $"{image} (pid 4600)"), LayoutRules.TrimmedAway(inside));
+        });
+
+        Assert.True(row is { IsVisible: true }, "the copy's row is not inside the list");
+        Assert.True(trimmed.Count == 0, "a row of the copies lost its end:\n" + string.Join("\n", trimmed));
+        Assert.True(
+            row.Bounds.Right <= list.Bounds.Right + 1,
+            $"the row runs to {row.Bounds.Right:F0}, past the list's edge at {list.Bounds.Right:F0}");
+    }
+
+    /// <summary>
     /// The programs a session went on for stand on the result, under the line that says the application closed
     /// and above the actions on the answer (R4-N53) - measured on the arrange pass, not read off the markup.
     /// </summary>

@@ -36,7 +36,7 @@ pub use batch::{batch_launch_problem, is_batch_script};
 pub use ending::FamilyEnd;
 pub use environment::{current_environment, environment_block};
 pub use family::FamilyMember;
-pub use handoff::{shows_window, RunningCopy};
+pub use handoff::RunningCopy;
 pub use host_zone::{host_zone_name, host_zone_sample, ZoneSample};
 pub use listeners::{listening_sockets, Listener, ListenerTable, IPV4_ANY_ADDR, IPV4_LOOPBACK_ADDR};
 pub use policy::webview2_arguments_policy_present;
@@ -631,12 +631,34 @@ impl Session {
         root.into_iter().chain(self.family.windowed_images().iter().cloned()).collect()
     }
 
-    /// The processes outside `family` that run the executable of a windowed process of this session: the
-    /// copies a single-instance application may have handed its work to (ADR-4, 2026-11-11). `family` is
-    /// every pid the session knows of, the children the hook never entered included. An error is the
-    /// process list's own.
-    pub fn running_copies(&self, family: &HashSet<u32>) -> Result<Vec<RunningCopy>, String> {
-        handoff::running_copies(&self.windowed_images(), family)
+    /// The pids this session holds as its own: the launched process, whose handle it keeps for its whole
+    /// life, and the members it watches, each through a handle of its own. A held handle keeps the system
+    /// from handing the pid on, so each of these still names the process it was taken for - which a pid
+    /// noted once and kept does not (ADR-4, 2026-11-11). The watch is as fresh as the last `family_alive`.
+    fn held_pids(&self) -> HashSet<u32> {
+        std::iter::once(self.pid).chain(self.family.living().into_iter().map(|m| m.pid)).collect()
+    }
+
+    /// Whether a process of this session shows a visible window now (ADR-4, 2026-11-11): one the session
+    /// holds, or a child the hook never entered (`unhooked`) that still runs the executable it was named
+    /// with. A pid the session neither holds nor can confirm may belong to another program by now, and that
+    /// program's window is not one the tester saw of this application.
+    pub fn family_shows_window(&self, unhooked: &[UncoveredChild]) -> bool {
+        let owners = handoff::visible_window_owners();
+        !owners.is_empty() && handoff::owned_by_member(&owners, &self.held_pids(), unhooked, handoff::full_path_of)
+    }
+
+    /// The processes outside this session that run the executable of a windowed process of it: the copies
+    /// a single-instance application may have handed its work to (ADR-4, 2026-11-11). The session's own
+    /// processes are told apart the way `family_shows_window` tells them - held, or a child the hook never
+    /// entered (`unhooked`) that still runs the file it was named with - so a copy that came to hold the
+    /// pid of a child gone long ago is still a copy. An error is the process list's own.
+    pub fn running_copies(&self, unhooked: &[UncoveredChild]) -> Result<Vec<RunningCopy>, String> {
+        let mut members = self.held_pids();
+        members.extend(
+            unhooked.iter().filter(|child| handoff::still_the_child(child, &handoff::full_path_of)).map(|child| child.pid),
+        );
+        handoff::running_copies(&self.windowed_images(), &members)
     }
 
     /// The target's exit code, once it has exited. Whether it has is the signalled process object's to

@@ -534,12 +534,18 @@ mod tests {
                 elapsed_real_ms: 1000,
             },
             Event::Error { v: 1, id: Some(12), code: 2, key: "time.bad_multiplier".into(), origin: "core".into() },
+            // A session with a copy outside has the reason and the warning that go with it, as the core
+            // sends them, so the window's test reads the warning in the report and in the summary both.
             Event::SessionVerdict {
                 v: 1,
                 verdict: "partial".into(),
-                reason_key: "session.family_partial_children".into(),
+                reason_key: "session.family_handed_to_copy".into(),
                 process_count: 3,
-                warning_keys: vec!["wait.timeout_collapsed".into(), "time.host_slept".into()],
+                warning_keys: vec![
+                    "wait.timeout_collapsed".into(),
+                    "time.host_slept".into(),
+                    "session.handed_to_copy".into(),
+                ],
                 uncovered_children: vec![chrono_proto::UncoveredChild {
                     pid: 4300,
                     parent_pid: 4200,

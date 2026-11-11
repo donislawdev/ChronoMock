@@ -70,7 +70,7 @@ public class LocalizationTests
         // outlived the program it launched and went on for what that program started (ADR-16).
         "session.left_running", "session.followed_family",
         // A process of the session the core could not wait on (R5-D3).
-        "session.member_unwatchable", "session.handed_to_copy",
+        "session.member_unwatchable", "session.handed_to_copy", "session.copy_search_failed",
         "chromium.launched_with_debug_port", "chromium.app_closed_before_audit",
         "chromium.rate_change_affects_running_timers", "chromium.contexts_pooled", "chromium.context_reached_running",
         // A timer the engine's 4 ms floor held back (R5-P6) and a frame the shim did not reach (R5-P5).

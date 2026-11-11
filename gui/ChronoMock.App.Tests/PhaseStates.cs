@@ -275,7 +275,7 @@ internal static class PhaseStates
     /// copy after the guard window. Partial, with the copy named under the exit code and the warning that
     /// says what to do.
     /// </summary>
-    public static SessionViewModel ResultPartialHandedToCopy()
+    public static SessionViewModel ResultPartialHandedToCopy(string image = "app.exe")
     {
         var model = ResultRunning();
         model.Apply(new SessionVerdictEvent
@@ -285,7 +285,7 @@ internal static class PhaseStates
             ReasonKey = "session.family_handed_to_copy",
             ProcessCount = 1,
             WarningKeys = ["session.handed_to_copy"],
-            CopiesOutside = [new FollowedProcess { Pid = 4600, Image = "app.exe" }],
+            CopiesOutside = [new FollowedProcess { Pid = 4600, Image = image }],
         });
         model.Apply(Ended());
         return model;
