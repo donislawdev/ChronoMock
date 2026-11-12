@@ -70,7 +70,7 @@ Chrono Mock - date calculator
 
     <div class="prose">
       <ul>
-        <li><strong>該時區會把自己回報為「Chrono Session」</strong>，這是任何 Windows 登錄都不認識的名稱。凡是把這個名稱對應回時區的東西——包括 .NET 的 <code>TimeZoneInfo.Local</code>——都會退回到使用偏移量，這是正確的答案。堅持要用登錄中名稱的應用程式則找不到。</li>
+        <li><strong>該時區會把自己回報為「Chrono Session」</strong>，這是任何 Windows 登錄都不認識的名稱。凡是把這個名稱對應回時區的東西——包括 .NET 的 <code>TimeZoneInfo.Local</code>——都會退回到使用偏移量，這是正確的答案。在沒有日光節約時間的真實時區的偏移量上（例如 +05:30），工作階段會給該時區使用那個真實時區在登錄中的名稱，從那個時區採用這個偏移量的日期起生效，因此依名稱尋找時區的程式——Node.js、Deno 等以 ICU 程式庫建置的程式，以及 .NET——都能找到它。在其他任何偏移量上，堅持要用登錄中名稱的應用程式則找不到。</li>
         <li><strong>Java 會把工作階段時區當作偏移量來接收。</strong>工作階段時區沒有日光節約時間，背後也沒有城市，所以 Java 用它的偏移量來命名——對於 +05:30 的工作階段就是 <code>GMT+05:30</code>。</li>
         <li><strong>在 Chromium 和 Electron 模式下，頁面同樣讀取工作階段時區。</strong>它是同一個固定位移：每個頁面和 worker 都會被放到這個時區，並檢查自己讀到的值。Electron 應用程式的主處理程序在 Node 中執行 JavaScript，工作階段無法觸及，所以它保持真實時鐘。</li>
         <li><strong>偏移量的範圍是 -14:00 到 +14:00</strong>，以整分鐘為單位。超出這個範圍的值會被拒絕，而不是悄悄迴繞。</li>

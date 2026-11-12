@@ -95,7 +95,11 @@ Chrono Mock - date calculator
         <li><strong>Le fuseau se déclare sous le nom «&nbsp;Chrono Session&nbsp;»</strong>, un nom
           qu'aucun registre Windows ne connaît. Tout ce qui rapproche ce nom d'un fuseau - dont
           <code>TimeZoneInfo.Local</code> de .NET - se rabat sur le décalage, ce qui est la bonne
-          réponse. Une application qui exige un nom de registre n'en trouvera pas.</li>
+          réponse. Au décalage d'un vrai fuseau sans heure d'été, comme +05:30, la session donne au
+          fuseau le nom de registre de ce vrai fuseau, à partir de la date où celui-ci a adopté ce
+          décalage, si bien que les programmes qui cherchent un fuseau par son nom - Node.js, Deno
+          et d'autres bâtis sur la bibliothèque ICU, ainsi que .NET - le trouvent. À tout autre
+          décalage, une application qui exige un nom de registre n'en trouvera pas.</li>
         <li><strong>Java prend le fuseau de la session sous forme de décalage.</strong> Le fuseau de la
           session n'a ni heure d'été ni ville derrière lui, si bien que Java le nomme d'après son
           décalage - <code>GMT+05:30</code> pour une session à +05:30.</li>

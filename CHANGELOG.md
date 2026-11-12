@@ -8,6 +8,20 @@ Notable changes to Chrono Mock, newest first. The format follows
 
 ### Fixed
 
+- **Programs built on the ICU library now name a session time zone like +05:30.** Node.js, Deno, Bun
+  and many other programs look the system time zone up by its registry name, and the session zone's
+  own, "Chrono Session", is in no list they carry. At a whole-hour offset they name the zone
+  after the offset (`Etc/GMT-5`), but at an offset like +05:30, +05:45 or -09:30 they found nothing:
+  some showed the right time with no zone name, others showed the time in UTC, and the report did not
+  say so. At such an offset the session now gives the zone the registry name of a real Windows time
+  zone with that offset and no daylight saving time, India Standard Time for +05:30, which those
+  programs find (`Asia/Calcutta`). Only from the date that zone took the offset on, 15 October 1945
+  for India, because those programs read the zone's whole history and before that date would show the
+  offset it had then. At an offset no such zone has (-03:30, -13:00 and others) or before that date,
+  the zone keeps its own name and the report says those programs cannot name it, and which offset or
+  date to choose instead. The report also says when a jump takes the clock to before that date. A .NET
+  program finds the borrowed name too, so at such an offset its `TimeZoneInfo.Local` is India Standard
+  Time and no longer "Chrono Session".
 - **A `TZ` variable in your environment no longer replaces the session's time zone.** The programs that
   read `TZ` (Python and other programs built on the C runtime, MSYS2, Node.js) take their time zone
   from it before the one Windows gives, so with `TZ` set they showed its zone instead of the session's,

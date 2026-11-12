@@ -89,10 +89,14 @@ Chrono Mock - date calculator
 
     <div class="prose">
       <ul>
-        <li><strong>De zone meldt zichzelf als “Chrono Session”</strong>, een naam die geen Windows-register
-          kent. Alles wat die naam terugvertaalt naar een zone - waaronder .NET's
-          <code>TimeZoneInfo.Local</code> - valt in plaats daarvan terug op de offset, wat het juiste
-          antwoord is. Een applicatie die op een registernaam staat, zal er geen vinden.</li>
+        <li><strong>De zone meldt zichzelf als “Chrono Session”</strong>, een naam die geen
+          Windows-register kent. Alles wat die naam terugvertaalt naar een zone - waaronder .NET's
+          <code>TimeZoneInfo.Local</code> - valt in plaats daarvan terug op de offset, wat het
+          juiste antwoord is. Bij de offset van een echte zone zonder zomertijd, zoals +05:30, geeft
+          de sessie de zone de registernaam van die echte zone, vanaf de datum waarop die zone de
+          offset aannam, zodat programma's die een zone op naam opzoeken - Node.js, Deno en andere
+          programma's op de ICU-bibliotheek, en ook .NET - haar vinden. Bij elke andere offset zal
+          een applicatie die op een registernaam staat er geen vinden.</li>
         <li><strong>Java neemt de sessiezone over als offset.</strong> De sessiezone heeft geen zomertijd en
           geen stad erachter, dus Java noemt haar naar haar offset - <code>GMT+05:30</code> voor een sessie
           op +05:30.</li>

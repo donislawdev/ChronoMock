@@ -83,9 +83,13 @@ Chrono Mock - date calculator
 
     <div class="prose">
       <ul>
-        <li><strong>Dilim kendini “Chrono Session” olarak bildirir</strong>, hiçbir Windows kayıt defterinin
-          bilmediği bir ad. Bu adı bir dilime geri eşleyen her şey - .NET’in
-          <code>TimeZoneInfo.Local</code>’ı dahil - bunun yerine kaymaya döner; bu doğru cevaptır. Bir
+        <li><strong>Dilim kendini “Chrono Session” olarak bildirir</strong>, hiçbir Windows kayıt
+          defterinin bilmediği bir ad. Bu adı bir dilime geri eşleyen her şey - .NET’in
+          <code>TimeZoneInfo.Local</code>’ı dahil - bunun yerine kaymaya döner; bu doğru cevaptır.
+          Yaz saati uygulaması olmayan gerçek bir dilimin kaymasında, örneğin +05:30’da, oturum
+          dilime o gerçek dilimin kayıt defteri adını, o dilimin bu kaymayı benimsediği tarihten
+          itibaren verir, böylece bir dilimi adıyla arayan programlar - Node.js, Deno ve ICU
+          kitaplığı üzerine kurulu diğerleri ile .NET - onu bulur. Başka herhangi bir kaymada, bir
           kayıt defteri adında ısrar eden bir uygulama onu bulamaz.</li>
         <li><strong>Java oturum dilimini bir kayma olarak alır.</strong> Oturum diliminin yaz saati
           uygulaması ve arkasında bir şehir yoktur; bu yüzden Java ona kaymasından bir ad verir -

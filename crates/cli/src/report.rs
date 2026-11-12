@@ -423,6 +423,17 @@ fn describe_session_warning(key: &str) -> &'static str {
         "session.tz_variable_removed" => {
             "the value of TZ set in your environment was not passed to the application - the programs that read TZ (Python and other programs on the C runtime, MSYS2, Node.js) take their time zone from it, so it would have replaced the session zone - a program built on the Rust jiff crate gets the session zone in TZ instead, any other program gets no TZ - your own environment is unchanged, and the value left out is on stderr"
         }
+        // ADR-26. Says what the tester sees and what to choose instead, because the cure is a choice of
+        // offset or date, not anything in the application.
+        "session.zone_unnamed" => {
+            "the programs built on ICU (Node.js, Deno, Bun and others) cannot name the session's time zone at this offset on the date the session starts, so some of them show the right time without a time zone name and others show it in UTC - for them to name it, choose a whole-hour offset from -12:00 to +14:00, or the offset of a real Windows time zone without daylight saving time with the session starting on or after the date that zone took that offset (+05:30 from 1945-10-15, for example)"
+        }
+        // ADR-26. ICU read the zone of the borrowed name with its history, once, so the jump is what moved
+        // those programs off the session's offset, and it cannot be undone while they run. The cure is the
+        // date of the next jump.
+        "session.jump_before_zone_name" => {
+            "for the programs built on ICU (Node.js, Deno, Bun and others) to name the session's time zone, the session gave it the registry name of a real Windows time zone with the same offset, and a jump took the clock to a date before that zone had this offset - at such a date those programs can show the offset the real zone had then instead of the session's, so to keep the session's offset in them, jump only to dates on or after the date that zone took it (1945-10-15 for +05:30)"
+        }
         _ => "",
     }
 }

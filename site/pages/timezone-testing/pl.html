@@ -87,10 +87,14 @@ Chrono Mock - date calculator
 
     <div class="prose">
       <ul>
-        <li><strong>Strefa przedstawia się jako „Chrono Session"</strong>, czyli nazwą, której
-          nie zna żaden rejestr Windows. Cokolwiek mapuje tę nazwę z powrotem na strefę -
-          w tym <code>TimeZoneInfo.Local</code> w .NET - spada na offset, co jest właściwą
-          odpowiedzią. Aplikacja upierająca się przy nazwie z rejestru jej nie znajdzie.</li>
+        <li><strong>Strefa przedstawia się jako „Chrono Session"</strong>, czyli nazwą, której nie
+          zna żaden rejestr Windows. Cokolwiek mapuje tę nazwę z powrotem na strefę - w tym
+          <code>TimeZoneInfo.Local</code> w .NET - spada na offset, co jest właściwą odpowiedzią.
+          Przy offsecie prawdziwej strefy bez czasu letniego, na przykład +05:30, sesja daje strefie
+          nazwę tej prawdziwej strefy z rejestru, od dnia, w którym ta strefa przyjęła ten offset,
+          więc programy, które szukają strefy po nazwie - Node.js, Deno i inne zbudowane na
+          bibliotece ICU, a także .NET - ją znajdują. Przy każdym innym offsecie aplikacja
+          upierająca się przy nazwie z rejestru jej nie znajdzie.</li>
         <li><strong>Java przejmuje strefę sesji jako offset.</strong> Strefa sesji nie ma czasu
           letniego ani miasta za sobą, więc Java nazywa ją od offsetu -
           <code>GMT+05:30</code> dla sesji na +05:30.</li>

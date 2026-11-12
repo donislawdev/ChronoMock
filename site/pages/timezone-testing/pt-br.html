@@ -89,9 +89,13 @@ Chrono Mock - date calculator
 
     <div class="prose">
       <ul>
-        <li><strong>O fuso se apresenta como “Chrono Session”</strong>, um nome que nenhum registro do
-          Windows conhece. Tudo o que mapeia esse nome de volta para um fuso - inclusive o
-          <code>TimeZoneInfo.Local</code> do .NET - recorre ao deslocamento, que é a resposta certa. Um
+        <li><strong>O fuso se apresenta como “Chrono Session”</strong>, um nome que nenhum registro
+          do Windows conhece. Tudo o que mapeia esse nome de volta para um fuso - inclusive o
+          <code>TimeZoneInfo.Local</code> do .NET - recorre ao deslocamento, que é a resposta certa.
+          No deslocamento de um fuso real sem horário de verão, como +05:30, a sessão dá ao fuso o
+          nome de registro desse fuso real, a partir da data em que ele adotou o deslocamento, e
+          assim os programas que procuram um fuso pelo nome - Node.js, Deno e outros feitos com a
+          biblioteca ICU, e também o .NET - o encontram. Em qualquer outro deslocamento, um
           aplicativo que insista em um nome de registro não vai encontrar nenhum.</li>
         <li><strong>O Java assume o fuso da sessão como um deslocamento.</strong> O fuso da sessão não tem
           horário de verão nem cidade por trás, então o Java o nomeia pelo deslocamento -

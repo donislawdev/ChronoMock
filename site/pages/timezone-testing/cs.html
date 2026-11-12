@@ -84,10 +84,14 @@ Chrono Mock - date calculator
 
     <div class="prose">
       <ul>
-        <li><strong>Pásmo se hlásí jako „Chrono Session“</strong>, jméno, které žádný registr Windows
-          nezná. Cokoli, co toto jméno převádí zpět na pásmo - mimo jiné <code>TimeZoneInfo.Local</code>
-          v .NET - se místo toho vrátí k posunu, což je správná odpověď. Aplikace, která trvá na názvu
-          z registru, žádný nenajde.</li>
+        <li><strong>Pásmo se hlásí jako „Chrono Session“</strong>, jméno, které žádný registr
+          Windows nezná. Cokoli, co toto jméno převádí zpět na pásmo - mimo jiné
+          <code>TimeZoneInfo.Local</code> v .NET - se místo toho vrátí k posunu, což je správná
+          odpověď. Při posunu skutečného pásma bez letního času, například +05:30, dá sezení pásmu
+          název tohoto skutečného pásma z registru, a to od data, kdy toto pásmo posun přijalo,
+          takže programy, které hledají pásmo podle názvu - Node.js, Deno a další postavené na
+          knihovně ICU a také .NET - ho najdou. Při jakémkoli jiném posunu aplikace, která trvá na
+          názvu z registru, žádný nenajde.</li>
         <li><strong>Java přebírá pásmo sezení jako posun.</strong> Pásmo sezení nemá letní čas ani město
           za sebou, takže ho Java pojmenuje podle jeho posunu - <code>GMT+05:30</code> pro sezení na
           +05:30.</li>

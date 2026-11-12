@@ -89,10 +89,15 @@ Chrono Mock - date calculator
 
     <div class="prose">
       <ul>
-        <li><strong>Il fuso si presenta come «Chrono Session»</strong>, un nome che nessun registro di
-          Windows conosce. Tutto ciò che riporta quel nome a un fuso - compreso
-          <code>TimeZoneInfo.Local</code> di .NET - ripiega invece sullo scostamento, che è la risposta
-          giusta. Un'applicazione che insista su un nome di registro non ne troverà uno.</li>
+        <li><strong>Il fuso si presenta come «Chrono Session»</strong>, un nome che nessun registro
+          di Windows conosce. Tutto ciò che riporta quel nome a un fuso - compreso
+          <code>TimeZoneInfo.Local</code> di .NET - ripiega invece sullo scostamento, che è la
+          risposta giusta. Allo scostamento di un fuso reale senza ora legale, come +05:30, la
+          sessione dà al fuso il nome di registro di quel fuso reale, a partire dalla data in cui
+          quel fuso ha adottato lo scostamento, così i programmi che cercano un fuso per nome -
+          Node.js, Deno e altri basati sulla libreria ICU, e anche .NET - lo trovano. Con qualsiasi
+          altro scostamento, un'applicazione che insista su un nome di registro non ne troverà
+          uno.</li>
         <li><strong>Java recepisce il fuso della sessione come scostamento.</strong> Il fuso della sessione
           non ha ora legale né una città dietro, quindi Java lo chiama con il suo scostamento -
           <code>GMT+05:30</code> per una sessione a +05:30.</li>

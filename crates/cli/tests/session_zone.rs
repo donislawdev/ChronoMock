@@ -16,6 +16,11 @@
 //! current zone through and nothing else (2026-10-27), and writes down the `TZ` it was started with: a
 //! `TZ` of the tester's own must not reach the program, or the runtimes that read it show its zone
 //! instead of the session's (2026-11-12).
+//!
+//! The key name is read for one more reader, ICU (ADR-26). ICU names a whole-hour zone from the bias
+//! and any other from the key name, through CLDR's table of Windows zones, where "Chrono Session" is not.
+//! So a session at +05:30 hands out the key of India's zone, which ICU maps, from the date that zone has
+//! kept +05:30 on, and its own name before it, with a warning in the report.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -28,8 +33,24 @@ const SESSION_ZONE: &str = "+05:30";
 /// The bias that zone has to arrive as, in the Win32 sense (UTC = local + bias).
 const SESSION_BIAS: &str = "-330";
 
-/// The key name only the hook hands out, so seeing it proves the session reached the probe.
-const SESSION_KEY: &str = "Chrono Session";
+/// The session zone's own name, which no registry knows: the standard name of every answer the hook
+/// gives, so seeing it proves the session reached the probe, and the key name where no real zone lends
+/// one.
+const SESSION_NAME: &str = "Chrono Session";
+
+/// The key name the session zone borrows at `SESSION_ZONE` from 1945-10-14T17:30Z on, when the IANA zone
+/// CLDR maps it to has kept +05:30 without daylight saving time (`chrono_ctl::BORROWED_NAMES`).
+const BORROWED_KEY: &str = "India Standard Time";
+
+/// A moment before that date, at which the session zone keeps its own name, and the report says ICU
+/// cannot name it. The shared session jumps here, and the session of its own starts here.
+const BEFORE_THE_BORROWED_PERIOD: &str = "1944-06-15T12:00:00";
+
+/// How the report names a session zone ICU cannot name.
+const ZONE_UNNAMED: &str = "(session.zone_unnamed)";
+
+/// How the report names a jump to before the period of the name the session zone borrowed.
+const JUMP_BEFORE_ZONE_NAME: &str = "(session.jump_before_zone_name)";
 
 /// A `TZ` of the tester's own, in the POSIX form the C runtime reads (UTC+2), set for the probe without a
 /// session and for the session that runs it. The session must not hand it on.
@@ -39,7 +60,9 @@ const TESTER_TZ: &str = "EET-2";
 const TZ_LEFT_OUT: &str = "(session.tz_variable_removed)";
 
 /// The probe: one call to `GetDynamicTimeZoneInformation` through kernel32, written to a file,
-/// because the output of a target running under a session does not reach the caller's pipe.
+/// because the output of a target running under a session does not reach the caller's pipe. Given a year,
+/// it stays until its clock shows that year, 30 seconds at most, so a session that jumps there after its
+/// first heartbeat lasts until the jump has landed, however late that heartbeat reaches the driver.
 const PROBE: &str = r#"Add-Type -TypeDefinition @'
 using System;
 using System.Runtime.InteropServices;
@@ -82,9 +105,17 @@ $y = New-Object ZoneProbe+Zone
 $current = [ZoneProbe]::GetTimeZoneInformationForYear(2038, [IntPtr]::Zero, [ref]$y)
 $n = New-Object ZoneProbe+Zone
 $named = [ZoneProbe]::GetNamedZoneForYear(2038, [ref]$z, [ref]$n)
+$k = New-Object ZoneProbe+DynamicZone
+$k.TimeZoneKeyName = $z.TimeZoneKeyName
+$o = New-Object ZoneProbe+Zone
+$keyonly = [ZoneProbe]::GetNamedZoneForYear(2038, [ref]$k, [ref]$o)
 $tz = [Environment]::GetEnvironmentVariable('TZ')
 if ($null -eq $tz) { $tz = 'unset' }
-Set-Content -Path zone.txt -Value ("key={0}|bias={1}|dstoff={2}|year={3}:{4}:{5}|named={6}:{7}|tz={8}" -f $z.TimeZoneKeyName, $z.Bias, $z.DynamicDaylightTimeDisabled, $current, $y.Bias, $y.StandardName, $named, $n.Bias, $tz)
+Set-Content -Path zone.txt -Value ("key={0}|bias={1}|dstoff={2}|year={3}:{4}:{5}|named={6}:{7}:{8}|keyonly={9}:{10}:{11}|tz={12}" -f $z.TimeZoneKeyName, $z.Bias, $z.DynamicDaylightTimeDisabled, $current, $y.Bias, $y.StandardName, $named, $n.Bias, $n.StandardName, $keyonly, $o.Bias, $o.StandardName, $tz)
+if ($args.Count -gt 0) {
+    $waited = [Diagnostics.Stopwatch]::StartNew()
+    while ([DateTime]::UtcNow.Year -ne [int]$args[0] -and $waited.Elapsed.TotalSeconds -lt 30) { Start-Sleep -Milliseconds 100 }
+}
 "#;
 
 /// Windows PowerShell, by full path, for the same reason `dry_run.rs` gives for the interpreter.
@@ -132,9 +163,39 @@ struct ZoneLines {
     context: String,
 }
 
-/// The probe's line without a session and under one at `SESSION_ZONE`, both started with `TESTER_TZ`,
-/// after checking the control: the probe ran, read the zone, and the host does not already report the
-/// session key.
+/// One session at `SESSION_ZONE` from `at` running the probe, started with `TESTER_TZ`, and jumping to
+/// `jump_to` after its first heartbeat when one is given (the probe then stays until its clock shows the
+/// year of the jump): the probe's line, the report on stdout, and stderr.
+fn probe_session(name: &str, at: &str, jump_to: Option<&str>) -> (String, String, String) {
+    let dir = scratch(name);
+    let probe_args = match jump_to {
+        Some(to) => format!("{PROBE_ARGS} {}", to.split_once('-').map_or(to, |(year, _)| year)),
+        None => PROBE_ARGS.to_string(),
+    };
+    let mut args = vec!["run".to_string(), windows_powershell(), "--args".into(), probe_args];
+    args.extend(["--cwd".to_string(), dir.display().to_string(), "--at".into(), at.into(), "--zone".into(), SESSION_ZONE.into()]);
+    if let Some(to) = jump_to {
+        args.extend(["--jump-after".to_string(), format!("1:{to}")]);
+    }
+    let out = Command::new(env!("CARGO_BIN_EXE_chrono"))
+        .args(&args)
+        .env("TZ", TESTER_TZ)
+        .output()
+        .expect("the tool must run");
+    let seen = written_zone(&dir);
+    let _ = std::fs::remove_dir_all(&dir);
+    (seen, String::from_utf8_lossy(&out.stdout).into_owned(), String::from_utf8_lossy(&out.stderr).into_owned())
+}
+
+/// Whether the probe's line came from under a session: the zone of a year carries the session's own name,
+/// which no machine's zone has.
+fn reached_by_the_session(seen: &str) -> bool {
+    field(seen, "year").is_some_and(|year| year.ends_with(SESSION_NAME))
+}
+
+/// The probe's line without a session and under one at `SESSION_ZONE` that jumps to before the period of
+/// the name it borrows, both started with `TESTER_TZ`, after checking the control: the probe ran, read the
+/// zone, and this machine's zone is not the one whose name the session borrows.
 fn zone_lines() -> ZoneLines {
     let library = injected_library();
     assert!(
@@ -160,34 +221,21 @@ fn zone_lines() -> ZoneLines {
         field(&real, "key").is_some() && field(&real, "bias").is_some() && field(&real, "dstoff").is_some(),
         "the probe wrote {real:?} without a session, so it cannot read the zone at all"
     );
-    assert_ne!(field(&real, "key"), Some(SESSION_KEY), "the host already reports the session key: {real}");
+    assert!(!reached_by_the_session(&real), "the host already reports the session's name: {real}");
+    assert!(
+        field(&real, "keyonly").is_some_and(|answer| answer.starts_with("True:")),
+        "Windows does not answer for a zone named by its key alone, so the probe cannot tell whose answer it got: {real}"
+    );
+    assert_ne!(
+        field(&real, "key"),
+        Some(BORROWED_KEY),
+        "this machine is in the zone whose name the session borrows, so the key cannot tell them apart: {real}"
+    );
     let _ = std::fs::remove_dir_all(&control);
 
-    let dir = scratch("session");
-    let out = Command::new(env!("CARGO_BIN_EXE_chrono"))
-        .args([
-            "run",
-            &windows_powershell(),
-            "--args",
-            PROBE_ARGS,
-            "--cwd",
-            &dir.display().to_string(),
-            "--at",
-            "2091-06-15T12:00:00",
-            "--zone",
-            SESSION_ZONE,
-        ])
-        .env("TZ", TESTER_TZ)
-        .output()
-        .expect("the tool must run");
-    let seen = written_zone(&dir);
-    let report = String::from_utf8_lossy(&out.stdout).into_owned();
-    let context = format!(
-        "The probe wrote {seen:?} under the session and {real:?} without it. stdout: {report} stderr: {}",
-        String::from_utf8_lossy(&out.stderr)
-    );
-    let _ = std::fs::remove_dir_all(&dir);
-    assert_eq!(field(&seen, "key"), Some(SESSION_KEY), "the session never reached the probe. {context}");
+    let (seen, report, stderr) = probe_session("session", "2091-06-15T12:00:00", Some(BEFORE_THE_BORROWED_PERIOD));
+    let context = format!("The probe wrote {seen:?} under the session and {real:?} without it. stdout: {report} stderr: {stderr}");
+    assert!(reached_by_the_session(&seen), "the session never reached the probe. {context}");
     ZoneLines { real, seen, report, context }
 }
 
@@ -283,9 +331,9 @@ fn a_tz_of_the_testers_own_left_out_is_said_in_the_report() {
     assert!(report.contains(TZ_LEFT_OUT), "the report does not say the TZ was left out. {context}");
 }
 
-/// The zone the hook hands out through `GetDynamicTimeZoneInformation` carries the session's key and
-/// bias, and says daylight saving time is disabled, which is what makes the JVM build its zone from
-/// that bias instead of from the real registry.
+/// The zone the hook hands out through `GetDynamicTimeZoneInformation` carries the session's bias, and
+/// says daylight saving time is disabled, which is what makes the JVM build its zone from that bias
+/// instead of from the real registry, whatever key name it carries.
 #[test]
 fn the_dynamic_zone_of_a_session_has_daylight_saving_time_disabled() {
     let ZoneLines { seen, context, .. } = lines();
@@ -304,25 +352,86 @@ fn the_dynamic_zone_of_a_session_has_daylight_saving_time_disabled() {
 
 /// The zone of a year is the session's: asked about the current zone, which is how the Rust `chrono`
 /// crate reads it and the only way (measured 2026-10-27: under a session at +05:30 its local time showed
-/// this machine's zone), and asked about the zone `GetDynamicTimeZoneInformation` handed out by its own
-/// name, which no registry knows. Without the session the same two questions get this machine's answers.
+/// this machine's zone), and asked about the zone `GetDynamicTimeZoneInformation` handed out, by the key
+/// name it carries. That name is a real zone's here, which Windows would answer for with that zone's own
+/// standard name: the session's name in the answer is what says the hook knew the zone for its own.
+/// Without the session the same two questions get this machine's answers.
 #[test]
 fn the_zone_of_a_year_is_the_session_zone_whether_asked_by_none_or_by_its_name() {
     let ZoneLines { real, seen, context, .. } = lines();
     assert!(
-        field(real, "year").is_some_and(|y| y.starts_with("True:") && !y.ends_with(SESSION_KEY)),
+        field(real, "year").is_some_and(|y| y.starts_with("True:")),
         "without a session the zone of a year has to be this machine's. {context}"
     );
     assert_eq!(field(real, "named").map(|n| n.starts_with("True:")), Some(true), "{context}");
     assert_eq!(
         field(seen, "year"),
-        Some(format!("True:{SESSION_BIAS}:{SESSION_KEY}").as_str()),
+        Some(format!("True:{SESSION_BIAS}:{SESSION_NAME}").as_str()),
         "the current zone of a year is not the session's, so a program built on `chrono` shows this \
          machine's zone. {context}"
     );
     assert_eq!(
         field(seen, "named"),
-        Some(format!("True:{SESSION_BIAS}").as_str()),
-        "the zone handed out under the session's own name is not answered for a year. {context}"
+        Some(format!("True:{SESSION_BIAS}:{SESSION_NAME}").as_str()),
+        "the zone handed out under the key name it carries is not answered for a year as the session's. {context}"
     );
+}
+
+/// At +05:30 from 1945-10-14 on, the zone borrows the key name of India's zone, which CLDR maps to an IANA
+/// zone, so the runtimes built on ICU name it instead of showing it without a name or in UTC (measured
+/// 2026-11-12). Its standard name stays the session's own, and the report says nothing ICU could not do.
+#[test]
+fn the_session_zone_borrows_the_key_name_of_a_real_zone_at_its_offset() {
+    let ZoneLines { seen, report, context, .. } = lines();
+    assert_eq!(field(seen, "key"), Some(BORROWED_KEY), "ICU finds no zone under the key the session handed out. {context}");
+    assert!(!report.contains(ZONE_UNNAMED), "a zone with a borrowed name is reported as one ICU cannot name. {context}");
+}
+
+/// A program can name the real zone whose key the session borrowed by itself: by that key alone, or as
+/// `EnumDynamicTimeZoneInformation` lists it, with that zone's own standard name. That is a question about
+/// the real zone, which Windows answers with its rules of the year (Iran's held daylight saving time until
+/// 2022), so the hook leaves it alone: the session's answer is for the zone the hook handed out, which
+/// carries the session's own standard name too. Measured 2026-11-12: Windows answers India's key alone with
+/// India's bias and its own standard name.
+#[test]
+fn the_real_zone_of_the_borrowed_key_is_answered_by_windows() {
+    let ZoneLines { seen, context, .. } = lines();
+    let answer = field(seen, "keyonly").unwrap_or_default();
+    assert!(
+        answer.starts_with(&format!("True:{SESSION_BIAS}:")) && !answer.ends_with(SESSION_NAME),
+        "the real zone named by the borrowed key alone got the session's answer instead of Windows'. {context}"
+    );
+}
+
+/// ICU reads the zone once, when a program first asks, so after a jump to before the date the borrowed
+/// name's zone took the session's offset on, those programs read that zone's history and not the session's
+/// offset. The report says so.
+#[test]
+fn a_jump_to_before_the_period_of_the_borrowed_name_is_said_in_the_report() {
+    let ZoneLines { report, context, .. } = lines();
+    assert!(report.contains(JUMP_BEFORE_ZONE_NAME), "the report does not say the jump left the borrowed name's period. {context}");
+}
+
+/// Before the date India's zone took +05:30, ICU would read that zone's history and show the offset of the
+/// time, not the session's, so the zone keeps its own key name there, which ICU cannot map, and the report
+/// says so. With no borrowed name there is no period to jump out of either. That own key name, which no
+/// registry has, finds the session zone by itself, where Windows would answer it with a failure.
+#[test]
+fn a_session_before_the_period_of_the_borrowed_name_keeps_its_own_and_says_icu_cannot_name_it() {
+    let library = injected_library();
+    assert!(library.is_file(), "this test drives a real session and needs {}", library.display());
+    let (seen, report, stderr) = {
+        let _session = one_real_session_at_a_time();
+        probe_session("before", BEFORE_THE_BORROWED_PERIOD, None)
+    };
+    let context = format!("The probe wrote {seen:?}. stdout: {report} stderr: {stderr}");
+    assert!(reached_by_the_session(&seen), "the session never reached the probe. {context}");
+    assert_eq!(field(&seen, "key"), Some(SESSION_NAME), "a name was borrowed before its zone had the offset. {context}");
+    assert_eq!(
+        field(&seen, "keyonly"),
+        Some(format!("True:{SESSION_BIAS}:{SESSION_NAME}").as_str()),
+        "the session's own key name alone did not find the session zone. {context}"
+    );
+    assert!(report.contains(ZONE_UNNAMED), "the report does not say ICU cannot name the zone. {context}");
+    assert!(!report.contains(JUMP_BEFORE_ZONE_NAME), "a session that borrowed no name reports a jump out of its period. {context}");
 }

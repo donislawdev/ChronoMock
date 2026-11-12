@@ -32,6 +32,7 @@ mod process_facts;
 mod search;
 mod stdio;
 mod tree;
+mod zone_name;
 
 pub use batch::{batch_launch_problem, is_batch_script};
 pub use ending::FamilyEnd;
@@ -65,7 +66,7 @@ use chrono_ctl::{
     read_uncovered_child, read_uncovered_children_count, read_uninjected_children, read_waits_at_floor,
     read_timers_at_floor, read_absolute_dues, read_calls_without_storage, calls_capped, clock_fence,
     mark_ended, write_anchor, write_anchor_full, write_core_created, write_header, FullAnchor,
-    write_core_pid, write_scale_dur, write_scale_qpc, write_tz_bias, ChannelCategory,
+    write_core_pid, write_scale_dur, write_scale_qpc, write_tz_bias, write_zone_name, ChannelCategory,
     Cov, Ctl, CHANNELS, CH_GTC, CH_GTC64, CTL_LAYOUT_VERSION, CTL_MAGIC, DEADLINE_CHANNELS, IDX_TIMEGETTIME,
     MAX_COV_PIDS, exit_began_in_window, qpc_span_ms, read_exit_began,
 };
@@ -200,6 +201,9 @@ pub struct Session {
     /// slept since (R5-P1).
     sleep_bias0: i64,
     tz_bias: i32,
+    /// The key name the zone is handed out under, and whether a jump has left the period it holds in
+    /// (ADR-26).
+    zone: zone_name::SessionZoneName,
     /// The duration axis is opt-in - coverage gathering needs it to know whether the
     /// Duration channels are expected.
     scale_duration: bool,
@@ -709,12 +713,29 @@ impl Session {
         let now = quitp_now();
         let (_, _, cur_m) = unsafe { read_anchor(self.ctl()) };
         unsafe { write_anchor(self.ctl_mut(), to_ft, now, cur_m) };
+        self.zone.note_landing(to_ft);
     }
 
     /// The session zone bias in minutes (UTC = local + bias) - the zone a jump that names none is
     /// read in, like every other moment of this session (untouchable rule 2).
     pub fn tz_bias(&self) -> i32 {
         self.tz_bias
+    }
+
+    /// Whether the runtimes built on ICU find no zone for this session (ADR-26): its offset is neither a
+    /// whole hour from -12:00 to +14:00, which ICU names from the bias, nor one a real Windows zone has kept
+    /// since before the session's start, whose key name the zone would borrow. Such a runtime then shows
+    /// the zone without a name, or shows UTC (measured 2026-11-12).
+    pub fn zone_unnamed_for_icu(&self) -> bool {
+        self.zone.unnamed_for_icu()
+    }
+
+    /// Whether a jump took the clock to before the period of the key name the zone borrowed (ADR-26). ICU
+    /// reads the zone of that name with its whole history, so a program built on it can show the offset
+    /// that zone had at the date jumped to: measured 2026-11-12 at +05:30 jumped to 1944, Node.js and Deno
+    /// showed India's war time, +06:30, and Bun kept +05:30.
+    pub fn jumped_before_zone_name(&self) -> bool {
+        self.zone.left_period()
     }
 
     /// Jump the wall clock by ONE shift step from its CURRENT fake value, keeping the
@@ -733,6 +754,7 @@ impl Session {
         let fake_now = project_fake_ft(a_fake, a_real, now, cur_m);
         let target = chrono_core::calc::step_target(fake_now, self.tz_bias, step)?;
         unsafe { write_anchor(self.ctl_mut(), target, now, cur_m) };
+        self.zone.note_landing(target);
         Ok(())
     }
 
@@ -1723,6 +1745,7 @@ pub fn prepare(spec: &SessionSpec, target: &Target, hook_dll: &Path) -> Result<P
     // instant outside the clock's range, is refused here as well as by the caller (R4-S7, R4-S9). The
     // zone comes back from the same check, so there is no default left to fall back on.
     let (a_fake, tz_bias) = chrono_core::session_instant(&spec.moment).map_err(PrepareError::Moment)?;
+    let zone = zone_name::SessionZoneName::choose(tz_bias, a_fake);
     let multiplier = match spec.mode {
         TimeMode::Flow => 1,
         TimeMode::Frozen => 0, // M = 0 holds the wall clock at a_fake
@@ -1831,6 +1854,7 @@ pub fn prepare(spec: &SessionSpec, target: &Target, hook_dll: &Path) -> Result<P
             },
         );
         write_tz_bias(ctl, tz_bias);
+        write_zone_name(ctl, zone.index());
         write_scale_dur(ctl, spec.scale_duration);
         write_scale_qpc(ctl, spec.scale_qpc);
         // The pair that names this session (R4-W2), the pid LAST. Reading our own creation time cannot
@@ -1937,6 +1961,7 @@ pub fn prepare(spec: &SessionSpec, target: &Target, hook_dll: &Path) -> Result<P
             rate_segment_real0: std::cell::Cell::new(start_real),
             sleep_bias0,
             tz_bias,
+            zone,
             scale_duration: spec.scale_duration,
             scale_qpc: spec.scale_qpc,
             reported_slots,

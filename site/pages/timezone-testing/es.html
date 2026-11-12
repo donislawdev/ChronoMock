@@ -90,10 +90,15 @@ Chrono Mock - date calculator
 
     <div class="prose">
       <ul>
-        <li><strong>La zona se presenta como «Chrono Session»</strong>, un nombre que ningún registro de
-          Windows conoce. Todo lo que relacione ese nombre con una zona - entre ello
-          <code>TimeZoneInfo.Local</code> de .NET - recurre en su lugar al desfase, que es la respuesta
-          correcta. Una aplicación que insista en un nombre del registro no encontrará ninguno.</li>
+        <li><strong>La zona se presenta como «Chrono Session»</strong>, un nombre que ningún
+          registro de Windows conoce. Todo lo que relacione ese nombre con una zona - entre ello
+          <code>TimeZoneInfo.Local</code> de .NET - recurre en su lugar al desfase, que es la
+          respuesta correcta. Con el desfase de una zona real sin horario de verano, como +05:30, la
+          sesión le da a la zona el nombre de registro de esa zona real, desde la fecha en que esa
+          zona adoptó el desfase, así que los programas que buscan una zona por su nombre - Node.js,
+          Deno y otros basados en la biblioteca ICU, y también .NET - la encuentran. Con cualquier
+          otro desfase, una aplicación que insista en un nombre del registro no encontrará
+          ninguno.</li>
         <li><strong>Java toma la zona de la sesión como un desfase.</strong> La zona de la sesión no tiene
           horario de verano ni ciudad detrás, así que Java la nombra por su desfase - <code>GMT+05:30</code>
           para una sesión en +05:30.</li>
