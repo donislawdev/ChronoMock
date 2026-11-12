@@ -377,7 +377,8 @@ fn describe_chromium_warning(key: &str) -> &'static str {
     }
 }
 
-/// The words for a key about how the session ended and what it lasted for (`session.*`). Split from
+/// The words for a key about the session as a whole (`session.*`): how it ended, what it lasted for, and
+/// what of the tester's environment it did not hand on to the application. Split from
 /// `describe_warning` for the reason `describe_chromium_warning` is: its length is the workspace's
 /// ceiling, and the third key here (R5-D3) would have pushed it over.
 fn describe_session_warning(key: &str) -> &'static str {
@@ -415,6 +416,11 @@ fn describe_session_warning(key: &str) -> &'static str {
         // can tell.
         "session.target_crashed" => {
             "the application crashed - it ended with the code Windows gives a program stopped by an error it did not handle (the exit code is above) - the verdict speaks only of the clock it read until then - start it once without Chrono Mock to see whether it crashes there too"
+        }
+        // Said before the launch: the runtimes that read TZ take their zone from it before the system's,
+        // so a TZ of the tester's own would have replaced the session zone in exactly those programs.
+        "session.tz_variable_removed" => {
+            "the TZ variable set in your environment was not passed to the application - the programs that read it (Python and other programs on the C runtime, MSYS2, Node.js) take their time zone from it, so it would have replaced the session zone - your own environment is unchanged, and the value left out is on stderr"
         }
         _ => "",
     }

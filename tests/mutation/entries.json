@@ -21730,8 +21730,8 @@
     "edits": [
       {
         "file": "crates/cli/src/core.rs",
-        "from": "    launch.env.extend(session_zone_variable(&target.path, spec.moment.tz_bias_min));",
-        "to": "    launch.env.extend(session_zone_variable(&target.path, spec.moment.tz_bias_min).filter(|_| false));"
+        "from": "        return (Some(chrono_mech::EnvChange::Set(\"TZ\".to_string(), value)), taken);",
+        "to": "        return (None, taken);"
       }
     ],
     "runner": "rust",
@@ -21750,8 +21750,8 @@
     "edits": [
       {
         "file": "crates/cli/src/core.rs",
-        "from": "    if !crate::pe::links_jiff(std::path::Path::new(target_path)) {",
-        "to": "    if false && !crate::pe::links_jiff(std::path::Path::new(target_path)) {"
+        "from": "    if jiff {",
+        "to": "    if true {"
       }
     ],
     "runner": "rust",

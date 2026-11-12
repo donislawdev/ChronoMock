@@ -337,10 +337,11 @@ cover something is worse than one that says what it cannot do.
   `jiff` crate is the exception: it finds a zone by its name alone and would fall back to UTC, so a
   session gives a program built on it the zone in the `TZ` variable instead (`CMS-5:30` for +05:30).
   A target that insists on a registry name will not find one
-- **A `TZ` variable in your environment wins over the session zone** for the programs that read it:
-  the C runtime, and so Python, MSYS2 and Node.js. Measured under a session at +05:30 with `TZ` set
-  to UTC+2: Python showed +02:00 and Node.js +00:00, and the report did not say so, while .NET, which
-  does not read the variable, showed the session's zone. Leave `TZ` unset for a session in another zone
+- **A `TZ` variable in your environment is not passed to the application.** The programs that read it
+  (the C runtime, and so Python and MSYS2, and Node.js) take their time zone from it before the one
+  Windows gives, so it would replace the session zone: measured under a session at +05:30 with `TZ` set
+  to UTC+2, Python showed +02:00 and Node.js +00:00. A session leaves it out of the application's
+  environment and the report says so. To test another zone, give it to the session
 - **A windowed program that ends within its first 300 ms is reported as a suspected hand-off** (exit
   code 12), because that is what the second instance of a single-instance application does: it passes
   its work to the copy already running, which the session never reached. A console program that ends

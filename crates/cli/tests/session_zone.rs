@@ -13,7 +13,9 @@
 //! installation and can call the function through kernel32 with nothing outside the repository.
 //!
 //! The same probe asks `GetTimeZoneInformationForYear` too, which the Rust `chrono` crate reads the
-//! current zone through and nothing else (2026-10-27).
+//! current zone through and nothing else (2026-10-27), and writes down the `TZ` it was started with: a
+//! `TZ` of the tester's own must not reach the program, or the runtimes that read it show its zone
+//! instead of the session's (2026-11-12).
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -28,6 +30,13 @@ const SESSION_BIAS: &str = "-330";
 
 /// The key name only the hook hands out, so seeing it proves the session reached the probe.
 const SESSION_KEY: &str = "Chrono Session";
+
+/// A `TZ` of the tester's own, in the POSIX form the C runtime reads (UTC+2), set for the probe without a
+/// session and for the session that runs it. The session must not hand it on.
+const TESTER_TZ: &str = "EET-2";
+
+/// How the report names a `TZ` of the tester's own that the session did not hand on.
+const TZ_LEFT_OUT: &str = "(session.tz_variable_removed)";
 
 /// The probe: one call to `GetDynamicTimeZoneInformation` through kernel32, written to a file,
 /// because the output of a target running under a session does not reach the caller's pipe.
@@ -114,9 +123,19 @@ fn field<'a>(line: &'a str, name: &str) -> Option<&'a str> {
     line.split('|').find_map(|part| part.strip_prefix(name)?.strip_prefix('='))
 }
 
-/// The probe's line without a session and under one at `SESSION_ZONE`, after checking the control: the
-/// probe ran, read the zone, and the host does not already report the session key.
-fn zone_lines() -> (String, String, String) {
+/// What the probe wrote without a session and under one, the session's report, and all of it in one text
+/// for the messages of the assertions.
+struct ZoneLines {
+    real: String,
+    seen: String,
+    report: String,
+    context: String,
+}
+
+/// The probe's line without a session and under one at `SESSION_ZONE`, both started with `TESTER_TZ`,
+/// after checking the control: the probe ran, read the zone, and the host does not already report the
+/// session key.
+fn zone_lines() -> ZoneLines {
     let library = injected_library();
     assert!(
         library.is_file(),
@@ -132,6 +151,7 @@ fn zone_lines() -> (String, String, String) {
     let status = Command::new(windows_powershell())
         .args(PROBE_ARGS.split(' '))
         .current_dir(&control)
+        .env("TZ", TESTER_TZ)
         .status()
         .expect("Windows PowerShell must run");
     assert!(status.success(), "the probe could not run without a session");
@@ -157,17 +177,18 @@ fn zone_lines() -> (String, String, String) {
             "--zone",
             SESSION_ZONE,
         ])
+        .env("TZ", TESTER_TZ)
         .output()
         .expect("the tool must run");
     let seen = written_zone(&dir);
+    let report = String::from_utf8_lossy(&out.stdout).into_owned();
     let context = format!(
-        "The probe wrote {seen:?} under the session and {real:?} without it. stdout: {} stderr: {}",
-        String::from_utf8_lossy(&out.stdout),
+        "The probe wrote {seen:?} under the session and {real:?} without it. stdout: {report} stderr: {}",
         String::from_utf8_lossy(&out.stderr)
     );
     let _ = std::fs::remove_dir_all(&dir);
     assert_eq!(field(&seen, "key"), Some(SESSION_KEY), "the session never reached the probe. {context}");
-    (real, seen, context)
+    ZoneLines { real, seen, report, context }
 }
 
 /// Held by every test here that starts the core. The core allows one session at a time, and the
@@ -180,8 +201,8 @@ fn one_real_session_at_a_time() -> MutexGuard<'static, ()> {
 
 /// The probe's session, run once by whichever test asks first: every question about the zone the
 /// PowerShell probe can answer is in the same line.
-fn lines() -> &'static (String, String, String) {
-    static LINES: OnceLock<(String, String, String)> = OnceLock::new();
+fn lines() -> &'static ZoneLines {
+    static LINES: OnceLock<ZoneLines> = OnceLock::new();
     LINES.get_or_init(|| {
         let _session = one_real_session_at_a_time();
         zone_lines()
@@ -213,12 +234,14 @@ fn probe_writes_the_zone_variable_it_was_given() {
 
 /// A program built on the Rust `jiff` crate finds its zone by a name the session zone does not have, and
 /// reads `TZ` before anything else, so the core gives it the session zone there: `CMS-5:30` for +05:30
-/// (2026-10-27). Any other program keeps the environment it had, because Node reads `TZ` too and
-/// breaks on that value: the PowerShell probe, under the same kind of session, sees what it sees without.
+/// (2026-10-27). No other program gets a `TZ` at all, because Node reads `TZ` too and breaks on that
+/// value, and a `TZ` of the tester's own would replace the session zone in the runtimes that read it: the
+/// PowerShell probe, started with one, sees it without a session and none under the session.
 #[test]
 fn a_program_built_on_jiff_is_given_the_session_zone_in_tz_and_no_other_program_is() {
-    let (real, seen, context) = lines();
-    assert_eq!(field(seen, "tz"), field(real, "tz"), "a program not built on jiff had its TZ changed. {context}");
+    let ZoneLines { real, seen, context, .. } = lines();
+    assert_eq!(field(real, "tz"), Some(TESTER_TZ), "the probe does not see the TZ it was started with. {context}");
+    assert_eq!(field(seen, "tz"), Some("unset"), "a TZ of the tester's own reached a program not built on jiff. {context}");
 
     let library = injected_library();
     assert!(library.is_file(), "this test drives a real session and needs {}", library.display());
@@ -239,18 +262,25 @@ fn a_program_built_on_jiff_is_given_the_session_zone_in_tz_and_no_other_program_
                 &format!("--ignored --exact {ZONE_VARIABLE_PROBE} --test-threads 1"),
             ])
             .env(PROBE_FILE, &file)
+            .env_remove("TZ")
             .output()
             .expect("the tool must run")
     };
     let written = std::fs::read_to_string(&file).unwrap_or_default();
     let _ = std::fs::remove_dir_all(&dir);
-    let context = format!(
-        "The probe wrote {written:?}. stdout: {} stderr: {}",
-        String::from_utf8_lossy(&out.stdout),
-        String::from_utf8_lossy(&out.stderr)
-    );
+    let report = String::from_utf8_lossy(&out.stdout);
+    let context = format!("The probe wrote {written:?}. stdout: {report} stderr: {}", String::from_utf8_lossy(&out.stderr));
     assert!(field(&written, "carried").is_some(), "the probe never ran under the session. {context}");
     assert_eq!(field(&written, "tz"), Some("CMS-5:30"), "{context}");
+    assert!(!report.contains(TZ_LEFT_OUT), "a tester without TZ lost nothing, and the report says otherwise. {context}");
+}
+
+/// A `TZ` of the tester's own that the session did not hand on is said in the report, so the tester who
+/// set it to test a zone knows why the application shows the session's instead.
+#[test]
+fn a_tz_of_the_testers_own_left_out_is_said_in_the_report() {
+    let ZoneLines { report, context, .. } = lines();
+    assert!(report.contains(TZ_LEFT_OUT), "the report does not say the TZ was left out. {context}");
 }
 
 /// The zone the hook hands out through `GetDynamicTimeZoneInformation` carries the session's key and
@@ -258,7 +288,7 @@ fn a_program_built_on_jiff_is_given_the_session_zone_in_tz_and_no_other_program_
 /// that bias instead of from the real registry.
 #[test]
 fn the_dynamic_zone_of_a_session_has_daylight_saving_time_disabled() {
-    let (_, seen, context) = lines();
+    let ZoneLines { seen, context, .. } = lines();
     assert_eq!(
         field(seen, "bias"),
         Some(SESSION_BIAS),
@@ -278,7 +308,7 @@ fn the_dynamic_zone_of_a_session_has_daylight_saving_time_disabled() {
 /// name, which no registry knows. Without the session the same two questions get this machine's answers.
 #[test]
 fn the_zone_of_a_year_is_the_session_zone_whether_asked_by_none_or_by_its_name() {
-    let (real, seen, context) = lines();
+    let ZoneLines { real, seen, context, .. } = lines();
     assert!(
         field(real, "year").is_some_and(|y| y.starts_with("True:") && !y.ends_with(SESSION_KEY)),
         "without a session the zone of a year has to be this machine's. {context}"

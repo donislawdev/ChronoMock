@@ -119,7 +119,7 @@ pub(crate) fn cdp_embedded_probe(argv: &[String]) -> i32 {
                 path,
                 args: host_args,
                 cwd: args.cwd.as_deref(),
-                env: &env,
+                env: &chrono_mech::EnvChange::set_each(&env),
                 stdio: chrono_mech::TargetStdio::choose(false, is_windowed_program(std::path::Path::new(path))),
             };
             match chrono_mech::launch_plain(&target) {

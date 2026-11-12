@@ -8,6 +8,12 @@ Notable changes to Chrono Mock, newest first. The format follows
 
 ### Fixed
 
+- **A `TZ` variable in your environment no longer replaces the session's time zone.** The programs that
+  read `TZ` (Python and other programs built on the C runtime, MSYS2, Node.js) take their time zone
+  from it before the one Windows gives, so with `TZ` set they showed its zone instead of the session's,
+  and the report did not say so. A session now leaves `TZ` out of the application's environment, and
+  the report says it did (the value left out is on the error output). Your own environment is
+  unchanged. A program built on the Rust `jiff` crate gets the session zone in `TZ`, as before.
 - **An application no longer crashes at start because Chrono Mock started it.** Chrono Mock starts the
   application paused and adds its time library before the application's own code runs. Until now the
   thread that added the library was the first thread to run, so Windows did the application's start-up

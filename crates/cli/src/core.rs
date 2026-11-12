@@ -113,24 +113,24 @@ pub(crate) fn core_mode() -> i32 {
     let elevated = chrono_mech::process_elevated(std::process::id()) == Some(true);
     let mut policy = PolicySession::start(&target, elevated);
     let mut launch = Launch::for_target(&target, elevated);
-    launch.env.extend(session_zone_variable(&target.path, spec.moment.tz_bias_min));
     launch.note_policy(&policy);
-    let m_target = chrono_mech::Target {
-        path: &target.path,
-        args: &target.args,
-        cwd: target.cwd.as_deref(),
-        env: &launch.env,
-        stdio: chrono_mech::TargetStdio::choose(
-            target.console == TargetConsole::New,
-            is_windowed_program(std::path::Path::new(&target.path)),
-        ),
-    };
 
     // Detect the target's runtime up front (static, no QPC hook, no process inspection) so the first
     // coverage can warn that its monotonic/elapsed clocks stand on QPC and do not scale - the failure a
     // Python/.NET/Java timer hits under a fast clock (B1, ADR-2). When --scale-qpc is on, this instead
     // cautions about render distortion (A2), since the QPC axis now scales.
     let mut runtime_warnings = detect_runtime_warnings(std::path::Path::new(&target.path), spec.scale_qpc);
+    let env = target_environment(&launch, &target.path, spec.moment.tz_bias_min, &mut runtime_warnings);
+    let m_target = chrono_mech::Target {
+        path: &target.path,
+        args: &target.args,
+        cwd: target.cwd.as_deref(),
+        env: &env,
+        stdio: chrono_mech::TargetStdio::choose(
+            target.console == TargetConsole::New,
+            is_windowed_program(std::path::Path::new(&target.path)),
+        ),
+    };
     if launch.registry_hidden {
         // Known before the launch, like the runtime: a registry policy the tester set for this
         // application is not read while the session's variable is in its environment.
@@ -794,6 +794,10 @@ const KEY_TARGET_CRASHED: &str = "target.crashed";
 /// session that went well, and the session may be its cause.
 const KEY_SESSION_TARGET_CRASHED: &str = "session.target_crashed";
 
+/// The tester's environment set `TZ`, and the session did not hand it on to the target, because the
+/// runtimes that read it would take their zone from it instead of the session's (`session_zone_change`).
+const KEY_TZ_VARIABLE_REMOVED: &str = "session.tz_variable_removed";
+
 /// End the application a refusal will not let run, with everything it started (R4-S5), and name what
 /// is still running afterwards for the verdict, with whether the family could be looked for in full. Why
 /// it could not goes to stderr, where the other human-side details of a start go - the verdict carries
@@ -823,23 +827,59 @@ fn ended_before<S>(session: &mut S, alive: fn(&S) -> bool, then: impl FnOnce(&mu
     ended
 }
 
-/// The variable that carries the session zone to a program built on the Rust `jiff` crate, or `None` for
-/// any other program. jiff finds the local zone by a name, and the session zone's name is in no table it
-/// carries, so without this it showed UTC under every session. `TZ` is the one thing it reads first
-/// (`pe::links_jiff`). Only for such a program: Node reads `TZ` too and turns a POSIX value into an
-/// unknown zone at +00:00 (measured 2026-10-27), so every other target keeps the environment it had.
-/// A `TZ` of the tester's own is replaced, because the session zone is the point of the session, and
-/// stderr says so.
-fn session_zone_variable(target_path: &str, bias: Option<i32>) -> Option<(String, String)> {
-    let bias = bias?;
-    if !crate::pe::links_jiff(std::path::Path::new(target_path)) {
-        return None;
+/// What a native session changes in the environment its target inherits: the variables of the
+/// embedded-engine channel, then `TZ` for the session zone (`session_zone_change`). A `TZ` of the
+/// tester's own that this takes away is said twice - its value on stderr, the fact in the report, among
+/// the warnings that are known before the launch.
+fn target_environment(
+    launch: &Launch,
+    target_path: &str,
+    bias: Option<i32>,
+    warnings: &mut Vec<String>,
+) -> Vec<chrono_mech::EnvChange> {
+    let mut env = chrono_mech::EnvChange::set_each(&launch.env);
+    let Some(bias) = bias else {
+        return env;
+    };
+    let jiff = crate::pe::links_jiff(std::path::Path::new(target_path));
+    let (change, taken) = session_zone_change(jiff, bias, std::env::var_os("TZ"));
+    if let Some(own) = taken {
+        match &change {
+            Some(chrono_mech::EnvChange::Set(_, value)) => {
+                diag!("chrono core: TZ={} replaced by TZ={value} for this program, which reads its zone from TZ", own.to_string_lossy());
+            }
+            _ => diag!(
+                "chrono core: TZ={} left out of this program's environment, so the session zone reaches the runtimes that read TZ first",
+                own.to_string_lossy()
+            ),
+        }
+        warnings.push(KEY_TZ_VARIABLE_REMOVED.to_string());
     }
-    let value = crate::zone::posix_tz(bias);
-    if let Some(own) = std::env::var_os("TZ").filter(|own| *own != *value) {
-        diag!("chrono core: TZ={} replaced by TZ={value} for this program, which reads its zone from TZ", own.to_string_lossy());
+    env.extend(change);
+    env
+}
+
+/// What a session does to `TZ` in its target's environment, and the tester's own value it takes away.
+///
+/// A `TZ` of the tester's own never reaches the target, because the session zone is the point of the
+/// session and the runtimes that read `TZ` take it before the zone the system answers with - the C
+/// runtime, and so Python, MSYS2 and Node (measured 2026-10-27 at +05:30 under `TZ` set to UTC+2: Python
+/// showed +02:00, Node +00:00). A program built on the Rust `jiff` crate gets the session zone there
+/// instead (`pe::links_jiff`): jiff finds the local zone by a name, the session zone's name is in no table
+/// it carries, and `TZ` is the one thing it reads first. Only such a program, because Node reads a POSIX
+/// value as an unknown zone at +00:00. A `TZ` the same as the one the session gives is not taken away.
+fn session_zone_change(
+    jiff: bool,
+    bias: i32,
+    own: Option<std::ffi::OsString>,
+) -> (Option<chrono_mech::EnvChange>, Option<std::ffi::OsString>) {
+    if jiff {
+        let value = crate::zone::posix_tz(bias);
+        let taken = own.filter(|own| *own != *value);
+        return (Some(chrono_mech::EnvChange::Set("TZ".to_string(), value)), taken);
     }
-    Some(("TZ".to_string(), value))
+    let change = own.is_some().then(|| chrono_mech::EnvChange::Remove("TZ".to_string()));
+    (change, own)
 }
 
 /// `ended` with the exit code of a target that ended on its own. The other fields stay what the start
@@ -1344,6 +1384,27 @@ mod tests {
     use super::*;
     use crate::testutil::unique_temp_dir;
     use chrono_proto::{MomentKind, MomentSpec, TimeModeKind};
+
+    /// A `TZ` of the tester's own never reaches the target and is named as taken, whatever the program: a
+    /// program built on jiff gets the session zone in its place, any other gets none. A `TZ` the same as
+    /// the one the session gives is not taken, and a tester without `TZ` loses nothing.
+    #[test]
+    fn a_tz_of_the_testers_own_is_taken_from_every_target_and_jiff_gets_the_session_zone() {
+        use chrono_mech::EnvChange::{Remove, Set};
+        let own = |value: &str| Some(std::ffi::OsString::from(value));
+        let session = || Some(Set("TZ".to_string(), "CMS-5:30".to_string()));
+        let cases = [
+            ("not jiff, no TZ", false, None, None, None),
+            ("not jiff, TZ of the tester's", false, own("EET-2"), Some(Remove("TZ".to_string())), own("EET-2")),
+            ("not jiff, TZ like the session's", false, own("CMS-5:30"), Some(Remove("TZ".to_string())), own("CMS-5:30")),
+            ("jiff, no TZ", true, None, session(), None),
+            ("jiff, TZ of the tester's", true, own("EET-2"), session(), own("EET-2")),
+            ("jiff, TZ the session gives", true, own("CMS-5:30"), session(), None),
+        ];
+        for (label, jiff, tester, change, taken) in cases {
+            assert_eq!(session_zone_change(jiff, -330, tester), (change, taken), "{label}");
+        }
+    }
 
     /// R5-P1, R5-D34. A sleep of the machine reaches the log once, when it is at least a second long, and
     /// each later one on its own - never the same sleep twice, never a resume of a fraction of a second.
