@@ -93,6 +93,9 @@ use windows::Win32::Foundation::{
     HMODULE, SYSTEMTIME, WAIT_FAILED,
 };
 use windows::Win32::System::Diagnostics::Debug::{OutputDebugStringA, WriteProcessMemory};
+use windows::Win32::System::Diagnostics::ToolHelp::{
+    CreateToolhelp32Snapshot, Thread32First, Thread32Next, TH32CS_SNAPTHREAD, THREADENTRY32,
+};
 use windows::Win32::System::LibraryLoader::{
     GetModuleFileNameW, GetModuleHandleA, GetModuleHandleExA, GetModuleHandleW, GetProcAddress,
     GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS, GET_MODULE_HANDLE_EX_FLAG_PIN,
@@ -106,10 +109,11 @@ use windows::Win32::System::SystemServices::{DLL_PROCESS_ATTACH, DLL_PROCESS_DET
 use windows::Win32::System::SystemInformation::{IMAGE_FILE_MACHINE, IMAGE_FILE_MACHINE_UNKNOWN};
 use windows::Win32::System::Threading::{
     CreateEventW, CreateRemoteThread, CreateThread, GetCurrentProcess, GetCurrentProcessId, GetCurrentThread, GetCurrentThreadId,
-    GetExitCodeProcess, GetExitCodeThread, GetProcessId, GetProcessTimes, IsWow64Process2, OpenProcess, ResumeThread,
-    SetEvent, SuspendThread, WaitForMultipleObjects, WaitForSingleObject, CREATE_SUSPENDED, DEBUG_ONLY_THIS_PROCESS, DEBUG_PROCESS,
-    INFINITE, LPTHREAD_START_ROUTINE, PROCESS_INFORMATION, PROCESS_QUERY_LIMITED_INFORMATION,
-    PROCESS_SYNCHRONIZE, THREAD_CREATION_FLAGS,
+    GetExitCodeProcess, GetExitCodeThread, GetProcessId, GetProcessTimes, GetThreadTimes, IsWow64Process2, OpenProcess,
+    OpenThread, ResumeThread, SetEvent, SuspendThread, WaitForMultipleObjects, WaitForSingleObject, CREATE_SUSPENDED,
+    DEBUG_ONLY_THIS_PROCESS, DEBUG_PROCESS, INFINITE, LPTHREAD_START_ROUTINE, PROCESS_INFORMATION,
+    PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_SYNCHRONIZE, THREAD_CREATION_FLAGS, THREAD_QUERY_LIMITED_INFORMATION,
+    THREAD_SET_CONTEXT,
 };
 use windows::Win32::System::Time::{
     FileTimeToSystemTime, SystemTimeToFileTime, DYNAMIC_TIME_ZONE_INFORMATION, TIME_ZONE_INFORMATION,
@@ -1423,7 +1427,10 @@ const TIME_ZONE_ID_INVALID: u32 = 0xFFFF_FFFF;
 use chrono_ctl::set_wide;
 
 unsafe extern "system" fn h_gtzi(lp: *mut TIME_ZONE_INFORMATION) -> u32 { unsafe {
-    bump(IDX_GTZI);
+    // The C runtimes ask through this one when the hook has them read the zone again (ADR-27).
+    if !zone_read_again() {
+        bump(IDX_GTZI);
+    }
     if detached() {
         return O_GTZI.get().map(|o| o(lp)).unwrap_or(TIME_ZONE_ID_INVALID);
     }
@@ -1515,6 +1522,113 @@ unsafe extern "system" fn h_gtzify(
     set_wide(&mut out.StandardName, SESSION_ZONE_NAME);
     core::ptr::write_unaligned(tzi, out);
     1
+}}
+
+/// The shared C runtimes of Microsoft, whose time functions read the zone on their first call and keep it
+/// (`__tzset` in the Universal CRT, Windows SDK 10.0.28000 `ucrt/time/tzset.cpp`). The start-up code of a
+/// program's libraries runs before the hook (ADR-25), and one that asks for the time there leaves the runtime
+/// with this machine's zone, whose daylight saving rules `localtime` then applies to the session's date
+/// (ADR-27). Each one here was measured to keep the zone so and to take the session's after `_tzset`.
+const SHARED_C_RUNTIMES: [PCSTR; 6] = [
+    s!("ucrtbase.dll"),
+    s!("ucrtbased.dll"),
+    s!("msvcrt.dll"),
+    s!("msvcr120.dll"),
+    s!("msvcr110.dll"),
+    s!("msvcr100.dll"),
+];
+
+thread_local! {
+    /// Raised while the hook has the program's C runtimes read the zone again (`read_zone_again`), so the
+    /// zone queries that makes are not counted as the program's (rule 4).
+    static READING_ZONE_AGAIN: Cell<bool> = const { Cell::new(false) };
+}
+
+/// Whether this call of a zone channel is the hook's own, made by `read_zone_again`, and so not counted.
+fn zone_read_again() -> bool {
+    read_flag(&READING_ZONE_AGAIN) == Some(true)
+}
+
+/// Have the shared C runtimes the program has loaded read the zone again (ADR-27). Queued on the main
+/// thread, which makes the call once the park lets it go and before the program's entry point, in the
+/// program's own state of each runtime. Made here, under the loader lock, `_tzset` would wait for the
+/// runtime's time lock, which a thread the start-up code started can hold while the system's
+/// `GetTimeZoneInformation` waits for the loader lock to read the zone's names. With no shared runtime
+/// loaded there is nothing to do, and without the main thread or the queue the log says so.
+///
+/// # Safety
+/// Called from `install` only, once every detour is live, so the zone the runtimes read is the session's.
+unsafe fn refresh_c_runtime_zones() { unsafe {
+    if !SHARED_C_RUNTIMES.iter().any(|runtime| GetModuleHandleA(*runtime).is_ok()) {
+        return;
+    }
+    let Some(thread) = main_thread() else {
+        log("[chrono_hook] main thread not found - a C runtime may keep the zone it read before the hook");
+        return;
+    };
+    let queue = GetModuleHandleA(s!("ntdll.dll")).ok().and_then(|ntdll| GetProcAddress(ntdll, s!("NtQueueApcThread")));
+    let queued = queue.is_some_and(|queue| {
+        let queue = std::mem::transmute::<unsafe extern "system" fn() -> isize, NtQueueApcFn>(queue);
+        let routine = read_zone_again as unsafe extern "system" fn(*mut c_void, *mut c_void, *mut c_void);
+        queue(thread, routine as *const c_void, std::ptr::null(), std::ptr::null(), std::ptr::null()) >= 0
+    });
+    if !queued {
+        log("[chrono_hook] the zone was not read again - a C runtime may keep the one it read before the hook");
+    }
+    let _ = CloseHandle(thread);
+}}
+
+/// The call `refresh_c_runtime_zones` queues on the main thread, with the three arguments the dispatcher
+/// passes and nothing in them: each shared C runtime the program has loaded reads the zone again through
+/// `_tzset`, which reads it whether it was read before or not. The library is pinned, so it is still here.
+unsafe extern "system" fn read_zone_again(_: *mut c_void, _: *mut c_void, _: *mut c_void) { unsafe {
+    let _own = set_flag(&READING_ZONE_AGAIN, true);
+    for runtime in SHARED_C_RUNTIMES {
+        if let Some(tzset) = GetModuleHandleA(runtime).ok().and_then(|module| GetProcAddress(module, s!("_tzset"))) {
+            // `_tzset` takes nothing and returns nothing, in the C calling convention.
+            std::mem::transmute::<unsafe extern "system" fn() -> isize, unsafe extern "C" fn()>(tzset)();
+        }
+    }
+}}
+
+/// This process's main thread, opened to queue a call on it: the oldest of its threads but the one running
+/// this, because the main thread is created with the process and every other thread after it. `None` when
+/// the threads cannot be listed or the oldest cannot be opened.
+///
+/// # Safety
+/// Called from `install` only.
+unsafe fn main_thread() -> Option<HANDLE> { unsafe {
+    let pid = GetCurrentProcessId();
+    let own = GetCurrentThreadId();
+    let snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0).ok()?;
+    let mut entry = THREADENTRY32 { dwSize: size_of::<THREADENTRY32>() as u32, ..Default::default() };
+    let mut oldest: Option<(u64, u32)> = None;
+    let mut listed = Thread32First(snapshot, &mut entry).is_ok();
+    while listed {
+        if entry.th32OwnerProcessID == pid
+            && entry.th32ThreadID != own
+            && let Some(created) = thread_created(entry.th32ThreadID)
+            && oldest.is_none_or(|(at, _)| created < at)
+        {
+            oldest = Some((created, entry.th32ThreadID));
+        }
+        listed = Thread32Next(snapshot, &mut entry).is_ok();
+    }
+    let _ = CloseHandle(snapshot);
+    OpenThread(THREAD_SET_CONTEXT, false, oldest?.1).ok()
+}}
+
+/// When thread `id` was created, in FILETIME units, or `None` when it cannot be read.
+///
+/// # Safety
+/// Called from `main_thread` only.
+unsafe fn thread_created(id: u32) -> Option<u64> { unsafe {
+    let thread = OpenThread(THREAD_QUERY_LIMITED_INFORMATION, false, id).ok()?;
+    let (mut created, mut exited, mut kernel, mut user) =
+        (FILETIME::default(), FILETIME::default(), FILETIME::default(), FILETIME::default());
+    let read = GetThreadTimes(thread, &mut created, &mut exited, &mut kernel, &mut user).is_ok();
+    let _ = CloseHandle(thread);
+    read.then(|| ft_to_i64(created) as u64)
 }}
 
 // SystemTimeToTzSpecificLocalTime converts a caller-supplied UTC to local. A NULL zone
@@ -4418,6 +4532,8 @@ unsafe fn install() -> Result<(), InstallError> { unsafe {
         set_channels_installed(c, pending);
         set_failed_channels(c, HOOK_FAILED.load(Ordering::Relaxed));
     }
+    // A C runtime that read the zone while the program's libraries started reads it again (ADR-27).
+    refresh_c_runtime_zones();
 
     // Hand the watcher whatever this session WANTED from an optional module and did not get. The set
     // is computed here rather than in the watcher so the opt-in gates are stated once: without

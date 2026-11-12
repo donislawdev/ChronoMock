@@ -331,6 +331,13 @@ const ALLOWED: &[(&str, &str, &str)] = &[
          machine",
     ),
     (
+        "crates/cli/tests/crt_zone.rs",
+        "spawn",
+        "runs this test binary's own ignored probe twice, once alone as the control and once under a session \
+         through the built binary. The probe loads two C runtimes of the system, reads the local time from \
+         each and writes it to a file. Nothing reaches past this machine",
+    ),
+    (
         "crates/cli/tests/target_exit.rs",
         "spawn",
         "runs this test binary's own ignored probe under a session through the built binary, and the probe \

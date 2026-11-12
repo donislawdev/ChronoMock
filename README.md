@@ -352,6 +352,14 @@ cover something is worse than one that says what it cannot do.
   Windows gives, so it would replace the session zone: measured under a session at +05:30 with `TZ` set
   to UTC+2, Python showed +02:00 and Node.js +00:00. A session leaves it out of the application's
   environment and the report says so. To test another zone, give it to the session
+- **The C runtime reads the time zone again before the application starts.** The C runtime of Windows
+  and Visual C++ reads the time zone the first time something asks for the local time, and keeps it.
+  The libraries an application loads start before the session reaches it, so one that asks for the time
+  while it loads would leave the runtime with your machine's zone and its daylight saving rules for the
+  session's date: measured on a spreadsheet application, `NOW()` under a session at +05:00 in July
+  showed +02:00. The session has the shared runtimes (`ucrtbase`, `msvcrt`, `msvcr100` to `msvcr120`)
+  read the zone again before the application's own code runs. A library that carries its own copy of
+  the C runtime and asks for the time while it loads keeps your machine's zone
 - **A windowed program that ends within its first 300 ms is reported as a suspected hand-off** (exit
   code 12), because that is what the second instance of a single-instance application does: it passes
   its work to the copy already running, which the session never reached. A console program that ends

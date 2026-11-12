@@ -89,6 +89,10 @@
 # `describe_session_warning` when a third one (`session.member_unwatchable`) would have taken it to 152,
 # and went to 144. The holder is now `cdp_embedded_probe` at 147, then `parse_run_args` at 146 and
 # `core_mode` at 145 (measured by `tools/margin.ps1 -Rust`).
+#
+# Measured 2026-11-12 (ADR-27): `hook::install` reached 147 with the one call that has the program's C
+# runtimes read the zone again, beside `report::describe_warning` and `cdp_embedded_probe` at 147, then
+# `parse_run_args` at 146 (measured by `tools/margin.ps1 -Rust`). The ceiling did not move.
 too-many-lines-threshold = 147
 
 # A tie at 25: `run::driver_run` and `report::render_report`. This happens to be clippy's own
