@@ -418,9 +418,10 @@ fn describe_session_warning(key: &str) -> &'static str {
             "the application crashed - it ended with the code Windows gives a program stopped by an error it did not handle (the exit code is above) - the verdict speaks only of the clock it read until then - start it once without Chrono Mock to see whether it crashes there too"
         }
         // Said before the launch: the runtimes that read TZ take their zone from it before the system's,
-        // so a TZ of the tester's own would have replaced the session zone in exactly those programs.
+        // so a TZ of the tester's own would have replaced the session zone in exactly those programs. It is
+        // the tester's VALUE that was not passed: a program built on jiff does get TZ, the session's.
         "session.tz_variable_removed" => {
-            "the TZ variable set in your environment was not passed to the application - the programs that read it (Python and other programs on the C runtime, MSYS2, Node.js) take their time zone from it, so it would have replaced the session zone - your own environment is unchanged, and the value left out is on stderr"
+            "the value of TZ set in your environment was not passed to the application - the programs that read TZ (Python and other programs on the C runtime, MSYS2, Node.js) take their time zone from it, so it would have replaced the session zone - a program built on the Rust jiff crate gets the session zone in TZ instead, any other program gets no TZ - your own environment is unchanged, and the value left out is on stderr"
         }
         _ => "",
     }

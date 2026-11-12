@@ -609,6 +609,42 @@ public class SessionViewModelTests
             vm.Warnings);
     }
 
+    /// <summary>
+    /// A warning the core knows before the launch (a TZ of the tester's own left out, the runtime's QPC
+    /// timers) rides the target's first coverage event only. A later coverage event of the same process
+    /// and the session verdict do not repeat it, and the panel still shows it - and a new session starts
+    /// without it.
+    /// </summary>
+    [Fact]
+    public void A_warning_said_only_in_the_first_coverage_stays_through_later_events_and_not_into_the_next_session()
+    {
+        var vm = SessionStates.Running();
+
+        vm.Apply(new CoverageEvent
+        {
+            V = ProtocolJson.ProtocolVersion,
+            Pid = 100,
+            Covered = [new CoveredChannel { Channel = "GetSystemTimeAsFileTime", Calls = 1 }],
+            WarningKeys = ["session.tz_variable_removed"],
+        });
+        vm.Apply(Coverage(pid: 100, "GetSystemTimeAsFileTime", 842));
+        vm.Apply(new SessionVerdictEvent
+        {
+            V = ProtocolJson.ProtocolVersion,
+            Verdict = "works",
+            ReasonKey = "session.family_covered",
+            ProcessCount = 1,
+            WarningKeys = ["session.left_running"],
+        });
+        vm.Apply(new EndedEvent { V = ProtocolJson.ProtocolVersion, Clean = true, TargetExitCode = 0 });
+
+        Assert.Equal(["session.tz_variable_removed", "session.left_running"], vm.Warnings);
+
+        vm.BeginNewSession();
+        Assert.Equal(SessionStatusKind.Idle, vm.StatusKind);
+        Assert.Empty(vm.Warnings);
+    }
+
     [Fact]
     public void A_child_coverage_never_replaces_or_sums_the_parent_coverage()
     {

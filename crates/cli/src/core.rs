@@ -794,8 +794,9 @@ const KEY_TARGET_CRASHED: &str = "target.crashed";
 /// session that went well, and the session may be its cause.
 const KEY_SESSION_TARGET_CRASHED: &str = "session.target_crashed";
 
-/// The tester's environment set `TZ`, and the session did not hand it on to the target, because the
-/// runtimes that read it would take their zone from it instead of the session's (`session_zone_change`).
+/// The tester's environment set `TZ`, and the session did not hand that value on to the target, because
+/// the runtimes that read it would take their zone from it instead of the session's (`session_zone_change`).
+/// Said once, in the first coverage: the CLI driver and the window union warnings over every event.
 const KEY_TZ_VARIABLE_REMOVED: &str = "session.tz_variable_removed";
 
 /// End the application a refusal will not let run, with everything it started (R4-S5), and name what
