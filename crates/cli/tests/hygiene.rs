@@ -323,7 +323,6 @@ const DETOUR_MAY_REACH: &[(&str, &str)] = &[
         "a detour of process creation gives the child the hook - a process start, not a clock read",
     ),
     ("inherit_into_debugged_child", "the same, for a child started under a debugger"),
-    ("debugged_child_proc", "started by the same path, the thread that waits on such a child"),
 ];
 
 /// Every function the hook defines in `text`, by its name and its first line, with the last line of its
