@@ -27,13 +27,25 @@
 /// Read as "not known yet", never as a loaded module.
 pub const STILL_ACTIVE_CODE: u32 = 259;
 
-/// How long either side waits for the main thread's park, and then for the remote `LoadLibraryW` thread
-/// (ADR-25). The hook's `DllMain` does no heavy work (it defers the watcher off the loader lock, ADR-3),
-/// so a load is quick - measured at about 68 ms for a child, start included - and a start or a load still
-/// running past this means the process's loader is stuck (a library's start-up code waiting, or a loader
-/// lock). Finite, so neither the core's start nor the parent's `CreateProcess` can hang for good (M-1,
-/// RELEASE-009).
+/// The time either side gives one injection: the main thread's start and park, and the remote
+/// `LoadLibraryW` thread after it, together (ADR-25, [`budget_left_ms`]). The hook's `DllMain` does no
+/// heavy work (it defers the watcher off the loader lock, ADR-3), so an injection is quick - measured at
+/// about 68 ms for a child, start included - and one still running past this means the process's loader
+/// is stuck (a library's start-up code waiting, or a loader lock). Finite, so neither the core's start nor
+/// the parent's `CreateProcess` can hang for good (M-1, RELEASE-009). One budget and not one per wait,
+/// because nothing reaches the client while the core waits for either, and the client's watchdog counts
+/// the two waits as one silence.
 pub const INJECT_TIMEOUT_MS: u32 = 10_000;
+
+/// What is left of [`INJECT_TIMEOUT_MS`] once `spent_ms` of it has gone since the process was resumed for
+/// its start, or `None` when nothing is. The wait for the park takes what is left when it begins, and the
+/// load what the start left of it - so the two together never run past the one budget. When nothing is
+/// left the load is not started at all: a remote thread nobody waits for would load the hook into a
+/// process already running its program, and leave the page holding the path behind.
+pub fn budget_left_ms(spent_ms: u64) -> Option<u32> {
+    let spent = u32::try_from(spent_ms).unwrap_or(u32::MAX);
+    INJECT_TIMEOUT_MS.checked_sub(spent).filter(|&left| left > 0)
+}
 
 /// How the wait for the remote `LoadLibraryW` thread ended.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -270,6 +282,23 @@ mod tests {
         assert_eq!(Park::TargetEndedUnread.unloaded(), Some(Outcome::TargetEndedUnread));
         assert_eq!(Park::TimedOut.unloaded(), Some(Outcome::TimedOut));
         assert_eq!(Park::WaitFailed.unloaded(), Some(Outcome::WaitFailed));
+    }
+
+    /// The start and the load share one budget: the load gets what the start left, never a fresh one, and
+    /// nothing once the start has used it all - also when the time spent does not fit the budget's type.
+    #[test]
+    fn the_start_and_the_load_share_one_budget() {
+        assert_eq!(budget_left_ms(0), Some(INJECT_TIMEOUT_MS));
+        assert_eq!(budget_left_ms(5_500), Some(INJECT_TIMEOUT_MS - 5_500));
+        assert_eq!(budget_left_ms(u64::from(INJECT_TIMEOUT_MS) - 1), Some(1));
+        assert_eq!(budget_left_ms(u64::from(INJECT_TIMEOUT_MS)), None);
+        assert_eq!(budget_left_ms(u64::from(INJECT_TIMEOUT_MS) + 1), None);
+        assert_eq!(budget_left_ms(u64::from(u32::MAX) + 1), None);
+        assert_eq!(budget_left_ms(u64::MAX), None);
+        for spent in (0..=u64::from(INJECT_TIMEOUT_MS) + 50).step_by(7) {
+            let left = budget_left_ms(spent).map_or(0, u64::from);
+            assert!(spent.min(u64::from(INJECT_TIMEOUT_MS)) + left <= u64::from(INJECT_TIMEOUT_MS), "{spent} ms spent");
+        }
     }
 
     /// The remote page goes only when nothing will read it again (R4-N10).

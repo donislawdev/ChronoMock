@@ -99,8 +99,11 @@ public class RustTimeoutMirrorTests
     }
 
     /// <summary>
-    /// Preparing a native session: injecting the hook, then the guard window before the first
-    /// coverage event. Nothing reaches the client during either.
+    /// Preparing a native session: the target's start and the hook's load, then the guard window
+    /// before the first coverage event. Nothing reaches the client during any of them. Counting
+    /// the injection budget once is right only while the start and the load share it (ADR-25):
+    /// the core's source is asked for that here, and its behaviour by the `injection_budget` test
+    /// of the CLI.
     /// </summary>
     [Fact]
     public void The_native_prepare_budget_is_shorter_than_the_client_watchdog()
@@ -110,6 +113,10 @@ public class RustTimeoutMirrorTests
         var shared = ReadRustSource("crates", "ctl", "src", "inject.rs");
         var inject = CaptureSeconds(shared, @"const INJECT_TIMEOUT_MS: u32 = ([\d_]+);", "INJECT_TIMEOUT_MS", 1000);
         var guard = CaptureSeconds(mech, @"const GUARD_MS: u32 = ([\d_]+);", "GUARD_MS", 1000);
+        Assert.True(
+            Regex.IsMatch(mech, @"budget_left_ms\(spent\)"),
+            "the core no longer gives the load what the start left of the budget, so a start and a load "
+                + "can each take the whole budget and this sum no longer bounds the silence");
 
         Assert.True(
             inject + guard < SessionViewModel.IdleTimeout.TotalSeconds,

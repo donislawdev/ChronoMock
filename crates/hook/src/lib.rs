@@ -83,7 +83,7 @@ use chrono_ctl::{
     IDX_TPTIMER, IDX_TPTIMEREX, IDX_NTCUP, IDX_CONNECT, IDX_QPC, IDX_TIMEGETTIME, IDX_SCVSRW,
     IDX_SCVCS, IDX_WOA, IDX_WSAWFME, IDX_QIT, IDX_QITP, IDX_QUITP, LATE_CHANNELS, bump_absolute_dues, sleep_bias,
 };
-use chrono_ctl::inject::{self as remote_load, INJECT_TIMEOUT_MS, STILL_ACTIVE_CODE};
+use chrono_ctl::inject::{self as remote_load, budget_left_ms, STILL_ACTIVE_CODE};
 use minhook::{MinHook, MH_STATUS};
 use windows::core::{s, PCSTR, PCWSTR};
 use windows::Win32::Foundation::{
@@ -2833,11 +2833,13 @@ unsafe extern "system" fn h_ntcup(
 /// so the audit can say a child ran on the real clock instead of quietly reporting a smaller family
 /// (R2-S2, untouchable rule 4).
 ///
+/// The load is waited for at most `limit_ms`, what the child's start left of the injection's budget.
+///
 /// # Safety
 /// `hproc` must be a valid process handle with injection rights.
-unsafe fn inject_self(hproc: HANDLE) -> remote_load::Outcome { unsafe {
+unsafe fn inject_self(hproc: HANDLE, limit_ms: u32) -> remote_load::Outcome { unsafe {
     match begin_remote_load(hproc) {
-        Some(load) => end_remote_load(hproc, load),
+        Some(load) => end_remote_load(hproc, load, limit_ms),
         None => remote_load::Outcome::LibraryNotLoaded,
     }
 }}
@@ -2933,9 +2935,9 @@ unsafe fn begin_remote_load(hproc: HANDLE) -> Option<RemoteLoad> { unsafe {
 ///
 /// # Safety
 /// `hproc` must be the process `load` was started in, still open.
-unsafe fn end_remote_load(hproc: HANDLE, load: RemoteLoad) -> remote_load::Outcome { unsafe {
+unsafe fn end_remote_load(hproc: HANDLE, load: RemoteLoad, limit_ms: u32) -> remote_load::Outcome { unsafe {
     // Finite wait (RELEASE-009): a child wedged in loader lock must not hang whoever waits here.
-    let wait = match wait_raw(load.thread, INJECT_TIMEOUT_MS) {
+    let wait = match wait_raw(load.thread, limit_ms) {
         WAIT_OBJECT_0_CODE => remote_load::Wait::ThreadDone,
         WAIT_TIMEOUT_CODE => remote_load::Wait::TimedOut,
         _ => remote_load::Wait::Failed,
@@ -3116,15 +3118,31 @@ unsafe fn wait_any_raw(handles: &[HANDLE; 2], ms: u32) -> u32 { unsafe {
     })
 }}
 
-/// What a child's injection came to: the load's outcome once its main thread parked within `limit_ms`,
-/// the start's when it did not, said in the hook's log either way.
+/// What a child's injection came to: the load's outcome once its main thread parked in time, the start's
+/// when it did not, said in the hook's log either way.
+///
+/// The start and the load share one budget, `INJECT_TIMEOUT_MS`, counted from `began`, the `real_quit`
+/// reading taken when the child was resumed for its start (`chrono_ctl::inject::budget_left_ms`), as the
+/// mechanism counts its own target's. `None` is a child its caller holds: its start begins whenever the
+/// caller resumes it, so the wait for its park has no limit, and that time is the caller's, not the load's.
 ///
 /// # Safety
 /// `process` must be the child the park was put on, still open.
-unsafe fn load_into_parked(process: HANDLE, park: &ChildPark, limit_ms: u32) -> remote_load::Outcome { unsafe {
-    let started = park.wait(process, limit_ms);
+unsafe fn load_into_parked(process: HANDLE, park: &ChildPark, began: Option<i64>) -> remote_load::Outcome { unsafe {
+    let spent = || began.map_or(0, ms_since);
+    let start_limit_ms = match began {
+        Some(_) => budget_left_ms(spent()).unwrap_or(0),
+        None => INFINITE,
+    };
+    let started = park.wait(process, start_limit_ms);
     match started.unloaded() {
-        None => inject_self(process),
+        None => match budget_left_ms(spent()) {
+            Some(limit_ms) => inject_self(process, limit_ms),
+            None => {
+                log("[chrono_hook] the child's start took all the time its injection is given - not injected, it runs uncovered");
+                remote_load::Outcome::TimedOut
+            }
+        },
         Some(outcome) => {
             match outcome {
                 remote_load::Outcome::TargetEnded(_) | remote_load::Outcome::TargetEndedUnread => {
@@ -3136,6 +3154,12 @@ unsafe fn load_into_parked(process: HANDLE, park: &ChildPark, limit_ms: u32) -> 
         }
     }
 }}
+
+/// Milliseconds since `began`, a `real_quit` reading: the real interrupt clock, which the session's own
+/// scaling never reaches, so a child's budget is real time whatever rate the application runs at.
+fn ms_since(began: i64) -> u64 {
+    u64::try_from(real_quit().saturating_sub(began)).unwrap_or(0) / 10_000
+}
 
 /// The machine a live process runs as, or `None` when it cannot be asked. The same reading as the
 /// mechanism's (`chrono-mech`, `process_machine`), which `chrono-ctl` cannot host without depending on
@@ -3212,12 +3236,13 @@ unsafe fn inherit_into_child(r: i32, pi: *mut PROCESS_INFORMATION, flags: u32) {
         }
         return;
     };
+    let began = real_quit();
     if ResumeThread(info.hThread) == u32::MAX {
         log("[chrono_hook] could not resume the child for its start - not injected");
         account_child(info.hProcess, info.dwProcessId, remote_load::Outcome::LibraryNotLoaded);
         return;
     }
-    let outcome = load_into_parked(info.hProcess, &park, INJECT_TIMEOUT_MS);
+    let outcome = load_into_parked(info.hProcess, &park, Some(began));
     account_child(info.hProcess, info.dwProcessId, outcome);
     if !resume && SuspendThread(info.hThread) == u32::MAX {
         log("[chrono_hook] could not hand the child back suspended - it runs");
@@ -3258,6 +3283,9 @@ unsafe fn inherit_into_debugged_child(info: &PROCESS_INFORMATION, resume: bool) 
         return;
     };
     let park = ChildPark::put_on(process, info.hThread);
+    // The child's start is under way from here when it is resumed here, so the budget a start and a load
+    // share counts from here. One its caller holds starts whenever the caller resumes it.
+    let began = resume.then(real_quit);
     if resume {
         let _ = ResumeThread(info.hThread);
     }
@@ -3267,10 +3295,7 @@ unsafe fn inherit_into_debugged_child(info: &PROCESS_INFORMATION, resume: bool) 
         let _ = CloseHandle(process);
         return;
     };
-    // The child's start is under way now when it was resumed here, so it gets the limit a start gets. One
-    // its caller holds starts whenever the caller resumes it.
-    let limit_ms = if resume { INJECT_TIMEOUT_MS } else { INFINITE };
-    let pending = Box::into_raw(Box::new(DebuggedChild { process, pid: info.dwProcessId, park, limit_ms }));
+    let pending = Box::into_raw(Box::new(DebuggedChild { process, pid: info.dwProcessId, park, began }));
     match CreateThread(None, 0, Some(debugged_child_proc), Some(pending as *const c_void), THREAD_CREATION_FLAGS(0), None) {
         Ok(waiter) => {
             let _ = CloseHandle(waiter);
@@ -3284,13 +3309,13 @@ unsafe fn inherit_into_debugged_child(info: &PROCESS_INFORMATION, resume: bool) 
 }}
 
 /// What the thread that follows a debugged child needs: its own handle to the child, the park put on the
-/// child's main thread, and how long to wait for that park. Dropped, the handle is closed and the park
-/// lets the child go.
+/// child's main thread, and when its start began (`load_into_parked`). Dropped, the handle is closed and
+/// the park lets the child go.
 struct DebuggedChild {
     process: HANDLE,
     pid: u32,
     park: ChildPark,
-    limit_ms: u32,
+    began: Option<i64>,
 }
 
 impl Drop for DebuggedChild {
@@ -3310,7 +3335,7 @@ impl Drop for DebuggedChild {
 /// this thread then owns.
 unsafe extern "system" fn debugged_child_proc(param: *mut c_void) -> u32 { unsafe {
     let child = Box::from_raw(param as *mut DebuggedChild);
-    let outcome = load_into_parked(child.process, &child.park, child.limit_ms);
+    let outcome = load_into_parked(child.process, &child.park, child.began);
     account_child(child.process, child.pid, outcome);
     0
 }}
