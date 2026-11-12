@@ -4219,11 +4219,13 @@ unsafe fn install() -> Result<(), InstallError> { unsafe {
         running: core.is_some_and(|h| WaitForSingleObject(h, 0).0 == WAIT_TIMEOUT_CODE),
         created_now: core.and_then(|h| process_created(h)),
     };
-    // The gate is asked only once the session is confirmed, so a hook refused for its session leaves the
-    // gate to its parent, which gives it back when the load returns.
-    let own_pid = GetCurrentProcessId();
+    // The gate is passed whatever the session's answer, and before it: a pending one is joined and goes
+    // back to the parent when the load returns, refused or not, and one the parent abandoned is freed as
+    // this hook refuses - a refusal for its session included, since nothing else would ever free it.
+    let pid = GetCurrentProcessId();
     let own_created = process_created(GetCurrentProcess()).unwrap_or(0);
-    if let Some(why) = join_refusal(&look).or_else(|| late_refusal(ctl, own_pid, own_created)) {
+    let late = late_refusal(ctl, pid, own_created);
+    if let Some(why) = join_refusal(&look).or(late) {
         give_back(core);
         return Err(InstallError::Refused(why.into()));
     }
@@ -4260,7 +4262,6 @@ unsafe fn install() -> Result<(), InstallError> { unsafe {
     // Best-effort: if the registry is full the detours still substitute time (they read the shared
     // anchor via CTL_PTR), but this process reports no coverage and publishes no PID - the mechanism
     // simply never sees it, and never fabricates coverage.
-    let pid = own_pid;
     let cov_slot: Option<usize> = reserve_cov_slot(ctl);
     let cov: Option<*mut Cov> = match cov_slot {
         Some(slot) => {

@@ -310,9 +310,10 @@ const ALLOWED: &[(&str, &str, &str)] = &[
     (
         "crates/cli/tests/held_exit.rs",
         "spawn",
-        "runs three sessions through the built binary, each on a copy of this test binary whose header names \
-         it a windowed program, written to a scratch directory. Each copy only waits and ends, and nothing \
-         reaches past this machine",
+        "runs five sessions through the built binary, each on a copy of this test binary whose header names \
+         it a windowed program, written to a scratch directory. One copy starts a second copy from the same \
+         directory, and one more runs outside the session until the test ends it. Each copy only waits and \
+         ends, and nothing reaches past this machine",
     ),
     (
         "crates/cli/tests/injection_budget.rs",

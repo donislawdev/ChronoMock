@@ -220,8 +220,8 @@ pub struct Session {
     /// The other processes on the session clock, watched so the session lasts as long as any of them
     /// runs and not only as long as the one it launched (ADR-16).
     family: family::Family,
-    /// The full path of the launched process's executable, read while it runs: once it has ended the
-    /// system may no longer say (ADR-4, 2026-11-11). `None` when it would not say even then.
+    /// The full path of the launched process's executable, read before it was let go: once it has ended
+    /// the system no longer says (ADR-4, 2026-11-11). `None` when it would not say even then.
     root_image: Option<String>,
     /// The session lock, held for as long as the session lives. Dropped last, so a second core
     /// cannot start until this one has released the control block it was using.
@@ -1244,6 +1244,7 @@ fn sleep_bias_now() -> i64 {
 /// value the target's hook does - the QPC axis anchor (ADR-2 reversal) rides on that.
 fn qpc_now() -> i64 {
     let mut t: i64 = 0;
+    // SAFETY: the call writes one counter value into a local that lives through it.
     unsafe {
         let _ = QueryPerformanceCounter(&mut t);
     }
@@ -1254,6 +1255,7 @@ fn qpc_now() -> i64 {
 /// `chrono_ctl::qpc_span_ms` turns into a span of 0 rather than a division by zero.
 fn qpc_frequency() -> i64 {
     let mut f: i64 = 0;
+    // SAFETY: the call writes one frequency value into a local that lives through it.
     unsafe {
         let _ = QueryPerformanceFrequency(&mut f);
     }
@@ -1871,6 +1873,12 @@ pub fn prepare(spec: &SessionSpec, target: &Target, hook_dll: &Path) -> Result<P
             None => 0,
         };
 
+        // The program's path, read while it is held before its entry point. Once it has ended the system no
+        // longer says (measured 2026-11-12: `QueryFullProcessImageNameW` fails with error 31 on a process
+        // that has exited, its handle still open), and a launcher gone inside the window still heads a
+        // session that looks for copies of it (ADR-4, ADR-16).
+        let root_image = image_path_of(suspended.process());
+
         // 5. Let the program go on to its entry point, then wait up to the guard window. WaitForSingleObject
         // returns early if the target exits - the single-instance vanish signal (ADR-4). The
         // install bits are already set in DllMain, so without this a target that
@@ -1914,7 +1922,6 @@ pub fn prepare(spec: &SessionSpec, target: &Target, hook_dll: &Path) -> Result<P
         // marked reported, since its coverage is handed back right here in `Prepared` - without that
         // the first child poll would emit the parent a second time.
         let _ = CloseHandle(pi.hThread);
-        let root_image = image_path_of(pi.hProcess);
         let mut reported_slots = vec![false; MAX_COV_PIDS];
         if let Some(slot) = parent_slot {
             reported_slots[slot] = true;

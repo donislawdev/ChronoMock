@@ -2076,7 +2076,8 @@ pub unsafe fn find_pid_slot(p: *const Ctl, pid: u32, created: Option<u64>) -> Op
 /// lock, as the process ends.
 ///
 /// # Safety
-/// `p` must point to a live, correctly aligned `Cov`.
+/// `p` must point to a live, correctly aligned `Cov`. Its `exit_began_qpc` then sits on the 8-byte boundary
+/// an `AtomicI64` view needs, in both bitnesses (the layout test pins the offset).
 pub unsafe fn mark_exit_began(p: *mut Cov, qpc: i64) { unsafe {
     let field = &*(addr_of_mut!((*p).exit_began_qpc) as *const AtomicI64);
     field.store(qpc, Ordering::Release);
@@ -2086,7 +2087,7 @@ pub unsafe fn mark_exit_began(p: *mut Cov, qpc: i64) { unsafe {
 /// (mechanism side).
 ///
 /// # Safety
-/// `p` must point to a live, correctly aligned `Cov`.
+/// `p` must point to a live, correctly aligned `Cov`, which aligns the field as `mark_exit_began` says.
 pub unsafe fn read_exit_began(p: *const Cov) -> i64 { unsafe {
     let field = &*(addr_of!((*p).exit_began_qpc) as *const AtomicI64);
     field.load(Ordering::Acquire)
