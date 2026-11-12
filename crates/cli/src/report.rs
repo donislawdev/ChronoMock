@@ -431,6 +431,11 @@ fn describe_session_warning(key: &str) -> &'static str {
         // ADR-26. ICU read the zone of the borrowed name with its history, once, so the jump is what moved
         // those programs off the session's offset, and it cannot be undone while they run. The cure is the
         // date of the next jump.
+        // ADR-27. The hook could not queue the call that has the C runtimes read the zone again, so a runtime
+        // that read it while the program's libraries started keeps it. Whether one did cannot be seen.
+        "session.c_runtime_zone_kept" => {
+            "the application's C runtime could not be made to read the session's time zone again when it started, so if one of its libraries asked for the time while it loaded, the local time the application shows can follow this machine's time zone and daylight saving rules instead of the session's"
+        }
         "session.jump_before_zone_name" => {
             "for the programs built on ICU (Node.js, Deno, Bun and others) to name the session's time zone, the session gave it the registry name of a real Windows time zone with the same offset, and a jump took the clock to a date before that zone had this offset - at such a date those programs can show the offset the real zone had then instead of the session's, so to keep the session's offset in them, jump only to dates on or after the date that zone took it (1945-10-15 for +05:30)"
         }

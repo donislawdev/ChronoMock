@@ -64,7 +64,7 @@ use chrono_ctl::{
     read_late_installed, read_pid,
     read_pid_count, read_subsystem, rebase, SUBSYSTEM_CONSOLE,
     read_uncovered_child, read_uncovered_children_count, read_uninjected_children, read_waits_at_floor,
-    read_timers_at_floor, read_absolute_dues, read_calls_without_storage, calls_capped, clock_fence,
+    read_timers_at_floor, read_absolute_dues, read_calls_without_storage, calls_capped, clock_fence, read_zone_not_read_again,
     mark_ended, write_anchor, write_anchor_full, write_core_created, write_header, FullAnchor,
     write_core_pid, write_scale_dur, write_scale_qpc, write_tz_bias, write_zone_name, ChannelCategory,
     Cov, Ctl, CHANNELS, CH_GTC, CH_GTC64, CTL_LAYOUT_VERSION, CTL_MAGIC, DEADLINE_CHANNELS, IDX_TIMEGETTIME,
@@ -1456,6 +1456,16 @@ unsafe fn floor_warning_keys(cov: *const Cov) -> Vec<String> { unsafe {
     keys
 }}
 
+/// The warning for a process whose shared C runtimes the hook could not have read the zone again (ADR-27):
+/// a library that asked for the time while the process started may have left it with this machine's zone.
+/// Its own function so `gather_coverage` stays under its pinned complexity ceiling.
+///
+/// # Safety
+/// `cov` must point to a live, correctly aligned `Cov`.
+unsafe fn zone_warning_keys(cov: *const Cov) -> Vec<String> { unsafe {
+    if read_zone_not_read_again(cov) { vec!["session.c_runtime_zone_kept".to_string()] } else { Vec::new() }
+}}
+
 /// Whether `ch` is a deadline channel in a session that does not scale durations (R5-D2). The deadline
 /// channels stand in EVERY session, but without scale_duration they convert only an absolute deadline:
 /// their calls are mostly relative waits and timers the session leaves real, so listing them as substituted
@@ -1565,6 +1575,7 @@ unsafe fn gather_coverage(
         out.warning_keys.push("wait.object_waits_not_scaled".to_string());
     }
     out.warning_keys.extend(floor_warning_keys(cov));
+    out.warning_keys.extend(zone_warning_keys(cov));
     if any_timer_observed {
         out.warning_keys.push("timer.multimedia_not_scaled".to_string());
     }
@@ -3185,6 +3196,22 @@ mod tests {
         let quiet = zeroed_cov();
         let gathered = unsafe { gather_coverage(&quiet as *const Cov, 0, true, false) };
         assert!(!says(&gathered, "wait.thread_without_storage"), "no such call, yet the warning came");
+    }
+
+    /// ADR-27: a process whose C runtimes the hook could not have read the zone again may show this
+    /// machine's zone, and the report says so under its own key, only for such a process.
+    #[test]
+    fn a_zone_the_c_runtimes_could_not_read_again_is_reported() {
+        let says = |c: &Coverage| c.warning_keys.iter().any(|k| k == "session.c_runtime_zone_kept");
+
+        let mut cov = zeroed_cov();
+        cov.zone_not_read_again = 1;
+        let gathered = unsafe { gather_coverage(&cov as *const Cov, 0, true, false) };
+        assert!(says(&gathered), "the runtimes may keep this machine's zone and nothing said so");
+
+        let quiet = zeroed_cov();
+        let gathered = unsafe { gather_coverage(&quiet as *const Cov, 0, true, false) };
+        assert!(!says(&gathered), "the runtimes read the zone again, yet the warning came");
     }
 
     /// A channel hooked late is covered, and the audit says the count is a floor.

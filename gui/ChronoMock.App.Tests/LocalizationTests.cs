@@ -77,6 +77,8 @@ public class LocalizationTests
         "session.tz_variable_removed",
         // A session zone ICU cannot name, and a jump out of the period of the name it borrowed (ADR-26).
         "session.zone_unnamed", "session.jump_before_zone_name",
+        // A process whose C runtimes the hook could not have read the zone again (ADR-27).
+        "session.c_runtime_zone_kept",
         "chromium.launched_with_debug_port", "chromium.app_closed_before_audit",
         "chromium.rate_change_affects_running_timers", "chromium.contexts_pooled", "chromium.context_reached_running",
         // A timer the engine's 4 ms floor held back (R5-P6) and a frame the shim did not reach (R5-P5).

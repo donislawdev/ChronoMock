@@ -764,7 +764,10 @@ pub const CTL_MAGIC: u64 = 0x4348_524F_4E4F_4354; // "CHRONOCT"
 /// 16: `Ctl` gained `zone_name` (ADR-26, 2026-11-12) in the four bytes after `tz_bias` that alignment had
 /// left unnamed. No offset moves, but an old hook would hand the zone out under its own name where a new
 /// core chose a borrowed one, and say nothing of it.
-pub const CTL_LAYOUT_VERSION: u32 = 16;
+///
+/// 17: `Cov` gained `zone_not_read_again` (ADR-27, 2026-11-12) after every other field, which widens every
+/// slot. An old hook would leave it at zero where it could not have the C runtimes read the zone again.
+pub const CTL_LAYOUT_VERSION: u32 = 17;
 
 /// How many uncovered children one process's `Cov` can name. Past this the counter still grows, so
 /// the audit says "and N more" rather than losing the number. Sized for what a Chromium browser
@@ -1029,6 +1032,12 @@ pub struct Cov {
     /// ([`exit_began_in_window`]). The hook writes it with one atomic store and nothing else, because it
     /// runs under the loader lock. Appended after every other field, so no offset inside a slot moves.
     pub exit_began_qpc: i64,
+    /// 1 when the hook could not have this process's shared C runtimes read the zone again at its start
+    /// (ADR-27): the main thread could not be found or opened, or the call could not be queued on it. A
+    /// library that asked for the time while the process started then leaves the program with this
+    /// machine's zone. Written once by `install`, before the pid is published, and the core warns
+    /// (`session.c_runtime_zone_kept`). Appended after every other field, so no offset inside a slot moves.
+    pub zone_not_read_again: u64,
 }
 
 impl Cov {
@@ -1049,6 +1058,7 @@ impl Cov {
         absolute_dues: 0,
         calls_without_storage: 0,
         exit_began_qpc: 0,
+        zone_not_read_again: 0,
     };
 }
 
@@ -2501,6 +2511,24 @@ pub unsafe fn read_calls_without_storage(p: *const Cov) -> u64 { unsafe {
     read_volatile(addr_of!((*p).calls_without_storage))
 }}
 
+/// Mark that the hook could not have this process's shared C runtimes read the zone again (hook side, this
+/// process's own `Cov`, ADR-27).
+///
+/// # Safety
+/// `p` must point to a live, correctly aligned `Cov`.
+pub unsafe fn mark_zone_not_read_again(p: *mut Cov) { unsafe {
+    write_volatile(addr_of_mut!((*p).zone_not_read_again), 1);
+}}
+
+/// Whether the hook could not have this process's shared C runtimes read the zone again (mechanism side,
+/// per-process `Cov`).
+///
+/// # Safety
+/// `p` must point to a live, correctly aligned `Cov`.
+pub unsafe fn read_zone_not_read_again(p: *const Cov) -> bool { unsafe {
+    read_volatile(addr_of!((*p).zone_not_read_again)) != 0
+}}
+
 /// The shortest real wait a scaled timeout is allowed to become.
 ///
 /// 🔴 One millisecond, and the difference between it and zero is the whole reason it exists. Integer
@@ -2808,6 +2836,7 @@ mod tests {
         assert_eq!(offset_of!(Cov, timers_at_floor) % 8, 0, "Cov.timers_at_floor is not 8-byte aligned");
         assert_eq!(offset_of!(Cov, calls_without_storage) % 8, 0, "Cov.calls_without_storage is not 8-byte aligned");
         assert_eq!(offset_of!(Cov, exit_began_qpc) % 8, 0, "Cov.exit_began_qpc is not 8-byte aligned");
+        assert_eq!(offset_of!(Cov, zone_not_read_again), offset_of!(Cov, exit_began_qpc) + 8, "Cov.zone_not_read_again moved");
         assert_eq!(size_of::<Cov>() % 8, 0, "a slot would misalign the next one");
         assert_eq!(size_of::<PendingLoad>(), 16, "a pending load is two words and a time");
         // The zone's two fields fill the header up to the first anchor, which a hook of either bitness

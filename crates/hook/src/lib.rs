@@ -69,7 +69,7 @@ use chrono_ctl::{
     anchor_write_in_progress, bump_calls, bump_uninjected_children, clock_fence, cov_at_mut, find_pid_slot,
     header_is_ours, indirect_jump_slot, record_uncovered_child, release_axes, release_margin_qpc, ReleasedAxes,
     publish_pid, read_anchor, read_anchor_with, read_core_created, read_core_pid, read_dur, read_dur_with,
-    read_ended, read_qpc, read_qpc_with, RELEASE_MARGIN_QUIT,
+    read_ended, read_qpc, read_qpc_with, RELEASE_MARGIN_QUIT, mark_zone_not_read_again,
     read_pid_count, read_scale_dur, read_scale_qpc, set_created, set_subsystem, image_subsystem, MAX_COV_PIDS,
     IMAGE_HEADER_SPAN, IDX_GTZIFY,
     bump_waits_at_floor, delay_hit_floor, read_installed, read_late_installed, read_tz_bias, read_zone_name, reserve_cov_slot,
@@ -497,6 +497,9 @@ unsafe extern "system" fn watcher_proc(_p: *mut c_void) -> u32 { unsafe {
     }
     release_duration_axes();
     DETACHED.store(true, Ordering::SeqCst);
+    // The program goes back to the real clock, and its C runtimes to this machine's zone, which they read
+    // again now that the zone channel answers with it. This thread is the hook's own and holds no lock.
+    read_zone_again(std::ptr::null_mut(), std::ptr::null_mut(), std::ptr::null_mut());
     0
 }}
 
@@ -887,6 +890,13 @@ fn start_watcher() {
             // that is over installs nothing more (`watcher_proc`).
             release_duration_axes();
             DETACHED.store(true, Ordering::SeqCst);
+            // The C runtimes read this machine's zone again as well, on a thread of their own: this is a
+            // detour's path, where the runtime's locks have no place.
+            if let Ok(h) =
+                unsafe { CreateThread(None, 0, Some(read_zone_again_thread), None, THREAD_CREATION_FLAGS(0), None) }
+            {
+                let _ = unsafe { CloseHandle(h) };
+            }
             return;
         }
         unsafe {
@@ -1554,33 +1564,39 @@ fn zone_read_again() -> bool {
 /// program's own state of each runtime. Made here, under the loader lock, `_tzset` would wait for the
 /// runtime's time lock, which a thread the start-up code started can hold while the system's
 /// `GetTimeZoneInformation` waits for the loader lock to read the zone's names. With no shared runtime
-/// loaded there is nothing to do, and without the main thread or the queue the log says so.
+/// loaded there is nothing to do. Without the main thread (a sandboxed process can be refused its own
+/// thread) or the queue, the process's coverage slot says so, and the core warns (rule 4).
 ///
 /// # Safety
 /// Called from `install` only, once every detour is live, so the zone the runtimes read is the session's.
-unsafe fn refresh_c_runtime_zones() { unsafe {
+/// `cov`, when there is one, must be this process's live slot.
+unsafe fn refresh_c_runtime_zones(cov: Option<*mut Cov>) { unsafe {
     if !SHARED_C_RUNTIMES.iter().any(|runtime| GetModuleHandleA(*runtime).is_ok()) {
         return;
     }
-    let Some(thread) = main_thread() else {
-        log("[chrono_hook] main thread not found - a C runtime may keep the zone it read before the hook");
-        return;
-    };
-    let queue = GetModuleHandleA(s!("ntdll.dll")).ok().and_then(|ntdll| GetProcAddress(ntdll, s!("NtQueueApcThread")));
-    let queued = queue.is_some_and(|queue| {
-        let queue = std::mem::transmute::<unsafe extern "system" fn() -> isize, NtQueueApcFn>(queue);
-        let routine = read_zone_again as unsafe extern "system" fn(*mut c_void, *mut c_void, *mut c_void);
-        queue(thread, routine as *const c_void, std::ptr::null(), std::ptr::null(), std::ptr::null()) >= 0
+    let queued = main_thread().is_some_and(|thread| {
+        let queue = GetModuleHandleA(s!("ntdll.dll")).ok().and_then(|ntdll| GetProcAddress(ntdll, s!("NtQueueApcThread")));
+        let queued = queue.is_some_and(|queue| {
+            let queue = std::mem::transmute::<unsafe extern "system" fn() -> isize, NtQueueApcFn>(queue);
+            let routine = read_zone_again as unsafe extern "system" fn(*mut c_void, *mut c_void, *mut c_void);
+            queue(thread, routine as *const c_void, std::ptr::null(), std::ptr::null(), std::ptr::null()) >= 0
+        });
+        let _ = CloseHandle(thread);
+        queued
     });
     if !queued {
         log("[chrono_hook] the zone was not read again - a C runtime may keep the one it read before the hook");
+        if let Some(c) = cov {
+            mark_zone_not_read_again(c);
+        }
     }
-    let _ = CloseHandle(thread);
 }}
 
-/// The call `refresh_c_runtime_zones` queues on the main thread, with the three arguments the dispatcher
-/// passes and nothing in them: each shared C runtime the program has loaded reads the zone again through
-/// `_tzset`, which reads it whether it was read before or not. The library is pinned, so it is still here.
+/// Each shared C runtime the program has loaded reads the zone again through `_tzset`, which reads it
+/// whether it was read before or not, from the zone channel: the session's while the session runs, this
+/// machine's once the hook has let the program go (ADR-27). The call `refresh_c_runtime_zones` queues on
+/// the main thread, with the three arguments the dispatcher passes and nothing in them, and the one the
+/// watcher makes when it lets the program go. The library is pinned, so it is still here.
 unsafe extern "system" fn read_zone_again(_: *mut c_void, _: *mut c_void, _: *mut c_void) { unsafe {
     let _own = set_flag(&READING_ZONE_AGAIN, true);
     for runtime in SHARED_C_RUNTIMES {
@@ -1589,6 +1605,12 @@ unsafe extern "system" fn read_zone_again(_: *mut c_void, _: *mut c_void, _: *mu
             std::mem::transmute::<unsafe extern "system" fn() -> isize, unsafe extern "C" fn()>(tzset)();
         }
     }
+}}
+
+/// `read_zone_again` on a thread of its own, for a program let go on a detour's path (`start_watcher`).
+unsafe extern "system" fn read_zone_again_thread(_: *mut c_void) -> u32 { unsafe {
+    read_zone_again(std::ptr::null_mut(), std::ptr::null_mut(), std::ptr::null_mut());
+    0
 }}
 
 /// This process's main thread, opened to queue a call on it: the oldest of its threads but the one running
@@ -4533,7 +4555,7 @@ unsafe fn install() -> Result<(), InstallError> { unsafe {
         set_failed_channels(c, HOOK_FAILED.load(Ordering::Relaxed));
     }
     // A C runtime that read the zone while the program's libraries started reads it again (ADR-27).
-    refresh_c_runtime_zones();
+    refresh_c_runtime_zones(cov);
 
     // Hand the watcher whatever this session WANTED from an optional module and did not get. The set
     // is computed here rather than in the watcher so the opt-in gates are stated once: without

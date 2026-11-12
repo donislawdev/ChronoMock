@@ -358,8 +358,10 @@ cover something is worse than one that says what it cannot do.
   while it loads would leave the runtime with your machine's zone and its daylight saving rules for the
   session's date: measured on a spreadsheet application, `NOW()` under a session at +05:00 in July
   showed +02:00. The session has the shared runtimes (`ucrtbase`, `msvcrt`, `msvcr100` to `msvcr120`)
-  read the zone again before the application's own code runs. A library that carries its own copy of
-  the C runtime and asks for the time while it loads keeps your machine's zone
+  read the zone again before the application's own code runs, and once more when the session ends while
+  the application keeps running, so it then shows your machine's zone with the real clock. If the
+  session could not have them read it at the start, the report says so. A library that carries its own
+  copy of the C runtime and asks for the time while it loads keeps your machine's zone
 - **A windowed program that ends within its first 300 ms is reported as a suspected hand-off** (exit
   code 12), because that is what the second instance of a single-instance application does: it passes
   its work to the copy already running, which the session never reached. A console program that ends

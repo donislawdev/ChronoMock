@@ -14,7 +14,9 @@ Notable changes to Chrono Mock, newest first. The format follows
   asked for the time while it loaded left the application with your machine's zone and its daylight
   saving rules for the session's date, while the report said `works`: a spreadsheet's `NOW()` under a
   session at +05:00 in July showed +02:00. The session now has the shared C runtimes of Windows and
-  Visual C++ read the zone again before the application's own code runs.
+  Visual C++ read the zone again before the application's own code runs, and the report says when it
+  could not. When the session ends while the application keeps running, the runtimes read your
+  machine's zone again, so the application no longer shows the real time in the session's zone.
 - **Programs built on the ICU library now name a session time zone like +05:30.** Node.js, Deno, Bun
   and many other programs look the system time zone up by its registry name, and the session zone's
   own, "Chrono Session", is in no list they carry. At a whole-hour offset they name the zone
