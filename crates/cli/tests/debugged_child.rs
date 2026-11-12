@@ -1,17 +1,20 @@
-//! A program the application starts under its own debugger starts at once and on the session clock
-//! (R5-P25).
+//! A program the application starts under its own debugger starts at once, on the session clock and by
+//! its own main thread (R5-P25, ADR-25).
 //!
-//! The hook loads itself into every child through a remote thread, and that thread is the first to run
-//! in the child, so it raises the child's first debug events and stands until the debugger answers
+//! A debugged child's first thread raises its first debug events and stands until the debugger answers
 //! them. When the application is that debugger, the thread answering them is the very one that called
 //! CreateProcess - and the hook used to wait for the load inside that call. Measured on both bitnesses
 //! (tools/probes/r5/fala4/p25.ps1): the call stood the whole ten-second limit, the child was then
 //! resumed before the hook had loaded, its program read the real clock, and the report named it a
-//! process on the real clock. The hook now hands the wait to a thread of its own for such a child.
+//! process on the real clock. The hook now hands the wait to a thread of its own for such a child, and
+//! the child's own main thread starts it and waits before its entry point while the hook is loaded.
 //!
 //! The application here is this test binary: one ignored probe debugs two children, one for each flag
 //! that makes the caller a debugger, and the children are the same binary running a second probe that
-//! writes the wall clock it reads.
+//! writes the wall clock it reads and which thread started its process (`support/start_thread.rs`).
+
+#[path = "support/start_thread.rs"]
+mod start_thread;
 
 use std::os::windows::process::CommandExt;
 use std::path::PathBuf;
@@ -164,7 +167,7 @@ fn probe_debugs_two_children_and_times_their_start() {
     std::thread::sleep(PAST_THE_GUARD);
 }
 
-/// Writes the wall clock this process reads, in seconds since 1970.
+/// Writes the wall clock this process reads, in seconds since 1970, and what it saw of its own start.
 #[test]
 #[ignore = "the child of the debugging probe in this file, not a test on its own"]
 fn probe_writes_the_wall_clock_it_reads() {
@@ -172,7 +175,8 @@ fn probe_writes_the_wall_clock_it_reads() {
         return;
     };
     let secs = SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs());
-    std::fs::write(PathBuf::from(file), secs.to_string()).expect("the child writes its clock");
+    let start = start_thread::own_start();
+    std::fs::write(PathBuf::from(file), format!("{secs} {start}")).expect("the child writes its clock");
 }
 
 /// The injected library, which `cargo test` does not build (`dry_run.rs` has the whole story).
@@ -226,10 +230,19 @@ fn a_child_started_under_the_applications_debugger_starts_at_once_and_on_the_ses
             context()
         );
         let read = std::fs::read_to_string(dir.join(format!("{name}.txt"))).unwrap_or_default();
-        let secs: u64 = read.trim().parse().unwrap_or(0);
+        let mut child_words = read.split_whitespace();
+        let secs: u64 = child_words.next().and_then(|w| w.parse().ok()).unwrap_or(0);
+        let start: Option<u32> = child_words.next().and_then(|w| w.parse().ok());
         assert!(
             secs >= MOMENT_SECS,
             "the {name} child read {read:?} seconds since 1970, not the session's moment, so it ran before the hook. {}",
+            context()
+        );
+        assert_eq!(
+            start,
+            Some(start_thread::STARTED_BY_ITS_OWN_THREAD),
+            "the {name} child wrote {read:?}: 3 another thread than its own main thread started its process, \
+             4 it did not see its start. {}",
             context()
         );
     }

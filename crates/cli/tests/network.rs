@@ -308,6 +308,14 @@ const ALLOWED: &[(&str, &str, &str)] = &[
          machine",
     ),
     (
+        "crates/cli/tests/process_start.rs",
+        "spawn",
+        "runs this test binary's own ignored probe under a session through the built binary, and the probe \
+         starts itself twice more as its children, once held suspended and resumed. Each copy only reads \
+         the clock and which thread started its process, and ends with a code. Nothing reaches past this \
+         machine",
+    ),
+    (
         "crates/cli/tests/target_exit.rs",
         "spawn",
         "runs this test binary's own ignored probe under a session through the built binary, and the probe \

@@ -7,18 +7,21 @@
 //! ended a moment later - measured with a Free Pascal application, which crashed under every session, also
 //! with the remote thread loading nothing but a library already there.
 //!
-//! The target here is this test binary. The TLS callback below records the thread the loader told the
-//! process is attaching, and notes when that thread ends. The probe ends with 0 when that thread is still
-//! there, with 3 when it has ended, and with 4 when the callback never ran, which would make the rest blind.
-//! The canary starts the probe the old way, with a remote thread first, and requires the 3.
+//! The target here is this test binary, and `support/start_thread.rs` tells which thread started its
+//! process. The probe ends with 0 when that is the thread that runs the program, with 3 when it is another
+//! one, with 4 when the start was not seen, which would make the rest blind, and under a session with 5 when
+//! the clock it reads is not the session's. The canary starts the probe the old way, with a remote thread
+//! first, and requires the 3.
+
+#[path = "support/start_thread.rs"]
+mod start_thread;
 
 use std::ffi::c_void;
 use std::os::windows::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Mutex, MutexGuard};
-use std::time::{Duration, SystemTime};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use windows::core::{s, PCWSTR, PWSTR};
 use windows::Win32::Foundation::{CloseHandle, HANDLE, WAIT_OBJECT_0};
@@ -26,75 +29,57 @@ use windows::Win32::System::Diagnostics::Debug::WriteProcessMemory;
 use windows::Win32::System::LibraryLoader::{GetModuleHandleA, GetProcAddress};
 use windows::Win32::System::Memory::{VirtualAllocEx, MEM_COMMIT, MEM_RESERVE, PAGE_READWRITE};
 use windows::Win32::System::Threading::{
-    CreateProcessW, CreateRemoteThread, GetCurrentThreadId, GetExitCodeProcess, ResumeThread, TerminateProcess,
-    WaitForSingleObject, CREATE_SUSPENDED, CREATE_UNICODE_ENVIRONMENT, PROCESS_INFORMATION, STARTUPINFOW,
+    CreateProcessW, CreateRemoteThread, GetExitCodeProcess, ResumeThread, TerminateProcess, WaitForSingleObject,
+    CREATE_SUSPENDED, CREATE_UNICODE_ENVIRONMENT, PROCESS_INFORMATION, STARTUPINFOW,
 };
+
+use start_thread::{own_start, STARTED_BY_ANOTHER_THREAD, STARTED_BY_ITS_OWN_THREAD};
 
 /// The probe's mode, set for it. Unset, the probe returns at once.
 const PROBE_ON: &str = "CHRONO_PROCESS_START_PROBE";
 
+/// The modes. `plain` is the canary's probe, with no session, which takes the clock as it is. `self` and
+/// `family` run under a session, and `family` starts two copies of itself in `self`.
+const PLAIN: &str = "plain";
+const SELF: &str = "self";
+const FAMILY: &str = "family";
+
 /// The probe's own name, which is how the binary is asked to run it and nothing else.
 const PROBE: &str = "probe_reports_the_thread_that_started_it";
 
-/// The probe's answers.
-const STARTED_BY_ITS_OWN_THREAD: u32 = 0;
-const STARTER_ENDED: u32 = 3;
-const START_NOT_SEEN: u32 = 4;
+/// The probe's answer when it runs under a session and reads another clock than the session's.
+const CLOCK_NOT_THE_SESSIONS: u32 = 5;
 
-/// What the loader passes a TLS callback (MS Learn, the PE format, TLS callback functions).
-const DLL_PROCESS_ATTACH: u32 = 1;
-const DLL_THREAD_DETACH: u32 = 3;
+/// The session's moment, 2077-01-01T00:00:00Z, in seconds since 1970. A program on the real clock reads a
+/// date decades earlier.
+const MOMENT_SECS: u64 = 3_376_684_800;
 
-/// The thread the loader told the process is attaching, and whether it has ended since.
-static STARTED_BY: AtomicU32 = AtomicU32::new(0);
-static STARTER_GONE: AtomicBool = AtomicBool::new(false);
-
-/// The program's own TLS callback, run by the loader in every process of this binary.
-unsafe extern "system" fn on_tls_event(_module: *mut c_void, reason: u32, _reserved: *mut c_void) {
-    // SAFETY: a call that reads the calling thread's id, nothing else.
-    let me = unsafe { GetCurrentThreadId() };
-    match reason {
-        DLL_PROCESS_ATTACH => STARTED_BY.store(me, Ordering::SeqCst),
-        DLL_THREAD_DETACH if me == STARTED_BY.load(Ordering::SeqCst) => STARTER_GONE.store(true, Ordering::SeqCst),
-        _ => {}
-    }
-}
-
-/// The callback, where the C runtime's TLS directory collects the program's callbacks (`.CRT$XLA` to
-/// `.CRT$XLZ`, the standard library's own sits at `.CRT$XLB`).
-#[used]
-#[unsafe(link_section = ".CRT$XLM")]
-static TLS_EVENT: unsafe extern "system" fn(*mut c_void, u32, *mut c_void) = on_tls_event;
-
-/// What this process saw of its own start.
-fn own_start() -> u32 {
-    if STARTED_BY.load(Ordering::SeqCst) == 0 {
-        START_NOT_SEEN
-    } else if STARTER_GONE.load(Ordering::SeqCst) {
-        STARTER_ENDED
-    } else {
-        STARTED_BY_ITS_OWN_THREAD
-    }
-}
-
-/// Reads the clock, and ends with what it saw of its own start. As `family`, it then starts two copies of
-/// itself - one as a program would, one suspended and resumed a moment later, as a caller that prepares its
-/// child does - and ends with the first answer that is not 0, a child's raised by 10 and 20.
+/// Reads the clock, and ends with what it saw of its own start, then, under a session, with whether the
+/// clock was the session's. In `family` it then starts two copies of itself - one as a program would, one
+/// suspended and resumed a moment later, as a caller that prepares its child does - and ends with the
+/// first answer that is not 0, a child's raised by 10 and 20.
 #[test]
 #[ignore = "the target of the session tests in this file, not a test on its own"]
 fn probe_reports_the_thread_that_started_it() {
     let Some(mode) = std::env::var_os(PROBE_ON) else {
         return;
     };
-    let _ = SystemTime::now();
+    let on_the_sessions_clock =
+        SystemTime::now().duration_since(UNIX_EPOCH).is_ok_and(|since| since.as_secs() >= MOMENT_SECS);
     let own = own_start();
-    if own != STARTED_BY_ITS_OWN_THREAD || mode != "family" {
+    if own != STARTED_BY_ITS_OWN_THREAD {
         std::process::exit(own as i32);
+    }
+    if mode != PLAIN && !on_the_sessions_clock {
+        std::process::exit(CLOCK_NOT_THE_SESSIONS as i32);
+    }
+    if mode != FAMILY {
+        std::process::exit(0);
     }
     let me = std::env::current_exe().expect("the probe knows its own path");
     let plain = Command::new(&me)
         .args(["--ignored", "--exact", PROBE, "--test-threads", "1"])
-        .env(PROBE_ON, "self")
+        .env(PROBE_ON, SELF)
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
@@ -104,7 +89,7 @@ fn probe_reports_the_thread_that_started_it() {
     if plain != STARTED_BY_ITS_OWN_THREAD {
         std::process::exit((10 + plain) as i32);
     }
-    let held = run_held(&me, Duration::from_millis(300));
+    let held = run_held(&me, SELF, Duration::from_millis(300));
     if held != STARTED_BY_ITS_OWN_THREAD {
         std::process::exit((20 + held) as i32);
     }
@@ -141,14 +126,14 @@ fn environment_with_probe(mode: &str) -> Vec<u16> {
     block
 }
 
-/// The probe in `exe`, created suspended with the mode `self`, and its main thread.
-fn start_probe_suspended(exe: &Path) -> PROCESS_INFORMATION {
+/// The probe in `exe`, created suspended in `mode`, and its main thread.
+fn start_probe_suspended(exe: &Path, mode: &str) -> PROCESS_INFORMATION {
     let mut line: Vec<u16> = format!("\"{}\" --ignored --exact {PROBE} --test-threads 1", exe.display())
         .encode_utf16()
         .chain([0])
         .collect();
     let app: Vec<u16> = exe.as_os_str().encode_wide().chain([0]).collect();
-    let env = environment_with_probe("self");
+    let env = environment_with_probe(mode);
     let startup = STARTUPINFOW { cb: size_of::<STARTUPINFOW>() as u32, ..Default::default() };
     let mut info = PROCESS_INFORMATION::default();
     // SAFETY: every buffer is this function's own, alive through the call and terminated as the call needs.
@@ -188,10 +173,10 @@ fn finish(info: PROCESS_INFORMATION) -> u32 {
     }
 }
 
-/// The probe started suspended, resumed after `held` - a caller that prepares its child before it runs -
-/// and its answer.
-fn run_held(exe: &Path, held: Duration) -> u32 {
-    let info = start_probe_suspended(exe);
+/// The probe started suspended in `mode`, resumed after `held` - a caller that prepares its child before it
+/// runs - and its answer.
+fn run_held(exe: &Path, mode: &str, held: Duration) -> u32 {
+    let info = start_probe_suspended(exe, mode);
     std::thread::sleep(held);
     // SAFETY: the main thread of the process just created.
     assert_ne!(unsafe { ResumeThread(info.hThread) }, u32::MAX, "the probe's main thread resumes");
@@ -201,7 +186,7 @@ fn run_held(exe: &Path, held: Duration) -> u32 {
 /// The probe started the way the hook used to be loaded: suspended, then a remote thread running
 /// `LoadLibraryW` of a library that is there already, then resumed.
 fn run_started_by_a_remote_thread(exe: &Path) -> u32 {
-    let info = start_probe_suspended(exe);
+    let info = start_probe_suspended(exe, PLAIN);
     let path: Vec<u16> = "kernel32.dll".encode_utf16().chain([0]).collect();
     // SAFETY: the process was created suspended above and is of this binary's bitness, so the address of
     // `LoadLibraryW` here is its address there. Every handle is closed once.
@@ -226,15 +211,19 @@ fn run_started_by_a_remote_thread(exe: &Path) -> u32 {
 }
 
 /// The canary: the probe sees the start the hook used to give a program. Started suspended and resumed, it
-/// says its own thread started it - and with a remote thread first, that the thread that started it ended.
-/// Without the second answer the session tests below would be green over a probe that cannot fail.
+/// says its own thread started it - and with a remote thread first, that another thread did. Without the
+/// second answer the session tests below would be green over a probe that cannot fail.
 #[test]
 fn the_probe_tells_a_process_started_by_a_remote_thread() {
     let me = std::env::current_exe().expect("the test binary knows its own path");
-    assert_eq!(run_held(&me, Duration::ZERO), STARTED_BY_ITS_OWN_THREAD, "a plain start reads as a foreign one");
+    assert_eq!(
+        run_held(&me, PLAIN, Duration::ZERO),
+        STARTED_BY_ITS_OWN_THREAD,
+        "a plain start reads as a foreign one, or the probe did not see its start (4)"
+    );
     assert_eq!(
         run_started_by_a_remote_thread(&me),
-        STARTER_ENDED,
+        STARTED_BY_ANOTHER_THREAD,
         "the probe did not see that a remote thread started its process - the session tests here prove nothing"
     );
 }
@@ -273,14 +262,14 @@ fn session_on_probe(mode: &str) -> (String, String) {
 #[test]
 fn the_target_is_started_by_its_own_main_thread() {
     let _session = one_real_session_at_a_time();
-    let (stdout, stderr) = session_on_probe("self");
+    let (stdout, stderr) = session_on_probe(SELF);
     let context = format!("stdout:\n{stdout}\nstderr:\n{stderr}");
     assert!(stdout.contains("verdict:  WORKS"), "the probe did not run under the session. {context}");
     assert!(
-        !stdout.contains(&format!("closed itself with code {STARTER_ENDED}\n")),
-        "a thread other than the target's main thread started its process. {context}"
+        stdout.contains("the target closed itself with code 0\n"),
+        "3: a thread other than the target's main thread started its process, 4: the probe did not see its \
+         start, 5: it read another clock than the session's. {context}"
     );
-    assert!(stdout.contains("the target closed itself with code 0\n"), "{context}");
 }
 
 /// A program the target starts is started by its own main thread too - one started as a program does it,
@@ -288,13 +277,14 @@ fn the_target_is_started_by_its_own_main_thread() {
 #[test]
 fn the_programs_the_target_starts_are_started_by_their_own_main_threads() {
     let _session = one_real_session_at_a_time();
-    let (stdout, stderr) = session_on_probe("family");
+    let (stdout, stderr) = session_on_probe(FAMILY);
     let context = format!("stdout:\n{stdout}\nstderr:\n{stderr}");
     assert!(stdout.contains("verdict:  WORKS"), "the probe did not run under the session. {context}");
     assert!(!stdout.contains("inheritance.child"), "a child ran outside the session. {context}");
     assert!(
         stdout.contains("the target closed itself with code 0\n"),
-        "13: the child the target started was started by another thread, 23: the child it held and resumed was \
-         (a code of 10 or 20 plus the child's own answer). {context}"
+        "a code of 10 plus the answer of the child the target started as a program does, 20 plus the answer \
+         of the child it held and resumed: 3 another thread started that child, 5 it read another clock than \
+         the session's. {context}"
     );
 }

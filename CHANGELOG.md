@@ -16,8 +16,8 @@ Notable changes to Chrono Mock, newest first. The format follows
   in every session - measured with a Free Pascal application. Now the application's own main thread
   does its start-up, waits before the first line of the program, and goes on once the time library is
   in. Programs the application starts are started the same way, including one its caller asks for
-  paused and one started under a debugger. A debugger that asks for its program paused can no longer
-  resume it before the time library is in.
+  paused and one started under a debugger. A debugger that asks for its program paused can resume it
+  at any time, and the program's own code still waits until the time library is in.
 - **An application that crashes during a session is said to have crashed.** A program stopped by an
   error it did not handle ends with that error's code (an access violation ends with 0xC0000005). The
   session then said `works` and that the application "closed itself" with that number, which read as a

@@ -2080,6 +2080,10 @@ fn build_command_line(path: &str, args: &[String]) -> Vec<u16> {
 /// target inherited it before its entry point (R4-S6, `loader::QuietLoader`). On `Ok` the target waits
 /// parked for the caller to release it. On `Err` the caller ends the target, which has not reached its
 /// entry point, so the mode is not given back on that road.
+///
+/// # Safety
+/// `hproc` and `hthread` must be the handles `CreateProcessW` gave for a target of this process's bitness,
+/// created suspended and never resumed, both still open, and `dll_wide` a path ended by a zero.
 unsafe fn inject(hproc: HANDLE, hthread: HANDLE, dll_wide: &[u16]) -> Result<park::Parking, PrepareError> { unsafe {
     let quiet = loader::QuietLoader::begin(hproc);
     let parking = start_and_park(hproc, hthread)?;
@@ -2093,6 +2097,10 @@ unsafe fn inject(hproc: HANDLE, hthread: HANDLE, dll_wide: &[u16]) -> Result<par
 /// Resume the target's main thread with the park put on it, and wait until it has started the process
 /// and parked before the entry point (ADR-25). A target its loader ends during the start - a missing or
 /// refusing import - is named by the loader's status, as before the park (R4-S6).
+///
+/// # Safety
+/// As `inject`: the creator's handles to a target of this process's bitness, created suspended and never
+/// resumed.
 unsafe fn start_and_park(hproc: HANDLE, hthread: HANDLE) -> Result<park::Parking, PrepareError> { unsafe {
     let parking = park::Parking::put_on(hproc, hthread).map_err(PrepareError::Inject)?;
     // ResumeThread returns the thread's previous suspend count, or u32::MAX (-1) on failure.

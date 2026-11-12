@@ -3020,6 +3020,10 @@ impl ChildPark {
             close_in(process, parked_there);
             return None;
         };
+        // SAFETY of the queued calls: `inherit_into_child` puts a park only on a child it did not find to be
+        // of the other bitness, so the routines, this process's addresses of ntdll and kernel32, are theirs in
+        // the child too - the assumption the remote `LoadLibraryW` has always made. Each handle a call takes
+        // is the child's own and stays open there until the last two calls close it, after the wait.
         // Each routine is called with the three arguments the dispatcher passes, the ones it does not take
         // null - the module `park` of `chrono-mech` has why that holds on x86 too.
         let one = |function: *const c_void, argument: HANDLE| {
@@ -3079,6 +3083,10 @@ impl Drop for ChildPark {
 }
 
 /// A handle in `process` to the object `own` names here.
+///
+/// # Safety
+/// `own` must be an open handle of this process, and `process` a process handle with handle-duplication
+/// access.
 unsafe fn handle_in(process: HANDLE, own: HANDLE) -> Option<HANDLE> { unsafe {
     let mut there = HANDLE::default();
     DuplicateHandle(GetCurrentProcess(), own, process, &mut there, 0, false, DUPLICATE_SAME_ACCESS)
@@ -3088,6 +3096,10 @@ unsafe fn handle_in(process: HANDLE, own: HANDLE) -> Option<HANDLE> { unsafe {
 
 /// Close a handle of `process`'s own that nothing there uses. With no target process the source is closed
 /// and nothing is duplicated.
+///
+/// # Safety
+/// `process` must be a process handle with handle-duplication access, and `there` a handle of its own
+/// that nothing in it uses or will use.
 unsafe fn close_in(process: HANDLE, there: HANDLE) { unsafe {
     let _ = DuplicateHandle(process, there, HANDLE::default(), std::ptr::null_mut(), 0, false, DUPLICATE_CLOSE_SOURCE);
 }}
@@ -3292,6 +3304,10 @@ impl Drop for DebuggedChild {
 }
 
 /// Wait for a debugged child's park, load the hook, count the child, and let it go.
+///
+/// # Safety
+/// `param` must be the `DebuggedChild` that `inherit_into_debugged_child` boxed for this thread alone, which
+/// this thread then owns.
 unsafe extern "system" fn debugged_child_proc(param: *mut c_void) -> u32 { unsafe {
     let child = Box::from_raw(param as *mut DebuggedChild);
     let outcome = load_into_parked(child.process, &child.park, child.limit_ms);
@@ -4372,6 +4388,38 @@ mod tests {
         ];
         for (failure, look) in cases {
             assert!(join_refusal(&look).is_some(), "{failure}");
+        }
+    }
+
+    /// A child's park whose first call the thread refuses leaves no handle open, here or in the child: the
+    /// two events, and the two handles to them put in the child, are all closed. The child is this process,
+    /// so a handle left in it shows in its own count, and the thread a handle to this thread without the
+    /// access to queue a call on it.
+    #[test]
+    fn a_childs_park_whose_first_call_is_refused_leaves_no_handle_open() {
+        use windows::Win32::System::Threading::{GetProcessHandleCount, OpenThread, THREAD_QUERY_LIMITED_INFORMATION};
+        const TRIES: u32 = 256;
+        // SAFETY: the pseudo-handle of this process, and a handle to this thread that `put_on` cannot queue a
+        // call on, so nothing is ever queued on it. Every handle that comes back is closed here.
+        unsafe {
+            let count = || {
+                let mut n = 0u32;
+                GetProcessHandleCount(GetCurrentProcess(), &mut n).expect("this process can count its handles");
+                n
+            };
+            let thread = OpenThread(THREAD_QUERY_LIMITED_INFORMATION, false, GetCurrentThreadId())
+                .expect("a handle to this thread");
+            let before = count();
+            for _ in 0..TRIES {
+                assert!(
+                    ChildPark::put_on(GetCurrentProcess(), thread).is_none(),
+                    "a call was queued on a thread handle without the access for it"
+                );
+            }
+            // Other tests open and close handles meanwhile, so the bound is a quarter of what a leak would add.
+            let grew = count().saturating_sub(before);
+            let _ = CloseHandle(thread);
+            assert!(grew < TRIES / 2, "{grew} handles stayed open after {TRIES} refused parks");
         }
     }
 
