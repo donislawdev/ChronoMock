@@ -67,7 +67,7 @@ use chrono_ctl::{
     mark_ended, write_anchor, write_anchor_full, write_core_created, write_header, FullAnchor,
     write_core_pid, write_scale_dur, write_scale_qpc, write_tz_bias, ChannelCategory,
     Cov, Ctl, CHANNELS, CH_GTC, CH_GTC64, CTL_LAYOUT_VERSION, CTL_MAGIC, DEADLINE_CHANNELS, IDX_TIMEGETTIME,
-    MAX_COV_PIDS,
+    MAX_COV_PIDS, exit_began_in_window, qpc_span_ms, read_exit_began,
 };
 // The budget a target's start and the remote `LoadLibraryW` thread share is the one the hook keeps for a
 // child (R5-A7): an injection still stuck past it means the target's loader deadlocked, an injection
@@ -99,7 +99,7 @@ use windows::Win32::System::Threading::{
     PROCESS_CREATION_FLAGS, PROCESS_INFORMATION, PROCESS_NAME_FORMAT, PROCESS_QUERY_LIMITED_INFORMATION,
     PROCESS_SYNCHRONIZE,
 };
-use windows::Win32::System::Performance::QueryPerformanceCounter;
+use windows::Win32::System::Performance::{QueryPerformanceCounter, QueryPerformanceFrequency};
 use windows::Win32::System::WindowsProgramming::{
     QueryInterruptTime, QueryUnbiasedInterruptTime, QueryUnbiasedInterruptTimePrecise,
 };
@@ -518,6 +518,12 @@ fn alive_in_order<S>(session: &mut S, launched: fn(&S) -> bool, others: fn(&mut 
 /// Window after resume within which a target exit is read as a single-instance vanish
 /// (ADR-4). Reuses the coverage sample window, so a healthy target pays no extra wait.
 const GUARD_MS: u32 = 300;
+
+/// How long the core waits, after the guard window, for a target whose hook marked the start of its exit
+/// inside the window (ADR-4, `Cov.exit_began_qpc`). A display driver's process-exit callback held exiting
+/// processes in the kernel for up to 2.6 s (measured 2026-11-12), and the target counts as gone in the
+/// window only once it is really gone. Paid only by such a target: one that runs on was never marked.
+const EXIT_GRACE_MS: u32 = 3_000;
 
 fn real_system_filetime() -> i64 {
     // windows 0.62: GetSystemTimeAsFileTime takes no argument and returns FILETIME.
@@ -1244,6 +1250,16 @@ fn qpc_now() -> i64 {
     t
 }
 
+/// The `QueryPerformanceCounter` frequency, fixed at boot. 0 when it cannot be read, which
+/// `chrono_ctl::qpc_span_ms` turns into a span of 0 rather than a division by zero.
+fn qpc_frequency() -> i64 {
+    let mut f: i64 = 0;
+    unsafe {
+        let _ = QueryPerformanceFrequency(&mut f);
+    }
+    f
+}
+
 /// The host's CURRENT effective UTC offset, in the Win32 sense (UTC = local + bias), daylight saving
 /// included as it stands right now. Used for the one case where the session must not shift anything:
 /// a `run` with no moment asked for, where the session clock is meant to be the real one - reading the
@@ -1860,6 +1876,7 @@ pub fn prepare(spec: &SessionSpec, target: &Target, hook_dll: &Path) -> Result<P
         // install bits are already set in DllMain, so without this a target that
         // vanished right after injection would look like a false "works".
         let t0 = Instant::now();
+        let released_qpc = qpc_now();
         // A failed release would leave the target PARKED forever while WaitForSingleObject below reads it as
         // "still alive/healthy" (M-3) - a frozen process handed back as a running session that never does
         // anything. It is ended on the way out instead, loudly (the hook's mapped section dies with it).
@@ -1871,14 +1888,22 @@ pub fn prepare(spec: &SessionSpec, target: &Target, hook_dll: &Path) -> Result<P
         let (pi, start_job) = suspended.into_running();
         let start_job_note = let_go_of(start_job);
         let waited = WaitForSingleObject(pi.hProcess, GUARD_MS);
+        let window_end_qpc = qpc_now();
         let coverage = match parent_slot {
             Some(slot) => {
                 gather_coverage(cov_at(ctl, slot), installed, spec.scale_duration, spec.scale_qpc)
             }
             None => Coverage::default(),
         };
+        // A target still there at the end of the window may only be held in its exit: its hook marked the
+        // start of the exit, and a display driver's exit callback holds the process in the kernel (measured
+        // up to 2.6 s). A mark inside the window counts once the process is really gone, and the time it
+        // lived runs to the mark - the end of its own work (ADR-4, 2026-11-12).
         let vanished_lived_ms = if waited == WAIT_TIMEOUT {
-            None
+            parent_slot
+                .and_then(|slot| exit_began_in_window(read_exit_began(cov_at(ctl, slot)), released_qpc, window_end_qpc))
+                .filter(|_| WaitForSingleObject(pi.hProcess, EXIT_GRACE_MS) == WAIT_OBJECT_0)
+                .map(|mark| qpc_span_ms(released_qpc, mark, qpc_frequency()))
         } else {
             Some(t0.elapsed().as_millis() as u64)
         };

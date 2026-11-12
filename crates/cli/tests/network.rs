@@ -308,6 +308,13 @@ const ALLOWED: &[(&str, &str, &str)] = &[
          machine",
     ),
     (
+        "crates/cli/tests/held_exit.rs",
+        "spawn",
+        "runs three sessions through the built binary, each on a copy of this test binary whose header names \
+         it a windowed program, written to a scratch directory. Each copy only waits and ends, and nothing \
+         reaches past this machine",
+    ),
+    (
         "crates/cli/tests/injection_budget.rs",
         "spawn",
         "runs two sessions through the built binary on this test binary's own ignored probe: one that holds \

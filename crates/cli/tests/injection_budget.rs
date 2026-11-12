@@ -13,6 +13,10 @@
 //! lock the remote thread needs before it can load the hook. Each stretch is well inside the budget, and
 //! the two together run past it: with a budget per wait the injection succeeds, with one budget it does
 //! not.
+//!
+//! The load a parent stops waiting for still ends in the child a moment later. A slow child therefore
+//! waits until that load has come and gone and then says which clock it reads: the real one, because its
+//! hook found the gate its parent abandoned and refused (`chrono_ctl::pass_load_gate`).
 
 use std::ffi::c_void;
 use std::process::Command;
@@ -24,7 +28,7 @@ use std::time::{Duration, Instant};
 const PROBE_ON: &str = "CHRONO_INJECTION_BUDGET_PROBE";
 
 /// The modes. `slow` starts slowly and lets the hook load slowly. `family` starts a copy of itself in
-/// `slow`, as a program does, and ends with how long that call took, in tenths of a second.
+/// `slow`, as a program does, and ends with how long that call took and what the child answered.
 const SLOW: &str = "slow";
 const FAMILY: &str = "family";
 
@@ -47,6 +51,19 @@ const CALL_FLOOR_TENTHS: u32 = START_MS / 100;
 
 /// What `family` ends with when the child could not be started at all, outside both bounds.
 const NOT_STARTED: i32 = 9_999;
+
+/// How long a `slow` child that runs waits before it reads the clock: well past the end of a load its
+/// parent stopped waiting for, which a hook that joined late would have hooked by then.
+const SETTLE_MS: u64 = 4_000;
+
+/// The session's moment, 2077-01-01T00:00:00Z, in seconds since 1970. A program on the real clock reads a
+/// date decades earlier.
+const MOMENT_SECS: u64 = 3_376_684_800;
+
+/// What a `slow` child ends with: it read the real clock, as its parent's report says - or the session's,
+/// because a load its parent stopped waiting for hooked it halfway through its run.
+const CHILD_ON_THE_REAL_CLOCK: u32 = 0;
+const CHILD_HOOKED_LATE: u32 = 5;
 
 /// The longest a session on a slow target may take to give up on it: the budget, and a second and a half
 /// for the core to start and report. With a budget per wait the target was let in after twelve.
@@ -105,8 +122,9 @@ unsafe extern "system" fn on_tls_event(_module: *mut c_void, reason: u32, _reser
 #[unsafe(link_section = ".CRT$XLM")]
 static TLS_EVENT: unsafe extern "system" fn(*mut c_void, u32, *mut c_void) = on_tls_event;
 
-/// In `family`, starts a copy of itself in `slow` and ends with how long the call that started it took, in
-/// tenths of a second. In `slow` it ends at once - its start and its load are what is measured.
+/// In `family`, starts a copy of itself in `slow`, waits for it, and ends with how long the call that
+/// started it took, in tenths of a second, times ten, plus the child's answer. In `slow` it waits for a
+/// late load to have come and gone, and ends with which clock it reads.
 #[test]
 #[ignore = "the target of the session tests in this file, not a test on its own"]
 fn probe_starts_slowly_or_starts_a_slow_child() {
@@ -114,7 +132,12 @@ fn probe_starts_slowly_or_starts_a_slow_child() {
         return;
     };
     if mode != FAMILY {
-        std::process::exit(0);
+        std::thread::sleep(Duration::from_millis(SETTLE_MS));
+        let on_the_sessions_clock = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .is_ok_and(|since| since.as_secs() >= MOMENT_SECS);
+        let answer = if on_the_sessions_clock { CHILD_HOOKED_LATE } else { CHILD_ON_THE_REAL_CLOCK };
+        std::process::exit(answer as i32);
     }
     let me = std::env::current_exe().expect("the probe knows its own path");
     let began = Instant::now();
@@ -126,10 +149,12 @@ fn probe_starts_slowly_or_starts_a_slow_child() {
         .stderr(std::process::Stdio::null())
         .spawn();
     let took = began.elapsed();
-    if child.is_err() {
+    let Ok(mut child) = child else {
         std::process::exit(NOT_STARTED);
-    }
-    std::process::exit(i32::try_from(took.as_millis() / 100).unwrap_or(i32::MAX));
+    };
+    let answer = child.wait().ok().and_then(|status| status.code()).map_or(9, |code| code.clamp(0, 9));
+    let tenths = i32::try_from(took.as_millis() / 100).unwrap_or(i32::MAX / 20);
+    std::process::exit(tenths.saturating_mul(10).saturating_add(answer));
 }
 
 /// Held by every test here that starts the core. The core allows one session at a time, and the tests of
@@ -194,22 +219,30 @@ fn the_targets_start_and_the_hooks_load_share_one_budget() {
 }
 
 /// A child the target starts gets the same one budget, so the application's own call that starts it is
-/// held no longer than that, and a child the budget ran out on is said to run on the real clock.
+/// held no longer than that, and a child the budget ran out on is said to run on the real clock - and
+/// does: the load its parent stopped waiting for ends a moment later, and its hook refuses rather than
+/// hook the program halfway through its run.
 #[test]
 fn a_childs_start_and_the_hooks_load_share_one_budget() {
     let _session = one_real_session_at_a_time();
     let (stdout, stderr, code, took) = session_on_probe(FAMILY);
     let context = format!("took {took:?}, exit {code:?}\nstdout:\n{stdout}\nstderr:\n{stderr}");
-    let call_tenths: u32 = stdout
+    let ended_with: u32 = stdout
         .lines()
         .find_map(|line| line.split_once("the target closed itself with code ").map(|(_, code)| code))
         .and_then(|code| code.trim().parse().ok())
         .unwrap_or_else(|| panic!("the target did not end with how long its call took. {context}"));
+    assert_ne!(ended_with, NOT_STARTED as u32, "the target could not start its child. {context}");
+    let (call_tenths, child) = (ended_with / 10, ended_with % 10);
+    assert_eq!(
+        child, CHILD_ON_THE_REAL_CLOCK,
+        "the child read the session's clock ({CHILD_HOOKED_LATE}): the load its parent stopped waiting for \
+         hooked it halfway through its run. {context}"
+    );
     assert!(
         (CALL_FLOOR_TENTHS..CALL_LIMIT_TENTHS).contains(&call_tenths),
         "starting the slow child held the application for {call_tenths} tenths of a second - over the limit \
-         the load had a budget of its own, under the floor the child was not slow, {NOT_STARTED} it could not \
-         be started. {context}"
+         the load had a budget of its own, under the floor the child was not slow. {context}"
     );
     assert!(
         stdout.contains("inheritance.child"),

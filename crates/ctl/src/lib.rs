@@ -42,7 +42,7 @@ use std::ptr::{addr_of, addr_of_mut, read_volatile, write_volatile};
 pub mod inject;
 #[cfg(test)]
 mod search;
-use std::sync::atomic::{fence, AtomicU32, AtomicUsize, Ordering};
+use std::sync::atomic::{fence, AtomicI64, AtomicU32, AtomicUsize, Ordering};
 
 /// Named shared section for a session's control memory (per interactive session).
 ///
@@ -755,7 +755,11 @@ pub const CTL_MAGIC: u64 = 0x4348_524F_4E4F_4354; // "CHRONOCT"
 /// four bytes an old hook leaves at zero a meaning a new core reads.
 ///
 /// 14: `Cov` gained `calls_without_storage` (2026-10-28) after every other field, which widens every slot.
-pub const CTL_LAYOUT_VERSION: u32 = 14;
+///
+/// 15: `Cov` gained `exit_began_qpc` (ADR-4, 2026-11-12) after every other field, which widens every
+/// slot, and `Ctl` gained `pending_loads` after `covs` (ADR-25), which makes the block longer. An old hook
+/// would leave the mark unwritten and never pass the gate a new parent opens for it.
+pub const CTL_LAYOUT_VERSION: u32 = 15;
 
 /// How many uncovered children one process's `Cov` can name. Past this the counter still grows, so
 /// the audit says "and N more" rather than losing the number. Sized for what a Chromium browser
@@ -852,6 +856,41 @@ pub struct Ctl {
     /// Per-process coverage, parallel to `pids`: slot `i` belongs to the process that published
     /// `pids[i]`. Never summed across slots - that is the whole point of the split (rule 4).
     pub covs: [Cov; MAX_COV_PIDS],
+    /// The loads of the hook a parent has started in its children and not yet seen end (ADR-25), each
+    /// a gate the child's hook has to pass before it installs anything. A parent that stops waiting for
+    /// a load lets the child's program run, and counts the child as running on the real clock - so a load
+    /// that finishes later must not hook the program halfway through its run. The parent and the child's
+    /// hook each try to move the entry on from pending, atomically, and only one of them can: to
+    /// "joined", and the parent waits for the install to finish, or to "abandoned", and the hook refuses
+    /// ([`open_load_gate`], [`pass_load_gate`], [`abandon_load_gate`]).
+    pub pending_loads: [PendingLoad; PENDING_LOADS_MAX],
+}
+
+/// How many loads of the hook into children may be pending at once in one session. A load is pending
+/// for the tens of milliseconds it takes, and an abandoned one until its child's hook comes to refuse, so
+/// this is far past what an application starts at once. With every entry taken, a parent loads without a
+/// gate and says so in its log: a load it stops waiting for can then still join late, as one did before
+/// the gate existed.
+pub const PENDING_LOADS_MAX: usize = 64;
+
+/// The states of a pending load. Free and claimed belong to the parent alone, the rest are what the
+/// child's hook reads.
+const LOAD_FREE: u32 = 0;
+const LOAD_CLAIMED: u32 = 1;
+const LOAD_PENDING: u32 = 2;
+const LOAD_JOINED: u32 = 3;
+const LOAD_ABANDONED: u32 = 4;
+
+/// One load of the hook into a child, named by the child's pid and creation time: the pid alone comes
+/// back with another process once the child is gone. `#[repr(C)]`, 16 bytes, so the table keeps the
+/// 8-byte alignment of the block.
+#[repr(C)]
+pub struct PendingLoad {
+    /// `LOAD_*`, moved on only with an atomic compare-and-swap.
+    pub state: u32,
+    pub pid: u32,
+    /// The FILETIME `GetProcessTimes` reports for the child.
+    pub created: u64,
 }
 
 /// One process's coverage, living in the `Ctl` slot that process reserved. `#[repr(C)]` - written
@@ -972,6 +1011,15 @@ pub struct Cov {
     /// Counted like `timers_at_floor`, and appended after every other field, so no offset inside a slot
     /// moves.
     pub calls_without_storage: u64,
+    /// The real `QueryPerformanceCounter` value at which this process began to exit, written by its hook
+    /// when the loader tells it the process is ending, 0 while it runs (ADR-4, 2026-11-12). The core
+    /// reads it once, for the process it launched, when that process was not gone by the end of the guard
+    /// window: a display driver's process-exit callback can hold an exiting process in the kernel for
+    /// seconds (measured up to 2.6 s), and a program that ended its own work inside the window then looked
+    /// like one that ran on. A mark inside the window, followed by the real end, is an exit inside it
+    /// ([`exit_began_in_window`]). The hook writes it with one atomic store and nothing else, because it
+    /// runs under the loader lock. Appended after every other field, so no offset inside a slot moves.
+    pub exit_began_qpc: i64,
 }
 
 impl Cov {
@@ -991,6 +1039,7 @@ impl Cov {
         timers_at_floor: 0,
         absolute_dues: 0,
         calls_without_storage: 0,
+        exit_began_qpc: 0,
     };
 }
 
@@ -2022,6 +2071,157 @@ pub unsafe fn find_pid_slot(p: *const Ctl, pid: u32, created: Option<u64>) -> Op
     (0..MAX_COV_PIDS).find(|&i| read_pid(p, i) == pid && same_creation(read_created(cov_at(p, i)), created))
 }}
 
+/// Mark the moment this process began to exit (hook side, its own `Cov`), with the real
+/// `QueryPerformanceCounter` value. One atomic store and nothing else: the hook calls it under the loader
+/// lock, as the process ends.
+///
+/// # Safety
+/// `p` must point to a live, correctly aligned `Cov`.
+pub unsafe fn mark_exit_began(p: *mut Cov, qpc: i64) { unsafe {
+    let field = &*(addr_of_mut!((*p).exit_began_qpc) as *const AtomicI64);
+    field.store(qpc, Ordering::Release);
+}}
+
+/// When the process that owns this slot began to exit, as its hook marked it, or 0 when it has not
+/// (mechanism side).
+///
+/// # Safety
+/// `p` must point to a live, correctly aligned `Cov`.
+pub unsafe fn read_exit_began(p: *const Cov) -> i64 { unsafe {
+    let field = &*(addr_of!((*p).exit_began_qpc) as *const AtomicI64);
+    field.load(Ordering::Acquire)
+}}
+
+/// The hook's mark of a process's exit when it falls inside the guard window, from the moment the core
+/// released the process (`released_qpc`) to the moment its wait for the window ended (`window_end_qpc`),
+/// or `None` (ADR-4). The mark is written by a process of the session into a block every such process can
+/// write, so it is read as untrusted: only a value inside the window counts, and a mark that counts still
+/// needs the process to really end within the grace the core gives it - a mark alone is never an exit.
+pub fn exit_began_in_window(mark: i64, released_qpc: i64, window_end_qpc: i64) -> Option<i64> {
+    (mark > 0 && released_qpc <= mark && mark <= window_end_qpc).then_some(mark)
+}
+
+/// Whole milliseconds from one `QueryPerformanceCounter` value to a later one, at `frequency` ticks a
+/// second. 0 for a span that runs backwards or a frequency that is not positive, never a panic.
+pub fn qpc_span_ms(from: i64, to: i64, frequency: i64) -> u64 {
+    if frequency <= 0 || to <= from {
+        return 0;
+    }
+    let ms = (i128::from(to) - i128::from(from)) * 1000 / i128::from(frequency);
+    u64::try_from(ms).unwrap_or(u64::MAX)
+}
+
+/// Pointer to one entry of the pending-loads table. `i` must be < `PENDING_LOADS_MAX`.
+///
+/// # Safety
+/// `p` must point to a live, correctly aligned `Ctl`, and `i < PENDING_LOADS_MAX`.
+unsafe fn pending_load(p: *const Ctl, i: usize) -> *mut PendingLoad { unsafe {
+    (addr_of!((*p).pending_loads) as *mut PendingLoad).add(i)
+}}
+
+/// The state word of one pending load, as the atomic it is used as.
+///
+/// # Safety
+/// `entry` must point to a live, correctly aligned `PendingLoad`.
+unsafe fn load_state<'a>(entry: *mut PendingLoad) -> &'a AtomicU32 { unsafe {
+    &*(addr_of_mut!((*entry).state) as *const AtomicU32)
+}}
+
+/// Open the gate for one load of the hook into the child `pid` created at `created` (parent side), before
+/// the remote thread that loads it starts. The index of the entry, or `None` when the child cannot be
+/// named (a pid or a time of 0) or every entry is taken - the load then goes ahead without a gate.
+///
+/// # Safety
+/// `p` must point to a live, correctly aligned `Ctl`.
+pub unsafe fn open_load_gate(p: *mut Ctl, pid: u32, created: u64) -> Option<usize> { unsafe {
+    if pid == 0 || created == 0 {
+        return None;
+    }
+    for i in 0..PENDING_LOADS_MAX {
+        let entry = pending_load(p, i);
+        let state = load_state(entry);
+        if state.compare_exchange(LOAD_FREE, LOAD_CLAIMED, Ordering::SeqCst, Ordering::SeqCst).is_ok() {
+            write_volatile(addr_of_mut!((*entry).pid), pid);
+            write_volatile(addr_of_mut!((*entry).created), created);
+            // Pairs with the acquire in `pass_load_gate`: a hook that sees the entry pending sees its name.
+            state.store(LOAD_PENDING, Ordering::Release);
+            return Some(i);
+        }
+    }
+    None
+}}
+
+/// What a child's hook found at its gate.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LoadGate {
+    /// Its parent was waiting for this load, and still is: install.
+    Joined,
+    /// Its parent stopped waiting and let the program run on the real clock: refuse, before anything.
+    Refused,
+    /// No gate names this process - the core's own target, or a parent that found the table full.
+    NotPending,
+}
+
+/// Pass the gate a parent opened for this process's hook, if one names it (hook side, before anything is
+/// installed). A pending entry is moved to joined, which the parent can no longer abandon. An abandoned
+/// one is a refusal, and is freed here: the one load it was for has now come and been refused.
+///
+/// # Safety
+/// `p` must point to a live, correctly aligned `Ctl`.
+pub unsafe fn pass_load_gate(p: *mut Ctl, pid: u32, created: u64) -> LoadGate { unsafe {
+    if pid == 0 || created == 0 {
+        return LoadGate::NotPending;
+    }
+    for i in 0..PENDING_LOADS_MAX {
+        let entry = pending_load(p, i);
+        let state = load_state(entry);
+        let seen = state.load(Ordering::Acquire);
+        if !matches!(seen, LOAD_PENDING | LOAD_ABANDONED)
+            || read_volatile(addr_of!((*entry).pid)) != pid
+            || read_volatile(addr_of!((*entry).created)) != created
+        {
+            continue;
+        }
+        if seen == LOAD_PENDING {
+            match state.compare_exchange(LOAD_PENDING, LOAD_JOINED, Ordering::SeqCst, Ordering::SeqCst) {
+                Ok(_) => return LoadGate::Joined,
+                // The parent abandoned it between the two looks.
+                Err(LOAD_ABANDONED) => {}
+                Err(_) => continue,
+            }
+        }
+        let _ = state.compare_exchange(LOAD_ABANDONED, LOAD_FREE, Ordering::SeqCst, Ordering::SeqCst);
+        return LoadGate::Refused;
+    }
+    LoadGate::NotPending
+}}
+
+/// Stop waiting for the load the gate `i` stands for (parent side, the wait for the remote thread ran
+/// out). True when the gate is now abandoned and the child's hook will refuse, false when the hook got
+/// there first and is installing - the parent then waits for the install before it lets the child go.
+///
+/// # Safety
+/// `p` must point to a live, correctly aligned `Ctl`, and `i` an index `open_load_gate` returned.
+pub unsafe fn abandon_load_gate(p: *mut Ctl, i: usize) -> bool { unsafe {
+    if i >= PENDING_LOADS_MAX {
+        return false;
+    }
+    load_state(pending_load(p, i))
+        .compare_exchange(LOAD_PENDING, LOAD_ABANDONED, Ordering::SeqCst, Ordering::SeqCst)
+        .is_ok()
+}}
+
+/// Give the gate `i` back once the load it stands for has ended, however it ended (parent side). Never
+/// called for a gate the parent abandoned: that one waits for the child's hook.
+///
+/// # Safety
+/// `p` must point to a live, correctly aligned `Ctl`, and `i` an index `open_load_gate` returned.
+pub unsafe fn close_load_gate(p: *mut Ctl, i: usize) { unsafe {
+    if i < PENDING_LOADS_MAX {
+        load_state(pending_load(p, i)).store(LOAD_FREE, Ordering::Release);
+    }
+}}
+
 /// Read the installed-channels bitmask (mechanism side, per-process `Cov`).
 ///
 /// # Safety
@@ -2580,13 +2780,102 @@ mod tests {
         assert_eq!(offset_of!(Cov, failed_channels) % 8, 0, "Cov.failed_channels is not 8-byte aligned");
         assert_eq!(offset_of!(Cov, timers_at_floor) % 8, 0, "Cov.timers_at_floor is not 8-byte aligned");
         assert_eq!(offset_of!(Cov, calls_without_storage) % 8, 0, "Cov.calls_without_storage is not 8-byte aligned");
+        assert_eq!(offset_of!(Cov, exit_began_qpc) % 8, 0, "Cov.exit_began_qpc is not 8-byte aligned");
         assert_eq!(size_of::<Cov>() % 8, 0, "a slot would misalign the next one");
+        assert_eq!(size_of::<PendingLoad>(), 16, "a pending load is two words and a time");
+        assert_eq!(
+            offset_of!(Ctl, pending_loads),
+            offset_of!(Ctl, covs) + size_of::<[Cov; MAX_COV_PIDS]>(),
+            "padding the layout does not name sits between covs and pending_loads"
+        );
         assert_eq!(
             offset_of!(Ctl, covs),
             offset_of!(Ctl, pids) + size_of::<[u32; MAX_COV_PIDS]>(),
             "padding the layout does not name sits between pids and covs"
         );
         assert_eq!(offset_of!(Ctl, ended) + 4, offset_of!(Ctl, _pad), "ended moved out of the header's tail");
+    }
+
+    /// A mark counts only inside the window, ends included, and a slot that was never marked never
+    /// counts - whatever the window.
+    #[test]
+    fn an_exit_mark_counts_only_inside_the_guard_window() {
+        assert_eq!(exit_began_in_window(150, 100, 200), Some(150));
+        assert_eq!(exit_began_in_window(100, 100, 200), Some(100), "marked as the process was let go");
+        assert_eq!(exit_began_in_window(200, 100, 200), Some(200), "marked as the window ended");
+        assert_eq!(exit_began_in_window(99, 100, 200), None, "before the process was let go");
+        assert_eq!(exit_began_in_window(201, 100, 200), None, "after the window - a process that ran on");
+        assert_eq!(exit_began_in_window(0, 0, 200), None, "never marked");
+        assert_eq!(exit_began_in_window(-5, -10, 200), None, "no real counter value is negative");
+        let mut cov = zeroed_cov();
+        unsafe {
+            assert_eq!(read_exit_began(&cov), 0, "a fresh slot reads as not exiting");
+            mark_exit_began(&mut cov, 0x1234_5678_9ABC);
+            assert_eq!(read_exit_began(&cov), 0x1234_5678_9ABC);
+        }
+    }
+
+    /// Milliseconds between two counter values, and 0 rather than a panic or a wrap for a span that runs
+    /// backwards, a frequency of 0, or values at the ends of the type.
+    #[test]
+    fn a_counter_span_is_whole_milliseconds_and_never_wraps() {
+        assert_eq!(qpc_span_ms(1_000, 11_000, 10_000_000), 1, "10 000 ticks at 10 MHz");
+        assert_eq!(qpc_span_ms(0, 2_999_999, 10_000_000), 299, "rounded down");
+        assert_eq!(qpc_span_ms(5, 5, 10_000_000), 0);
+        assert_eq!(qpc_span_ms(10, 5, 10_000_000), 0, "backwards");
+        assert_eq!(qpc_span_ms(0, 10, 0), 0, "no frequency");
+        assert_eq!(qpc_span_ms(0, 10, -1), 0, "a negative frequency");
+        assert_eq!(qpc_span_ms(i64::MIN, i64::MAX, 1), u64::MAX, "past u64 is held at its top");
+    }
+
+    /// The gate's protocol, one step at a time: a pending load joins once, an abandoned one is refused
+    /// once and freed by the refusal, the parent cannot abandon a load that joined, and a closed gate
+    /// names nobody.
+    #[test]
+    fn a_load_joins_or_is_abandoned_and_never_both() {
+        let mut ctl = zeroed_ctl();
+        let p = &mut *ctl as *mut Ctl;
+        unsafe {
+            assert_eq!(pass_load_gate(p, 7, 70), LoadGate::NotPending, "no gate opened yet");
+            let joined = open_load_gate(p, 7, 70).expect("a gate for the first child");
+            assert_eq!(pass_load_gate(p, 7, 71), LoadGate::NotPending, "another process under the same pid");
+            assert_eq!(pass_load_gate(p, 8, 70), LoadGate::NotPending, "another pid");
+            assert_eq!(pass_load_gate(p, 7, 70), LoadGate::Joined);
+            assert!(!abandon_load_gate(p, joined), "a load whose hook joined cannot be abandoned");
+            close_load_gate(p, joined);
+            assert_eq!(pass_load_gate(p, 7, 70), LoadGate::NotPending, "a closed gate names nobody");
+
+            let late = open_load_gate(p, 9, 90).expect("a gate for the second child");
+            assert!(abandon_load_gate(p, late), "a pending load can be abandoned");
+            assert!(!abandon_load_gate(p, late), "and only once");
+            assert_eq!(pass_load_gate(p, 9, 90), LoadGate::Refused, "the late hook refuses");
+            assert_eq!(pass_load_gate(p, 9, 90), LoadGate::NotPending, "the refusal freed the entry");
+
+            assert_eq!(open_load_gate(p, 0, 90), None, "a child without a pid is not named");
+            assert_eq!(open_load_gate(p, 9, 0), None, "nor one without a creation time");
+            assert_eq!(pass_load_gate(p, 0, 0), LoadGate::NotPending);
+            assert!(!abandon_load_gate(p, PENDING_LOADS_MAX), "an index past the table is no gate");
+        }
+    }
+
+    /// A full table opens no gate - the load then goes ahead without one - and an entry closed or
+    /// refused is taken again.
+    #[test]
+    fn a_full_table_opens_no_gate_until_an_entry_comes_back() {
+        let mut ctl = zeroed_ctl();
+        let p = &mut *ctl as *mut Ctl;
+        unsafe {
+            let gates: Vec<usize> = (1..=PENDING_LOADS_MAX as u32)
+                .map(|pid| open_load_gate(p, pid, u64::from(pid) * 10).expect("a free entry"))
+                .collect();
+            assert_eq!(open_load_gate(p, 9_999, 1), None, "every entry is taken");
+            close_load_gate(p, gates[3]);
+            assert_eq!(open_load_gate(p, 9_999, 1), Some(gates[3]), "a closed entry is taken again");
+            assert!(abandon_load_gate(p, gates[5]));
+            assert_eq!(open_load_gate(p, 9_998, 1), None, "an abandoned entry waits for its hook");
+            assert_eq!(pass_load_gate(p, 6, 60), LoadGate::Refused);
+            assert_eq!(open_load_gate(p, 9_998, 1), Some(gates[5]), "and is taken again once refused");
+        }
     }
 
     /// The identity fields round-trip, and the end mark is one-way until a reclaim zeroes the block.
