@@ -3139,7 +3139,7 @@ unsafe fn load_into_parked(process: HANDLE, park: &ChildPark, began: Option<i64>
         None => match budget_left_ms(spent()) {
             Some(limit_ms) => inject_self(process, limit_ms),
             None => {
-                log("[chrono_hook] the child's start took all the time its injection is given - not injected, it runs uncovered");
+                log("[chrono_hook] the child's start used all the time allowed for starting it and loading the hook - not injected, it runs uncovered");
                 remote_load::Outcome::TimedOut
             }
         },

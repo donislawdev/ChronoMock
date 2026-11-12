@@ -185,7 +185,7 @@ fn the_targets_start_and_the_hooks_load_share_one_budget() {
         "the slow target was let in - the load had a budget of its own. {context}"
     );
     assert!(
-        stderr.contains("LoadLibraryW did not return within the"),
+        stderr.contains("the hook did not load within the"),
         "the injection did not end on the load's share of the budget - the start ran out, or something else \
          failed. {context}"
     );

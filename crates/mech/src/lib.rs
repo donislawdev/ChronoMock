@@ -2094,8 +2094,8 @@ unsafe fn inject(hproc: HANDLE, hthread: HANDLE, dll_wide: &[u16]) -> Result<par
     let spent = u64::try_from(began.elapsed().as_millis()).unwrap_or(u64::MAX);
     let Some(limit_ms) = budget_left_ms(spent) else {
         return Err(PrepareError::Inject(format!(
-            "the target's start took the whole {INJECT_TIMEOUT_MS} ms its injection is given, and left no time to \
-             load the hook - a library's start-up code is slow, or waiting"
+            "the target's start used all of the {INJECT_TIMEOUT_MS} ms allowed for starting it and loading the hook, \
+             so the hook was not loaded - a library's start-up code is slow, or waiting"
         )));
     };
     load_hook(hproc, dll_wide, limit_ms)?;
@@ -2128,8 +2128,8 @@ unsafe fn start_and_park(hproc: HANDLE, hthread: HANDLE) -> Result<park::Parking
             "the target ended while Windows was starting it, and its exit code could not be read".into(),
         )),
         park::Park::TimedOut => Err(PrepareError::Inject(format!(
-            "the target's start did not finish within {INJECT_TIMEOUT_MS} ms - a library's start-up code is \
-             waiting, or a loader lock"
+            "the target's start did not finish within the {INJECT_TIMEOUT_MS} ms allowed for starting it and \
+             loading the hook - a library's start-up code is waiting, or a loader lock"
         ))),
         park::Park::WaitFailed => Err(PrepareError::Inject("waiting for the target's start failed".into())),
     }
@@ -2218,9 +2218,9 @@ unsafe fn load_hook(hproc: HANDLE, dll_wide: &[u16], limit_ms: u32) -> Result<()
             "the target ended while Windows was loading it, and its exit code could not be read".into(),
         )),
         loader::Outcome::TimedOut => Err(PrepareError::Inject(format!(
-            "LoadLibraryW did not return within the {limit_ms} ms the target's start left of the \
-             {INJECT_TIMEOUT_MS} ms its injection is given - the target's loading is stuck (a library's \
-             start-up code waiting, or a loader lock)"
+            "the hook did not load within the {limit_ms} ms left of the {INJECT_TIMEOUT_MS} ms allowed for \
+             starting the target and loading the hook - the target's loading is stuck (a library's start-up \
+             code waiting, or a loader lock)"
         ))),
         loader::Outcome::WaitFailed => Err(PrepareError::Inject(win32_detail(
             "waiting for the remote LoadLibraryW thread",
