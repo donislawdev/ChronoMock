@@ -1464,29 +1464,40 @@ unsafe extern "system" fn h_gdtzi(lp: *mut DYNAMIC_TIME_ZONE_INFORMATION) -> u32
     O_GDTZI.get().map(|o| o(lp)).unwrap_or(TIME_ZONE_ID_INVALID)
 }}
 
-/// Whether a dynamic zone the caller passed is the one `h_gdtzi` handed out, by its key name. Compared in
-/// place, without building a string, because a detour does not allocate.
+/// Whether a dynamic zone the caller passed is the one `h_gdtzi` handed out. The session's own key name
+/// says so by itself, because no registry has it. A borrowed key is the real zone's too, which a program
+/// can name by that key alone or as `EnumDynamicTimeZoneInformation` lists it, and that is a question about
+/// the real zone: the zone the hook handed out carries the session's own standard name as well, which no
+/// real zone has (ADR-26).
 ///
 /// # Safety
 /// `dtzi` must point to a readable `DYNAMIC_TIME_ZONE_INFORMATION`, aligned or not.
 unsafe fn names_session_zone(dtzi: *const DYNAMIC_TIME_ZONE_INFORMATION) -> bool { unsafe {
-    let key = core::ptr::read_unaligned(dtzi).TimeZoneKeyName;
-    let mut name = session_zone_key().encode_utf16();
-    key.iter().all(|&unit| match name.next() {
-        Some(expected) => unit == expected,
+    let zone = core::ptr::read_unaligned(dtzi);
+    let key = session_zone_key();
+    wide_field_holds(&zone.TimeZoneKeyName, key)
+        && (key == SESSION_ZONE_NAME || wide_field_holds(&zone.StandardName, SESSION_ZONE_NAME))
+}}
+
+/// Whether a NUL-terminated UTF-16 field holds exactly `text`. Compared in place, without building a
+/// string, because a detour does not allocate.
+fn wide_field_holds(field: &[u16], text: &str) -> bool {
+    let mut expected = text.encode_utf16();
+    field.iter().all(|&unit| match expected.next() {
+        Some(wanted) => unit == wanted,
         None => unit == 0,
     })
-}}
+}
 
 // GetTimeZoneInformationForYear gives the rules a zone follows in one year: of the zone the caller names,
 // or of the current one when it names none. The Rust `chrono` crate reads the current zone this way and
 // no other, so its local time showed this machine's zone under every session (measured 2026-10-27: a
 // session at +05:30 printed +01:00). The current zone is the session's, the answer h_gtzi gives, in every
-// year, because the session zone has no daylight saving time. A zone named like the session's is the one
-// h_gdtzi handed out, so it gets the same answer: under the session's own name, which no registry knows
-// and the original would fail on, and under a borrowed one too, whose real zone the original would answer
-// for with that zone's rules of the year, which the session zone does not have (ADR-26). Any other named
-// zone is a question about a real zone, and goes through untouched.
+// year, because the session zone has no daylight saving time. The zone h_gdtzi handed out gets the same
+// answer: under the session's own name, which no registry knows and the original would fail on, and under
+// a borrowed one with the session's standard name, whose real zone the original would answer for with
+// that zone's rules of the year, which the session zone does not have (ADR-26). Any other named zone, the
+// real zone of a borrowed name among them, is a question about a real zone, and goes through untouched.
 unsafe extern "system" fn h_gtzify(
     year: u16,
     dtzi: *const DYNAMIC_TIME_ZONE_INFORMATION,

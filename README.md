@@ -345,8 +345,8 @@ cover something is worse than one that says what it cannot do.
   the zone it names and before that date would show the offset the zone had then. At an offset no such
   zone has (-03:30, -13:00 and others) or before that date, programs built on ICU show the zone without
   a name or show UTC, and the report says so. It also says when a jump takes the clock to before that
-  date, where those programs can show the real zone's offset of the time. A target that insists on a
-  registry name finds one only at such an offset
+  date, where those programs can show the real zone's offset of the time. An application that insists
+  on a registry name finds one only at such an offset
 - **A `TZ` variable in your environment is not passed to the application.** The programs that read it
   (the C runtime, and so Python and MSYS2, and Node.js) take their time zone from it before the one
   Windows gives, so it would replace the session zone: measured under a session at +05:30 with `TZ` set
