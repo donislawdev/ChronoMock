@@ -52,11 +52,12 @@ impl Drop for ControlView {
     }
 }
 
-/// A target created suspended, which has not run an instruction, with the job it was started in.
+/// A target created suspended, whose program has not run - its main thread is suspended, or parked
+/// before the entry point once it has started the process (ADR-25) - with the job it was started in.
 ///
-/// Dropped before it runs, it is ended: resuming it would run an application that reads the real
-/// clock as a session that substituted nothing (H-2), and leaving it suspended would hold its
-/// executable and the hook library open for good. Ending it costs the tester nothing, since it never
+/// Dropped before it runs, it is ended: letting it go on would run an application that reads the real
+/// clock as a session that substituted nothing (H-2), and leaving it held would keep its executable
+/// and the hook library open for good. Ending it costs the tester nothing, since its program never
 /// ran.
 pub(crate) struct SuspendedTarget {
     pi: PROCESS_INFORMATION,

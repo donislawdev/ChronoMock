@@ -1,18 +1,18 @@
 //! What Windows's loader did to the target while the hook was being injected (R4-S6, R4-N10).
 //!
-//! The target is created suspended, so the first thread that runs in it is the remote thread that loads
-//! the hook, and the first thread of a process does that process's own loading before its start routine:
-//! the static imports and their start-up code, then `LoadLibraryW` of the hook. A target whose static
-//! import is missing, built for the other bitness, lacking a function or refusing to initialise ends right
-//! there, with the loader's status as its exit code. That used to read as a successful injection followed
-//! by a target that vanished (exit 12, "suspected single-instance app"), or, when Windows showed its error
-//! window and waited for an answer, as a loader lock ten seconds later. Both were measured on x64 and x86
-//! (`tools/probes/r4-9`), and neither was true.
+//! The target is created suspended, and its own main thread does the process's loading before the hook
+//! comes in (ADR-25, `crate::park`): the static imports and their start-up code, then, with the thread
+//! parked before the entry point, `LoadLibraryW` of the hook on a remote thread. A target whose static
+//! import is missing, built for the other bitness, lacking a function or refusing to initialise ends during
+//! that start, with the loader's status as its exit code. That used to read as a successful injection
+//! followed by a target that vanished (exit 12, "suspected single-instance app"), or, when Windows showed
+//! its error window and waited for an answer, as a loader lock ten seconds later. Both were measured on x64
+//! and x86 (`tools/probes/r4-9`, when the remote thread did the loading), and neither was true.
 //!
-//! Two things fix it. The end of the wait is read in the order that tells the truth (`outcome`, shared
-//! with the hook in `chrono_ctl::inject` since R5-A7): the target's own exit code first, then the
-//! thread's. And Windows's error window is switched off for the target while it loads and switched back
-//! before its entry point ([`QuietLoader`]), so a failed load ends in milliseconds with its status
+//! Two things fix it. The end of each wait is read in the order that tells the truth (`outcome` and
+//! `park_outcome`, shared with the hook in `chrono_ctl::inject` since R5-A7): the target's own exit code
+//! first. And Windows's error window is switched off for the target while it starts and loads and switched
+//! back before its entry point ([`QuietLoader`]), so a failed start ends in milliseconds with its status
 //! instead of waiting on a window nobody may be looking at, and no window outlives the start that raised
 //! it.
 

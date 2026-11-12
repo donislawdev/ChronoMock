@@ -24,6 +24,7 @@ mod host_zone;
 mod job;
 mod listeners;
 mod loader;
+mod park;
 mod policy;
 mod policy_value;
 mod process_facts;
@@ -1820,8 +1821,8 @@ pub fn prepare(spec: &SessionSpec, target: &Target, hook_dll: &Path) -> Result<P
         write_core_created(ctl, process_created(GetCurrentProcess()).unwrap_or(0));
         write_core_pid(ctl, GetCurrentProcessId());
 
-        // 2. Launch SUSPENDED so the hook lands before the entry point (the loading the remote thread does
-        // for the target still comes first, with its imports' start-up code, R4-N20), and in a job that ends the
+        // 2. Launch SUSPENDED so the hook lands before the entry point (the target's own main thread still
+        // starts the process first, with its imports' start-up code, R4-N20, ADR-25), and in a job that ends the
         // target with this core until it runs (R4-S1). A core that died while the target was still
         // suspended - killed by the window after its patience ran out, Ctrl+C, a crash - left it
         // suspended for good, holding its executable and the hook library open. Its children stay out
@@ -1837,13 +1838,14 @@ pub fn prepare(spec: &SessionSpec, target: &Target, hook_dll: &Path) -> Result<P
             return Err(PrepareError::BitnessMismatch(target_bits, core_bits));
         }
 
-        // 3. Inject the hook into the suspended target. A failed injection leaves it UNHOOKED and still
-        // SUSPENDED, and it is ended on the way out (H-2): resuming - the old "let it die naturally" -
-        // would run an unhooked process to completion reading REAL time, a silent orphan the caller
-        // never asked to run, and hand back a "session" that substituted nothing. The view goes too (M-2).
-        inject(suspended.process(), &dll_wide)?;
+        // 3. Let the target's main thread start the process and park before its entry point, then inject
+        // the hook (ADR-25). A failed injection leaves it UNHOOKED and short of its entry point, and it is
+        // ended on the way out (H-2): letting it go on - the old "let it die naturally" - would run an
+        // unhooked process to completion reading REAL time, a silent orphan the caller never asked to run,
+        // and hand back a "session" that substituted nothing. The view goes too (M-2).
+        let parking = inject(suspended.process(), suspended.thread(), &dll_wide)?;
 
-        // 4. Find the parent's OWN coverage slot (it published its pid in DllMain, before resume, so
+        // 4. Find the parent's OWN coverage slot (it published its pid in DllMain, before the release, so
         // this is deterministic) and read the install bitmask. If the hook could not claim a slot
         // (best-effort failure in the target), report no coverage rather than guessing - honest.
         let parent_pid = suspended.pid();
@@ -1853,18 +1855,17 @@ pub fn prepare(spec: &SessionSpec, target: &Target, hook_dll: &Path) -> Result<P
             None => 0,
         };
 
-        // 5. Resume, then wait up to the guard window. WaitForSingleObject returns
-        // early if the target exits - the single-instance vanish signal (ADR-4). The
+        // 5. Let the program go on to its entry point, then wait up to the guard window. WaitForSingleObject
+        // returns early if the target exits - the single-instance vanish signal (ADR-4). The
         // install bits are already set in DllMain, so without this a target that
         // vanished right after injection would look like a false "works".
         let t0 = Instant::now();
-        // ResumeThread returns the thread's previous suspend count, or u32::MAX (-1) on failure. A failed
-        // resume would leave the target SUSPENDED forever while WaitForSingleObject below reads it as
+        // A failed release would leave the target PARKED forever while WaitForSingleObject below reads it as
         // "still alive/healthy" (M-3) - a frozen process handed back as a running session that never does
         // anything. It is ended on the way out instead, loudly (the hook's mapped section dies with it).
-        if ResumeThread(suspended.thread()) == u32::MAX {
-            return Err(PrepareError::Inject("ResumeThread failed - target left suspended".into()));
-        }
+        parking
+            .release()
+            .map_err(|e| PrepareError::Inject(format!("{e} - the target was held before its entry point and not let go")))?;
         // It runs now, so the job lets go of it before the guard window: from here a core that dies
         // leaves the application running, as ADR-14 promises.
         let (pi, start_job) = suspended.into_running();
@@ -2074,22 +2075,52 @@ fn build_command_line(path: &str, args: &[String]) -> Vec<u16> {
     to_wide(&command_line_string(path, args))
 }
 
-/// Inject the hook with Windows's error window off while the target loads, and back the way the target
-/// inherited it before its entry point (R4-S6, `loader::QuietLoader`). On `Err` the caller ends the
-/// target, which has not reached its entry point, so the mode is not given back on that road.
-unsafe fn inject(hproc: HANDLE, dll_wide: &[u16]) -> Result<(), PrepareError> { unsafe {
+/// Let the target's main thread start the process and park before its entry point, then inject the hook
+/// (ADR-25), with Windows's error window off while the target starts and loads, and back the way the
+/// target inherited it before its entry point (R4-S6, `loader::QuietLoader`). On `Ok` the target waits
+/// parked for the caller to release it. On `Err` the caller ends the target, which has not reached its
+/// entry point, so the mode is not given back on that road.
+unsafe fn inject(hproc: HANDLE, hthread: HANDLE, dll_wide: &[u16]) -> Result<park::Parking, PrepareError> { unsafe {
     let quiet = loader::QuietLoader::begin(hproc);
+    let parking = start_and_park(hproc, hthread)?;
     load_hook(hproc, dll_wide)?;
-    match quiet {
-        Some(quiet) => quiet.end().map_err(PrepareError::Inject),
-        None => Ok(()),
+    if let Some(quiet) = quiet {
+        quiet.end().map_err(PrepareError::Inject)?;
+    }
+    Ok(parking)
+}}
+
+/// Resume the target's main thread with the park put on it, and wait until it has started the process
+/// and parked before the entry point (ADR-25). A target its loader ends during the start - a missing or
+/// refusing import - is named by the loader's status, as before the park (R4-S6).
+unsafe fn start_and_park(hproc: HANDLE, hthread: HANDLE) -> Result<park::Parking, PrepareError> { unsafe {
+    let parking = park::Parking::put_on(hproc, hthread).map_err(PrepareError::Inject)?;
+    // ResumeThread returns the thread's previous suspend count, or u32::MAX (-1) on failure.
+    if ResumeThread(hthread) == u32::MAX {
+        return Err(PrepareError::Inject(win32_detail(
+            "ResumeThread",
+            &windows::core::Error::from_thread(),
+        )));
+    }
+    match parking.wait(hproc, INJECT_TIMEOUT_MS) {
+        park::Park::Parked => Ok(parking),
+        park::Park::TargetEnded(code) => Err(PrepareError::EndedLoading(code)),
+        park::Park::TargetEndedUnread => Err(PrepareError::Inject(
+            "the target ended while Windows was starting it, and its exit code could not be read".into(),
+        )),
+        park::Park::TimedOut => Err(PrepareError::Inject(format!(
+            "the target's start did not finish within {INJECT_TIMEOUT_MS} ms - a library's start-up code is \
+             waiting, or a loader lock"
+        ))),
+        park::Park::WaitFailed => Err(PrepareError::Inject("waiting for the target's start failed".into())),
     }
 }}
 
-/// Manual LoadLibrary injection: write the DLL path into the target and run `LoadLibraryW` there on a
-/// remote thread. Returns `Err` on any failure, INCLUDING a `LoadLibraryW` that returned NULL in the
-/// target - the caller then terminates the still-suspended target rather than resume an unhooked process
-/// reading real time (H-2) - and a target the loader ended before the hook got its turn (R4-S6).
+/// Manual LoadLibrary injection: write the DLL path into the target, whose main thread has started the
+/// process and is parked before its entry point (ADR-25), and run `LoadLibraryW` there on a remote
+/// thread. Returns `Err` on any failure, INCLUDING a `LoadLibraryW` that returned NULL in the target -
+/// the caller then terminates the still-parked target rather than let an unhooked process run reading
+/// real time (H-2) - and a target that ended before the hook got its turn (R4-S6).
 unsafe fn load_hook(hproc: HANDLE, dll_wide: &[u16]) -> Result<(), PrepareError> { unsafe {
     let bytes = dll_wide.len() * 2;
     let remote = VirtualAllocEx(hproc, None, bytes, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);

@@ -87,7 +87,8 @@ use chrono_ctl::inject::{self as remote_load, INJECT_TIMEOUT_MS, STILL_ACTIVE_CO
 use minhook::{MinHook, MH_STATUS};
 use windows::core::{s, PCSTR, PCWSTR};
 use windows::Win32::Foundation::{
-    CloseHandle, DuplicateHandle, SetLastError, DUPLICATE_SAME_ACCESS, ERROR_INVALID_PARAMETER, FILETIME, HANDLE,
+    CloseHandle, DuplicateHandle, SetLastError, DUPLICATE_CLOSE_SOURCE, DUPLICATE_SAME_ACCESS, ERROR_INVALID_PARAMETER,
+    FILETIME, HANDLE,
     HMODULE, SYSTEMTIME, WAIT_FAILED,
 };
 use windows::Win32::System::Diagnostics::Debug::{OutputDebugStringA, WriteProcessMemory};
@@ -103,9 +104,9 @@ use windows::Win32::System::Memory::{
 use windows::Win32::System::SystemServices::DLL_PROCESS_ATTACH;
 use windows::Win32::System::SystemInformation::{IMAGE_FILE_MACHINE, IMAGE_FILE_MACHINE_UNKNOWN};
 use windows::Win32::System::Threading::{
-    CreateRemoteThread, CreateThread, GetCurrentProcess, GetCurrentProcessId, GetCurrentThread, GetCurrentThreadId,
+    CreateEventW, CreateRemoteThread, CreateThread, GetCurrentProcess, GetCurrentProcessId, GetCurrentThread, GetCurrentThreadId,
     GetExitCodeProcess, GetExitCodeThread, GetProcessId, GetProcessTimes, IsWow64Process2, OpenProcess, ResumeThread,
-    WaitForSingleObject, CREATE_SUSPENDED, DEBUG_ONLY_THIS_PROCESS, DEBUG_PROCESS,
+    SetEvent, SuspendThread, WaitForMultipleObjects, WaitForSingleObject, CREATE_SUSPENDED, DEBUG_ONLY_THIS_PROCESS, DEBUG_PROCESS,
     INFINITE, LPTHREAD_START_ROUTINE, PROCESS_INFORMATION, PROCESS_QUERY_LIMITED_INFORMATION,
     PROCESS_SYNCHRONIZE, THREAD_CREATION_FLAGS,
 };
@@ -2817,8 +2818,9 @@ unsafe extern "system" fn h_ntcup(
 }}
 
 // --- Child inheritance (ADR-3) --------------------------------------------------
-// Detour CreateProcessW so children join the session: create suspended, inject the
-// same DLL, then resume (unless the caller wanted it suspended). The child opens the
+// Detour CreateProcessW so children join the session: create suspended, let the child's own
+// main thread start it and park before its entry point (ADR-25), inject the same DLL, then
+// let it go (handed back suspended when the caller wanted it so). The child opens the
 // shared Ctl and hooks itself, so it sees the same wall clock as the parent.
 
 /// Inject this DLL into `hproc` by writing our own module path and running LoadLibraryW there, and
@@ -2972,6 +2974,157 @@ unsafe fn end_remote_load(hproc: HANDLE, load: RemoteLoad) -> remote_load::Outco
     outcome
 }}
 
+/// `NtQueueApcThread` as ntdll exports it: the thread, the routine, and the three arguments the dispatcher
+/// passes to the routine.
+type NtQueueApcFn = unsafe extern "system" fn(HANDLE, *const c_void, *const c_void, *const c_void, *const c_void) -> i32;
+
+/// The park of a child's main thread (ADR-25): the child's own main thread starts the process, then
+/// waits before its entry point while the hook is loaded. The same queue the mechanism puts on its
+/// target, where the measurements and the reasons stand (`chrono-mech`, module `park`): signal `parked`,
+/// wait for `go`, close both handles of the child's own. A remote thread that was the child's first
+/// thread started the process itself, and a runtime that takes "the process is attaching" for its main
+/// thread crashed (a Free Pascal application, measured). These are this process's handles to the two
+/// events. Dropped, `go` is set - so a child whose calls are delivered late passes straight through, and
+/// a suspension is never what holds it - and both are closed. No allocation: a detour of process
+/// creation reaches it.
+struct ChildPark {
+    parked: HANDLE,
+    go: HANDLE,
+}
+
+impl ChildPark {
+    /// Put the park on `thread`, the child's main thread, created suspended and not resumed. `None` when
+    /// it could not be put, and then nothing waits in the child: a refusal after the first call was
+    /// queued leaves two handles in it, and the drop sets `go`, so what was queued passes through.
+    ///
+    /// # Safety
+    /// `process` must be the child's handle with handle-duplication access, `thread` its main thread with
+    /// the access to queue a call, and the child of this process's bitness - the calls are this process's
+    /// addresses.
+    unsafe fn put_on(process: HANDLE, thread: HANDLE) -> Option<Self> { unsafe {
+        let ntdll = GetModuleHandleA(s!("ntdll.dll")).ok()?;
+        let k32 = GetModuleHandleA(s!("kernel32.dll")).ok()?;
+        let queue = GetProcAddress(ntdll, s!("NtQueueApcThread"))?;
+        let queue = std::mem::transmute::<unsafe extern "system" fn() -> isize, NtQueueApcFn>(queue);
+        let wait = GetProcAddress(ntdll, s!("NtWaitForSingleObject"))? as *const c_void;
+        let set_event = GetProcAddress(k32, s!("SetEvent"))? as *const c_void;
+        let close = GetProcAddress(k32, s!("CloseHandle"))? as *const c_void;
+        let parked = CreateEventW(None, true, false, None).ok()?;
+        let Ok(go) = CreateEventW(None, true, false, None) else {
+            let _ = CloseHandle(parked);
+            return None;
+        };
+        let park = ChildPark { parked, go };
+        let parked_there = handle_in(process, parked)?;
+        let Some(go_there) = handle_in(process, go) else {
+            close_in(process, parked_there);
+            return None;
+        };
+        // Each routine is called with the three arguments the dispatcher passes, the ones it does not take
+        // null - the module `park` of `chrono-mech` has why that holds on x86 too.
+        let one = |function: *const c_void, argument: HANDLE| {
+            queue(thread, function, argument.0, std::ptr::null(), std::ptr::null()) >= 0
+        };
+        if !one(set_event, parked_there) {
+            close_in(process, parked_there);
+            close_in(process, go_there);
+            return None;
+        }
+        // From here a queued call may use either handle, so a refusal leaves both in the child rather than
+        // risk a call on a handle the child has reused.
+        if queue(thread, wait, go_there.0, std::ptr::null(), std::ptr::null()) < 0
+            || !one(close, parked_there)
+            || !one(close, go_there)
+        {
+            log("[chrono_hook] the child's start could not be fully held - two handles stay in it");
+            return None;
+        }
+        Some(park)
+    }}
+
+    /// Wait until the child's main thread has parked, the child has ended, or `ms` has passed, and read
+    /// which, the child first (`chrono_ctl::inject::park_outcome`). The waits are the hook's own, unseen by
+    /// the audit.
+    ///
+    /// # Safety
+    /// `process` must be the child the park was put on, still open.
+    unsafe fn wait(&self, process: HANDLE, ms: u32) -> remote_load::Park { unsafe {
+        let woke = wait_any_raw(&[self.parked, process], ms);
+        let wait = match woke {
+            WAIT_OBJECT_0_CODE => remote_load::ParkWait::Parked,
+            WAIT_TIMEOUT_CODE => remote_load::ParkWait::TimedOut,
+            w if w == WAIT_OBJECT_0_CODE + 1 => remote_load::ParkWait::ProcessSignalled,
+            _ => remote_load::ParkWait::Failed,
+        };
+        // Signalled first, then the code, as `end_remote_load` reads them.
+        let signalled = wait_raw(process, 0) == WAIT_OBJECT_0_CODE;
+        let mut code: u32 = 0;
+        let after = remote_load::ProcessAfter {
+            signalled,
+            code: GetExitCodeProcess(process, &mut code).is_ok().then_some(code),
+        };
+        remote_load::park_outcome(wait, after)
+    }}
+}
+
+impl Drop for ChildPark {
+    fn drop(&mut self) {
+        // SAFETY: both handles are this value's own and closed once, here.
+        unsafe {
+            let _ = SetEvent(self.go);
+            let _ = CloseHandle(self.parked);
+            let _ = CloseHandle(self.go);
+        }
+    }
+}
+
+/// A handle in `process` to the object `own` names here.
+unsafe fn handle_in(process: HANDLE, own: HANDLE) -> Option<HANDLE> { unsafe {
+    let mut there = HANDLE::default();
+    DuplicateHandle(GetCurrentProcess(), own, process, &mut there, 0, false, DUPLICATE_SAME_ACCESS)
+        .ok()
+        .map(|()| there)
+}}
+
+/// Close a handle of `process`'s own that nothing there uses. With no target process the source is closed
+/// and nothing is duplicated.
+unsafe fn close_in(process: HANDLE, there: HANDLE) { unsafe {
+    let _ = DuplicateHandle(process, there, HANDLE::default(), std::ptr::null_mut(), 0, false, DUPLICATE_CLOSE_SOURCE);
+}}
+
+/// Wait on two objects through the original `WaitForMultipleObjects`, unseen by the audit - the hook's own
+/// wait, as `wait_raw` is for one.
+///
+/// # Safety
+/// Both must be valid handles to wait on.
+unsafe fn wait_any_raw(handles: &[HANDLE; 2], ms: u32) -> u32 { unsafe {
+    unobserved(|| match O_WFMO.get() {
+        Some(o) => o(2, handles.as_ptr(), 0, ms),
+        None => WaitForMultipleObjects(handles, false, ms).0,
+    })
+}}
+
+/// What a child's injection came to: the load's outcome once its main thread parked within `limit_ms`,
+/// the start's when it did not, said in the hook's log either way.
+///
+/// # Safety
+/// `process` must be the child the park was put on, still open.
+unsafe fn load_into_parked(process: HANDLE, park: &ChildPark, limit_ms: u32) -> remote_load::Outcome { unsafe {
+    let started = park.wait(process, limit_ms);
+    match started.unloaded() {
+        None => inject_self(process),
+        Some(outcome) => {
+            match outcome {
+                remote_load::Outcome::TargetEnded(_) | remote_load::Outcome::TargetEndedUnread => {
+                    log("[chrono_hook] child ended while Windows was starting it - it never ran, nothing to cover");
+                }
+                _ => log("[chrono_hook] the child's start did not finish in time - not injected, it runs uncovered"),
+            }
+            outcome
+        }
+    }
+}}
+
 /// The machine a live process runs as, or `None` when it cannot be asked. The same reading as the
 /// mechanism's (`chrono-mech`, `process_machine`), which `chrono-ctl` cannot host without depending on
 /// `windows`: `IsWow64Process2` names the emulated machine, or UNKNOWN for a native process, whose
@@ -3007,10 +3160,10 @@ fn child_ran_uncovered(loaded: bool, signed_in: bool, slot_claims: u32) -> bool 
 /// The creation flags that make the caller the debugger of the child it starts.
 const DEBUG_FLAGS: u32 = DEBUG_PROCESS.0 | DEBUG_ONLY_THIS_PROCESS.0;
 
-/// After a create call we forced to CREATE_SUSPENDED returns, inject the hook into the
-/// new child so it joins the session, then resume it unless the caller originally asked
-/// for a suspended child. `flags` are the caller's own, before CREATE_SUSPENDED was added.
-/// Shared by the three CreateProcess detours.
+/// After a create call we forced to CREATE_SUSPENDED returns, have the new child join the session: its own
+/// main thread starts it and parks before its entry point, the hook is loaded into it, and it is let go -
+/// handed back suspended when the caller originally asked for a suspended child (ADR-25). `flags` are the
+/// caller's own, before CREATE_SUSPENDED was added. Shared by the three CreateProcess detours.
 ///
 /// # Safety
 /// `pi`, when non-null, must point to a PROCESS_INFORMATION filled by a successful create, aligned or
@@ -3020,94 +3173,130 @@ unsafe fn inherit_into_child(r: i32, pi: *mut PROCESS_INFORMATION, flags: u32) {
         return;
     }
     let info = core::ptr::read_unaligned(pi);
-    // Resume regardless. The parent is the application under test and it asked for this child -
-    // holding it suspended or killing it would change the behaviour we were asked to observe.
+    // Hand the child back the way it was asked for. The parent is the application under test and it asked
+    // for this child - holding it or killing it would change the behaviour we were asked to observe.
     let resume = (flags & CREATE_SUSPENDED.0) == 0;
-    if flags & DEBUG_FLAGS != 0 && inherit_into_debugged_child(&info, resume) {
+    // A child of the other bitness cannot load this library, and the park's calls are this process's
+    // addresses, which mean nothing in its half of the machine: nothing is put into it (R4-N9).
+    if bitness_differs(process_machine(info.hProcess), process_machine(GetCurrentProcess())) {
+        log("[chrono_hook] child of the other bitness - not injected, it runs on the real clock");
+        account_child(info.hProcess, info.dwProcessId, remote_load::Outcome::LibraryNotLoaded);
+        if resume {
+            let _ = ResumeThread(info.hThread);
+        }
         return;
     }
-    let outcome = inject_self(info.hProcess);
+    if flags & DEBUG_FLAGS != 0 {
+        inherit_into_debugged_child(&info, resume);
+        return;
+    }
+    // The caller stays in this call until it returns, so nothing else touches the child's thread meanwhile:
+    // it is resumed for its start, and suspended again before it is let go when the caller asked for that.
+    let Some(park) = ChildPark::put_on(info.hProcess, info.hThread) else {
+        log("[chrono_hook] could not hold the child's start - not injected, it runs uncovered");
+        account_child(info.hProcess, info.dwProcessId, remote_load::Outcome::LibraryNotLoaded);
+        if resume {
+            let _ = ResumeThread(info.hThread);
+        }
+        return;
+    };
+    if ResumeThread(info.hThread) == u32::MAX {
+        log("[chrono_hook] could not resume the child for its start - not injected");
+        account_child(info.hProcess, info.dwProcessId, remote_load::Outcome::LibraryNotLoaded);
+        return;
+    }
+    let outcome = load_into_parked(info.hProcess, &park, INJECT_TIMEOUT_MS);
     account_child(info.hProcess, info.dwProcessId, outcome);
+    if !resume && SuspendThread(info.hThread) == u32::MAX {
+        log("[chrono_hook] could not hand the child back suspended - it runs");
+    }
+    drop(park);
+}}
+
+/// A child the caller debugs, followed from a thread of its own (R5-P25, R5-D38, ADR-25).
+///
+/// A child's first thread raises its first debug events and stands until the debugger answers them - and
+/// the debugger is the very thread that called CreateProcess, waiting in this detour. Measured on both
+/// bitnesses (`tools/probes/r5/fala4/p25.ps1`) when that first thread was the remote thread loading the
+/// hook: the call stood the whole ten-second limit, the child was then resumed before the hook had loaded,
+/// its program read the real clock, and the report named it uncovered while the hook did load a moment
+/// later. The child's own main thread starts it now and raises the same events, so the wait for its park
+/// and the load stay on a thread of their own. The detour puts the park on, resumes the child when its
+/// caller wanted it running, and returns. The caller goes back to answering the child's events, and the
+/// new thread waits for the park, loads the hook, counts the child and lets it go - so its program starts
+/// on the session clock. A caller that asked for the child suspended as well resumes it itself, and the park
+/// comes once it does - however long the debugger holds it, so the wait for that park has no limit and ends
+/// with the park or with the child.
+///
+/// Without a second handle to the child, or a thread for the wait, the child is let go uncovered and
+/// counted so: waiting in the caller would stand the whole limit for a park that cannot come.
+///
+/// # Safety
+/// `info` is the PROCESS_INFORMATION of a child just created suspended, its handles still open, of this
+/// process's bitness.
+unsafe fn inherit_into_debugged_child(info: &PROCESS_INFORMATION, resume: bool) { unsafe {
+    // The caller owns `info`'s handles and may close them as soon as CreateProcess returns, so the
+    // waiting thread needs a handle of its own. Taken before anything starts in the child.
+    let Some(process) = own_handle(info.hProcess) else {
+        log("[chrono_hook] no second handle to a debugged child - not injected, it runs uncovered");
+        account_child(info.hProcess, info.dwProcessId, remote_load::Outcome::LibraryNotLoaded);
+        if resume {
+            let _ = ResumeThread(info.hThread);
+        }
+        return;
+    };
+    let park = ChildPark::put_on(process, info.hThread);
     if resume {
         let _ = ResumeThread(info.hThread);
     }
-}}
-
-/// A child the caller debugs, followed without waiting in the caller's thread (R5-P25, R5-D38).
-///
-/// The remote thread that loads the hook is the first thread to run in the child, so it raises the
-/// child's first debug events and stands until the debugger answers them - and the debugger is the very
-/// thread that called CreateProcess, waiting in this detour for that remote thread. Measured on both
-/// bitnesses (`tools/probes/r5/fala4/p25.ps1`): the caller stood the whole ten-second limit, the child
-/// was then resumed before the hook had loaded and its program read the real clock, and the report
-/// named it uncovered while the hook did load a moment later.
-///
-/// So the wait moves to a thread of its own here. The detour starts the load and returns at once, the
-/// caller goes back to answering the child's events, and the new thread waits for the load, counts the
-/// child the way the synchronous path does and only then resumes it - so its program starts on the
-/// session clock. Children that are not debugged keep the synchronous path: one started with
-/// CREATE_SUSPENDED is resumed by its caller right after the call returns, before a load waited for
-/// elsewhere could finish.
-///
-/// `false` when the wait could not be handed over before anything started (no second handle to the
-/// child), so the caller takes the synchronous path. Once the load is started, this handles the child
-/// to the end and returns `true`, waiting here only if no thread could be made for it.
-///
-/// # Safety
-/// `info` is the PROCESS_INFORMATION of a child just created suspended, its handles still open.
-unsafe fn inherit_into_debugged_child(info: &PROCESS_INFORMATION, resume: bool) -> bool { unsafe {
-    // The caller owns `info`'s handles and may close them as soon as CreateProcess returns, so the
-    // waiting thread needs handles of its own. Taken before anything starts in the child.
-    let Some((process, thread)) = own_handles(info.hProcess, info.hThread) else {
-        return false;
-    };
-    let Some(load) = begin_remote_load(process) else {
+    let Some(park) = park else {
+        log("[chrono_hook] could not hold a debugged child's start - not injected, it runs uncovered");
         account_child(process, info.dwProcessId, remote_load::Outcome::LibraryNotLoaded);
-        finish_debugged_child(process, thread, resume);
-        return true;
+        let _ = CloseHandle(process);
+        return;
     };
-    let pending = Box::into_raw(Box::new(DebuggedChild { process, thread, pid: info.dwProcessId, load, resume }));
+    // The child's start is under way now when it was resumed here, so it gets the limit a start gets. One
+    // its caller holds starts whenever the caller resumes it.
+    let limit_ms = if resume { INJECT_TIMEOUT_MS } else { INFINITE };
+    let pending = Box::into_raw(Box::new(DebuggedChild { process, pid: info.dwProcessId, park, limit_ms }));
     match CreateThread(None, 0, Some(debugged_child_proc), Some(pending as *const c_void), THREAD_CREATION_FLAGS(0), None) {
         Ok(waiter) => {
             let _ = CloseHandle(waiter);
         }
         Err(_) => {
-            // No thread to hand the wait to: wait here, as before this existed - the caller stands the
-            // limit, but the child is still counted and resumed.
-            log("[chrono_hook] could not start a thread for a debugged child - waiting in the caller");
-            debugged_child_proc(pending as *mut c_void);
+            log("[chrono_hook] could not start a thread for a debugged child - not injected, it runs uncovered");
+            let child = Box::from_raw(pending);
+            account_child(child.process, child.pid, remote_load::Outcome::LibraryNotLoaded);
         }
     }
-    true
 }}
 
-/// What the thread that follows a debugged child needs: its own handles to the child and the child's
-/// first thread, the load started there, and whether to resume the child afterwards.
+/// What the thread that follows a debugged child needs: its own handle to the child, the park put on the
+/// child's main thread, and how long to wait for that park. Dropped, the handle is closed and the park
+/// lets the child go.
 struct DebuggedChild {
     process: HANDLE,
-    thread: HANDLE,
     pid: u32,
-    load: RemoteLoad,
-    resume: bool,
+    park: ChildPark,
+    limit_ms: u32,
 }
 
-/// Wait for the load in a debugged child, count the child, resume it if its caller did not ask for it
-/// suspended, and let go of the handles.
+impl Drop for DebuggedChild {
+    fn drop(&mut self) {
+        // SAFETY: the handle is this value's own, taken by `own_handle`, and closed once, here. The park is
+        // dropped after this body, as a field, and its events are its own.
+        unsafe {
+            let _ = CloseHandle(self.process);
+        }
+    }
+}
+
+/// Wait for a debugged child's park, load the hook, count the child, and let it go.
 unsafe extern "system" fn debugged_child_proc(param: *mut c_void) -> u32 { unsafe {
     let child = Box::from_raw(param as *mut DebuggedChild);
-    let outcome = end_remote_load(child.process, child.load);
+    let outcome = load_into_parked(child.process, &child.park, child.limit_ms);
     account_child(child.process, child.pid, outcome);
-    finish_debugged_child(child.process, child.thread, child.resume);
     0
-}}
-
-/// Resume a debugged child when its caller wanted it running, and close the handles taken for it.
-unsafe fn finish_debugged_child(process: HANDLE, thread: HANDLE, resume: bool) { unsafe {
-    if resume {
-        let _ = ResumeThread(thread);
-    }
-    let _ = CloseHandle(thread);
-    let _ = CloseHandle(process);
 }}
 
 /// A second handle to `handle`, with the same access, owned by the caller.
@@ -3116,21 +3305,6 @@ unsafe fn own_handle(handle: HANDLE) -> Option<HANDLE> { unsafe {
     DuplicateHandle(GetCurrentProcess(), handle, GetCurrentProcess(), &mut own, 0, false, DUPLICATE_SAME_ACCESS)
         .ok()
         .map(|()| own)
-}}
-
-/// Second handles to a child and to its first thread, both or neither. When the second cannot be had,
-/// the first is closed again: left open, it would keep the child's process object alive in the
-/// application under test for as long as that application runs, once for every debugged child it starts.
-///
-/// # Safety
-/// Each must be a handle of this process, or one `DuplicateHandle` refuses.
-unsafe fn own_handles(process: HANDLE, thread: HANDLE) -> Option<(HANDLE, HANDLE)> { unsafe {
-    let process = own_handle(process)?;
-    let Some(thread) = own_handle(thread) else {
-        let _ = CloseHandle(process);
-        return None;
-    };
-    Some((process, thread))
 }}
 
 /// Count a child the hook tried to follow into, once its load has ended: nothing when it signed in,
@@ -3879,16 +4053,18 @@ unsafe fn make_qpc_hooks(pending: &mut u64, k32: HMODULE, ntdll: HMODULE) { unsa
 
 /// Install and enable every channel's detour, wiring this process to the shared anchor.
 ///
-/// INVARIANT (P6, docs/06 ADR-3): injection assumes the target is SUSPENDED - the parent is created
-/// `CREATE_SUSPENDED` and injected before its main thread runs, and children are forced
-/// `CREATE_SUSPENDED` in `h_cpw`/`h_cpa` before self-injection. This runs from `DLL_PROCESS_ATTACH`
-/// under the loader lock, and `MinHook::enable_all_hooks` suspends/resumes threads - safe ONLY while
-/// no other application thread exists yet. Not quite "no code of the target has run" (R4-N20): the
-/// injecting thread does the target's own loading first, so the start-up code of its static imports and
-/// its TLS callbacks run before this, on the real clock, and a thread one of them starts is the one
-/// application thread that can exist here. Do NOT add a path that injects into an already-running,
-/// multi-threaded process without moving hook-enabling off the loader lock (the watcher thread is
-/// created OUTSIDE DllMain, in `ensure_watcher`, for exactly this reason).
+/// INVARIANT (P6, docs/06 ADR-3, ADR-25): injection assumes the target's program has not run - the
+/// parent is created `CREATE_SUSPENDED`, and children are forced `CREATE_SUSPENDED` in `h_cpw`/`h_cpa`.
+/// Its main thread starts the process and parks before the entry point, and only then is the hook
+/// loaded. This runs from `DLL_PROCESS_ATTACH` under the loader lock, and `MinHook::enable_all_hooks`
+/// suspends/resumes threads - safe ONLY while no application thread runs code of the program. Not quite
+/// "no code of the target has run" (R4-N20): the start-up code of its static imports and its TLS
+/// callbacks ran during the start, on the real clock. The threads here are the main thread, blocked in
+/// the park's wait inside an asynchronous call (its address the return after the system call, past any
+/// prologue a detour patches, and holding no lock), and a thread one of the start-up routines started.
+/// Do NOT add a path that injects into an already-running, multi-threaded process without moving
+/// hook-enabling off the loader lock (the watcher thread is created OUTSIDE DllMain, in `ensure_watcher`,
+/// for exactly this reason).
 unsafe fn install() -> Result<(), InstallError> { unsafe {
     let hmap = OpenFileMappingW(FILE_MAP_ALL_ACCESS.0, false, PCWSTR(chrono_ctl::CTL_SECTION_NAME_W.as_ptr()))
         .map_err(|e| InstallError::Refused(format!("OpenFileMappingW: {e:?}")))?;
@@ -4196,35 +4372,6 @@ mod tests {
         ];
         for (failure, look) in cases {
             assert!(join_refusal(&look).is_some(), "{failure}");
-        }
-    }
-
-    /// A debugged child's two handles are taken both or neither: when the second duplicate fails, the
-    /// first is closed again. The two used to be taken side by side, and whichever succeeded stayed open in
-    /// the application under test.
-    #[test]
-    fn a_failed_second_duplicate_leaves_no_handle_open() {
-        use windows::Win32::System::Threading::GetProcessHandleCount;
-        const TRIES: u32 = 256;
-        // SAFETY: the pseudo-handles of this process and thread, and a null handle, which DuplicateHandle
-        // refuses. Every handle that comes back is closed here.
-        unsafe {
-            let count = || {
-                let mut n = 0u32;
-                GetProcessHandleCount(GetCurrentProcess(), &mut n).expect("this process can count its handles");
-                n
-            };
-            let (process, thread) =
-                own_handles(GetCurrentProcess(), GetCurrentThread()).expect("both handles of this process duplicate");
-            let _ = CloseHandle(thread);
-            let _ = CloseHandle(process);
-            let before = count();
-            for _ in 0..TRIES {
-                assert!(own_handles(GetCurrentProcess(), HANDLE::default()).is_none(), "a null thread handle duplicated");
-            }
-            // Other tests open and close handles meanwhile, so the bound is half of what a leak would add.
-            let grew = count().saturating_sub(before);
-            assert!(grew < TRIES / 2, "{grew} handles stayed open after {TRIES} failed pairs");
         }
     }
 
