@@ -18,6 +18,19 @@ Notable changes to Chrono Mock, newest first. The format follows
   in. Programs the application starts are started the same way, including one its caller asks for
   paused and one started under a debugger. A debugger that asks for its program paused can resume it
   at any time, and the program's own code still waits until the time library is in.
+- **A windowed program that closes right after it starts is recognised even when Windows is slow to
+  finish closing it.** Chrono Mock watches the first 300 ms after it starts a windowed program. A
+  program gone by then is usually a second copy that passed its work to one already open, and the
+  session says so (exit code 12). On some machines Windows holds a closing program for up to a few
+  seconds after the program itself has finished - measured with a graphics driver - and such a program
+  was reported as one that ran. Now the time library notes when the program starts to close, and a
+  program that started to close inside those 300 ms counts as gone once it really is. Chrono Mock waits
+  up to 3 more seconds for that, and only for such a program.
+- **A program the application starts no longer switches to the session's time halfway through its
+  run.** When Chrono Mock could not add its time library to such a program within 10 seconds, it let
+  the program run and reported it as running on the real time. The library could still arrive a moment
+  later and switch the program's clock to the session's while it ran. Now a library that arrives too
+  late steps back, and the program keeps the real time the report names.
 - **An application that crashes during a session is said to have crashed.** A program stopped by an
   error it did not handle ends with that error's code (an access violation ends with 0xC0000005). The
   session then said `works` and that the application "closed itself" with that number, which read as a

@@ -82,8 +82,9 @@ use chrono_ctl::{
     IDX_WFMOEX, IDX_SOAW, IDX_MWFMO, IDX_MWFMOEX, IDX_SWT, IDX_SWTEX, IDX_SETTIMER, IDX_TIMESETEVENT,
     IDX_TPTIMER, IDX_TPTIMEREX, IDX_NTCUP, IDX_CONNECT, IDX_QPC, IDX_TIMEGETTIME, IDX_SCVSRW,
     IDX_SCVCS, IDX_WOA, IDX_WSAWFME, IDX_QIT, IDX_QITP, IDX_QUITP, LATE_CHANNELS, bump_absolute_dues, sleep_bias,
+    abandon_load_gate, close_load_gate, mark_exit_began, open_load_gate, pass_load_gate, read_pid, LoadGate,
 };
-use chrono_ctl::inject::{self as remote_load, budget_left_ms, STILL_ACTIVE_CODE};
+use chrono_ctl::inject::{self as remote_load, budget_left_ms, INJECT_TIMEOUT_MS, STILL_ACTIVE_CODE};
 use minhook::{MinHook, MH_STATUS};
 use windows::core::{s, PCSTR, PCWSTR};
 use windows::Win32::Foundation::{
@@ -101,7 +102,7 @@ use windows::Win32::System::Memory::{
     FILE_MAP_ALL_ACCESS, MEMORY_MAPPED_VIEW_ADDRESS, MEM_COMMIT, MEM_RELEASE, MEM_RESERVE,
     PAGE_READWRITE,
 };
-use windows::Win32::System::SystemServices::DLL_PROCESS_ATTACH;
+use windows::Win32::System::SystemServices::{DLL_PROCESS_ATTACH, DLL_PROCESS_DETACH};
 use windows::Win32::System::SystemInformation::{IMAGE_FILE_MACHINE, IMAGE_FILE_MACHINE_UNKNOWN};
 use windows::Win32::System::Threading::{
     CreateEventW, CreateRemoteThread, CreateThread, GetCurrentProcess, GetCurrentProcessId, GetCurrentThread, GetCurrentThreadId,
@@ -113,7 +114,7 @@ use windows::Win32::System::Threading::{
 use windows::Win32::System::Time::{
     FileTimeToSystemTime, SystemTimeToFileTime, DYNAMIC_TIME_ZONE_INFORMATION, TIME_ZONE_INFORMATION,
 };
-use windows::Win32::System::Performance::QueryPerformanceFrequency;
+use windows::Win32::System::Performance::{QueryPerformanceCounter, QueryPerformanceFrequency};
 use windows::Win32::System::WindowsProgramming::{QueryInterruptTime, QueryUnbiasedInterruptTime};
 
 type FtFn = unsafe extern "system" fn(*mut FILETIME);
@@ -277,6 +278,8 @@ type CpiwFn = unsafe extern "system" fn(
 
 static CTL_PTR: OnceLock<usize> = OnceLock::new();
 static COV_PTR: OnceLock<usize> = OnceLock::new();
+/// The registry slot `COV_PTR` points into, which the exit mark checks still names this process.
+static COV_SLOT: OnceLock<usize> = OnceLock::new();
 static TZ_BIAS: OnceLock<i32> = OnceLock::new();
 
 static O_GSTAFT: OnceLock<FtFn> = OnceLock::new();
@@ -2838,9 +2841,49 @@ unsafe extern "system" fn h_ntcup(
 /// # Safety
 /// `hproc` must be a valid process handle with injection rights.
 unsafe fn inject_self(hproc: HANDLE, limit_ms: u32) -> remote_load::Outcome { unsafe {
+    let gate = open_gate(hproc);
     match begin_remote_load(hproc) {
-        Some(load) => end_remote_load(hproc, load, limit_ms),
-        None => remote_load::Outcome::LibraryNotLoaded,
+        Some(load) => end_remote_load(hproc, load, limit_ms, gate),
+        None => {
+            close_gate(gate);
+            remote_load::Outcome::LibraryNotLoaded
+        }
+    }
+}}
+
+/// Open the gate the child's hook passes before it installs (ADR-25, `chrono_ctl::open_load_gate`), so
+/// that a load this side stops waiting for cannot hook the child's program halfway through its run. `None`
+/// when the child cannot be named or the table is full, said in the log: the load then goes ahead without
+/// one.
+///
+/// # Safety
+/// `hproc` must be a process handle with at least `PROCESS_QUERY_LIMITED_INFORMATION`.
+unsafe fn open_gate(hproc: HANDLE) -> Option<usize> { unsafe {
+    let ctl = ctl_ptr()?;
+    let gate = process_created(hproc).and_then(|created| open_load_gate(ctl, GetProcessId(hproc), created));
+    if gate.is_none() {
+        log("[chrono_hook] no gate for this child's load - if the wait for it runs out, a load that ends later still hooks its program");
+    }
+    gate
+}}
+
+/// Give a gate back once the load it stands for has ended.
+fn close_gate(gate: Option<usize>) {
+    if let (Some(ctl), Some(i)) = (ctl_ptr(), gate) {
+        // SAFETY: the block this process joined, and an index `open_load_gate` returned.
+        unsafe { close_load_gate(ctl, i) };
+    }
+}
+
+/// Wait for a remote load's thread, through the hook's own unseen wait, and read how the wait ended.
+///
+/// # Safety
+/// `thread` must be a thread handle to wait on.
+unsafe fn wait_for_load(thread: HANDLE, ms: u32) -> remote_load::Wait { unsafe {
+    match wait_raw(thread, ms) {
+        WAIT_OBJECT_0_CODE => remote_load::Wait::ThreadDone,
+        WAIT_TIMEOUT_CODE => remote_load::Wait::TimedOut,
+        _ => remote_load::Wait::Failed,
     }
 }}
 
@@ -2935,13 +2978,24 @@ unsafe fn begin_remote_load(hproc: HANDLE) -> Option<RemoteLoad> { unsafe {
 ///
 /// # Safety
 /// `hproc` must be the process `load` was started in, still open.
-unsafe fn end_remote_load(hproc: HANDLE, load: RemoteLoad, limit_ms: u32) -> remote_load::Outcome { unsafe {
+unsafe fn end_remote_load(hproc: HANDLE, load: RemoteLoad, limit_ms: u32, gate: Option<usize>) -> remote_load::Outcome { unsafe {
     // Finite wait (RELEASE-009): a child wedged in loader lock must not hang whoever waits here.
-    let wait = match wait_raw(load.thread, limit_ms) {
-        WAIT_OBJECT_0_CODE => remote_load::Wait::ThreadDone,
-        WAIT_TIMEOUT_CODE => remote_load::Wait::TimedOut,
-        _ => remote_load::Wait::Failed,
-    };
+    let mut wait = wait_for_load(load.thread, limit_ms);
+    let mut gate = gate;
+    if wait != remote_load::Wait::ThreadDone
+        && let (Some(ctl), Some(i)) = (ctl_ptr(), gate)
+    {
+        if abandon_load_gate(ctl, i) {
+            // The child's hook refuses if this load ever reaches it, and frees the entry then.
+            gate = None;
+        } else {
+            // Its hook passed the gate first and is installing, with the child still parked - letting the
+            // child go now would run its program under detours half made. The install takes milliseconds,
+            // and the limit only keeps a hook that hangs there from holding the caller for good.
+            log("[chrono_hook] the hook joined the child as the wait ran out - waiting for its install");
+            wait = wait_for_load(load.thread, INJECT_TIMEOUT_MS);
+        }
+    }
     // Signalled first, then the code: read the other way round, a child that ends between the two reads
     // would be a signalled process with the code of a live one.
     let signalled = wait_raw(hproc, 0) == WAIT_OBJECT_0_CODE;
@@ -2955,6 +3009,9 @@ unsafe fn end_remote_load(hproc: HANDLE, load: RemoteLoad, limit_ms: u32) -> rem
     let thread_code = (wait == remote_load::Wait::ThreadDone && GetExitCodeThread(load.thread, &mut thread_code).is_ok())
         .then_some(thread_code);
     let _ = CloseHandle(load.thread);
+    // A gate not abandoned has done its work: the load ended, or its hook joined and the second wait ran
+    // out too - either way nothing will pass it again.
+    close_gate(gate);
     let outcome = remote_load::outcome(wait, process, thread_code);
     if remote_load::page_released_safely(outcome) {
         let _ = VirtualFreeEx(hproc, load.page, 0, MEM_RELEASE);
@@ -4162,7 +4219,13 @@ unsafe fn install() -> Result<(), InstallError> { unsafe {
         running: core.is_some_and(|h| WaitForSingleObject(h, 0).0 == WAIT_TIMEOUT_CODE),
         created_now: core.and_then(|h| process_created(h)),
     };
-    if let Some(why) = join_refusal(&look) {
+    // The gate is passed whatever the session's answer, and before it: a pending one is joined and goes
+    // back to the parent when the load returns, refused or not, and one the parent abandoned is freed as
+    // this hook refuses - a refusal for its session included, since nothing else would ever free it.
+    let pid = GetCurrentProcessId();
+    let own_created = process_created(GetCurrentProcess()).unwrap_or(0);
+    let late = late_refusal(ctl, pid, own_created);
+    if let Some(why) = join_refusal(&look).or(late) {
         give_back(core);
         return Err(InstallError::Refused(why.into()));
     }
@@ -4199,18 +4262,18 @@ unsafe fn install() -> Result<(), InstallError> { unsafe {
     // Best-effort: if the registry is full the detours still substitute time (they read the shared
     // anchor via CTL_PTR), but this process reports no coverage and publishes no PID - the mechanism
     // simply never sees it, and never fabricates coverage.
-    let pid = GetCurrentProcessId();
     let cov_slot: Option<usize> = reserve_cov_slot(ctl);
     let cov: Option<*mut Cov> = match cov_slot {
         Some(slot) => {
             let cptr = cov_at_mut(ctl, slot);
             // Which process this slot is, beyond a pid the system will hand out again once we are gone
             // (R4-N12). Before the pid is published, so the mechanism never reads one without the other.
-            set_created(cptr, process_created(GetCurrentProcess()).unwrap_or(0));
+            set_created(cptr, own_created);
             // Whether this is a windowed or a console program, which lets the core tell a hand-off from a
             // console tool that simply ended (ADR-4, 2026-10-27).
             set_subsystem(cptr, own_subsystem());
             let _ = COV_PTR.set(cptr as usize);
+            let _ = COV_SLOT.set(slot);
             Some(cptr)
         }
         None => {
@@ -4354,8 +4417,70 @@ unsafe fn install() -> Result<(), InstallError> { unsafe {
     Ok(())
 }}
 
+/// Whether a detach is this process's own exit, which the hook marks for the core (ADR-4, 2026-11-12): the
+/// loader passes a `reserved` that is not null when the process is ending and null for a `FreeLibrary`, and
+/// only a slot that still names this process is this process's to mark - a block a new session reclaimed
+/// may have given the slot to another.
+fn marks_exit(reserved_is_null: bool, slot_pid: u32, own_pid: u32) -> bool {
+    !reserved_is_null && own_pid != 0 && slot_pid == own_pid
+}
+
+/// Why a hook that comes late does not join (ADR-25): the process that started this one stopped waiting
+/// for this load and let its program run, and counts it as running on the real clock - so the hook
+/// refuses before anything changes rather than hook a program halfway through its run
+/// (`chrono_ctl::pass_load_gate`, which frees the gate as it refuses).
+///
+/// # Safety
+/// `ctl` must point to the live block `install` mapped and checked as this build's.
+unsafe fn late_refusal(ctl: *mut Ctl, pid: u32, created: u64) -> Option<&'static str> { unsafe {
+    (pass_load_gate(ctl, pid, created) == LoadGate::Refused)
+        .then_some("the process that started this one stopped waiting for this load and let its program run")
+}}
+
+/// The real `QueryPerformanceCounter`: through the trampoline when the counter is hooked, the export when
+/// it is not - never the detour, so the value is the system's own whatever the session does to the
+/// counter. `real_qpc` answers 0 without the trampoline, for the release, which has nothing to do then.
+fn real_counter() -> i64 {
+    let mut t: i64 = 0;
+    // SAFETY: both write one counter value to a local that lives through the call.
+    unsafe {
+        match O_QPC.get() {
+            Some(o) => {
+                o(&mut t);
+            }
+            None => {
+                let _ = QueryPerformanceCounter(&mut t);
+            }
+        }
+    }
+    t
+}
+
+/// Mark the moment this process began to exit in its slot, for the core's guard window (ADR-4). Runs under
+/// the loader lock as the process ends, so it allocates nothing, touches no thread-local storage, logs
+/// nothing and takes no lock: two reads of the block and one atomic store. The core reads the mark only
+/// for the process it launched and only while it waits on the window, so a mark nobody reads costs one
+/// counter read at the end of a process.
+///
+/// # Safety
+/// Called from `DllMain` for `DLL_PROCESS_DETACH`, with whether its `reserved` was null.
+unsafe fn mark_own_exit(reserved_is_null: bool) { unsafe {
+    let (Some(ctl), Some(&slot)) = (ctl_ptr(), COV_SLOT.get()) else {
+        return;
+    };
+    if slot >= MAX_COV_PIDS || !marks_exit(reserved_is_null, read_pid(ctl, slot), GetCurrentProcessId()) {
+        return;
+    }
+    mark_exit_began(cov_at_mut(ctl, slot), real_counter());
+}}
+
 #[unsafe(no_mangle)]
-pub extern "system" fn DllMain(hinst: HMODULE, reason: u32, _reserved: *mut c_void) -> i32 {
+pub extern "system" fn DllMain(hinst: HMODULE, reason: u32, reserved: *mut c_void) -> i32 {
+    if reason == DLL_PROCESS_DETACH {
+        // SAFETY: this is `DllMain` for `DLL_PROCESS_DETACH`.
+        unsafe { mark_own_exit(reserved.is_null()) };
+        return 1;
+    }
     if reason != DLL_PROCESS_ATTACH {
         return 1; // the answer is ignored for every other reason (MS Learn, `DllMain`)
     }
@@ -4386,6 +4511,17 @@ mod tests {
             assert_eq!(late_site(idx).is_some(), LATE_CHANNELS & ch.bit != 0, "{}", ch.name);
         }
         assert_eq!(LATE_CHANNELS.count_ones(), 6, "six channels live in a module that may arrive late");
+    }
+
+    /// The exit is marked only for the process's own end, never for an unload, and only in a slot that
+    /// still names this process - a reclaimed block may have given it to another (ADR-4).
+    #[test]
+    fn only_the_process_s_own_end_in_its_own_slot_is_marked() {
+        assert!(marks_exit(false, 42, 42), "the process ends, its slot names it");
+        assert!(!marks_exit(true, 42, 42), "a FreeLibrary is not the end of the process");
+        assert!(!marks_exit(false, 43, 42), "the slot names another process now");
+        assert!(!marks_exit(false, 0, 42), "the slot was never published");
+        assert!(!marks_exit(false, 0, 0), "no pid to compare is no mark");
     }
 
     /// A block is joined only while its session is alive and is the one that wrote it (R4-D18). Each
