@@ -308,6 +308,13 @@ const ALLOWED: &[(&str, &str, &str)] = &[
          machine",
     ),
     (
+        "crates/cli/tests/injection_budget.rs",
+        "spawn",
+        "runs two sessions through the built binary on this test binary's own ignored probe: one that holds \
+         its own start and the hook's load, and one that starts such a copy of itself as its child. Each copy \
+         only waits and ends with a code, and nothing reaches past this machine",
+    ),
+    (
         "crates/cli/tests/process_start.rs",
         "spawn",
         "runs this test binary's own ignored probe under a session through the built binary, and the probe \

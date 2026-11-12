@@ -69,10 +69,10 @@ use chrono_ctl::{
     Cov, Ctl, CHANNELS, CH_GTC, CH_GTC64, CTL_LAYOUT_VERSION, CTL_MAGIC, DEADLINE_CHANNELS, IDX_TIMEGETTIME,
     MAX_COV_PIDS,
 };
-// The bound on the remote `LoadLibraryW` thread is the one the hook keeps for a child (R5-A7): a thread
-// still stuck past it means the target's loader deadlocked, an injection failure rather than a
-// `prepare` that hangs forever (M-1).
-use chrono_ctl::inject::INJECT_TIMEOUT_MS;
+// The budget a target's start and the remote `LoadLibraryW` thread share is the one the hook keeps for a
+// child (R5-A7): an injection still stuck past it means the target's loader deadlocked, an injection
+// failure rather than a `prepare` that hangs forever (M-1).
+use chrono_ctl::inject::{budget_left_ms, INJECT_TIMEOUT_MS};
 use windows::core::{s, PCWSTR, PWSTR};
 use windows::Win32::Foundation::{
     CloseHandle, GetLastError, ERROR_ALREADY_EXISTS, FILETIME, HANDLE, INVALID_HANDLE_VALUE, UNICODE_STRING,
@@ -2081,13 +2081,24 @@ fn build_command_line(path: &str, args: &[String]) -> Vec<u16> {
 /// parked for the caller to release it. On `Err` the caller ends the target, which has not reached its
 /// entry point, so the mode is not given back on that road.
 ///
+/// The start and the load share one budget, `INJECT_TIMEOUT_MS` (`budget_left_ms`): nothing reaches the
+/// client while the core waits for either, and its watchdog counts them as one silence.
+///
 /// # Safety
 /// `hproc` and `hthread` must be the handles `CreateProcessW` gave for a target of this process's bitness,
 /// created suspended and never resumed, both still open, and `dll_wide` a path ended by a zero.
 unsafe fn inject(hproc: HANDLE, hthread: HANDLE, dll_wide: &[u16]) -> Result<park::Parking, PrepareError> { unsafe {
     let quiet = loader::QuietLoader::begin(hproc);
+    let began = Instant::now();
     let parking = start_and_park(hproc, hthread)?;
-    load_hook(hproc, dll_wide)?;
+    let spent = u64::try_from(began.elapsed().as_millis()).unwrap_or(u64::MAX);
+    let Some(limit_ms) = budget_left_ms(spent) else {
+        return Err(PrepareError::Inject(format!(
+            "the target's start used all of the {INJECT_TIMEOUT_MS} ms allowed for starting it and loading the hook, \
+             so the hook was not loaded - a library's start-up code is slow, or waiting"
+        )));
+    };
+    load_hook(hproc, dll_wide, limit_ms)?;
     if let Some(quiet) = quiet {
         quiet.end().map_err(PrepareError::Inject)?;
     }
@@ -2117,8 +2128,8 @@ unsafe fn start_and_park(hproc: HANDLE, hthread: HANDLE) -> Result<park::Parking
             "the target ended while Windows was starting it, and its exit code could not be read".into(),
         )),
         park::Park::TimedOut => Err(PrepareError::Inject(format!(
-            "the target's start did not finish within {INJECT_TIMEOUT_MS} ms - a library's start-up code is \
-             waiting, or a loader lock"
+            "the target's start did not finish within the {INJECT_TIMEOUT_MS} ms allowed for starting it and \
+             loading the hook - a library's start-up code is waiting, or a loader lock"
         ))),
         park::Park::WaitFailed => Err(PrepareError::Inject("waiting for the target's start failed".into())),
     }
@@ -2126,10 +2137,11 @@ unsafe fn start_and_park(hproc: HANDLE, hthread: HANDLE) -> Result<park::Parking
 
 /// Manual LoadLibrary injection: write the DLL path into the target, whose main thread has started the
 /// process and is parked before its entry point (ADR-25), and run `LoadLibraryW` there on a remote
-/// thread. Returns `Err` on any failure, INCLUDING a `LoadLibraryW` that returned NULL in the target -
-/// the caller then terminates the still-parked target rather than let an unhooked process run reading
-/// real time (H-2) - and a target that ended before the hook got its turn (R4-S6).
-unsafe fn load_hook(hproc: HANDLE, dll_wide: &[u16]) -> Result<(), PrepareError> { unsafe {
+/// thread, waiting for it at most `limit_ms` - what the target's start left of the injection's budget.
+/// Returns `Err` on any failure, INCLUDING a `LoadLibraryW` that returned NULL in the target - the caller
+/// then terminates the still-parked target rather than let an unhooked process run reading real time
+/// (H-2) - and a target that ended before the hook got its turn (R4-S6).
+unsafe fn load_hook(hproc: HANDLE, dll_wide: &[u16], limit_ms: u32) -> Result<(), PrepareError> { unsafe {
     let bytes = dll_wide.len() * 2;
     let remote = VirtualAllocEx(hproc, None, bytes, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
     if remote.is_null() {
@@ -2164,7 +2176,7 @@ unsafe fn load_hook(hproc: HANDLE, dll_wide: &[u16]) -> Result<(), PrepareError>
     // Bounded wait (M-1): a hung DllMain (loader lock) must not hang prepare forever. The thread alone is
     // enough to wait on: a target that ends takes its threads with it, so the thread is signalled no
     // later than the process.
-    let waited = WaitForSingleObject(hthread, INJECT_TIMEOUT_MS);
+    let waited = WaitForSingleObject(hthread, limit_ms);
     let wait_error = GetLastError();
     let wait = match waited {
         WAIT_OBJECT_0 => loader::Wait::ThreadDone,
@@ -2206,8 +2218,9 @@ unsafe fn load_hook(hproc: HANDLE, dll_wide: &[u16]) -> Result<(), PrepareError>
             "the target ended while Windows was loading it, and its exit code could not be read".into(),
         )),
         loader::Outcome::TimedOut => Err(PrepareError::Inject(format!(
-            "LoadLibraryW did not return within {INJECT_TIMEOUT_MS} ms - the target's loading is stuck (a \
-             library's start-up code waiting, or a loader lock)"
+            "the hook did not load within the {limit_ms} ms left of the {INJECT_TIMEOUT_MS} ms allowed for \
+             starting the target and loading the hook - the target's loading is stuck (a library's start-up \
+             code waiting, or a loader lock)"
         ))),
         loader::Outcome::WaitFailed => Err(PrepareError::Inject(win32_detail(
             "waiting for the remote LoadLibraryW thread",
