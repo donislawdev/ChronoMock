@@ -73,6 +73,8 @@ public class LocalizationTests
         "session.member_unwatchable", "session.handed_to_copy", "session.copy_search_failed",
         // An application that ended with the exit code of a crash, after the guard window.
         "session.target_crashed",
+        // A TZ of the tester's own, not handed on to the application so the session zone reaches it.
+        "session.tz_variable_removed",
         "chromium.launched_with_debug_port", "chromium.app_closed_before_audit",
         "chromium.rate_change_affects_running_timers", "chromium.contexts_pooled", "chromium.context_reached_running",
         // A timer the engine's 4 ms floor held back (R5-P6) and a frame the shim did not reach (R5-P5).

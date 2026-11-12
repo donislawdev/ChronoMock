@@ -35,7 +35,7 @@ mod tree;
 
 pub use batch::{batch_launch_problem, is_batch_script};
 pub use ending::FamilyEnd;
-pub use environment::{current_environment, environment_block};
+pub use environment::{current_environment, environment_block, EnvChange};
 pub use family::FamilyMember;
 pub use handoff::RunningCopy;
 pub use host_zone::{host_zone_name, host_zone_sample, ZoneSample};
@@ -109,11 +109,11 @@ pub struct Target<'a> {
     pub path: &'a str,
     pub args: &'a [String],
     pub cwd: Option<&'a str>,
-    /// Variables the target gets on top of this process's environment (a name already present is
-    /// replaced). Empty means the child inherits the environment untouched, through a null
-    /// `lpEnvironment` - byte for byte what every session did before the embedded-engine channel
-    /// (docs/09) had two variables to add. Non-empty means a block built by `environment_block`.
-    pub env: &'a [(String, String)],
+    /// What the target's environment changes from this process's: variables set (a name already present
+    /// is replaced) and variables removed, in order. Empty means the child inherits the environment
+    /// untouched, through a null `lpEnvironment` - byte for byte what a session with nothing to change
+    /// hands on. Non-empty means a block built by `environment_block`.
+    pub env: &'a [EnvChange],
     /// The standard handles it starts with (R4-W1, ADR-17) - never this process's stdin or stdout.
     pub stdio: TargetStdio,
 }
@@ -1174,15 +1174,15 @@ fn launch_line(target: &Target) -> Result<(Vec<u16>, Vec<u16>), String> {
 }
 
 /// The `lpEnvironment` argument and its creation flag for a launch: null and no flag when there is
-/// nothing to add (the child inherits, exactly as before), or a Unicode block with its flag. The
-/// block is returned so it outlives the call - the pointer is into it.
+/// nothing to change (the child inherits this process's environment), or a Unicode block with its flag.
+/// The block is returned so it outlives the call - the pointer is into it.
 fn environment_for(
-    extra: &[(String, String)],
+    changes: &[EnvChange],
 ) -> (Option<Vec<u16>>, Option<*const c_void>, windows::Win32::System::Threading::PROCESS_CREATION_FLAGS) {
-    if extra.is_empty() {
+    if changes.is_empty() {
         return (None, None, windows::Win32::System::Threading::PROCESS_CREATION_FLAGS(0));
     }
-    let block = environment_block(extra);
+    let block = environment_block(changes);
     let ptr = block.as_ptr().cast::<c_void>();
     (Some(block), Some(ptr), CREATE_UNICODE_ENVIRONMENT)
 }
@@ -2414,7 +2414,7 @@ mod tests {
 
     /// The shell every Windows has, asked one question about its environment and answering with
     /// its exit code - no pipes, no output, the one oracle a plain launch offers.
-    fn cmd_exit_if_defined(name: &str, env: &[(String, String)]) -> i32 {
+    fn cmd_exit_if_defined(name: &str, env: &[super::EnvChange]) -> i32 {
         let system_root = std::env::var("SystemRoot").unwrap_or_else(|_| r"C:\Windows".to_string());
         let path = format!(r"{system_root}\System32\cmd.exe");
         let args = vec!["/c".to_string(), format!("if defined {name} (exit 3) else (exit 0)")];
@@ -2651,7 +2651,7 @@ mod tests {
 
     #[test]
     fn a_launched_child_sees_the_variable_the_block_added_and_the_environment_it_inherited() {
-        let extra = vec![("CHRONO_MECH_PROBE".to_string(), "1".to_string())];
+        let extra = vec![super::EnvChange::Set("CHRONO_MECH_PROBE".to_string(), "1".to_string())];
         // The block carries the new name...
         assert_eq!(cmd_exit_if_defined("CHRONO_MECH_PROBE", &extra), 3);
         // ...and everything the parent had - a block that dropped SystemRoot would start a child
@@ -2659,6 +2659,23 @@ mod tests {
         assert_eq!(cmd_exit_if_defined("SystemRoot", &extra), 3);
         // Reversal: without the block the name is not there, so the variable is the block's doing.
         assert_eq!(cmd_exit_if_defined("CHRONO_MECH_PROBE", &[]), 0);
+    }
+
+    /// A variable this process holds is not in the environment of a child launched without it, named in
+    /// another case than it was set in, and the rest of the environment still is. The same launch without
+    /// the removal hands it on, so its absence is the removal's doing.
+    #[test]
+    fn a_launched_child_does_not_get_a_variable_the_launch_removed() {
+        use windows::core::PCWSTR;
+        use windows::Win32::System::Environment::SetEnvironmentVariableW;
+        let name: Vec<u16> = "CHRONO_MECH_REMOVED_PROBE".encode_utf16().chain([0]).collect();
+        let value: Vec<u16> = "EET-2".encode_utf16().chain([0]).collect();
+        // SAFETY: both strings are zero-terminated and outlive the call. The name is this test's own.
+        unsafe { SetEnvironmentVariableW(PCWSTR(name.as_ptr()), PCWSTR(value.as_ptr())) }.expect("the variable is set");
+        assert_eq!(cmd_exit_if_defined("CHRONO_MECH_REMOVED_PROBE", &[]), 3, "a child inherits what this process holds");
+        let removed = [super::EnvChange::Remove("chrono_mech_removed_probe".to_string())];
+        assert_eq!(cmd_exit_if_defined("CHRONO_MECH_REMOVED_PROBE", &removed), 0);
+        assert_eq!(cmd_exit_if_defined("SystemRoot", &removed), 3);
     }
 
     use super::*;

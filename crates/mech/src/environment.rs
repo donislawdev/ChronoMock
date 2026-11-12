@@ -1,9 +1,10 @@
-//! The environment block a launched target inherits, with the session's own variables added.
+//! The environment block a launched target inherits, with the session's own changes made to it.
 //!
 //! `CreateProcessW` with a null `lpEnvironment` hands the child a copy of this process's environment,
-//! and that is what every session did until the embedded-engine channel (docs/09) needed to put two
-//! variables in front of the target. Once a caller supplies a block, the system stops doing three
-//! things for it, and this module does them instead:
+//! and that is what a session does when it has nothing to change. The embedded-engine channel (docs/09)
+//! puts two variables in front of the target, and the session zone takes a `TZ` of the tester's own out
+//! of it. Once a caller supplies a block, the system stops doing three things for it, and this module
+//! does them instead:
 //!
 //! - the drive-directory entries (`=C:=C:\...`) are not propagated - so the block is built from
 //!   `GetEnvironmentStringsW`, which carries them, never from `std::env`, which may not,
@@ -22,10 +23,27 @@ use windows::Win32::System::Environment::{FreeEnvironmentStringsW, GetEnvironmen
 /// `=` as a UTF-16 unit. It is never half of a surrogate pair, so splitting at it by unit is safe.
 const EQUALS: u16 = 0x3D;
 
-/// Build the Unicode environment block for a child: this process's environment with `extra` merged
-/// in (a name already present is replaced), sorted as the system requires, doubly terminated.
-pub fn environment_block(extra: &[(String, String)]) -> Vec<u16> {
-    encode_block(&merge_entries(raw_environment(), extra))
+/// One change a launch makes to the environment the target inherits from this process. Names compare
+/// without regard to case, as the system compares them, and the changes apply in the order given.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum EnvChange {
+    /// The variable gets this value: a name already present is replaced, a new one is added.
+    Set(String, String),
+    /// The variable is not handed on, every entry of that name in whatever case it is written.
+    Remove(String),
+}
+
+impl EnvChange {
+    /// Each `name=value` pair as a variable set, in the order given.
+    pub fn set_each(variables: &[(String, String)]) -> Vec<EnvChange> {
+        variables.iter().map(|(name, value)| EnvChange::Set(name.clone(), value.clone())).collect()
+    }
+}
+
+/// Build the Unicode environment block for a child: this process's environment with `changes` made to
+/// it, sorted as the system requires, doubly terminated.
+pub fn environment_block(changes: &[EnvChange]) -> Vec<u16> {
+    encode_block(&merge_entries(raw_environment(), changes))
 }
 
 /// This process's environment as text, drive-directory entries included - for READING a variable, as
@@ -82,17 +100,27 @@ fn name_of(entry: &[u16]) -> &[u16] {
     }
 }
 
-/// The current entries with `extra` merged in: a name already present is replaced in place (names
-/// compare without regard to case, as the system compares them), a new one is appended. Then the
-/// whole list is sorted the way the system requires, so the caller never has to know that a block
-/// is sorted at all. Entries `extra` does not name are kept unit for unit.
-pub(crate) fn merge_entries(mut entries: Vec<Vec<u16>>, extra: &[(String, String)]) -> Vec<Vec<u16>> {
-    for (name, value) in extra {
-        let wanted = sort_key(&name.encode_utf16().collect::<Vec<u16>>());
-        let entry: Vec<u16> = format!("{name}={value}").encode_utf16().collect();
-        match entries.iter_mut().find(|present| sort_key(name_of(present)) == wanted) {
-            Some(slot) => *slot = entry,
-            None => entries.push(entry),
+/// The current entries with `changes` made to them, in order: a name set that is already present is
+/// replaced in place (names compare without regard to case, as the system compares them), a new one is
+/// appended, and a name removed leaves with every entry that carries it. Then the whole list is sorted
+/// the way the system requires, so the caller never has to know that a block is sorted at all. Entries
+/// no change names are kept unit for unit.
+pub(crate) fn merge_entries(mut entries: Vec<Vec<u16>>, changes: &[EnvChange]) -> Vec<Vec<u16>> {
+    let key_of = |name: &str| sort_key(&name.encode_utf16().collect::<Vec<u16>>());
+    for change in changes {
+        match change {
+            EnvChange::Set(name, value) => {
+                let wanted = key_of(name);
+                let entry: Vec<u16> = format!("{name}={value}").encode_utf16().collect();
+                match entries.iter_mut().find(|present| sort_key(name_of(present)) == wanted) {
+                    Some(slot) => *slot = entry,
+                    None => entries.push(entry),
+                }
+            }
+            EnvChange::Remove(name) => {
+                let wanted = key_of(name);
+                entries.retain(|present| sort_key(name_of(present)) != wanted);
+            }
         }
     }
     entries.sort_by_key(|entry| sort_key(name_of(entry)));
@@ -134,6 +162,14 @@ mod tests {
         (n.to_string(), v.to_string())
     }
 
+    fn set(n: &str, v: &str) -> EnvChange {
+        EnvChange::Set(n.to_string(), v.to_string())
+    }
+
+    fn remove(n: &str) -> EnvChange {
+        EnvChange::Remove(n.to_string())
+    }
+
     fn entry(text: &str) -> Vec<u16> {
         text.encode_utf16().collect()
     }
@@ -146,9 +182,21 @@ mod tests {
     fn a_present_name_is_replaced_without_regard_to_case_and_a_new_one_is_appended() {
         let merged = merge_entries(
             vec![entry("Path=C:\\bin"), entry("TEMP=C:\\t")],
-            &[pair("path", "D:\\bin"), pair("CHRONO_X", "1")],
+            &[set("path", "D:\\bin"), set("CHRONO_X", "1")],
         );
         assert_eq!(texts(&merged), ["CHRONO_X=1", "path=D:\\bin", "TEMP=C:\\t"]);
+    }
+
+    /// A name removed leaves with every entry that carries it, in whatever case each is written - a block
+    /// handed on by a parent may hold one name twice. The changes apply in order, so a name set after it
+    /// was removed is there, and one removed after it was set is not. A name nobody holds changes nothing.
+    #[test]
+    fn a_removed_name_leaves_in_every_case_it_is_written_and_the_changes_apply_in_order() {
+        let present = || vec![entry("TZ=EET-2"), entry("Path=C:\\bin"), entry("tz=UTC")];
+        assert_eq!(texts(&merge_entries(present(), &[remove("Tz")])), ["Path=C:\\bin"]);
+        assert_eq!(texts(&merge_entries(present(), &[remove("TZ"), set("TZ", "CMS-5:30")])), ["Path=C:\\bin", "TZ=CMS-5:30"]);
+        assert_eq!(texts(&merge_entries(present(), &[set("TZ", "CMS-5:30"), remove("tz")])), ["Path=C:\\bin"]);
+        assert_eq!(texts(&merge_entries(present(), &[remove("NOBODY")])), ["Path=C:\\bin", "TZ=EET-2", "tz=UTC"]);
     }
 
     #[test]
@@ -182,7 +230,7 @@ mod tests {
     fn an_entry_that_is_not_valid_utf16_reaches_the_child_unit_for_unit() {
         let odd_value: Vec<u16> = vec![u16::from(b'A'), EQUALS, u16::from(b'x'), 0xD800, u16::from(b'y')];
         let odd_name: Vec<u16> = vec![u16::from(b'B'), 0xDC00, EQUALS, u16::from(b'1')];
-        let merged = merge_entries(vec![odd_name.clone(), odd_value.clone()], &[pair("CHRONO_X", "1")]);
+        let merged = merge_entries(vec![odd_name.clone(), odd_value.clone()], &[set("CHRONO_X", "1")]);
         assert!(merged.contains(&odd_value) && merged.contains(&odd_name), "{merged:?}");
         let block = encode_block(&merged);
         assert!(block.windows(odd_value.len()).any(|w| w == odd_value.as_slice()), "{block:?}");
@@ -274,14 +322,22 @@ mod tests {
             )
         }
 
-        /// A session's variables: names of the environment's in another case, new ones, and one name twice.
-        fn extra(environment: Vec<(String, Vec<u16>)>) -> impl Strategy<Value = Vec<(String, String)>> {
+        /// A session's changes: names of the environment's in another case and new ones, each set or
+        /// removed, and one name changed twice - the second time set or removed as the mask says.
+        fn extra(environment: Vec<(String, Vec<u16>)>) -> impl Strategy<Value = Vec<EnvChange>> {
             let names: Vec<String> = environment.into_iter().map(|(n, _)| n).filter(|n| !n.starts_with('=')).collect();
             let present = if names.is_empty() { name().boxed() } else { select(names).boxed() };
-            let one = prop_oneof![2 => (present, any::<u64>()).prop_map(|(n, mask)| recased(&n, mask)), 2 => name()];
-            (proptest::collection::vec((one, "[a-z=;\\\\ ]{0,6}|.{0,4}"), 0..4), any::<u64>()).prop_map(|(mut extra, mask)| {
-                if let Some((first, _)) = extra.first().cloned() {
-                    extra.push((recased(&first, mask), "twice".into()));
+            let one = prop_oneof![2 => (present, any::<u64>()).prop_map(|(n, mask)| recased(&n, mask)), 2 => name()].boxed();
+            let change = prop_oneof![
+                3 => (one.clone(), "[a-z=;\\\\ ]{0,6}|.{0,4}").prop_map(|(n, v)| EnvChange::Set(n, v)),
+                1 => one.prop_map(EnvChange::Remove),
+            ];
+            (proptest::collection::vec(change, 0..4), any::<u64>()).prop_map(|(mut extra, mask)| {
+                let first = extra.first().map(|change| match change {
+                    EnvChange::Set(n, _) | EnvChange::Remove(n) => recased(n, mask),
+                });
+                if let Some(again) = first {
+                    extra.push(if mask & 1 == 1 { EnvChange::Remove(again) } else { EnvChange::Set(again, "twice".into()) });
                 }
                 extra
             })
@@ -292,9 +348,10 @@ mod tests {
         }
 
         proptest! {
-            /// Every entry the session does not name reaches the block unit for unit, every variable of
-            /// the session's stands in it once with the value it was given last, nothing else does, the
-            /// entries are sorted by name without regard to case, and the block ends as the system reads it.
+            /// Every entry the session does not name reaches the block unit for unit, every variable the
+            /// session set last stands in it once with the value it was given last, every one it removed
+            /// last is gone, nothing else is there, the entries are sorted by name without regard to case,
+            /// and the block ends as the system reads it.
             #[test]
             fn the_block_holds_the_environment_and_the_sessions_variables_and_nothing_else(
                 (environment, extra) in environment().prop_flat_map(|env| (Just(env.clone()), extra(env))),
@@ -307,8 +364,11 @@ mod tests {
                     .iter()
                     .map(|(n, v)| (folded(n), [units(n), vec![0x3D], v.clone()].concat()))
                     .collect();
-                for (n, v) in &extra {
-                    wanted.insert(folded(n), units(&format!("{n}={v}")));
+                for change in &extra {
+                    match change {
+                        EnvChange::Set(n, v) => wanted.insert(folded(n), units(&format!("{n}={v}"))),
+                        EnvChange::Remove(n) => wanted.remove(&folded(n)),
+                    };
                 }
                 let owed: Vec<u16> = wanted.into_values().flat_map(|entry| entry.into_iter().chain([0])).chain([0]).collect();
                 prop_assert_eq!(&block, &owed, "the block of {:?} with {:?}", environment, extra);
