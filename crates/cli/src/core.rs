@@ -153,7 +153,7 @@ pub(crate) fn core_mode() -> i32 {
             let verdict = verdict_from_coverage(&prepared.coverage);
             // The parent's own coverage (its pid). Children that join later report
             // separately from run_session, each with its own pid and counts.
-            emit_coverage(prepared.session.pid, &prepared.coverage, &runtime_warnings);
+            emit_coverage(prepared.session.pid, &prepared.coverage, &with_zone_warning(runtime_warnings, prepared.session.zone_unnamed_for_icu()));
             let mut ledger = SessionLedger::new(verdict);
 
             // Single-instance vanish (ADR-4): the target exited within the guard
@@ -737,15 +737,19 @@ pub(crate) fn native_session_warnings(
 const KEY_ABSOLUTE_DUE: &str = "timer.absolute_due_converted";
 
 /// The warnings about what the session's own clock meant for the application, each said only when it
-/// happened: the machine slept while the session clock stood still (R5-P1, R5-D34), and an absolute
-/// deadline converted on the speed of its moment was pending when the clock moved (R5-D2, R5-D35).
-fn session_clock_warnings(host_slept_ms: i64, absolute_due_before_move: bool) -> Vec<String> {
+/// happened: the machine slept while the session clock stood still (R5-P1, R5-D34), an absolute
+/// deadline converted on the speed of its moment was pending when the clock moved (R5-D2, R5-D35), and a
+/// jump took the clock to before the period of the key name the session zone borrowed (ADR-26).
+fn session_clock_warnings(host_slept_ms: i64, absolute_due_before_move: bool, jumped_before_zone_name: bool) -> Vec<String> {
     let mut warnings = Vec::new();
     if host_slept_ms >= SLEPT_REPORTED_MS {
         warnings.push(KEY_HOST_SLEPT.to_string());
     }
     if absolute_due_before_move {
         warnings.push(KEY_ABSOLUTE_DUE.to_string());
+    }
+    if jumped_before_zone_name {
+        warnings.push(KEY_JUMP_BEFORE_ZONE_NAME.to_string());
     }
     warnings
 }
@@ -798,6 +802,25 @@ const KEY_SESSION_TARGET_CRASHED: &str = "session.target_crashed";
 /// the runtimes that read it would take their zone from it instead of the session's (`session_zone_change`).
 /// Said once, in the first coverage: the CLI driver and the window union warnings over every event.
 const KEY_TZ_VARIABLE_REMOVED: &str = "session.tz_variable_removed";
+
+/// The runtimes built on ICU find no zone for this session (`Session::zone_unnamed_for_icu`, ADR-26), so
+/// they show it without a name or show UTC. Known when the session starts, and said in the first coverage
+/// beside the warnings known before the launch.
+const KEY_ZONE_UNNAMED: &str = "session.zone_unnamed";
+
+/// A jump took the clock to before the period of the key name the session zone borrowed (ADR-26), where
+/// the runtimes built on ICU can show the offset the real zone of that name had at the date. Said with the
+/// verdict, because any jump of the session can be the one.
+const KEY_JUMP_BEFORE_ZONE_NAME: &str = "session.jump_before_zone_name";
+
+/// The warnings known before the launch, and then whether ICU can name the session zone, which is known
+/// once the session has chosen the zone's name.
+fn with_zone_warning(mut warnings: Vec<String>, zone_unnamed_for_icu: bool) -> Vec<String> {
+    if zone_unnamed_for_icu {
+        warnings.push(KEY_ZONE_UNNAMED.to_string());
+    }
+    warnings
+}
 
 /// End the application a refusal will not let run, with everything it started (R4-S5), and name what
 /// is still running afterwards for the verdict, with whether the family could be looked for in full. Why
@@ -1055,6 +1078,7 @@ pub(crate) fn close_session(
     // (R2-S9). It rides the session verdict, which is the one event that speaks for the whole family.
     let uncovered_processes = session.uncovered_process_count();
     let unwatchable_members = session.unwatchable_member_count();
+    let jumped_before_zone_name = session.jumped_before_zone_name();
 
     // The counts every process ENDED with. The first event for a process is emitted inside the ADR-4
     // guard window, so its call counts are the first 300 ms of the session and never move again -
@@ -1088,7 +1112,7 @@ pub(crate) fn close_session(
         duration_clamped || final_state.duration_at_range_end(),
         substituted_reads(&final_coverage, &page_rows),
     );
-    session_warnings.extend(session_clock_warnings(final_state.host_slept_ms, absolute_due_before_move));
+    session_warnings.extend(session_clock_warnings(final_state.host_slept_ms, absolute_due_before_move, jumped_before_zone_name));
     let mut children_warnings = uncovered_children_warnings(&uncovered_children, uncovered_children_total);
     reconcile_engine_warnings(&mut children_warnings, every_renderer_reached(&uncovered_children, &pages.engines));
     session_warnings.extend(children_warnings);
@@ -1424,14 +1448,28 @@ mod tests {
         assert_eq!(reported_sleep_ms(1_000), 1_000);
     }
 
-    /// R5-P1 and R5-D35: each warning only when it happened.
+    /// R5-P1, R5-D35 and ADR-26: each warning only when it happened.
     #[test]
     fn the_session_clock_warnings_say_only_what_happened() {
-        assert!(session_clock_warnings(0, false).is_empty());
-        assert!(session_clock_warnings(999, false).is_empty());
-        assert_eq!(session_clock_warnings(5_000, false), vec![KEY_HOST_SLEPT]);
-        assert_eq!(session_clock_warnings(0, true), vec![KEY_ABSOLUTE_DUE]);
-        assert_eq!(session_clock_warnings(5_000, true), vec![KEY_HOST_SLEPT, KEY_ABSOLUTE_DUE]);
+        assert!(session_clock_warnings(0, false, false).is_empty());
+        assert!(session_clock_warnings(999, false, false).is_empty());
+        assert_eq!(session_clock_warnings(5_000, false, false), vec![KEY_HOST_SLEPT]);
+        assert_eq!(session_clock_warnings(0, true, false), vec![KEY_ABSOLUTE_DUE]);
+        assert_eq!(session_clock_warnings(0, false, true), vec![KEY_JUMP_BEFORE_ZONE_NAME]);
+        assert_eq!(
+            session_clock_warnings(5_000, true, true),
+            vec![KEY_HOST_SLEPT, KEY_ABSOLUTE_DUE, KEY_JUMP_BEFORE_ZONE_NAME]
+        );
+    }
+
+    /// ADR-26: the zone's warning joins those known before the launch only when ICU cannot name the zone,
+    /// and after them, in the order they were found.
+    #[test]
+    fn the_zone_warning_follows_the_ones_known_before_the_launch_only_when_icu_cannot_name_the_zone() {
+        let known = vec![KEY_TZ_VARIABLE_REMOVED.to_string()];
+        assert_eq!(with_zone_warning(known.clone(), false), known);
+        assert_eq!(with_zone_warning(known, true), vec![KEY_TZ_VARIABLE_REMOVED, KEY_ZONE_UNNAMED]);
+        assert_eq!(with_zone_warning(Vec::new(), true), vec![KEY_ZONE_UNNAMED]);
     }
 
     /// R5-D35. The ledger remembers whether a deadline had been converted when the clock moved: a move with

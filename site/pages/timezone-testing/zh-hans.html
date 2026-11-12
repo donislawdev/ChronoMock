@@ -70,7 +70,7 @@ Chrono Mock - date calculator
 
     <div class="prose">
       <ul>
-        <li><strong>该时区会把自己报告为“Chrono Session”</strong>，这是任何 Windows 注册表都不认识的名字。凡是把这个名字映射回时区的东西——包括 .NET 的 <code>TimeZoneInfo.Local</code>——都会退回到使用偏移量，这是正确的答案。坚持要用注册表中名称的应用则找不到。</li>
+        <li><strong>该时区会把自己报告为“Chrono Session”</strong>，这是任何 Windows 注册表都不认识的名字。凡是把这个名字映射回时区的东西——包括 .NET 的 <code>TimeZoneInfo.Local</code>——都会退回到使用偏移量，这是正确的答案。在没有夏令时的真实时区的偏移量上（例如 +05:30），会话会给该时区使用那个真实时区在注册表中的名称，从那个时区采用这个偏移量的日期起生效，因此按名称查找时区的程序——Node.js、Deno 等基于 ICU 库构建的程序，以及 .NET——都能找到它。在其他任何偏移量上，坚持要用注册表中名称的应用则找不到。</li>
         <li><strong>Java 会把会话时区当作偏移量来接收。</strong>会话时区没有夏令时，背后也没有城市，所以 Java 用它的偏移量来命名——对于 +05:30 的会话就是 <code>GMT+05:30</code>。</li>
         <li><strong>在 Chromium 和 Electron 模式下，页面同样读取会话时区。</strong>它是同一个固定偏移：每个页面和 worker 都会被放到这个时区，并检查自己读到的值。Electron 应用的主进程在 Node 中运行 JavaScript，会话无法触及，所以它保持真实时钟。</li>
         <li><strong>偏移量的范围是 -14:00 到 +14:00</strong>，以整分钟为单位。超出这个范围的值会被拒绝，而不是悄悄回绕。</li>

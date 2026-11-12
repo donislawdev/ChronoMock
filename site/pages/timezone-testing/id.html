@@ -84,10 +84,15 @@ Chrono Mock - date calculator
 
     <div class="prose">
       <ul>
-        <li><strong>Zona itu melaporkan dirinya sebagai “Chrono Session”</strong>, nama yang tidak dikenal
-          registry Windows mana pun. Apa pun yang memetakan nama itu kembali ke zona - termasuk
-          <code>TimeZoneInfo.Local</code> milik .NET - akan beralih ke selisihnya, yang merupakan jawaban
-          yang benar. Aplikasi yang bersikeras pada nama registry tidak akan menemukannya.</li>
+        <li><strong>Zona itu melaporkan dirinya sebagai “Chrono Session”</strong>, nama yang tidak
+          dikenal registry Windows mana pun. Apa pun yang memetakan nama itu kembali ke zona -
+          termasuk <code>TimeZoneInfo.Local</code> milik .NET - akan beralih ke selisihnya, yang
+          merupakan jawaban yang benar. Pada selisih zona nyata yang tidak punya waktu musim panas,
+          seperti +05:30, sesi memberi zona itu nama registry milik zona nyata tersebut, sejak
+          tanggal zona itu memakai selisih tersebut, sehingga program yang mencari zona menurut
+          namanya - Node.js, Deno, dan program lain yang dibangun di atas pustaka ICU, juga .NET -
+          dapat menemukannya. Pada selisih lainnya, aplikasi yang bersikeras pada nama registry
+          tidak akan menemukannya.</li>
         <li><strong>Java mengambil zona sesi sebagai selisih.</strong> Zona sesi tidak punya waktu musim
           panas dan tidak ada kota di baliknya, sehingga Java menamainya menurut selisihnya -
           <code>GMT+05:30</code> untuk sesi pada +05:30.</li>

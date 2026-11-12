@@ -85,10 +85,14 @@ Chrono Mock - date calculator
 
     <div class="prose">
       <ul>
-        <li><strong>Fusul se raportează drept „Chrono Session”</strong>, un nume pe care niciun registru
-          Windows nu îl cunoaște. Orice mapează acel nume înapoi la un fus - printre ele
-          <code>TimeZoneInfo.Local</code> din .NET - revine în schimb la decalaj, ceea ce este răspunsul
-          corect. O aplicație care insistă pe un nume din registru nu va găsi unul.</li>
+        <li><strong>Fusul se raportează drept „Chrono Session”</strong>, un nume pe care niciun
+          registru Windows nu îl cunoaște. Orice mapează acel nume înapoi la un fus - printre ele
+          <code>TimeZoneInfo.Local</code> din .NET - revine în schimb la decalaj, ceea ce este
+          răspunsul corect. La decalajul unui fus real fără ora de vară, cum ar fi +05:30, sesiunea
+          dă fusului numele din registru al acelui fus real, de la data la care acel fus a adoptat
+          decalajul, așa că programele care caută un fus după nume - Node.js, Deno și altele
+          construite pe biblioteca ICU, precum și .NET - îl găsesc. La orice alt decalaj, o
+          aplicație care insistă pe un nume din registru nu va găsi unul.</li>
         <li><strong>Java preia fusul sesiunii ca decalaj.</strong> Fusul sesiunii nu are ora de vară și nici
           un oraș în spate, așa că Java îl numește după decalajul lui - <code>GMT+05:30</code> pentru o
           sesiune la +05:30.</li>

@@ -91,10 +91,14 @@ Chrono Mock - date calculator
 
     <div class="prose">
       <ul>
-        <li><strong>The zone reports itself as "Chrono Session"</strong>, a name no Windows
-          registry knows. Anything mapping that name back to a zone - .NET's
-          <code>TimeZoneInfo.Local</code> among them - falls back to the offset instead, which
-          is the right answer. An application insisting on a registry name will not find one.</li>
+        <li><strong>The zone reports itself as "Chrono Session"</strong>, a name no Windows registry
+          knows. Anything mapping that name back to a zone - .NET's <code>TimeZoneInfo.Local</code>
+          among them - falls back to the offset instead, which is the right answer. At the offset of
+          a real time zone without daylight saving time, such as +05:30, the session gives the zone
+          the registry name of that real zone, from the date that zone took the offset on, so
+          programs that look a zone up by its name - Node.js, Deno and others built on the ICU
+          library, and .NET too - find it. At any other offset, an application insisting on a
+          registry name will not find one.</li>
         <li><strong>Java picks the session zone up as an offset.</strong> The session zone has
           no daylight saving time and no city behind it, so Java names it after its offset -
           <code>GMT+05:30</code> for a session at +05:30.</li>

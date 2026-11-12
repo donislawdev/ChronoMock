@@ -9,8 +9,8 @@
 //!   (parent and children share ONE fake clock - ADR-3). The duration anchor rides the same seqlock
 //!   as the wall anchor, so a hook reads the multiplier and the duration base as one snapshot, with
 //!   the real clock it projects from read inside the same window (`read_dur_with`, R4-S3). The
-//!   stable config fields (`tz_bias`, `scale_dur`, `core_created`, `core_pid`) are written once before
-//!   the target exists. `ended` is the one written later, once, when the core ends the session.
+//!   stable config fields (`tz_bias`, `zone_name`, `scale_dur`, `core_created`, `core_pid`) are written
+//!   once before the target exists. `ended` is the one written later, once, when the core ends the session.
 //!
 //! - The PID REGISTRY (`pid_count`, `pids`) lets each hooked process claim a slot and publish its
 //!   own PID, so the mechanism knows which processes joined the session.
@@ -42,6 +42,7 @@ use std::ptr::{addr_of, addr_of_mut, read_volatile, write_volatile};
 pub mod inject;
 #[cfg(test)]
 mod search;
+pub mod zone_name;
 use std::sync::atomic::{fence, AtomicI64, AtomicU32, AtomicUsize, Ordering};
 
 /// Named shared section for a session's control memory (per interactive session).
@@ -759,7 +760,11 @@ pub const CTL_MAGIC: u64 = 0x4348_524F_4E4F_4354; // "CHRONOCT"
 /// 15: `Cov` gained `exit_began_qpc` (ADR-4, 2026-11-12) after every other field, which widens every
 /// slot, and `Ctl` gained `pending_loads` after `covs` (ADR-25), which makes the block longer. An old hook
 /// would leave the mark unwritten and never pass the gate a new parent opens for it.
-pub const CTL_LAYOUT_VERSION: u32 = 15;
+///
+/// 16: `Ctl` gained `zone_name` (ADR-26, 2026-11-12) in the four bytes after `tz_bias` that alignment had
+/// left unnamed. No offset moves, but an old hook would hand the zone out under its own name where a new
+/// core chose a borrowed one, and say nothing of it.
+pub const CTL_LAYOUT_VERSION: u32 = 16;
 
 /// How many uncovered children one process's `Cov` can name. Past this the counter still grows, so
 /// the audit says "and N more" rather than losing the number. Sized for what a Chromium browser
@@ -781,6 +786,10 @@ pub struct Ctl {
     pub seq: u32,
     /// Session zone bias in minutes (UTC = local + bias), no DST. Stable per session.
     pub tz_bias: i32,
+    /// Which key name the session zone is handed out under: [`zone_name::OWN_ZONE_NAME`], or a name
+    /// borrowed from a real zone at the same offset ([`zone_name::BORROWED_NAMES`], ADR-26). Stable per
+    /// session. In the four bytes alignment leaves before `a_fake`, so naming them moved no offset.
+    pub zone_name: u32,
     /// Fake anchor in 100 ns FILETIME units.
     pub a_fake: i64,
     /// Real anchor in QueryUnbiasedInterruptTime (QUIT) 100 ns units.
@@ -1789,6 +1798,23 @@ pub unsafe fn read_tz_bias(p: *const Ctl) -> i32 { unsafe {
     read_volatile(addr_of!((*p).tz_bias))
 }}
 
+/// Write which name the session zone is handed out under (stable field, outside the seqlock, ADR-26).
+/// Mechanism side.
+///
+/// # Safety
+/// `p` must point to a live, correctly aligned `Ctl`.
+pub unsafe fn write_zone_name(p: *mut Ctl, index: u32) { unsafe {
+    write_volatile(addr_of_mut!((*p).zone_name), index);
+}}
+
+/// Read which name the session zone is handed out under (hook side).
+///
+/// # Safety
+/// `p` must point to a live, correctly aligned `Ctl`.
+pub unsafe fn read_zone_name(p: *const Ctl) -> u32 { unsafe {
+    read_volatile(addr_of!((*p).zone_name))
+}}
+
 /// Write the scale-duration flag (stable field, outside the seqlock). Mechanism side.
 ///
 /// # Safety
@@ -2784,6 +2810,11 @@ mod tests {
         assert_eq!(offset_of!(Cov, exit_began_qpc) % 8, 0, "Cov.exit_began_qpc is not 8-byte aligned");
         assert_eq!(size_of::<Cov>() % 8, 0, "a slot would misalign the next one");
         assert_eq!(size_of::<PendingLoad>(), 16, "a pending load is two words and a time");
+        // The zone's two fields fill the header up to the first anchor, which a hook of either bitness
+        // reads with one load (version 16 named the four bytes alignment had left there).
+        assert_eq!(offset_of!(Ctl, zone_name), offset_of!(Ctl, tz_bias) + 4, "zone_name moved away from tz_bias");
+        assert_eq!(offset_of!(Ctl, a_fake), offset_of!(Ctl, zone_name) + 4, "padding the layout does not name sits before a_fake");
+        assert_eq!(offset_of!(Ctl, a_fake) % 8, 0, "a_fake is not 8-byte aligned");
         assert_eq!(
             offset_of!(Ctl, pending_loads),
             offset_of!(Ctl, covs) + size_of::<[Cov; MAX_COV_PIDS]>(),
@@ -3283,6 +3314,21 @@ mod tests {
         unsafe {
             write_tz_bias(p, -120);
             assert_eq!(read_tz_bias(p), -120);
+        }
+    }
+
+    /// A zeroed block is the zone's own name, which is what every block reads before the mechanism
+    /// writes the field, and the field does not reach into the bias beside it.
+    #[test]
+    fn zone_name_round_trips_beside_the_bias() {
+        let mut ctl = zeroed_ctl();
+        let p = &mut *ctl as *mut Ctl;
+        unsafe {
+            assert_eq!(read_zone_name(p), zone_name::OWN_ZONE_NAME);
+            write_tz_bias(p, -330);
+            write_zone_name(p, 4);
+            assert_eq!(read_zone_name(p), 4);
+            assert_eq!(read_tz_bias(p), -330);
         }
     }
 

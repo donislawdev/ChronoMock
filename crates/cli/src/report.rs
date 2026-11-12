@@ -423,6 +423,16 @@ fn describe_session_warning(key: &str) -> &'static str {
         "session.tz_variable_removed" => {
             "the value of TZ set in your environment was not passed to the application - the programs that read TZ (Python and other programs on the C runtime, MSYS2, Node.js) take their time zone from it, so it would have replaced the session zone - a program built on the Rust jiff crate gets the session zone in TZ instead, any other program gets no TZ - your own environment is unchanged, and the value left out is on stderr"
         }
+        // ADR-26. Says what the tester sees and which sessions do not have it, because the cure is a choice
+        // of offset or date, not anything in the application.
+        "session.zone_unnamed" => {
+            "the programs built on ICU (Node.js, Deno, Bun and others) have no time zone for this session's offset at the moment it starts, so some of them show the right time without a zone name and others show it in UTC - they have one for a whole-hour offset from -12:00 to +14:00, and for the offset of a real zone without daylight saving time from the date that zone took it on (+05:30 from 1945-10-15, for example)"
+        }
+        // ADR-26. ICU read the zone of the borrowed name with its history, once, so the jump is what moved
+        // those programs off the session's offset, and it cannot be undone while they run.
+        "session.jump_before_zone_name" => {
+            "for the programs built on ICU (Node.js, Deno, Bun and others) to name the session's time zone, the session gave it the name of a real zone with the same offset, and a jump took the clock to a date before that zone had this offset - at such a date those programs can show the offset the real zone had then instead of the session's"
+        }
         _ => "",
     }
 }

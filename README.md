@@ -333,10 +333,20 @@ cover something is worse than one that says what it cannot do.
 - **The zone reports itself as "Chrono Session"**, a name no Windows registry knows, and says it
   has no daylight saving time. Anything that maps that name back to a zone falls back to the offset
   instead, which is the right answer: .NET's `TimeZoneInfo.Local` keeps the name, Java names the zone
-  after its offset (`GMT+05:30`), and so do Node.js and Deno for a whole hour (`Etc/GMT-5`). The Rust
-  `jiff` crate is the exception: it finds a zone by its name alone and would fall back to UTC, so a
-  session gives a program built on it the zone in the `TZ` variable instead (`CMS-5:30` for +05:30).
-  A target that insists on a registry name will not find one
+  after its offset (`GMT+05:30`), and so do Node.js, Deno and the other programs built on the ICU
+  library for a whole hour from -12:00 to +14:00 (`Etc/GMT-5`). The Rust `jiff` crate is the
+  exception: it finds a zone by its name alone and would fall back to UTC, so a session gives a program
+  built on it the zone in the `TZ` variable instead (`CMS-5:30` for +05:30)
+- **At an offset like +05:30 the zone borrows the name of a real one.** ICU cannot name such an
+  offset from the offset alone, so the session gives the zone the registry name of a Windows time zone
+  with that offset and no daylight saving time - India Standard Time for +05:30 - which ICU looks up
+  (`Asia/Calcutta`), and so does .NET, whose `TimeZoneInfo.Local` is then that zone. Only from the
+  date that zone took the offset on (15 October 1945 for India), because ICU reads the whole history of
+  the zone it names and before that date would show the offset the zone had then. At an offset no such
+  zone has (-03:30, -13:00 and others) or before that date, programs built on ICU show the zone without
+  a name or show UTC, and the report says so. It also says when a jump takes the clock to before that
+  date, where those programs can show the real zone's offset of the time. A target that insists on a
+  registry name finds one only at such an offset
 - **A `TZ` variable in your environment is not passed to the application.** The programs that read it
   (the C runtime, and so Python and MSYS2, and Node.js) take their time zone from it before the one
   Windows gives, so it would replace the session zone: measured under a session at +05:30 with `TZ` set
@@ -483,7 +493,7 @@ says which is which, and some rows have both._
 | .NET (Framework and modern) | experimental | measured on x64, x86 | Time calls go through Win32 exports and are covered, including the session time zone. Stopwatch stays on the real high-resolution counter unless you opt in with Scale QPC (`--scale-qpc`), which accelerates it too |
 | Java (JVM) | experimental | measured on x64, x86 | The wall clock, at the session's speed too, and the session time zone are covered. The zone arrives as a fixed offset named after it, like `GMT+05:30`. nanoTime stays on the real high-resolution counter unless you opt in with Scale QPC (`--scale-qpc`) |
 | Python (CPython, incl. PyInstaller) | experimental | measured on x64 by the runtime maps (wall clock, time zone), by hand on x64 (the high-resolution clocks) | Wall clock (time.time, datetime) and the session time zone (time.localtime) are covered. perf_counter, and monotonic on Python 3.13+, are on the high-resolution counter - real by default, accelerated when you opt in with Scale QPC (`--scale-qpc`) |
-| JavaScript runtimes (Node.js, Deno) | experimental | measured on x64 by the runtime maps | `Date` and the session time zone are covered. A zone of whole hours is named like `Etc/GMT-5`, and one with a half-hour offset has no name in `Intl`, though its offset is right |
+| JavaScript runtimes (Node.js, Deno) | experimental | measured on x64 by the runtime maps | `Date` and the session time zone are covered. A zone of whole hours is named like `Etc/GMT-5`, and one at the offset of a real zone without daylight saving time, like +05:30, by that zone's name (`Asia/Calcutta`) from the date the zone took the offset on. At an offset no such zone has, or before that date, `Intl` gives the zone no name, though its offset is right, and the report says so |
 | Ruby | experimental | measured on x64 by the runtime maps | The wall clock and the session time zone are covered |
 | Rust | experimental | measured on x64 by the runtime maps (the standard library), by hand on x64 and x86 (the `chrono` crate) and on x64 (the `jiff` crate) | The wall clock (`SystemTime`) is covered, and so is the session time zone read through the `chrono` crate. The `jiff` crate finds a zone by its name, which the session zone does not have, so a session gives a program built on it the zone in the `TZ` variable. A jiff program started by another program of the session is not recognised and shows UTC. `Instant` stays on the real high-resolution counter unless you opt in with Scale QPC (`--scale-qpc`) |
 | Go | not supported | measured on x64, x86 by the runtime maps | Go reads the wall clock straight from a page Windows shares with every process, which no hook reaches, so the application keeps the real date. The report recognises a Go program and says so. The session time zone does reach it |

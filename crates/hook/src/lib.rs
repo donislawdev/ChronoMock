@@ -72,7 +72,7 @@ use chrono_ctl::{
     read_ended, read_qpc, read_qpc_with, RELEASE_MARGIN_QUIT,
     read_pid_count, read_scale_dur, read_scale_qpc, set_created, set_subsystem, image_subsystem, MAX_COV_PIDS,
     IMAGE_HEADER_SPAN, IDX_GTZIFY,
-    bump_waits_at_floor, delay_hit_floor, read_installed, read_late_installed, read_tz_bias, reserve_cov_slot,
+    bump_waits_at_floor, delay_hit_floor, read_installed, read_late_installed, read_tz_bias, read_zone_name, reserve_cov_slot,
     scale_delay_deadline, scale_delay_interval, scale_timer_due, scale_timer_elapse, scale_timer_period,
     scale_timer_period_ms, scale_wait, set_channels_installed, set_failed_channels, set_late_installed,
     wait_hit_floor, bump_timers_at_floor, bump_calls_without_storage, timer_elapse_hit_floor, timer_period_hit_floor, ChannelModule, Cov,
@@ -280,7 +280,10 @@ static CTL_PTR: OnceLock<usize> = OnceLock::new();
 static COV_PTR: OnceLock<usize> = OnceLock::new();
 /// The registry slot `COV_PTR` points into, which the exit mark checks still names this process.
 static COV_SLOT: OnceLock<usize> = OnceLock::new();
-static TZ_BIAS: OnceLock<i32> = OnceLock::new();
+/// The session zone, read once from the block when the hook joins: its bias, and the index of the key name
+/// it is handed out under (`chrono_ctl::zone_name`, ADR-26). One cell for both, because both are stable for
+/// the whole session and are set in the same breath.
+static SESSION_ZONE: OnceLock<(i32, u32)> = OnceLock::new();
 
 static O_GSTAFT: OnceLock<FtFn> = OnceLock::new();
 static O_GSTPAFT: OnceLock<FtFn> = OnceLock::new();
@@ -1147,7 +1150,13 @@ fn fake_now_by(clock: fn() -> i64) -> Option<(i64, i64)> {
 }
 
 fn cur_tz_bias() -> i32 {
-    *TZ_BIAS.get().unwrap_or(&0)
+    SESSION_ZONE.get().map_or(0, |zone| zone.0)
+}
+
+/// The key name the session zone is handed out under: a real zone's at the same offset where the core
+/// chose one for ICU to name the zone by, the session's own name otherwise (ADR-26).
+fn session_zone_key() -> &'static str {
+    chrono_ctl::zone_name::zone_key_name(SESSION_ZONE.get().map_or(chrono_ctl::zone_name::OWN_ZONE_NAME, |zone| zone.1))
 }
 
 /// Current multiplier from the anchor (the wall-clock speed factor).
@@ -1404,8 +1413,10 @@ unsafe extern "system" fn h_ntqsi(class: i32, info: *mut c_void, len: u32, retle
 // --- Session zone -------------------------------------------------------------
 // Report the session zone (Bias = tz_bias, no DST, and in the dynamic form DST explicitly
 // disabled) so a target's notion of "which zone am I in" agrees with the shifted GetLocalTime.
+// Every answer carries the session's own name as the standard name. The key name of the dynamic
+// form is a real zone's where the core borrowed one, so ICU can name the zone (ADR-26).
 
-const SESSION_ZONE_NAME: &str = "Chrono Session";
+use chrono_ctl::zone_name::SESSION_ZONE_NAME;
 const TIME_ZONE_ID_INVALID: u32 = 0xFFFF_FFFF;
 
 /// Copy `s` into a fixed-length UTF-16 field, NUL-terminated (zone name buffers).
@@ -1438,14 +1449,15 @@ unsafe extern "system" fn h_gdtzi(lp: *mut DYNAMIC_TIME_ZONE_INFORMATION) -> u32
         // JVM (every line from 8 to the current one) does exactly that when it is TRUE, and otherwise
         // looks the key name up in its own table, misses, and falls back to ActiveTimeBias from the
         // REAL registry, which is how Java kept the host zone under every session. ICU names a
-        // whole-hour offset Etc/GMT-N on the same flag. .NET, the C runtime and Go do not read it.
+        // whole-hour offset Etc/GMT-N on the same flag, and any other by the key name. .NET, the C
+        // runtime and Go do not read the flag.
         let mut d = DYNAMIC_TIME_ZONE_INFORMATION {
             Bias: cur_tz_bias(),
             DynamicDaylightTimeDisabled: true,
             ..Default::default()
         };
         set_wide(&mut d.StandardName, SESSION_ZONE_NAME);
-        set_wide(&mut d.TimeZoneKeyName, SESSION_ZONE_NAME);
+        set_wide(&mut d.TimeZoneKeyName, session_zone_key());
         core::ptr::write_unaligned(lp, d);
         return 0; // TIME_ZONE_ID_UNKNOWN - the session zone has no DST
     }
@@ -1459,7 +1471,7 @@ unsafe extern "system" fn h_gdtzi(lp: *mut DYNAMIC_TIME_ZONE_INFORMATION) -> u32
 /// `dtzi` must point to a readable `DYNAMIC_TIME_ZONE_INFORMATION`, aligned or not.
 unsafe fn names_session_zone(dtzi: *const DYNAMIC_TIME_ZONE_INFORMATION) -> bool { unsafe {
     let key = core::ptr::read_unaligned(dtzi).TimeZoneKeyName;
-    let mut name = SESSION_ZONE_NAME.encode_utf16();
+    let mut name = session_zone_key().encode_utf16();
     key.iter().all(|&unit| match name.next() {
         Some(expected) => unit == expected,
         None => unit == 0,
@@ -1471,8 +1483,10 @@ unsafe fn names_session_zone(dtzi: *const DYNAMIC_TIME_ZONE_INFORMATION) -> bool
 // no other, so its local time showed this machine's zone under every session (measured 2026-10-27: a
 // session at +05:30 printed +01:00). The current zone is the session's, the answer h_gtzi gives, in every
 // year, because the session zone has no daylight saving time. A zone named like the session's is the one
-// h_gdtzi handed out, which no registry knows and the original would fail on, so it gets the same answer.
-// Any other named zone is a question about a real zone, and goes through untouched.
+// h_gdtzi handed out, so it gets the same answer: under the session's own name, which no registry knows
+// and the original would fail on, and under a borrowed one too, whose real zone the original would answer
+// for with that zone's rules of the year, which the session zone does not have (ADR-26). Any other named
+// zone is a question about a real zone, and goes through untouched.
 unsafe extern "system" fn h_gtzify(
     year: u16,
     dtzi: *const DYNAMIC_TIME_ZONE_INFORMATION,
@@ -4241,7 +4255,7 @@ unsafe fn install() -> Result<(), InstallError> { unsafe {
     // Past the last refusal, so a refused library still unloads (R4-N2).
     pin_self();
     let _ = CTL_PTR.set(view.Value as usize);
-    let _ = TZ_BIAS.set(read_tz_bias(ctl as *const Ctl));
+    let _ = SESSION_ZONE.set((read_tz_bias(ctl as *const Ctl), read_zone_name(ctl as *const Ctl)));
     // The session we joined, for `still_ours` (R2-S6), and the core the watcher waits on.
     let _ = CORE_PID.set(core_pid);
     if let Some(h) = core {

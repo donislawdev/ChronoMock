@@ -82,10 +82,14 @@ Chrono Mock - date calculator
 
     <div class="prose">
       <ul>
-        <li><strong>Múi giờ tự báo là “Chrono Session”</strong>, một cái tên mà không registry Windows nào
-          biết. Bất cứ thứ gì ánh xạ cái tên đó ngược về một múi giờ - trong đó có
-          <code>TimeZoneInfo.Local</code> của .NET - sẽ quay về dùng độ lệch, và đó là câu trả lời đúng. Một
-          ứng dụng khăng khăng đòi tên trong registry sẽ không tìm thấy.</li>
+        <li><strong>Múi giờ tự báo là “Chrono Session”</strong>, một cái tên mà không registry
+          Windows nào biết. Bất cứ thứ gì ánh xạ cái tên đó ngược về một múi giờ - trong đó có
+          <code>TimeZoneInfo.Local</code> của .NET - sẽ quay về dùng độ lệch, và đó là câu trả lời
+          đúng. Ở độ lệch của một múi giờ thật không có giờ mùa hè, chẳng hạn +05:30, phiên sẽ đặt
+          cho múi giờ tên registry của chính múi giờ thật đó, kể từ ngày múi giờ ấy bắt đầu dùng độ
+          lệch này, nên các chương trình tìm múi giờ theo tên - Node.js, Deno và các chương trình
+          khác dựa trên thư viện ICU, cả .NET - đều tìm thấy. Ở mọi độ lệch khác, một ứng dụng khăng
+          khăng đòi tên trong registry sẽ không tìm thấy.</li>
         <li><strong>Java nhận múi giờ phiên dưới dạng một độ lệch.</strong> Múi giờ phiên không có giờ mùa
           hè và không có thành phố nào đứng sau, nên Java đặt tên nó theo độ lệch - <code>GMT+05:30</code>
           cho một phiên ở +05:30.</li>
