@@ -1458,6 +1458,7 @@ public class SessionViewModelTests
         vm.ForceStart = false;
         vm.ReachEmbedded = true; // the default, so the record has to carry the opt-out back
         vm.KeepBackgroundTimers = false;
+        vm.GeckoSandboxOff = false;
 
         var record = HistoryRecord("Ledger") with
         {
@@ -1468,6 +1469,7 @@ public class SessionViewModelTests
             Force = true,
             Embedded = false,
             KeepBackgroundTimers = true,
+            GeckoSandboxOff = true,
         };
         vm.LoadFromHistory(record);
 
@@ -1478,6 +1480,7 @@ public class SessionViewModelTests
         Assert.True(vm.ForceStart);
         Assert.False(vm.ReachEmbedded);
         Assert.True(vm.KeepBackgroundTimers);
+        Assert.True(vm.GeckoSandboxOff);
         Assert.False(vm.HasHistoryNote, "everything was on offer, so there is nothing to report");
     }
 
@@ -1671,6 +1674,7 @@ public class SessionViewModelTests
         vm.ForceStart = true;
         vm.ReachEmbedded = false;
         vm.KeepBackgroundTimers = true;
+        vm.GeckoSandboxOff = true;
 
         var record = vm.BuildRecord();
 
@@ -1681,6 +1685,7 @@ public class SessionViewModelTests
         Assert.True(record.Force);
         Assert.False(record.Embedded);
         Assert.True(record.KeepBackgroundTimers);
+        Assert.True(record.GeckoSandboxOff);
     }
 
     /// <summary>Reaching the web pages inside the application is on for a fresh form, and the folded

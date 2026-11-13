@@ -148,6 +148,19 @@ struct Plan<'a> {
     zone_bias_min: i32,
 }
 
+/// The warnings the core would give before the launch, from the functions it calls: what the target's
+/// file says, and for a native session what it does about the Gecko sandbox (ADR-28). A Chromium session
+/// sets no variables of the target's, so `--no-gecko-sandbox` does nothing there and the plan says so
+/// among the session's lines instead.
+fn plan_warnings(ra: &RunArgs, chromium: bool) -> Vec<String> {
+    let mut keys = detect_runtime_warnings(Path::new(&ra.target), ra.scale_qpc);
+    if !chromium {
+        let gecko = crate::gecko::warning(Path::new(&ra.target), ra.gecko_sandbox, crate::gecko::pages_unsandboxed_by_tester());
+        keys.extend(gecko.map(str::to_string));
+    }
+    keys
+}
+
 /// Print the plan and start nothing. Exit 0, except for a path that definitely leads to no file, to a
 /// file Windows will not start, or to a batch script its launch would refuse, which exits 2 - the code
 /// a real run gives for the same fact (docs/08 section 8).
@@ -161,7 +174,7 @@ pub(super) fn dry_run(ra: &RunArgs, spec: &TimeSpec, origin: &TimeOrigin, now_bi
         origin,
         chromium,
         target: inspect_target(&ra.target, chromium),
-        warning_keys: detect_runtime_warnings(Path::new(&ra.target), ra.scale_qpc),
+        warning_keys: plan_warnings(ra, chromium),
         zone_bias_min: ra.zone_bias_min.unwrap_or(now_bias),
     };
 
@@ -350,6 +363,9 @@ fn session_block(p: &Plan) -> String {
         }));
     }
     out.push_str(&elevated_embedded_note(p));
+    if p.chromium && !p.ra.gecko_sandbox {
+        out.push_str(&note("--no-gecko-sandbox: does not apply - this target is Chromium, which has no Gecko sandbox"));
+    }
     if p.ra.keep_background_timers {
         out.push_str(&note("--keep-background-timers: the web engine starts with its slowdown of timers in hidden windows switched off - a minimised window keeps the session speed, and the app works at full pace while hidden"));
     }
@@ -495,6 +511,10 @@ struct SessionJson<'a> {
     /// Whether `--keep-background-timers` was given (R4-N28): the web engine would start with its
     /// slowdown of timers in hidden windows switched off. A setting, not an outcome.
     keep_background_timers: bool,
+    /// Whether the sandbox of a Gecko application would be left on (ADR-28): false under
+    /// `--no-gecko-sandbox` for a native session. Always true for a Chromium target, which it does not
+    /// apply to. A setting, not an outcome.
+    gecko_sandbox: bool,
     /// The path `--report` named. A dry run does not write it.
     report: Option<&'a str>,
 }
@@ -553,6 +573,7 @@ fn render_json(p: &Plan) -> String {
             elevated_embedded: p.ra.elevated_embedded && !p.chromium,
             elevated_embedded_value: elevated_value_name(p),
             keep_background_timers: p.ra.keep_background_timers,
+            gecko_sandbox: p.ra.gecko_sandbox || p.chromium,
             report: p.ra.report.as_deref(),
         },
         warnings: &p.warning_keys,

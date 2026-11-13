@@ -120,7 +120,10 @@ pub(crate) fn core_mode() -> i32 {
     // Python/.NET/Java timer hits under a fast clock (B1, ADR-2). When --scale-qpc is on, this instead
     // cautions about render distortion (A2), since the QPC axis now scales.
     let mut runtime_warnings = detect_runtime_warnings(std::path::Path::new(&target.path), spec.scale_qpc);
-    let env = target_environment(&launch, &target.path, spec.moment.tz_bias_min, &mut runtime_warnings);
+    // The Gecko sandbox (ADR-28), said from the same function the dry run asks.
+    let gecko = crate::gecko::warning(std::path::Path::new(&target.path), target.gecko_sandbox, crate::gecko::pages_unsandboxed_by_tester());
+    runtime_warnings.extend(gecko.map(str::to_string));
+    let env = target_environment(&launch, &target.path, spec.moment.tz_bias_min, target.gecko_sandbox, &mut runtime_warnings);
     let m_target = chrono_mech::Target {
         path: &target.path,
         args: &target.args,
@@ -852,16 +855,21 @@ fn ended_before<S>(session: &mut S, alive: fn(&S) -> bool, then: impl FnOnce(&mu
 }
 
 /// What a native session changes in the environment its target inherits: the variables of the
-/// embedded-engine channel, then `TZ` for the session zone (`session_zone_change`). A `TZ` of the
-/// tester's own that this takes away is said twice - its value on stderr, the fact in the report, among
-/// the warnings that are known before the launch.
+/// embedded-engine channel, the ones that switch the Gecko sandbox off when the tester asked for that
+/// (ADR-28, said by `gecko::warning`), then `TZ` for the session zone (`session_zone_change`). A `TZ` of
+/// the tester's own that this takes away is said twice - its value on stderr, the fact in the report,
+/// among the warnings that are known before the launch.
 fn target_environment(
     launch: &Launch,
     target_path: &str,
     bias: Option<i32>,
+    gecko_sandbox: bool,
     warnings: &mut Vec<String>,
 ) -> Vec<chrono_mech::EnvChange> {
     let mut env = chrono_mech::EnvChange::set_each(&launch.env);
+    if !gecko_sandbox {
+        env.extend(crate::gecko::sandbox_off());
+    }
     let Some(bias) = bias else {
         return env;
     };
@@ -1687,6 +1695,7 @@ mod tests {
                 embedded: true,
                 elevated_embedded: false,
                 keep_background_timers: false,
+                gecko_sandbox: true,
                 console: Default::default(),
             },
             time: TimeSpec {

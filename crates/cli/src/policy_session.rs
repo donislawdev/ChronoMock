@@ -329,6 +329,7 @@ mod tests {
             embedded,
             elevated_embedded,
             keep_background_timers: false,
+            gecko_sandbox: true,
             console: Default::default(),
         }
     }

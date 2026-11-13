@@ -70,6 +70,7 @@ internal static class PhaseStates
         model.ScaleDuration = true;
         model.ScaleQpc = true;
         model.ForceStart = true;
+        model.GeckoSandboxOff = true;
         model.TargetArgs = "--seed 7 --headless";
         model.WorkingFolder = @"C:\apps\data";
         return model;

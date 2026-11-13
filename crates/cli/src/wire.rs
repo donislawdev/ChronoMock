@@ -461,14 +461,15 @@ mod tests {
             let what = select(vec![QueryWhat::State, QueryWhat::Unknown]);
             let moment = (kind, option::of(text()), option::of(any::<i32>()), option::of(text()))
                 .prop_map(|(kind, local, tz_bias_min, delta)| MomentSpec { kind, local, tz_bias_min, delta });
-            let target = (text(), vec(text(), 0..3), option::of(text()), any::<[bool; 3]>(), any::<bool>()).prop_map(
-                |(path, args, cwd, [embedded, elevated_embedded, keep_background_timers], new)| TargetSpec {
+            let target = (text(), vec(text(), 0..3), option::of(text()), any::<[bool; 4]>(), any::<bool>()).prop_map(
+                |(path, args, cwd, [embedded, elevated_embedded, keep_background_timers, gecko_sandbox], new)| TargetSpec {
                     path,
                     args,
                     cwd,
                     embedded,
                     elevated_embedded,
                     keep_background_timers,
+                    gecko_sandbox,
                     console: if new { TargetConsole::New } else { TargetConsole::Shared },
                 },
             );

@@ -423,6 +423,15 @@ fn describe_session_warning(key: &str) -> &'static str {
         "session.tz_variable_removed" => {
             "the value of TZ set in your environment was not passed to the application - the programs that read TZ (Python and other programs on the C runtime, MSYS2, Node.js) take their time zone from it, so it would have replaced the session zone - a program built on the Rust jiff crate gets the session zone in TZ instead, any other program gets no TZ - your own environment is unchanged, and the value left out is on stderr"
         }
+        // ADR-28. Said for any program the variables are set for, because the session sets them, and with the
+        // cost, which lasts as long as the application does. Worded for the dry run as much as the report.
+        "session.gecko_sandbox_off" => {
+            "the application is started with the sandbox of Mozilla's Gecko engine switched off, as --no-gecko-sandbox asks, so its pages and their scripts follow the session clock - it runs without that protection until it closes, so open only pages you trust in it"
+        }
+        // ADR-28. Said before anything runs, for a program known to be Gecko, with the way to change it.
+        "session.gecko_pages_sandboxed" => {
+            "this application runs on Mozilla's Gecko engine, which runs its pages and their scripts in sandboxed processes the session cannot enter - the application follows the session clock, but its pages stay on the real clock, and the session lists those processes as not covered - for the pages to follow the session clock too, run the session with --no-gecko-sandbox, which switches that sandbox off for it"
+        }
         // ADR-26. Says what the tester sees and what to choose instead, because the cure is a choice of
         // offset or date, not anything in the application.
         "session.zone_unnamed" => {

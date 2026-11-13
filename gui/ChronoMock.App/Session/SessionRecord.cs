@@ -70,6 +70,10 @@ public sealed record SessionRecord
     /// switched off (R4-N28). A record from before this field existed reads as off, which is what it did.</summary>
     [JsonPropertyName("keep_background_timers")] public bool KeepBackgroundTimers { get; init; }
 
+    /// <summary>Whether the session started the application with the sandbox of the Gecko engine switched
+    /// off (ADR-28). A record from before this field existed reads as on, which is what it did.</summary>
+    [JsonPropertyName("gecko_sandbox_off")] public bool GeckoSandboxOff { get; init; }
+
     /// <summary>Whether every text this record promises is there. <c>required</c> only says a key was
     /// present, and an explicit JSON <c>null</c> satisfies it - so a hand-edited or damaged row could carry a
     /// null that failed only where it was read (R4-N47).</summary>

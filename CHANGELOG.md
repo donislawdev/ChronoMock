@@ -6,6 +6,19 @@ Notable changes to Chrono Mock, newest first. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **The web pages of an application on Mozilla's Gecko engine can follow the session clock.** Gecko
+  runs its pages in sandboxed processes the session cannot enter, so until now they kept the real
+  clock while the rest of the application followed the session. `--no-gecko-sandbox`, or the option
+  "Switch off the sandbox of Gecko applications" in the window, starts the application with that
+  sandbox switched off, so every process of it joins the session and the pages read its clock, its
+  speed, its jumps and its time zone. The application then runs without that protection until it
+  closes, and the report says so (`session.gecko_sandbox_off`). Off by default: without it, the report
+  of a Gecko application says from the start that its pages stay on the real clock
+  (`session.gecko_pages_sandboxed`), and so does `--dry-run`. The start command of the protocol has a
+  new field for it, `target.gecko_sandbox`, on unless a client sets it to `false`.
+
 ## [0.6.0-rc.1] - 2026-11-13
 
 ### Fixed

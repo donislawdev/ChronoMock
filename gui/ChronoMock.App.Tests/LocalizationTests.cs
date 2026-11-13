@@ -79,6 +79,8 @@ public class LocalizationTests
         "session.zone_unnamed", "session.jump_before_zone_name",
         // A process whose C runtimes the hook could not have read the zone again (ADR-27).
         "session.c_runtime_zone_kept",
+        // The sandbox of a Gecko application: switched off on request, or left on with its pages real (ADR-28).
+        "session.gecko_sandbox_off", "session.gecko_pages_sandboxed",
         "chromium.launched_with_debug_port", "chromium.app_closed_before_audit",
         "chromium.rate_change_affects_running_timers", "chromium.contexts_pooled", "chromium.context_reached_running",
         // A timer the engine's 4 ms floor held back (R5-P6) and a frame the shim did not reach (R5-P5).

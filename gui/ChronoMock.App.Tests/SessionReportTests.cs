@@ -28,6 +28,7 @@ public class SessionReportTests
         ScaleDuration: true,
         ScaleQpc: false,
         KeepBackgroundTimers: true,
+        GeckoSandboxOff: true,
         Force: false,
         ReachEmbedded: false,
         ReachElevated: true);
@@ -48,9 +49,9 @@ public class SessionReportTests
         Assert.Equal(setup.TargetArgs, record.TargetArgs);
         Assert.Equal(setup.WorkingFolder, record.WorkingFolder);
         Assert.Equal(
-            (true, false, true, false, false, true),
-            (record.ScaleDuration, record.ScaleQpc, record.KeepBackgroundTimers, record.Force, record.Embedded,
-                record.ElevatedEmbedded));
+            (true, false, true, true, false, false, true),
+            (record.ScaleDuration, record.ScaleQpc, record.KeepBackgroundTimers, record.GeckoSandboxOff, record.Force,
+                record.Embedded, record.ElevatedEmbedded));
         Assert.Equal("partial", record.Verdict);
         Assert.Equal("2031-05-06T12:00:00Z", record.EndedAtUtc);
     }

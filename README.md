@@ -381,7 +381,9 @@ cover something is worse than one that says what it cannot do.
   the C runtime's `system`, spawn and `_popen` functions or `ShellExecuteEx` join the session. One
   started under another user token, with `CreateProcessAsUserW` - by a launcher that drops its rights,
   or a sandbox broker - runs on the real clock, and the report names it among the processes the
-  session did not cover. A program a Windows service starts on the
+  session did not cover. An application on Mozilla's Gecko engine starts its web pages that way, and
+  can be asked to start them without the sandbox (`--no-gecko-sandbox`, see below). A program a
+  Windows service starts on the
   application's behalf is outside its process tree altogether
 - **What runs while Windows loads the application reads the real clock.** The fake clock is attached
   once Windows has loaded the application, so the start-up code of the libraries it imports
@@ -488,6 +490,19 @@ also works at full pace while it is hidden. Without the option, a page that was 
 faster is named in the report. An application started as administrator through `--elevated-embedded`
 does not get the switches.
 
+**The sandbox of a Gecko application (opt-in, off by default).** An application on Mozilla's Gecko
+engine runs its web pages, their scripts and its network work in processes it starts in a sandbox,
+under a restricted user token, which the session cannot enter. The application follows the session
+clock, its pages stay on the real clock, the verdict is PARTIAL, and the report says why from the
+start. `chrono run app.exe --no-gecko-sandbox`, or the option "Switch off the sandbox of Gecko
+applications" in the window, starts the application with the variables Gecko reads to start those
+processes without their sandbox, so they join the session and the pages follow its clock, its speed,
+its jumps and its time zone. The application then runs without that protection until it closes, so
+open only pages you trust in it. The variables go to the application and to everything it starts,
+whatever it is, so a Gecko application started through a launcher in another folder gets them too.
+Without the option, the session recognises a Gecko application by the engine's library beside its
+program, and only then says that its pages will stay on the real clock.
+
 ---
 
 ## Support matrix
@@ -511,6 +526,7 @@ says which is which, and some rows have both._
 | Embedded web engine inside a native app (WebView2, Qt WebEngine) | experimental | measured on x64 (WebView2 and Qt WebEngine) and x86 (WebView2) by the embedded-engine stand, on hosts of our own | The native hook covers the application and the pages inside it are reached over the engine's debugging port, opened for the session through two environment variables the application inherits. The pages read the session clock at the session rate and follow a speed change and a jump. The engine's helper processes and the renderer's native reads stay on the real clock, so the verdict is PARTIAL and says why. The pages read the session's time zone - a fixed offset, set through the engine's own zone override and checked in every page and worker. An elevated application is out of reach unless you opt in with `--elevated-embedded`, which writes one registry value for the session and removes it (see above) |
 | Batch script (`.bat`, `.cmd`) as the target | experimental (command line) | measured on x64 by the test suite, on x86 by hand | Started through the command interpreter from the system folder, which is the process the session covers, together with everything the script starts. Arguments arrive as given, including spaces, `&`, an empty argument and `%` (`%OS%` stays those four characters). A quote inside an argument arrives doubled, and so does the trailing backslash of an argument that needs quotes, which keeps a script that passes `%*` on to a program correct. A command line longer than the interpreter's 8191 characters is refused before anything starts. The window takes a program (`.exe`) or a shortcut to one, not a script |
 | Electron / Chromium | experimental (Chromium mode) | measured by hand on two Electron apps and on two installed browsers (x64), not by the suite | A separate mechanism, not injection: the app is launched with a debug port and a clean isolated profile, and its own JS time APIs are put on the session clock over the DevTools protocol - reaching the sandboxed renderer and its Web Workers, where the timer often lives. A browser built on Chromium and installed on Windows, which keeps the engine in a folder named after its version, is started in this mode too, without its first-run windows, and so is an Electron app that keeps the engine and the app itself in a folder beside its program. The pages read the session's time zone - a fixed offset, set through the engine's own zone override and checked in every page and worker. A launcher that hands the app over to another process and exits does not end the session. The main process of an Electron app runs JavaScript in Node outside its windows and reads the real clock, which the report says. Chromium slows the timers of a minimized window to about once a second, which the report says unless the session starts with `--keep-background-timers` |
+| Gecko (Mozilla's engine) | experimental | measured by hand on two Gecko applications (x64), not by the suite | The application is covered, and when its launcher hands it on, the session goes on with it. Its web pages run in sandboxed processes the session cannot enter, so they stay on the real clock and the verdict is PARTIAL, unless you opt in with `--no-gecko-sandbox`, which starts the application without that sandbox (see above). Then every process of it is covered, and the pages read the session clock and the session's time zone |
 | UWP / MSIX (Store apps) | not supported | declared (not exercised) | Packaging and launch model |
 | ARM64 | out of scope through v1.0 | declared (not exercised) | To be revisited |
 

@@ -83,6 +83,7 @@ public sealed class SessionViewModel : ObservableObject
     private readonly bool _canReachElevated;
     private bool _reachElevatedEmbedded;
     private bool _keepBackgroundTimers;
+    private bool _geckoSandboxOff;
     // The key of the one warning that must not sit below the fold: a registry value the session could not
     // remove (docs/09 section 12.19). A literal, because the wire carries it as a string.
     private const string LeftBehindKey = "embedded.policy_value_left";
@@ -651,6 +652,12 @@ public sealed class SessionViewModel : ObservableObject
     /// For a Chromium or Electron application and the web pages inside an application. Off by default.
     /// Maps to the wire <c>target.keep_background_timers</c>. Start-only.</summary>
     public bool KeepBackgroundTimers { get => _keepBackgroundTimers; set => Set(ref _keepBackgroundTimers, value); }
+
+    /// <summary>Start the application with the sandbox of the Gecko engine switched off (ADR-28), so the
+    /// pages of an application on Mozilla's Gecko engine follow the session clock. The application
+    /// then runs without that protection until it closes. Off by default. Maps to the wire
+    /// <c>target.gecko_sandbox</c>, inverted. Start-only.</summary>
+    public bool GeckoSandboxOff { get => _geckoSandboxOff; set => Set(ref _geckoSandboxOff, value); }
 
     /// <summary>Run even when the opening verdict says the substitution did not take effect. Off by
     /// default: the core stops the target in that case, because an application that looks time-shifted
@@ -2377,6 +2384,7 @@ public sealed class SessionViewModel : ObservableObject
         _scaleDuration,
         _scaleQpc,
         _keepBackgroundTimers,
+        _geckoSandboxOff,
         _forceStart,
         _reachEmbedded,
         WantsElevatedEmbedded);
@@ -2520,6 +2528,7 @@ public sealed class SessionViewModel : ObservableObject
         ScaleDuration = record.ScaleDuration;
         ScaleQpc = record.ScaleQpc;
         KeepBackgroundTimers = record.KeepBackgroundTimers;
+        GeckoSandboxOff = record.GeckoSandboxOff;
         ForceStart = record.Force;
         ReachEmbedded = record.Embedded;
         // What a window that is not elevated cannot do is not loaded as ticked: the box would claim it.

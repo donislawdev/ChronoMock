@@ -27,7 +27,8 @@ internal sealed record SessionPlan(string CorePath, PeReader.Machine Machine, St
         string? workingFolder = null,
         bool embedded = true,
         bool elevatedEmbedded = false,
-        bool keepBackgroundTimers = false)
+        bool keepBackgroundTimers = false,
+        bool geckoSandboxOff = false)
     {
         ArgumentException.ThrowIfNullOrEmpty(targetPath);
         ArgumentNullException.ThrowIfNull(time);
@@ -56,6 +57,9 @@ internal sealed record SessionPlan(string CorePath, PeReader.Machine Machine, St
                 // For the browser of a Chromium target and the engine inside an application alike, so it
                 // does not ride on the channel the way the registry option does (R4-N28).
                 KeepBackgroundTimers = keepBackgroundTimers,
+                // Any program may get it: a Gecko application started through a launcher in another folder
+                // is not recognised beforehand, and the variables reach it all the same (ADR-28).
+                GeckoSandbox = !geckoSandboxOff,
                 // A console program shows up the way it does when the tester starts it, in a console
                 // window of its own (R4-D16, ADR-17). The core runs with no window, so the console it
                 // could share is one nobody sees: no input, and the program's output in the diagnostics
