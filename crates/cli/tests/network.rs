@@ -338,6 +338,14 @@ const ALLOWED: &[(&str, &str, &str)] = &[
          each and writes it to a file. Nothing reaches past this machine",
     ),
     (
+        "crates/cli/tests/gecko_sandbox.rs",
+        "spawn",
+        "runs this test binary's own ignored probe alone as the control and under sessions through the \
+         built binary, itself and a copy of it in a scratch folder. The probe only reads its environment \
+         and writes which of the sandbox variables it was given to a file. Nothing reaches past this \
+         machine",
+    ),
+    (
         "crates/cli/tests/target_exit.rs",
         "spawn",
         "runs this test binary's own ignored probe under a session through the built binary, and the probe \

@@ -359,7 +359,7 @@ fn session_block(p: &Plan) -> String {
         out.push_str(&note(if p.ra.embedded {
             "web pages inside the app: the session will try to reach them through the app's own web engine, if it has one - only the session report can say whether it did (--no-embedded turns this off)"
         } else {
-            "--no-embedded: web pages inside the app are left on the real clock"
+            "--no-embedded: the session does not reach web pages through the debugging port of a web engine built into the app (WebView2, Qt WebEngine), so those pages are left on the real clock"
         }));
     }
     out.push_str(&elevated_embedded_note(p));
