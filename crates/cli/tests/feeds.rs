@@ -5,7 +5,8 @@
 //! shape the measurement rests on, the names that are public for good, the one source of the UpgradeCode,
 //! the paths several files must agree on, and the refusals of the script. Rendering a real release needs its
 //! files signed by our certificate, so every refusal asked here comes before the signatures or is theirs, on
-//! release folders built here: this build's chrono.exe in two archives and a copy of pwsh.exe as the installer.
+//! release folders built here: this build's chrono.exe with the version of the newest release in two archives
+//! and a copy of pwsh.exe as the installer.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -260,11 +261,43 @@ const MSI: &str = "ChronoMock-app-win-x64.msi";
 const APP_ZIP: &str = "ChronoMock-app-win-x64.zip";
 const CLI_ZIP: &str = "ChronoMock-cli-win.zip";
 
-/// The tag of the version this build carries. The archives below hold this build's chrono.exe, whose version
-/// resource is the workspace's, and the release commit that moves the version dates it in CHANGELOG.md, which
-/// the script reads.
-fn tag() -> String {
-    format!("v{}", env!("CARGO_PKG_VERSION"))
+/// The tag of the newest release CHANGELOG.md dates, which the script reads for the release date. Not the
+/// workspace's version: between a candidate and its release the workspace carries the candidate's, which the
+/// script refuses before it reads a file, and the cases below would check nothing but that refusal.
+fn release_tag() -> String {
+    let log = read("CHANGELOG.md");
+    let is_release = |v: &&str| v.split('.').count() == 3 && v.split('.').all(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()));
+    let version = log
+        .lines()
+        .filter_map(|l| l.strip_prefix("## [")?.split_once("] - "))
+        .map(|(version, _)| version)
+        .find(is_release)
+        .expect("CHANGELOG.md dates a release under `## [X.Y.Z] - date`");
+    format!("v{version}")
+}
+
+/// This build's chrono.exe as a program of the release `tag`: a copy whose version strings (ProductVersion and
+/// FileVersion, the workspace version in UTF-16) carry the release's, padded with NULs so that no length in
+/// the version resource moves. Windows reads such a string up to its first NUL.
+fn release_program(tag: &str, dir: &Path) -> PathBuf {
+    let utf16 = |s: &str| s.encode_utf16().flat_map(u16::to_le_bytes).collect::<Vec<u8>>();
+    let built = utf16(env!("CARGO_PKG_VERSION"));
+    let mut wanted = utf16(tag.trim_start_matches('v'));
+    assert!(wanted.len() <= built.len(), "{tag} is longer than this build's {}, so it cannot be written over it", env!("CARGO_PKG_VERSION"));
+    wanted.resize(built.len(), 0);
+    let mut bytes = std::fs::read(env!("CARGO_BIN_EXE_chrono")).expect("this build's chrono.exe");
+    let mut replaced = 0;
+    let mut at = 0;
+    while let Some(found) = bytes[at..].windows(built.len()).position(|w| w == built.as_slice()) {
+        bytes[at + found..at + found + built.len()].copy_from_slice(&wanted);
+        at += found + built.len();
+        replaced += 1;
+    }
+    assert!(replaced >= 1, "this build's chrono.exe carries no version string {} to write {tag} over", env!("CARGO_PKG_VERSION"));
+    std::fs::create_dir_all(dir).expect("a folder for the program");
+    let program = dir.join("chrono.exe");
+    std::fs::write(&program, bytes).expect("the program of the release");
+    program
 }
 
 /// The binaries sign-release.ps1 signs, per archive, out of its `$OURS` table: each archive name, then the
@@ -348,7 +381,7 @@ fn started_programs() -> Vec<String> {
 
 /// Builds a release folder that gets as far as the signatures: the installer as a copy of the pwsh.exe that
 /// runs this, validly signed by a certificate that is not ours, both archives holding every binary the
-/// release signs - this build's chrono.exe for each program a package starts and a line of text for the
+/// release signs - `program` (release_program) for each program a package starts and a line of text for the
 /// rest - and a SHA256SUMS that lists the three as they are. -Change builds one thing otherwise. It prints how
 /// many entries it packed, so a fixture that packed nothing cannot pass for one that worked.
 const RELEASE_FIXTURE: &str = r#"
@@ -395,7 +428,7 @@ $sums = foreach ($name in 'ChronoMock-app-win-x64.msi', 'ChronoMock-app-win-x64.
 "packed $packed"
 "#;
 
-fn release_folder(dir: &Path, change: &str) {
+fn release_folder(dir: &Path, program: &Path, change: &str) {
     let fixture = std::env::temp_dir().join(format!("chrono-feeds-guard-{}-fixture.ps1", std::process::id()));
     std::fs::write(&fixture, RELEASE_FIXTURE).expect("the fixture script");
     let archives = signed_binaries();
@@ -411,7 +444,9 @@ fn release_folder(dir: &Path, change: &str) {
         .arg(&fixture)
         .arg("-Release")
         .arg(dir)
-        .args(["-Program", env!("CARGO_BIN_EXE_chrono"), "-Programs", &started_programs().join(","), "-Archives", &listed, "-Change", change])
+        .arg("-Program")
+        .arg(program)
+        .args(["-Programs", &started_programs().join(","), "-Archives", &listed, "-Change", change])
         .output()
         .expect("pwsh could not be started");
     let said = format!("{}{}", String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr));
@@ -442,20 +477,10 @@ type FeedCase = (&'static str, &'static str, fn(&Path), &'static str);
 /// refusal of what the case changed, not of something the fixture got wrong.
 #[test]
 fn the_packages_are_rendered_from_a_published_release_or_not_at_all() {
-    let tag = tag();
+    let tag = release_tag();
     let base = temp_case("base");
-    if tag.contains('-') {
-        // A release candidate gets no packages, and the programs of this build carry the candidate's version,
-        // so no folder built from them can stand in for a release. The candidate is refused before any file is
-        // read, and the cases below run again once the workspace carries a release version.
-        let run = build_feeds(&tag, &base.join("release"), &base.join("out"));
-        assert!(run.code == 1 && run.said.contains("is a release candidate"), "-Tag {tag} exited {} and said:\n{}", run.code, run.said);
-        assert!(!base.join("out").exists(), "a refused run leaves no destination");
-        let _ = std::fs::remove_dir_all(&base);
-        eprintln!("{tag} is a release candidate: only its refusal was checked, the release folder cases were not run");
-        return;
-    }
-    release_folder(&base.join("release"), "none");
+    let program = release_program(&tag, &base.join("program"));
+    release_folder(&base.join("release"), &program, "none");
     let run = build_feeds(&tag, &base.join("release"), &base.join("out"));
     assert!(run.code == 1 && run.said.contains("not signed by the certificate packaging/codesign.json pins"), "the fixture should stop at the signatures, exited {}:\n{}", run.code, run.said);
     assert!(run.said.contains(&format!("{MSI} (signed by a certificate with SHA-256 ")), "the installer, validly signed by somebody else, is refused for its signer:\n{}", run.said);
@@ -498,7 +523,7 @@ fn the_packages_are_rendered_from_a_published_release_or_not_at_all() {
     ];
     for (what, built, change, says) in cases {
         let dir = temp_case("case");
-        release_folder(&dir.join("release"), built);
+        release_folder(&dir.join("release"), &program, built);
         change(&dir.join("release"));
         let run = build_feeds(&tag, &dir.join("release"), &dir.join("out"));
         assert!(run.code == 1 && run.said.contains(says), "{what}: exited {} and said:\n{}\nwant exit 1 and {says:?}", run.code, run.said);
