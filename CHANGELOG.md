@@ -6,6 +6,8 @@ Notable changes to Chrono Mock, newest first. The format follows
 
 ## [Unreleased]
 
+## [0.6.0-rc.1] - 2026-11-13
+
 ### Fixed
 
 - **An application whose libraries ask for the time while they load now shows the session's time
@@ -2084,6 +2086,7 @@ listing everything as "added", here is where to find out what it does:
 
 From the next release onwards this file records what changed.
 
+[0.6.0-rc.1]: https://github.com/donislawdev/ChronoMock/releases/tag/v0.6.0-rc.1
 [0.5.0]: https://github.com/donislawdev/ChronoMock/releases/tag/v0.5.0
 [0.4.0]: https://github.com/donislawdev/ChronoMock/releases/tag/v0.4.0
 [0.3.0]: https://github.com/donislawdev/ChronoMock/releases/tag/v0.3.0

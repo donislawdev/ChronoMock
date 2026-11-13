@@ -444,6 +444,17 @@ type FeedCase = (&'static str, &'static str, fn(&Path), &'static str);
 fn the_packages_are_rendered_from_a_published_release_or_not_at_all() {
     let tag = tag();
     let base = temp_case("base");
+    if tag.contains('-') {
+        // A release candidate gets no packages, and the programs of this build carry the candidate's version,
+        // so no folder built from them can stand in for a release. The candidate is refused before any file is
+        // read, and the cases below run again once the workspace carries a release version.
+        let run = build_feeds(&tag, &base.join("release"), &base.join("out"));
+        assert!(run.code == 1 && run.said.contains("is a release candidate"), "-Tag {tag} exited {} and said:\n{}", run.code, run.said);
+        assert!(!base.join("out").exists(), "a refused run leaves no destination");
+        let _ = std::fs::remove_dir_all(&base);
+        eprintln!("{tag} is a release candidate: only its refusal was checked, the release folder cases were not run");
+        return;
+    }
     release_folder(&base.join("release"), "none");
     let run = build_feeds(&tag, &base.join("release"), &base.join("out"));
     assert!(run.code == 1 && run.said.contains("not signed by the certificate packaging/codesign.json pins"), "the fixture should stop at the signatures, exited {}:\n{}", run.code, run.said);
