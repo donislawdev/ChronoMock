@@ -23763,5 +23763,25 @@
     "match": "method",
     "build": "",
     "notHere": ""
+  },
+  {
+    "name": "gecko sandbox switched off unasked",
+    "edits": [
+      {
+        "file": "crates/cli/src/core.rs",
+        "from": "    if !gecko_sandbox {\n        env.extend(crate::gecko::sandbox_off());",
+        "to": "    if !gecko_sandbox || std::hint::black_box(true) {\n        env.extend(crate::gecko::sandbox_off());"
+      }
+    ],
+    "runner": "rust",
+    "package": "chrono-cli",
+    "target": [
+      "--test",
+      "gecko_sandbox"
+    ],
+    "test": "a_gecko_program_run_as_it_is_keeps_its_sandbox_and_the_report_says_its_pages_stay_real",
+    "match": "exact",
+    "build": "",
+    "notHere": ""
   }
 ]

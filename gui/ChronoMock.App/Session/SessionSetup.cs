@@ -31,6 +31,7 @@ internal sealed record SessionSetup(
     bool ScaleDuration,
     bool ScaleQpc,
     bool KeepBackgroundTimers,
+    bool GeckoSandboxOff,
     bool Force,
     bool ReachEmbedded,
     bool ReachElevated)
@@ -52,5 +53,5 @@ internal sealed record SessionSetup(
     /// </summary>
     internal SessionPlan Plan() => SessionPlan.Build(
         TargetPath, Time(), Force, TargetArguments.Split(TargetArgs), WorkingFolder, ReachEmbedded, ReachElevated,
-        KeepBackgroundTimers);
+        KeepBackgroundTimers, GeckoSandboxOff);
 }

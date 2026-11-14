@@ -423,6 +423,16 @@ fn describe_session_warning(key: &str) -> &'static str {
         "session.tz_variable_removed" => {
             "the value of TZ set in your environment was not passed to the application - the programs that read TZ (Python and other programs on the C runtime, MSYS2, Node.js) take their time zone from it, so it would have replaced the session zone - a program built on the Rust jiff crate gets the session zone in TZ instead, any other program gets no TZ - your own environment is unchanged, and the value left out is on stderr"
         }
+        // ADR-28. Said for any program the variables are set for, because the session sets them, and with the
+        // cost, which lasts as long as the application does. Said before the launch, so it promises no
+        // coverage: the coverage says which processes joined. Worded for the dry run as much as the report.
+        "session.gecko_sandbox_off" => {
+            "the application is started with the variables that switch off the Gecko sandbox, as --no-gecko-sandbox asks, so the processes a Gecko application runs its pages and their scripts in can join the session - which of them did is what the session's coverage says - the application runs without that protection until it closes, so open only pages you trust in it"
+        }
+        // ADR-28. Said before anything runs, for a program known to be Gecko, with the way to change it.
+        "session.gecko_pages_sandboxed" => {
+            "this is a Gecko application, which runs its pages and their scripts in processes inside the Gecko sandbox, which the session cannot enter - the application follows the session clock, but its pages stay on the real clock, and the session lists those processes as not covered - for the pages to follow the session clock too, run the session with --no-gecko-sandbox, which switches the Gecko sandbox off for it"
+        }
         // ADR-26. Says what the tester sees and what to choose instead, because the cure is a choice of
         // offset or date, not anything in the application.
         "session.zone_unnamed" => {

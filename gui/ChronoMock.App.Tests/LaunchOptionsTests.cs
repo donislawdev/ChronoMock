@@ -80,6 +80,18 @@ public class LaunchOptionsTests
         Assert.True(SessionPlan.Build(APeFile(), AnyTime(), embedded: false, keepBackgroundTimers: true).Start.Target.KeepBackgroundTimers);
     }
 
+    /// <summary>The sandbox of a Gecko application stays on unless the tester switches it off, and the
+    /// request reaches the wire as the core reads it - on is <c>true</c>, the default an older core assumes
+    /// too (ADR-28). Nothing else rides on it.</summary>
+    [Fact]
+    public void The_gecko_sandbox_is_switched_off_only_when_asked_and_reaches_the_wire()
+    {
+        Assert.True(SessionPlan.Build(APeFile(), AnyTime()).Start.Target.GeckoSandbox);
+        var off = SessionPlan.Build(APeFile(), AnyTime(), geckoSandboxOff: true).Start.Target;
+        Assert.False(off.GeckoSandbox);
+        Assert.True(off.Embedded && !off.ElevatedEmbedded && !off.KeepBackgroundTimers);
+    }
+
     /// <summary>A console program started from the panel gets a console window of its own (R4-D16): the
     /// core runs with no window, so the console it would otherwise share is one nobody sees. The field has
     /// to reach the wire, since the core's default is the other one.</summary>

@@ -28,6 +28,12 @@ public sealed record TargetSpec
     /// out rather than left to the core's default, like <see cref="Embedded"/>.</summary>
     [JsonPropertyName("keep_background_timers")] public bool KeepBackgroundTimers { get; init; }
 
+    /// <summary>Leave the sandbox of an application on Mozilla's Gecko engine on
+    /// (ADR-28). False starts the target with the variables that switch it off, so the hook enters the
+    /// processes its pages run in, at the cost of that protection while they run. ON by default, and written
+    /// out rather than left to the core's default, like <see cref="Embedded"/>.</summary>
+    [JsonPropertyName("gecko_sandbox")] public bool GeckoSandbox { get; init; } = true;
+
     /// <summary>Where a console program's console is (mirrors <c>chrono_proto::TargetConsole</c>, docs/08,
     /// ADR-17): <see cref="SharedConsole"/> gives it the core's console and stderr, <see cref="NewConsole"/>
     /// a console window of its own. Neither hands it the core's stdin or stdout, which carry this protocol.

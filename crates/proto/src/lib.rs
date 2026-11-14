@@ -51,6 +51,14 @@ pub struct TargetSpec {
     /// while time ran faster is reported (`chromium.background_timers_slowed`).
     #[serde(default)]
     pub keep_background_timers: bool,
+    /// Leave the sandbox of an application on Mozilla's Gecko engine as it is
+    /// (ADR-28). Gecko runs its pages in processes it starts under a restricted token, which the hook does
+    /// not enter, so they stay on the real clock. `false` starts the target with the variables that switch
+    /// that sandbox off, which the processes it starts inherit, and the hook enters them like any child -
+    /// at the cost of the protection, for as long as those processes run. On by default, and a client from
+    /// before this field existed gets that default: a sandbox is switched off only when asked.
+    #[serde(default = "gecko_sandbox_default")]
+    pub gecko_sandbox: bool,
     /// Where a console program's console is (docs/08, ADR-17): `shared` gives it the core's console
     /// and stderr, `new` a console window of its own. Neither hands it the core's stdin or stdout,
     /// which carry this protocol (R4-W1). A client from before this field existed gets `shared`, and
@@ -73,6 +81,10 @@ pub enum TargetConsole {
 
 /// The default for [`TargetSpec::embedded`]: reach the pages.
 fn embedded_default() -> bool {
+    true
+}
+
+fn gecko_sandbox_default() -> bool {
     true
 }
 
@@ -503,6 +515,8 @@ mod tests {
                 // And for the engine switches that change how the application behaves while hidden
                 // (R4-N28): asked for, never assumed.
                 assert!(!target.keep_background_timers, "a missing keep_background_timers must leave the engine as it is");
+                // And for the sandbox of a Gecko application (ADR-28): switched off only when asked.
+                assert!(target.gecko_sandbox, "a missing gecko_sandbox must leave the sandbox on");
                 // A client from before the field keeps the console it always had, and now without the
                 // protocol in it (R4-W1).
                 assert_eq!(target.console, TargetConsole::Shared, "a missing console must mean shared");
@@ -523,6 +537,7 @@ mod tests {
                 embedded: false,
                 elevated_embedded: true,
                 keep_background_timers: true,
+                gecko_sandbox: false,
                 console: TargetConsole::New,
             },
             time: TimeSpec {

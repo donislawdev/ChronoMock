@@ -153,7 +153,7 @@ public class SessionReportFactsTests
     {
         var setup = new SessionSetup(
             @"C:\apps\app.exe", "2031-02-03T04:05:06", TimeInputs.Zones.First(), TimeInputs.Modes.First(),
-            string.Empty, string.Empty, false, false, false, false, false, false);
+            string.Empty, string.Empty, false, false, false, false, false, false, false);
         string Slept(string key) => key == "report.slept" ? "slept {0}" : key;
 
         var timed = SessionReport.Summary(

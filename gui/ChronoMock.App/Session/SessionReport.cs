@@ -287,6 +287,7 @@ internal static class SessionReport
         ScaleDuration = setup.ScaleDuration,
         ScaleQpc = setup.ScaleQpc,
         KeepBackgroundTimers = setup.KeepBackgroundTimers,
+        GeckoSandboxOff = setup.GeckoSandboxOff,
         Force = setup.Force,
         Embedded = setup.ReachEmbedded,
         ElevatedEmbedded = setup.ReachElevated,

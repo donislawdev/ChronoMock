@@ -126,6 +126,7 @@ fn evidence_flags(ra: &RunArgs) -> String {
         (!ra.embedded, "--no-embedded"),
         (ra.elevated_embedded, "--elevated-embedded"),
         (ra.keep_background_timers, "--keep-background-timers"),
+        (!ra.gecko_sandbox, "--no-gecko-sandbox"),
         (ra.json, "--json"),
         (ra.report_args, "--report-args"),
     ];

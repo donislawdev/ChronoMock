@@ -95,6 +95,14 @@
             <TextBlock Style="{StaticResource PartCaption}" TextWrapping="NoWrap"
                        Text="{DynamicResource setup.chip_keep_timers}" />
           </Border>
+          <!-- ADR-28: the option that starts the application without the sandbox of the Gecko engine. A cost
+               that lasts as long as the application, folded away with the rest of this section, so the header
+               says when a session will do it. -->
+          <Border Style="{StaticResource PartBadge}" Margin="{StaticResource SpaceXs}"
+                  Visibility="{Binding GeckoSandboxOff, Converter={StaticResource BoolToVis}}">
+            <TextBlock Style="{StaticResource PartCaption}" TextWrapping="NoWrap"
+                       Text="{DynamicResource setup.chip_gecko_sandbox}" />
+          </Border>
           <!-- 🔴 The launch fields live in this section too, so its header has to account for them. A chip
                rather than the value: an argument list and a folder path are both as long as somebody makes
                them, and a summary that grew with them would push the rate off the right-hand edge. Neither
@@ -487,6 +495,16 @@
                     Margin="{StaticResource StackGapSm}" />
           <TextBlock Style="{StaticResource PartNote}" Margin="{StaticResource OptionNoteGap}"
                      Text="{DynamicResource setup.opt_keep_timers_note}" />
+
+          <!-- ADR-28: the Gecko engine runs the pages of its applications in sandboxed processes the hook
+               cannot enter. OFF by default, because the application then runs without that sandbox until it
+               closes, and that cost stands under the box like the ones above. Not tied to the target: a Gecko
+               application started through a launcher elsewhere is not recognised beforehand. -->
+          <CheckBox Content="{DynamicResource setup.opt_gecko_sandbox}" IsChecked="{Binding GeckoSandboxOff}"
+                    IsEnabled="{Binding IsIdle}" ToolTip="{DynamicResource tip.gecko_sandbox}"
+                    Margin="{StaticResource StackGapSm}" />
+          <TextBlock Style="{StaticResource PartNote}" Margin="{StaticResource OptionNoteGap}"
+                     Text="{DynamicResource setup.opt_gecko_sandbox_note}" />
 
           <!--
             🔴 AND THE LAUNCH OPTIONS, IN THE SAME GROUP. They were a fifth section of their own, and

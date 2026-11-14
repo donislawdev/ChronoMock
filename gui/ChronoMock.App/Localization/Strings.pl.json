@@ -110,6 +110,7 @@
   "setup.chip_no_embedded": "bez stron WWW",
   "setup.chip_elevated_embedded": "dotarcie do stron administratora",
   "setup.chip_keep_timers": "ukryte okna w tempie",
+  "setup.chip_gecko_sandbox": "piaskownica Gecko wyłączona",
   // The launch fields moved into this section, so its folded header says they are set without printing
   // values that have no length limit.
   "setup.chip_args": "argumenty ustawione",
@@ -156,6 +157,7 @@
   "setup.opt_embedded": "Sięgnij do stron WWW wewnątrz aplikacji",
   "setup.opt_elevated_embedded": "Dotrzyj do stron w aplikacji uruchomionej jako administrator",
   "setup.opt_keep_timers": "Utrzymuj tempo timerów w ukrytych oknach",
+  "setup.opt_gecko_sandbox": "Wyłącz piaskownicę Gecko",
 
   // Fits after a number, like the shipped one. It names the button to press rather than quoting it in
   // passing, because a reader who has never opened the calculator cannot tell a quotation from a label.
@@ -175,6 +177,7 @@
   "setup.opt_elevated_embedded_note": "Zapisuje na czas sesji jedną opcję WebView2 w rejestrze komputera i usuwa ją po sesji. Dopóki aplikacja działa, każdy program na tym komputerze może dotrzeć do jej stron, a aplikacja ma uprawnienia administratora.",
   "setup.opt_elevated_embedded_unavailable": "Dostępne, gdy Chrono Mock działa jako administrator.",
   "setup.opt_keep_timers_note": "Dla aplikacji Chromium i Electron oraz stron WWW wewnątrz aplikacji. Aplikacja pracuje pełnym tempem także wtedy, gdy jej okno jest zminimalizowane.",
+  "setup.opt_gecko_sandbox_note": "Dla aplikacji na silniku Gecko firmy Mozilla: ich strony WWW też mogą iść za zegarem sesji. Aplikacja działa bez piaskownicy Gecko, dopóki jej nie zamkniesz, więc otwieraj w niej tylko strony, którym ufasz.",
 
   // Both of these say "target" in the shipped panel, which is the word this screen stopped using.
   "setup.tip_recent": "Aplikacje uruchamiane wcześniej. „Wybierz…” wskazuje taką, której ta maszyna jeszcze nie uruchamiała.",
@@ -490,6 +493,8 @@
   "session.copy_search_failed": "Program zakończył się, nie pokazując żadnego okna, a listy działających programów nie dało się odczytać, więc sesja nie mogła sprawdzić, czy program przekazał pracę swojej kopii działającej poza sesją. Jeśli program się nie otworzył, zamknij wszystkie jego kopie i uruchom sesję ponownie.",
   "session.target_crashed": "Aplikacja padła: zakończyła się kodem wyjścia, który Windows nadaje programowi zatrzymanemu przez nieobsłużony błąd (kod widać przy wyniku). Werdykt mówi tylko o zegarze, który odczytała do tej chwili. Uruchom ją raz bez Chrono Mock, żeby sprawdzić, czy tam też pada.",
   "session.tz_variable_removed": "Wartość TZ ustawiona w Twoim środowisku nie została przekazana aplikacji. Programy, które czytają TZ (Python, MSYS2, Node.js i inne), biorą z niej strefę czasową, więc zastąpiłaby strefę sesji. Program zbudowany na bibliotece Rusta jiff dostaje w TZ strefę sesji, każdy inny program nie dostaje TZ wcale. Twoje własne środowisko się nie zmieniło.",
+  "session.gecko_sandbox_off": "Aplikacja wystartowała z wyłączoną piaskownicą Gecko, więc procesy, w których działają jej strony WWW, mogą dołączyć do sesji. Które dołączyły, pokazuje pokrycie sesji. Aplikacja działa bez tej ochrony, dopóki jej nie zamkniesz, więc otwieraj w niej tylko strony, którym ufasz.",
+  "session.gecko_pages_sandboxed": "To aplikacja na silniku Gecko, która uruchamia strony WWW w procesach w piaskownicy Gecko, do których Chrono Mock nie ma wstępu. Aplikacja idzie za zegarem sesji, ale jej strony zostają na prawdziwym zegarze. Żeby szły za nim także strony, uruchom sesję jeszcze raz z zaznaczoną opcją „Wyłącz piaskownicę Gecko” w opcjach sesji.",
   "session.zone_unnamed": "Programy zbudowane na ICU (Node.js, Deno, Bun i inne) nie potrafią nazwać strefy czasowej sesji przy tym przesunięciu w dniu, w którym sesja startuje. Część z nich pokazuje dobrą godzinę bez nazwy strefy, inne pokazują czas UTC. Żeby ją nazwały, wybierz przesunięcie o pełną godzinę od -12:00 do +14:00 albo przesunięcie prawdziwej strefy Windows bez czasu letniego i start sesji w dniu, w którym ta strefa je przyjęła, lub później (na przykład +05:30 od 15 października 1945).",
   "session.c_runtime_zone_kept": "Nie udało się sprawić, żeby runtime C aplikacji przeczytał strefę czasową sesji od nowa przy jej starcie. Jeśli któraś z jej bibliotek zapytała o czas podczas ładowania, czas lokalny, który pokazuje aplikacja, może iść według strefy czasowej i reguł czasu letniego tej maszyny zamiast strefy sesji.",
   "session.jump_before_zone_name": "Żeby programy zbudowane na ICU (Node.js, Deno, Bun i inne) mogły nazwać strefę czasową sesji, sesja nadała jej nazwę z rejestru prawdziwej strefy Windows o tym samym przesunięciu. Skok przeniósł zegar na datę, zanim ta strefa miała to przesunięcie, a w takiej dacie te programy mogą pokazać przesunięcie, jakie prawdziwa strefa miała wtedy, zamiast przesunięcia sesji. Żeby zachowały przesunięcie sesji, skacz tylko na daty od dnia, w którym ta strefa je przyjęła (15 października 1945 dla +05:30).",
@@ -855,6 +860,7 @@
   "tip.embedded": "Domyślnie włączone. Aplikacja z wbudowanym silnikiem WWW (WebView2, Qt WebEngine) uruchamia swoje strony w procesie, do którego hook zegara nie wchodzi. Z tą opcją silnik jest proszony o otwarcie na czas sesji lokalnego portu debugowania, a strony idą za zegarem sesji przez ten port. Odznacz, aby zostawić te strony na realnym zegarze i nie otwierać portu.",
   "tip.elevated_embedded": "Domyślnie wyłączone. Aplikacja uruchomiona jako administrator sprawia, że WebView2 pomija ustawienie, przez które sesja dociera do jej stron, więc zostają na realnym zegarze. Po włączeniu sesja zapisuje jedną opcję WebView2 w HKLM\\SOFTWARE\\Policies\\Microsoft\\Edge\\WebView2\\AdditionalBrowserArguments, w wartości nazwanej jak plik aplikacji, i usuwa ją po końcu sesji. Wymaga Chrono Mock uruchomionego jako administrator i aplikacji startowanej z pliku .exe. Dopóki jest ustawiona, każdy program uruchomiony pod tą nazwą pliku też dostaje port diagnostyczny, a uruchamiana aplikacja ma uprawnienia administratora. Wartość zostawiona przez sesję, która zakończyła się awaryjnie, jest usuwana przy następnym starcie z tą opcją.",
   "tip.keep_timers": "Silnik WWW spowalnia timery zminimalizowanego albo ukrytego okna do mniej więcej jednego wywołania na sekundę, więc przy przyspieszonym czasie ukryte okno traci przyspieszenie. Z tą opcją aplikacja startuje z tym spowolnieniem wyłączonym.",
+  "tip.gecko_sandbox": "Aplikacje na silniku Gecko uruchamiają strony WWW w procesach w piaskownicy Gecko, do których Chrono Mock nie ma wstępu, więc bez tej opcji te strony zostają na prawdziwym zegarze, a reszta aplikacji idzie za sesją. Z tą opcją aplikacja startuje z wyłączoną piaskownicą Gecko.",
   "tip.force": "Domyślnie wyłączone. Gdy sprawdzenie zaraz po starcie pokaże, że fałszywy zegar nie zadziałał, aplikacja jest zatrzymywana, a nie zostawiana w działaniu, bo to, co pokazuje, pochodziłoby z realnego zegara. Zaznacz, żeby mimo to ją uruchomić - sesja jest wtedy wszędzie oznaczona jako nierzetelna.",
   "tip.set_speed": "Ustaw dowolną prędkość, np. 500.",
   "tip.stop": "Zatrzymaj sesję. Aplikacja wraca do prawdziwego czasu - nie jest zamykana.",

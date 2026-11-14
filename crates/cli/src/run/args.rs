@@ -46,6 +46,10 @@ pub(crate) struct RunArgs {
     /// (`--keep-background-timers`, R4-N28) - the browser of a Chromium target and the engine inside an
     /// application alike. Off by default: the application then also works at full pace while hidden.
     pub(super) keep_background_timers: bool,
+    /// Leave the sandbox of an application on Mozilla's Gecko engine on. On unless `--no-gecko-sandbox`
+    /// (ADR-28), which starts the target with that sandbox switched off so the hook enters the processes
+    /// its pages run in.
+    pub(super) gecko_sandbox: bool,
     /// How many `state` heartbeats to stream before ending. 0 = no cut: the session lasts until the
     /// target, and whatever it started on the session clock, has exited (ADR-16) - or, on the
     /// Chromium path, until the browser closes its debugging connection (R4-S18).
@@ -163,6 +167,7 @@ pub(crate) fn target_spec_for(ra: &RunArgs) -> TargetSpec {
         embedded: ra.embedded,
         elevated_embedded: ra.elevated_embedded,
         keep_background_timers: ra.keep_background_timers,
+        gecko_sandbox: ra.gecko_sandbox,
         // The terminal `chrono run` was started from: its console for input, its stderr for output
         // (R4-D15). Named rather than left to the default, so the driver's choice is visible here.
         console: TargetConsole::Shared,
@@ -206,6 +211,7 @@ struct EngineFlags {
     embedded: bool,
     elevated_embedded: bool,
     keep_background_timers: bool,
+    gecko_sandbox: bool,
 }
 
 impl EngineFlags {
@@ -215,6 +221,7 @@ impl EngineFlags {
             "--no-embedded" => self.embedded = false,
             "--elevated-embedded" => self.elevated_embedded = true,
             "--keep-background-timers" => self.keep_background_timers = true,
+            "--no-gecko-sandbox" => self.gecko_sandbox = false,
             _ => return false,
         }
         true
@@ -292,7 +299,7 @@ pub(crate) fn parse_run_args(argv: &[String]) -> Result<RunArgs, String> {
     let mut mode = TimeModeKind::Flow;
     let mut multiplier: Option<i64> = None;
     let mut scale_duration = false;
-    let mut engine = EngineFlags { embedded: true, elevated_embedded: false, keep_background_timers: false };
+    let mut engine = EngineFlags { embedded: true, elevated_embedded: false, keep_background_timers: false, gecko_sandbox: true };
     let mut switches = Switches::default();
     let mut ticks: u64 = 0;
     let mut timeout_secs: Option<u64> = None;
@@ -430,6 +437,7 @@ pub(crate) fn parse_run_args(argv: &[String]) -> Result<RunArgs, String> {
         embedded: engine.embedded,
         elevated_embedded: engine.elevated_embedded,
         keep_background_timers: engine.keep_background_timers,
+        gecko_sandbox: engine.gecko_sandbox,
         dry_run: switches.dry_run,
         ticks,
         timeout_secs,
@@ -554,6 +562,18 @@ mod tests {
         let on = parse_run_args(&["app.exe".into(), "--keep-background-timers".into()]).unwrap();
         assert!(target_spec_for(&on).keep_background_timers, "the opt-in has to reach the wire");
         assert!(target_spec_for(&on).embedded, "and it does not turn the pages off");
+    }
+
+    /// The sandbox of a Gecko application is left on unless the tester switches it off, and the request
+    /// reaches the wire (ADR-28). It asks nothing of the other engine switches.
+    #[test]
+    fn the_gecko_sandbox_is_switched_off_only_when_asked_and_reaches_the_wire() {
+        let bare = parse_run_args(&["app.exe".into()]).unwrap();
+        assert!(bare.gecko_sandbox && target_spec_for(&bare).gecko_sandbox);
+        let off = parse_run_args(&["app.exe".into(), "--no-gecko-sandbox".into()]).unwrap();
+        assert!(!target_spec_for(&off).gecko_sandbox, "the opt-in has to reach the wire");
+        let spec = target_spec_for(&off);
+        assert!(spec.embedded && !spec.elevated_embedded && !spec.keep_background_timers, "and it changes no other switch");
     }
 
     /// The option that writes the machine registry is off unless asked for, says so on the wire, and
@@ -789,7 +809,7 @@ mod tests {
             let max = chrono_core::MULTIPLIER_MAX;
             let switches = prop::sample::select(vec![
                 "--scale-duration", "--no-embedded", "--elevated-embedded", "--keep-background-timers", "--scale-qpc",
-                "--force", "--dry-run", "--json", "--report-args",
+                "--force", "--dry-run", "--json", "--report-args", "--no-gecko-sandbox",
             ])
             .prop_map(|flag| Part { words: vec![flag.to_string()], sets: Some(Sets::Switch(flag)) });
             let unknown = prop::sample::select(vec!["--AT", "--at=2026-01-01T00:00:00", "--unknown", "--"])
@@ -892,7 +912,7 @@ mod tests {
             preset: Option<String>,
             params: Vec<(String, String)>,
             /// scale-duration, embedded, elevated, background timers, scale-qpc, force, dry run, json, report args.
-            switches: [bool; 9],
+            switches: [bool; 10],
         }
 
         fn seen(ra: &RunArgs) -> Seen {
@@ -915,7 +935,7 @@ mod tests {
                 params,
                 switches: [
                     ra.scale_duration, ra.embedded, ra.elevated_embedded, ra.keep_background_timers, ra.scale_qpc, ra.force,
-                    ra.dry_run, ra.json, ra.report_args,
+                    ra.dry_run, ra.json, ra.report_args, ra.gecko_sandbox,
                 ],
             }
         }
@@ -927,7 +947,7 @@ mod tests {
             let mut owed = Seen {
                 target: String::new(), args: Vec::new(), cwd: None, at: None, zone: None, mode: TimeModeKind::Flow, multiplier: None,
                 ticks: 0, timeout: None, set_after: None, jump_after: None, report: None, preset: None, params: Vec::new(),
-                switches: [false, true, false, false, false, false, false, false, false],
+                switches: [false, true, false, false, false, false, false, false, false, true],
             };
             let (mut targets, mut flags_once, mut time_flag) = (0, Vec::new(), false);
             for part in parts {
@@ -960,14 +980,17 @@ mod tests {
                     }
                     Sets::Switch(flag) => {
                         let at = ["--scale-duration", "--no-embedded", "--elevated-embedded", "--keep-background-timers",
-                            "--scale-qpc", "--force", "--dry-run", "--json", "--report-args"].iter().position(|f| *f == flag)?;
-                        owed.switches[at] = flag != "--no-embedded";
+                            "--scale-qpc", "--force", "--dry-run", "--json", "--report-args", "--no-gecko-sandbox"]
+                            .iter()
+                            .position(|f| *f == flag)?;
+                        // A `--no-` switch turns off what is on by default.
+                        owed.switches[at] = !flag.starts_with("--no-");
                         time_flag |= flag == "--scale-duration";
                     }
                 }
             }
             owed.params.sort();
-            let [_, embedded, elevated, _, _, _, _, _, report_args] = owed.switches;
+            let [_, embedded, elevated, _, _, _, _, _, report_args, _] = owed.switches;
             let contradiction = (owed.preset.is_some() && time_flag)
                 || (!owed.params.is_empty() && owed.preset.is_none())
                 || (elevated && !embedded)

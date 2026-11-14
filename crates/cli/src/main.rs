@@ -49,6 +49,8 @@ mod embedded;
 mod embedded_bridge;
 /// Writing protocol events, and the shapes both mechanisms share.
 mod events;
+/// Applications on Mozilla's Gecko engine and their sandbox (ADR-28).
+mod gecko;
 /// The step grammar shared by the calculator flags and the preset reader.
 mod grammar;
 /// Writing to the caller without ever crashing on a reader that left.
