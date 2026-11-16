@@ -21,6 +21,16 @@ Notable changes to Chrono Mock, newest first. The format follows
   does `--dry-run`. The start command of the protocol has a new field for it, `target.gecko_sandbox`,
   on unless a client sets it to `false`.
 
+### Fixed
+
+- **A console program whose PE header lies past the first 4 KB of its file now ends its session with
+  its own exit code.** A program that ends at once is told apart from a windowed application handing
+  its work to a copy that is already running by the kind of program its headers name, and the session
+  read only the first 4 KB of them. A console program whose header lies further in, which the format
+  allows and Windows runs, was taken for such a hand-off: exit code 12 and
+  `target.single_instance_suspected`, though it had run under the session. The headers are now read as
+  far as Windows loaded them.
+
 ## [0.6.0-rc.1] - 2026-11-13
 
 ### Fixed

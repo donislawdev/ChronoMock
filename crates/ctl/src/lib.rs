@@ -2036,10 +2036,6 @@ pub const SUBSYSTEM_WINDOWS: u32 = 2;
 /// `IMAGE_SUBSYSTEM_WINDOWS_CUI`: a console program.
 pub const SUBSYSTEM_CONSOLE: u32 = 3;
 
-/// How far into an image its headers are read for the subsystem. The first page of a mapped image always
-/// holds them, and a header placed further in answers "not recorded", which is the safe direction.
-pub const IMAGE_HEADER_SPAN: usize = 4096;
-
 /// The subsystem an image's own headers name (`OptionalHeader.Subsystem`), from the bytes at the start of
 /// the image, or 0 when they do not read as a program's headers: no `MZ`, a PE header outside `headers`,
 /// no `PE\0\0`, or an optional header that is neither PE32 nor PE32+. The field sits at the same offset in
