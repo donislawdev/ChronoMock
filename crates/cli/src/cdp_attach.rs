@@ -105,6 +105,20 @@ pub(crate) enum ClockRead {
 /// The probe: our marker if it is there, otherwise the context's own `Date.now()` as text.
 const CLOCK_PROBE_EXPR: &str = "globalThis.__chronomock ? 'shim' : String(Date.now())";
 
+/// The probe's call: [`CLOCK_PROBE_EXPR`], its value returned.
+fn clock_probe() -> serde_json::Value {
+    json!({ "expression": CLOCK_PROBE_EXPR, "returnByValue": true })
+}
+
+/// Whether a probe's reply - `None` when there was none - stands nearer the session clock projected to
+/// now than the real one ([`classify_clock_read`]).
+fn reads_natively(reply: Option<&serde_json::Value>, origin: ShimOrigin) -> bool {
+    let real_now = now_epoch_ms();
+    let fake_now = origin.fake0.saturating_add((real_now - origin.real0).saturating_mul(origin.mult));
+    let text = reply.and_then(|r| r["result"]["value"].as_str());
+    classify_clock_read(text, fake_now, real_now) == ClockRead::Native
+}
+
 /// Judge a probe reply against where the session clock and the real clock stand now. No reply, or one
 /// that is not a number, is `Real`: the absence of evidence that a context is covered is not evidence
 /// that it is, and the shim is the safe side. A reading equally far from both is `Real` as well - that
@@ -625,20 +639,41 @@ impl Attacher {
     }
 
     /// Put the shim into the context of session `sid`, by `deadline`: what the injection left, or `None`
-    /// when the context was asked first which clock it reads and reads the session's already. `waiting`:
-    /// auto-attach delivered it paused on start, and a page so paused may answer nothing until it is
-    /// released (see [`cdp::inject_page`]).
+    /// when the context, asked which clock it reads, reads the session's already. `waiting`: auto-attach
+    /// delivered it paused on start.
+    ///
+    /// A page paused on start may answer nothing until it is released (see [`cdp::inject_page`]), so
+    /// it is not asked first: a question that waits for its answer would spend the attach's deadline
+    /// and leave the shim no time, and the page went back to the real clock. Measured on a model of
+    /// the page measured on Electron (2 s, the page given up), not seen on WebView2 157, whose pages
+    /// announced paused answered within milliseconds (2026-11-16, `tools/probes/embedded-paused-page`).
+    /// Its question goes out right before the injection, so in the page's own queue it reads the clock
+    /// ahead of the shim, and it is read once the injection's answers are in. A page that turns out
+    /// to read the session clock through the native hook has the shim taken back - its hook removed,
+    /// the shim in its document set to the clock it reads without it - and is let go as native. In the
+    /// moment between the page's start and that, such a page reads the session clock twice over. Any
+    /// other context is asked first, as it answers.
     fn put_shim_in(&mut self, sid: &str, ty: &str, waiting: bool, origin: ShimOrigin, deadline: Instant) -> Option<io::Result<cdp::Injected>> {
-        if self.probe_clock && self.reads_session_clock_natively(sid, origin, deadline) {
+        let paused_page = waiting && !cdp::is_worker(ty);
+        if self.probe_clock && !paused_page && self.reads_session_clock_natively(sid, origin, deadline) {
             return None;
         }
+        let asked = if self.probe_clock && paused_page { self.client.send("Runtime.evaluate", clock_probe(), Some(sid)).ok() } else { None };
         let shim = origin.shim(self.zone);
         let zone = self.zone.map(cdp::zone_id);
-        Some(if cdp::is_worker(ty) {
+        let injected = if cdp::is_worker(ty) {
             cdp::inject_worker(&mut self.client, sid, &shim, zone.as_deref(), deadline)
         } else {
             cdp::inject_page(&mut self.client, sid, &shim, zone.as_deref(), waiting, deadline)
-        })
+        };
+        if let (Some(id), Ok(done)) = (asked, &injected) {
+            let reply = self.client.reply_until(id, "Runtime.evaluate", deadline).ok();
+            if reads_natively(reply.as_ref(), origin) {
+                cdp::take_back(&mut self.client, sid, done.script.as_deref());
+                return None;
+            }
+        }
+        Some(injected)
     }
 
     /// Count a context the shim is in as covered: a row of its own, or past the ceiling of own rows the
@@ -664,12 +699,8 @@ impl Attacher {
     /// to now. One `Runtime.evaluate`, by the attach's deadline - a context that does not answer
     /// counts as real, and gets the shim.
     fn reads_session_clock_natively(&mut self, sid: &str, origin: ShimOrigin, deadline: Instant) -> bool {
-        let real_now = now_epoch_ms();
-        let fake_now = origin.fake0.saturating_add((real_now - origin.real0).saturating_mul(origin.mult));
-        let params = json!({ "expression": CLOCK_PROBE_EXPR, "returnByValue": true });
-        let reply = self.client.call_until("Runtime.evaluate", params, Some(sid), deadline).ok();
-        let text = reply.as_ref().and_then(|r| r["result"]["value"].as_str());
-        classify_clock_read(text, fake_now, real_now) == ClockRead::Native
+        let reply = self.client.call_until("Runtime.evaluate", clock_probe(), Some(sid), deadline).ok();
+        reads_natively(reply.as_ref(), origin)
     }
 
     /// Release a target that auto-attach paused on start. Not waited for: its answer changes nothing,
@@ -1171,6 +1202,109 @@ mod tests {
             .map(|r| (r["params"]["sessionId"].as_str().unwrap_or(""), r["sessionId"].as_str().unwrap_or("browser")))
             .collect();
         assert_eq!(detached, vec![("S-NATIVE", "S-PAGE"), ("S-W2", "S-PAGE")], "each through the page that announced it");
+    }
+
+    /// A browser that announces one page paused on start, `S-PAGE`, and holds every answer of that page
+    /// until its release, as the page measured on Electron did (see `cdp::inject_page`). The clock probe
+    /// answers `probe_value`. Hands back the port and the browser's log of requests.
+    fn browser_with_a_page_held_until_release(
+        probe_value: impl Fn() -> String + Send + 'static,
+    ) -> (u16, std::thread::JoinHandle<Vec<serde_json::Value>>) {
+        let mut held = Vec::new();
+        crate::cdp::fake_browser_holding(move |request| {
+            let id = request["id"].clone();
+            let method = request["method"].as_str().unwrap_or("");
+            if request["sessionId"].as_str().unwrap_or("") != "S-PAGE" {
+                return match method {
+                    "Target.getTargets" => vec![
+                        (id, json!({ "targetInfos": [] })),
+                        (
+                            serde_json::Value::Null,
+                            json!({
+                                "method": "Target.attachedToTarget",
+                                "params": { "sessionId": "S-PAGE", "targetInfo": { "targetId": "T-PAGE", "type": "page" }, "waitingForDebugger": true }
+                            }),
+                        ),
+                    ],
+                    _ => vec![(id, json!({}))],
+                };
+            }
+            let answer = match method {
+                "Page.addScriptToEvaluateOnNewDocument" => json!({ "identifier": "h1" }),
+                "Runtime.evaluate" if request["params"]["expression"] == CLOCK_PROBE_EXPR => json!({ "result": { "value": probe_value() } }),
+                "Runtime.evaluate" => json!({ "result": { "type": "string", "value": "installed" } }),
+                "Runtime.runIfWaitingForDebugger" => {
+                    let mut now = std::mem::take(&mut held);
+                    now.push((id, json!({})));
+                    return now;
+                }
+                _ => json!({}),
+            };
+            held.push((id, answer));
+            Vec::new()
+        })
+    }
+
+    /// An attacher that asks each context which clock it reads, the embedded engines' one, over `port`,
+    /// with the attach's deadline the bridge gives, after the existing targets are attached and the
+    /// events pumped.
+    fn probing_attacher_over(port: u16, origin: ShimOrigin) -> Attacher {
+        let ws = crate::cdp::WsClient::connect("127.0.0.1", port, "/", Instant::now() + Duration::from_secs(5)).unwrap();
+        let mut attacher = Attacher::over(cdp::CdpClient::from_ws(ws), port);
+        attacher.set_budgets(Duration::from_millis(20), Duration::from_secs(2));
+        attacher.probe_clock_before_shim();
+        let mut next = 0;
+        attacher.attach_existing(origin, &mut next, Instant::now() + Duration::from_secs(2)).unwrap();
+        for _ in 0..10 {
+            attacher.pump(origin, &mut next);
+        }
+        attacher
+    }
+
+    /// #162 (f): a page paused on start, which answers nothing before its release, is not asked which
+    /// clock it reads before its shim. Asked first, the question spent the attach's deadline (2 s) and the
+    /// injection had none left: the page was given up and ran on the real clock. Its question now goes out
+    /// with the shim, and the page reads the real clock, so it is covered.
+    #[test]
+    fn a_page_paused_on_start_is_covered_when_the_clock_is_asked_with_its_shim() {
+        let origin = ShimOrigin { fake0: 2_147_483_647_000, real0: now_epoch_ms(), mult: 1, dur: 1, scheduled: None };
+        let (port, browser) = browser_with_a_page_held_until_release(|| now_epoch_ms().to_string());
+        let began = Instant::now();
+        let attacher = probing_attacher_over(port, origin);
+        let took = began.elapsed();
+        let live: Vec<&str> = attacher.contexts().iter().map(|c| c.session_id.as_str()).collect();
+        assert_eq!(attacher.failed(), 0, "the paused page was given up");
+        assert_eq!(live, vec!["S-PAGE"], "the paused page is covered");
+        assert_eq!(attacher.native(), 0);
+        assert!(took < Duration::from_secs(2), "the attach waited out its deadline: {took:?}");
+        drop(attacher);
+        let methods: Vec<String> =
+            browser.join().unwrap().iter().map(|r| r["method"].as_str().unwrap_or("").to_string()).collect();
+        let probe_at = methods.iter().position(|m| m == "Runtime.evaluate");
+        let hook_at = methods.iter().position(|m| m == "Page.addScriptToEvaluateOnNewDocument");
+        assert!(probe_at < hook_at, "the question goes ahead of the shim in the page's queue: {methods:?}");
+    }
+
+    /// The same page reading the session clock through the native hook: its shim, already in, is taken
+    /// back - the new-document hook removed and the shim set to the clock it reads without it - and the
+    /// page is let go as native, not counted as a context, so the fake wall is not scaled twice.
+    #[test]
+    fn a_page_paused_on_start_that_reads_the_session_clock_natively_has_its_shim_taken_back() {
+        let session_now = 2_147_483_647_000_i64;
+        let origin = ShimOrigin { fake0: session_now, real0: now_epoch_ms(), mult: 1, dur: 1, scheduled: None };
+        let (port, browser) = browser_with_a_page_held_until_release(move || session_now.to_string());
+        let attacher = probing_attacher_over(port, origin);
+        assert_eq!(attacher.native(), 1, "the page on the session clock natively was not let go as native");
+        assert!(attacher.contexts().is_empty(), "a page the hook covers is not a context");
+        assert_eq!(attacher.failed(), 0);
+        drop(attacher);
+        let log = browser.join().unwrap();
+        let removed = log.iter().any(|r| r["method"] == "Page.removeScriptToEvaluateOnNewDocument" && r["params"]["identifier"] == "h1");
+        let released = log.iter().any(|r| {
+            r["method"] == "Runtime.evaluate" && r["params"]["expression"] == json!(cdp::set_expr(0, 0, 1, 1, None))
+        });
+        let detached = log.iter().any(|r| r["method"] == "Target.detachFromTarget" && r["params"]["sessionId"] == "S-PAGE");
+        assert!(removed && released && detached, "hook removed {removed}, shim set to the page's own clock {released}, page let go {detached}");
     }
 
     /// R5-D6: a target the by-name pass could not attach to ran unreached, and counts as such - it used

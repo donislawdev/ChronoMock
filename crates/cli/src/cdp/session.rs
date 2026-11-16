@@ -717,9 +717,11 @@ pub fn inject_page(
 /// counts the context as uncovered and lets it go, and nothing moves or releases it after that - but
 /// the new-document hook is registered, and a shim evaluate that ran out of time is still queued in
 /// the context and runs once it is free. So the hook is removed, and the release is queued after that
-/// evaluate, in the same session, so the document ends on the real clock whichever runs. Not waited
-/// for: the context may be busy for as long as it likes.
-fn take_back(client: &mut CdpClient, session_id: &str, script: Option<&str>) {
+/// evaluate, in the same session, so the document ends on the clock it reads without the shim
+/// whichever runs. Not waited for: the context may be busy for as long as it likes. The attacher takes
+/// back the same way a page that turned out to read the session clock through the native hook once
+/// its shim was in (see `Attacher::put_shim_in`).
+pub fn take_back(client: &mut CdpClient, session_id: &str, script: Option<&str>) {
     if let Some(script) = script {
         let _ = client.send("Page.removeScriptToEvaluateOnNewDocument", json!({ "identifier": script }), Some(session_id));
     }

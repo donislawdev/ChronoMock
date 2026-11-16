@@ -51,6 +51,15 @@ Notable changes to Chrono Mock, newest first. The format follows
   held thread may keep the program from loading anything or starting a thread. The error message now
   says that the session joined the program and the thread did not end. Before, it said the session had
   not been loaded.
+- **A page that an application with an embedded web engine opens during the session no longer risks
+  staying on the real clock.** Before the session gives a page its clock, it asks the page which clock
+  it already reads, so that a page the session already covers through the application itself does not
+  get the session's clock a second time. A page opened after the session reached the engine can arrive
+  paused, and such a page may answer nothing until the session lets it go. The session waited for that
+  answer until its time for the page ran out, then left the page on the real clock and said in the
+  report that the page could not take the session's clock. Such a page now gets the question together
+  with the session's clock. A page that turns out to read the session's clock already gets its own
+  clock back at once, and for those few milliseconds it reads the session's time shifted twice.
 
 ## [0.6.0-rc.1] - 2026-11-13
 
