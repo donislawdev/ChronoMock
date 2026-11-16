@@ -1744,7 +1744,11 @@ unsafe extern "system" fn read_zone_again_thread(_: *mut c_void) -> u32 { unsafe
 
 /// The id of this process's main thread: the oldest of its threads but the one running this, because the
 /// main thread is created with the process and every other thread after it. `None` when the threads
-/// cannot be listed.
+/// cannot be listed, or when the creation time of one of them cannot be read: that one could be the main
+/// thread, and the oldest of the rest would then be another thread, whose end the watcher would take for
+/// the program's and whose queue the zone read would go to. Without an id the watcher waits on the core
+/// alone and the zone read is reported as not made, which is the safe direction. A thread that ended
+/// between the listing and the question counts as unreadable too.
 ///
 /// # Safety
 /// Called from `install` only.
@@ -1754,19 +1758,22 @@ unsafe fn main_thread_id() -> Option<u32> { unsafe {
     let snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0).ok()?;
     let mut entry = THREADENTRY32 { dwSize: size_of::<THREADENTRY32>() as u32, ..Default::default() };
     let mut oldest: Option<(u64, u32)> = None;
+    let mut unreadable = false;
     let mut listed = Thread32First(snapshot, &mut entry).is_ok();
     while listed {
-        if entry.th32OwnerProcessID == pid
-            && entry.th32ThreadID != own
-            && let Some(created) = thread_created(entry.th32ThreadID)
-            && oldest.is_none_or(|(at, _)| created < at)
-        {
-            oldest = Some((created, entry.th32ThreadID));
+        if entry.th32OwnerProcessID == pid && entry.th32ThreadID != own {
+            match thread_created(entry.th32ThreadID) {
+                Some(created) if oldest.is_none_or(|(at, _)| created < at) => {
+                    oldest = Some((created, entry.th32ThreadID));
+                }
+                Some(_) => {}
+                None => unreadable = true,
+            }
         }
         listed = Thread32Next(snapshot, &mut entry).is_ok();
     }
     let _ = CloseHandle(snapshot);
-    oldest.map(|(_, id)| id)
+    if unreadable { None } else { oldest.map(|(_, id)| id) }
 }}
 
 /// Remember the session this process joined and what its watcher waits on: the core's pid, which
