@@ -11,8 +11,9 @@
 //! The system targets come with every Windows installation, so this runs on a clean runner: the command
 //! interpreter as the console program, and `rundll32.exe` with nothing to run as the windowed one, which
 //! ends at once without showing anything (measured: 1 to 3 ms after the start, both bitnesses). The
-//! 32-bit interpreter of a 64-bit system is the child the hook cannot enter. The one target that is not a
-//! system program is written here: a few bytes of console program whose PE header lies past the first page.
+//! 32-bit interpreter of a 64-bit system is the child the hook cannot enter. The targets that are not system
+//! programs are written here, a few bytes of console program each: one whose PE header lies past the first
+//! page, and the same with its header in the first page as the control.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;

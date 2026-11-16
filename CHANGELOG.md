@@ -23,13 +23,14 @@ Notable changes to Chrono Mock, newest first. The format follows
 
 ### Fixed
 
-- **A console program whose PE header lies past the first 4 KB of its file now ends its session with
-  its own exit code.** A program that ends at once is told apart from a windowed application handing
-  its work to a copy that is already running by the kind of program its headers name, and the session
-  read only the first 4 KB of them. A console program whose header lies further in, which the format
-  allows and Windows runs, was taken for such a hand-off: exit code 12 and
+- **A console program whose PE header lies past the first 4 KB of its file is no longer taken for a
+  hand-off.** A program that ends at once is told apart from a windowed application handing its work
+  to a copy that is already running by the kind of program its headers name, and the session read
+  only the first 4 KB of them. A console program whose header lies further in, which the format allows
+  and Windows runs, was reported as such a hand-off, with exit code 12 and
   `target.single_instance_suspected`, though it had run under the session. The headers are now read as
-  far as Windows loaded them.
+  far as Windows loaded them, so such a program gets the verdict of its session like any other, and the
+  report gives its own exit code beside it.
 
 ## [0.6.0-rc.1] - 2026-11-13
 

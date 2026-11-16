@@ -1016,6 +1016,8 @@ unsafe fn own_subsystem() -> u32 { unsafe {
     };
     match readable_from(start) {
         0 => 0,
+        // SAFETY: `readable_from` said the `span` bytes from `start` are one region of committed pages
+        // that can be read, the executable's own image, which stays mapped for the life of the process.
         span => image_subsystem(core::slice::from_raw_parts(start, span)),
     }
 }}
@@ -1028,6 +1030,8 @@ unsafe fn own_subsystem() -> u32 { unsafe {
 /// `start` may be any address. Nothing is read through it here.
 unsafe fn readable_from(start: *const u8) -> usize { unsafe {
     let mut info = MEMORY_BASIC_INFORMATION::default();
+    // SAFETY: a question about an address, which reads nothing at it and writes only `info`, a local of
+    // the size passed.
     if VirtualQuery(Some(start.cast()), &mut info, size_of::<MEMORY_BASIC_INFORMATION>()) == 0 {
         return 0;
     }

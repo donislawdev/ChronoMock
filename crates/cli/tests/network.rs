@@ -247,7 +247,7 @@ const ALLOWED: &[(&str, &str, &str)] = &[
         "runs the built binary with programs that end at once: three from the system folder (the \
          command interpreter told to exit, the same interpreter starting its 32-bit copy told to exit, \
          and rundll32 with nothing to run) and two the test writes to a scratch folder, a few bytes \
-         that return at once and import nothing. None reaches past this machine",
+         each that end at once and import one function from KERNEL32.dll. None reaches past this machine",
     ),
     (
         "crates/cli/tests/hand_off.rs",
