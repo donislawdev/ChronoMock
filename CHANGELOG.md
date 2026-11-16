@@ -41,6 +41,16 @@ Notable changes to Chrono Mock, newest first. The format follows
   can differ for a program whose main thread ends before its other threads. When the session cannot
   tell which thread is the program's main one, or whether its own thread is the last one left, the
   program keeps running as before.
+- **A child process that joined the session is no longer reported as running on the real clock when the
+  thread that brought the session in does not end in time.** The session enters each process on a
+  thread of its own and waits a limited time for that thread to end. When it did not, the session took
+  that for a failure to enter, even though the process had joined and read the session's clock. Code in
+  the program or one of its libraries that holds a thread as it ends causes this. Such a child was then
+  named in the report as running on the real clock (`inheritance.child_not_injected`), and is now
+  counted as covered. The program the session starts itself is still stopped in that case, because the
+  held thread may keep the program from loading anything or starting a thread. The error message now
+  says that the session joined the program and the thread did not end. Before, it said the session had
+  not been loaded.
 
 ## [0.6.0-rc.1] - 2026-11-13
 

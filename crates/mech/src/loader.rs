@@ -22,7 +22,7 @@ use windows::core::s;
 use windows::Win32::Foundation::HANDLE;
 use windows::Win32::System::LibraryLoader::{GetModuleHandleA, GetProcAddress};
 
-pub(crate) use chrono_ctl::inject::{outcome, page_released_safely, Outcome, ProcessAfter, Wait};
+pub(crate) use chrono_ctl::inject::{outcome, page_released_safely, signed_in_after_all, Outcome, ProcessAfter, Wait};
 
 /// `ProcessDefaultHardErrorMode`: the information class that reads and sets whether Windows shows its
 /// error window for a process's hard errors - what `SetErrorMode` changes for the calling process. Bit 0

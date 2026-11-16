@@ -1896,7 +1896,7 @@ pub fn prepare(spec: &SessionSpec, target: &Target, hook_dll: &Path) -> Result<P
         // ended on the way out (H-2): letting it go on - the old "let it die naturally" - would run an
         // unhooked process to completion reading REAL time, a silent orphan the caller never asked to run,
         // and hand back a "session" that substituted nothing. The view goes too (M-2).
-        let parking = inject(suspended.process(), suspended.thread(), &dll_wide)?;
+        let parking = inject(suspended.process(), suspended.thread(), &dll_wide, (ctl, suspended.pid()))?;
 
         // 4. Find the parent's OWN coverage slot (it published its pid in DllMain, before the release, so
         // this is deterministic) and read the install bitmask. If the hook could not claim a slot
@@ -2154,8 +2154,14 @@ fn build_command_line(path: &str, args: &[String]) -> Vec<u16> {
 ///
 /// # Safety
 /// `hproc` and `hthread` must be the handles `CreateProcessW` gave for a target of this process's bitness,
-/// created suspended and never resumed, both still open, and `dll_wide` a path ended by a zero.
-unsafe fn inject(hproc: HANDLE, hthread: HANDLE, dll_wide: &[u16]) -> Result<park::Parking, PrepareError> { unsafe {
+/// created suspended and never resumed, both still open, `dll_wide` a path ended by a zero, and `session`
+/// the live block this core wrote and the target's pid.
+unsafe fn inject(
+    hproc: HANDLE,
+    hthread: HANDLE,
+    dll_wide: &[u16],
+    session: (*const Ctl, u32),
+) -> Result<park::Parking, PrepareError> { unsafe {
     let quiet = loader::QuietLoader::begin(hproc);
     let began = Instant::now();
     let parking = start_and_park(hproc, hthread)?;
@@ -2166,7 +2172,7 @@ unsafe fn inject(hproc: HANDLE, hthread: HANDLE, dll_wide: &[u16]) -> Result<par
              so the hook was not loaded - a library's start-up code is slow, or waiting"
         )));
     };
-    load_hook(hproc, dll_wide, limit_ms)?;
+    load_hook(hproc, dll_wide, limit_ms, session)?;
     if let Some(quiet) = quiet {
         quiet.end().map_err(PrepareError::Inject)?;
     }
@@ -2208,8 +2214,11 @@ unsafe fn start_and_park(hproc: HANDLE, hthread: HANDLE) -> Result<park::Parking
 /// thread, waiting for it at most `limit_ms` - what the target's start left of the injection's budget.
 /// Returns `Err` on any failure, INCLUDING a `LoadLibraryW` that returned NULL in the target - the caller
 /// then terminates the still-parked target rather than let an unhooked process run reading real time
-/// (H-2) - and a target that ended before the hook got its turn (R4-S6).
-unsafe fn load_hook(hproc: HANDLE, dll_wide: &[u16], limit_ms: u32) -> Result<(), PrepareError> { unsafe {
+/// (H-2) - and a target that ended before the hook got its turn (R4-S6). A remote thread that did not
+/// end in time is an `Err` too, also when the target signed in to the session (`session`, the block and
+/// the target's pid) and only the thread's end is stuck: whatever holds it may hold the loader lock, and
+/// the program would stop at the first thing it loads or the first thread it starts or ends.
+unsafe fn load_hook(hproc: HANDLE, dll_wide: &[u16], limit_ms: u32, session: (*const Ctl, u32)) -> Result<(), PrepareError> { unsafe {
     let bytes = dll_wide.len() * 2;
     let remote = VirtualAllocEx(hproc, None, bytes, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
     if remote.is_null() {
@@ -2263,7 +2272,10 @@ unsafe fn load_hook(hproc: HANDLE, dll_wide: &[u16], limit_ms: u32) -> Result<()
     let mut thread_code: u32 = 0;
     let thread_code = (wait == loader::Wait::ThreadDone && GetExitCodeThread(hthread, &mut thread_code).is_ok())
         .then_some(thread_code);
-    let outcome = loader::outcome(wait, process, thread_code);
+    let (ctl, pid) = session;
+    let outcome = loader::signed_in_after_all(loader::outcome(wait, process, thread_code), || {
+        find_pid_slot(ctl, pid, process_created(hproc)).is_some()
+    });
     if loader::page_released_safely(outcome) {
         let _ = VirtualFreeEx(hproc, remote, 0, MEM_RELEASE);
     }
@@ -2289,6 +2301,12 @@ unsafe fn load_hook(hproc: HANDLE, dll_wide: &[u16], limit_ms: u32) -> Result<()
             "the hook did not load within the {limit_ms} ms left of the {INJECT_TIMEOUT_MS} ms allowed for \
              starting the target and loading the hook - the target's loading is stuck (a library's start-up \
              code waiting, or a loader lock)"
+        ))),
+        loader::Outcome::ThreadEndStuck => Err(PrepareError::Inject(format!(
+            "the hook loaded and joined the session, but the thread that loaded it did not end within the \
+             {limit_ms} ms left of the {INJECT_TIMEOUT_MS} ms allowed for starting the target and loading the \
+             hook - code the target runs as a thread ends is stuck (a library's or the program's own, waiting \
+             or holding a lock)"
         ))),
         loader::Outcome::WaitFailed => Err(PrepareError::Inject(win32_detail(
             "waiting for the remote LoadLibraryW thread",
