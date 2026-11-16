@@ -246,7 +246,7 @@ const ALLOWED: &[(&str, &str, &str)] = &[
         "spawn",
         "runs the built binary with programs that end at once: three from the system folder (the \
          command interpreter told to exit, the same interpreter starting its 32-bit copy told to exit, \
-         and rundll32 with nothing to run) and two the test writes to a scratch folder, a few bytes \
+         and rundll32 with nothing to run) and three the test writes to a scratch folder, a few bytes \
          each that end at once and import one function from KERNEL32.dll. None reaches past this machine",
     ),
     (

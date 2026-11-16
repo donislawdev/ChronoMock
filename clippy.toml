@@ -93,6 +93,10 @@
 # Measured 2026-11-12 (ADR-27): `hook::install` reached 147 with the one call that has the program's C
 # runtimes read the zone again, beside `report::describe_warning` and `cdp_embedded_probe` at 147, then
 # `parse_run_args` at 146 (measured by `tools/margin.ps1 -Rust`). The ceiling did not move.
+#
+# Measured 2026-11-16: `hook::install` went to 144 when remembering the core and the program's main
+# thread moved to `remember_core_and_main_thread`. The holders are `cdp_embedded_probe`,
+# `report::describe_warning` and `run::args::parse_run_args` at 147 (measured by `tools/margin.ps1 -Rust`).
 too-many-lines-threshold = 147
 
 # A tie at 25: `run::driver_run` and `report::render_report`. This happens to be clippy's own
