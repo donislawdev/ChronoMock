@@ -71,7 +71,7 @@ use chrono_ctl::{
     publish_pid, read_anchor, read_anchor_with, read_core_created, read_core_pid, read_dur, read_dur_with,
     read_ended, read_qpc, read_qpc_with, RELEASE_MARGIN_QUIT, mark_zone_not_read_again,
     read_pid_count, read_scale_dur, read_scale_qpc, set_created, set_subsystem, image_subsystem, MAX_COV_PIDS,
-    IMAGE_HEADER_SPAN, IDX_GTZIFY,
+    IDX_GTZIFY,
     bump_waits_at_floor, delay_hit_floor, read_installed, read_late_installed, read_tz_bias, read_zone_name, reserve_cov_slot,
     scale_delay_deadline, scale_delay_interval, scale_timer_due, scale_timer_elapse, scale_timer_period,
     scale_timer_period_ms, scale_wait, set_channels_installed, set_failed_channels, set_late_installed,
@@ -101,9 +101,10 @@ use windows::Win32::System::LibraryLoader::{
     GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS, GET_MODULE_HANDLE_EX_FLAG_PIN,
 };
 use windows::Win32::System::Memory::{
-    MapViewOfFile, OpenFileMappingW, UnmapViewOfFile, VirtualAllocEx, VirtualFreeEx,
-    FILE_MAP_ALL_ACCESS, MEMORY_MAPPED_VIEW_ADDRESS, MEM_COMMIT, MEM_RELEASE, MEM_RESERVE,
-    PAGE_READWRITE,
+    MapViewOfFile, OpenFileMappingW, UnmapViewOfFile, VirtualAllocEx, VirtualFreeEx, VirtualQuery,
+    FILE_MAP_ALL_ACCESS, MEMORY_BASIC_INFORMATION, MEMORY_MAPPED_VIEW_ADDRESS, MEM_COMMIT, MEM_RELEASE,
+    MEM_RESERVE, PAGE_EXECUTE_READ, PAGE_EXECUTE_READWRITE, PAGE_EXECUTE_WRITECOPY, PAGE_GUARD,
+    PAGE_READONLY, PAGE_READWRITE, PAGE_WRITECOPY,
 };
 use windows::Win32::System::SystemServices::{DLL_PROCESS_ATTACH, DLL_PROCESS_DETACH};
 use windows::Win32::System::SystemInformation::{IMAGE_FILE_MACHINE, IMAGE_FILE_MACHINE_UNKNOWN};
@@ -998,18 +999,54 @@ unsafe fn process_created(handle: HANDLE) -> Option<u64> { unsafe {
 }}
 
 /// The subsystem this process's executable was built for, from its own image headers, or 0 when they
-/// cannot be read. The loader maps the executable, headers first, before any library of the process runs,
-/// and the first page of a mapped image always holds them.
+/// cannot be read. The loader maps the executable, headers first, before any library of the process runs.
+///
+/// The headers are read as far as the system says the pages from the image's start are mapped and
+/// readable, never a fixed span: the PE header sits wherever the offset at 0x3C points, and an image whose
+/// header lies past the first page is a console program like any other (measured on images with the
+/// header at 0x1100, 0x8000 and 0x100000, all of which Windows runs). A header past the readable pages is
+/// never touched and answers 0, which keeps the core's suspicion.
 ///
 /// # Safety
 /// Called from `install`, inside `DllMain`, where the executable's module is mapped.
 unsafe fn own_subsystem() -> u32 { unsafe {
-    match GetModuleHandleW(PCWSTR::null()) {
-        Ok(module) if !module.is_invalid() => {
-            image_subsystem(core::slice::from_raw_parts(module.0 as *const u8, IMAGE_HEADER_SPAN))
-        }
-        _ => 0,
+    let start = match GetModuleHandleW(PCWSTR::null()) {
+        Ok(module) if !module.is_invalid() => module.0 as *const u8,
+        _ => return 0,
+    };
+    match readable_from(start) {
+        0 => 0,
+        // SAFETY: `readable_from` said the `span` bytes from `start` are one region of committed pages
+        // that can be read, the executable's own image, which stays mapped for the life of the process.
+        span => image_subsystem(core::slice::from_raw_parts(start, span)),
     }
+}}
+
+/// How many bytes from `start` lie in one region of committed pages that can be read, or 0 when the
+/// system will not say or the pages cannot be read. A question about the address, which reads nothing at
+/// it. Capped at `isize::MAX`, the most one slice may span.
+///
+/// # Safety
+/// `start` may be any address. Nothing is read through it here.
+unsafe fn readable_from(start: *const u8) -> usize { unsafe {
+    let mut info = MEMORY_BASIC_INFORMATION::default();
+    // SAFETY: a question about an address, which reads nothing at it and writes only `info`, a local of
+    // the size passed.
+    if VirtualQuery(Some(start.cast()), &mut info, size_of::<MEMORY_BASIC_INFORMATION>()) == 0 {
+        return 0;
+    }
+    let readable = PAGE_READONLY
+        | PAGE_READWRITE
+        | PAGE_WRITECOPY
+        | PAGE_EXECUTE_READ
+        | PAGE_EXECUTE_READWRITE
+        | PAGE_EXECUTE_WRITECOPY;
+    if info.State != MEM_COMMIT || (info.Protect & readable).0 == 0 || (info.Protect & PAGE_GUARD).0 != 0 {
+        return 0;
+    }
+    // The region counts from the start of the page that holds `start`.
+    let before = (start as usize).saturating_sub(info.BaseAddress as usize);
+    info.RegionSize.saturating_sub(before).min(isize::MAX as usize)
 }}
 
 /// Real (unbiased) monotonic anchor base - ADR-5. QUIT may be hooked for the duration
