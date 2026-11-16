@@ -13,7 +13,8 @@
 //! ends at once without showing anything (measured: 1 to 3 ms after the start, both bitnesses). The
 //! 32-bit interpreter of a 64-bit system is the child the hook cannot enter. The targets that are not system
 //! programs are written here, a few bytes of console program each: one whose PE header lies past the first
-//! page, and the same with its header in the first page as the control.
+//! page, the same with its header in the first page as the control, and one that ends by returning
+//! from its entry point.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -96,14 +97,24 @@ fn a_console_family_that_ends_at_once_names_the_children_it_ran_uncovered() {
     assert_eq!(named, total, "the report counts children it does not name. {context}");
 }
 
-/// The exit code the program written by `write_console_program` ends with, through `ExitProcess`.
+/// The exit code the program written by `write_console_program` ends with, either way it ends.
 const WRITTEN_PROGRAM_EXIT: u8 = 7;
 
+/// How the program written by `write_console_program` ends.
+#[derive(Clone, Copy)]
+enum Ending {
+    /// Through `ExitProcess`, as the C runtime of any program ends it.
+    ExitProcess,
+    /// By returning from its entry point, which ends its only thread, and Windows ends a process when its
+    /// last thread ends. A program without a C runtime can end so.
+    Return,
+}
+
 /// Writes a console program of this test's bitness to `path`, with its PE header at `pe` and its sections
-/// aligned to `section_align`, that ends at once through `ExitProcess`, as the C runtime of any program
-/// ends it. One section holds the code and the import of that one function from KERNEL32.dll, at a fixed
-/// base without relocations, laid out the way a linker lays a program out (the PE format, MS Learn).
-fn write_console_program(path: &Path, pe: usize, section_align: usize) {
+/// aligned to `section_align`, that ends at once as `ending` says. One section holds the code and the
+/// import of `ExitProcess` from KERNEL32.dll, at a fixed base without relocations, laid out the way a
+/// linker lays a program out (the PE format, MS Learn).
+fn write_console_program(path: &Path, pe: usize, section_align: usize, ending: Ending) {
     const FILE_ALIGN: usize = 0x200;
     // Where each part sits in the section, which starts at the relative address `section_align`.
     const IMPORTS: usize = 0x40;
@@ -175,7 +186,12 @@ fn write_console_program(path: &Path, pe: usize, section_align: usize) {
     // Code, read, write and execute: the loader writes the address of `ExitProcess` into the section.
     put(section + 36, &0xE000_0060u32.to_le_bytes());
     let raw = size_of_headers;
-    if wide {
+    if let Ending::Return = ending {
+        // mov eax, code / ret, and on 32-bit `ret 4` for the one stack argument of a thread's start.
+        put(raw, &[0xB8]);
+        put(raw + 1, &u32::from(WRITTEN_PROGRAM_EXIT).to_le_bytes());
+        put(raw + 5, if wide { &[0xC3][..] } else { &[0xC2, 0x04, 0x00][..] });
+    } else if wide {
         // sub rsp, 0x28 / mov ecx, code / call [rip + to the address slot] / int3
         let after_call = rva(15);
         let to_slot = (rva(ADDRESSES) - after_call) as u32;
@@ -213,7 +229,7 @@ fn a_console_program_with_its_pe_header_past_the_first_page_ends_its_session() {
     let mut results = Vec::new();
     for (name, pe, align) in cases {
         let program = dir.join(format!("{name}.exe"));
-        write_console_program(&program, pe, align);
+        write_console_program(&program, pe, align, Ending::ExitProcess);
         let (code, stdout, stderr) = session(&program.to_string_lossy(), None);
         let own_code = stdout
             .lines()
@@ -228,6 +244,29 @@ fn a_console_program_with_its_pe_header_past_the_first_page_ends_its_session() {
         assert!(!context.contains("target.single_instance_suspected"), "{name} was suspected of handing off. {context}");
         assert_eq!(code, Some(0), "{name} ran under the session, which works. {context}");
     }
+}
+
+/// A program that ends by returning from its entry point ends its only thread, and Windows ends a process
+/// with its last thread, with that thread's code. The hook's watcher is a thread of the process too, and it
+/// waits on the core for as long as the session runs, so it lets the program go once the program's own
+/// threads are gone: the session ends with the program's code, the same as without a session.
+#[test]
+fn a_program_that_returns_from_its_entry_point_ends_its_session() {
+    let dir = std::env::temp_dir().join(format!("chrono-quick-exit-return-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("the scratch folder can be made");
+    let program = dir.join("returns.exe");
+    write_console_program(&program, 0x80, 0x1000, Ending::Return);
+    let (code, stdout, stderr) = session(&program.to_string_lossy(), None);
+    let _ = std::fs::remove_dir_all(&dir);
+    let context = format!("exit {code:?}\nstdout:\n{stdout}\nstderr:\n{stderr}");
+    let own_code = stdout
+        .lines()
+        .filter_map(|l| serde_json::from_str::<serde_json::Value>(l).ok())
+        .find(|event| event["type"] == "ended")
+        .and_then(|ended| ended["target_exit_code"].as_i64());
+    assert_ne!(code, Some(6), "the program ended, yet its session ran until the timeout. {context}");
+    assert_eq!(own_code, Some(i64::from(WRITTEN_PROGRAM_EXIT)), "the program did not end with its own code. {context}");
+    assert_eq!(code, Some(0), "the program ran under the session, which works. {context}");
 }
 
 /// A windowed program that ends at once is what the second instance of a single-instance application

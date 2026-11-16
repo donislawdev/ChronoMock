@@ -31,6 +31,16 @@ Notable changes to Chrono Mock, newest first. The format follows
   `target.single_instance_suspected`, though it had run under the session. The headers are now read as
   far as Windows loaded them, so such a program gets the verdict of its session like any other, and the
   report gives its own exit code beside it.
+- **A program can now end after returning from its entry point.** A program without a C runtime can
+  end that way: returning ends the thread that returns, and Windows ends a process when its last
+  thread ends. The session's own thread in the program kept such a process running, and the session
+  waited for it until it was stopped or ran out of `--timeout`: since 0.6.0-rc.1 for every such
+  program, and before that for one that had read the clock. The program now ends once all of its own
+  threads are gone, with the code its main thread ended with, and the session ends as it always does,
+  after the last process on its clock. Windows gives the code of the thread that ended last, so the two
+  can differ for a program whose main thread ends before its other threads. When the session cannot
+  tell which thread is the program's main one, or whether its own thread is the last one left, the
+  program keeps running as before.
 
 ## [0.6.0-rc.1] - 2026-11-13
 

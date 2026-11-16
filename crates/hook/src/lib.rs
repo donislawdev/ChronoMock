@@ -114,7 +114,7 @@ use windows::Win32::System::Threading::{
     OpenThread, ResumeThread, SetEvent, SuspendThread, WaitForMultipleObjects, WaitForSingleObject, CREATE_SUSPENDED,
     DEBUG_ONLY_THIS_PROCESS, DEBUG_PROCESS, INFINITE, LPTHREAD_START_ROUTINE, PROCESS_INFORMATION,
     PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_SYNCHRONIZE, THREAD_CREATION_FLAGS, THREAD_QUERY_LIMITED_INFORMATION,
-    THREAD_SET_CONTEXT,
+    THREAD_SET_CONTEXT, THREAD_SYNCHRONIZE, ExitProcess,
 };
 use windows::Win32::System::Time::{
     FileTimeToSystemTime, SystemTimeToFileTime, DYNAMIC_TIME_ZONE_INFORMATION, TIME_ZONE_INFORMATION,
@@ -366,6 +366,9 @@ static CORE_HANDLE: OnceLock<usize> = OnceLock::new();
 static CORE_PID: OnceLock<u32> = OnceLock::new();
 static DETACHED: AtomicBool = AtomicBool::new(false);
 static WATCHER_STARTED: AtomicBool = AtomicBool::new(false);
+/// The program's main thread, opened in `install` to be waited on and asked how it ended, and never closed.
+/// Unset when it could not be found or opened, and the watcher then waits on the core alone.
+static MAIN_THREAD: OnceLock<usize> = OnceLock::new();
 
 fn ctl_ptr() -> Option<*mut Ctl> {
     CTL_PTR.get().map(|a| *a as *mut Ctl)
@@ -470,9 +473,20 @@ fn late_poll_interval(tries: u32) -> u32 {
 /// settle, which for a target whose modules were all present at `DllMain` is the FIRST look - so that
 /// case pays no timed wait at all. A target that never loads one of them keeps looking for the whole
 /// session, backing off to one look a second (`late_poll_interval`).
+///
+/// The same wait takes in the program's main thread. The watcher is a thread of the program's process,
+/// and Windows ends a process when its last thread ends, so a program that ends by returning from its
+/// entry point, without `ExitProcess`, would run on as long as the session did, with the session waiting
+/// for it to end (measured on a program built that way: until the timeout). Once the main thread has
+/// ended, the watcher asks whether it is the last thread left, and when it is, it ends the process with
+/// the main thread's code (`let_program_end`). Until then it asks again at the late interval, which a
+/// program that ends its main thread first and lives on in its other threads pays once a second.
 unsafe extern "system" fn watcher_proc(_p: *mut c_void) -> u32 { unsafe {
+    // The code the program's main thread ended with, once it has.
+    let mut main_ended_with: Option<u32> = None;
     if let Some(&h) = CORE_HANDLE.get() {
         let handle = HANDLE(h as *mut c_void);
+        let mut main = MAIN_THREAD.get().map(|&m| HANDLE(m as *mut c_void));
         let mut tries: u32 = 0;
         let mut said = false;
         loop {
@@ -481,9 +495,30 @@ unsafe extern "system" fn watcher_proc(_p: *mut c_void) -> u32 { unsafe {
             // pulls in early may already be there, and sleeping before the first look would hand
             // back a whole interval for nothing.
             late_scan();
-            let interval = if late_pending() { late_poll_interval(tries) } else { INFINITE };
+            let polling = late_pending() || main_ended_with.is_some();
+            let interval = if polling { late_poll_interval(tries) } else { INFINITE };
             tries = tries.saturating_add(1);
-            match read_core_wait(wait_raw(handle, interval), || core_exit_code(handle)) {
+            let mut result = match main {
+                Some(m) => wait_any_raw(&[handle, m], interval),
+                None => wait_raw(handle, interval),
+            };
+            if let Some(m) = main
+                && matches!(result, WAIT_SECOND_OBJECT_CODE | WAIT_FAILED_CODE)
+            {
+                // The main thread ended, or the two-object wait failed: the core alone from here, and
+                // the core's own state is read on the next wait, not from this one.
+                main = None;
+                if result == WAIT_SECOND_OBJECT_CODE {
+                    main_ended_with = thread_exit_code(m);
+                }
+                result = WAIT_TIMEOUT_CODE;
+            }
+            if let Some(code) = main_ended_with
+                && last_thread_left()
+            {
+                let_program_end(code);
+            }
+            match read_core_wait(result, || core_exit_code(handle)) {
                 CoreWait::Running => {}
                 CoreWait::Gone => break, // detach, and install nothing more
                 CoreWait::Failed => {
@@ -501,8 +536,64 @@ unsafe extern "system" fn watcher_proc(_p: *mut c_void) -> u32 { unsafe {
     // The program goes back to the real clock, and its C runtimes to this machine's zone, which they read
     // again now that the zone channel answers with it. This thread is the hook's own and holds no lock.
     read_zone_again(std::ptr::null_mut(), std::ptr::null_mut(), std::ptr::null_mut());
-    0
+    // The process's code if the program's threads ended while the core went, and this one is the last.
+    main_ended_with.unwrap_or(0)
 }}
+
+/// `WAIT_OBJECT_0 + 1` as the raw value the two-object wait returns: the program's main thread ended.
+const WAIT_SECOND_OBJECT_CODE: u32 = 1;
+
+/// `WAIT_FAILED` as the raw value a wait returns.
+const WAIT_FAILED_CODE: u32 = u32::MAX;
+
+/// The code thread `thread` ended with, or `None` when the handle cannot say.
+fn thread_exit_code(thread: HANDLE) -> Option<u32> {
+    let mut code: u32 = 0;
+    unsafe { GetExitCodeThread(thread, &mut code) }.ok().map(|()| code)
+}
+
+/// `ThreadAmILastThread`, the class of `NtQueryInformationThread` that answers whether the calling thread
+/// is the last one in its process (phnt `ntpsapi.h`). The system's own way to end a process with its last
+/// thread asks the same.
+const THREAD_AM_I_LAST_THREAD: u32 = 12;
+
+/// `NtQueryInformationThread` as ntdll exports it: the thread, the class, the buffer and its size, and
+/// where the size written goes.
+type NtQueryInformationThreadFn = unsafe extern "system" fn(HANDLE, u32, *mut c_void, u32, *mut u32) -> i32;
+
+/// Whether the thread running this is the last one left in its process. `false` when the system cannot be
+/// asked, which leaves the program running, as it did before the watcher asked at all.
+fn last_thread_left() -> bool {
+    unsafe {
+        let Some(query) =
+            GetModuleHandleA(s!("ntdll.dll")).ok().and_then(|ntdll| GetProcAddress(ntdll, s!("NtQueryInformationThread")))
+        else {
+            return false;
+        };
+        let query = std::mem::transmute::<unsafe extern "system" fn() -> isize, NtQueryInformationThreadFn>(query);
+        let mut last: u32 = 0;
+        let asked = query(
+            GetCurrentThread(),
+            THREAD_AM_I_LAST_THREAD,
+            (&raw mut last).cast(),
+            size_of::<u32>() as u32,
+            std::ptr::null_mut(),
+        );
+        asked >= 0 && last != 0
+    }
+}
+
+/// End the process for a program whose own threads are all gone, the main thread with `code`, as Windows
+/// ends it when its last thread ends. Through `ExitProcess`, so the libraries are told the process is
+/// ending, this one among them, which marks the exit for the core as for any other.
+///
+/// The code is the main thread's, where Windows gives the code of the thread that ended last. The two
+/// differ only for a program whose main thread ended before its other threads, and the code of those is
+/// not known here.
+fn let_program_end(code: u32) -> ! {
+    log("[chrono_hook] the program's threads have all ended - ending its process with its main thread's code");
+    unsafe { ExitProcess(code) }
+}
 
 /// `WAIT_OBJECT_0` as the raw value the trampoline returns: the core's handle was signalled.
 const WAIT_OBJECT_0_CODE: u32 = 0;
@@ -1606,12 +1697,13 @@ fn zone_read_again() -> bool {
 ///
 /// # Safety
 /// Called from `install` only, once every detour is live, so the zone the runtimes read is the session's.
-/// `cov`, when there is one, must be this process's live slot.
-unsafe fn refresh_c_runtime_zones(cov: Option<*mut Cov>) { unsafe {
+/// `cov`, when there is one, must be this process's live slot, and `main` the id `main_thread_id` gave.
+unsafe fn refresh_c_runtime_zones(cov: Option<*mut Cov>, main: Option<u32>) { unsafe {
     if !SHARED_C_RUNTIMES.iter().any(|runtime| GetModuleHandleA(*runtime).is_ok()) {
         return;
     }
-    let queued = main_thread().is_some_and(|thread| {
+    let thread = main.and_then(|id| OpenThread(THREAD_SET_CONTEXT, false, id).ok());
+    let queued = thread.is_some_and(|thread| {
         let queue = GetModuleHandleA(s!("ntdll.dll")).ok().and_then(|ntdll| GetProcAddress(ntdll, s!("NtQueueApcThread")));
         let queued = queue.is_some_and(|queue| {
             let queue = std::mem::transmute::<unsafe extern "system" fn() -> isize, NtQueueApcFn>(queue);
@@ -1650,37 +1742,64 @@ unsafe extern "system" fn read_zone_again_thread(_: *mut c_void) -> u32 { unsafe
     0
 }}
 
-/// This process's main thread, opened to queue a call on it: the oldest of its threads but the one running
-/// this, because the main thread is created with the process and every other thread after it. `None` when
-/// the threads cannot be listed or the oldest cannot be opened.
+/// The id of this process's main thread: the oldest of its threads but the one running this, because the
+/// main thread is created with the process and every other thread after it. `None` when the threads
+/// cannot be listed, or when the creation time of one of them cannot be read: that one could be the main
+/// thread, and the oldest of the rest would then be another thread, whose end the watcher would take for
+/// the program's and whose queue the zone read would go to. Without an id the watcher waits on the core
+/// alone and the zone read is reported as not made, which is the safe direction. A thread that ended
+/// between the listing and the question counts as unreadable too.
 ///
 /// # Safety
 /// Called from `install` only.
-unsafe fn main_thread() -> Option<HANDLE> { unsafe {
+unsafe fn main_thread_id() -> Option<u32> { unsafe {
     let pid = GetCurrentProcessId();
     let own = GetCurrentThreadId();
     let snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0).ok()?;
     let mut entry = THREADENTRY32 { dwSize: size_of::<THREADENTRY32>() as u32, ..Default::default() };
     let mut oldest: Option<(u64, u32)> = None;
+    let mut unreadable = false;
     let mut listed = Thread32First(snapshot, &mut entry).is_ok();
     while listed {
-        if entry.th32OwnerProcessID == pid
-            && entry.th32ThreadID != own
-            && let Some(created) = thread_created(entry.th32ThreadID)
-            && oldest.is_none_or(|(at, _)| created < at)
-        {
-            oldest = Some((created, entry.th32ThreadID));
+        if entry.th32OwnerProcessID == pid && entry.th32ThreadID != own {
+            match thread_created(entry.th32ThreadID) {
+                Some(created) if oldest.is_none_or(|(at, _)| created < at) => {
+                    oldest = Some((created, entry.th32ThreadID));
+                }
+                Some(_) => {}
+                None => unreadable = true,
+            }
         }
         listed = Thread32Next(snapshot, &mut entry).is_ok();
     }
     let _ = CloseHandle(snapshot);
-    OpenThread(THREAD_SET_CONTEXT, false, oldest?.1).ok()
+    if unreadable { None } else { oldest.map(|(_, id)| id) }
+}}
+
+/// Remember the session this process joined and what its watcher waits on: the core's pid, which
+/// `still_ours` compares on every anchor read (R2-S6), the core's handle, and the program's main thread,
+/// opened to be waited on and asked how it ended (`watcher_proc`). The watcher reads them once, when it
+/// starts, so they are set before any detour can start it. The main thread's id is handed back for the
+/// zone read queued on it, which needs another right and opens its own handle.
+///
+/// # Safety
+/// Called from `install` only, with the core's handle when one was opened.
+unsafe fn remember_core_and_main_thread(core_pid: u32, core: Option<HANDLE>) -> Option<u32> { unsafe {
+    let _ = CORE_PID.set(core_pid);
+    if let Some(h) = core {
+        let _ = CORE_HANDLE.set(h.0 as usize);
+    }
+    let main = main_thread_id();
+    if let Some(thread) = main.and_then(|id| OpenThread(THREAD_SYNCHRONIZE | THREAD_QUERY_LIMITED_INFORMATION, false, id).ok()) {
+        let _ = MAIN_THREAD.set(thread.0 as usize);
+    }
+    main
 }}
 
 /// When thread `id` was created, in FILETIME units, or `None` when it cannot be read.
 ///
 /// # Safety
-/// Called from `main_thread` only.
+/// Called from `main_thread_id` only, inside `install`.
 unsafe fn thread_created(id: u32) -> Option<u64> { unsafe {
     let thread = OpenThread(THREAD_QUERY_LIMITED_INFORMATION, false, id).ok()?;
     let (mut created, mut exited, mut kernel, mut user) =
@@ -4440,11 +4559,8 @@ unsafe fn install() -> Result<(), InstallError> { unsafe {
     pin_self();
     let _ = CTL_PTR.set(view.Value as usize);
     let _ = SESSION_ZONE.set((read_tz_bias(ctl as *const Ctl), read_zone_name(ctl as *const Ctl)));
-    // The session we joined, for `still_ours` (R2-S6), and the core the watcher waits on.
-    let _ = CORE_PID.set(core_pid);
-    if let Some(h) = core {
-        let _ = CORE_HANDLE.set(h.0 as usize);
-    }
+    // The session we joined, and what the watcher waits on, before any detour can start the watcher.
+    let main = remember_core_and_main_thread(core_pid, core);
 
     // This process's OWN coverage slot in the shared block, so its calls are attributed to it and
     // never summed into the parent's report (rule 4). Reserved NOW, before any detour is enabled,
@@ -4592,7 +4708,7 @@ unsafe fn install() -> Result<(), InstallError> { unsafe {
         set_failed_channels(c, HOOK_FAILED.load(Ordering::Relaxed));
     }
     // A C runtime that read the zone while the program's libraries started reads it again (ADR-27).
-    refresh_c_runtime_zones(cov);
+    refresh_c_runtime_zones(cov, main);
 
     // Hand the watcher whatever this session WANTED from an optional module and did not get. The set
     // is computed here rather than in the watcher so the opt-in gates are stated once: without
