@@ -208,20 +208,34 @@ fn time_change_heard() -> bool {
     heard
 }
 
+/// Whether Windows gives the probe a local time in the session's year, which it does until the session lets
+/// the probe go.
+fn in_session_year() -> bool {
+    // SAFETY: fills a structure the call returns by value.
+    unsafe { GetLocalTime() }.wYear == 2091
+}
+
 /// Stays until the session has let the probe go, which is when Windows gives a local time outside the
 /// session's year again, then until each runtime gives the local time Windows gives and the probe's window
 /// heard that the time changed, and writes how far each runtime is from Windows at the end and whether the
 /// window heard it.
 fn outlive_the_session() -> String {
     let window = own_window();
-    let mut heard = false;
+    let (mut heard_before_let_go, mut heard) = (false, false);
     let start = Instant::now();
-    // SAFETY: fills a structure the call returns by value.
-    while unsafe { GetLocalTime() }.wYear == 2091 && start.elapsed() < LET_GO_LIMIT {
-        heard |= time_change_heard();
+    while in_session_year() && start.elapsed() < LET_GO_LIMIT {
+        // The clock is read again after a message, because the session may have let the probe go since the
+        // read above and told it then: only a message heard while the clock still gives the session's year
+        // came before the let-go.
+        if time_change_heard() {
+            if in_session_year() {
+                heard_before_let_go = true;
+            } else {
+                heard = true;
+            }
+        }
         std::thread::sleep(Duration::from_millis(100));
     }
-    let heard_before_let_go = heard;
     let let_go = Instant::now();
     let mut distances = distances_from_windows();
     heard |= time_change_heard();

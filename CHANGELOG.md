@@ -42,9 +42,10 @@ Notable changes to Chrono Mock, newest first. The format follows
   the program the starter would start, in its place, with the same arguments and, unless you give a
   working folder, in that program's folder, and the report says so (`session.squirrel_starter_skipped`).
   The session runs at that program's bitness, the window picks its core by that program too, and an
-  Electron application takes the Chromium mode. `--dry-run` names the program it would start, and its
-  JSON carries it as `target.program`. A version folder the installer has not finished writing is
-  passed over, as the starter passes it over.
+  Electron application takes the Chromium mode. `--dry-run` names the program it would start and checks
+  that Windows can start it, and its JSON carries it as `target.program`. The evidence file of
+  `--report` names that program and the folder it worked in. A version folder the installer has not
+  finished writing is passed over, as the starter passes it over.
 - **A window that a Chromium-based application opens after the session reached it now follows the
   session clock.** Some browsers built on Chromium announce a new window to the session as content of
   an unnamed kind while it is still being made a tab, and the session left such content alone. The

@@ -52,21 +52,36 @@ fn a_session_on_a_starter_runs_the_newest_version_in_its_own_folder_and_says_so(
     let newest = dir.join("app-1.10.0");
 
     let file = dir.join("seen.txt");
+    let evidence_file = dir.join("evidence.txt");
     let probe_args = format!("--ignored --exact {PROBE} --test-threads 1");
+    // This command runs in the crate's folder, never the version folder, so the evidence names the folder
+    // the program really worked in only if it was worked out the way the core works it out.
     let out = Command::new(env!("CARGO_BIN_EXE_chrono"))
-        .args(["run", &starter.display().to_string(), "--at", "2091-06-15T12:00:00", "--args", &probe_args])
+        .args(["run", &starter.display().to_string(), "--at", "2091-06-15T12:00:00", "--report", &evidence_file.display().to_string(), "--args", &probe_args])
         .env(PROBE_FILE, &file)
         .output()
         .expect("the session must start");
     let written = std::fs::read_to_string(&file).unwrap_or_default();
+    let evidence = std::fs::read_to_string(&evidence_file).unwrap_or_default();
     let report = String::from_utf8_lossy(&out.stdout).into_owned();
     let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
     let _ = std::fs::remove_dir_all(&dir);
-    let context = format!("The probe wrote {written:?}. stdout: {report} stderr: {stderr}");
+    let context = format!("The probe wrote {written:?}. stdout: {report} stderr: {stderr} evidence: {evidence}");
 
     let (program, cwd) = written.split_once('|').unwrap_or_else(|| panic!("the probe wrote nothing. {context}"));
     assert!(Path::new(program).ends_with(newest.join("Tool.exe").strip_prefix(&dir).unwrap()), "the program of 1.10.0 ran, not the starter or 1.9.0. {context}");
     assert!(Path::new(cwd).ends_with("app-1.10.0"), "it worked in its own folder, as the starter would start it. {context}");
     assert!(report.contains(STARTER_SKIPPED), "the report says the starter was skipped. {context}");
     assert!(stderr.contains("only starts the newest version"), "stderr names both programs. {context}");
+    // From the end, where the run's own lines stand below the report, which has a target line of its own.
+    let line = |label: &str| evidence.lines().rev().find_map(|line| line.trim_start().strip_prefix(label)).map(str::trim).unwrap_or_default().to_string();
+    assert!(
+        line("target:").contains(&format!("the session started {} in its place", newest.join("Tool.exe").display())),
+        "the evidence names the starter and the program started in its place. {context}"
+    );
+    assert_eq!(
+        line("folder:"),
+        format!("{} (the program's own folder, as the starter gives it)", newest.display()),
+        "the evidence names the folder the program worked in, not this command's. {context}"
+    );
 }

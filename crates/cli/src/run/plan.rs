@@ -174,23 +174,35 @@ fn plan_warnings(ra: &RunArgs, program: &Path, starter_skipped: bool, chromium: 
     keys
 }
 
+/// The path of the file a session would start: the program behind a Squirrel starter, else the target.
+fn started<'p>(target: &'p str, program: Option<&'p Path>) -> &'p str {
+    program.and_then(Path::to_str).unwrap_or(target)
+}
+
 impl<'a> Plan<'a> {
     /// The plan for a command line, from the same pure functions the core calls, so it names the program
-    /// and the mechanism the core would choose and not ones worked out a second way (ADR-9).
+    /// and the mechanism the core would choose and not ones worked out a second way (ADR-9). Whether a run
+    /// could start is asked of the file the core would start, so a starter whose newest version holds a
+    /// file Windows will not start is planned as the failed launch the run would be.
     fn new(ra: &'a RunArgs, spec: &'a TimeSpec, origin: &'a TimeOrigin, zone_bias_min: i32) -> Plan<'a> {
         let program = crate::squirrel::program_behind(Path::new(&ra.target));
-        let runs = program.as_deref().unwrap_or(Path::new(&ra.target));
-        let chromium = runs.to_str().is_some_and(cdp::is_chromium_target);
+        let runs = started(&ra.target, program.as_deref());
+        let chromium = cdp::is_chromium_target(runs);
         Plan {
             ra,
             spec,
             origin,
-            target: inspect_target(&ra.target, chromium),
-            warning_keys: plan_warnings(ra, runs, program.is_some(), chromium),
+            target: inspect_target(runs, chromium),
+            warning_keys: plan_warnings(ra, Path::new(runs), program.is_some(), chromium),
             program,
             chromium,
             zone_bias_min,
         }
+    }
+
+    /// The path of the file the session would start.
+    fn runs(&self) -> &str {
+        started(&self.ra.target, self.program.as_deref())
     }
 }
 
@@ -225,8 +237,8 @@ pub(super) fn dry_run(ra: &RunArgs, spec: &TimeSpec, origin: &TimeOrigin, now_bi
     // The launch refuses some batch launches (a line break in an argument, a line longer than the
     // interpreter runs), so the plan does too, through the same checks and with the same code.
     if matches!(plan.target, TargetPath::Found(_))
-        && chrono_mech::is_batch_script(Path::new(&ra.target))
-        && let Some(problem) = chrono_mech::batch_launch_problem(&ra.target, &ra.args)
+        && chrono_mech::is_batch_script(Path::new(plan.runs()))
+        && let Some(problem) = chrono_mech::batch_launch_problem(plan.runs(), &ra.args)
     {
         diag!("chrono: {problem}, so a real run would refuse to start it (exit 2)");
         return 2;
@@ -246,14 +258,25 @@ fn note(value: &str) -> String {
 /// What the plan says about the target itself.
 fn target_block(p: &Plan) -> String {
     let mut out = String::new();
+    // A starter is named as given, and what follows is said of the program the session would start in its
+    // place, which is the file `p.target` looked at.
+    let named = match (&p.program, &p.target) {
+        (Some(_), _) => shown(Path::new(&p.ra.target)),
+        (None, TargetPath::Found(path) | TargetPath::NotAProgram(path)) => path.display().to_string(),
+        (None, TargetPath::Missing | TargetPath::Unchecked) => p.ra.target.clone(),
+    };
+    out.push_str(&line("target", &named));
+    if let Some(program) = &p.program {
+        out.push_str(&note("an installer's starter, which only starts the newest version of the application"));
+        out.push_str(&line("starts", &shown(program)));
+        out.push_str(&note("in the starter's place, as the program the session runs"));
+    }
     match &p.target {
-        TargetPath::Found(path) => out.push_str(&line("target", &path.display().to_string())),
-        TargetPath::NotAProgram(path) => {
-            out.push_str(&line("target", &path.display().to_string()));
+        TargetPath::Found(_) => {}
+        TargetPath::NotAProgram(_) => {
             out.push_str(&note("not a program Windows can start - its header is missing, cut short or a library's, and it is not a batch script"));
         }
         TargetPath::Missing => {
-            out.push_str(&line("target", &p.ra.target));
             out.push_str(&note("there is no file here by that name"));
             if is_bare_name(&p.ra.target) {
                 // Worth spelling out, because this is the case a reader expects to work: a target is
@@ -262,14 +285,8 @@ fn target_block(p: &Plan) -> String {
             }
         }
         TargetPath::Unchecked => {
-            out.push_str(&line("target", &p.ra.target));
             out.push_str(&note("a bare name on the Chromium path, which resolves it through PATH itself - not checked here"));
         }
-    }
-    if let Some(program) = &p.program {
-        out.push_str(&note("an installer's starter, which only starts the newest version of the application"));
-        out.push_str(&line("starts", &shown(program)));
-        out.push_str(&note("in the starter's place, as the program the session runs"));
     }
     out.push_str(&line(
         "arguments",
@@ -303,7 +320,7 @@ fn mechanism_text(p: &Plan) -> String {
     }
     // The process started is the command interpreter from the system folder, whose bitness is this
     // core's, and what the audit then reports is that interpreter and whatever the script starts.
-    if chrono_mech::is_batch_script(Path::new(&p.ra.target)) {
+    if chrono_mech::is_batch_script(Path::new(p.runs())) {
         return format!(
             "native injection into the command interpreter that runs the script, from the {} core",
             this_bitness()
@@ -483,9 +500,10 @@ struct PlanJson<'a> {
 #[derive(serde::Serialize)]
 struct TargetJson<'a> {
     path: &'a str,
-    /// The absolute path, when there is a file to point at.
+    /// The absolute path of the file the session would start, when there is one to point at: the program
+    /// behind a Squirrel starter, else the target.
     resolved: Option<String>,
-    /// `found` / `missing` / `unchecked`.
+    /// `found` / `not_a_program` / `missing` / `unchecked`, of that file.
     state: &'static str,
     /// The program the session would start in the target's place, when the target is a Squirrel starter.
     /// With no `cwd`, it would run in that program's own folder, as the starter runs it.
@@ -897,6 +915,39 @@ mod tests {
         plan_for(&[&starter], |plan| {
             assert!(plan.program.is_none() && !plan.chromium, "without the updater beside it, a program like any other");
             assert!(!render_plan(plan).contains("  starts  "), "nothing is said about a program it would start");
+        });
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Whether a run on a starter could start is a question about the program the core starts in its place,
+    /// never about the starter: a sound starter in front of a newest version Windows will not start is
+    /// planned as the failed launch the run would be, and the starter is still the target named.
+    #[test]
+    fn a_starter_is_planned_by_whether_windows_would_start_its_program() {
+        let dir = crate::testutil::unique_temp_dir("chrono-plan-starter-program");
+        let version = dir.join("app-2.0.0");
+        std::fs::create_dir_all(&version).expect("scratch dir");
+        std::fs::write(dir.join("Update.exe"), b"MZ").expect("updater");
+        let exe = std::env::current_exe().expect("this test has an executable");
+        for path in [dir.join("Tool.exe"), version.join("Tool.exe")] {
+            std::fs::copy(&exe, &path).expect("a program Windows starts");
+        }
+        let starter = dir.join("Tool.exe").display().to_string();
+        let program = shown(&version.join("Tool.exe"));
+        let state = |plan: &Plan| {
+            let json: serde_json::Value = serde_json::from_str(&render_json(plan)).expect("the plan is JSON");
+            (json["target"]["state"].as_str().map(str::to_string), json["target"]["resolved"].as_str().map(str::to_string))
+        };
+        plan_for(&[&starter], |plan| {
+            assert_eq!(state(plan), (Some("found".into()), Some(program.clone())));
+            assert!(render_plan(plan).contains(&format!("  target      {}\n", shown(Path::new(&starter)))), "{}", render_plan(plan));
+        });
+        std::fs::write(version.join("Tool.exe"), b"").expect("a program cut to nothing");
+        plan_for(&[&starter], |plan| {
+            assert_eq!(state(plan), (Some("not_a_program".into()), Some(program.clone())), "the starter is sound, the program is not");
+            let text = render_plan(plan);
+            assert!(text.contains(&format!("{}\n{}", note("in the starter's place, as the program the session runs").trim_end(), note("not a program Windows can start").trim_end())), "{text}");
+            assert!(mechanism_text(plan).starts_with("none"), "{}", mechanism_text(plan));
         });
         let _ = std::fs::remove_dir_all(&dir);
     }

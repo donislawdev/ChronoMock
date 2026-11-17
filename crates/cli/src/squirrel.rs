@@ -46,16 +46,10 @@ pub(crate) fn program_behind(target: &Path) -> Option<PathBuf> {
     (program.is_file() && program.to_str().is_some()).then_some(program)
 }
 
-/// The path of the program a session on `target` would start: the program behind a Squirrel starter, or
-/// `target` itself. What the driver and the plan ask about the target they ask about this one, because
-/// it is the one the core starts.
-pub(crate) fn session_program(target: &str) -> String {
-    program_behind(Path::new(target)).and_then(|program| program.to_str().map(str::to_string)).unwrap_or_else(|| target.to_string())
-}
-
 /// Start the program behind a Squirrel starter in place of the starter, the way the starter would: its
 /// arguments unchanged, and its own folder as the working folder unless the tester named one. Returns
-/// whether it did.
+/// whether it did. The driver asks this too, before the core starts, so its report and evidence say what
+/// the core started and where.
 pub(crate) fn skip_starter(target: &mut TargetSpec) -> bool {
     let Some(program) = program_behind(Path::new(&target.path)) else {
         return false;
@@ -256,7 +250,6 @@ mod tests {
         let mut spec = spec_for(&exe, None);
         assert!(!skip_starter(&mut spec));
         assert_eq!((Path::new(&spec.path), spec.cwd.as_deref()), (exe.as_path(), None), "left as it was");
-        assert_eq!(session_program(exe.to_str().unwrap()), exe.to_str().unwrap());
 
         let exe = installed(&dir, "Tool.exe", &["app-1.0.0"]);
         std::fs::remove_file(dir.join(UPDATER)).unwrap();

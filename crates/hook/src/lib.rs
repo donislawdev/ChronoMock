@@ -1784,6 +1784,9 @@ unsafe fn tell_windows_time_changed() { unsafe {
     ) else {
         return;
     };
+    // SAFETY: the three exports have the signatures winuser.h gives them, which the three types copy.
+    // `GetModuleHandleA` takes no reference to user32, so this relies on the program keeping the library it
+    // loaded itself through the call, as `read_zone_again` relies on it for the C runtimes.
     let change = TimeChange {
         pid: GetCurrentProcessId(),
         owner: std::mem::transmute::<unsafe extern "system" fn() -> isize, WindowOwnerFn>(owner),
@@ -1796,6 +1799,8 @@ unsafe fn tell_windows_time_changed() { unsafe {
 /// One window `EnumWindows` hands `tell_windows_time_changed`: told the time changed when this process owns
 /// it. Goes on to the next window either way.
 unsafe extern "system" fn tell_window(window: *mut c_void, change: isize) -> i32 { unsafe {
+    // SAFETY: `change` is the address of the `TimeChange` local `tell_windows_time_changed` hands
+    // `EnumWindows`, which calls this before it returns, so the local is still there and only read.
     let change = &*(change as *const TimeChange);
     let mut pid = 0u32;
     (change.owner)(window, &raw mut pid);
