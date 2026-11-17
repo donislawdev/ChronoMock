@@ -21,7 +21,7 @@ pub use launch::{
     is_chromium_target, is_electron_target, launch_chromium, with_background_timers, BACKGROUND_TIMER_SWITCHES,
 };
 pub use session::{
-    build_shim, inject_page, inject_worker, is_shimmable, is_worker, release_expr, script_identifier, set_expr,
+    build_shim, context_kind, inject_page, inject_worker, is_shimmable, is_worker, release_expr, script_identifier, set_expr,
     starts_workers, take_back, zone_id, zone_read_expr, Injected, ScheduledRate, COUNTED_APIS, COUNTS_EXPR,
 };
 pub use ws::WsClient;

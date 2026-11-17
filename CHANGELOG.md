@@ -23,6 +23,14 @@ Notable changes to Chrono Mock, newest first. The format follows
 
 ### Fixed
 
+- **A window that a Chromium-based application opens after the session reached it now follows the
+  session clock.** Some browsers built on Chromium announce a new window to the session as content of
+  an unnamed kind while it is still being made a tab, and the session left such content alone. The
+  window then ran on the real clock: a window opened during the session went unmentioned in the report,
+  which still said the session covered the browser, and when the first window came only after the
+  session had reached the browser, on a slow start, the session ended with "no JS context could be
+  shimmed" (exit code 11). Such a window now gets the session clock before its own scripts run, and
+  the report counts it as a page. The DevTools window, announced the same way, keeps its own clock.
 - **A console program whose PE header lies past the first 4 KB of its file is no longer taken for a
   hand-off.** A program that ends at once is told apart from a windowed application handing its work
   to a copy that is already running by the kind of program its headers name, and the session read

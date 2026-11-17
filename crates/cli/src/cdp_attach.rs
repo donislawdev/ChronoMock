@@ -537,7 +537,7 @@ impl Attacher {
                 if sid.is_empty() {
                     return Pumped::Idle;
                 }
-                if self.ending || !cdp::is_shimmable(&ty) {
+                if self.ending || !cdp::is_shimmable(&ty, params["targetInfo"]["url"].as_str().unwrap_or("")) {
                     // Auto-attach paused it on start, like everything it delivers. A target with no
                     // timer of ours to cover - or one that arrives as the session ends - is let go at
                     // once: left as it arrived, it would stay paused.
@@ -669,7 +669,7 @@ impl Attacher {
                 }
                 // The target named its own context type, and that name becomes a coverage key in the
                 // report and on the wire. Cleaned here, at the one place a context is built.
-                self.requests.push(CdpContext::new(index, sid, cdp::sanitise_target_text(&ty), tid, script).awaiting(awaiting));
+                self.requests.push(CdpContext::new(index, sid, cdp::sanitise_target_text(cdp::context_kind(&ty)), tid, script).awaiting(awaiting));
                 if awaiting {
                     // No document yet: the hook gives the first one its shim, and the first audit that
                     // answers from it makes the page covered (R5-F11, R5-D46).
@@ -1001,13 +1001,14 @@ fn new_targets(reply: &serde_json::Value, known: &HashMap<String, u32>) -> Vec<(
         .map(|targets| {
             targets
                 .iter()
+                .filter(|t| cdp::is_shimmable(t["type"].as_str().unwrap_or(""), t["url"].as_str().unwrap_or("")))
                 .map(|t| {
                     (
                         t["targetId"].as_str().unwrap_or("").to_string(),
                         t["type"].as_str().unwrap_or("").to_string(),
                     )
                 })
-                .filter(|(tid, ty)| !tid.is_empty() && cdp::is_shimmable(ty) && !known.contains_key(tid))
+                .filter(|(tid, _)| !tid.is_empty() && !known.contains_key(tid))
                 .collect()
         })
         .unwrap_or_default()
@@ -1084,8 +1085,8 @@ mod tests {
                         let params = json!({ "sessionId": sid, "targetInfo": { "targetId": tid, "type": ty }, "waitingForDebugger": true });
                         (serde_json::Value::Null, json!({ "method": "Target.attachedToTarget", "params": params }))
                     };
-                    // The target with no JS is announced by a page's own auto-attach.
-                    let (none, mut by_page) = attached("S-GPU", "T-GPU", "other");
+                    // The target with no JS of ours is announced by a page's own auto-attach.
+                    let (none, mut by_page) = attached("S-WORKLET", "T-WORKLET", "auction_worklet");
                     by_page["sessionId"] = json!("S-PAGE");
                     vec![
                         (id, json!({ "targetInfos": [] })),
@@ -1099,7 +1100,7 @@ mod tests {
                 // the session drives shares.
                 "Target.detachFromTarget" => {
                     let sid = request["params"]["sessionId"].as_str().unwrap_or("").to_string();
-                    let tid = if sid == "S-W2" { "T-W" } else { "T-GPU" };
+                    let tid = if sid == "S-W2" { "T-W" } else { "T-WORKLET" };
                     let gone = json!({ "method": "Target.detachedFromTarget", "params": { "sessionId": sid, "targetId": tid } });
                     vec![(id, json!({})), (serde_json::Value::Null, gone)]
                 }
@@ -1131,11 +1132,11 @@ mod tests {
         // a session a page announced with "No session with given id" (measured 2026-11-09).
         assert_eq!(
             detached,
-            vec![("S-GPU", "S-PAGE"), ("S-W2", "browser")],
+            vec![("S-WORKLET", "S-PAGE"), ("S-W2", "browser")],
             "the target with no JS and the second session, not the shimmed one"
         );
         let resumed = |sid: &str| log.iter().any(|r| r["method"] == "Runtime.runIfWaitingForDebugger" && r["sessionId"] == sid);
-        assert!(resumed("S-GPU") && resumed("S-W2"), "each released before it is let go");
+        assert!(resumed("S-WORKLET") && resumed("S-W2"), "each released before it is let go");
     }
 
     /// A service worker a page registers is announced twice - by the browser's auto-attach and by the
@@ -1507,6 +1508,48 @@ mod tests {
         assert_eq!(attacher.failed(), 0, "and not counted as unreached");
         drop(attacher);
         drop(browser);
+    }
+
+    /// Etap 5 (2026-11-17, a Chrome-style CEF 156 browser): a window that comes after auto-attach was
+    /// armed is announced `other`, paused, while it is made a tab. It used to be let go and ran on the
+    /// real clock - the first window gave a session with no context, a later one went unsaid. It is
+    /// covered now, counted as a page. The DevTools front-end, `other` at its own address, is let go.
+    #[test]
+    fn a_window_announced_as_other_is_covered_as_a_page_and_the_devtools_front_end_is_let_go() {
+        let (port, browser) = crate::cdp::fake_browser_holding(move |request| {
+            let id = request["id"].clone();
+            let announced = |sid: &str, url: &str| {
+                let params = json!({ "sessionId": sid, "targetInfo": { "targetId": format!("T{sid}"), "type": "other", "url": url }, "waitingForDebugger": true });
+                (serde_json::Value::Null, json!({ "method": "Target.attachedToTarget", "params": params }))
+            };
+            match request["method"].as_str().unwrap_or("") {
+                "Target.getTargets" => vec![
+                    (id, json!({ "targetInfos": [] })),
+                    announced("S-WINDOW", "file:///C:/app/index.html"),
+                    announced("S-DEVTOOLS", "devtools://devtools/bundled/devtools_app.html?targetType=tab"),
+                ],
+                "Page.addScriptToEvaluateOnNewDocument" => vec![(id, json!({ "identifier": "h1" }))],
+                "Runtime.evaluate" => vec![(id, json!({ "result": { "type": "string", "value": "installed" } }))],
+                _ => vec![(id, json!({}))],
+            }
+        });
+        let ws = crate::cdp::WsClient::connect("127.0.0.1", port, "/", Instant::now() + Duration::from_secs(5)).unwrap();
+        let mut attacher = Attacher::over(cdp::CdpClient::from_ws(ws), port);
+        attacher.set_budgets(Duration::from_millis(20), Duration::from_secs(2));
+        let origin = ShimOrigin { fake0: 0, real0: 0, mult: 1, dur: 1, scheduled: None };
+        let mut next = 0;
+        attacher.attach_existing(origin, &mut next, Instant::now() + Duration::from_secs(2)).unwrap();
+        for _ in 0..10 {
+            attacher.pump(origin, &mut next);
+        }
+        let live: Vec<(&str, &str)> = attacher.contexts().iter().map(|c| (c.session_id.as_str(), c.ty.as_str())).collect();
+        assert_eq!(live, vec![("S-WINDOW", "page")], "the window is covered, as a page, and DevTools is not");
+        assert_eq!(attacher.failed(), 0);
+        drop(attacher);
+        let log = browser.join().unwrap();
+        let detached: Vec<&str> =
+            log.iter().filter(|r| r["method"] == "Target.detachFromTarget").map(|r| r["params"]["sessionId"].as_str().unwrap_or("")).collect();
+        assert_eq!(detached, vec!["S-DEVTOOLS"], "the DevTools front-end is let go, the window kept");
     }
 
     /// R5-P7: a context reached while it was already running is counted, once - a page whose shim
