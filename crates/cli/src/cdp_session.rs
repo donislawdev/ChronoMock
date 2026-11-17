@@ -43,8 +43,9 @@ use crate::cdp_audit::{
 /// application over and exits leaves the browser, and the session, running (R4-S18).
 ///
 /// `start_id` is the id of the `start` that opened the session, which an error before the session runs
-/// answers (R5-P18).
-pub(crate) fn cdp_session(start_id: u64, target: TargetSpec, time: TimeSpec, reader: BufReader<std::io::Stdin>) -> i32 {
+/// answers (R5-P18). `starter_skipped` says the target is the program a Squirrel starter would start,
+/// put in the starter's place (`crate::squirrel`).
+pub(crate) fn cdp_session(start_id: u64, target: TargetSpec, starter_skipped: bool, time: TimeSpec, reader: BufReader<std::io::Stdin>) -> i32 {
     // Resolve the fake-clock origin ONCE, in Unix-epoch ms, and share it with both the shim and every
     // `state` event, so the panel's fake clock matches what the app's own `Date.now()` reads (no skew
     // from the launch+attach duration). The moment is absolute here (the driver resolved a relative
@@ -218,6 +219,7 @@ pub(crate) fn cdp_session(start_id: u64, target: TargetSpec, time: TimeSpec, rea
         // session speed while hidden (measured, R4-N28).
         background_timers_slowed: outcome.hidden_fast > 0 && !target.keep_background_timers,
         main_process_uncovered: cdp::is_electron_target(&target.path),
+        starter_skipped,
     };
     for event in coverage_events(&outcome.seen, &covered, session_warnings(&facts)) {
         emit(&event);

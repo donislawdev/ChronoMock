@@ -339,6 +339,13 @@ const ALLOWED: &[(&str, &str, &str)] = &[
          each and writes it to a file. Nothing reaches past this machine",
     ),
     (
+        "crates/cli/tests/squirrel_starter.rs",
+        "spawn",
+        "runs the built binary on a copy of this test binary laid out as an installer's starter in a scratch \
+         folder, beside copies in two version folders. Each copy runs only its ignored probe, which writes \
+         the path it runs from and its working folder to a file. Nothing reaches past this machine",
+    ),
+    (
         "crates/cli/tests/gecko_sandbox.rs",
         "spawn",
         "runs this test binary's own ignored probe alone as the control and under sessions through the \

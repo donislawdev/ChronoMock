@@ -585,13 +585,38 @@ fn set_call(before: &str, fake0: i64, real0: i64, mult: i64, dur: i64, scheduled
     )
 }
 
-/// True for a CDP target type that runs the target's own JS (and so is worth shimming). GPU, browser,
-/// and other infrastructure targets have no app timer to cover.
-pub fn is_shimmable(target_type: &str) -> bool {
-    matches!(
-        target_type,
-        "page" | "iframe" | "webview" | "worker" | "shared_worker" | "service_worker" | "dedicated_worker"
-    )
+/// True for a CDP target, of type `target_type` at address `url`, that runs the target's own JS (and so
+/// is worth shimming). The browser, its own interface and other infrastructure targets have no app timer
+/// to cover.
+///
+/// `other` is web content the browser counts as neither a tab, nor an app, nor an extension's page
+/// (`ChromeDevToolsManagerDelegate::GetTargetType` in Chromium) - and a window is that while it is being
+/// made a tab. Measured on a Chrome-style CEF 156 browser (2026-11-17, `tools/probes/cef-attach`): a
+/// window that came after auto-attach was armed - one opened during the session, and the first one on a
+/// start slow enough - was announced `other` and paused, and a moment later was a tab. Left alone, it ran
+/// on the real clock: the first window gave a session with no context at all, a later one a session
+/// that said it covered the browser. The DevTools front-end is `other` as well, announced with its own
+/// address (measured the same day): it is the browser's tool, not the application, and it keeps its
+/// own clock.
+pub fn is_shimmable(target_type: &str, url: &str) -> bool {
+    match target_type {
+        "page" | "iframe" | "webview" | "worker" | "shared_worker" | "service_worker" | "dedicated_worker" => true,
+        "other" => !is_devtools_front_end(url),
+        _ => false,
+    }
+}
+
+/// Whether `url` is the DevTools front-end's (measured: `devtools://devtools/bundled/devtools_app.html`).
+fn is_devtools_front_end(url: &str) -> bool {
+    const SCHEME: &str = "devtools://";
+    url.get(..SCHEME.len()).is_some_and(|start| start.eq_ignore_ascii_case(SCHEME))
+}
+
+/// The kind a context is counted under in the audit: the engine's own name for its target, except
+/// `other`, which is reported as the `page` it is - a window on its way to becoming a tab, mostly (see
+/// [`is_shimmable`]), and "other" would tell the reader nothing.
+pub fn context_kind(target_type: &str) -> &str {
+    if target_type == "other" { "page" } else { target_type }
 }
 
 /// Whether a CDP target type is a worker (vs a page/frame). Workers get the shim directly - pages also
@@ -602,9 +627,10 @@ pub fn is_worker(target_type: &str) -> bool {
 
 /// Whether a context of this type can start workers of its own - the ones auto-attach set on it is
 /// there to reach. A service worker cannot (`Worker` is not in its scope), so one that refuses
-/// auto-attach leaves nothing on the real clock.
+/// auto-attach leaves nothing on the real clock. Asked of a context that is shimmed already, so its
+/// address is no longer in question.
 pub fn starts_workers(target_type: &str) -> bool {
-    is_shimmable(target_type) && target_type != "service_worker"
+    is_shimmable(target_type, "") && target_type != "service_worker"
 }
 
 /// What installing the shim into one context left behind.
@@ -946,7 +972,7 @@ mod tests {
     /// shimmed is never counted.
     #[test]
     fn only_a_context_that_can_start_workers_loses_them_by_refusing_auto_attach() {
-        for ty in ["page", "iframe", "webview", "worker", "dedicated_worker", "shared_worker"] {
+        for ty in ["page", "other", "iframe", "webview", "worker", "dedicated_worker", "shared_worker"] {
             assert!(starts_workers(ty), "{ty}");
         }
         assert!(!starts_workers("service_worker"));
@@ -955,13 +981,28 @@ mod tests {
 
     #[test]
     fn classifies_target_types() {
-        assert!(is_shimmable("page"));
-        assert!(is_shimmable("worker"));
-        assert!(is_shimmable("service_worker"));
-        assert!(!is_shimmable("browser"));
-        assert!(!is_shimmable("other"));
+        let app = "file:///C:/app/index.html";
+        assert!(is_shimmable("page", app));
+        assert!(is_shimmable("worker", app));
+        assert!(is_shimmable("service_worker", app));
+        assert!(!is_shimmable("browser", ""));
+        assert!(!is_shimmable("browser_ui", "chrome://omnibox-popup.top-chrome/"));
         assert!(is_worker("dedicated_worker"));
         assert!(!is_worker("page"));
+    }
+
+    /// Etap 5 (2026-11-17, a Chrome-style CEF 156 browser): a window that comes after auto-attach is
+    /// announced `other` while it is made a tab, and is covered - reported as the page it is. The
+    /// DevTools front-end is `other` too, at its own address, and keeps its own clock.
+    #[test]
+    fn a_window_announced_as_other_is_covered_and_the_devtools_front_end_is_not() {
+        assert!(is_shimmable("other", "file:///C:/app/index.html"));
+        assert!(is_shimmable("other", ""), "a window announced before it has an address");
+        assert!(!is_shimmable("other", "devtools://devtools/bundled/devtools_app.html?targetType=tab"));
+        assert!(!is_shimmable("other", "DevTools://devtools/bundled/devtools_app.html"));
+        assert!(is_shimmable("other", "devtools"), "an address shorter than the scheme is not the front-end");
+        assert_eq!(context_kind("other"), "page");
+        assert_eq!(context_kind("iframe"), "iframe");
     }
 
     /// CodeRabbit on #85: an injection whose shim evaluate runs out of time takes itself back before

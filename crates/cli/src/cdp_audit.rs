@@ -182,6 +182,8 @@ pub(crate) struct SessionFacts {
     pub(crate) background_timers_slowed: bool,
     /// The target is an Electron application, whose main process the session does not reach.
     pub(crate) main_process_uncovered: bool,
+    /// The session started the program a Squirrel starter would start, in place of the starter.
+    pub(crate) starter_skipped: bool,
 }
 
 /// What a finished CDP session has to say about itself beyond the coverage numbers.
@@ -191,6 +193,10 @@ pub(crate) struct SessionFacts {
 /// reader if it were left out (rule 6).
 pub(crate) fn session_warnings(facts: &SessionFacts) -> Vec<String> {
     let mut warnings = vec!["chromium.launched_with_debug_port".to_string()];
+    if facts.starter_skipped {
+        // Said first of what the session did about the program, because it names the program it ran.
+        warnings.push(crate::squirrel::KEY_STARTER_SKIPPED.to_string());
+    }
     if facts.followed_browser {
         // Said next to the launch, because it explains the shape of the whole session: the program
         // the tester named ended, and the session did not (R4-S18).
@@ -562,6 +568,11 @@ mod tests {
             session_warnings(&SessionFacts { main_process_uncovered: true, followed_browser: true, ..audited }),
             vec!["chromium.launched_with_debug_port", KEY_FOLLOWED_BROWSER, KEY_MAIN_PROCESS_UNCOVERED],
             "an Electron application's main process is said to read the real clock (R4-S19)"
+        );
+        assert_eq!(
+            session_warnings(&SessionFacts { starter_skipped: true, main_process_uncovered: true, ..audited }),
+            vec!["chromium.launched_with_debug_port", crate::squirrel::KEY_STARTER_SKIPPED, KEY_MAIN_PROCESS_UNCOVERED],
+            "an application started in place of its installer's starter says so"
         );
         assert_eq!(
             session_warnings(&SessionFacts { background_timers_slowed: true, ..audited }),

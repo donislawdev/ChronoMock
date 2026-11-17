@@ -24,7 +24,7 @@ use std::process::{Command as PCommand, Stdio};
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
-use chrono_proto::{Command, Event, MomentKind, MomentSpec, TimeSpec, PROTOCOL_VERSION};
+use chrono_proto::{Command, Event, MomentKind, MomentSpec, TargetSpec, TimeSpec, PROTOCOL_VERSION};
 
 use args::{elevation_problem, parse_run_args, target_spec_for, RunArgs};
 use collect::Collector;
@@ -79,7 +79,7 @@ pub(crate) fn send_command(stdin: &mut std::process::ChildStdin, cmd: &Command) 
 
 /// What the evidence file says beside the report: the time the session ran at, and the run itself -
 /// which build, when, what, where and with which switches (8.8, R5 D4-5).
-fn evidence_params(ra: &RunArgs, spec: &TimeSpec, now_bias: i32, started_utc: String) -> EvidenceParams {
+fn evidence_params(ra: &RunArgs, launch: &TargetSpec, spec: &TimeSpec, now_bias: i32, started_utc: String) -> EvidenceParams {
     EvidenceParams {
         moment: spec.moment.local.clone().unwrap_or_else(|| "(default)".into()),
         // The zone the session ACTUALLY ran in, not the flag. This line used to read
@@ -93,11 +93,18 @@ fn evidence_params(ra: &RunArgs, spec: &TimeSpec, now_bias: i32, started_utc: St
         run: RunFacts {
             build: format!("{}, {}-bit core", env!("CARGO_PKG_VERSION"), usize::BITS),
             started_utc,
-            target: ra.target.clone(),
-            folder: match &ra.cwd {
-                Some(dir) => dir.clone(),
+            // The target as given, and the program the session started in its place when it is an
+            // installer's starter (ADR-29), since that program is what the session tested.
+            target: if launch.path == ra.target {
+                ra.target.clone()
+            } else {
+                format!("{} (an installer's starter - the session started {} in its place)", ra.target, launch.path)
+            },
+            folder: match (&ra.cwd, &launch.cwd) {
+                (Some(dir), _) => dir.clone(),
+                (None, Some(dir)) => format!("{dir} (the program's own folder, as the starter gives it)"),
                 // The target inherits this command's directory, so that is where it ran.
-                None => match std::env::current_dir() {
+                (None, None) => match std::env::current_dir() {
                     Ok(dir) => format!("{} (inherited from this command)", dir.display()),
                     Err(_) => "(inherited from this command, which could not name it)".to_string(),
                 },
@@ -194,6 +201,12 @@ pub(crate) fn driver_run(argv: &[String]) -> i32 {
     // like a native session. The only CDP-specific thing left here is labelling the report's coverage
     // unit as a JS "context" instead of a "pid" (the `cdp` flag on the report below).
 
+    // What the core will start and where: the program behind an installer's starter in the starter's place
+    // (ADR-29), from the function the core calls, before the core starts it. Worked out after the session,
+    // it could name a version the installer wrote meanwhile, or the starter once its version was removed.
+    let mut launch = target_spec_for(&ra);
+    crate::squirrel::skip_starter(&mut launch);
+
     let exe = match crate::own_path::own_exe() {
         Ok(p) => p,
         Err(e) => {
@@ -257,8 +270,8 @@ pub(crate) fn driver_run(argv: &[String]) -> i32 {
     let report = collected.into_report(
         ra.target.clone(),
         // The core auto-detects a Chromium target and runs it over CDP - label the report's coverage
-        // unit accordingly. Same pure function, same path string the core sees, so the two never drift.
-        cdp::is_chromium_target(&ra.target),
+        // unit accordingly. Same pure functions, same path string the core sees, so the two never drift.
+        cdp::is_chromium_target(&launch.path),
         // Whether the run was cut short, and by what. It has to travel INTO the report rather than be
         // printed beside it, because the report is also written to the evidence file, and that file is
         // the one a tester cites (untouchable rule 4).
@@ -267,7 +280,7 @@ pub(crate) fn driver_run(argv: &[String]) -> i32 {
     let evidence_written = match &ra.report {
         None => true,
         Some(path) => {
-            let params = evidence_params(&ra, &spec, now_bias, started_utc);
+            let params = evidence_params(&ra, &launch, &spec, now_bias, started_utc);
             let written = evidence_file::write(path, &render_evidence(&report, &params));
             match &written {
                 Ok(()) => diag!("chrono: evidence written to {path}"),
@@ -284,8 +297,8 @@ pub(crate) fn driver_run(argv: &[String]) -> i32 {
     // for this command (R4/5 review round): the target was given a copy of that stream, and nothing
     // waits for the end of a terminal.
     let caller_waits_on_target = target_gets_our_stderr(
-        crate::pe::is_windowed_program(std::path::Path::new(&ra.target)),
-        cdp::is_chromium_target(&ra.target),
+        crate::pe::is_windowed_program(std::path::Path::new(&launch.path)),
+        cdp::is_chromium_target(&launch.path),
     ) && !std::io::stderr().is_terminal();
 
     // A session that timed out has no verdict to report, and must not borrow one: the core was

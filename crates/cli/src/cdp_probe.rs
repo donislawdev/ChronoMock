@@ -183,7 +183,7 @@ pub(crate) fn cdp_shim_probe(argv: &[String]) -> i32 {
                 let sid = params["sessionId"].as_str().unwrap_or("").to_string();
                 let ty = params["targetInfo"]["type"].as_str().unwrap_or("").to_string();
                 let url = params["targetInfo"]["url"].as_str().unwrap_or("").to_string();
-                if !cdp::is_shimmable(&ty) {
+                if !cdp::is_shimmable(&ty, &url) {
                     continue;
                 }
                 let r = if cdp::is_worker(&ty) {

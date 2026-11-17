@@ -18,11 +18,42 @@ Notable changes to Chrono Mock, newest first. The format follows
   (`session.gecko_sandbox_off`). Off by default: without it, when the engine's library is beside the
   program and your own environment does not already switch the sandbox off for the pages, the report
   says from the start that the pages stay on the real clock (`session.gecko_pages_sandboxed`), and so
-  does `--dry-run`. The start command of the protocol has a new field for it, `target.gecko_sandbox`,
-  on unless a client sets it to `false`.
+  does `--dry-run`, whose JSON says whether the sandbox would stay on as `session.gecko_sandbox`. The
+  start command of the protocol has a new field for it, `target.gecko_sandbox`, on unless a client sets
+  it to `false`.
 
 ### Fixed
 
+- **The web pages of an application that outlives the session go back to this machine's time zone
+  again.** Since 0.6.0-rc.1, the web engine inside such an application (WebView2) took the session's
+  time zone by the name of a real zone with the same offset, kept it, and gave it to its pages once the
+  session had let them go: a page of a session at +05:30 stayed on `Asia/Calcutta` until the application
+  closed, while the report said its pages were back on this machine's zone. When the session lets a
+  program go, Chrono Mock now tells its windows that the time changed, as Windows does when the clock
+  is set, so a program that worked its time zone out once works it out again, and the pages go back to
+  this machine's zone.
+- **An application installed with Squirrel.Windows runs under the session when you start it through
+  its starter.** Such an installer puts a starter beside `Update.exe` that only starts the newest
+  version of the application, kept in a folder named `app-<version>`, and closes. A session on the
+  starter reached only the starter: it is a 32-bit program, so a 64-bit application it started stayed
+  out of the session's reach, and an Electron application was started as a native program, so its
+  windows kept the real clock. The report said so, with a verdict of PARTIAL or exit code 12, but the
+  application could not be tested through the program its shortcut points to. The session now starts
+  the program the starter would start, in its place, with the same arguments and, unless you give a
+  working folder, in that program's folder, and the report says so (`session.squirrel_starter_skipped`).
+  The session runs at that program's bitness, the window picks its core by that program too, and an
+  Electron application takes the Chromium mode. `--dry-run` names the program it would start and checks
+  that Windows can start it, and its JSON carries it as `target.program`. The evidence file of
+  `--report` names that program and the folder it worked in. A version folder the installer has not
+  finished writing is passed over, as the starter passes it over.
+- **A window that a Chromium-based application opens after the session reached it now follows the
+  session clock.** Some browsers built on Chromium announce a new window to the session as content of
+  an unnamed kind while it is still being made a tab, and the session left such content alone. The
+  window then ran on the real clock: a window opened during the session went unmentioned in the report,
+  which still said the session covered the browser, and when the first window came only after the
+  session had reached the browser, on a slow start, the session ended with "no JS context could be
+  shimmed" (exit code 11). Such a window now gets the session clock before its own scripts run, and
+  the report counts it as a page. The DevTools window, announced the same way, keeps its own clock.
 - **A console program whose PE header lies past the first 4 KB of its file is no longer taken for a
   hand-off.** A program that ends at once is told apart from a windowed application handing its work
   to a copy that is already running by the kind of program its headers name, and the session read

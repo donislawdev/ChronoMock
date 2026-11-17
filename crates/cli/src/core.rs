@@ -67,6 +67,7 @@ pub(crate) fn core_mode() -> i32 {
             return 1;
         }
     };
+    let (target, starter) = past_starter(target);
 
     // A Chromium/Electron target takes the CDP mechanism (ADR-8/ADR-9): its time-dependent logic runs
     // in a sandboxed renderer the native hook cannot reach, and Chromium timers are QPC-based which
@@ -74,7 +75,7 @@ pub(crate) fn core_mode() -> i32 {
     // same machine protocol, so the GUI and CLI consume it identically. `ready` was already emitted
     // (its bitness is this core's own - the driver skips the bitness gate for a Chromium target).
     if cdp::is_chromium_target(&target.path) {
-        return cdp_session(start_id, target, time, reader);
+        return cdp_session(start_id, target, starter.is_some(), time, reader);
     }
 
     // Prepare and start the session (Stage 2: real injection of one wall channel).
@@ -120,9 +121,9 @@ pub(crate) fn core_mode() -> i32 {
     // Python/.NET/Java timer hits under a fast clock (B1, ADR-2). When --scale-qpc is on, this instead
     // cautions about render distortion (A2), since the QPC axis now scales.
     let mut runtime_warnings = detect_runtime_warnings(std::path::Path::new(&target.path), spec.scale_qpc);
-    // The Gecko sandbox (ADR-28), said from the same function the dry run asks.
+    // The Gecko sandbox (ADR-28), said from the same function the dry run asks, after the starter skipped.
     let gecko = crate::gecko::warning(std::path::Path::new(&target.path), target.gecko_sandbox, crate::gecko::pages_unsandboxed_by_tester());
-    runtime_warnings.extend(gecko.map(str::to_string));
+    runtime_warnings.extend(starter.into_iter().chain(gecko).map(str::to_string));
     let env = target_environment(&launch, &target.path, spec.moment.tz_bias_min, target.gecko_sandbox, &mut runtime_warnings);
     let m_target = chrono_mech::Target {
         path: &target.path,
@@ -321,6 +322,19 @@ pub(crate) fn read_start<R: BufRead>(reader: &mut R) -> Result<Start, StartRefus
         }
         _ => Err(StartRefusal { key: "protocol.expected_start", id: None, needs_ended: false }),
     }
+}
+
+/// The target the session starts: the program a Squirrel starter would start in its place, said on stderr
+/// with both paths and in the report by the key handed back, or the target as it came. Decided before the
+/// mechanism, so a starter of an Electron application takes the Chromium path its program takes, and a
+/// native program is started at its own bitness, not the starter's.
+fn past_starter(mut target: TargetSpec) -> (TargetSpec, Option<&'static str>) {
+    let starter = target.path.clone();
+    if !crate::squirrel::skip_starter(&mut target) {
+        return (target, None);
+    }
+    diag!("chrono core: {starter} only starts the newest version of the application kept beside it, so the session starts {} in its place", target.path);
+    (target, Some(crate::squirrel::KEY_STARTER_SKIPPED))
 }
 
 /// What the session loop accumulates between the start verdict and the closing account: the family
