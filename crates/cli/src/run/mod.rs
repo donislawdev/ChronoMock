@@ -253,12 +253,14 @@ pub(crate) fn driver_run(argv: &[String]) -> i32 {
     // A core that stopped before `ended` left the session open, and nothing it sent before that is the
     // session's result (R4-W3). A run the driver cut short itself is said as that instead.
     let core_lost = timed_out.is_none() && collected.core_left_session_open();
+    // The program the core started: the one a Squirrel starter would start, in the starter's place.
+    let program = crate::squirrel::session_program(&ra.target);
 
     let report = collected.into_report(
         ra.target.clone(),
         // The core auto-detects a Chromium target and runs it over CDP - label the report's coverage
-        // unit accordingly. Same pure function, same path string the core sees, so the two never drift.
-        cdp::is_chromium_target(&ra.target),
+        // unit accordingly. Same pure functions, same path string the core sees, so the two never drift.
+        cdp::is_chromium_target(&program),
         // Whether the run was cut short, and by what. It has to travel INTO the report rather than be
         // printed beside it, because the report is also written to the evidence file, and that file is
         // the one a tester cites (untouchable rule 4).
@@ -284,8 +286,8 @@ pub(crate) fn driver_run(argv: &[String]) -> i32 {
     // for this command (R4/5 review round): the target was given a copy of that stream, and nothing
     // waits for the end of a terminal.
     let caller_waits_on_target = target_gets_our_stderr(
-        crate::pe::is_windowed_program(std::path::Path::new(&ra.target)),
-        cdp::is_chromium_target(&ra.target),
+        crate::pe::is_windowed_program(std::path::Path::new(&program)),
+        cdp::is_chromium_target(&program),
     ) && !std::io::stderr().is_terminal();
 
     // A session that timed out has no verdict to report, and must not borrow one: the core was

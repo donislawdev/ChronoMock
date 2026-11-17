@@ -423,6 +423,11 @@ fn describe_session_warning(key: &str) -> &'static str {
         "session.tz_variable_removed" => {
             "the value of TZ set in your environment was not passed to the application - the programs that read TZ (Python and other programs on the C runtime, MSYS2, Node.js) take their time zone from it, so it would have replaced the session zone - a program built on the Rust jiff crate gets the session zone in TZ instead, any other program gets no TZ - your own environment is unchanged, and the value left out is on stderr"
         }
+        // Said before the launch, worded for the dry run as much as the report: the program the tester named
+        // is not the one that runs, and the working folder may not be the one they are in.
+        "session.squirrel_starter_skipped" => {
+            "the program you chose is an installer's starter, which only starts the newest version of the application, kept beside it in a folder named app-<version>, and then closes - the session starts that program in its place, with the same arguments and in that folder unless you named a working folder, so the session reaches the application itself rather than the starter"
+        }
         // ADR-28. Said for any program the variables are set for, because the session sets them, and with the
         // cost, which lasts as long as the application does. Said before the launch, so it promises no
         // coverage: the coverage says which processes joined. Worded for the dry run as much as the report.

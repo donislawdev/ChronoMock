@@ -23,6 +23,19 @@ Notable changes to Chrono Mock, newest first. The format follows
 
 ### Fixed
 
+- **An application installed with Squirrel.Windows runs under the session when you start it through
+  its starter.** Such an installer puts a starter beside `Update.exe` that only starts the newest
+  version of the application, kept in a folder named `app-<version>`, and closes. A session on the
+  starter reached only the starter: it is a 32-bit program, so a 64-bit application it started stayed
+  out of the session's reach, and an Electron application was started as a native program, so its
+  windows kept the real clock. The report said so, with a verdict of PARTIAL or exit code 12, but the
+  application could not be tested through the program its shortcut points to. The session now starts
+  the program the starter would start, in its place, with the same arguments and, unless you give a
+  working folder, in that program's folder, and the report says so (`session.squirrel_starter_skipped`).
+  The session runs at that program's bitness, the window picks its core by that program too, and an
+  Electron application takes the Chromium mode. `--dry-run` names the program it would start, and its
+  JSON carries it as `target.program`. A version folder the installer has not finished writing is
+  passed over, as the starter passes it over.
 - **A window that a Chromium-based application opens after the session reached it now follows the
   session clock.** Some browsers built on Chromium announce a new window to the session as content of
   an unnamed kind while it is still being made a tab, and the session left such content alone. The

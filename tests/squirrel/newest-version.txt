@@ -1,0 +1,58 @@
+# The version folders beside a Squirrel starter, and the one the starter starts ("-" for none).
+# Read by crates/cli/src/squirrel.rs and by the window's mirror, gui/ChronoMock.App/Session/SquirrelStarter.cs,
+# so the command line and the window start the same program. Precedence is Semantic Versioning 2.0.0
+# (semver.org, item 11). Of equal versions the first named wins, as the starter keeps the first it finds.
+
+app-1.0.0 => app-1.0.0
+app-1.0.0 app-1.0.1 => app-1.0.1
+app-3.6.9 app-3.6.11 => app-3.6.11
+app-3.6.11 app-3.6.9 => app-3.6.11
+app-2.0.0 app-10.0.0 => app-10.0.0
+app-1.9.0 app-1.10.0 => app-1.10.0
+app-0.0.0 => -
+app-0.0.0-alpha => -
+app-0.0.1 => app-0.0.1
+app-1.0.0-beta app-1.0.0 => app-1.0.0
+app-1.0.0 app-1.0.0-rc.1 => app-1.0.0
+
+# The pre-release order semver.org gives as its example, one step at a time
+app-1.0.0-alpha app-1.0.0-alpha.1 => app-1.0.0-alpha.1
+app-1.0.0-alpha.1 app-1.0.0-alpha.beta => app-1.0.0-alpha.beta
+app-1.0.0-alpha.beta app-1.0.0-beta => app-1.0.0-beta
+app-1.0.0-beta app-1.0.0-beta.2 => app-1.0.0-beta.2
+app-1.0.0-beta.2 app-1.0.0-beta.11 => app-1.0.0-beta.11
+app-1.0.0-beta.11 app-1.0.0-rc.1 => app-1.0.0-rc.1
+app-1.0.0-rc.1 app-1.0.0 => app-1.0.0
+
+# A number sorts below every other identifier
+app-1.0.0-1 app-1.0.0-a => app-1.0.0-a
+app-1.0.0-a app-1.0.0-1 => app-1.0.0-a
+
+# Build metadata does not count, so the first of equal versions stays
+app-1.0.0+build.2 app-1.0.0+build.1 => app-1.0.0+build.2
+app-1.0.0 app-1.0.0+zzz => app-1.0.0
+
+# The prefix in any case, as Windows matches it
+App-2.0.0 app-1.0.0 => App-2.0.0
+APP-1.0.0 => APP-1.0.0
+
+# Not a version, so passed over
+app-1.0 app-0.1.0 => app-0.1.0
+app-1.0.0.0 app-0.1.0 => app-0.1.0
+app-01.0.0 app-0.1.0 => app-0.1.0
+app-1.0.0-01 app-0.1.0 => app-0.1.0
+app-1.0.0- app-0.1.0 => app-0.1.0
+app-1.0.0-a..b app-0.1.0 => app-0.1.0
+app-1.0.0+ app-0.1.0 => app-0.1.0
+app-1.0.0-a_b app-0.1.0 => app-0.1.0
+app-v1.0.0 app-0.1.0 => app-0.1.0
+app- app-0.1.0 => app-0.1.0
+app-99999999999999999999.0.0 app-0.1.0 => app-0.1.0
+
+# A leading zero is allowed in an identifier that is not a number
+app-1.0.0-0abc app-0.1.0 => app-1.0.0-0abc
+
+# Not a version folder at all
+application-9.0.0 app-0.1.0 => app-0.1.0
+packages app-0.1.0 => app-0.1.0
+packages => -

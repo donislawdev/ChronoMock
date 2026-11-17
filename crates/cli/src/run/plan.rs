@@ -134,13 +134,22 @@ fn readable(path: PathBuf) -> PathBuf {
     if drive_path { PathBuf::from(rest) } else { path }
 }
 
+/// A path that is there, as the plan shows it: absolute and in one spelling, like the target above it.
+fn shown(path: &Path) -> String {
+    readable(std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())).display().to_string()
+}
+
 /// Everything a dry run says, held by reference to the values that decided it.
 struct Plan<'a> {
     ra: &'a RunArgs,
     spec: &'a TimeSpec,
     origin: &'a TimeOrigin,
     target: TargetPath,
-    /// Whether the core would take the Chromium path, from the same function the core calls (ADR-9).
+    /// The program a Squirrel starter would start, which the core starts in the target's place
+    /// (`crate::squirrel`), when the target is one.
+    program: Option<PathBuf>,
+    /// Whether the core would take the Chromium path, from the same function the core calls (ADR-9),
+    /// asked about the program the core would start.
     chromium: bool,
     /// The warning keys the core would emit for this target and these flags, from the same detector.
     warning_keys: Vec<String>,
@@ -148,35 +157,48 @@ struct Plan<'a> {
     zone_bias_min: i32,
 }
 
-/// The warnings the core would give before the launch, from the functions it calls: what the target's
-/// file says, and for a native session what it does about the Gecko sandbox (ADR-28). A Chromium session
-/// sets no variables of the target's, so `--no-gecko-sandbox` does nothing there and the plan says so
-/// among the session's lines instead.
-fn plan_warnings(ra: &RunArgs, chromium: bool) -> Vec<String> {
-    let mut keys = detect_runtime_warnings(Path::new(&ra.target), ra.scale_qpc);
+/// The warnings the core would give before the launch, from the functions it calls, about the program it
+/// would start: what that program's file says, that it is started in place of a Squirrel starter, and for
+/// a native session what the session does about the Gecko sandbox (ADR-28). A Chromium session sets no
+/// variables of the target's, so `--no-gecko-sandbox` does nothing there and the plan says so among the
+/// session's lines instead.
+fn plan_warnings(ra: &RunArgs, program: &Path, starter_skipped: bool, chromium: bool) -> Vec<String> {
+    let mut keys = detect_runtime_warnings(program, ra.scale_qpc);
+    if starter_skipped {
+        keys.push(crate::squirrel::KEY_STARTER_SKIPPED.to_string());
+    }
     if !chromium {
-        let gecko = crate::gecko::warning(Path::new(&ra.target), ra.gecko_sandbox, crate::gecko::pages_unsandboxed_by_tester());
+        let gecko = crate::gecko::warning(program, ra.gecko_sandbox, crate::gecko::pages_unsandboxed_by_tester());
         keys.extend(gecko.map(str::to_string));
     }
     keys
+}
+
+impl<'a> Plan<'a> {
+    /// The plan for a command line, from the same pure functions the core calls, so it names the program
+    /// and the mechanism the core would choose and not ones worked out a second way (ADR-9).
+    fn new(ra: &'a RunArgs, spec: &'a TimeSpec, origin: &'a TimeOrigin, zone_bias_min: i32) -> Plan<'a> {
+        let program = crate::squirrel::program_behind(Path::new(&ra.target));
+        let runs = program.as_deref().unwrap_or(Path::new(&ra.target));
+        let chromium = runs.to_str().is_some_and(cdp::is_chromium_target);
+        Plan {
+            ra,
+            spec,
+            origin,
+            target: inspect_target(&ra.target, chromium),
+            warning_keys: plan_warnings(ra, runs, program.is_some(), chromium),
+            program,
+            chromium,
+            zone_bias_min,
+        }
+    }
 }
 
 /// Print the plan and start nothing. Exit 0, except for a path that definitely leads to no file, to a
 /// file Windows will not start, or to a batch script its launch would refuse, which exits 2 - the code
 /// a real run gives for the same fact (docs/08 section 8).
 pub(super) fn dry_run(ra: &RunArgs, spec: &TimeSpec, origin: &TimeOrigin, now_bias: i32) -> i32 {
-    // The same pure function the core calls, so the plan names the mechanism the core would choose
-    // and not one worked out a second way (ADR-9).
-    let chromium = cdp::is_chromium_target(&ra.target);
-    let plan = Plan {
-        ra,
-        spec,
-        origin,
-        chromium,
-        target: inspect_target(&ra.target, chromium),
-        warning_keys: plan_warnings(ra, chromium),
-        zone_bias_min: ra.zone_bias_min.unwrap_or(now_bias),
-    };
+    let plan = Plan::new(ra, spec, origin, ra.zone_bias_min.unwrap_or(now_bias));
 
     if ra.json {
         outln!("{}", render_json(&plan));
@@ -244,16 +266,28 @@ fn target_block(p: &Plan) -> String {
             out.push_str(&note("a bare name on the Chromium path, which resolves it through PATH itself - not checked here"));
         }
     }
+    if let Some(program) = &p.program {
+        out.push_str(&note("an installer's starter, which only starts the newest version of the application"));
+        out.push_str(&line("starts", &shown(program)));
+        out.push_str(&note("in the starter's place, as the program the session runs"));
+    }
     out.push_str(&line(
         "arguments",
         &if p.ra.args.is_empty() { "(none)".to_string() } else { p.ra.args.join(" | ") },
     ));
-    out.push_str(&line(
-        "directory",
-        p.ra.cwd.as_deref().unwrap_or("inherited from this shell"),
-    ));
+    out.push_str(&line("directory", &directory_text(p)));
     out.push_str(&line("mechanism", &mechanism_text(p)));
     out
+}
+
+/// The working folder the program would get: the one named, else the folder of the program a starter
+/// would start, as the starter gives it, else this shell's.
+fn directory_text(p: &Plan) -> String {
+    match (&p.ra.cwd, p.program.as_deref().and_then(Path::parent)) {
+        (Some(cwd), _) => cwd.clone(),
+        (None, Some(folder)) => format!("{} - the program's own folder, as the starter would give it", shown(folder)),
+        (None, None) => "inherited from this shell".to_string(),
+    }
 }
 
 /// Which of the two mechanisms the core would take, and why.
@@ -453,6 +487,9 @@ struct TargetJson<'a> {
     resolved: Option<String>,
     /// `found` / `missing` / `unchecked`.
     state: &'static str,
+    /// The program the session would start in the target's place, when the target is a Squirrel starter.
+    /// With no `cwd`, it would run in that program's own folder, as the starter runs it.
+    program: Option<String>,
     args: &'a [String],
     cwd: Option<&'a str>,
 }
@@ -548,6 +585,7 @@ fn render_json(p: &Plan) -> String {
                 _ => None,
             },
             state: p.target.key(),
+            program: p.program.as_deref().map(shown),
             args: &p.ra.args,
             cwd: p.ra.cwd.as_deref(),
         },
@@ -593,15 +631,7 @@ mod tests {
         let owned: Vec<String> = argv.iter().map(|a| (*a).to_string()).collect();
         let ra = parse_run_args(&owned).expect("the command line must parse");
         let resolved = resolve_time_spec(&ra, 120).expect("an absolute moment needs no catalogue");
-        let plan = Plan {
-            ra: &ra,
-            spec: &resolved.spec,
-            origin: &resolved.origin,
-            target: inspect_target(&ra.target, cdp::is_chromium_target(&ra.target)),
-            chromium: cdp::is_chromium_target(&ra.target),
-            warning_keys: Vec::new(),
-            zone_bias_min: ra.zone_bias_min.unwrap_or(120),
-        };
+        let plan = Plan::new(&ra, &resolved.spec, &resolved.origin, ra.zone_bias_min.unwrap_or(120));
         f(&plan);
     }
 
@@ -830,6 +860,43 @@ mod tests {
             assert!(!plan.chromium);
             let text = render_plan(plan);
             assert!(text.contains("runs until the target, and whatever it started on the session clock, has exited"), "{text}");
+        });
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A Squirrel starter is planned as the program it would start: the plan names that program, asks its
+    /// mechanism - an Electron application in the version folder takes the Chromium path the starter's
+    /// own folder would not - and gives it its own folder to work in unless one is named.
+    #[test]
+    fn a_starter_is_planned_as_the_program_it_would_start() {
+        let dir = crate::testutil::unique_temp_dir("chrono-plan-starter");
+        let version = dir.join("app-1.2.3");
+        std::fs::create_dir_all(version.join("resources")).expect("scratch dir");
+        for file in ["Update.exe", "Tool.exe"] {
+            std::fs::write(dir.join(file), b"MZ").expect("starter folder");
+        }
+        for file in ["Tool.exe", "icudtl.dat", "snapshot_blob.bin", "resources/app.asar"] {
+            std::fs::write(version.join(file), b"").expect("version folder");
+        }
+        let starter = dir.join("Tool.exe").display().to_string();
+        let program = shown(&version.join("Tool.exe"));
+        plan_for(&[&starter], |plan| {
+            assert!(plan.chromium, "the program behind the starter carries the Chromium runtime");
+            let text = render_plan(plan);
+            assert!(text.contains(&format!("  starts      {program}\n")), "{text}");
+            assert!(text.contains(&format!("  directory   {} - the program's own folder", shown(&version))), "{text}");
+            assert!(plan.warning_keys.iter().any(|key| key == crate::squirrel::KEY_STARTER_SKIPPED), "{:?}", plan.warning_keys);
+            let json: serde_json::Value = serde_json::from_str(&render_json(plan)).expect("the plan is JSON");
+            assert_eq!((json["target"]["program"].as_str(), json["mechanism"].as_str()), (Some(program.as_str()), Some("chromium-cdp")));
+        });
+        plan_for(&[&starter, "--cwd", r"C:\work"], |plan| {
+            let text = render_plan(plan);
+            assert!(text.contains("  directory   C:\\work\n"), "the folder named stays: {text}");
+        });
+        std::fs::remove_file(dir.join("Update.exe")).expect("updater");
+        plan_for(&[&starter], |plan| {
+            assert!(plan.program.is_none() && !plan.chromium, "without the updater beside it, a program like any other");
+            assert!(!render_plan(plan).contains("  starts  "), "nothing is said about a program it would start");
         });
         let _ = std::fs::remove_dir_all(&dir);
     }

@@ -33,13 +33,17 @@ internal sealed record SessionPlan(string CorePath, PeReader.Machine Machine, St
         ArgumentException.ThrowIfNullOrEmpty(targetPath);
         ArgumentNullException.ThrowIfNull(time);
 
-        var machine = PeReader.ReadMachine(targetPath);
+        // The core starts the program behind an installer's starter in the starter's place (SquirrelStarter),
+        // so the core is picked by that program's bitness and the mechanism is that program's. The target
+        // goes on the wire as the tester chose it, and the core finds the same program.
+        var program = SquirrelStarter.SessionProgram(targetPath);
+        var machine = PeReader.ReadMachine(program);
         if (machine is PeReader.Machine.Unknown)
         {
-            throw new InvalidOperationException($"cannot determine the bitness of '{targetPath}'");
+            throw new InvalidOperationException($"cannot determine the bitness of '{program}'");
         }
 
-        var corePath = AppPaths.SubstitutionCores.CoreForTarget(targetPath);
+        var corePath = AppPaths.SubstitutionCores.CoreForTarget(program);
         var start = new StartCommand
         {
             Id = 1,
@@ -69,7 +73,7 @@ internal sealed record SessionPlan(string CorePath, PeReader.Machine Machine, St
             Time = time,
             Force = force,
         };
-        return new SessionPlan(corePath, machine, start, ChromiumTarget.IsChromium(targetPath));
+        return new SessionPlan(corePath, machine, start, ChromiumTarget.IsChromium(program));
     }
 
     /// <summary>
