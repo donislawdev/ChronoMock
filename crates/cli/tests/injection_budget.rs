@@ -17,6 +17,12 @@
 //! The load a parent stops waiting for still ends in the child a moment later. A slow child therefore
 //! waits until that load has come and gone and then says which clock it reads: the real one, because its
 //! hook found the gate its parent abandoned and refused (`chrono_ctl::pass_load_gate`).
+//!
+//! A load can also run out after the hook is in. In `stuck` mode the TLS callback holds the first thread
+//! that ends, past both waits - the thread that loaded the hook, at its own end, with the loader lock.
+//! That is a hook that joined the session and a thread that did not end, and both sides say so
+//! (`chrono_ctl::inject::signed_in_after_all`): the core does not call it a hook that did not load, and
+//! the hook does not call a child on the session's clock one that ran on the real clock.
 
 use std::ffi::c_void;
 use std::process::Command;
@@ -27,10 +33,13 @@ use std::time::{Duration, Instant};
 /// The probe's mode, set for it. Unset, the probe returns at once and its TLS callback does nothing.
 const PROBE_ON: &str = "CHRONO_INJECTION_BUDGET_PROBE";
 
-/// The modes. `slow` starts slowly and lets the hook load slowly. `family` starts a copy of itself in
-/// `slow`, as a program does, and ends with how long that call took and what the child answered.
+/// The modes. `slow` starts slowly and lets the hook load slowly. `stuck` holds the end of the thread that
+/// loaded the hook. `family` starts a copy of itself in `slow`, as a program does, and ends with how long
+/// that call took and what the child answered, and `family-stuck` does the same with a copy in `stuck`.
 const SLOW: &str = "slow";
+const STUCK: &str = "stuck";
 const FAMILY: &str = "family";
+const FAMILY_STUCK: &str = "family-stuck";
 
 /// The probe's own name, which is how the binary is asked to run it and nothing else.
 const PROBE: &str = "probe_starts_slowly_or_starts_a_slow_child";
@@ -60,10 +69,17 @@ const SETTLE_MS: u64 = 4_000;
 /// date decades earlier.
 const MOMENT_SECS: u64 = 3_376_684_800;
 
-/// What a `slow` child ends with: it read the real clock, as its parent's report says - or the session's,
-/// because a load its parent stopped waiting for hooked it halfway through its run.
+/// What a child ends with: it read the real clock, or the session's - for a `slow` child because a load
+/// its parent stopped waiting for hooked it halfway through its run, for a `stuck` one because the hook
+/// was in before its parent stopped waiting.
 const CHILD_ON_THE_REAL_CLOCK: u32 = 0;
-const CHILD_HOOKED_LATE: u32 = 5;
+const CHILD_ON_THE_SESSIONS_CLOCK: u32 = 5;
+
+/// How long a `stuck` process holds the first thread that ends: past the ten seconds an injection is
+/// given and the ten more a parent gives a hook that joined as its wait ran out, so neither side sees the
+/// thread end, and finite, because the thread holds the loader lock and the process's own end waits
+/// for it.
+const HOLD_MS: u32 = 24_000;
 
 /// The longest a session on a slow target may take to give up on it: the budget, and a second and a half
 /// for the core to start and report. With a budget per wait the target was let in after twelve.
@@ -72,6 +88,7 @@ const GIVE_UP_LIMIT: Duration = Duration::from_millis(11_500);
 /// What the loader passes a TLS callback (MS Learn, the PE format, TLS callback functions).
 const DLL_PROCESS_ATTACH: u32 = 1;
 const DLL_THREAD_ATTACH: u32 = 2;
+const DLL_THREAD_DETACH: u32 = 3;
 
 #[cfg_attr(target_arch = "x86", link(name = "kernel32", kind = "raw-dylib", import_name_type = "undecorated"))]
 #[cfg_attr(not(target_arch = "x86"), link(name = "kernel32", kind = "raw-dylib"))]
@@ -80,13 +97,14 @@ unsafe extern "system" {
     fn Sleep(ms: u32);
 }
 
-/// Whether this process runs in `slow` mode, and whether it has held a thread yet.
+/// Whether this process runs in `slow` or in `stuck` mode, and whether it has held a thread yet.
 static SLOW_PROCESS: AtomicBool = AtomicBool::new(false);
+static STUCK_PROCESS: AtomicBool = AtomicBool::new(false);
 static HELD_A_THREAD: AtomicBool = AtomicBool::new(false);
 
-/// Whether the probe's mode is `slow`, read without allocating: the loader calls the TLS callback before
-/// anything of the program has run.
-fn runs_slow() -> bool {
+/// Whether the probe's mode is `wanted`, read without allocating: the loader calls the TLS callback before
+/// anything of the program has run. A mode longer than the buffer is no mode the callback acts on.
+fn runs_in(wanted: &str) -> bool {
     let mut name = [0u16; 32];
     for (to, from) in name.iter_mut().zip(PROBE_ON.encode_utf16()) {
         *to = from;
@@ -94,19 +112,25 @@ fn runs_slow() -> bool {
     let mut value = [0u16; 8];
     // SAFETY: the name is ended by a zero, and the buffer is this function's own, of the length passed.
     let length = unsafe { GetEnvironmentVariableW(name.as_ptr(), value.as_mut_ptr(), value.len() as u32) };
-    let wanted = SLOW.encode_utf16();
-    length as usize == SLOW.len() && value.iter().copied().zip(wanted).all(|(seen, want)| seen == want)
+    length as usize == wanted.len() && value.iter().copied().zip(wanted.encode_utf16()).all(|(seen, want)| seen == want)
 }
 
 /// The program's own TLS callback, run by the loader in every process of the binary. In a `slow` process
 /// it holds the start while the process attaches, and the first thread that attaches after it, under the
-/// loader lock - so the remote thread that loads the hook waits for it, whichever thread it is.
+/// loader lock - so the remote thread that loads the hook waits for it, whichever thread it is. In a
+/// `stuck` process it holds the first thread that ends: the remote thread, once the hook is in, and any
+/// thread ending before it would hold the loader lock the remote thread's own end waits for.
 unsafe extern "system" fn on_tls_event(_module: *mut c_void, reason: u32, _reserved: *mut c_void) {
     match reason {
-        DLL_PROCESS_ATTACH if runs_slow() => {
+        DLL_PROCESS_ATTACH if runs_in(SLOW) => {
             SLOW_PROCESS.store(true, Ordering::SeqCst);
             // SAFETY: no pointers, it waits.
             unsafe { Sleep(START_MS) };
+        }
+        DLL_PROCESS_ATTACH if runs_in(STUCK) => STUCK_PROCESS.store(true, Ordering::SeqCst),
+        DLL_THREAD_DETACH if STUCK_PROCESS.load(Ordering::SeqCst) && !HELD_A_THREAD.swap(true, Ordering::SeqCst) => {
+            // SAFETY: no pointers, it waits.
+            unsafe { Sleep(HOLD_MS) };
         }
         DLL_THREAD_ATTACH if SLOW_PROCESS.load(Ordering::SeqCst) && !HELD_A_THREAD.swap(true, Ordering::SeqCst) => {
             // SAFETY: no pointers, it waits.
@@ -122,28 +146,35 @@ unsafe extern "system" fn on_tls_event(_module: *mut c_void, reason: u32, _reser
 #[unsafe(link_section = ".CRT$XLM")]
 static TLS_EVENT: unsafe extern "system" fn(*mut c_void, u32, *mut c_void) = on_tls_event;
 
-/// In `family`, starts a copy of itself in `slow`, waits for it, and ends with how long the call that
-/// started it took, in tenths of a second, times ten, plus the child's answer. In `slow` it waits for a
-/// late load to have come and gone, and ends with which clock it reads.
+/// In `family`, starts a copy of itself in `slow` (in `family-stuck`, in `stuck`), waits for it, and ends
+/// with how long the call that started it took, in tenths of a second, times ten, plus the child's answer.
+/// In `slow` it waits for a late load to have come and gone, and ends with which clock it reads, which a
+/// `stuck` child does at once.
 #[test]
 #[ignore = "the target of the session tests in this file, not a test on its own"]
 fn probe_starts_slowly_or_starts_a_slow_child() {
     let Some(mode) = std::env::var_os(PROBE_ON) else {
         return;
     };
-    if mode != FAMILY {
-        std::thread::sleep(Duration::from_millis(SETTLE_MS));
-        let on_the_sessions_clock = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .is_ok_and(|since| since.as_secs() >= MOMENT_SECS);
-        let answer = if on_the_sessions_clock { CHILD_HOOKED_LATE } else { CHILD_ON_THE_REAL_CLOCK };
-        std::process::exit(answer as i32);
-    }
+    let child_mode = match mode.to_str() {
+        Some(FAMILY) => SLOW,
+        Some(FAMILY_STUCK) => STUCK,
+        _ => {
+            if mode == SLOW {
+                std::thread::sleep(Duration::from_millis(SETTLE_MS));
+            }
+            let on_the_sessions_clock = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .is_ok_and(|since| since.as_secs() >= MOMENT_SECS);
+            let answer = if on_the_sessions_clock { CHILD_ON_THE_SESSIONS_CLOCK } else { CHILD_ON_THE_REAL_CLOCK };
+            std::process::exit(answer as i32);
+        }
+    };
     let me = std::env::current_exe().expect("the probe knows its own path");
     let began = Instant::now();
     let child = Command::new(&me)
         .args(["--ignored", "--exact", PROBE, "--test-threads", "1"])
-        .env(PROBE_ON, SLOW)
+        .env(PROBE_ON, child_mode)
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
@@ -227,17 +258,11 @@ fn a_childs_start_and_the_hooks_load_share_one_budget() {
     let _session = one_real_session_at_a_time();
     let (stdout, stderr, code, took) = session_on_probe(FAMILY);
     let context = format!("took {took:?}, exit {code:?}\nstdout:\n{stdout}\nstderr:\n{stderr}");
-    let ended_with: u32 = stdout
-        .lines()
-        .find_map(|line| line.split_once("the target closed itself with code ").map(|(_, code)| code))
-        .and_then(|code| code.trim().parse().ok())
-        .unwrap_or_else(|| panic!("the target did not end with how long its call took. {context}"));
-    assert_ne!(ended_with, NOT_STARTED as u32, "the target could not start its child. {context}");
-    let (call_tenths, child) = (ended_with / 10, ended_with % 10);
+    let (call_tenths, child) = call_and_child(&stdout, &context);
     assert_eq!(
         child, CHILD_ON_THE_REAL_CLOCK,
-        "the child read the session's clock ({CHILD_HOOKED_LATE}): the load its parent stopped waiting for \
-         hooked it halfway through its run. {context}"
+        "the child read the session's clock ({CHILD_ON_THE_SESSIONS_CLOCK}): the load its parent stopped \
+         waiting for hooked it halfway through its run. {context}"
     );
     assert!(
         (CALL_FLOOR_TENTHS..CALL_LIMIT_TENTHS).contains(&call_tenths),
@@ -247,5 +272,58 @@ fn a_childs_start_and_the_hooks_load_share_one_budget() {
     assert!(
         stdout.contains("inheritance.child"),
         "a child the budget ran out on was not named as running on the real clock. {context}"
+    );
+}
+
+/// How long the target's call that started its child took, in tenths of a second, and what the child
+/// answered - read from the code the `family` target ended with.
+fn call_and_child(stdout: &str, context: &str) -> (u32, u32) {
+    let ended_with: u32 = stdout
+        .lines()
+        .find_map(|line| line.split_once("the target closed itself with code ").map(|(_, code)| code))
+        .and_then(|code| code.trim().parse().ok())
+        .unwrap_or_else(|| panic!("the target did not end with how long its call took. {context}"));
+    assert_ne!(ended_with, NOT_STARTED as u32, "the target could not start its child. {context}");
+    (ended_with / 10, ended_with % 10)
+}
+
+/// A target whose hook is in and whose loading thread does not end is given up on as the budget runs
+/// out, as before, and the core says what happened: the hook joined the session and the thread did not
+/// end. It used to say the hook did not load.
+#[test]
+fn a_target_whose_loading_thread_does_not_end_is_named_as_hooked() {
+    let _session = one_real_session_at_a_time();
+    let (stdout, stderr, code, took) = session_on_probe(STUCK);
+    let context = format!("took {took:?}, exit {code:?}\nstdout:\n{stdout}\nstderr:\n{stderr}");
+    assert!(
+        stdout.contains("[target.inject_failed]"),
+        "the target was let in with its loading thread held. {context}"
+    );
+    assert!(
+        stderr.contains("the hook loaded and joined the session, but the thread that loaded it did not end"),
+        "the core did not say the hook was in and its thread held - it called the load missing, or \
+         something else failed. {context}"
+    );
+    assert_eq!(code, Some(2), "a target that could not be injected is exit 2. {context}");
+    assert!(took < GIVE_UP_LIMIT, "the session took longer than one budget to give up. {context}");
+}
+
+/// A child whose hook is in and whose loading thread does not end runs on the session's clock once its
+/// parent stops waiting, and the report does not name it as a child on the real clock. It used to, beside
+/// the same child signed in to the session.
+#[test]
+fn a_child_whose_loading_thread_does_not_end_is_counted_as_covered() {
+    let _session = one_real_session_at_a_time();
+    let (stdout, stderr, code, took) = session_on_probe(FAMILY_STUCK);
+    let context = format!("took {took:?}, exit {code:?}\nstdout:\n{stdout}\nstderr:\n{stderr}");
+    let (_, child) = call_and_child(&stdout, &context);
+    assert_eq!(
+        child, CHILD_ON_THE_SESSIONS_CLOCK,
+        "the child read the real clock ({CHILD_ON_THE_REAL_CLOCK}): its hook was not in, and nothing here was \
+         measured. {context}"
+    );
+    assert!(
+        !stdout.contains("inheritance.child"),
+        "a child on the session's clock was named as running on the real clock. {context}"
     );
 }

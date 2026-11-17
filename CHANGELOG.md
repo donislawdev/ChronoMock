@@ -41,6 +41,33 @@ Notable changes to Chrono Mock, newest first. The format follows
   can differ for a program whose main thread ends before its other threads. When the session cannot
   tell which thread is the program's main one, or whether its own thread is the last one left, the
   program keeps running as before.
+- **A child process that joined the session is no longer reported as running on the real clock when the
+  thread that brought the session in does not end in time.** The session enters each process on a
+  thread of its own and waits a limited time for that thread to end. When it did not, the session took
+  that for a failure to enter, even though the process had joined and read the session's clock. Code in
+  the program or one of its libraries that holds a thread as it ends causes this. Such a child was then
+  named in the report as running on the real clock (`inheritance.child_not_injected`), and is now
+  counted as covered. The program the session starts itself is still stopped in that case, because the
+  held thread may keep the program from loading anything or starting a thread. The error message now
+  says that the program joined the session, that the thread did not end, and that the program was
+  closed before it ran. Before, it said the session had not been loaded.
+- **A page that an application with an embedded web engine opens during the session no longer risks
+  staying on the real clock.** Before the session gives a page its clock, it asks the page which clock
+  it already reads, so that a page the session already covers through the application itself does not
+  get the session's clock a second time. A page opened after the session reached the engine can arrive
+  paused, and such a page may answer nothing until the session lets it go. The session waited for that
+  answer until its time for the page ran out, then left the page on the real clock and said in the
+  report that the page could not take the session's clock. Such a page now gets the question together
+  with the session's clock. A page that turns out to read the session's clock already gets its own
+  clock back at once, and for those few milliseconds it reads the session's time shifted twice.
+- **A page in an application with an embedded web engine is no longer judged by an answer that came
+  late.** The session tells which clock a page already reads from the time the page gives in answer.
+  That time was compared with where the session's clock and the real clock stood when the answer
+  arrived, not when the page read its clock. A page on the real clock whose answer came late, in a
+  session whose time stood close to the real time, could be taken for a page the application already
+  keeps on the session's time, and was left on the real clock. A page already on the session's time in
+  a session that runs fast could be taken for one on the real clock, and got the session's time a
+  second time. The answer is now compared with the whole stretch between the question and the answer.
 
 ## [0.6.0-rc.1] - 2026-11-13
 

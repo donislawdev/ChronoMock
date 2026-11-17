@@ -78,10 +78,21 @@ pub enum Outcome {
     TargetEnded(u32),
     /// The process ended and its exit code could not be read.
     TargetEndedUnread,
-    /// The thread did not finish in time.
+    /// The thread did not finish in time, and the process had not signed in to the session.
     TimedOut,
+    /// The thread did not finish in time, though the hook had loaded and signed the process in to the
+    /// session: what held the thread came after the hook's install ([`signed_in_after_all`]).
+    ThreadEndStuck,
     /// The wait failed.
     WaitFailed,
+}
+
+impl Outcome {
+    /// Whether the hook is in the process with its detours live, whatever became of the thread that
+    /// loaded it - which is what decides whether the process runs on the session's clock.
+    pub fn hook_loaded(self) -> bool {
+        matches!(self, Outcome::Loaded | Outcome::ThreadEndStuck)
+    }
 }
 
 /// Read the end of the injection wait.
@@ -109,6 +120,22 @@ pub fn outcome(wait: Wait, process: ProcessAfter, thread_code: Option<u32>) -> O
         },
         Wait::TimedOut => Outcome::TimedOut,
         Wait::Failed => Outcome::WaitFailed,
+    }
+}
+
+/// Read a load that ran out of time once more, with whether the process signed in to the session, asked
+/// of the registry after the wait and only for a load that ran out (`find_pid_slot`). The hook publishes
+/// its process's pid as the last step of its install, so a process that signed in has the hook loaded
+/// and its detours live, and what the thread was still doing is what comes after: the loader's return
+/// from `LoadLibraryW`, and the thread's own end, where the loader tells every library and the program's
+/// TLS callbacks that the thread is detaching. Code that waits there holds the thread, and the process
+/// with it whenever that code holds the loader lock. Measured 2026-10-28 before #147: a detour reading
+/// thread-local storage on that thread waited on the heap lock for good, and the core said the hook
+/// had not loaded. Any other outcome stands as it is.
+pub fn signed_in_after_all(outcome: Outcome, signed_in: impl FnOnce() -> bool) -> Outcome {
+    match outcome {
+        Outcome::TimedOut if signed_in() => Outcome::ThreadEndStuck,
+        other => other,
     }
 }
 
@@ -309,6 +336,44 @@ mod tests {
         assert!(page_released_safely(Outcome::TargetEnded(0xC000_0135)));
         assert!(page_released_safely(Outcome::TargetEndedUnread));
         assert!(!page_released_safely(Outcome::TimedOut));
+        assert!(!page_released_safely(Outcome::ThreadEndStuck));
         assert!(!page_released_safely(Outcome::WaitFailed));
+    }
+
+    /// A load that ran out of time is a hook stuck in the thread's end only when the process signed in,
+    /// and the registry is asked only then - every other outcome stands without the question.
+    #[test]
+    fn a_load_that_ran_out_after_the_process_signed_in_is_a_stuck_thread_end() {
+        assert_eq!(signed_in_after_all(Outcome::TimedOut, || true), Outcome::ThreadEndStuck);
+        assert_eq!(signed_in_after_all(Outcome::TimedOut, || false), Outcome::TimedOut);
+        let others = [
+            Outcome::Loaded,
+            Outcome::LibraryNotLoaded,
+            Outcome::TargetEnded(0xC000_0135),
+            Outcome::TargetEndedUnread,
+            Outcome::WaitFailed,
+        ];
+        for other in others {
+            let asked = core::cell::Cell::new(false);
+            let read = signed_in_after_all(other, || {
+                asked.set(true);
+                true
+            });
+            assert_eq!(read, other);
+            assert!(!asked.get(), "the registry was asked about {other:?}");
+        }
+    }
+
+    /// The hook is in the process after a load that returned a module, or one whose thread is stuck at
+    /// its end after the process signed in - and after nothing else.
+    #[test]
+    fn the_hook_is_loaded_only_where_it_returned_or_signed_in() {
+        assert!(Outcome::Loaded.hook_loaded());
+        assert!(Outcome::ThreadEndStuck.hook_loaded());
+        assert!(!Outcome::LibraryNotLoaded.hook_loaded());
+        assert!(!Outcome::TargetEnded(0xC000_0135).hook_loaded());
+        assert!(!Outcome::TargetEndedUnread.hook_loaded());
+        assert!(!Outcome::TimedOut.hook_loaded());
+        assert!(!Outcome::WaitFailed.hook_loaded());
     }
 }

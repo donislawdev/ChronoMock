@@ -717,14 +717,18 @@ pub fn inject_page(
 /// counts the context as uncovered and lets it go, and nothing moves or releases it after that - but
 /// the new-document hook is registered, and a shim evaluate that ran out of time is still queued in
 /// the context and runs once it is free. So the hook is removed, and the release is queued after that
-/// evaluate, in the same session, so the document ends on the real clock whichever runs. Not waited
-/// for: the context may be busy for as long as it likes.
-fn take_back(client: &mut CdpClient, session_id: &str, script: Option<&str>) {
+/// evaluate, in the same session, so the document ends on the clock it reads without the shim
+/// whichever runs. Not waited for here: the context may be busy for as long as it likes. Hands back the
+/// id of the release, `None` where it could not be sent, for a caller that would detach the context -
+/// a detach could drop the release still queued, so it waits for that answer first. The attacher takes
+/// back the same way a page that turned out to read the session clock through the native hook once
+/// its shim was in (see `Attacher::put_shim_in`).
+pub fn take_back(client: &mut CdpClient, session_id: &str, script: Option<&str>) -> Option<u64> {
     if let Some(script) = script {
         let _ = client.send("Page.removeScriptToEvaluateOnNewDocument", json!({ "identifier": script }), Some(session_id));
     }
     let release = set_expr(0, 0, 1, 1, None);
-    let _ = client.send("Runtime.evaluate", json!({ "expression": release, "returnByValue": true }), Some(session_id));
+    client.send("Runtime.evaluate", json!({ "expression": release, "returnByValue": true }), Some(session_id)).ok()
 }
 
 /// Install the shim into a worker session, before its script runs when the worker was paused on start

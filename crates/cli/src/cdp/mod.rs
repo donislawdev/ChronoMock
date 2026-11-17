@@ -22,7 +22,7 @@ pub use launch::{
 };
 pub use session::{
     build_shim, inject_page, inject_worker, is_shimmable, is_worker, release_expr, script_identifier, set_expr,
-    starts_workers, zone_id, zone_read_expr, Injected, ScheduledRate, COUNTED_APIS, COUNTS_EXPR,
+    starts_workers, take_back, zone_id, zone_read_expr, Injected, ScheduledRate, COUNTED_APIS, COUNTS_EXPR,
 };
 pub use ws::WsClient;
 /// The scripted browser the transport's own tests talk to, for the attacher's tests outside this module.

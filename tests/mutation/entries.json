@@ -1723,8 +1723,8 @@
     "edits": [
       {
         "file": "crates/hook/src/lib.rs",
-        "from": "    if SPAWNING.get() || !token.0.is_null() || pi.is_null() || session_over() {\n",
-        "to": "    if SPAWNING.get() || pi.is_null() || session_over() {\n"
+        "from": "    if spawning() || !token.0.is_null() || pi.is_null() || session_over() {\n",
+        "to": "    if spawning() || pi.is_null() || session_over() {\n"
       }
     ],
     "runner": "none",

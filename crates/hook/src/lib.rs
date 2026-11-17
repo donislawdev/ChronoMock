@@ -3291,7 +3291,9 @@ unsafe fn begin_remote_load(hproc: HANDLE) -> Option<RemoteLoad> { unsafe {
 /// Wait for a load started by `begin_remote_load` and read how it ended, the way the mechanism reads
 /// its own target's (`chrono_ctl::inject::outcome`): the child's own exit code before the thread's, so
 /// a child its loader ended is not taken for one the hook loaded into, and a loader status is never
-/// taken for a module (R5-A7, R5-F8). Closes the thread, and frees the page once nothing reads it.
+/// taken for a module (R5-A7, R5-F8). A load that ran out of time after the child signed in is a stuck
+/// thread end, not a missing hook (`signed_in_after_all`). Closes the thread, and frees the page once
+/// nothing reads it.
 ///
 /// # Safety
 /// `hproc` must be the process `load` was started in, still open.
@@ -3329,7 +3331,9 @@ unsafe fn end_remote_load(hproc: HANDLE, load: RemoteLoad, limit_ms: u32, gate: 
     // A gate not abandoned has done its work: the load ended, or its hook joined and the second wait ran
     // out too - either way nothing will pass it again.
     close_gate(gate);
-    let outcome = remote_load::outcome(wait, process, thread_code);
+    let outcome = remote_load::signed_in_after_all(remote_load::outcome(wait, process, thread_code), || {
+        ctl_ptr().is_some_and(|p| find_pid_slot(p as *const Ctl, GetProcessId(hproc), process_created(hproc)).is_some())
+    });
     if remote_load::page_released_safely(outcome) {
         let _ = VirtualFreeEx(hproc, load.page, 0, MEM_RELEASE);
     } else {
@@ -3338,12 +3342,15 @@ unsafe fn end_remote_load(hproc: HANDLE, load: RemoteLoad, limit_ms: u32, gate: 
         // be reading it. Said out loud rather than done quietly (rule 6), and this is why the wait above
         // is generous: a child load costs about 68 ms, and a shorter limit would only make this branch
         // more likely.
-        log("[chrono_hook] LoadLibraryW still running in the child - leaving its path buffer allocated");
+        log("[chrono_hook] the thread that loads the hook has not ended in the child - leaving its path buffer allocated");
     }
     match outcome {
         remote_load::Outcome::Loaded => {}
         remote_load::Outcome::TargetEnded(_) | remote_load::Outcome::TargetEndedUnread => {
             log("[chrono_hook] child ended while Windows was loading it - it never ran, nothing to cover");
+        }
+        remote_load::Outcome::ThreadEndStuck => {
+            log("[chrono_hook] the hook loaded in the child and joined the session, but the thread that loaded it did not end in time - the child is covered");
         }
         _ => log("[chrono_hook] child not covered - LoadLibraryW did not load the hook there"),
     }
@@ -3732,8 +3739,9 @@ unsafe fn account_child(hproc: HANDLE, pid: u32, outcome: remote_load::Outcome) 
     if matches!(outcome, remote_load::Outcome::TargetEnded(_) | remote_load::Outcome::TargetEndedUnread) {
         return;
     }
-    let loaded = outcome == remote_load::Outcome::Loaded;
-    // Asked of the registry only after the load returned, which is after the child's install ended.
+    let loaded = outcome.hook_loaded();
+    // Asked of the registry only after the load returned or the child signed in, which is after the
+    // child's install ended.
     let (signed_in, slot_claims) = match ctl_ptr() {
         Some(p) if loaded => (
             find_pid_slot(p as *const Ctl, pid, process_created(hproc)).is_some(),
