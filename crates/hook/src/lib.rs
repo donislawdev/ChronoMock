@@ -533,9 +533,10 @@ unsafe extern "system" fn watcher_proc(_p: *mut c_void) -> u32 { unsafe {
     }
     release_duration_axes();
     DETACHED.store(true, Ordering::SeqCst);
-    // The program goes back to the real clock, and its C runtimes to this machine's zone, which they read
-    // again now that the zone channel answers with it. This thread is the hook's own and holds no lock.
-    read_zone_again(std::ptr::null_mut(), std::ptr::null_mut(), std::ptr::null_mut());
+    // The program goes back to the real clock, its C runtimes to this machine's zone, which they read again
+    // now that the zone channel answers with it, and its windows hear that the time changed. This thread is
+    // the hook's own and holds no lock.
+    after_let_go();
     // The process's code if the program's threads ended while the core went, and this one is the last.
     main_ended_with.unwrap_or(0)
 }}
@@ -982,10 +983,10 @@ fn start_watcher() {
             // that is over installs nothing more (`watcher_proc`).
             release_duration_axes();
             DETACHED.store(true, Ordering::SeqCst);
-            // The C runtimes read this machine's zone again as well, on a thread of their own: this is a
-            // detour's path, where the runtime's locks have no place.
+            // The C runtimes read this machine's zone again and the windows hear the time changed as well,
+            // on a thread of their own: this is a detour's path, where the runtime's locks have no place.
             if let Ok(h) =
-                unsafe { CreateThread(None, 0, Some(read_zone_again_thread), None, THREAD_CREATION_FLAGS(0), None) }
+                unsafe { CreateThread(None, 0, Some(after_let_go_thread), None, THREAD_CREATION_FLAGS(0), None) }
             {
                 let _ = unsafe { CloseHandle(h) };
             }
@@ -1736,10 +1737,72 @@ unsafe extern "system" fn read_zone_again(_: *mut c_void, _: *mut c_void, _: *mu
     }
 }}
 
-/// `read_zone_again` on a thread of its own, for a program let go on a detour's path (`start_watcher`).
-unsafe extern "system" fn read_zone_again_thread(_: *mut c_void) -> u32 { unsafe {
+/// What the hook does once it has let the program go: the C runtimes read this machine's zone again
+/// (ADR-27), and the program's windows are told the time changed (ADR-30).
+unsafe fn after_let_go() { unsafe {
     read_zone_again(std::ptr::null_mut(), std::ptr::null_mut(), std::ptr::null_mut());
+    tell_windows_time_changed();
+}}
+
+/// `after_let_go` on a thread of its own, for a program let go on a detour's path (`start_watcher`).
+unsafe extern "system" fn after_let_go_thread(_: *mut c_void) -> u32 { unsafe {
+    after_let_go();
     0
+}}
+
+/// `WM_TIMECHANGE` (winuser.h): the message a window gets when the time has changed.
+const WM_TIMECHANGE: u32 = 0x001E;
+
+/// `EnumWindows`, `GetWindowThreadProcessId` and `PostMessageW` as user32 exports them (winuser.h).
+type EnumWindowsFn = unsafe extern "system" fn(unsafe extern "system" fn(*mut c_void, isize) -> i32, isize) -> i32;
+type WindowOwnerFn = unsafe extern "system" fn(*mut c_void, *mut u32) -> u32;
+type PostMessageFn = unsafe extern "system" fn(*mut c_void, u32, usize, isize) -> i32;
+
+/// What `tell_window` needs for each window `EnumWindows` hands it.
+struct TimeChange {
+    pid: u32,
+    owner: WindowOwnerFn,
+    post: PostMessageFn,
+}
+
+/// Tell this process's own top-level windows that the time changed, once the program is let go (ADR-30):
+/// for it, it has - its wall is back on the real clock and its zone channel answers with this machine's
+/// zone. A program that worked its zone out once and keeps it works it out again on that message, as the
+/// WebView2 browser does for the pages it runs. Measured 2026-11-17: the page of a WebView2 application that
+/// outlived a session at +05:30 kept the borrowed `Asia/Calcutta` (ADR-26) after the session, and was on
+/// this machine's zone 0.7 s after its browser got the message. Posted, never sent, so no window of the
+/// program runs on this thread. Only through the user32 the program has already loaded: a program without
+/// it has no window, and the hook never loads it itself.
+unsafe fn tell_windows_time_changed() { unsafe {
+    let Ok(user32) = GetModuleHandleA(s!("user32.dll")) else {
+        return;
+    };
+    let (Some(each), Some(owner), Some(post)) = (
+        GetProcAddress(user32, s!("EnumWindows")),
+        GetProcAddress(user32, s!("GetWindowThreadProcessId")),
+        GetProcAddress(user32, s!("PostMessageW")),
+    ) else {
+        return;
+    };
+    let change = TimeChange {
+        pid: GetCurrentProcessId(),
+        owner: std::mem::transmute::<unsafe extern "system" fn() -> isize, WindowOwnerFn>(owner),
+        post: std::mem::transmute::<unsafe extern "system" fn() -> isize, PostMessageFn>(post),
+    };
+    let each = std::mem::transmute::<unsafe extern "system" fn() -> isize, EnumWindowsFn>(each);
+    each(tell_window, &raw const change as isize);
+}}
+
+/// One window `EnumWindows` hands `tell_windows_time_changed`: told the time changed when this process owns
+/// it. Goes on to the next window either way.
+unsafe extern "system" fn tell_window(window: *mut c_void, change: isize) -> i32 { unsafe {
+    let change = &*(change as *const TimeChange);
+    let mut pid = 0u32;
+    (change.owner)(window, &raw mut pid);
+    if pid == change.pid {
+        (change.post)(window, WM_TIMECHANGE, 0, 0);
+    }
+    1
 }}
 
 /// The id of this process's main thread: the oldest of its threads but the one running this, because the

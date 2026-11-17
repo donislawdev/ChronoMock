@@ -847,7 +847,12 @@ impl Attacher {
     /// it was given, also once the connection closes (measured on WebView2 154 in a hooked application,
     /// 2026-10-05 - the browser of a Chromium session, which is not hooked, did go back to the machine's
     /// zone). A named zone given last stays, with the machine's offsets on both sides of daylight saving.
-    /// With no name the override is taken away all the same.
+    /// With no name the override is taken away all the same. Once the connection closes, the page also
+    /// takes the zone its engine's browser process gives it, and that process is one of the session's: it
+    /// works its zone out when it starts, under ADR-26 as the zone the session borrowed a name for, and works
+    /// it out again only when told the time changed - which the hook does when it lets the process go
+    /// (ADR-30). Measured 2026-11-17 on a WebView2 host at +05:30: without that message the page was on
+    /// `Asia/Calcutta` 0.5 s after the session, although this check had seen it on this machine's zone.
     ///
     /// Neither is taken on trust: an engine that does not know the name keeps the page where it was, and
     /// the answer to the override proves nothing. Once every context answered the zone, each is asked

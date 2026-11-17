@@ -23,6 +23,14 @@ Notable changes to Chrono Mock, newest first. The format follows
 
 ### Fixed
 
+- **The web pages of an application that outlives the session go back to this machine's time zone
+  again.** Since 0.6.0-rc.1, the web engine inside such an application (WebView2) took the session's
+  time zone by the name of a real zone with the same offset, kept it, and gave it to its pages once the
+  session had let them go: a page of a session at +05:30 stayed on `Asia/Calcutta` until the application
+  closed, while the report said its pages were back on this machine's zone. When the session lets a
+  program go, Chrono Mock now tells its windows that the time changed, as Windows does when the clock
+  is set, so a program that worked its time zone out once works it out again, and the pages go back to
+  this machine's zone.
 - **An application installed with Squirrel.Windows runs under the session when you start it through
   its starter.** Such an installer puts a starter beside `Update.exe` that only starts the newest
   version of the application, kept in a folder named `app-<version>`, and closes. A session on the

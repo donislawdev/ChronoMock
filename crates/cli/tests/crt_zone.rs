@@ -14,6 +14,10 @@
 //! while it runs (ADR-14) would show the real time in the session's zone. The hook has the runtimes read
 //! the zone again when it lets the program go, and the probe, kept running past the end of a session, checks
 //! that each gives the local time Windows gives again.
+//!
+//! A program that worked its zone out once outside the C runtime keeps it the same way, so the hook also
+//! tells the program's windows that the time changed when it lets the program go (ADR-30). The probe keeps a
+//! hidden window of its own and writes whether it heard that, and that it did not hear it before.
 
 use std::ffi::c_void;
 use std::path::PathBuf;
@@ -22,11 +26,12 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
-use windows::core::{s, HSTRING, PCSTR, PCWSTR};
-use windows::Win32::Foundation::HMODULE;
+use windows::core::{s, w, HSTRING, PCSTR, PCWSTR};
+use windows::Win32::Foundation::{HMODULE, HWND};
 use windows::Win32::System::Environment::GetEnvironmentVariableW;
-use windows::Win32::System::LibraryLoader::{GetProcAddress, LoadLibraryW};
+use windows::Win32::System::LibraryLoader::{GetModuleHandleW, GetProcAddress, LoadLibraryW};
 use windows::Win32::System::SystemInformation::GetLocalTime;
+use windows::Win32::UI::WindowsAndMessaging::{CreateWindowExW, PeekMessageW, MSG, PM_REMOVE, WINDOW_EX_STYLE, WM_TIMECHANGE, WS_OVERLAPPED};
 
 /// The session zone, a half-hour offset, so this machine's zone cannot give the same local time by
 /// coincidence on any runner this test is expected to meet.
@@ -181,22 +186,59 @@ fn distances_from_windows() -> Vec<i64> {
         .collect()
 }
 
+/// A hidden top-level window of the probe's own, which the session's hook tells that the time changed when it
+/// lets the program go (ADR-30). `None` when one could not be made, which the probe writes as such.
+fn own_window() -> Option<HWND> {
+    // SAFETY: makes a window of a class the system registers for every process, on this thread, which takes
+    // its messages off the queue until it writes - a message posted to it is read there, never handled.
+    unsafe {
+        let instance = GetModuleHandleW(None).ok()?;
+        CreateWindowExW(WINDOW_EX_STYLE(0), w!("STATIC"), w!("probe"), WS_OVERLAPPED, 0, 0, 0, 0, None, None, Some(instance.into()), None).ok()
+    }
+}
+
+/// Takes every message waiting for this thread, and says whether one of them was `WM_TIMECHANGE`.
+fn time_change_heard() -> bool {
+    let mut heard = false;
+    let mut message = MSG::default();
+    // SAFETY: takes this thread's own messages into a structure that lives on this stack.
+    while unsafe { PeekMessageW(&raw mut message, None, 0, 0, PM_REMOVE) }.as_bool() {
+        heard |= message.message == WM_TIMECHANGE;
+    }
+    heard
+}
+
 /// Stays until the session has let the probe go, which is when Windows gives a local time outside the
-/// session's year again, then until each runtime gives the local time Windows gives, and writes how far
-/// each one is from it at the end.
+/// session's year again, then until each runtime gives the local time Windows gives and the probe's window
+/// heard that the time changed, and writes how far each runtime is from Windows at the end and whether the
+/// window heard it.
 fn outlive_the_session() -> String {
+    let window = own_window();
+    let mut heard = false;
     let start = Instant::now();
     // SAFETY: fills a structure the call returns by value.
     while unsafe { GetLocalTime() }.wYear == 2091 && start.elapsed() < LET_GO_LIMIT {
+        heard |= time_change_heard();
         std::thread::sleep(Duration::from_millis(100));
     }
+    let heard_before_let_go = heard;
     let let_go = Instant::now();
     let mut distances = distances_from_windows();
-    while distances.iter().any(|&d| d > SAME_LOCAL_TIME_S) && let_go.elapsed() < READ_AGAIN_LIMIT {
+    heard |= time_change_heard();
+    while (distances.iter().any(|&d| d > SAME_LOCAL_TIME_S) || !heard) && let_go.elapsed() < READ_AGAIN_LIMIT {
         std::thread::sleep(Duration::from_millis(50));
         distances = distances_from_windows();
+        heard |= time_change_heard();
     }
-    SHARED_C_RUNTIMES.iter().zip(distances).map(|(name, d)| format!("|after_{name}={d}")).collect()
+    let told = match (window, heard_before_let_go, heard) {
+        (None, _, _) => "no_window",
+        (Some(_), true, _) => "before_let_go",
+        (Some(_), false, true) => "yes",
+        (Some(_), false, false) => "no",
+    };
+    let mut line: String = SHARED_C_RUNTIMES.iter().zip(distances).map(|(name, d)| format!("|after_{name}={d}")).collect();
+    line.push_str(&format!("|time_change={told}"));
+    line
 }
 
 /// Writes whether its runtimes read the zone while it started, and the local time each gives, then, when
@@ -345,4 +387,10 @@ fn a_c_runtime_of_a_program_the_session_lets_go_reads_this_machines_zone_again()
              Windows gives. {context}"
         );
     }
+    assert_eq!(
+        field(&seen, "time_change"),
+        Some("yes"),
+        "the probe's window was to hear that the time changed once the session let the program go, and not before \
+         (ADR-30). {context}"
+    );
 }
