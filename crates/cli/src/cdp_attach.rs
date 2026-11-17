@@ -110,30 +110,77 @@ fn clock_probe() -> serde_json::Value {
     json!({ "expression": CLOCK_PROBE_EXPR, "returnByValue": true })
 }
 
-/// Whether a probe's reply - `None` when there was none - stands nearer the session clock projected to
-/// now than the real one ([`classify_clock_read`]).
-fn reads_natively(reply: Option<&serde_json::Value>, origin: ShimOrigin) -> bool {
-    let real_now = now_epoch_ms();
-    let fake_now = origin.fake0.saturating_add((real_now - origin.real0).saturating_mul(origin.mult));
-    let text = reply.and_then(|r| r["result"]["value"].as_str());
-    classify_clock_read(text, fake_now, real_now) == ClockRead::Native
+/// The epoch milliseconds a clock passed through between two of its readings, the lower end first.
+type Span = (i64, i64);
+
+/// The span between two readings, in whichever order they stand - the real clock can be set back
+/// between them.
+fn span(a: i64, b: i64) -> Span {
+    (a.min(b), a.max(b))
 }
 
-/// Judge a probe reply against where the session clock and the real clock stand now. No reply, or one
-/// that is not a number, is `Real`: the absence of evidence that a context is covered is not evidence
-/// that it is, and the shim is the safe side. A reading equally far from both is `Real` as well - that
-/// only happens with the session clock within milliseconds of the real one, where a second
-/// substitution is the identity. The distances are unsigned, because the reading is whatever the
-/// page's own `Date.now` returned - a subtraction near `i64::MIN` panicked the core (R4-N23).
-pub(crate) fn classify_clock_read(reply: Option<&str>, fake_now_ms: i64, real_now_ms: i64) -> ClockRead {
+/// Where the session clock of `origin` stands at the real instant `real_ms`.
+fn session_ms_at(origin: ShimOrigin, real_ms: i64) -> i64 {
+    origin.fake0.saturating_add(real_ms.saturating_sub(origin.real0).saturating_mul(origin.mult))
+}
+
+/// Whether a probe's reply - `None` when there was none - stands nearer the session clock than the real
+/// one ([`classify_clock_read`]). The context read its clock somewhere between `asked_at`, the real
+/// instant the question went out, and now, when its answer is judged - so both clocks are taken over
+/// that span, not at its end. A paused page's answer is read only after its injection's, and a busy
+/// context answers when it likes, by the attach's deadline.
+fn reads_natively(reply: Option<&serde_json::Value>, origin: ShimOrigin, asked_at: i64) -> bool {
+    let judged_at = now_epoch_ms();
+    let real = span(asked_at, judged_at);
+    let session = span(session_ms_at(origin, asked_at), session_ms_at(origin, judged_at));
+    let text = reply.and_then(|r| r["result"]["value"].as_str());
+    classify_clock_read(text, session, real) == ClockRead::Native
+}
+
+/// Judge a probe reply against the spans the session clock and the real clock passed through while the
+/// question was out: a reading nearer the session's span than the real one is `Native`. A reading
+/// inside the real span is never `Native`, however near the session clock stood. Judged against where
+/// the clocks stood when the answer was read, a page that read the real clock early looked nearer a
+/// session clock standing close behind the real one, lost its shim and ran on the real clock - and a
+/// page that read the session clock of a fast session looked as far behind it as the session ran
+/// meanwhile, and got the shim on top (CodeRabbit on #178).
+///
+/// No reply, or one that is not a number, is `Real`: the absence of evidence that a context is covered
+/// is not evidence that it is, and the shim is the safe side. A reading equally far from both is `Real`
+/// as well: the session clock stood that near the real one, and there is no telling which the context
+/// read. The distances are unsigned, because the reading is whatever the page's own `Date.now`
+/// returned - a subtraction near `i64::MIN` panicked the core (R4-N23).
+pub(crate) fn classify_clock_read(reply: Option<&str>, session: Span, real: Span) -> ClockRead {
     match reply {
         Some("shim") => ClockRead::Shim,
         Some(text) => match text.parse::<i64>() {
-            Ok(read) if read.abs_diff(fake_now_ms) < read.abs_diff(real_now_ms) => ClockRead::Native,
+            Ok(read) if distance(read, session) < distance(read, real) => ClockRead::Native,
             _ => ClockRead::Real,
         },
         None => ClockRead::Real,
     }
+}
+
+/// How far `read` stands from the span `(lo, hi)`: zero inside it.
+fn distance(read: i64, (lo, hi): Span) -> u64 {
+    if read < lo {
+        lo.abs_diff(read)
+    } else if read > hi {
+        read.abs_diff(hi)
+    } else {
+        0
+    }
+}
+
+/// What putting the shim into a context came to ([`Attacher::put_shim_in`]).
+enum Shimming {
+    /// The context reads the session clock through the native hook, and is to be let go without the
+    /// shim. `settled`: nothing of ours is left queued in its session, so it may be detached. A page
+    /// whose shim was taken back is settled once its release answered - detached before that, it could
+    /// lose the release still queued in its session and keep the shim on top of the native clock.
+    Native { settled: bool },
+    /// The injection, and what it left or why it failed.
+    Shimmed(io::Result<cdp::Injected>),
 }
 
 /// How many contexts of one attacher get an audit row of their own. A family that fans out without
@@ -597,12 +644,20 @@ impl Attacher {
         self.client.attaching(Some((&tid, &sid)));
         let put = self.put_shim_in(&sid, &ty, waiting, origin, deadline);
         self.client.attaching(None);
-        let Some(injected) = put else {
-            // Covered by the native mechanism already: it has a row of its own under its pid, and a
-            // shim here would scale the fake wall twice. Released, and not counted as a context.
-            self.native += 1;
-            self.let_go(&sid, parent.as_deref());
-            return;
+        let injected = match put {
+            Shimming::Shimmed(injected) => injected,
+            Shimming::Native { settled } => {
+                // Covered by the native mechanism already: it has a row of its own under its pid, and a
+                // shim here would scale the fake wall twice. Not counted as a context, and released -
+                // detached only once nothing of ours is left queued in its session (see `let_go`).
+                self.native += 1;
+                if settled {
+                    self.let_go(&sid, parent.as_deref());
+                } else {
+                    self.resume(&sid);
+                }
+                return;
+            }
         };
         match injected {
             Ok(cdp::Injected { script, children, running, awaiting }) => {
@@ -638,9 +693,9 @@ impl Attacher {
         }
     }
 
-    /// Put the shim into the context of session `sid`, by `deadline`: what the injection left, or `None`
-    /// when the context, asked which clock it reads, reads the session's already. `waiting`: auto-attach
-    /// delivered it paused on start.
+    /// Put the shim into the context of session `sid`, by `deadline`: what the injection left, or
+    /// [`Shimming::Native`] when the context, asked which clock it reads, reads the session's already.
+    /// `waiting`: auto-attach delivered it paused on start.
     ///
     /// A page paused on start may answer nothing until it is released (see [`cdp::inject_page`]), so
     /// it is not asked first: a question that waits for its answer would spend the attach's deadline
@@ -650,15 +705,21 @@ impl Attacher {
     /// Its question goes out right before the injection, so in the page's own queue it reads the clock
     /// ahead of the shim, and it is read once the injection's answers are in. A page that turns out
     /// to read the session clock through the native hook has the shim taken back - its hook removed,
-    /// the shim in its document set to the clock it reads without it - and is let go as native. In the
-    /// moment between the page's start and that, such a page reads the session clock twice over. Any
-    /// other context is asked first, as it answers.
-    fn put_shim_in(&mut self, sid: &str, ty: &str, waiting: bool, origin: ShimOrigin, deadline: Instant) -> Option<io::Result<cdp::Injected>> {
+    /// the shim in its document set to the clock it reads without it - and is let go as native, settled
+    /// once that release answered by the deadline, and otherwise left attached, as a context whose shim
+    /// failed is (see [`Attacher::let_go`]). In the moment between the page's start and its release,
+    /// such a page reads the session clock twice over. Any other context is asked first, as it answers.
+    fn put_shim_in(&mut self, sid: &str, ty: &str, waiting: bool, origin: ShimOrigin, deadline: Instant) -> Shimming {
         let paused_page = waiting && !cdp::is_worker(ty);
         if self.probe_clock && !paused_page && self.reads_session_clock_natively(sid, origin, deadline) {
-            return None;
+            return Shimming::Native { settled: true };
         }
-        let asked = if self.probe_clock && paused_page { self.client.send("Runtime.evaluate", clock_probe(), Some(sid)).ok() } else { None };
+        let asked = if self.probe_clock && paused_page {
+            let at = now_epoch_ms();
+            self.client.send("Runtime.evaluate", clock_probe(), Some(sid)).ok().map(|id| (id, at))
+        } else {
+            None
+        };
         let shim = origin.shim(self.zone);
         let zone = self.zone.map(cdp::zone_id);
         let injected = if cdp::is_worker(ty) {
@@ -666,14 +727,15 @@ impl Attacher {
         } else {
             cdp::inject_page(&mut self.client, sid, &shim, zone.as_deref(), waiting, deadline)
         };
-        if let (Some(id), Ok(done)) = (asked, &injected) {
+        if let (Some((id, asked_at)), Ok(done)) = (asked, &injected) {
             let reply = self.client.reply_until(id, "Runtime.evaluate", deadline).ok();
-            if reads_natively(reply.as_ref(), origin) {
-                cdp::take_back(&mut self.client, sid, done.script.as_deref());
-                return None;
+            if reads_natively(reply.as_ref(), origin, asked_at) {
+                let release = cdp::take_back(&mut self.client, sid, done.script.as_deref());
+                let settled = release.is_some_and(|r| self.client.reply_until(r, "Runtime.evaluate", deadline).is_ok());
+                return Shimming::Native { settled };
             }
         }
-        Some(injected)
+        Shimming::Shimmed(injected)
     }
 
     /// Count a context the shim is in as covered: a row of its own, or past the ceiling of own rows the
@@ -699,8 +761,9 @@ impl Attacher {
     /// to now. One `Runtime.evaluate`, by the attach's deadline - a context that does not answer
     /// counts as real, and gets the shim.
     fn reads_session_clock_natively(&mut self, sid: &str, origin: ShimOrigin, deadline: Instant) -> bool {
+        let asked_at = now_epoch_ms();
         let reply = self.client.call_until("Runtime.evaluate", clock_probe(), Some(sid), deadline).ok();
-        reads_natively(reply.as_ref(), origin)
+        reads_natively(reply.as_ref(), origin, asked_at)
     }
 
     /// Release a target that auto-attach paused on start. Not waited for: its answer changes nothing,
@@ -714,9 +777,10 @@ impl Attacher {
     /// one that arrives as the session ends. Left attached, the session stays open in the browser for
     /// as long as the connection lives. Measured on Electron 44: a worker detached right after its
     /// release runs on - a chain of a hundred workers, each started by the one before, ran through. NOT
-    /// for a context whose shim failed: its release is queued in its own session behind the shim
-    /// (`take_back`), and a detach could drop it. The detach goes through `parent`, the session that
-    /// announced it ([`cdp::CdpClient::let_go`]).
+    /// for a context whose shim failed, nor for one whose shim was taken back while its release has not
+    /// answered: the release is queued in its own session behind the shim (`take_back`), and a detach
+    /// could drop it. The detach goes through `parent`, the session that announced it
+    /// ([`cdp::CdpClient::let_go`]).
     fn let_go(&mut self, sid: &str, parent: Option<&str>) {
         self.client.let_go(sid, parent);
     }
@@ -1204,13 +1268,28 @@ mod tests {
         assert_eq!(detached, vec![("S-NATIVE", "S-PAGE"), ("S-W2", "S-PAGE")], "each through the page that announced it");
     }
 
+    /// How the page of [`browser_with_a_page_held_until_release`] answers once it is released.
+    #[derive(Clone, Copy)]
+    enum AfterRelease {
+        /// Everything, at once.
+        Answers,
+        /// Everything, but the answers it held reach the core only this many milliseconds after the
+        /// release - a renderer busy as it starts.
+        AnswersLate(u64),
+        /// What it held, and nothing it is asked after that - its own scripts keep it busy.
+        Busy,
+    }
+
     /// A browser that announces one page paused on start, `S-PAGE`, and holds every answer of that page
-    /// until its release, as the page measured on Electron did (see `cdp::inject_page`). The clock probe
-    /// answers `probe_value`. Hands back the port and the browser's log of requests.
+    /// until its release, as the page measured on Electron did (see `cdp::inject_page`), and answers
+    /// after it as `after` says. The clock probe answers `probe_value`, read as the question arrives.
+    /// Hands back the port and the browser's log of requests.
     fn browser_with_a_page_held_until_release(
         probe_value: impl Fn() -> String + Send + 'static,
+        after: AfterRelease,
     ) -> (u16, std::thread::JoinHandle<Vec<serde_json::Value>>) {
         let mut held = Vec::new();
+        let mut released = false;
         crate::cdp::fake_browser_holding(move |request| {
             let id = request["id"].clone();
             let method = request["method"].as_str().unwrap_or("");
@@ -1233,25 +1312,30 @@ mod tests {
                 "Page.addScriptToEvaluateOnNewDocument" => json!({ "identifier": "h1" }),
                 "Runtime.evaluate" if request["params"]["expression"] == CLOCK_PROBE_EXPR => json!({ "result": { "value": probe_value() } }),
                 "Runtime.evaluate" => json!({ "result": { "type": "string", "value": "installed" } }),
-                "Runtime.runIfWaitingForDebugger" => {
-                    let mut now = std::mem::take(&mut held);
-                    now.push((id, json!({})));
-                    return now;
-                }
                 _ => json!({}),
             };
             held.push((id, answer));
+            if released {
+                return if matches!(after, AfterRelease::Busy) { Vec::new() } else { std::mem::take(&mut held) };
+            }
+            if method == "Runtime.runIfWaitingForDebugger" {
+                released = true;
+                if let AfterRelease::AnswersLate(ms) = after {
+                    std::thread::sleep(Duration::from_millis(ms));
+                }
+                return std::mem::take(&mut held);
+            }
             Vec::new()
         })
     }
 
     /// An attacher that asks each context which clock it reads, the embedded engines' one, over `port`,
-    /// with the attach's deadline the bridge gives, after the existing targets are attached and the
-    /// events pumped.
-    fn probing_attacher_over(port: u16, origin: ShimOrigin) -> Attacher {
+    /// with `call` for the attach's deadline (the bridge gives 2 s), after the existing targets are
+    /// attached and the events pumped.
+    fn probing_attacher_over(port: u16, origin: ShimOrigin, call: Duration) -> Attacher {
         let ws = crate::cdp::WsClient::connect("127.0.0.1", port, "/", Instant::now() + Duration::from_secs(5)).unwrap();
         let mut attacher = Attacher::over(cdp::CdpClient::from_ws(ws), port);
-        attacher.set_budgets(Duration::from_millis(20), Duration::from_secs(2));
+        attacher.set_budgets(Duration::from_millis(20), call);
         attacher.probe_clock_before_shim();
         let mut next = 0;
         attacher.attach_existing(origin, &mut next, Instant::now() + Duration::from_secs(2)).unwrap();
@@ -1268,9 +1352,9 @@ mod tests {
     #[test]
     fn a_page_paused_on_start_is_covered_when_the_clock_is_asked_with_its_shim() {
         let origin = ShimOrigin { fake0: 2_147_483_647_000, real0: now_epoch_ms(), mult: 1, dur: 1, scheduled: None };
-        let (port, browser) = browser_with_a_page_held_until_release(|| now_epoch_ms().to_string());
+        let (port, browser) = browser_with_a_page_held_until_release(|| now_epoch_ms().to_string(), AfterRelease::Answers);
         let began = Instant::now();
-        let attacher = probing_attacher_over(port, origin);
+        let attacher = probing_attacher_over(port, origin, Duration::from_secs(2));
         let took = began.elapsed();
         let live: Vec<&str> = attacher.contexts().iter().map(|c| c.session_id.as_str()).collect();
         assert_eq!(attacher.failed(), 0, "the paused page was given up");
@@ -1285,26 +1369,69 @@ mod tests {
         assert!(probe_at < hook_at, "the question goes ahead of the shim in the page's queue: {methods:?}");
     }
 
-    /// The same page reading the session clock through the native hook: its shim, already in, is taken
-    /// back - the new-document hook removed and the shim set to the clock it reads without it - and the
-    /// page is let go as native, not counted as a context, so the fake wall is not scaled twice.
-    #[test]
-    fn a_page_paused_on_start_that_reads_the_session_clock_natively_has_its_shim_taken_back() {
-        let session_now = 2_147_483_647_000_i64;
-        let origin = ShimOrigin { fake0: session_now, real0: now_epoch_ms(), mult: 1, dur: 1, scheduled: None };
-        let (port, browser) = browser_with_a_page_held_until_release(move || session_now.to_string());
-        let attacher = probing_attacher_over(port, origin);
-        assert_eq!(attacher.native(), 1, "the page on the session clock natively was not let go as native");
-        assert!(attacher.contexts().is_empty(), "a page the hook covers is not a context");
-        assert_eq!(attacher.failed(), 0);
-        drop(attacher);
-        let log = browser.join().unwrap();
+    /// What the browser's log shows was done to `S-PAGE` after its shim was taken back: the new-document
+    /// hook removed, the shim set to the clock the page reads without it, the page detached.
+    fn taken_back(log: &[serde_json::Value]) -> (bool, bool, bool) {
         let removed = log.iter().any(|r| r["method"] == "Page.removeScriptToEvaluateOnNewDocument" && r["params"]["identifier"] == "h1");
         let released = log.iter().any(|r| {
             r["method"] == "Runtime.evaluate" && r["params"]["expression"] == json!(cdp::set_expr(0, 0, 1, 1, None))
         });
         let detached = log.iter().any(|r| r["method"] == "Target.detachFromTarget" && r["params"]["sessionId"] == "S-PAGE");
+        (removed, released, detached)
+    }
+
+    /// The same page reading the session clock through the native hook: its shim, already in, is taken
+    /// back - the new-document hook removed and the shim set to the clock it reads without it - and the
+    /// page is let go as native, not counted as a context, so the fake wall is not scaled twice. It
+    /// answers the release, so it is detached too.
+    #[test]
+    fn a_page_paused_on_start_that_reads_the_session_clock_natively_has_its_shim_taken_back() {
+        let session_now = 2_147_483_647_000_i64;
+        let origin = ShimOrigin { fake0: session_now, real0: now_epoch_ms(), mult: 1, dur: 1, scheduled: None };
+        let (port, browser) = browser_with_a_page_held_until_release(move || session_now.to_string(), AfterRelease::Answers);
+        let attacher = probing_attacher_over(port, origin, Duration::from_secs(2));
+        assert_eq!(attacher.native(), 1, "the page on the session clock natively was not let go as native");
+        assert!(attacher.contexts().is_empty(), "a page the hook covers is not a context");
+        assert_eq!(attacher.failed(), 0);
+        drop(attacher);
+        let (removed, released, detached) = taken_back(&browser.join().unwrap());
         assert!(removed && released && detached, "hook removed {removed}, shim set to the page's own clock {released}, page let go {detached}");
+    }
+
+    /// CodeRabbit on #178: a page whose shim was taken back while it is busy has its release still
+    /// queued in its session, and a detach could drop it - the page would keep the shim on top of the
+    /// native clock. So it is not detached until the release answered, and one that does not answer by
+    /// the deadline stays attached, as a context whose shim failed does.
+    #[test]
+    fn a_page_whose_shim_was_taken_back_is_not_detached_before_its_release_answered() {
+        let session_now = 2_147_483_647_000_i64;
+        let origin = ShimOrigin { fake0: session_now, real0: now_epoch_ms(), mult: 1, dur: 1, scheduled: None };
+        let (port, browser) = browser_with_a_page_held_until_release(move || session_now.to_string(), AfterRelease::Busy);
+        let attacher = probing_attacher_over(port, origin, Duration::from_millis(300));
+        assert_eq!(attacher.native(), 1, "the page on the session clock natively was not let go as native");
+        assert!(attacher.contexts().is_empty(), "a page the hook covers is not a context");
+        drop(attacher);
+        let (removed, released, detached) = taken_back(&browser.join().unwrap());
+        assert!(removed && released, "hook removed {removed}, shim set to the page's own clock {released}");
+        assert!(!detached, "the busy page was detached with its release still queued");
+    }
+
+    /// CodeRabbit on #178: a page on the real clock whose answer reaches the core late, in a session whose
+    /// clock stands close behind the real one, is covered. Judged against where the clocks stood when
+    /// the answer was read, its reading looked nearer the session clock than the real one - the page lost
+    /// its shim and ran on the real clock, counted as covered natively.
+    #[test]
+    fn a_page_whose_real_clock_answer_comes_late_keeps_its_shim() {
+        let real0 = now_epoch_ms();
+        let origin = ShimOrigin { fake0: real0 - 150, real0, mult: 1, dur: 1, scheduled: None };
+        let (port, browser) = browser_with_a_page_held_until_release(|| now_epoch_ms().to_string(), AfterRelease::AnswersLate(400));
+        let attacher = probing_attacher_over(port, origin, Duration::from_secs(2));
+        let live: Vec<&str> = attacher.contexts().iter().map(|c| c.session_id.as_str()).collect();
+        assert_eq!(attacher.native(), 0, "the page on the real clock was taken for one on the session clock");
+        assert_eq!(live, vec!["S-PAGE"], "the page is covered");
+        drop(attacher);
+        let (_, released, _) = taken_back(&browser.join().unwrap());
+        assert!(!released, "the shim of a page on the real clock was taken back");
     }
 
     /// R5-D6: a target the by-name pass could not attach to ran unreached, and counts as such - it used
@@ -1915,16 +2042,41 @@ mod tests {
     /// shim: no reply, a reply that is not a number, or a reading nearer the real clock.
     #[test]
     fn the_clock_probe_tells_ours_from_native_from_real() {
-        let fake = 1_900_000_000_000;
-        let real = 1_700_000_000_000;
+        let fake = (1_900_000_000_000, 1_900_000_000_000);
+        let real = (1_700_000_000_000, 1_700_000_000_000);
         assert_eq!(classify_clock_read(Some("shim"), fake, real), ClockRead::Shim);
         assert_eq!(classify_clock_read(Some("1900000000500"), fake, real), ClockRead::Native);
         assert_eq!(classify_clock_read(Some("1700000000500"), fake, real), ClockRead::Real);
         assert_eq!(classify_clock_read(None, fake, real), ClockRead::Real, "no evidence is no hook");
         assert_eq!(classify_clock_read(Some("undefined"), fake, real), ClockRead::Real);
-        // A reading equally far from both only happens with the session clock within milliseconds
-        // of the real one, where a second substitution is the identity - so it gets the shim.
+        // A reading equally far from both cannot tell which clock the context read - so it gets the shim.
         assert_eq!(classify_clock_read(Some("1800000000000"), fake, real), ClockRead::Real);
+    }
+
+    /// CodeRabbit on #178: the context read its clock somewhere between the question and the moment its
+    /// answer is judged, and both clocks are taken over that span. Asked at 1 000 000 and judged 2 s later.
+    #[test]
+    fn a_late_answer_is_judged_against_the_span_the_question_was_out() {
+        let real = (1_000_000, 1_002_000);
+        // A session 1.5 s behind the real clock, at its pace: a real reading taken when asked stood
+        // nearer the session clock at the end (500 ms) than the real clock at the end (2 s).
+        let behind = (998_500, 1_000_500);
+        assert_eq!(classify_clock_read(Some("1000000"), behind, real), ClockRead::Real, "a real reading lost its shim");
+        // A session an hour ahead at x3600: a native reading taken when asked stood two hours behind the
+        // session clock at the end and only an hour ahead of the real clock.
+        let ahead = (4_600_000, 4_600_000 + 2_000 * 3_600);
+        assert_eq!(classify_clock_read(Some("4600000"), ahead, real), ClockRead::Native, "a native reading got the shim on top");
+        // Past either end of a span, the distance is to that end.
+        assert_eq!(classify_clock_read(Some("1003000"), behind, real), ClockRead::Real);
+        assert_eq!(classify_clock_read(Some("998000"), behind, real), ClockRead::Native);
+    }
+
+    /// Two readings of the real clock in either order make the same span - the clock can be set back
+    /// between the question and the answer.
+    #[test]
+    fn a_span_is_the_same_whichever_reading_came_first() {
+        assert_eq!(span(5, 3), span(3, 5));
+        assert_eq!(span(3, 5), (3, 5));
     }
 
     /// The reading is the page's own `Date.now`, and a page can make that anything. At the ends of
@@ -1932,14 +2084,15 @@ mod tests {
     /// clock before 1970, so the sign of neither distance is assumed.
     #[test]
     fn a_page_clock_at_the_ends_of_the_range_is_judged_rather_than_a_crash() {
-        let fake = 1_900_000_000_000;
-        let real = 1_700_000_000_000;
+        let fake = (1_900_000_000_000, 1_900_000_000_000);
+        let before_1970 = (-1_900_000_000_000, -1_900_000_000_000);
+        let real = (1_700_000_000_000, 1_700_000_000_000);
         let min = i64::MIN.to_string();
         let max = i64::MAX.to_string();
         assert_eq!(classify_clock_read(Some(&min), fake, real), ClockRead::Real);
         assert_eq!(classify_clock_read(Some(&max), fake, real), ClockRead::Native);
-        assert_eq!(classify_clock_read(Some(&max), -fake, real), ClockRead::Real);
-        assert_eq!(classify_clock_read(Some(&min), -fake, real), ClockRead::Native);
+        assert_eq!(classify_clock_read(Some(&max), before_1970, real), ClockRead::Real);
+        assert_eq!(classify_clock_read(Some(&min), before_1970, real), ClockRead::Native);
     }
 
     /// The ceiling is on contexts ever seen, and a re-attach of a known context never counts against

@@ -3342,7 +3342,7 @@ unsafe fn end_remote_load(hproc: HANDLE, load: RemoteLoad, limit_ms: u32, gate: 
         // be reading it. Said out loud rather than done quietly (rule 6), and this is why the wait above
         // is generous: a child load costs about 68 ms, and a shorter limit would only make this branch
         // more likely.
-        log("[chrono_hook] the thread loading the hook still runs in the child - leaving its path buffer allocated");
+        log("[chrono_hook] the thread that loads the hook has not ended in the child - leaving its path buffer allocated");
     }
     match outcome {
         remote_load::Outcome::Loaded => {}
@@ -3350,7 +3350,7 @@ unsafe fn end_remote_load(hproc: HANDLE, load: RemoteLoad, limit_ms: u32, gate: 
             log("[chrono_hook] child ended while Windows was loading it - it never ran, nothing to cover");
         }
         remote_load::Outcome::ThreadEndStuck => {
-            log("[chrono_hook] the hook joined the child, but the thread that loaded it did not end in time - the child runs covered");
+            log("[chrono_hook] the hook loaded in the child and joined the session, but the thread that loaded it did not end in time - the child is covered");
         }
         _ => log("[chrono_hook] child not covered - LoadLibraryW did not load the hook there"),
     }

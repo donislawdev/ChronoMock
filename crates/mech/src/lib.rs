@@ -2305,8 +2305,8 @@ unsafe fn load_hook(hproc: HANDLE, dll_wide: &[u16], limit_ms: u32, session: (*c
         loader::Outcome::ThreadEndStuck => Err(PrepareError::Inject(format!(
             "the hook loaded and joined the session, but the thread that loaded it did not end within the \
              {limit_ms} ms left of the {INJECT_TIMEOUT_MS} ms allowed for starting the target and loading the \
-             hook - code the target runs as a thread ends is stuck (a library's or the program's own, waiting \
-             or holding a lock)"
+             hook, so the target was closed before it ran its own code - code the target runs whenever a \
+             thread ends, in one of its libraries or in the program itself, is waiting or holding a lock"
         ))),
         loader::Outcome::WaitFailed => Err(PrepareError::Inject(win32_detail(
             "waiting for the remote LoadLibraryW thread",
