@@ -18,8 +18,9 @@ Notable changes to Chrono Mock, newest first. The format follows
   (`session.gecko_sandbox_off`). Off by default: without it, when the engine's library is beside the
   program and your own environment does not already switch the sandbox off for the pages, the report
   says from the start that the pages stay on the real clock (`session.gecko_pages_sandboxed`), and so
-  does `--dry-run`. The start command of the protocol has a new field for it, `target.gecko_sandbox`,
-  on unless a client sets it to `false`.
+  does `--dry-run`, whose JSON says whether the sandbox would stay on as `session.gecko_sandbox`. The
+  start command of the protocol has a new field for it, `target.gecko_sandbox`, on unless a client sets
+  it to `false`.
 
 ### Fixed
 
