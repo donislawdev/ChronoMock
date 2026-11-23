@@ -39,6 +39,8 @@
           <tr><td>Code source</td><td class="n">freeware, fermé</td><td class="y">GPL-3.0</td></tr>
           <tr><td>Taille</td><td class="y">47 Ko à télécharger, 57 Ko en 64 bits</td><td class="n">~{{size_cli_zip}} Mo en ligne de commande, ~{{size_app_zip}} Mo avec la fenêtre</td></tr>
           <tr><td>Anciennes versions de Windows</td><td class="y">jusqu'à Windows 2000</td><td class="n">Windows 10 et 11</td></tr>
+          <tr><td>Applications 32 et 64 bits</td><td class="n">un téléchargement séparé pour chacune</td><td class="y">les deux dans un seul téléchargement, et la fenêtre choisit la bonne</td></tr>
+          <tr><td>Windows 11 dans sa liste de versions prises en charge</td><td class="n">non, la liste s'arrête à Windows 10</td><td class="y">oui, avec Windows 10</td></tr>
         </tbody>
       </table>
     </div>
@@ -95,6 +97,20 @@
         <li>les <strong>connexions réseau</strong>, comptées comme le signe que l'heure peut venir d'un serveur</li>
       </ul>
       <p>Sur les {{channel_count}}, {{substituted_count}} passent sur l'horloge de la session. Les {{observed_count}} autres sont seulement comptés et restent réels, si bien que le rapport les cite sans prétendre qu'ils ont été décalés. L'horloge murale et le fuseau sont décalés dans chaque session. L'axe du temps écoulé et les attentes sont observés quand vous le demandez avec <code>--scale-duration</code>, le compteur haute résolution avec <code>--scale-qpc</code>.</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Quand RunAsDate semble ne pas marcher</h2>
+    <div class="prose">
+      <p>Sa propre page donne la plupart des raisons, et chacune mérite d'être vérifiée avant d'abandonner :</p>
+      <ul>
+        <li><strong>Le téléchargement ne correspond pas au programme.</strong> Un programme 64 bits a besoin du RunAsDate 64 bits, qui est un téléchargement séparé. Les versions récentes le disent au lieu d'échouer en silence.</li>
+        <li><strong>Le programme a lu la date avant que RunAsDate soit en place.</strong> Sauf si son Immediate Mode est activé, RunAsDate attend avant d'injecter la date, et un programme qui lit l'heure tout au début garde la vraie. Sa page prévient aussi que l'Immediate Mode peut perturber certains programmes, surtout ceux en .NET.</li>
+        <li><strong>Le programme demande des droits d'administrateur.</strong> RunAsDate lui-même doit alors tourner en tant qu'administrateur.</li>
+        <li><strong>La date vient d'un endroit que RunAsDate n'atteint pas</strong> - un serveur, une fonction en dehors des cinq qu'il intercepte, comme le fuseau horaire ou le temps écoulé, ou un processus lancé par le programme, dont sa page ne parle pas.</li>
+      </ul>
+      <p>La dernière raison, c'est là que Chrono Mock est construit autrement : il couvre {{channel_count}} canaux, suit les processus qu'une application lance, et son rapport liste les canaux qu'il a manqués. « Ça ne marche pas, on dirait » devient une ligne qui dit pourquoi.</p>
     </div>
   </section>
 

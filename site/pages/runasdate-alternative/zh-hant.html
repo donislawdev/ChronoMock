@@ -33,6 +33,8 @@
           <tr><td>原始碼</td><td class="n">免費軟體，封閉原始碼</td><td class="y">GPL-3.0</td></tr>
           <tr><td>大小</td><td class="y">下載 47 KB，64 位元版 57 KB</td><td class="n">命令列版約 {{size_cli_zip}} MB，含視窗版約 {{size_app_zip}} MB</td></tr>
           <tr><td>舊版 Windows</td><td class="y">最早到 Windows 2000</td><td class="n">Windows 10 與 11</td></tr>
+          <tr><td>32 位元和 64 位元應用程式</td><td class="n">每種各需單獨下載</td><td class="y">兩種都在同一個下載裡，視窗會自動選對</td></tr>
+          <tr><td>支援的版本清單裡有 Windows 11</td><td class="n">沒有，清單止於 Windows 10</td><td class="y">有，與 Windows 10 一起</td></tr>
         </tbody>
       </table>
     </div>
@@ -75,6 +77,20 @@
         <li><strong>網路連線</strong>，作為時間可能來自伺服器的跡象而被計數</li>
       </ul>
       <p>在 {{channel_count}} 個通道中，{{substituted_count}} 個被換到工作階段時鐘上。其餘 {{observed_count}} 個只計數並保持真實，所以報告會列出它們，而不會聲稱它們被偏移了。牆上時鐘和時區在每個工作階段中都會被偏移。經過時間軸和等待在你用 <code>--scale-duration</code> 要求時會被監看，高解析度計數器則用 <code>--scale-qpc</code>。</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>RunAsDate 似乎沒有作用時</h2>
+    <div class="prose">
+      <p>大多數原因它自己的頁面都寫了，放棄之前每一條都值得檢查：</p>
+      <ul>
+        <li><strong>下載的版本與程式不相符。</strong> 64 位元程式需要 64 位元的 RunAsDate，它是單獨的下載。較新的版本會明確提示，而不是悄悄失敗。</li>
+        <li><strong>程式在 RunAsDate 就位之前就讀取了日期。</strong> 除非開啟它的 Immediate Mode，RunAsDate 會等一會兒才注入日期，而在啟動最初就讀取時間的程式會拿到真實時間。它的頁面還提醒，Immediate Mode 可能讓某些程式出問題，尤其是 .NET 程式。</li>
+        <li><strong>程式需要系統管理員權限。</strong> 那麼 RunAsDate 本身也必須以系統管理員身分執行。</li>
+        <li><strong>日期來自 RunAsDate 搆不到的地方</strong> - 伺服器、它攔截的五個函式之外的函式（例如時區或經過的時間），或者程式啟動的處理程序，而它的頁面對此隻字未提。</li>
+      </ul>
+      <p>最後這個原因正是 Chrono Mock 構建方式不同的地方：它涵蓋 {{channel_count}} 個通道，跟隨應用程式啟動的處理程序，其報告會列出它漏掉的通道。「好像沒有作用」就變成了一行說明原因的文字。</p>
     </div>
   </section>
 

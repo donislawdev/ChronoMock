@@ -39,6 +39,8 @@
           <tr><td>Quellcode</td><td class="n">Freeware, closed source</td><td class="y">GPL-3.0</td></tr>
           <tr><td>Größe</td><td class="y">47 KB Download, 57 KB für 64 Bit</td><td class="n">~{{size_cli_zip}} MB Kommandozeile, ~{{size_app_zip}} MB mit Fenster</td></tr>
           <tr><td>Ältere Windows-Versionen</td><td class="y">bis zurück zu Windows 2000</td><td class="n">Windows 10 und 11</td></tr>
+          <tr><td>32- und 64-Bit-Anwendungen</td><td class="n">für jede ein eigener Download</td><td class="y">beide in einem Download, und das Fenster wählt die passende</td></tr>
+          <tr><td>Windows 11 in der Liste unterstützter Versionen</td><td class="n">nein, die Liste endet bei Windows 10</td><td class="y">ja, zusammen mit Windows 10</td></tr>
         </tbody>
       </table>
     </div>
@@ -94,6 +96,20 @@
         <li><strong>Netzwerkverbindungen</strong>, gezählt als Hinweis, dass die Zeit von einem Server kommen kann</li>
       </ul>
       <p>Von den {{channel_count}} kommen {{substituted_count}} auf die Sitzungsuhr. Der Rest ({{observed_count}}) wird nur gezählt und bleibt echt, sodass der Bericht ihn nennt, ohne zu behaupten, er sei verschoben worden. Wanduhr und Zeitzone werden in jeder Sitzung verschoben. Die Achse der verstrichenen Zeit und die Wartevorgänge werden beobachtet, wenn Sie das mit <code>--scale-duration</code> verlangen, der hochauflösende Zähler mit <code>--scale-qpc</code>.</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Wenn RunAsDate nicht zu wirken scheint</h2>
+    <div class="prose">
+      <p>Die meisten Gründe nennt seine eigene Seite, und jeder ist es wert, geprüft zu werden, bevor man aufgibt:</p>
+      <ul>
+        <li><strong>Der Download passt nicht zum Programm.</strong> Ein 64-Bit-Programm braucht das 64-Bit-RunAsDate, und das ist ein eigener Download. Neuere Versionen sagen das, statt still zu scheitern.</li>
+        <li><strong>Das Programm hat das Datum gelesen, bevor RunAsDate bereit war.</strong> Ohne eingeschalteten Immediate Mode wartet RunAsDate, bevor es das Datum einschleust, und ein Programm, das die Zeit ganz am Start liest, behält die echte. Seine Seite warnt außerdem, dass der Immediate Mode manche Programme durcheinanderbringen kann, vor allem .NET-Programme.</li>
+        <li><strong>Das Programm braucht Administratorrechte.</strong> Dann muss auch RunAsDate selbst als Administrator laufen.</li>
+        <li><strong>Das Datum kommt von dort, wo RunAsDate nicht hinreicht</strong> - von einem Server, aus einer Funktion außerhalb der fünf, die es abfängt, etwa der Zeitzone oder der verstrichenen Zeit, oder aus einem Prozess, den das Programm startet, worüber seine Seite nichts sagt.</li>
+      </ul>
+      <p>Beim letzten Grund ist Chrono Mock anders gebaut: Es deckt {{channel_count}} Kanäle ab, folgt den Prozessen, die eine Anwendung startet, und sein Bericht nennt die Kanäle, die es verpasst hat. Aus "scheint nicht zu wirken" wird eine Zeile, die sagt, warum.</p>
     </div>
   </section>
 

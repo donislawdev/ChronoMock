@@ -12,134 +12,134 @@
     "en": {
       "slug": "runasdate-alternative",
       "link_text": "vs RunAsDate",
-      "title": "RunAsDate alternative for Windows QA - open source",
-      "description": "How Chrono Mock differs from RunAsDate: {{channel_count}} time channels instead of five, an adjustable clock speed, its own time zone, child processes - and a verdict on whether it worked."
+      "title": "RunAsDate alternative for Windows 11 - open source, 32 and 64-bit",
+      "description": "How Chrono Mock differs from RunAsDate on Windows 10 and 11: {{channel_count}} time channels instead of five, both bitnesses in one download, a faster clock, its own time zone, child processes - and a verdict on whether it worked."
     },
     "pl": {
       "slug": "alternatywa-dla-runasdate",
       "link_text": "vs RunAsDate",
-      "title": "Alternatywa dla RunAsDate na Windows - otwarte źródła",
-      "description": "Czym Chrono Mock różni się od RunAsDate: {{channel_count}} kanałów czasu zamiast pięciu, regulowana prędkość zegara, własna strefa, procesy potomne - i werdykt, czy zadziałało."
+      "title": "Alternatywa dla RunAsDate na Windows 11 - otwarte źródła, 32 i 64 bity",
+      "description": "Czym Chrono Mock różni się od RunAsDate na Windows 10 i 11: {{channel_count}} kanałów czasu zamiast pięciu, obie bitowości w jednym pobraniu, szybszy zegar, własna strefa czasowa, procesy potomne - i werdykt, czy zadziałało."
     },
     "de": {
       "slug": "runasdate-alternative",
       "link_text": "vs RunAsDate",
-      "title": "RunAsDate-Alternative für Windows-QA - Open Source",
-      "description": "Wie sich Chrono Mock von RunAsDate unterscheidet: {{channel_count}} Zeitkanäle statt fünf, regelbare Uhrgeschwindigkeit, eigene Zeitzone, Kindprozesse - und ein Urteil, ob es gewirkt hat."
+      "title": "RunAsDate-Alternative für Windows 11 - Open Source, 32 und 64 Bit",
+      "description": "Worin sich Chrono Mock unter Windows 10 und 11 von RunAsDate unterscheidet: {{channel_count}} Zeitkanäle statt fünf, beide Bitbreiten in einem Download, eine schnellere Uhr, eine eigene Zeitzone, Kindprozesse - und ein Urteil, ob es gewirkt hat."
     },
     "fr": {
       "slug": "alternative-a-runasdate",
       "link_text": "vs RunAsDate",
-      "title": "Alternative à RunAsDate pour la QA Windows - open source",
-      "description": "En quoi Chrono Mock diffère de RunAsDate : {{channel_count}} canaux de temps au lieu de cinq, vitesse d'horloge réglable, fuseau propre, processus enfants - et un verdict sur le succès."
+      "title": "Alternative à RunAsDate pour Windows 11 - open source, 32 et 64 bits",
+      "description": "Ce qui distingue Chrono Mock de RunAsDate sous Windows 10 et 11 : {{channel_count}} canaux de temps au lieu de cinq, les deux architectures dans un seul téléchargement, une horloge plus rapide, son propre fuseau horaire, les processus enfants - et un verdict sur le fait que ça a marché."
     },
     "es": {
       "slug": "alternativa-a-runasdate",
       "link_text": "vs RunAsDate",
-      "title": "Alternativa a RunAsDate para QA en Windows - código abierto",
-      "description": "En qué se diferencia Chrono Mock de RunAsDate: {{channel_count}} canales de tiempo en lugar de cinco, velocidad de reloj ajustable, zona horaria propia, procesos hijos - y un veredicto de si funcionó."
+      "title": "Alternativa a RunAsDate para Windows 11 - código abierto, 32 y 64 bits",
+      "description": "En qué se diferencia Chrono Mock de RunAsDate en Windows 10 y 11: {{channel_count}} canales de tiempo en lugar de cinco, las dos arquitecturas en una sola descarga, un reloj más rápido, su propia zona horaria, los procesos hijos - y un veredicto sobre si funcionó."
     },
     "pt-br": {
       "slug": "alternativa-ao-runasdate",
       "link_text": "vs RunAsDate",
-      "title": "Alternativa ao RunAsDate para QA no Windows - código aberto",
-      "description": "Como o Chrono Mock difere do RunAsDate: {{channel_count}} canais de tempo em vez de cinco, velocidade de relógio ajustável, fuso horário próprio, processos filhos - e um veredito se funcionou."
+      "title": "Alternativa ao RunAsDate para Windows 11 - código aberto, 32 e 64 bits",
+      "description": "Como o Chrono Mock difere do RunAsDate no Windows 10 e 11: {{channel_count}} canais de tempo em vez de cinco, as duas arquiteturas em um só download, um relógio mais rápido, fuso horário próprio, processos filhos - e um veredito sobre se funcionou."
     },
     "it": {
       "slug": "alternativa-a-runasdate",
       "link_text": "vs RunAsDate",
-      "title": "Alternativa a RunAsDate per il QA su Windows - open source",
-      "description": "In che cosa Chrono Mock differisce da RunAsDate: {{channel_count}} canali temporali invece di cinque, velocità dell'orologio regolabile, fuso orario proprio, processi figlio - e un verdetto se ha funzionato."
+      "title": "Alternativa a RunAsDate per Windows 11 - open source, 32 e 64 bit",
+      "description": "In cosa Chrono Mock differisce da RunAsDate su Windows 10 e 11: {{channel_count}} canali del tempo invece di cinque, entrambe le architetture in un unico download, un orologio più veloce, un fuso orario proprio, i processi figli - e un verdetto sul fatto che abbia funzionato."
     },
     "nl": {
       "slug": "runasdate-alternatief",
       "link_text": "vs RunAsDate",
-      "title": "RunAsDate-alternatief voor Windows-QA - open source",
-      "description": "Hoe Chrono Mock verschilt van RunAsDate: {{channel_count}} tijdkanalen in plaats van vijf, regelbare kloksnelheid, eigen tijdzone, kindprocessen - en een oordeel of het gewerkt heeft."
+      "title": "RunAsDate-alternatief voor Windows 11 - open source, 32 en 64 bit",
+      "description": "Waarin Chrono Mock verschilt van RunAsDate op Windows 10 en 11: {{channel_count}} tijdkanalen in plaats van vijf, beide architecturen in één download, een snellere klok, een eigen tijdzone, onderliggende processen - en een oordeel of het gewerkt heeft."
     },
     "ro": {
       "slug": "alternativa-la-runasdate",
       "link_text": "vs RunAsDate",
-      "title": "Alternativă la RunAsDate pentru QA pe Windows - open source",
-      "description": "Cum diferă Chrono Mock de RunAsDate: {{channel_count}} canale de timp în loc de cinci, viteză reglabilă a ceasului, fus orar propriu, procese copil - și un verdict dacă a funcționat."
+      "title": "Alternativă la RunAsDate pentru Windows 11 - open source, 32 și 64 de biți",
+      "description": "Prin ce diferă Chrono Mock de RunAsDate pe Windows 10 și 11: {{channel_count}} de canale de timp în loc de cinci, ambele arhitecturi într-o singură descărcare, un ceas mai rapid, propriul fus orar, procesele copil - și un verdict dacă a funcționat."
     },
     "cs": {
       "slug": "alternativa-k-runasdate",
       "link_text": "vs RunAsDate",
-      "title": "Alternativa k RunAsDate pro QA ve Windows - open source",
-      "description": "V čem se Chrono Mock liší od RunAsDate: {{channel_count}} časových kanálů místo pěti, nastavitelná rychlost hodin, vlastní časové pásmo, podřízené procesy - a verdikt, jestli to zabralo."
+      "title": "Alternativa k RunAsDate pro Windows 11 - open source, 32 a 64 bitů",
+      "description": "Čím se Chrono Mock ve Windows 10 a 11 liší od RunAsDate: {{channel_count}} časových kanálů místo pěti, obě bitové verze v jednom stažení, rychlejší hodiny, vlastní časové pásmo, podřízené procesy - a verdikt, zda to zabralo."
     },
     "tr": {
       "slug": "runasdate-alternatifi",
       "link_text": "RunAsDate ile",
-      "title": "Windows QA için RunAsDate alternatifi - açık kaynak",
-      "description": "Chrono Mock’un RunAsDate’ten farkı: beş yerine {{channel_count}} zaman kanalı, ayarlanabilir saat hızı, kendi saat dilimi, alt süreçler - ve işe yarayıp yaramadığına dair bir karar."
+      "title": "Windows 11 için RunAsDate alternatifi - açık kaynak, 32 ve 64 bit",
+      "description": "Chrono Mock'un Windows 10 ve 11'de RunAsDate'ten farkı: beş yerine {{channel_count}} zaman kanalı, iki mimari tek indirmede, daha hızlı saat, kendi saat dilimi, alt süreçler - ve işe yarayıp yaramadığına dair karar."
     },
     "id": {
       "slug": "alternatif-runasdate",
       "link_text": "vs RunAsDate",
-      "title": "Alternatif RunAsDate untuk QA Windows - open source",
-      "description": "Perbedaan Chrono Mock dan RunAsDate: {{channel_count}} kanal waktu, bukan lima, kecepatan jam yang dapat diatur, zona waktu sendiri, proses anak - dan putusan apakah berhasil."
+      "title": "Alternatif RunAsDate untuk Windows 11 - sumber terbuka, 32 dan 64 bit",
+      "description": "Bedanya Chrono Mock dengan RunAsDate di Windows 10 dan 11: {{channel_count}} kanal waktu, bukan lima, kedua arsitektur dalam satu unduhan, jam yang lebih cepat, zona waktu sendiri, proses anak - dan putusan apakah berhasil."
     },
     "vi": {
       "slug": "thay-the-runasdate",
       "link_text": "so với RunAsDate",
-      "title": "Thay thế RunAsDate cho QA Windows - mã nguồn mở",
-      "description": "Chrono Mock khác RunAsDate ở chỗ: {{channel_count}} kênh thời gian thay vì năm, tốc độ đồng hồ điều chỉnh được, múi giờ riêng, tiến trình con - và kết luận có hiệu quả hay không."
+      "title": "Phần mềm thay thế RunAsDate cho Windows 11 - mã nguồn mở, 32 và 64 bit",
+      "description": "Chrono Mock khác RunAsDate thế nào trên Windows 10 và 11: {{channel_count}} kênh thời gian thay vì năm, cả hai kiến trúc trong một lần tải, đồng hồ nhanh hơn, múi giờ riêng, tiến trình con - và kết luận có hiệu quả hay không."
     },
     "ru": {
       "slug": "runasdate-alternative",
       "link_text": "vs RunAsDate",
-      "title": "Альтернатива RunAsDate для QA в Windows — с открытым кодом",
-      "description": "Чем Chrono Mock отличается от RunAsDate: {{channel_count}} каналов времени вместо пяти, регулируемая скорость часов, собственный часовой пояс, дочерние процессы — и вердикт, сработало ли."
+      "title": "Альтернатива RunAsDate для Windows 11 - открытый код, 32 и 64 бита",
+      "description": "Чем Chrono Mock отличается от RunAsDate в Windows 10 и 11: {{channel_count}} каналов времени вместо пяти, обе разрядности в одной загрузке, ускоренные часы, собственный часовой пояс, дочерние процессы - и вердикт, сработало ли."
     },
     "uk": {
       "slug": "runasdate-alternative",
       "link_text": "vs RunAsDate",
-      "title": "Альтернатива RunAsDate для QA у Windows — з відкритим кодом",
-      "description": "Чим Chrono Mock відрізняється від RunAsDate: {{channel_count}} каналів часу замість п’яти, регульована швидкість годинника, власний часовий пояс, дочірні процеси — і вердикт, чи спрацювало."
+      "title": "Альтернатива RunAsDate для Windows 11 - відкритий код, 32 і 64 біти",
+      "description": "Чим Chrono Mock відрізняється від RunAsDate у Windows 10 і 11: {{channel_count}} каналів часу замість п'яти, обидві розрядності в одному завантаженні, прискорений годинник, власний часовий пояс, дочірні процеси - і вердикт, чи спрацювало."
     },
     "ja": {
       "slug": "runasdate-alternative",
       "link_text": "RunAsDate との比較",
-      "title": "Windows QA 向け RunAsDate の代替 - オープンソース",
-      "description": "Chrono Mock が RunAsDate と違う点。5 つではなく {{channel_count}} 個の時刻チャネル、調整できる時計の速度、独自のタイムゾーン、子プロセス対応、そして効いたかどうかの判定。"
+      "title": "Windows 11 向け RunAsDate の代替 - オープンソース、32 ビットと 64 ビット",
+      "description": "Windows 10 と 11 で Chrono Mock が RunAsDate とどう違うか。5 つではなく {{channel_count}} の時刻チャネル、両方のビット数を 1 つのダウンロードに、速い時計、独自のタイムゾーン、子プロセス、そして効いたかどうかの判定。"
     },
     "ko": {
       "slug": "runasdate-alternative",
       "link_text": "RunAsDate와 비교",
-      "title": "Windows QA를 위한 RunAsDate 대안 - 오픈 소스",
-      "description": "Chrono Mock이 RunAsDate와 다른 점. 다섯 개가 아닌 {{channel_count}}개의 시간 채널, 조절 가능한 시계 속도, 자체 시간대, 자식 프로세스 - 그리고 적용 여부에 대한 판정."
+      "title": "Windows 11용 RunAsDate 대안 - 오픈 소스, 32비트와 64비트",
+      "description": "Windows 10과 11에서 Chrono Mock이 RunAsDate와 다른 점: 다섯 개가 아닌 {{channel_count}}개의 시간 채널, 두 비트 버전을 한 번에 내려받기, 더 빠른 시계, 독립 시간대, 자식 프로세스, 그리고 효과가 있었는지에 대한 판정."
     },
     "zh-hans": {
       "slug": "runasdate-alternative",
       "link_text": "对比 RunAsDate",
-      "title": "面向 Windows QA 的 RunAsDate 替代品 - 开源",
-      "description": "Chrono Mock 与 RunAsDate 的不同：{{channel_count}} 个时间通道而不是五个，可调的时钟速度，独立时区，子进程——以及是否生效的判定。"
+      "title": "适用于 Windows 11 的 RunAsDate 替代品 - 开源，支持 32 位和 64 位",
+      "description": "Chrono Mock 在 Windows 10 和 11 上与 RunAsDate 有何不同：{{channel_count}} 个时间通道而不是五个、两种位数在同一个下载里、更快的时钟、独立时区、子进程，以及是否生效的结论。"
     },
     "zh-hant": {
       "slug": "runasdate-alternative",
       "link_text": "比較 RunAsDate",
-      "title": "給 Windows QA 的 RunAsDate 替代品 - 開放原始碼",
-      "description": "Chrono Mock 與 RunAsDate 的不同：{{channel_count}} 個時間通道而不是五個，可調的時鐘速度，獨立時區，子處理序——以及是否生效的判定。"
+      "title": "適用於 Windows 11 的 RunAsDate 替代方案 - 開放原始碼，支援 32 位元和 64 位元",
+      "description": "Chrono Mock 在 Windows 10 和 11 上與 RunAsDate 有何不同：{{channel_count}} 個時間通道而不是五個、兩種位元數在同一個下載裡、更快的時鐘、獨立時區、子處理程序，以及是否生效的結論。"
     },
     "ar": {
       "slug": "runasdate-alternative",
       "link_text": "مقارنة بـ RunAsDate",
-      "title": "بديل RunAsDate لاختبار Windows - مفتوح المصدر",
-      "description": "كيف يختلف Chrono Mock عن RunAsDate: {{channel_count}} قناة وقت بدل خمس، وسرعة ساعة قابلة للضبط، ومنطقة زمنية خاصة، وعمليات فرعية - وحكم عن النجاح."
+      "title": "بديل RunAsDate لنظام Windows 11 - مفتوح المصدر، 32 و64 بت",
+      "description": "بماذا يختلف Chrono Mock عن RunAsDate على Windows 10 و11: {{channel_count}} قناة وقت بدل خمس، والإصداران 32 و64 بت في تنزيل واحد، وساعة أسرع، ومنطقة زمنية خاصة، والعمليات الفرعية - وحكم على ما إذا كان قد نجح."
     },
     "hi": {
       "slug": "runasdate-alternative",
       "link_text": "RunAsDate से तुलना",
-      "title": "Windows QA के लिए RunAsDate का विकल्प - ओपन सोर्स",
-      "description": "Chrono Mock, RunAsDate से कैसे अलग है: पाँच की जगह {{channel_count}} समय चैनल, बदली जा सकने वाली घड़ी की गति, अपना टाइम ज़ोन, चाइल्ड प्रोसेस - और काम किया या नहीं का निर्णय।"
+      "title": "Windows 11 के लिए RunAsDate का विकल्प - ओपन सोर्स, 32 और 64-बिट",
+      "description": "Windows 10 और 11 पर Chrono Mock, RunAsDate से कैसे अलग है: पाँच की जगह {{channel_count}} टाइम चैनल, दोनों बिटनेस एक ही डाउनलोड में, तेज़ घड़ी, अपना टाइम ज़ोन, चाइल्ड प्रोसेस - और यह फ़ैसला कि काम हुआ या नहीं।"
     },
     "th": {
       "slug": "runasdate-alternative",
       "link_text": "เทียบกับ RunAsDate",
-      "title": "ทางเลือกแทน RunAsDate สำหรับ QA บน Windows - โอเพนซอร์ส",
-      "description": "Chrono Mock ต่างจาก RunAsDate อย่างไร: ช่องทางเวลา {{channel_count}} ช่องแทนห้าช่อง ปรับความเร็วนาฬิกาได้ เขตเวลาของตัวเอง โพรเซสย่อย - และผลสรุปว่าได้ผลหรือไม่"
+      "title": "ทางเลือกแทน RunAsDate สำหรับ Windows 11 - โอเพนซอร์ส รองรับ 32 และ 64 บิต",
+      "description": "Chrono Mock ต่างจาก RunAsDate บน Windows 10 และ 11 อย่างไร: ช่องทางเวลา {{channel_count}} ช่องแทนที่จะเป็นห้า ทั้งสองสถาปัตยกรรมในการดาวน์โหลดเดียว นาฬิกาที่เร็วขึ้น เขตเวลาของตัวเอง โปรเซสลูก - และคำตัดสินว่าได้ผลหรือไม่"
     }
   }
 }

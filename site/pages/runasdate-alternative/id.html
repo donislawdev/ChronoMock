@@ -36,6 +36,8 @@
           <tr><td>Kode sumber</td><td class="n">freeware, tertutup</td><td class="y">GPL-3.0</td></tr>
           <tr><td>Ukuran</td><td class="y">unduhan 47 KB, 57 KB untuk 64-bit</td><td class="n">~{{size_cli_zip}} MB baris perintah, ~{{size_app_zip}} MB dengan jendela</td></tr>
           <tr><td>Versi Windows lama</td><td class="y">sampai Windows 2000</td><td class="n">Windows 10 dan 11</td></tr>
+          <tr><td>Aplikasi 32 dan 64 bit</td><td class="n">unduhan terpisah untuk masing-masing</td><td class="y">keduanya dalam satu unduhan, dan jendela memilih yang cocok</td></tr>
+          <tr><td>Windows 11 di daftar versi yang didukung</td><td class="n">tidak, daftarnya berhenti di Windows 10</td><td class="y">ya, bersama Windows 10</td></tr>
         </tbody>
       </table>
     </div>
@@ -91,6 +93,20 @@
         <li><strong>koneksi jaringan</strong>, dihitung sebagai tanda bahwa waktu mungkin berasal dari server</li>
       </ul>
       <p>Dari {{channel_count}} kanal, {{substituted_count}} dipindahkan ke jam sesi. Sisanya ({{observed_count}}) hanya dihitung dan tetap nyata, sehingga laporan mencantumkannya tanpa mengklaim bahwa kanal itu digeser. Jam dinding dan zona waktu digeser di setiap sesi. Sumbu waktu berlalu dan penantian dipantau saat Anda memintanya dengan <code>--scale-duration</code>, dan penghitung resolusi tinggi dengan <code>--scale-qpc</code>.</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Saat RunAsDate tampaknya tidak berfungsi</h2>
+    <div class="prose">
+      <p>Halamannya sendiri menyebut sebagian besar penyebabnya, dan masing-masing layak dicek sebelum menyerah:</p>
+      <ul>
+        <li><strong>Unduhannya tidak cocok dengan programnya.</strong> Program 64 bit butuh RunAsDate 64 bit, yang merupakan unduhan terpisah. Versi terbaru mengatakannya alih-alih gagal diam-diam.</li>
+        <li><strong>Program membaca tanggal sebelum RunAsDate siap.</strong> Kecuali Immediate Mode-nya menyala, RunAsDate menunggu sebelum menyuntikkan tanggal, dan program yang membaca waktu tepat di awal tetap memakai waktu asli. Halamannya juga mengingatkan bahwa Immediate Mode bisa mengganggu sebagian program, terutama yang berbasis .NET.</li>
+        <li><strong>Program butuh hak administrator.</strong> Maka RunAsDate sendiri juga harus berjalan sebagai administrator.</li>
+        <li><strong>Tanggal datang dari tempat yang tidak dijangkau RunAsDate</strong> - server, fungsi di luar lima yang dicegatnya, seperti zona waktu atau waktu berlalu, atau proses yang dijalankan program, yang tidak disebut di halamannya.</li>
+      </ul>
+      <p>Penyebab terakhir itulah tempat Chrono Mock dibangun berbeda: ia mencakup {{channel_count}} kanal, mengikuti proses yang dijalankan aplikasi, dan laporannya mencantumkan kanal yang terlewat. "Kelihatannya tidak berfungsi" berubah menjadi satu baris yang menjelaskan alasannya.</p>
     </div>
   </section>
 

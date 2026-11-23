@@ -35,6 +35,8 @@
           <tr><td>Zdrojový kód</td><td class="n">freeware, uzavřený</td><td class="y">GPL-3.0</td></tr>
           <tr><td>Velikost</td><td class="y">47 KB ke stažení, 57 KB pro 64 bitů</td><td class="n">~{{size_cli_zip}} MB příkazová řádka, ~{{size_app_zip}} MB s oknem</td></tr>
           <tr><td>Starší verze Windows</td><td class="y">až po Windows 2000</td><td class="n">Windows 10 a 11</td></tr>
+          <tr><td>32bitové a 64bitové aplikace</td><td class="n">pro každou samostatné stažení</td><td class="y">obě v jednom stažení a okno vybere tu pravou</td></tr>
+          <tr><td>Windows 11 v seznamu podporovaných verzí</td><td class="n">ne, seznam končí u Windows 10</td><td class="y">ano, spolu s Windows 10</td></tr>
         </tbody>
       </table>
     </div>
@@ -89,6 +91,20 @@
         <li><strong>síťová připojení</strong>, počítaná jako znamení, že čas může přicházet ze serveru</li>
       </ul>
       <p>Z {{channel_count}} kanálů jich na hodiny sezení přechází {{substituted_count}}. Zbytek ({{observed_count}}) se jen počítá a zůstává skutečný, takže ho report uvádí, aniž by tvrdil, že byl posunut. Nástěnné hodiny a časové pásmo se posouvají v každém sezení. Osa uplynulého času a čekání se sledují, když o to požádáte přes <code>--scale-duration</code>, čítač s vysokým rozlišením přes <code>--scale-qpc</code>.</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Když se zdá, že RunAsDate nefunguje</h2>
+    <div class="prose">
+      <p>Většinu důvodů uvádí jeho vlastní stránka a každý stojí za ověření, než to vzdáte:</p>
+      <ul>
+        <li><strong>Stažená verze neodpovídá programu.</strong> 64bitový program potřebuje 64bitový RunAsDate, což je samostatné stažení. Novější verze to řeknou, místo aby tiše selhaly.</li>
+        <li><strong>Program přečetl datum dřív, než byl RunAsDate na místě.</strong> Pokud není zapnutý jeho Immediate Mode, RunAsDate s vložením data počká a program, který čte čas hned na začátku, zůstane u skutečného. Jeho stránka také varuje, že Immediate Mode může některé programy rozhodit, hlavně ty v .NET.</li>
+        <li><strong>Program vyžaduje práva správce.</strong> Pak musí i samotný RunAsDate běžet jako správce.</li>
+        <li><strong>Datum přichází odněkud, kam RunAsDate nedosáhne</strong> - ze serveru, z funkce mimo pět, které zachytává, třeba časového pásma nebo uplynulého času, nebo z procesu, který program spustí, o čemž jeho stránka mlčí.</li>
+      </ul>
+      <p>Poslední důvod je místo, kde je Chrono Mock postavený jinak: pokrývá {{channel_count}} kanálů, sleduje procesy, které aplikace spouští, a jeho zpráva vypíše kanály, které minul. Z „asi to nefunguje“ se stane řádek, který říká proč.</p>
     </div>
   </section>
 

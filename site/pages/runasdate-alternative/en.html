@@ -9,7 +9,13 @@
      its "Return to the current date/time after xx seconds", attaching to a running
      process arrived in 1.40, and running several applications at different dates is
      stated there. The sizes are not on that page: they are the Content-Length of
-     runasdate.zip (47616 bytes) and runasdate-x64.zip (58027 bytes) on the same day. -->
+     runasdate.zip (47616 bytes) and runasdate-x64.zip (58027 bytes) on the same day.
+
+     Checked again on 2026-11-23 for the section on why it may not seem to work: its list of
+     supported versions ends at Windows 10, the x64 version is a separate download for x64
+     programs and version 1.35 made a mismatch an error message, Immediate Mode is off unless
+     chosen and is said to upset some .NET programs, and an elevated program needs RunAsDate
+     run as administrator. -->
 
 <div class="shell">
 
@@ -47,6 +53,8 @@
           <tr><td>Source code</td><td class="n">freeware, closed</td><td class="y">GPL-3.0</td></tr>
           <tr><td>Size</td><td class="y">a 47 KB download, 57 KB for 64-bit</td><td class="n">~{{size_cli_zip}} MB command line, ~{{size_app_zip}} MB with the window</td></tr>
           <tr><td>Old Windows versions</td><td class="y">back to Windows 2000</td><td class="n">Windows 10 and 11</td></tr>
+          <tr><td>32-bit and 64-bit applications</td><td class="n">a separate download for each</td><td class="y">both in one download, and the window picks the matching one</td></tr>
+          <tr><td>Windows 11 in its list of supported versions</td><td class="n">no, the list ends at Windows 10</td><td class="y">yes, with Windows 10</td></tr>
         </tbody>
       </table>
     </div>
@@ -102,6 +110,20 @@
         <li><strong>network connections</strong>, counted as a sign that the time may come from a server</li>
       </ul>
       <p>Of the {{channel_count}}, {{substituted_count}} are put on the session clock. The other {{observed_count}} are counted and left real, so the report lists them without claiming they were shifted. The wall clock and the time zone are shifted in every session. The elapsed-time axis and the waits are watched when you ask for them with <code>--scale-duration</code>, and the high-resolution counter with <code>--scale-qpc</code>.</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>When RunAsDate does not seem to work</h2>
+    <div class="prose">
+      <p>Its own page names most of the reasons, and each one is worth checking before giving up on it:</p>
+      <ul>
+        <li><strong>The download does not match the program.</strong> A 64-bit program needs the 64-bit RunAsDate, which is a separate download. Recent versions say so instead of failing quietly.</li>
+        <li><strong>The program read the date before RunAsDate was in place.</strong> Unless its Immediate Mode is on, RunAsDate waits before it injects the date, and a program that reads the time at its very start keeps the real one. Its page also warns that Immediate Mode can upset some programs, .NET ones especially.</li>
+        <li><strong>The program needs administrator rights.</strong> RunAsDate itself then has to run as administrator.</li>
+        <li><strong>The date comes from somewhere RunAsDate does not reach</strong> - a server, a function outside the five it intercepts, such as the time zone or elapsed time, or a process the program starts, which its page does not mention.</li>
+      </ul>
+      <p>The last reason is where Chrono Mock is built differently: it covers {{channel_count}} channels, follows the processes an application starts, and its report lists the channels it missed. "It does not seem to work" becomes a line that says why.</p>
     </div>
   </section>
 
