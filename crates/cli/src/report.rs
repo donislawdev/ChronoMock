@@ -440,7 +440,7 @@ fn describe_session_warning(key: &str) -> &'static str {
         }
         // ADR-31. Said before anything runs, with both ways out, because the tester chose the rights the session has.
         "session.gecko_restarts_without_admin" => {
-            "Chrono Mock runs as administrator, and this Gecko application, started that way, starts itself again without administrator rights, where the session cannot follow it, so the application runs on the real clock - start Chrono Mock without administrator rights, or add --no-deelevate to the arguments --args gives the application, which keeps it in the session, running as administrator"
+            "Chrono Mock runs as administrator, and this Gecko application, started that way, starts itself again without administrator rights, where the session cannot follow it, so the application runs on the real clock - start Chrono Mock without administrator rights, or add --no-deelevate to the arguments --args gives the application, which keeps it in the session, running as administrator, so open only pages you trust in it"
         }
         // ADR-26. Says what the tester sees and what to choose instead, because the cure is a choice of
         // offset or date, not anything in the application.
@@ -926,7 +926,7 @@ fn vanish_cause(reason_key: &str) -> &'static str {
             "it crashed - it ended with the code Windows gives a program stopped by an error it did not handle (the exit code is below) - start it once without Chrono Mock to see whether it crashes there too"
         }
         "target.restarted_without_admin" => {
-            "it started itself again without administrator rights, where the session cannot follow it, as a Gecko application started as administrator does - start Chrono Mock without administrator rights, or add --no-deelevate to the arguments --args gives the application, which keeps it in the session, running as administrator"
+            "it started itself again without administrator rights, where the session cannot follow it, as a Gecko application started as administrator does - start Chrono Mock without administrator rights, or add --no-deelevate to the arguments --args gives the application, which keeps it in the session, running as administrator, so open only pages you trust in it"
         }
         _ => "",
     }

@@ -24,15 +24,18 @@ Notable changes to Chrono Mock, newest first. The format follows
 
 ### Fixed
 
-- **A browser on Mozilla's Gecko engine is no longer reported as a single-instance application when
-  Chrono Mock runs as administrator.** Started with administrator rights, such a browser has Windows
-  start it again without them, where the session cannot follow it, so the session ended with exit code
-  12 and the advice to close a copy that was not running. Chrono Mock now says this before the session
-  starts (`session.gecko_restarts_without_admin`, also from `--dry-run`) and gives it as the reason the
-  application vanished (`target.restarted_without_admin`). Start Chrono Mock without administrator
-  rights, or add `--no-deelevate` to the application's arguments to keep it in the session as
-  administrator. Chrono Mock does not add that option for you, because a browser that runs as
-  administrator loses part of its protection against the pages it opens.
+- **A Gecko browser that drops administrator rights is no longer reported as a single-instance
+  application.** Some browsers on Mozilla's Gecko engine start through a launcher of their own, which,
+  started with administrator rights, has Windows start the browser again without them, where the
+  session cannot follow it. When Chrono Mock ran as administrator, the session ended with exit code 12
+  and the advice to close a copy that was not running. When Chrono Mock runs as administrator, finds
+  that launcher in the program and the application's arguments do not include `--no-deelevate`, it now
+  says this before the session starts (`session.gecko_restarts_without_admin`, also from `--dry-run`)
+  and gives it as the reason the application vanished (`target.restarted_without_admin`). Start Chrono
+  Mock without administrator rights, or add `--no-deelevate` to the application's arguments to keep the
+  browser in the session as administrator, and then open only pages you trust in it. Chrono Mock does
+  not add that option for you, because a browser that runs as administrator loses part of its
+  protection against the pages it opens.
 
 - **The web pages of an application that outlives the session go back to this machine's time zone
   again.** Since 0.6.0-rc.1, the web engine inside such an application (WebView2) took the session's

@@ -965,8 +965,10 @@ fn vanish_reason_key(session: &mut chrono_mech::Session, ledger: &mut SessionLed
 /// administrator rights (ADR-31): that, in place of the hand-off or the single-instance suspicion the vanish
 /// looks like from the family alone. Through the shell, the application runs outside the family, and the
 /// family looks like a single-instance application. Under a token of medium integrity, it runs as a child
-/// the hook did not enter, and the family looks like a hand-off. Neither of their remedies helps. A crash is
-/// still a crash, and a vanish of any other target keeps its reason.
+/// the hook did not enter, and the family looks like a hand-off. Neither of their remedies helps. A crash that
+/// left nothing running is still a crash. A launcher that crashed after starting the application without the
+/// rights is a hand-off to `vanish_reason`, and is said as the restart: that is where the application runs,
+/// and what the tester can change. A vanish of any other target keeps its reason.
 fn restarted_without_admin(reason: Option<&'static str>, restarts_without_admin: bool) -> Option<&'static str> {
     match reason {
         Some(KEY_SINGLE_INSTANCE_SUSPECTED | KEY_HANDED_OFF_UNCOVERED) if restarts_without_admin => Some(KEY_RESTARTED_WITHOUT_ADMIN),
@@ -2359,6 +2361,11 @@ mod tests {
         for reason in [Some(KEY_SINGLE_INSTANCE_SUSPECTED), Some(KEY_HANDED_OFF_UNCOVERED), Some(KEY_TARGET_CRASHED), None] {
             assert_eq!(restarted_without_admin(reason, false), reason, "a target the session did not expect to restart");
         }
+        // Composed with `vanish_reason`: a launcher that crashed with nothing left running crashed, and one that
+        // crashed after starting the application, which still runs where the hook did not enter it, restarted it.
+        let child = |pid, parent_pid| UncoveredChild { pid, parent_pid, image: None, command_line: None };
+        assert_eq!(restarted_without_admin(vanish_reason(10, &[], |_| true, false, true), true), Some(KEY_TARGET_CRASHED));
+        assert_eq!(restarted_without_admin(vanish_reason(10, &[child(11, 10)], |_| true, false, true), true), restarted);
     }
 
     /// `ended` after a vanish carries the code the target ended with, and nothing else of it changes.
