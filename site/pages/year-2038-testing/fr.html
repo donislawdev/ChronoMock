@@ -3,7 +3,7 @@
 <div class="shell">
 
   <section class="plain">
-    <h1>Tester le bug de l'an 2038 sous Windows</h1>
+    <h1>Le problème de l'an 2038, et comment le tester sous Windows</h1>
     <p class="sub">
       Le 19 janvier 2038 à 03:14:07 UTC, un compteur signé de 32 bits de secondes depuis 1970 arrive au
       bout. L'horloge de Windows continue au-delà - pas les programmes, formats de fichier et
@@ -34,6 +34,18 @@
           prêt sur trente ans ou un certificat valable jusqu'en 2040 franchissent la limite bien avant
           l'arrivée de 2038.</li>
       </ul>
+    </div>
+  </section>
+
+  <section>
+    <h2>La correction, et pourquoi elle n'est pas terminée</h2>
+    <div class="prose">
+      <p>
+        La correction, c'est un temps sur 64 bits partout où un temps est gardé ou transmis : dans les variables du programme lui-même, et dans chaque fichier, message et colonne de base de données qu'il écrit. Un compteur de secondes signé sur 64 bits tient environ 292 milliards d'années. Windows et sa bibliothèque d'exécution C ont fait ce changement depuis longtemps, il reste donc le code qui a gardé sa propre copie sur 32 bits.
+      </p>
+      <p>
+        C'est pourquoi on ne peut pas déclarer un programme prêt pour 2038 en le lisant. Les endroits où un temps est stocké sont répartis dans le programme, ses bibliothèques et ses données, et un seul champ oublié suffit. Le test qui tranche est celui de cette page : faire passer la limite au programme et regarder ce qu'il fait.
+      </p>
     </div>
   </section>
 

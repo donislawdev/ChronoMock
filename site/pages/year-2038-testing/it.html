@@ -3,7 +3,7 @@
 <div class="shell">
 
   <section class="plain">
-    <h1>Testare il problema dell'anno 2038 su Windows</h1>
+    <h1>Il problema dell'anno 2038, e come testarlo su Windows</h1>
     <p class="sub">
       Il 19 gennaio 2038 alle 03:14:07 UTC si esaurisce un contatore con segno a 32 bit dei secondi dal
       1970. L'orologio di Windows va oltre - i programmi, i formati di file e le librerie che hanno
@@ -34,6 +34,18 @@
           trentennale o un certificato valido fino al 2040 attraversano il confine molto prima che arrivi
           il 2038.</li>
       </ul>
+    </div>
+  </section>
+
+  <section>
+    <h2>La soluzione, e perché non è finita</h2>
+    <div class="prose">
+      <p>
+        La soluzione è un tempo a 64 bit ovunque un tempo venga conservato o trasportato: nelle variabili del programma stesso e in ogni file, messaggio e colonna di database che scrive. Un contatore di secondi con segno a 64 bit dura circa 292 miliardi di anni. Windows e il suo runtime C hanno fatto questo cambiamento da tempo, quindi resta il codice che si è tenuto una propria copia a 32 bit.
+      </p>
+      <p>
+        Per questo un programma non si può dichiarare pronto per il 2038 leggendone il codice. I punti in cui si salva un tempo sono sparsi nel programma, nelle sue librerie e nei suoi dati, e basta un campo dimenticato. Il test che decide è quello di questa pagina: far superare il limite al programma e guardare cosa fa.
+      </p>
     </div>
   </section>
 

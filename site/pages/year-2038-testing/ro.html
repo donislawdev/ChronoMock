@@ -3,7 +3,7 @@
 <div class="shell">
 
   <section class="plain">
-    <h1>Testarea problemei anului 2038 pe Windows</h1>
+    <h1>Problema anului 2038 și cum o testezi pe Windows</h1>
     <p class="sub">
       Pe 19 ianuarie 2038, la 03:14:07 UTC, se termină un contor cu semn pe 32 de biți al secundelor de
       la 1970. Ceasul Windows merge mai departe - programele, formatele de fișiere și bibliotecile care
@@ -33,6 +33,18 @@
           pe treizeci de ani sau un certificat valabil până în 2040 trec de limită cu mult înainte să
           vină 2038.</li>
       </ul>
+    </div>
+  </section>
+
+  <section>
+    <h2>Reparația și de ce nu e terminată</h2>
+    <div class="prose">
+      <p>
+        Reparația este un timp pe 64 de biți peste tot unde un timp e păstrat sau transmis: în variabilele programului însuși și în fiecare fișier, mesaj și coloană de bază de date pe care le scrie. Un contor de secunde cu semn pe 64 de biți ajunge pentru circa 292 de miliarde de ani. Windows și biblioteca sa de rulare C au făcut schimbarea de mult, deci rămâne codul care și-a păstrat propria copie pe 32 de biți.
+      </p>
+      <p>
+        De aceea un program nu poate fi declarat pregătit pentru 2038 doar citindu-i codul. Locurile în care se stochează un timp sunt împrăștiate prin program, bibliotecile și datele lui, și ajunge un singur câmp scăpat. Testul care decide este cel de pe această pagină: treci programul dincolo de limită și urmărești ce face.
+      </p>
     </div>
   </section>
 
