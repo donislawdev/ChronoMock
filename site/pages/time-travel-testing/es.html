@@ -1,0 +1,145 @@
+<!-- Time travel testing, Spanish. Same structure and facts as en.html. -->
+
+<div class="shell">
+
+  <section class="plain">
+    <h1>Time travel testing</h1>
+    <p class="sub">
+      El time travel testing consiste en ejecutar un programa en una fecha distinta de hoy - el mes
+      que viene, el último segundo del año, el 29 de febrero, 2038 - para ver qué hace cuando llega
+      ese día. Encuentra los errores que esperan una fecha: el informe que cierra el mes equivocado,
+      la licencia que nunca caduca, el token aceptado un día de más.
+    </p>
+  </section>
+
+  <section>
+    <h2>Por qué hace falta una técnica</h2>
+    <div class="prose">
+      <p>
+        Mucho comportamiento depende de la fecha: periodos de prueba y caducidad de licencias,
+        renovaciones de suscripciones, vigencia de certificados y tokens, caducidad de cachés,
+        cierres de fin de mes y de año, intereses, recordatorios. Nada de eso se puede probar
+        esperando, y todo lee lo mismo - la hora actual - de algún sitio. El time travel testing es
+        controlar ese sitio.
+      </p>
+      <p>
+        A veces se le llama time machine testing. Se llame como se llame, el tiempo se puede mover en
+        cuatro lugares, y cada uno mueve una parte distinta del mundo.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Cuatro formas de mover el tiempo</h2>
+    <div class="wrap">
+      <table>
+        <thead>
+          <tr><th>Dónde se mueve el tiempo</th><th>Quién ve la nueva fecha</th><th>Sirve para</th><th>Qué cuesta</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>El reloj del sistema de una máquina</td><td>Todo lo que hay en esa máquina</td><td>Probar el propio sistema, tareas programadas, servicios. En una máquina virtual desechable, todo</td><td>Se rompen el inicio de sesión en el dominio, los certificados y la sincronización de hora, y el cambio exige permisos de administrador</td></tr>
+          <tr><td>Un reloj dentro del código</td><td>El código que consulta ese reloj</td><td>Pruebas unitarias de código que puedes cambiar - un reloj inyectado o los temporizadores falsos de un framework de pruebas</td><td>Exige el código fuente y un diseño que pase el reloj. No sirve de nada para una aplicación que solo tienes como programa</td></tr>
+          <tr><td>El reloj de un proceso</td><td>Una aplicación y los procesos que inicia</td><td>Probar una aplicación compilada de principio a fin, en la máquina en la que trabajas</td><td>Una aplicación puede leer la hora de otra manera, así que necesitas saber qué lecturas se cubrieron</td></tr>
+          <tr><td>La hora de un servidor</td><td>Todo lo que consulta ese servidor</td><td>Aplicaciones cliente-servidor en las que el servidor decide la hora</td><td>Exige control del servidor, que ninguna herramienta local da</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="prose">
+      <p>
+        En Linux la tercera forma es <a href="/es/libfaketime-windows/">libfaketime</a>. En Windows
+        ha sido <a href="/es/alternativa-a-runasdate/">RunAsDate</a>, y es lo que hace Chrono Mock.
+        La primera forma, y lo que rompe en la máquina en la que trabajas, tiene
+        <a href="/es/cambiar-la-fecha-del-sistema-para-pruebas/">su propia página &rarr;</a>
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Qué probar cuando el tiempo ya se mueve</h2>
+    <div class="prose">
+      <ul>
+        <li><strong>Los límites</strong> - el último día de un mes, de un trimestre y de un año
+          fiscal, y el momento en que cambia el año con la aplicación en marcha.</li>
+        <li><strong>El calendario</strong> - el 29 de febrero, una fecha anterior a 1970, el límite
+          de 32 bits en 2038.</li>
+        <li><strong>Tus propias licencias</strong> - el último día de una prueba, el primer día
+          después, una licencia caducada hace mucho.</li>
+        <li><strong>El tiempo transcurrido</strong> - cuentas atrás, caducidad de sesiones y todo
+          lo que se mide entre dos momentos, que solo muestra sus errores cuando el tiempo corre
+          más rápido que el real.</li>
+        <li><strong>Las zonas horarias</strong> - el cliente a cinco zonas de distancia, cuyo día
+          termina antes que el tuyo.</li>
+      </ul>
+      <p>
+        <a href="/es/escenarios-de-prueba-de-fechas/">Los casos de prueba de fechas, uno a uno &rarr;</a>
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Time travel testing de una aplicación Windows</h2>
+    <div class="prose">
+      <p>
+        Chrono Mock inicia la aplicación con su propio reloj y deja en paz el reloj del sistema, así
+        que el resto de la máquina conserva la fecha real. El reloj puede empezar en cualquier
+        momento, quedarse quieto, correr más rápido o saltar con la aplicación abierta.
+      </p>
+    </div>
+
+    <pre class="term"><span class="c"># La aplicación ve los últimos diez segundos de 2027 y pasa sola a 2028</span>
+<span class="p">chrono</span> run "C:\apps\test.exe" --at 2027-12-31T23:59:50
+
+<span class="c"># Un día por minuto: un periodo de 30 días termina en media hora</span>
+<span class="p">chrono</span> run "C:\apps\test.exe" --mode x1440
+
+<span class="c"># Un escenario con nombre en lugar de una fecha, con la prueba escrita en un archivo</span>
+<span class="p">chrono</span> run "C:\apps\test.exe" --preset month-end --report session.txt
+
+<span class="c"># Empezar hoy y saltar a 2038 a los pocos segundos, con la aplicación abierta</span>
+<span class="p">chrono</span> run "C:\apps\test.exe" --jump-after 5:2038-01-19T03:14:05 --zone +00:00</pre>
+
+    <div class="prose">
+      <p>
+        Lo mismo en la ventana: elige la aplicación, elige un escenario o escribe una fecha, elige
+        una velocidad, pulsa Start.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Saber que el viaje en el tiempo ocurrió</h2>
+    <div class="prose">
+      <p>
+        El punto débil de todas las técnicas es el mismo: la aplicación puede leer la hora por un
+        camino que la técnica no movió. Una prueba que pasa porque la aplicación nunca vio la nueva
+        fecha es peor que no tener prueba. Cada sesión de Chrono Mock termina con un veredicto, los
+        canales de tiempo que la aplicación leyó de verdad con un recuento de cada uno, y los que se
+        perdieron.
+        <a href="/es/auditoria-de-fuentes-de-tiempo/">Cómo funciona la auditoría &rarr;</a>
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Qué no cubre</h2>
+    <div class="prose">
+      <ul>
+        <li><strong>Teléfonos y otros sistemas.</strong> Chrono Mock ejecuta aplicaciones de
+          Windows. El time travel testing de una app de Android o iOS, o de un programa en Linux o
+          macOS, necesita una herramienta para esa plataforma.</li>
+        <li><strong>El lado del servidor.</strong> Una fecha que la aplicación recibe de un servidor
+          sigue siendo la del servidor. La sesión avisa cuando ve que la aplicación abre una
+          conexión de red, para que sepas que hay que comprobarlo.</li>
+      </ul>
+    </div>
+  </section>
+
+  <section>
+    <h2>Pruébalo</h2>
+    <div class="cta">
+      <a class="btn btn-primary" href="/es/descargar/">Descargar para Windows</a>
+      <a class="btn btn-ghost" href="/es/escenarios-de-prueba-de-fechas/">Casos de prueba de fechas</a>
+    </div>
+  </section>
+
+</div>

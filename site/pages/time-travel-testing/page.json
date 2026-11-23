@@ -1,0 +1,143 @@
+{
+  "//": "The QA term itself. 'time travel testing' and 'what is time travel testing' came out highest of every phrase measured for this site (tools/seo, 2026-11-23), in all three search engines asked, and no page here used the term. The term is English jargon in every language measured, so the slug keeps it everywhere and each title explains it in the page's own language. Not in the header bar, which stays the handful of addresses a first-time reader needs: it is reached from the home page, from the pages on the ways it compares and from the footer map.",
+
+  "id": "time-travel-testing",
+  "order": 32,
+  "nav": false,
+  "group": "tools",
+
+  "languages": {
+    "en": {
+      "slug": "time-travel-testing",
+      "link_text": "Time travel testing",
+      "title": "Time travel testing - what it is and how to do it on Windows",
+      "description": "Time travel testing runs software at a date other than today to find the bugs that wait for a date. Four ways to move time, what each one moves, and how to do it on Windows."
+    },
+    "pl": {
+      "slug": "time-travel-testing",
+      "link_text": "Time travel testing",
+      "title": "Time travel testing - co to jest i jak to robić w Windows",
+      "description": "Time travel testing to uruchamianie programu z inną datą niż dziś, żeby znaleźć błędy, które czekają na datę. Cztery sposoby przesunięcia czasu, co każdy przesuwa i jak to zrobić w Windows."
+    },
+    "zh-hans": {
+      "slug": "time-travel-testing",
+      "link_text": "时间旅行测试",
+      "title": "时间旅行测试（time travel testing）是什么，以及在 Windows 上怎么做",
+      "description": "时间旅行测试让软件在今天以外的日期运行，找出那些等着某个日期才出现的缺陷。四种移动时间的方法、各自移动了什么，以及在 Windows 上怎么做。"
+    },
+    "ja": {
+      "slug": "time-travel-testing",
+      "link_text": "タイムトラベルテスト",
+      "title": "タイムトラベルテスト（time travel testing）とは - Windows での方法",
+      "description": "タイムトラベルテストは、今日以外の日付でソフトウェアを動かし、ある日付を待っているバグを見つける手法です。時間を動かす 4 つの方法、それぞれが動かすもの、Windows での方法。"
+    },
+    "de": {
+      "slug": "time-travel-testing",
+      "link_text": "Time Travel Testing",
+      "title": "Time Travel Testing - was es ist und wie es unter Windows geht",
+      "description": "Time Travel Testing lässt Software an einem anderen Datum als heute laufen, um die Fehler zu finden, die auf ein Datum warten. Vier Wege, die Zeit zu verschieben, was jeder verschiebt, und wie es unter Windows geht."
+    },
+    "fr": {
+      "slug": "time-travel-testing",
+      "link_text": "Time travel testing",
+      "title": "Time travel testing : ce que c'est et comment le faire sous Windows",
+      "description": "Le time travel testing fait tourner un logiciel à une autre date qu'aujourd'hui pour trouver les bugs qui attendent une date. Quatre façons de déplacer le temps, ce que chacune déplace, et comment le faire sous Windows."
+    },
+    "es": {
+      "slug": "time-travel-testing",
+      "link_text": "Time travel testing",
+      "title": "Time travel testing: qué es y cómo hacerlo en Windows",
+      "description": "El time travel testing ejecuta un programa en una fecha distinta de hoy para encontrar los errores que esperan una fecha. Cuatro formas de mover el tiempo, qué mueve cada una y cómo hacerlo en Windows."
+    },
+    "pt-br": {
+      "slug": "time-travel-testing",
+      "link_text": "Time travel testing",
+      "title": "Time travel testing: o que é e como fazer no Windows",
+      "description": "Time travel testing roda um software em uma data diferente de hoje para achar os bugs que esperam uma data. Quatro formas de mover o tempo, o que cada uma move e como fazer no Windows."
+    },
+    "it": {
+      "slug": "time-travel-testing",
+      "link_text": "Time travel testing",
+      "title": "Time travel testing: cos'è e come farlo su Windows",
+      "description": "Il time travel testing esegue un software in una data diversa da oggi per trovare i bug che aspettano una data. Quattro modi di spostare il tempo, cosa sposta ciascuno e come farlo su Windows."
+    },
+    "id": {
+      "slug": "time-travel-testing",
+      "link_text": "Time travel testing",
+      "title": "Time travel testing: apa itu dan cara melakukannya di Windows",
+      "description": "Time travel testing menjalankan perangkat lunak pada tanggal selain hari ini untuk menemukan bug yang menunggu suatu tanggal. Empat cara menggeser waktu, apa yang digeser masing-masing, dan cara melakukannya di Windows."
+    },
+    "ru": {
+      "slug": "time-travel-testing",
+      "link_text": "Тестирование с перемещением во времени",
+      "title": "Time travel testing - что это и как делать в Windows",
+      "description": "Time travel testing запускает программу с датой, отличной от сегодняшней, чтобы найти ошибки, которые ждут определённой даты. Четыре способа сдвинуть время, что сдвигает каждый и как это сделать в Windows."
+    },
+    "tr": {
+      "slug": "time-travel-testing",
+      "link_text": "Time travel testing",
+      "title": "Time travel testing nedir ve Windows'ta nasıl yapılır",
+      "description": "Time travel testing, bir tarihi bekleyen hataları bulmak için yazılımı bugünden farklı bir tarihte çalıştırır. Zamanı kaydırmanın dört yolu, her birinin neyi kaydırdığı ve Windows'ta nasıl yapılacağı."
+    },
+    "cs": {
+      "slug": "time-travel-testing",
+      "link_text": "Time travel testing",
+      "title": "Time travel testing - co to je a jak na to ve Windows",
+      "description": "Time travel testing spouští software s jiným datem než dnes, aby našel chyby, které čekají na určité datum. Čtyři způsoby, jak posunout čas, co který posune a jak na to ve Windows."
+    },
+    "vi": {
+      "slug": "time-travel-testing",
+      "link_text": "Time travel testing",
+      "title": "Time travel testing là gì và cách làm trên Windows",
+      "description": "Time travel testing chạy phần mềm ở một ngày khác hôm nay để tìm những lỗi đang chờ một ngày nào đó. Bốn cách dời thời gian, mỗi cách dời những gì, và cách làm trên Windows."
+    },
+    "hi": {
+      "slug": "time-travel-testing",
+      "link_text": "टाइम ट्रैवल टेस्टिंग",
+      "title": "टाइम ट्रैवल टेस्टिंग (time travel testing) क्या है और Windows पर कैसे करें",
+      "description": "टाइम ट्रैवल टेस्टिंग सॉफ़्टवेयर को आज के अलावा किसी और तारीख़ पर चलाती है, ताकि वे बग मिलें जो किसी तारीख़ का इंतज़ार करते हैं। समय खिसकाने के चार तरीके, हर एक क्या खिसकाता है, और Windows पर कैसे करें।"
+    },
+    "ko": {
+      "slug": "time-travel-testing",
+      "link_text": "타임 트래블 테스트",
+      "title": "타임 트래블 테스트(time travel testing)란 무엇이며 Windows에서 하는 법",
+      "description": "타임 트래블 테스트는 소프트웨어를 오늘이 아닌 날짜에서 실행해 특정 날짜를 기다리는 버그를 찾습니다. 시간을 옮기는 네 가지 방법, 각각이 옮기는 것, Windows에서 하는 법."
+    },
+    "ar": {
+      "slug": "time-travel-testing",
+      "link_text": "اختبار السفر عبر الزمن",
+      "title": "اختبار السفر عبر الزمن (time travel testing): ما هو وكيف تجريه على Windows",
+      "description": "اختبار السفر عبر الزمن يشغّل البرنامج بتاريخ غير تاريخ اليوم ليكشف الأخطاء التي تنتظر تاريخًا معيّنًا. أربع طرق لتحريك الوقت، وما تحرّكه كل واحدة، وكيف تجريه على Windows."
+    },
+    "ro": {
+      "slug": "time-travel-testing",
+      "link_text": "Time travel testing",
+      "title": "Time travel testing: ce este și cum se face pe Windows",
+      "description": "Time travel testing rulează un program la altă dată decât azi pentru a găsi erorile care așteaptă o dată anume. Patru moduri de a muta timpul, ce mută fiecare și cum se face pe Windows."
+    },
+    "nl": {
+      "slug": "time-travel-testing",
+      "link_text": "Time travel testing",
+      "title": "Time travel testing: wat het is en hoe het werkt op Windows",
+      "description": "Time travel testing laat software draaien op een andere datum dan vandaag om de fouten te vinden die op een datum wachten. Vier manieren om de tijd te verzetten, wat elk verzet, en hoe het op Windows werkt."
+    },
+    "zh-hant": {
+      "slug": "time-travel-testing",
+      "link_text": "時間旅行測試",
+      "title": "時間旅行測試（time travel testing）是什麼，以及在 Windows 上怎麼做",
+      "description": "時間旅行測試讓軟體在今天以外的日期執行，找出那些等著某個日期才出現的錯誤。四種移動時間的方法、各自移動了什麼，以及在 Windows 上怎麼做。"
+    },
+    "uk": {
+      "slug": "time-travel-testing",
+      "link_text": "Тестування з переміщенням у часі",
+      "title": "Time travel testing - що це і як робити у Windows",
+      "description": "Time travel testing запускає програму з датою, відмінною від сьогоднішньої, щоб знайти помилки, які чекають певної дати. Чотири способи зсунути час, що зсуває кожен і як це зробити у Windows."
+    },
+    "th": {
+      "slug": "time-travel-testing",
+      "link_text": "การทดสอบข้ามเวลา",
+      "title": "การทดสอบข้ามเวลา (time travel testing) คืออะไร และทำบน Windows อย่างไร",
+      "description": "การทดสอบข้ามเวลาให้ซอฟต์แวร์ทำงานในวันที่อื่นที่ไม่ใช่วันนี้ เพื่อหาบั๊กที่รอวันที่หนึ่งอยู่ สี่วิธีเลื่อนเวลา แต่ละวิธีเลื่อนอะไร และทำบน Windows อย่างไร"
+    }
+  }
+}

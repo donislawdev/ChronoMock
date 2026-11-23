@@ -1,0 +1,118 @@
+<!-- Time travel testing, Simplified Chinese. Same structure and facts as en.html. -->
+
+<div class="shell">
+
+  <section class="plain">
+    <h1>时间旅行测试（time travel testing）</h1>
+    <p class="sub">
+      时间旅行测试，就是让软件在今天以外的日期运行：下个月、一年的最后一秒、2 月 29 日、2038 年，看看那一天到来时它会做什么。它能找出那些等着某个日期才出现的缺陷：结错月份的报表、永不到期的许可证、多被接受一天的令牌。
+    </p>
+  </section>
+
+  <section>
+    <h2>为什么需要专门的方法</h2>
+    <div class="prose">
+      <p>
+        大量行为取决于日期：试用期与许可证到期、订阅续费、证书和令牌的有效期、缓存过期、月末与年末结账、利息、提醒。这些都无法靠等待来测试，而且都从某处读取同一样东西：当前时间。时间旅行测试，就是掌控这个“某处”。
+      </p>
+      <p>
+        它有时也叫 time machine testing。不管叫什么，时间可以在四个地方移动，每个地方移动的是世界的不同部分。
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>移动时间的四种方法</h2>
+    <div class="wrap">
+      <table>
+        <thead>
+          <tr><th>时间在哪里移动</th><th>谁看到新日期</th><th>适合做什么</th><th>代价</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>一台机器的系统时钟</td><td>这台机器上的一切</td><td>测试操作系统本身、计划任务、服务。在用完即弃的虚拟机上，什么都行</td><td>域登录、证书和时间同步会出问题，而且修改需要管理员权限</td></tr>
+          <tr><td>代码里的时钟</td><td>询问这个时钟的代码</td><td>你能修改的代码的单元测试：注入的时钟，或测试框架的假定时器</td><td>需要源代码和把时钟传进去的设计。对只有程序文件的应用毫无帮助</td></tr>
+          <tr><td>单个进程的时钟</td><td>一个应用及其启动的进程</td><td>在你工作用的机器上，对构建好的应用做端到端测试</td><td>应用可能通过别的途径读取时间，所以你需要知道哪些读取被覆盖了</td></tr>
+          <tr><td>服务器的时间</td><td>询问这台服务器的一切</td><td>由服务器决定当前时间的客户端/服务器应用</td><td>需要掌控服务器，这是任何本地工具都给不了的</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="prose">
+      <p>
+        在 Linux 上，第三种方法是 <a href="/zh-hans/libfaketime-windows/">libfaketime</a>。在 Windows 上，一直是 <a href="/zh-hans/runasdate-alternative/">RunAsDate</a>，Chrono Mock 做的也是这件事。第一种方法，以及它在你工作用的机器上会弄坏什么，
+        <a href="/zh-hans/change-system-date-testing/">有专门的一页 &rarr;</a>
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>时间动起来之后测什么</h2>
+    <div class="prose">
+      <ul>
+        <li><strong>边界</strong>：月、季度和财年的最后一天，以及应用运行中跨年的那一刻。</li>
+        <li><strong>日历</strong>：2 月 29 日、1970 年以前的日期、2038 年的 32 位上限。</li>
+        <li><strong>你自己的授权</strong>：试用期最后一天、试用期后的第一天、早已过期的许可证。</li>
+        <li><strong>经过的时间</strong>：倒计时、会话超时，以及一切在两个时刻之间测量的东西，只有时间跑得比真实时间快时才会暴露缺陷。</li>
+        <li><strong>时区</strong>：相隔五个时区、一天比你先结束的客户。</li>
+      </ul>
+      <p>
+        <a href="/zh-hans/date-test-scenarios/">日期测试用例，逐个来看 &rarr;</a>
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>对 Windows 应用做时间旅行测试</h2>
+    <div class="prose">
+      <p>
+        Chrono Mock 用应用自己的时钟启动它，不碰系统时钟，因此机器的其余部分保持真实日期。时钟可以从任意时刻开始、停住不动、走得更快，或在应用打开时跳转。
+      </p>
+    </div>
+
+    <pre class="term"><span class="c"># 应用看到 2027 年的最后十秒，并自己跨入 2028 年</span>
+<span class="p">chrono</span> run "C:\apps\test.exe" --at 2027-12-31T23:59:50
+
+<span class="c"># 一分钟一天：30 天的期限半小时内结束</span>
+<span class="p">chrono</span> run "C:\apps\test.exe" --mode x1440
+
+<span class="c"># 用命名场景代替日期，并把证据写入文件</span>
+<span class="p">chrono</span> run "C:\apps\test.exe" --preset month-end --report session.txt
+
+<span class="c"># 从今天开始，几秒后在应用打开时跳到 2038 年</span>
+<span class="p">chrono</span> run "C:\apps\test.exe" --jump-after 5:2038-01-19T03:14:05 --zone +00:00</pre>
+
+    <div class="prose">
+      <p>
+        窗口中也一样：选择应用，选择场景或输入日期，选择速度，按 Start。
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>如何知道时间旅行真的发生了</h2>
+    <div class="prose">
+      <p>
+        每种方法都有同一个弱点：应用可能通过该方法没有移动的途径读取时间。因为应用从未看到新日期而通过的测试，比没有测试更糟。每次 Chrono Mock 会话结束时都会给出结论、应用实际读取的时间通道及各自的调用次数，以及漏掉的通道。
+        <a href="/zh-hans/time-source-audit/">审计如何工作 &rarr;</a>
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>不涵盖的内容</h2>
+    <div class="prose">
+      <ul>
+        <li><strong>手机和其他系统。</strong> Chrono Mock 运行的是 Windows 应用。要对 Android 或 iOS 应用、或 Linux、macOS 上的程序做时间旅行测试，需要那个平台的工具。</li>
+        <li><strong>服务器端。</strong> 应用从服务器拿到的日期仍是服务器的日期。会话一旦看到应用打开网络连接就会说明，让你知道需要检查。</li>
+      </ul>
+    </div>
+  </section>
+
+  <section>
+    <h2>亲自试试</h2>
+    <div class="cta">
+      <a class="btn btn-primary" href="/zh-hans/download/">下载 Windows 版</a>
+      <a class="btn btn-ghost" href="/zh-hans/date-test-scenarios/">日期测试用例</a>
+    </div>
+  </section>
+
+</div>

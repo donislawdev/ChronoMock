@@ -1,0 +1,144 @@
+<!-- Time travel testing, Indonesian. Same structure and facts as en.html. -->
+
+<div class="shell">
+
+  <section class="plain">
+    <h1>Time travel testing</h1>
+    <p class="sub">
+      Time travel testing berarti menjalankan perangkat lunak pada tanggal selain hari ini - bulan
+      depan, detik terakhir tahun ini, 29 Februari, 2038 - untuk melihat apa yang dilakukannya saat
+      hari itu tiba. Cara ini menemukan bug yang menunggu suatu tanggal: laporan yang menutup bulan
+      yang salah, lisensi yang tidak pernah kedaluwarsa, token yang diterima sehari terlalu lama.
+    </p>
+  </section>
+
+  <section>
+    <h2>Mengapa butuh teknik khusus</h2>
+    <div class="prose">
+      <p>
+        Banyak sekali perilaku yang bergantung pada tanggal: masa percobaan dan kedaluwarsa lisensi,
+        perpanjangan langganan, masa berlaku sertifikat dan token, kedaluwarsa cache, tutup buku akhir
+        bulan dan akhir tahun, bunga, pengingat. Tidak satu pun bisa diuji dengan menunggu, dan
+        semuanya membaca hal yang sama - waktu saat ini - dari suatu tempat. Time travel testing
+        adalah mengendalikan tempat itu.
+      </p>
+      <p>
+        Kadang juga disebut time machine testing. Apa pun namanya, waktu bisa digeser di empat
+        tempat, dan masing-masing menggeser bagian dunia yang berbeda.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Empat cara menggeser waktu</h2>
+    <div class="wrap">
+      <table>
+        <thead>
+          <tr><th>Di mana waktu digeser</th><th>Siapa yang melihat tanggal baru</th><th>Cocok untuk</th><th>Biayanya</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Jam sistem sebuah mesin</td><td>Semua yang ada di mesin itu</td><td>Menguji sistem operasinya sendiri, tugas terjadwal, layanan. Di mesin virtual sekali pakai, apa saja</td><td>Login domain, sertifikat, dan sinkronisasi waktu rusak, dan perubahannya butuh hak administrator</td></tr>
+          <tr><td>Jam di dalam kode</td><td>Kode yang bertanya ke jam itu</td><td>Uji unit untuk kode yang bisa Anda ubah - jam yang disuntikkan atau timer palsu dari framework pengujian</td><td>Butuh kode sumber dan desain yang meneruskan jamnya. Tidak berguna untuk aplikasi yang Anda punya hanya sebagai program</td></tr>
+          <tr><td>Jam satu proses</td><td>Satu aplikasi dan proses yang dijalankannya</td><td>Menguji aplikasi jadi dari awal sampai akhir, di mesin tempat Anda bekerja</td><td>Aplikasi bisa membaca waktu dengan cara lain, jadi Anda perlu tahu bacaan mana yang tercakup</td></tr>
+          <tr><td>Waktu sebuah server</td><td>Semua yang bertanya ke server itu</td><td>Aplikasi klien-server tempat server yang menentukan jam berapa sekarang</td><td>Butuh kendali atas server, yang tidak diberikan alat lokal mana pun</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="prose">
+      <p>
+        Di Linux, cara ketiga adalah <a href="/id/libfaketime-windows/">libfaketime</a>. Di Windows
+        selama ini <a href="/id/alternatif-runasdate/">RunAsDate</a>, dan itulah yang dilakukan Chrono
+        Mock. Cara pertama, dan apa yang dirusaknya di mesin tempat Anda bekerja, punya
+        <a href="/id/mengubah-tanggal-sistem-untuk-pengujian/">halaman sendiri &rarr;</a>
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Apa yang diuji setelah waktu bergeser</h2>
+    <div class="prose">
+      <ul>
+        <li><strong>Batas</strong> - hari terakhir bulan, kuartal, dan tahun fiskal, serta saat
+          tahun berganti ketika aplikasi sedang berjalan.</li>
+        <li><strong>Kalender</strong> - 29 Februari, tanggal sebelum 1970, batas 32 bit pada
+          2038.</li>
+        <li><strong>Lisensi Anda sendiri</strong> - hari terakhir masa percobaan, hari pertama
+          sesudahnya, lisensi yang sudah lama kedaluwarsa.</li>
+        <li><strong>Waktu berlalu</strong> - hitung mundur, batas waktu sesi, dan semua yang diukur
+          di antara dua saat, yang baru menunjukkan bug-nya ketika waktu berjalan lebih cepat dari
+          aslinya.</li>
+        <li><strong>Zona waktu</strong> - pelanggan lima zona jauhnya, yang harinya berakhir lebih
+          dulu daripada hari Anda.</li>
+      </ul>
+      <p>
+        <a href="/id/skenario-uji-tanggal/">Kasus uji tanggal, satu per satu &rarr;</a>
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Time travel testing aplikasi Windows</h2>
+    <div class="prose">
+      <p>
+        Chrono Mock menjalankan aplikasi dengan jamnya sendiri dan membiarkan jam sistem, sehingga
+        bagian lain mesin tetap memakai tanggal asli. Jamnya bisa mulai dari saat mana pun, diam,
+        berjalan lebih cepat, atau melompat ketika aplikasi terbuka.
+      </p>
+    </div>
+
+    <pre class="term"><span class="c"># Aplikasi melihat sepuluh detik terakhir tahun 2027 dan masuk ke 2028 dengan sendirinya</span>
+<span class="p">chrono</span> run "C:\apps\test.exe" --at 2027-12-31T23:59:50
+
+<span class="c"># Satu hari per menit: periode 30 hari selesai dalam setengah jam</span>
+<span class="p">chrono</span> run "C:\apps\test.exe" --mode x1440
+
+<span class="c"># Skenario bernama alih-alih tanggal, dengan bukti ditulis ke berkas</span>
+<span class="p">chrono</span> run "C:\apps\test.exe" --preset month-end --report session.txt
+
+<span class="c"># Mulai hari ini dan lompat ke 2038 setelah beberapa detik, saat aplikasi terbuka</span>
+<span class="p">chrono</span> run "C:\apps\test.exe" --jump-after 5:2038-01-19T03:14:05 --zone +00:00</pre>
+
+    <div class="prose">
+      <p>
+        Sama saja di jendela: pilih aplikasi, pilih skenario atau ketik tanggal, pilih kecepatan,
+        tekan Start.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Mengetahui bahwa perjalanan waktunya terjadi</h2>
+    <div class="prose">
+      <p>
+        Titik lemah setiap teknik sama: aplikasi bisa membaca waktu lewat jalur yang tidak digeser
+        teknik itu. Uji yang lulus karena aplikasi tidak pernah melihat tanggal baru lebih buruk
+        daripada tidak ada uji. Setiap sesi Chrono Mock berakhir dengan putusan, kanal waktu yang
+        benar-benar dibaca aplikasi beserta jumlahnya masing-masing, dan kanal yang terlewat.
+        <a href="/id/audit-sumber-waktu/">Cara kerja audit &rarr;</a>
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Yang tidak dicakup</h2>
+    <div class="prose">
+      <ul>
+        <li><strong>Ponsel dan sistem lain.</strong> Chrono Mock menjalankan aplikasi Windows. Time
+          travel testing untuk aplikasi Android atau iOS, atau program di Linux atau macOS, butuh
+          alat untuk platform itu.</li>
+        <li><strong>Sisi server.</strong> Tanggal yang diterima aplikasi dari server tetap tanggal
+          server. Sesi memberi tahu saat melihat aplikasi membuka koneksi jaringan, jadi Anda tahu
+          hal itu perlu dicek.</li>
+      </ul>
+    </div>
+  </section>
+
+  <section>
+    <h2>Cobalah</h2>
+    <div class="cta">
+      <a class="btn btn-primary" href="/id/unduh/">Unduh untuk Windows</a>
+      <a class="btn btn-ghost" href="/id/skenario-uji-tanggal/">Kasus uji tanggal</a>
+    </div>
+  </section>
+
+</div>

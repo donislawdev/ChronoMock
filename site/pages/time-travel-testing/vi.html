@@ -1,0 +1,142 @@
+<!-- Time travel testing, Vietnamese. Same structure and facts as en.html. -->
+
+<div class="shell">
+
+  <section class="plain">
+    <h1>Time travel testing</h1>
+    <p class="sub">
+      Time travel testing là chạy phần mềm ở một ngày khác hôm nay - tháng sau, giây cuối cùng của
+      năm, ngày 29 tháng 2, năm 2038 - để xem nó làm gì khi ngày đó đến. Cách này tìm ra những lỗi
+      đang chờ một ngày nào đó: báo cáo khóa sổ nhầm tháng, giấy phép không bao giờ hết hạn, token
+      được chấp nhận dư một ngày.
+    </p>
+  </section>
+
+  <section>
+    <h2>Vì sao cần một kỹ thuật</h2>
+    <div class="prose">
+      <p>
+        Rất nhiều hành vi phụ thuộc vào ngày: thời gian dùng thử và hết hạn giấy phép, gia hạn thuê
+        bao, thời hạn của chứng chỉ và token, hết hạn bộ nhớ đệm, khóa sổ cuối tháng và cuối năm, lãi
+        suất, lời nhắc. Không thứ nào trong số đó kiểm thử được bằng cách chờ, và tất cả đều đọc cùng
+        một thứ - thời gian hiện tại - từ một chỗ nào đó. Time travel testing là nắm quyền điều khiển
+        chỗ đó.
+      </p>
+      <p>
+        Đôi khi nó còn được gọi là time machine testing. Dù gọi thế nào, thời gian có thể được dời ở
+        bốn chỗ, và mỗi chỗ dời một phần khác nhau của thế giới.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Bốn cách dời thời gian</h2>
+    <div class="wrap">
+      <table>
+        <thead>
+          <tr><th>Thời gian được dời ở đâu</th><th>Ai thấy ngày mới</th><th>Hợp với việc gì</th><th>Cái giá phải trả</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Đồng hồ hệ thống của một máy</td><td>Mọi thứ trên máy đó</td><td>Kiểm thử chính hệ điều hành, tác vụ theo lịch, dịch vụ. Trên một máy ảo dùng xong bỏ, mọi thứ</td><td>Hỏng đăng nhập miền, chứng chỉ và đồng bộ giờ, và việc đổi cần quyền quản trị viên</td></tr>
+          <tr><td>Một đồng hồ trong mã</td><td>Phần mã hỏi đồng hồ đó</td><td>Kiểm thử đơn vị cho mã bạn sửa được - một đồng hồ được tiêm vào hoặc bộ hẹn giờ giả của framework kiểm thử</td><td>Cần mã nguồn và một thiết kế truyền đồng hồ vào. Vô ích với ứng dụng bạn chỉ có dưới dạng chương trình</td></tr>
+          <tr><td>Đồng hồ của một tiến trình</td><td>Một ứng dụng và các tiến trình nó khởi chạy</td><td>Kiểm thử một ứng dụng đã build từ đầu đến cuối, trên chính máy bạn làm việc</td><td>Ứng dụng có thể đọc giờ theo đường khác, nên bạn cần biết những lần đọc nào đã được bao phủ</td></tr>
+          <tr><td>Giờ của một máy chủ</td><td>Mọi thứ hỏi máy chủ đó</td><td>Ứng dụng khách-chủ mà máy chủ quyết định bây giờ là mấy giờ</td><td>Cần quyền điều khiển máy chủ, điều mà không công cụ cục bộ nào cho được</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="prose">
+      <p>
+        Trên Linux, cách thứ ba là <a href="/vi/libfaketime-windows/">libfaketime</a>. Trên Windows
+        từ trước đến nay là <a href="/vi/thay-the-runasdate/">RunAsDate</a>, và đó cũng là việc
+        Chrono Mock làm. Cách thứ nhất, và những gì nó làm hỏng trên chiếc máy bạn đang làm việc, có
+        <a href="/vi/doi-ngay-he-thong-de-kiem-thu/">trang riêng &rarr;</a>
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Kiểm thử gì khi thời gian đã dời</h2>
+    <div class="prose">
+      <ul>
+        <li><strong>Các ranh giới</strong> - ngày cuối của tháng, quý và năm tài chính, và khoảnh
+          khắc năm mới đến trong khi ứng dụng đang chạy.</li>
+        <li><strong>Lịch</strong> - ngày 29 tháng 2, một ngày trước năm 1970, giới hạn 32 bit năm
+          2038.</li>
+        <li><strong>Giấy phép của chính bạn</strong> - ngày cuối của bản dùng thử, ngày đầu tiên sau
+          đó, một giấy phép đã hết hạn từ lâu.</li>
+        <li><strong>Thời gian trôi qua</strong> - đếm ngược, hết hạn phiên và mọi thứ được đo giữa
+          hai thời điểm, vốn chỉ lộ lỗi khi thời gian chạy nhanh hơn thật.</li>
+        <li><strong>Múi giờ</strong> - khách hàng cách năm múi giờ, ngày của họ kết thúc trước ngày
+          của bạn.</li>
+      </ul>
+      <p>
+        <a href="/vi/kich-ban-kiem-thu-ngay/">Các trường hợp kiểm thử ngày, từng cái một &rarr;</a>
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Time travel testing cho một ứng dụng Windows</h2>
+    <div class="prose">
+      <p>
+        Chrono Mock khởi chạy ứng dụng với đồng hồ riêng của nó và để yên đồng hồ hệ thống, nên phần
+        còn lại của máy vẫn giữ ngày thật. Đồng hồ có thể bắt đầu ở bất kỳ thời điểm nào, đứng yên,
+        chạy nhanh hơn hoặc nhảy trong khi ứng dụng đang mở.
+      </p>
+    </div>
+
+    <pre class="term"><span class="c"># Ứng dụng thấy mười giây cuối của năm 2027 và tự sang năm 2028</span>
+<span class="p">chrono</span> run "C:\apps\test.exe" --at 2027-12-31T23:59:50
+
+<span class="c"># Một ngày mỗi phút: khoảng 30 ngày kết thúc trong nửa giờ</span>
+<span class="p">chrono</span> run "C:\apps\test.exe" --mode x1440
+
+<span class="c"># Một kịch bản có tên thay cho ngày, bằng chứng được ghi ra tệp</span>
+<span class="p">chrono</span> run "C:\apps\test.exe" --preset month-end --report session.txt
+
+<span class="c"># Bắt đầu từ hôm nay và nhảy tới năm 2038 sau vài giây, khi ứng dụng đang mở</span>
+<span class="p">chrono</span> run "C:\apps\test.exe" --jump-after 5:2038-01-19T03:14:05 --zone +00:00</pre>
+
+    <div class="prose">
+      <p>
+        Trong cửa sổ cũng vậy: chọn ứng dụng, chọn một kịch bản hoặc gõ một ngày, chọn tốc độ, bấm
+        Start.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Biết rằng chuyến du hành thời gian đã diễn ra</h2>
+    <div class="prose">
+      <p>
+        Mọi kỹ thuật có cùng một điểm yếu: ứng dụng có thể đọc giờ theo con đường mà kỹ thuật đó
+        không dời. Một bài kiểm thử đạt vì ứng dụng chưa từng thấy ngày mới còn tệ hơn không có bài
+        kiểm thử nào. Mỗi phiên Chrono Mock kết thúc bằng một kết luận, các kênh thời gian ứng dụng
+        thực sự đọc kèm số lần cho từng kênh, và những kênh bị bỏ sót.
+        <a href="/vi/kiem-toan-nguon-thoi-gian/">Cách kiểm toán hoạt động &rarr;</a>
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Những gì không bao gồm</h2>
+    <div class="prose">
+      <ul>
+        <li><strong>Điện thoại và hệ thống khác.</strong> Chrono Mock chạy ứng dụng Windows. Time
+          travel testing cho ứng dụng Android hay iOS, hoặc chương trình trên Linux hay macOS, cần
+          một công cụ cho nền tảng đó.</li>
+        <li><strong>Phía máy chủ.</strong> Ngày mà ứng dụng nhận từ máy chủ vẫn là ngày của máy chủ.
+          Phiên sẽ báo khi thấy ứng dụng mở kết nối mạng, để bạn biết cần kiểm tra.</li>
+      </ul>
+    </div>
+  </section>
+
+  <section>
+    <h2>Dùng thử</h2>
+    <div class="cta">
+      <a class="btn btn-primary" href="/vi/tai-xuong/">Tải về cho Windows</a>
+      <a class="btn btn-ghost" href="/vi/kich-ban-kiem-thu-ngay/">Trường hợp kiểm thử ngày</a>
+    </div>
+  </section>
+
+</div>

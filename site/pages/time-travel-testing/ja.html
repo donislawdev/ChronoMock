@@ -1,0 +1,118 @@
+<!-- Time travel testing, Japanese. Same structure and facts as en.html. -->
+
+<div class="shell">
+
+  <section class="plain">
+    <h1>タイムトラベルテスト（time travel testing）</h1>
+    <p class="sub">
+      タイムトラベルテストとは、ソフトウェアを今日以外の日付で動かすことです。来月、年の最後の 1 秒、2 月 29 日、2038 年。その日が来たときに何が起きるかを確かめます。見つかるのは日付を待っているバグです。間違った月を締める帳票、いつまでも切れないライセンス、1 日長く受け付けられるトークン。
+    </p>
+  </section>
+
+  <section>
+    <h2>なぜ手法が必要なのか</h2>
+    <div class="prose">
+      <p>
+        日付に左右される動作はたくさんあります。試用期間とライセンスの期限切れ、サブスクリプションの更新、証明書やトークンの有効期間、キャッシュの期限切れ、月末と年末の締め処理、利息、リマインダー。どれも待って試すことはできず、どれも同じもの、つまり現在時刻をどこかから読んでいます。タイムトラベルテストとは、その「どこか」を制御することです。
+      </p>
+      <p>
+        time machine testing と呼ばれることもあります。呼び名が何であれ、時間を動かせる場所は 4 つあり、それぞれが世界の違う部分を動かします。
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>時間を動かす 4 つの方法</h2>
+    <div class="wrap">
+      <table>
+        <thead>
+          <tr><th>時間が動く場所</th><th>新しい日付が見えるもの</th><th>向いている用途</th><th>代償</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>マシンのシステム時計</td><td>そのマシン上のすべて</td><td>OS そのもの、タスク スケジューラ、サービスのテスト。使い捨ての仮想マシンなら何でも</td><td>ドメイン ログオン、証明書、時刻同期が壊れ、変更には管理者権限が必要</td></tr>
+          <tr><td>コードの中の時計</td><td>その時計に問い合わせるコード</td><td>変更できるコードの単体テスト。注入した時計や、テスト フレームワークの偽タイマー</td><td>ソースコードと、時計を渡す設計が必要。プログラムとしてしか手元にないアプリには役立たない</td></tr>
+          <tr><td>1 つのプロセスの時計</td><td>1 つのアプリと、それが起動するプロセス</td><td>ビルド済みのアプリを、作業しているマシンでエンドツーエンドにテストする</td><td>アプリが別の経路で時刻を読むことがあるので、どの読み取りがカバーされたかを知る必要がある</td></tr>
+          <tr><td>サーバーの時刻</td><td>そのサーバーに問い合わせるすべて</td><td>時刻をサーバーが決めるクライアント/サーバー型のアプリ</td><td>サーバーを操作する権限が必要で、ローカルのツールでは得られない</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="prose">
+      <p>
+        Linux では 3 番目の方法が <a href="/ja/libfaketime-windows/">libfaketime</a> です。Windows では <a href="/ja/runasdate-alternative/">RunAsDate</a> がそれを担ってきました。Chrono Mock がするのもこれです。1 番目の方法と、作業中のマシンでそれが壊すものについては
+        <a href="/ja/change-system-date-testing/">専用のページがあります &rarr;</a>
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>時間が動いたら何をテストするか</h2>
+    <div class="prose">
+      <ul>
+        <li><strong>境界</strong> - 月、四半期、会計年度の最終日と、アプリの実行中に年が変わる瞬間。</li>
+        <li><strong>暦</strong> - 2 月 29 日、1970 年より前の日付、2038 年の 32 ビットの限界。</li>
+        <li><strong>自社のライセンス</strong> - 試用期間の最終日、その翌日、ずっと前に切れたライセンス。</li>
+        <li><strong>経過時間</strong> - カウントダウン、セッションのタイムアウトなど 2 つの時点の間で測るもの。時間が実際より速く進んで初めてバグが見えます。</li>
+        <li><strong>タイムゾーン</strong> - 5 つ離れたタイムゾーンにいて、あなたより先に一日が終わる顧客。</li>
+      </ul>
+      <p>
+        <a href="/ja/date-test-scenarios/">日付のテストケースを 1 つずつ &rarr;</a>
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Windows アプリのタイムトラベルテスト</h2>
+    <div class="prose">
+      <p>
+        Chrono Mock はアプリを専用の時計で起動し、システム時計には触れません。マシンのほかの部分は本物の日付のままです。時計はどの時点からでも始められ、止めることも、速く進めることも、アプリを開いたまま飛ばすこともできます。
+      </p>
+    </div>
+
+    <pre class="term"><span class="c"># アプリには 2027 年の最後の 10 秒が見え、自分で 2028 年に入る</span>
+<span class="p">chrono</span> run "C:\apps\test.exe" --at 2027-12-31T23:59:50
+
+<span class="c"># 1 分で 1 日: 30 日の期間が 30 分で終わる</span>
+<span class="p">chrono</span> run "C:\apps\test.exe" --mode x1440
+
+<span class="c"># 日付の代わりに名前付きシナリオを使い、証拠をファイルに書き出す</span>
+<span class="p">chrono</span> run "C:\apps\test.exe" --preset month-end --report session.txt
+
+<span class="c"># 今日の日付で始め、数秒後にアプリを開いたまま 2038 年へ飛ぶ</span>
+<span class="p">chrono</span> run "C:\apps\test.exe" --jump-after 5:2038-01-19T03:14:05 --zone +00:00</pre>
+
+    <div class="prose">
+      <p>
+        ウィンドウでも同じです。アプリを選び、シナリオを選ぶか日付を入力し、速度を選んで Start を押します。
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>タイムトラベルが起きたと知るには</h2>
+    <div class="prose">
+      <p>
+        どの手法にも同じ弱点があります。アプリは、その手法が動かしていない経路で時刻を読むかもしれません。アプリが新しい日付を一度も見ていないせいで通るテストは、テストがないより悪いものです。Chrono Mock のセッションは毎回、判定、アプリが実際に読んだ時刻チャネルとそれぞれの回数、読み逃したチャネルで終わります。
+        <a href="/ja/time-source-audit/">監査のしくみ &rarr;</a>
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>対象外のもの</h2>
+    <div class="prose">
+      <ul>
+        <li><strong>スマートフォンとほかの OS。</strong> Chrono Mock が動かすのは Windows アプリです。Android や iOS のアプリ、Linux や macOS のプログラムのタイムトラベルテストには、そのプラットフォーム向けのツールが必要です。</li>
+        <li><strong>サーバー側。</strong> アプリがサーバーから受け取る日付は、サーバーの日付のままです。アプリがネットワーク接続を開くのを見ると、セッションはそれを伝えるので、確認が必要だとわかります。</li>
+      </ul>
+    </div>
+  </section>
+
+  <section>
+    <h2>試してみる</h2>
+    <div class="cta">
+      <a class="btn btn-primary" href="/ja/download/">Windows 版をダウンロード</a>
+      <a class="btn btn-ghost" href="/ja/date-test-scenarios/">日付のテストケース</a>
+    </div>
+  </section>
+
+</div>

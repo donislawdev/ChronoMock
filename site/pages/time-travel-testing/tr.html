@@ -1,0 +1,142 @@
+<!-- Time travel testing, Turkish. Same structure and facts as en.html. -->
+
+<div class="shell">
+
+  <section class="plain">
+    <h1>Time travel testing</h1>
+    <p class="sub">
+      Time travel testing, yazılımı bugünden farklı bir tarihte çalıştırmaktır - gelecek ay, yılın
+      son saniyesi, 29 Şubat, 2038 - ki o gün geldiğinde ne yaptığını görelim. Bir tarihi bekleyen
+      hataları bulur: yanlış ayı kapatan rapor, hiç sona ermeyen lisans, bir gün fazla kabul edilen
+      token.
+    </p>
+  </section>
+
+  <section>
+    <h2>Neden bir tekniğe ihtiyaç var</h2>
+    <div class="prose">
+      <p>
+        Davranışın çok büyük bir kısmı tarihe bağlıdır: deneme süreleri ve lisansın sona ermesi,
+        abonelik yenilemeleri, sertifika ve token ömürleri, önbelleğin süresinin dolması, ay ve yıl
+        sonu kapanışları, faiz, hatırlatmalar. Hiçbiri beklenerek test edilemez ve hepsi aynı şeyi -
+        şu anki zamanı - bir yerden okur. Time travel testing o yeri kontrol etmektir.
+      </p>
+      <p>
+        Bazen time machine testing de denir. Adı ne olursa olsun, zaman dört yerde kaydırılabilir ve
+        her biri dünyanın farklı bir parçasını kaydırır.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Zamanı kaydırmanın dört yolu</h2>
+    <div class="wrap">
+      <table>
+        <thead>
+          <tr><th>Zaman nerede kayar</th><th>Yeni tarihi kim görür</th><th>Ne için uygun</th><th>Bedeli ne</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Bir makinenin sistem saati</td><td>O makinedeki her şey</td><td>İşletim sisteminin kendisini, zamanlanmış görevleri, hizmetleri test etmek. Atılacak bir sanal makinede her şey</td><td>Etki alanı oturum açma, sertifikalar ve zaman eşitleme bozulur, değişiklik yönetici hakkı ister</td></tr>
+          <tr><td>Kodun içindeki bir saat</td><td>O saate soran kod</td><td>Değiştirebildiğiniz kodun birim testleri - enjekte edilen bir saat ya da bir test çatısının sahte zamanlayıcıları</td><td>Kaynak kodu ve saati içeri aktaran bir tasarım ister. Elinizde yalnızca program olarak bulunan bir uygulamada işe yaramaz</td></tr>
+          <tr><td>Tek bir sürecin saati</td><td>Bir uygulama ve başlattığı süreçler</td><td>Derlenmiş bir uygulamayı uçtan uca, üzerinde çalıştığınız makinede test etmek</td><td>Uygulama zamanı başka bir yoldan okuyabilir, bu yüzden hangi okumaların kapsandığını bilmeniz gerekir</td></tr>
+          <tr><td>Bir sunucunun zamanı</td><td>O sunucuya soran her şey</td><td>Saatin kaç olduğuna sunucunun karar verdiği istemci-sunucu uygulamaları</td><td>Sunucu üzerinde denetim ister, bunu hiçbir yerel araç vermez</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="prose">
+      <p>
+        Linux'ta üçüncü yol <a href="/tr/libfaketime-windows/">libfaketime</a>'dır. Windows'ta bu
+        <a href="/tr/runasdate-alternatifi/">RunAsDate</a> oldu, Chrono Mock'un yaptığı da budur. İlk
+        yolun ve üzerinde çalıştığınız makinede neyi bozduğunun
+        <a href="/tr/sistem-tarihini-degistirerek-test/">kendi sayfası var &rarr;</a>
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Zaman kaymaya başlayınca ne test edilir</h2>
+    <div class="prose">
+      <ul>
+        <li><strong>Sınırlar</strong> - bir ayın, çeyreğin ve mali yılın son günü, ve uygulama
+          çalışırken yılın değiştiği an.</li>
+        <li><strong>Takvim</strong> - 29 Şubat, 1970'ten önceki bir tarih, 2038'deki 32 bit
+          sınırı.</li>
+        <li><strong>Kendi lisanslamanız</strong> - deneme süresinin son günü, sonraki ilk gün, uzun
+          zaman önce sona ermiş bir lisans.</li>
+        <li><strong>Geçen süre</strong> - geri sayımlar, oturum zaman aşımları ve iki an arasında
+          ölçülen her şey. Bunlar hatalarını ancak zaman gerçeğinden hızlı aktığında gösterir.</li>
+        <li><strong>Saat dilimleri</strong> - günü sizinkinden önce biten, beş dilim ötedeki
+          müşteri.</li>
+      </ul>
+      <p>
+        <a href="/tr/tarih-test-senaryolari/">Tarih test senaryoları, tek tek &rarr;</a>
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Bir Windows uygulamasında time travel testing</h2>
+    <div class="prose">
+      <p>
+        Chrono Mock uygulamayı kendi saatiyle başlatır ve sistem saatine dokunmaz, böylece makinenin
+        geri kalanı gerçek tarihte kalır. Saat herhangi bir andan başlayabilir, durabilir, daha hızlı
+        akabilir ya da uygulama açıkken atlayabilir.
+      </p>
+    </div>
+
+    <pre class="term"><span class="c"># Uygulama 2027'nin son on saniyesini görür ve 2028'e kendisi geçer</span>
+<span class="p">chrono</span> run "C:\apps\test.exe" --at 2027-12-31T23:59:50
+
+<span class="c"># Dakikada bir gün: 30 günlük bir süre yarım saatte biter</span>
+<span class="p">chrono</span> run "C:\apps\test.exe" --mode x1440
+
+<span class="c"># Tarih yerine adlandırılmış bir senaryo, kanıt bir dosyaya yazılır</span>
+<span class="p">chrono</span> run "C:\apps\test.exe" --preset month-end --report session.txt
+
+<span class="c"># Bugünle başla ve birkaç saniye sonra, uygulama açıkken 2038'e atla</span>
+<span class="p">chrono</span> run "C:\apps\test.exe" --jump-after 5:2038-01-19T03:14:05 --zone +00:00</pre>
+
+    <div class="prose">
+      <p>
+        Pencerede de aynısı: uygulamayı seçin, bir senaryo seçin ya da bir tarih yazın, bir hız seçin,
+        Start'a basın.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Zaman yolculuğunun gerçekleştiğini bilmek</h2>
+    <div class="prose">
+      <p>
+        Her tekniğin zayıf noktası aynıdır: uygulama zamanı, tekniğin kaydırmadığı bir yoldan
+        okuyabilir. Uygulama yeni tarihi hiç görmediği için geçen bir test, hiç test olmamasından
+        kötüdür. Her Chrono Mock oturumu bir kararla, uygulamanın gerçekten okuduğu zaman
+        kanallarıyla (her biri için sayıyla) ve kaçırılanlarla biter.
+        <a href="/tr/zaman-kaynagi-denetimi/">Denetim nasıl çalışır &rarr;</a>
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Neyi kapsamaz</h2>
+    <div class="prose">
+      <ul>
+        <li><strong>Telefonlar ve diğer sistemler.</strong> Chrono Mock Windows uygulamalarını
+          çalıştırır. Bir Android ya da iOS uygulamasının veya Linux ya da macOS üzerindeki bir
+          programın time travel testing'i o platform için bir araç ister.</li>
+        <li><strong>Sunucu tarafı.</strong> Uygulamanın bir sunucudan aldığı tarih sunucunun tarihi
+          olarak kalır. Oturum, uygulamanın bir ağ bağlantısı açtığını gördüğünde bunu söyler, böylece
+          kontrol etmeniz gerektiğini bilirsiniz.</li>
+      </ul>
+    </div>
+  </section>
+
+  <section>
+    <h2>Deneyin</h2>
+    <div class="cta">
+      <a class="btn btn-primary" href="/tr/indir/">Windows için indir</a>
+      <a class="btn btn-ghost" href="/tr/tarih-test-senaryolari/">Tarih test senaryoları</a>
+    </div>
+  </section>
+
+</div>
