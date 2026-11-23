@@ -3,7 +3,7 @@
 <div class="shell">
 
   <section class="plain">
-    <h1>Testowanie problemu roku 2038 w Windows</h1>
+    <h1>Problem roku 2038 i jak go przetestować w Windows</h1>
     <p class="sub">
       O 03:14:07 UTC 19 stycznia 2038 kończy się 32-bitowy licznik sekund od 1970 roku ze znakiem.
       Zegar Windows biegnie dalej - programy, formaty plików i biblioteki, które zachowały własną
@@ -33,6 +33,18 @@
           harmonogram kredytu albo certyfikat ważny do 2040 przekraczają tę granicę na długo
           przed nadejściem roku 2038.</li>
       </ul>
+    </div>
+  </section>
+
+  <section>
+    <h2>Naprawa i dlaczego nie jest skończona</h2>
+    <div class="prose">
+      <p>
+        Naprawą jest 64-bitowy czas wszędzie tam, gdzie czas jest przechowywany albo przenoszony: w zmiennych samego programu i w każdym pliku, komunikacie i kolumnie bazy danych, które zapisuje. Licznik sekund ze znakiem na 64 bitach wystarcza na około 292 miliardy lat. Windows i jego biblioteka uruchomieniowa C zrobiły tę zmianę dawno temu, więc zostaje kod, który trzymał własną 32-bitową kopię.
+      </p>
+      <p>
+        Dlatego programu nie da się uznać za gotowy na 2038 samą lekturą kodu. Miejsca, w których zapisuje się czas, są rozsiane po programie, jego bibliotekach i danych, a wystarczy jedno przeoczone pole. Rozstrzyga test z tej strony: przeprowadzić program przez granicę i patrzeć, co zrobi.
+      </p>
     </div>
   </section>
 

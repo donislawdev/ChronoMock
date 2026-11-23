@@ -1,0 +1,143 @@
+<!-- Time travel testing, Dutch. Same structure and facts as en.html. -->
+
+<div class="shell">
+
+  <section class="plain">
+    <h1>Time travel testing</h1>
+    <p class="sub">
+      Time travel testing betekent software laten draaien op een andere datum dan vandaag - volgende
+      maand, de laatste seconde van het jaar, 29 februari, 2038 - om te zien wat ze doet als die dag
+      komt. Het vindt de fouten die op een datum wachten: het rapport dat de verkeerde maand afsluit,
+      de licentie die nooit verloopt, het token dat een dag te lang geldig is.
+    </p>
+  </section>
+
+  <section>
+    <h2>Waarom er een techniek voor nodig is</h2>
+    <div class="prose">
+      <p>
+        Heel veel gedrag hangt af van de datum: proefperiodes en het verlopen van licenties,
+        verlengingen van abonnementen, de geldigheid van certificaten en tokens, het verlopen van
+        caches, maand- en jaarafsluitingen, rente, herinneringen. Niets daarvan is te testen door te
+        wachten, en alles leest hetzelfde - de huidige tijd - ergens vandaan. Time travel testing is
+        de controle over dat ergens.
+      </p>
+      <p>
+        Het heet soms ook time machine testing. Hoe je het ook noemt: de tijd kan op vier plekken
+        worden verzet, en elke plek verzet een ander deel van de wereld.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Vier manieren om de tijd te verzetten</h2>
+    <div class="wrap">
+      <table>
+        <thead>
+          <tr><th>Waar de tijd verschuift</th><th>Wie de nieuwe datum ziet</th><th>Goed voor</th><th>Wat het kost</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>De systeemklok van een machine</td><td>Alles op die machine</td><td>Het besturingssysteem zelf, geplande taken, services testen. Op een wegwerp-VM alles</td><td>Domeinaanmelding, certificaten en tijdsynchronisatie gaan stuk, en de wijziging vraagt beheerdersrechten</td></tr>
+          <tr><td>Een klok in de code</td><td>De code die die klok vraagt</td><td>Unittests van code die je kunt aanpassen - een geïnjecteerde klok of de nep-timers van een testframework</td><td>Vraagt de broncode en een ontwerp dat de klok doorgeeft. Helpt niets bij een applicatie die je alleen als programma hebt</td></tr>
+          <tr><td>De klok van één proces</td><td>Eén applicatie en de processen die ze start</td><td>Een gebouwde applicatie van begin tot eind testen, op de machine waarop je werkt</td><td>Een applicatie kan de tijd op een andere manier lezen, dus je moet weten welke leesacties gedekt waren</td></tr>
+          <tr><td>De tijd van een server</td><td>Alles wat die server vraagt</td><td>Client-serverapplicaties waarin de server bepaalt hoe laat het is</td><td>Vraagt controle over de server, die geen lokaal hulpmiddel geeft</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="prose">
+      <p>
+        Op Linux is de derde manier <a href="/nl/libfaketime-windows/">libfaketime</a>. Op Windows
+        was het <a href="/nl/runasdate-alternatief/">RunAsDate</a>, en het is wat Chrono Mock doet. De
+        eerste manier, en wat die stukmaakt op de machine waarop je werkt, heeft
+        <a href="/nl/systeemdatum-wijzigen-testen/">een eigen pagina &rarr;</a>
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Wat te testen als de tijd eenmaal beweegt</h2>
+    <div class="prose">
+      <ul>
+        <li><strong>Grenzen</strong> - de laatste dag van een maand, kwartaal en boekjaar, en het
+          moment waarop het jaar wisselt terwijl de applicatie draait.</li>
+        <li><strong>De kalender</strong> - 29 februari, een datum vóór 1970, de 32-bitsgrens in
+          2038.</li>
+        <li><strong>Je eigen licenties</strong> - de laatste dag van een proefperiode, de eerste dag
+          erna, een licentie die lang geleden verliep.</li>
+        <li><strong>Verstreken tijd</strong> - aftellers, sessietime-outs en alles wat tussen twee
+          momenten wordt gemeten, dat zijn fouten pas laat zien als de tijd sneller loopt dan echt.</li>
+        <li><strong>Tijdzones</strong> - de klant vijf zones verderop, wiens dag eerder eindigt dan
+          de jouwe.</li>
+      </ul>
+      <p>
+        <a href="/nl/datum-testscenarios/">De testgevallen voor datums, een voor een &rarr;</a>
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Time travel testing van een Windows-applicatie</h2>
+    <div class="prose">
+      <p>
+        Chrono Mock start de applicatie met haar eigen klok en laat de systeemklok met rust, zodat de
+        rest van de machine de echte datum houdt. De klok kan op elk moment beginnen, stilstaan,
+        sneller lopen of springen terwijl de applicatie open is.
+      </p>
+    </div>
+
+    <pre class="term"><span class="c"># De applicatie ziet de laatste tien seconden van 2027 en gaat zelf over naar 2028</span>
+<span class="p">chrono</span> run "C:\apps\test.exe" --at 2027-12-31T23:59:50
+
+<span class="c"># Een dag per minuut: een periode van 30 dagen eindigt in een half uur</span>
+<span class="p">chrono</span> run "C:\apps\test.exe" --mode x1440
+
+<span class="c"># Een benoemd scenario in plaats van een datum, met het bewijs in een bestand</span>
+<span class="p">chrono</span> run "C:\apps\test.exe" --preset month-end --report session.txt
+
+<span class="c"># Vandaag beginnen en na een paar seconden naar 2038 springen, met de applicatie open</span>
+<span class="p">chrono</span> run "C:\apps\test.exe" --jump-after 5:2038-01-19T03:14:05 --zone +00:00</pre>
+
+    <div class="prose">
+      <p>
+        Hetzelfde in het venster: kies de applicatie, kies een scenario of typ een datum, kies een
+        snelheid, druk op Start.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Weten dat de tijdreis plaatsvond</h2>
+    <div class="prose">
+      <p>
+        Elke techniek heeft hetzelfde zwakke punt: de applicatie kan de tijd lezen langs een weg die
+        de techniek niet verzette. Een test die slaagt omdat de applicatie de nieuwe datum nooit zag,
+        is erger dan geen test. Elke Chrono Mock-sessie eindigt met een oordeel, de tijdkanalen die de
+        applicatie echt las met een telling per kanaal, en de kanalen die gemist werden.
+        <a href="/nl/tijdbronnen-audit/">Hoe de audit werkt &rarr;</a>
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Wat dit niet dekt</h2>
+    <div class="prose">
+      <ul>
+        <li><strong>Telefoons en andere systemen.</strong> Chrono Mock draait Windows-applicaties.
+          Time travel testing van een Android- of iOS-app, of van een programma op Linux of macOS,
+          vraagt een hulpmiddel voor dat platform.</li>
+        <li><strong>De serverkant.</strong> Een datum die de applicatie van een server krijgt,
+          blijft de datum van de server. De sessie meldt het als ze ziet dat de applicatie een
+          netwerkverbinding opent, zodat je weet dat je het moet nagaan.</li>
+      </ul>
+    </div>
+  </section>
+
+  <section>
+    <h2>Probeer het</h2>
+    <div class="cta">
+      <a class="btn btn-primary" href="/nl/downloaden/">Downloaden voor Windows</a>
+      <a class="btn btn-ghost" href="/nl/datum-testscenarios/">Testgevallen voor datums</a>
+    </div>
+  </section>
+
+</div>

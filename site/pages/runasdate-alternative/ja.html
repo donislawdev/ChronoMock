@@ -33,6 +33,8 @@
           <tr><td>ソースコード</td><td class="n">フリーウェア、非公開</td><td class="y">GPL-3.0</td></tr>
           <tr><td>サイズ</td><td class="y">ダウンロード 47 KB、64 ビット版は 57 KB</td><td class="n">コマンドライン版 約 {{size_cli_zip}} MB、ウィンドウ付きで 約 {{size_app_zip}} MB</td></tr>
           <tr><td>古い Windows</td><td class="y">Windows 2000 まで</td><td class="n">Windows 10 と 11</td></tr>
+          <tr><td>32 ビットと 64 ビットのアプリ</td><td class="n">それぞれ別のダウンロード</td><td class="y">1 つのダウンロードに両方、ウィンドウが合うほうを選ぶ</td></tr>
+          <tr><td>サポート対象一覧に Windows 11</td><td class="n">なし、一覧は Windows 10 まで</td><td class="y">あり、Windows 10 とともに</td></tr>
         </tbody>
       </table>
     </div>
@@ -74,6 +76,20 @@
         <li><strong>ネットワーク接続</strong> - 時刻がサーバーから来ているかもしれない兆候として数えます</li>
       </ul>
       <p>{{channel_count}} のうち {{substituted_count}} はセッションの時計に載せ替えます。残りの {{observed_count}} は数えるだけで実際の値のままにするので、レポートはずらしたとは主張せずにそれらを挙げます。壁時計とタイムゾーンはすべてのセッションでずらします。経過時間の軸と待機は <code>--scale-duration</code> で、高分解能カウンターは <code>--scale-qpc</code> で求めたときに監視します。</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>RunAsDate が効かないように見えるとき</h2>
+    <div class="prose">
+      <p>理由の多くは RunAsDate 自身のページに書かれています。あきらめる前に、どれも確かめる価値があります。</p>
+      <ul>
+        <li><strong>ダウンロードしたものがプログラムに合っていない。</strong> 64 ビットのプログラムには 64 ビット版の RunAsDate が必要で、これは別のダウンロードです。新しいバージョンは黙って失敗せず、そう知らせます。</li>
+        <li><strong>RunAsDate が入る前にプログラムが日付を読んだ。</strong> Immediate Mode をオンにしない限り、RunAsDate は日付を注入する前に待つので、起動直後に時刻を読むプログラムは本物の時刻のままです。そのページは、Immediate Mode が一部のプログラム、特に .NET のものを不安定にしうるとも警告しています。</li>
+        <li><strong>プログラムが管理者権限を必要とする。</strong> その場合は RunAsDate 自身も管理者として実行する必要があります。</li>
+        <li><strong>日付が RunAsDate の届かないところから来ている</strong> - サーバー、横取りする 5 つの関数の外にある関数（タイムゾーンや経過時間など）、あるいはプログラムが起動するプロセス。最後のものについてそのページは何も述べていません。</li>
+      </ul>
+      <p>最後の理由こそ、Chrono Mock のつくりが違うところです。{{channel_count}} のチャネルをカバーし、アプリが起動するプロセスについていき、レポートは読み逃したチャネルを挙げます。「効かないみたい」が、理由を言う 1 行に変わります。</p>
     </div>
   </section>
 

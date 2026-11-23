@@ -3,7 +3,7 @@
 <div class="shell">
 
   <section class="plain">
-    <h1>Tanggal yang layak diuji</h1>
+    <h1>Kasus uji tanggal yang layak dijalankan</h1>
     <p class="sub">
       Perangkat lunak tidak rusak pada hari Selasa biasa. Ia rusak pada hari terakhir kuartal, pada
       29 Februari, tepat saat tahun berganti, dan satu detik setelah lisensi kedaluwarsa. Inilah
@@ -85,6 +85,37 @@
           berbasis waktu dan validasi token.</li>
       </ul>
     </div>
+  </section>
+
+  <section>
+    <h2>Kasus uji untuk kolom tanggal</h2>
+    <div class="prose">
+      <p>
+        Tanggal yang diketik ke formulir - tanggal lahir, tanggal mulai, tanggal kedaluwarsa - gagal dengan caranya sendiri, dan tidak satu pun perlu menggeser jam. Inilah masukan yang layak dicoba:
+      </p>
+      <ul>
+        <li><strong>29 Februari</strong> - diterima pada tahun kabisat (2024, juga 2000, karena tahun yang habis dibagi 400 adalah kabisat), ditolak pada tahun lain (2023, juga 1900 dan 2100, karena tahun abad yang tidak habis dibagi 400 bukan kabisat).</li>
+        <li><strong>Hari yang tidak ada</strong> - 30 dan 31 Februari, 31 April, 31 Juni, 31 September, dan 31 November.</li>
+        <li><strong>Angka yang sama dibaca dua cara</strong> - 04/08/2026 adalah 8 April di Amerika Serikat dan 4 Agustus di Polandia. Kolom yang menerima keduanya harus memilih, dan mengatakan yang mana.</li>
+        <li><strong>Tanggal lahir di batas usia</strong> - tepat 18 tahun sebelum hari ini harus lolos, sehari kemudian tidak. Ulang tahun pada 29 Februari jatuh pada 28 Februari atau 1 Maret di tahun lain, tergantung aturan yang harus diikuti aplikasi.</li>
+        <li><strong>Tanggal lahir di masa depan,</strong> dan satu yang lebih tua daripada siapa pun yang masih hidup.</li>
+        <li><strong>1 Januari 1970</strong> - tanggal sungguhan, sekaligus wujud yang sering diambil nilai kosong saat disimpan sebagai angka.</li>
+        <li><strong>Tanggal setelah 19 Januari 2038</strong> - tanggal kedaluwarsa di sana melewati waktu 32 bit di suatu tempat dalam perjalanannya, atau tidak.</li>
+      </ul>
+      <p>
+        Pemilih tanggal semestinya mengikuti aturan yang sama dengan tidak menawarkan hari yang tidak ada. Kalkulator membaca balik tanggal yang ditempel dan menampilkan kedua pembacaan bila tanggalnya ambigu:
+      </p>
+    </div>
+
+    <pre class="term"><span class="c"># Membaca balik tanggal yang ditempel - yang ambigu ditampilkan dua cara</span>
+<span class="p">chrono</span> calc --analyze 04/08/2026
+Chrono Mock - date analysis
+  input:   04/08/2026  (ambiguous - month/day order differs by locale)
+  US MM/DD/YYYY:  2026-04-08  (Wednesday)
+  PL DD/MM/YYYY:  2026-08-04  (Tuesday)
+
+<span class="c"># Delapan belas tahun sebelum hari ini: tanggal lahir paling akhir yang sudah dewasa</span>
+<span class="p">chrono</span> calc --base today --shift -18y</pre>
   </section>
 
   <section>

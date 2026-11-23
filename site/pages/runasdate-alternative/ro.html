@@ -35,6 +35,8 @@
           <tr><td>Cod sursă</td><td class="n">freeware, închis</td><td class="y">GPL-3.0</td></tr>
           <tr><td>Dimensiune</td><td class="y">47 KB de descărcat, 57 KB pe 64 de biți</td><td class="n">~{{size_cli_zip}} MB linia de comandă, ~{{size_app_zip}} MB cu fereastra</td></tr>
           <tr><td>Versiuni vechi de Windows</td><td class="y">până la Windows 2000</td><td class="n">Windows 10 și 11</td></tr>
+          <tr><td>Aplicații pe 32 și 64 de biți</td><td class="n">câte o descărcare separată pentru fiecare</td><td class="y">ambele într-o singură descărcare, iar fereastra o alege pe cea potrivită</td></tr>
+          <tr><td>Windows 11 în lista versiunilor suportate</td><td class="n">nu, lista se oprește la Windows 10</td><td class="y">da, împreună cu Windows 10</td></tr>
         </tbody>
       </table>
     </div>
@@ -89,6 +91,20 @@
         <li><strong>conexiunile de rețea</strong>, numărate ca semn că ora poate veni de la un server</li>
       </ul>
       <p>Din cele {{channel_count}}, {{substituted_count}} trec pe ceasul sesiunii. Celelalte {{observed_count}} sunt doar numărate și rămân reale, așa că raportul le numește fără să pretindă că au fost decalate. Ceasul de perete și fusul orar sunt decalate în fiecare sesiune. Axa timpului scurs și așteptările sunt urmărite când ceri asta cu <code>--scale-duration</code>, iar contorul de înaltă rezoluție cu <code>--scale-qpc</code>.</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Când RunAsDate pare să nu funcționeze</h2>
+    <div class="prose">
+      <p>Cele mai multe motive le dă chiar pagina lui, și fiecare merită verificat înainte să renunți:</p>
+      <ul>
+        <li><strong>Descărcarea nu se potrivește cu programul.</strong> Un program pe 64 de biți are nevoie de RunAsDate pe 64 de biți, care e o descărcare separată. Versiunile recente spun asta în loc să eșueze în tăcere.</li>
+        <li><strong>Programul a citit data înainte ca RunAsDate să fie la locul lui.</strong> Dacă Immediate Mode nu e pornit, RunAsDate așteaptă înainte să injecteze data, iar un program care citește ora chiar la pornire rămâne cu cea reală. Pagina lui avertizează și că Immediate Mode poate deranja unele programe, mai ales cele .NET.</li>
+        <li><strong>Programul cere drepturi de administrator.</strong> Atunci și RunAsDate trebuie să ruleze ca administrator.</li>
+        <li><strong>Data vine de unde RunAsDate nu ajunge</strong> - de la un server, dintr-o funcție din afara celor cinci pe care le interceptează, cum ar fi fusul orar sau timpul scurs, ori dintr-un proces pornit de program, despre care pagina lui nu spune nimic.</li>
+      </ul>
+      <p>Ultimul motiv e locul unde Chrono Mock e construit altfel: acoperă {{channel_count}} de canale, urmărește procesele pe care le pornește o aplicație, iar raportul lui enumeră canalele pe care le-a ratat. „Pare că nu merge” devine un rând care spune de ce.</p>
     </div>
   </section>
 

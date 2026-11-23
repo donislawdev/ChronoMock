@@ -3,12 +3,39 @@
 <div class="shell">
 
   <section class="plain">
-    <h1>Bir uygulamayı test etmek için sistem tarihini değiştirmek</h1>
+    <h1>Windows'ta sistem tarihini ve saatini değiştirmek</h1>
     <p class="sub">
       Var olan en eski hile: Windows saatini test etmek istediğiniz tarihe ayarlarsınız, programı
       çalıştırırsınız, saati geri alırsınız. İşe yarar - ve saat kaydırılmış olduğu sürece makinedeki
       geri kalan her şeyi de kaydırır.
     </p>
+  </section>
+
+  <section>
+    <h2>Windows 11 ve 10'da nasıl değiştirilir</h2>
+    <div class="prose">
+      <ol>
+        <li>Ayarlar'ı açın, saat ve dil bölümüne, ardından tarih ve saate gidin.</li>
+        <li>Saatin otomatik ayarlanmasını kapatın.</li>
+        <li>Tarih ve saati elle ayarlama seçeneğinin yanındaki Değiştir'i seçin, tarih ve saati girin ve değişikliği onaylayın.</li>
+      </ol>
+      <p>
+        Komut satırında aynı işi, yönetici olarak başlatılmış bir PowerShell'de <code>Set-Date</code> yapar:
+      </p>
+    </div>
+
+    <pre class="term"><span class="c"># Tüm makine 2027'nin son on saniyesine geçer</span>
+<span class="p">Set-Date</span> -Date "2027-12-31 23:59:50"
+
+<span class="c"># Şu andan itibaren otuz gün sonrası</span>
+<span class="p">Set-Date</span> -Date (Get-Date).AddDays(30)</pre>
+
+    <div class="prose">
+      <p>
+        Geri almak için saatin otomatik ayarlanmasını yeniden açın. İki yol da yönetici hakkı ister ve etki alanına katılmış bir makinede zaman hizmeti, siz daha test ederken saati geri alabilir. Sistem saatini kaydırmak, test için zamanı kaydırmanın dört yolundan biridir.
+        <a href="/tr/time-travel-testing/">Dördü, karşılaştırmalı &rarr;</a>
+      </p>
+    </div>
   </section>
 
   <section>

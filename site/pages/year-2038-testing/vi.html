@@ -3,7 +3,7 @@
 <div class="shell">
 
   <section class="plain">
-    <h1>Kiểm thử lỗi năm 2038 trên Windows</h1>
+    <h1>Sự cố năm 2038, và cách kiểm thử trên Windows</h1>
     <p class="sub">
       Vào 03:14:07 UTC ngày 19 tháng 1 năm 2038, bộ đếm giây có dấu 32 bit tính từ năm 1970 sẽ hết. Đồng
       hồ Windows vẫn chạy tiếp qua mốc đó - còn các chương trình, định dạng tệp và thư viện giữ bản sao 32
@@ -31,6 +31,18 @@
         <li><strong>Mã cộng thêm năm.</strong> Giấy phép hai mươi năm, lịch trả nợ ba mươi năm hay chứng
           chỉ có hiệu lực đến năm 2040 vượt qua ranh giới này rất lâu trước khi năm 2038 đến.</li>
       </ul>
+    </div>
+  </section>
+
+  <section>
+    <h2>Cách khắc phục, và vì sao vẫn chưa xong</h2>
+    <div class="prose">
+      <p>
+        Cách khắc phục là dùng thời gian 64 bit ở mọi nơi thời gian được lưu giữ hoặc truyền đi: trong chính các biến của chương trình, và trong mọi tệp, thông điệp và cột cơ sở dữ liệu mà nó ghi ra. Một bộ đếm giây có dấu 64 bit đủ dùng khoảng 292 tỷ năm. Windows và thư viện thời gian chạy C của nó đã đổi từ lâu, nên phần còn lại là mã tự giữ một bản sao 32 bit của riêng mình.
+      </p>
+      <p>
+        Vì thế không thể tuyên bố một chương trình đã sẵn sàng cho năm 2038 chỉ bằng cách đọc mã. Những nơi lưu thời gian nằm rải rác trong chương trình, thư viện và dữ liệu của nó, và chỉ cần sót một trường là đủ. Phép thử quyết định là phép thử trên trang này: cho chương trình chạy qua giới hạn và xem nó làm gì.
+      </p>
     </div>
   </section>
 

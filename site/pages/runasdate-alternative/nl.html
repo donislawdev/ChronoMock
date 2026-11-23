@@ -38,6 +38,8 @@
           <tr><td>Broncode</td><td class="n">freeware, gesloten</td><td class="y">GPL-3.0</td></tr>
           <tr><td>Grootte</td><td class="y">47 KB download, 57 KB voor 64-bit</td><td class="n">~{{size_cli_zip}} MB opdrachtregel, ~{{size_app_zip}} MB met het venster</td></tr>
           <tr><td>Oude Windows-versies</td><td class="y">terug tot Windows 2000</td><td class="n">Windows 10 en 11</td></tr>
+          <tr><td>32- en 64-bitsapplicaties</td><td class="n">voor elk een aparte download</td><td class="y">beide in één download, en het venster kiest de passende</td></tr>
+          <tr><td>Windows 11 in de lijst met ondersteunde versies</td><td class="n">nee, de lijst stopt bij Windows 10</td><td class="y">ja, samen met Windows 10</td></tr>
         </tbody>
       </table>
     </div>
@@ -92,6 +94,20 @@
         <li><strong>netwerkverbindingen</strong>, geteld als teken dat de tijd van een server kan komen</li>
       </ul>
       <p>Van de {{channel_count}} komen er {{substituted_count}} op de sessieklok. De overige {{observed_count}} worden alleen geteld en blijven echt, zodat het rapport ze noemt zonder te beweren dat ze verschoven zijn. De wandklok en de tijdzone worden in elke sessie verschoven. De as van de verstreken tijd en het wachten worden gevolgd als je daarom vraagt met <code>--scale-duration</code>, de teller met hoge resolutie met <code>--scale-qpc</code>.</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Als RunAsDate niet lijkt te werken</h2>
+    <div class="prose">
+      <p>De meeste redenen staan op zijn eigen pagina, en elke reden is het controleren waard voordat je het opgeeft:</p>
+      <ul>
+        <li><strong>De download past niet bij het programma.</strong> Een 64-bitsprogramma heeft de 64-bits RunAsDate nodig, en dat is een aparte download. Recente versies zeggen dat in plaats van stilletjes te falen.</li>
+        <li><strong>Het programma las de datum voordat RunAsDate klaarstond.</strong> Tenzij de Immediate Mode aanstaat, wacht RunAsDate voordat het de datum injecteert, en een programma dat de tijd meteen bij het starten leest, houdt de echte. Zijn pagina waarschuwt ook dat Immediate Mode sommige programma's kan verstoren, vooral .NET-programma's.</li>
+        <li><strong>Het programma heeft beheerdersrechten nodig.</strong> Dan moet RunAsDate zelf ook als administrator draaien.</li>
+        <li><strong>De datum komt van een plek waar RunAsDate niet bij kan</strong> - een server, een functie buiten de vijf die het onderschept, zoals de tijdzone of de verstreken tijd, of een proces dat het programma start, waarover zijn pagina niets zegt.</li>
+      </ul>
+      <p>Bij de laatste reden is Chrono Mock anders gebouwd: het dekt {{channel_count}} kanalen, volgt de processen die een applicatie start, en het rapport somt de kanalen op die het miste. "Het lijkt niet te werken" wordt een regel die zegt waarom.</p>
     </div>
   </section>
 

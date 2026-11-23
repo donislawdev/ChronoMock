@@ -1,0 +1,118 @@
+<!-- Time travel testing, Traditional Chinese. Same structure and facts as en.html. -->
+
+<div class="shell">
+
+  <section class="plain">
+    <h1>時間旅行測試（time travel testing）</h1>
+    <p class="sub">
+      時間旅行測試，就是讓軟體在今天以外的日期執行：下個月、一年的最後一秒、2 月 29 日、2038 年，看看那一天到來時它會做什麼。它能找出那些等著某個日期才出現的錯誤：結錯月份的報表、永不到期的授權、多被接受一天的權杖。
+    </p>
+  </section>
+
+  <section>
+    <h2>為什麼需要專門的方法</h2>
+    <div class="prose">
+      <p>
+        大量行為取決於日期：試用期與授權到期、訂閱續約、憑證和權杖的有效期、快取過期、月底與年底結帳、利息、提醒。這些都無法靠等待來測試，而且都從某處讀取同一樣東西：目前時間。時間旅行測試，就是掌控這個「某處」。
+      </p>
+      <p>
+        它有時也叫 time machine testing。不管叫什麼，時間可以在四個地方移動，每個地方移動的是世界的不同部分。
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>移動時間的四種方法</h2>
+    <div class="wrap">
+      <table>
+        <thead>
+          <tr><th>時間在哪裡移動</th><th>誰看到新日期</th><th>適合做什麼</th><th>代價</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>一台電腦的系統時鐘</td><td>這台電腦上的一切</td><td>測試作業系統本身、排程工作、服務。在用完即丟的虛擬機器上，什麼都行</td><td>網域登入、憑證和時間同步會出問題，而且修改需要系統管理員權限</td></tr>
+          <tr><td>程式碼裡的時鐘</td><td>詢問這個時鐘的程式碼</td><td>你能修改的程式碼的單元測試：注入的時鐘，或測試框架的假計時器</td><td>需要原始碼和把時鐘傳進去的設計。對只有程式檔的應用程式毫無幫助</td></tr>
+          <tr><td>單一處理程序的時鐘</td><td>一個應用程式及其啟動的處理程序</td><td>在你工作用的電腦上，對建置好的應用程式做端對端測試</td><td>應用程式可能透過別的途徑讀取時間，所以你需要知道哪些讀取被涵蓋了</td></tr>
+          <tr><td>伺服器的時間</td><td>詢問這台伺服器的一切</td><td>由伺服器決定目前時間的用戶端/伺服器應用程式</td><td>需要掌控伺服器，這是任何本機工具都給不了的</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="prose">
+      <p>
+        在 Linux 上，第三種方法是 <a href="/zh-hant/libfaketime-windows/">libfaketime</a>。在 Windows 上，一直是 <a href="/zh-hant/runasdate-alternative/">RunAsDate</a>，Chrono Mock 做的也是這件事。第一種方法，以及它在你工作用的電腦上會弄壞什麼，
+        <a href="/zh-hant/change-system-date-testing/">有專門的一頁 &rarr;</a>
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>時間動起來之後測什麼</h2>
+    <div class="prose">
+      <ul>
+        <li><strong>邊界</strong>：月、季度和會計年度的最後一天，以及應用程式執行中跨年的那一刻。</li>
+        <li><strong>日曆</strong>：2 月 29 日、1970 年以前的日期、2038 年的 32 位元上限。</li>
+        <li><strong>你自己的授權</strong>：試用期最後一天、試用期後的第一天、早已過期的授權。</li>
+        <li><strong>經過的時間</strong>：倒數計時、工作階段逾時，以及一切在兩個時刻之間測量的東西，只有時間跑得比真實時間快時才會暴露錯誤。</li>
+        <li><strong>時區</strong>：相隔五個時區、一天比你先結束的客戶。</li>
+      </ul>
+      <p>
+        <a href="/zh-hant/date-test-scenarios/">日期測試案例，逐個來看 &rarr;</a>
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>對 Windows 應用程式做時間旅行測試</h2>
+    <div class="prose">
+      <p>
+        Chrono Mock 用應用程式自己的時鐘啟動它，不碰系統時鐘，因此電腦的其餘部分保持真實日期。時鐘可以從任意時刻開始、停住不動、走得更快，或在應用程式開啟時跳轉。
+      </p>
+    </div>
+
+    <pre class="term"><span class="c"># 應用程式看到 2027 年的最後十秒，並自己跨入 2028 年</span>
+<span class="p">chrono</span> run "C:\apps\test.exe" --at 2027-12-31T23:59:50
+
+<span class="c"># 一分鐘一天：30 天的期限半小時內結束</span>
+<span class="p">chrono</span> run "C:\apps\test.exe" --mode x1440
+
+<span class="c"># 用具名情境代替日期，並把證據寫入檔案</span>
+<span class="p">chrono</span> run "C:\apps\test.exe" --preset month-end --report session.txt
+
+<span class="c"># 從今天開始，幾秒後在應用程式開啟時跳到 2038 年</span>
+<span class="p">chrono</span> run "C:\apps\test.exe" --jump-after 5:2038-01-19T03:14:05 --zone +00:00</pre>
+
+    <div class="prose">
+      <p>
+        視窗中也一樣：選擇應用程式，選擇情境或輸入日期，選擇速度，按 Start。
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>如何知道時間旅行真的發生了</h2>
+    <div class="prose">
+      <p>
+        每種方法都有同一個弱點：應用程式可能透過該方法沒有移動的途徑讀取時間。因為應用程式從未看到新日期而通過的測試，比沒有測試更糟。每次 Chrono Mock 工作階段結束時都會給出結論、應用程式實際讀取的時間通道及各自的呼叫次數，以及漏掉的通道。
+        <a href="/zh-hant/time-source-audit/">稽核如何運作 &rarr;</a>
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>不涵蓋的內容</h2>
+    <div class="prose">
+      <ul>
+        <li><strong>手機和其他系統。</strong> Chrono Mock 執行的是 Windows 應用程式。要對 Android 或 iOS 應用程式、或 Linux、macOS 上的程式做時間旅行測試，需要那個平台的工具。</li>
+        <li><strong>伺服器端。</strong> 應用程式從伺服器拿到的日期仍是伺服器的日期。工作階段一旦看到應用程式開啟網路連線就會說明，讓你知道需要檢查。</li>
+      </ul>
+    </div>
+  </section>
+
+  <section>
+    <h2>親自試試</h2>
+    <div class="cta">
+      <a class="btn btn-primary" href="/zh-hant/download/">下載 Windows 版</a>
+      <a class="btn btn-ghost" href="/zh-hant/date-test-scenarios/">日期測試案例</a>
+    </div>
+  </section>
+
+</div>

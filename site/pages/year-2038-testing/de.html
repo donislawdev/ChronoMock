@@ -3,7 +3,7 @@
 <div class="shell">
 
   <section class="plain">
-    <h1>Das Jahr-2038-Problem unter Windows testen</h1>
+    <h1>Das Jahr-2038-Problem und wie man es unter Windows testet</h1>
     <p class="sub">
       Am 19. Januar 2038 um 03:14:07 UTC geht ein vorzeichenbehafteter 32-Bit-Zähler für Sekunden seit
       1970 zu Ende. Die Windows-Uhr läuft darüber hinaus weiter - die Programme, Dateiformate und
@@ -34,6 +34,18 @@
           Tilgungsplan oder ein bis 2040 gültiges Zertifikat überschreiten die Grenze lange bevor 2038
           da ist.</li>
       </ul>
+    </div>
+  </section>
+
+  <section>
+    <h2>Die Lösung und warum sie nicht fertig ist</h2>
+    <div class="prose">
+      <p>
+        Die Lösung ist eine 64-Bit-Zeit überall dort, wo eine Zeit gespeichert oder weitergegeben wird: in den eigenen Variablen des Programms und in jeder Datei, Nachricht und Datenbankspalte, die es schreibt. Ein vorzeichenbehafteter 64-Bit-Sekundenzähler reicht für etwa 292 Milliarden Jahre. Windows und seine C-Laufzeit haben diese Umstellung längst gemacht, übrig bleibt also der Code, der eine eigene 32-Bit-Kopie behalten hat.
+      </p>
+      <p>
+        Deshalb lässt sich ein Programm nicht durch Lesen für 2038 bereit erklären. Die Stellen, an denen eine Zeit gespeichert wird, verteilen sich über das Programm, seine Bibliotheken und seine Daten, und ein übersehenes Feld genügt. Entscheiden kann nur der Test auf dieser Seite: das Programm über die Grenze laufen lassen und beobachten, was es tut.
+      </p>
     </div>
   </section>
 

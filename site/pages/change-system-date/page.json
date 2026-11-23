@@ -10,134 +10,134 @@
     "en": {
       "slug": "change-system-date-testing",
       "link_text": "Don't change the clock",
-      "title": "Changing the system date to test: what breaks on Windows",
-      "description": "Setting the Windows clock to test a date moves the whole machine - logon, certificates, time sync. What breaks, and how to move one app's clock instead."
+      "title": "Change the system date and time in Windows 11 - and what it breaks",
+      "description": "How to change the date and time in Windows 11 and 10, from Settings or PowerShell, how to put it back, and what moves with it: logon, certificates, time sync. And how to move one app's clock instead."
     },
     "pl": {
       "slug": "zmiana-daty-systemowej-w-testach",
       "link_text": "Nie zmieniaj zegara",
-      "title": "Zmiana daty systemowej do testów - co psuje się w Windows",
-      "description": "Przestawienie zegara Windows na czas testu przestawia całą maszynę: domenę, certyfikaty, synchronizację. Co się psuje i jak przesunąć zegar jednej aplikacji."
+      "title": "Zmiana daty i godziny w Windows 11 - jak to zrobić i co się psuje",
+      "description": "Jak zmienić datę i godzinę w komputerze z Windows 11 i 10, w Ustawieniach albo w PowerShell, jak ją przywrócić i co przesuwa się razem z nią: logowanie, certyfikaty, synchronizacja. I jak przesunąć zegar jednej aplikacji."
     },
     "de": {
       "slug": "systemdatum-aendern-testen",
       "link_text": "Systemuhr nicht ändern",
-      "title": "Systemdatum zum Testen ändern: Was unter Windows kaputtgeht",
-      "description": "Wer die Windows-Uhr zum Testen umstellt, verstellt den ganzen Rechner: Anmeldung, Zertifikate, Zeitsync. Was kaputtgeht und wie nur eine App umgestellt wird."
+      "title": "Systemdatum und Uhrzeit in Windows 11 ändern - und was dabei kaputtgeht",
+      "description": "Wie man Datum und Uhrzeit in Windows 11 und 10 über die Einstellungen oder PowerShell ändert, wie man es zurückstellt und was sich mitbewegt: Anmeldung, Zertifikate, Zeitsynchronisierung. Und wie man stattdessen nur die Uhr einer App verstellt."
     },
     "fr": {
       "slug": "changer-la-date-systeme-pour-tester",
       "link_text": "Sans changer l'horloge",
-      "title": "Date système changée pour tester : ce qui casse sous Windows",
-      "description": "Changer l'horloge de Windows pour tester une date décale toute la machine : domaine, certificats, synchro. Ce qui casse, et comment ne décaler qu'une appli."
+      "title": "Changer la date et l'heure du système sous Windows 11 - et ce que ça casse",
+      "description": "Comment changer la date et l'heure sous Windows 11 et 10, depuis les Paramètres ou PowerShell, comment revenir en arrière, et ce qui bouge avec : connexion, certificats, synchronisation de l'heure. Et comment ne décaler que l'horloge d'une appli."
     },
     "es": {
       "slug": "cambiar-la-fecha-del-sistema-para-pruebas",
       "link_text": "No cambies el reloj",
-      "title": "Cambiar la fecha del sistema para probar: qué falla en Windows",
-      "description": "Cambiar el reloj de Windows para probar una fecha mueve toda la máquina: dominio, certificados, sincronización. Qué se rompe y cómo mover solo una app."
+      "title": "Cambiar la fecha y hora del sistema en Windows 11 - y lo que se rompe",
+      "description": "Cómo cambiar la fecha y la hora en Windows 11 y 10, desde Configuración o PowerShell, cómo volver atrás y qué se mueve con ellas: inicio de sesión, certificados, sincronización de hora. Y cómo mover solo el reloj de una app."
     },
     "pt-br": {
       "slug": "alterar-a-data-do-sistema-para-testar",
       "link_text": "Não mude o relógio",
-      "title": "Alterar a data do sistema para testar: o que quebra no Windows",
-      "description": "Mudar o relógio do Windows para testar uma data move a máquina toda: domínio, certificados, sincronização. O que quebra e como mover só um app."
+      "title": "Alterar a data e a hora do sistema no Windows 11 - e o que quebra",
+      "description": "Como alterar a data e a hora no Windows 11 e 10, pelas Configurações ou pelo PowerShell, como voltar atrás e o que se move junto: logon, certificados, sincronização de hora. E como mover só o relógio de um app."
     },
     "it": {
       "slug": "cambiare-la-data-di-sistema-nei-test",
       "link_text": "Non cambiare l'orologio",
-      "title": "Data di sistema cambiata per i test: cosa si rompe su Windows",
-      "description": "Cambiare l'orologio di Windows per testare una data sposta l'intera macchina: dominio, certificati, sincronizzazione. Cosa si rompe e come spostare una sola app."
+      "title": "Cambiare data e ora di sistema in Windows 11 - e cosa si rompe",
+      "description": "Come cambiare data e ora in Windows 11 e 10, dalle Impostazioni o da PowerShell, come tornare indietro e cosa si sposta insieme: accesso, certificati, sincronizzazione dell'ora. E come spostare solo l'orologio di un'app."
     },
     "nl": {
       "slug": "systeemdatum-wijzigen-testen",
       "link_text": "Verander de klok niet",
-      "title": "Systeemdatum wijzigen om te testen: wat breekt er in Windows",
-      "description": "De Windows-klok verzetten om een datum te testen verzet de hele machine: domein, certificaten, tijdsync. Wat er breekt en hoe je alleen één app verzet."
+      "title": "Systeemdatum en -tijd wijzigen in Windows 11 - en wat er breekt",
+      "description": "Hoe je datum en tijd wijzigt in Windows 11 en 10, via Instellingen of PowerShell, hoe je ze terugzet en wat er meeschuift: aanmelden, certificaten, tijdsynchronisatie. En hoe je in plaats daarvan alleen de klok van één app verzet."
     },
     "ro": {
       "slug": "modificarea-datei-sistemului-pentru-teste",
       "link_text": "Nu schimba ceasul",
-      "title": "Schimbarea datei sistemului la teste: ce se strică în Windows",
-      "description": "Schimbarea ceasului Windows pentru a testa o dată mută toată mașina: domeniu, certificate, sincronizare. Ce se strică și cum muți ceasul unei singure aplicații."
+      "title": "Schimbarea datei și orei sistemului în Windows 11 - și ce se strică",
+      "description": "Cum schimbi data și ora în Windows 11 și 10, din Setări sau din PowerShell, cum le readuci și ce se mută odată cu ele: autentificare, certificate, sincronizarea orei. Și cum muți în schimb doar ceasul unei aplicații."
     },
     "cs": {
       "slug": "zmena-systemoveho-data-pri-testovani",
       "link_text": "Neměňte hodiny",
-      "title": "Změna systémového data kvůli testu: co se ve Windows rozbije",
-      "description": "Přestavení hodin Windows kvůli testu data posune celý počítač: doména, certifikáty, synchronizace. Co se rozbije a jak posunout hodiny jen jedné aplikace."
+      "title": "Změna systémového data a času ve Windows 11 - a co se tím rozbije",
+      "description": "Jak změnit datum a čas ve Windows 11 a 10 v Nastavení nebo v PowerShellu, jak je vrátit a co se posune s nimi: přihlášení, certifikáty, synchronizace času. A jak místo toho posunout hodiny jen jedné aplikace."
     },
     "tr": {
       "slug": "sistem-tarihini-degistirerek-test",
       "link_text": "Saati değiştirmeyin",
-      "title": "Test için sistem tarihini değiştirmek: Windows’ta ne bozulur",
-      "description": "Test için Windows saatini kaydırmak tüm makineyi kaydırır: etki alanı, sertifikalar, zaman eşitleme. Ne bozulur ve yalnızca bir uygulamanın saati nasıl kaydırılır."
+      "title": "Windows 11'de sistem tarihini ve saatini değiştirmek - ve neyin bozulduğu",
+      "description": "Windows 11 ve 10'da tarih ve saati Ayarlar'dan ya da PowerShell'den değiştirme, geri alma ve onunla birlikte neyin kaydığı: oturum açma, sertifikalar, zaman eşitleme. Ve bunun yerine yalnızca bir uygulamanın saatini kaydırma."
     },
     "id": {
       "slug": "mengubah-tanggal-sistem-untuk-pengujian",
       "link_text": "Jangan ubah jamnya",
-      "title": "Mengubah tanggal sistem untuk menguji: yang rusak di Windows",
-      "description": "Menggeser jam Windows untuk menguji tanggal ikut menggeser seluruh mesin: domain, sertifikat, sinkronisasi. Apa yang rusak dan cara menggeser satu aplikasi saja."
+      "title": "Mengubah tanggal dan waktu sistem di Windows 11 - dan apa yang rusak",
+      "description": "Cara mengubah tanggal dan waktu di Windows 11 dan 10, lewat Pengaturan atau PowerShell, cara mengembalikannya, dan apa yang ikut bergeser: login, sertifikat, sinkronisasi waktu. Juga cara menggeser jam satu aplikasi saja."
     },
     "vi": {
       "slug": "doi-ngay-he-thong-de-kiem-thu",
       "link_text": "Đừng đổi đồng hồ",
-      "title": "Đổi ngày hệ thống để kiểm thử: điều gì hỏng trên Windows",
-      "description": "Dời đồng hồ Windows để thử một ngày sẽ dời cả máy: miền, chứng chỉ, đồng bộ giờ. Điều gì hỏng và cách chỉ dời đồng hồ của một ứng dụng."
+      "title": "Đổi ngày giờ hệ thống trên Windows 11 - và những gì bị hỏng",
+      "description": "Cách đổi ngày giờ trên Windows 11 và 10 bằng Cài đặt hoặc PowerShell, cách đặt lại, và những gì dời theo: đăng nhập, chứng chỉ, đồng bộ giờ. Và cách chỉ dời đồng hồ của một ứng dụng."
     },
     "ru": {
       "slug": "change-system-date-testing",
       "link_text": "Не меняйте часы",
-      "title": "Смена системной даты для тестов — что ломается в Windows",
-      "description": "Сдвиг часов Windows ради теста даты сдвигает всю машину: домен, сертификаты, синхронизацию. Что ломается и как сдвинуть часы только одного приложения."
+      "title": "Как изменить системную дату и время в Windows 11 - и что при этом ломается",
+      "description": "Как изменить дату и время в Windows 11 и 10 через «Параметры» или PowerShell, как вернуть всё назад и что сдвигается вместе с ними: вход в систему, сертификаты, синхронизация времени. И как вместо этого сдвинуть часы только одного приложения."
     },
     "uk": {
       "slug": "change-system-date-testing",
       "link_text": "Не змінюйте годинник",
-      "title": "Зміна системної дати для тестів — що ламається у Windows",
-      "description": "Зсув годинника Windows заради тесту дати зсуває всю машину: домен, сертифікати, синхронізацію. Що ламається і як зсунути годинник лише одного застосунку."
+      "title": "Як змінити системну дату й час у Windows 11 - і що при цьому ламається",
+      "description": "Як змінити дату й час у Windows 11 і 10 через «Параметри» або PowerShell, як усе повернути і що зсувається разом із ними: вхід у систему, сертифікати, синхронізація часу. І як натомість зсунути годинник лише одного застосунку."
     },
     "ja": {
       "slug": "change-system-date-testing",
       "link_text": "時計を変更しない",
-      "title": "システム日付を変えてテスト - Windows で壊れるもの",
-      "description": "テストのために Windows の時計を動かすとマシン全体が動きます。ドメイン、証明書、時刻同期など何が壊れるか、1 つのアプリだけ動かす方法。"
+      "title": "Windows 11 でシステムの日付と時刻を変更する方法 - そして壊れるもの",
+      "description": "Windows 11 と 10 で、設定アプリまたは PowerShell から日付と時刻を変更する方法、元に戻す方法、一緒に動くもの（ログオン、証明書、時刻同期）。そして 1 つのアプリの時計だけを動かす方法。"
     },
     "ko": {
       "slug": "change-system-date-testing",
       "link_text": "시계를 바꾸지 마세요",
-      "title": "테스트용 시스템 날짜 변경 - Windows에서 망가지는 것",
-      "description": "날짜를 테스트하려고 Windows 시계를 옮기면 컴퓨터 전체가 옮겨집니다. 도메인, 인증서, 시간 동기화 등 무엇이 망가지는지와 앱 하나만 옮기는 방법."
+      "title": "Windows 11에서 시스템 날짜와 시간 바꾸기 - 그리고 망가지는 것",
+      "description": "Windows 11과 10에서 설정이나 PowerShell로 날짜와 시간을 바꾸는 법, 되돌리는 법, 그리고 함께 움직이는 것(로그온, 인증서, 시간 동기화). 그리고 대신 앱 하나의 시계만 옮기는 법."
     },
     "zh-hans": {
       "slug": "change-system-date-testing",
       "link_text": "别改系统时钟",
-      "title": "为测试改系统日期 - 在 Windows 上会坏什么",
-      "description": "为测试日期而调动 Windows 时钟，会让整台机器跟着动：域登录、证书、时间同步。会坏什么，以及如何只调动一个应用的时钟。"
+      "title": "在 Windows 11 中更改系统日期和时间 - 以及会坏什么",
+      "description": "如何在 Windows 11 和 10 中通过“设置”或 PowerShell 更改日期和时间、如何改回来，以及哪些东西会跟着变：登录、证书、时间同步。还有如何只改一个应用的时钟。"
     },
     "zh-hant": {
       "slug": "change-system-date-testing",
       "link_text": "別改系統時鐘",
-      "title": "為測試改系統日期 - 在 Windows 上會壞什麼",
-      "description": "為測試日期而調動 Windows 時鐘，會讓整台電腦跟著動：網域登入、憑證、時間同步。會壞什麼，以及如何只調動一個應用程式的時鐘。"
+      "title": "在 Windows 11 中變更系統日期和時間 - 以及會壞什麼",
+      "description": "如何在 Windows 11 和 10 中透過「設定」或 PowerShell 變更日期和時間、如何改回來，以及哪些東西會跟著變：登入、憑證、時間同步。還有如何只改一個應用程式的時鐘。"
     },
     "ar": {
       "slug": "change-system-date-testing",
       "link_text": "لا تغيّر الساعة",
-      "title": "تغيير تاريخ النظام للاختبار - ما الذي يتعطل في Windows",
-      "description": "إزاحة ساعة Windows لاختبار تاريخ تزيح الجهاز كله: النطاق والشهادات ومزامنة الوقت. ما الذي يتعطل، وكيف تزيح ساعة تطبيق واحد فقط."
+      "title": "تغيير تاريخ النظام ووقته في Windows 11 - وما الذي يتعطل",
+      "description": "كيف تغيّر التاريخ والوقت في Windows 11 و10 من الإعدادات أو من PowerShell، وكيف تعيدهما، وما الذي يتحرك معهما: تسجيل الدخول والشهادات ومزامنة الوقت. وكيف تحرّك ساعة تطبيق واحد بدلًا من ذلك."
     },
     "hi": {
       "slug": "change-system-date-testing",
       "link_text": "घड़ी न बदलें",
-      "title": "परीक्षण के लिए सिस्टम की तारीख़ बदलना - Windows में क्या टूटता है",
-      "description": "तारीख़ परखने के लिए Windows की घड़ी खिसकाने से पूरी मशीन खिसक जाती है: डोमेन, सर्टिफ़िकेट, समय सिंक। क्या टूटता है, और सिर्फ़ एक ऐप की घड़ी कैसे खिसकाएँ।"
+      "title": "Windows 11 में सिस्टम की तारीख़ और समय बदलना - और इससे क्या टूटता है",
+      "description": "Windows 11 और 10 में सेटिंग्स या PowerShell से तारीख़ और समय कैसे बदलें, वापस कैसे लाएँ, और साथ में क्या खिसकता है: लॉगऑन, सर्टिफ़िकेट, समय सिंक। और इसके बजाय सिर्फ़ एक ऐप की घड़ी कैसे खिसकाएँ।"
     },
     "th": {
       "slug": "change-system-date-testing",
       "link_text": "อย่าเปลี่ยนนาฬิกา",
-      "title": "เปลี่ยนวันที่ของระบบเพื่อทดสอบ - อะไรจะพังบน Windows",
-      "description": "การเลื่อนนาฬิกา Windows เพื่อทดสอบวันที่ทำให้ทั้งเครื่องเลื่อนตาม: โดเมน ใบรับรอง การซิงก์เวลา อะไรจะพัง และวิธีเลื่อนนาฬิกาเฉพาะแอปเดียว"
+      "title": "เปลี่ยนวันที่และเวลาของระบบใน Windows 11 - และสิ่งที่พัง",
+      "description": "วิธีเปลี่ยนวันที่และเวลาใน Windows 11 และ 10 ผ่านการตั้งค่าหรือ PowerShell วิธีเปลี่ยนกลับ และสิ่งที่เลื่อนตามไปด้วย ได้แก่ การล็อกออน ใบรับรอง การซิงก์เวลา และวิธีเลื่อนนาฬิกาเฉพาะแอปเดียวแทน"
     }
   }
 }

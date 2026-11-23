@@ -3,11 +3,38 @@
 <div class="shell">
 
   <section class="plain">
-    <h1>Schimbarea datei sistemului pentru a testa o aplicație</h1>
+    <h1>Schimbarea datei și orei sistemului în Windows</h1>
     <p class="sub">
       Este cel mai vechi truc care există: pui ceasul Windows pe data pe care vrei s-o testezi, rulezi
       programul, apoi îl pui la loc. Merge - iar cât timp ceasul e mutat, mută și tot restul mașinii.
     </p>
+  </section>
+
+  <section>
+    <h2>Cum le schimbi în Windows 11 și 10</h2>
+    <div class="prose">
+      <ol>
+        <li>Deschide Setările, apoi secțiunea oră și limbă, apoi data și ora.</li>
+        <li>Dezactivează setarea automată a orei.</li>
+        <li>Alege Modificare lângă setarea manuală a datei și orei, introdu data și ora și confirmă modificarea.</li>
+      </ol>
+      <p>
+        Din linia de comandă, <code>Set-Date</code> face același lucru, într-un PowerShell pornit ca administrator:
+      </p>
+    </div>
+
+    <pre class="term"><span class="c"># Toată mașina trece în ultimele zece secunde din 2027</span>
+<span class="p">Set-Date</span> -Date "2027-12-31 23:59:50"
+
+<span class="c"># Treizeci de zile de acum înainte</span>
+<span class="p">Set-Date</span> -Date (Get-Date).AddDays(30)</pre>
+
+    <div class="prose">
+      <p>
+        Ca să revii, activează din nou setarea automată a orei. Ambele căi cer drepturi de administrator, iar pe o mașină dintr-un domeniu serviciul de timp poate da ceasul înapoi cât încă testezi. Mutarea ceasului sistemului este unul dintre cele patru moduri de a muta timpul pentru un test.
+        <a href="/ro/time-travel-testing/">Toate patru, comparate &rarr;</a>
+      </p>
+    </div>
   </section>
 
   <section>

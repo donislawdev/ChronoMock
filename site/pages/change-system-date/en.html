@@ -9,12 +9,39 @@
 <div class="shell">
 
   <section class="plain">
-    <h1>Changing the system date to test an application</h1>
+    <h1>Changing the system date and time on Windows</h1>
     <p class="sub">
       It is the oldest trick there is: set the Windows clock to the date you want to test, run the
       program, set it back. It works - and for as long as the clock is moved, it moves everything
       else on the machine too.
     </p>
+  </section>
+
+  <section>
+    <h2>How to change it in Windows 11 and 10</h2>
+    <div class="prose">
+      <ol>
+        <li>Open <strong>Settings &gt; Time &amp; language &gt; Date &amp; time</strong>.</li>
+        <li>Turn <strong>Set time automatically</strong> off.</li>
+        <li>Select <strong>Change</strong> next to setting the date and time manually, enter the date and time, and select <strong>Change</strong> again.</li>
+      </ol>
+      <p>
+        From the command line, PowerShell's <code>Set-Date</code> does the same, in a PowerShell started with <strong>Run as administrator</strong>:
+      </p>
+    </div>
+
+    <pre class="term"><span class="c"># The whole machine moves to the last ten seconds of 2027</span>
+<span class="p">Set-Date</span> -Date "2027-12-31 23:59:50"
+
+<span class="c"># Thirty days ahead of now</span>
+<span class="p">Set-Date</span> -Date (Get-Date).AddDays(30)</pre>
+
+    <div class="prose">
+      <p>
+        To put it back, turn <strong>Set time automatically</strong> on again. Both ways need administrator rights, and on a machine joined to a domain the time service can move the clock back while you are still testing. Moving the system clock is one of four ways to move time for a test.
+        <a href="/time-travel-testing/">All four, compared &rarr;</a>
+      </p>
+    </div>
   </section>
 
   <section>

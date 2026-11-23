@@ -4,7 +4,7 @@
 <div class="shell">
 
   <section class="plain">
-    <h1>Testenswerte Daten</h1>
+    <h1>Testfälle für Datumswerte, die sich lohnen</h1>
     <p class="sub">
       Software scheitert nicht an gewöhnlichen Dienstagen. Sie scheitert am letzten Tag des Quartals, am
       29. Februar, im Moment des Jahreswechsels und eine Sekunde nach Ablauf einer Lizenz. Das sind die
@@ -90,6 +90,37 @@
           bricht.</li>
       </ul>
     </div>
+  </section>
+
+  <section>
+    <h2>Testfälle für ein Datumsfeld</h2>
+    <div class="prose">
+      <p>
+        Ein Datum, das in ein Formular getippt wird - ein Geburtsdatum, ein Startdatum, ein Ablaufdatum -, scheitert auf eigene Weise, und für keinen dieser Fälle muss die Uhr verstellt werden. Diese Eingaben lohnen einen Versuch:
+      </p>
+      <ul>
+        <li><strong>29. Februar</strong> - angenommen in einem Schaltjahr (2024, und 2000, weil ein durch 400 teilbares Jahr eines ist), abgelehnt in jedem anderen (2023, und 1900 und 2100, weil ein nicht durch 400 teilbares Jahrhundertjahr keines ist).</li>
+        <li><strong>Tage, die es nicht gibt</strong> - der 30. und 31. Februar, der 31. April, 31. Juni, 31. September und 31. November.</li>
+        <li><strong>Dieselben Ziffern, zweimal gelesen</strong> - 04/08/2026 ist in den USA der 8. April und in Polen der 4. August. Ein Feld, das beide Schreibweisen annimmt, muss sich entscheiden und sagen, wofür.</li>
+        <li><strong>Ein Geburtsdatum an der Altersgrenze</strong> - genau 18 Jahre vor heute muss durchgehen, einen Tag später nicht. Ein Geburtstag am 29. Februar fällt in anderen Jahren auf den 28. Februar oder den 1. März, je nach der Regel, der die Anwendung folgen soll.</li>
+        <li><strong>Ein Geburtsdatum in der Zukunft</strong> und eines, das älter ist als jeder lebende Mensch.</li>
+        <li><strong>1. Januar 1970</strong> - ein echtes Datum und zugleich das, was oft aus einem leeren Wert wird, der als Zahl gespeichert ist.</li>
+        <li><strong>Ein Datum nach dem 19. Januar 2038</strong> - ein Ablaufdatum dort läuft unterwegs irgendwo durch eine 32-Bit-Zeit oder eben nicht.</li>
+      </ul>
+      <p>
+        Ein Datumswähler sollte dieselben Regeln einhalten, indem er Tage, die es nicht gibt, gar nicht anbietet. Der Rechner liest ein eingefügtes Datum zurück und zeigt bei einem mehrdeutigen beide Lesarten:
+      </p>
+    </div>
+
+    <pre class="term"><span class="c"># Ein eingefügtes Datum zurücklesen - ein mehrdeutiges wird auf beide Arten gezeigt</span>
+<span class="p">chrono</span> calc --analyze 04/08/2026
+Chrono Mock - date analysis
+  input:   04/08/2026  (ambiguous - month/day order differs by locale)
+  US MM/DD/YYYY:  2026-04-08  (Wednesday)
+  PL DD/MM/YYYY:  2026-08-04  (Tuesday)
+
+<span class="c"># 18 Jahre vor heute: das späteste Geburtsdatum, das volljährig ist</span>
+<span class="p">chrono</span> calc --base today --shift -18y</pre>
   </section>
 
   <section>

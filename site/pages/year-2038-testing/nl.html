@@ -3,7 +3,7 @@
 <div class="shell">
 
   <section class="plain">
-    <h1>Het jaar-2038-probleem testen in Windows</h1>
+    <h1>Het jaar 2038-probleem, en hoe je het test op Windows</h1>
     <p class="sub">
       Op 19 januari 2038 om 03:14:07 UTC raakt een 32-bits teller met teken voor seconden sinds 1970 op.
       De Windows-klok loopt er gewoon doorheen - de programma's, bestandsformaten en bibliotheken die hun
@@ -33,6 +33,18 @@
           dertig jaar of een certificaat dat tot 2040 geldt, passeren de grens lang voordat 2038
           aanbreekt.</li>
       </ul>
+    </div>
+  </section>
+
+  <section>
+    <h2>De oplossing, en waarom die niet af is</h2>
+    <div class="prose">
+      <p>
+        De oplossing is een 64-bits tijd overal waar een tijd wordt bewaard of doorgegeven: in de eigen variabelen van het programma en in elk bestand, bericht en databasekolom dat het schrijft. Een 64-bits secondenteller met teken gaat ongeveer 292 miljard jaar mee. Windows en zijn C-runtime hebben die overstap lang geleden gemaakt, dus wat overblijft is de code die een eigen 32-bits kopie hield.
+      </p>
+      <p>
+        Daarom kun je een programma niet door te lezen klaar verklaren voor 2038. De plekken waar een tijd wordt opgeslagen zitten verspreid over het programma, zijn bibliotheken en zijn gegevens, en één gemist veld is genoeg. De test die het beslist is die op deze pagina: laat het programma over de grens gaan en kijk wat het doet.
+      </p>
     </div>
   </section>
 

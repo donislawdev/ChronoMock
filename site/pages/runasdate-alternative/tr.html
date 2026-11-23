@@ -36,6 +36,8 @@
           <tr><td>Kaynak kodu</td><td class="n">freeware, kapalı</td><td class="y">GPL-3.0</td></tr>
           <tr><td>Boyut</td><td class="y">47 KB indirme, 64 bit için 57 KB</td><td class="n">komut satırı ~{{size_cli_zip}} MB, pencereyle ~{{size_app_zip}} MB</td></tr>
           <tr><td>Eski Windows sürümleri</td><td class="y">Windows 2000’e kadar</td><td class="n">Windows 10 ve 11</td></tr>
+          <tr><td>32 ve 64 bit uygulamalar</td><td class="n">her biri için ayrı indirme</td><td class="y">ikisi de tek indirmede, pencere uygun olanı seçer</td></tr>
+          <tr><td>Desteklenen sürümler listesinde Windows 11</td><td class="n">hayır, liste Windows 10'da biter</td><td class="y">evet, Windows 10 ile birlikte</td></tr>
         </tbody>
       </table>
     </div>
@@ -89,6 +91,20 @@
         <li><strong>ağ bağlantıları</strong>, zamanın bir sunucudan gelebileceğinin işareti olarak sayılır</li>
       </ul>
       <p>{{channel_count}} kanalın {{substituted_count}} tanesi oturum saatine geçer. Kalan {{observed_count}} tanesi yalnızca sayılır ve gerçek kalır, bu yüzden rapor onları kaydırılmış gibi göstermeden listeler. Duvar saati ve saat dilimi her oturumda kaydırılır. Geçen süre ekseni ve beklemeler <code>--scale-duration</code> ile, yüksek çözünürlüklü sayaç ise <code>--scale-qpc</code> ile istediğinizde izlenir.</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>RunAsDate çalışmıyor gibi göründüğünde</h2>
+    <div class="prose">
+      <p>Nedenlerin çoğunu kendi sayfası söylüyor ve vazgeçmeden önce her birini kontrol etmeye değer:</p>
+      <ul>
+        <li><strong>İndirilen sürüm programa uymuyor.</strong> 64 bitlik bir program 64 bitlik RunAsDate ister ve bu ayrı bir indirmedir. Yeni sürümler sessizce başarısız olmak yerine bunu söyler.</li>
+        <li><strong>Program tarihi RunAsDate yerini almadan önce okudu.</strong> Immediate Mode açık değilse RunAsDate tarihi enjekte etmeden önce bekler ve zamanı en başta okuyan program gerçek zamanda kalır. Sayfası ayrıca Immediate Mode'un bazı programları, özellikle .NET olanları bozabileceği konusunda uyarır.</li>
+        <li><strong>Program yönetici hakkı istiyor.</strong> O zaman RunAsDate'in kendisi de yönetici olarak çalışmalıdır.</li>
+        <li><strong>Tarih RunAsDate'in ulaşamadığı bir yerden geliyor</strong> - bir sunucudan, yakaladığı beş işlevin dışındaki bir işlevden (saat dilimi ya da geçen süre gibi) veya programın başlattığı bir süreçten. Sayfası sonuncusundan hiç söz etmez.</li>
+      </ul>
+      <p>Son neden, Chrono Mock'un farklı kurulduğu yerdir: {{channel_count}} kanalı kapsar, uygulamanın başlattığı süreçleri izler ve raporu kaçırdığı kanalları listeler. "Çalışmıyor gibi" nedenini söyleyen bir satıra dönüşür.</p>
     </div>
   </section>
 

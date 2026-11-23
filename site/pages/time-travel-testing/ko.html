@@ -1,0 +1,118 @@
+<!-- Time travel testing, Korean. Same structure and facts as en.html. -->
+
+<div class="shell">
+
+  <section class="plain">
+    <h1>타임 트래블 테스트(time travel testing)</h1>
+    <p class="sub">
+      타임 트래블 테스트는 소프트웨어를 오늘이 아닌 날짜에서 실행하는 것입니다. 다음 달, 한 해의 마지막 1초, 2월 29일, 2038년에서 그날이 왔을 때 무엇을 하는지 봅니다. 날짜를 기다리는 버그를 찾아냅니다. 엉뚱한 달을 마감하는 보고서, 끝나지 않는 라이선스, 하루 더 받아들여지는 토큰 같은 것들입니다.
+    </p>
+  </section>
+
+  <section>
+    <h2>왜 기법이 필요한가</h2>
+    <div class="prose">
+      <p>
+        날짜에 따라 달라지는 동작은 아주 많습니다. 체험 기간과 라이선스 만료, 구독 갱신, 인증서와 토큰의 유효 기간, 캐시 만료, 월말과 연말 마감, 이자, 알림. 어느 것도 기다려서 테스트할 수 없고, 모두 같은 것, 즉 현재 시각을 어딘가에서 읽습니다. 타임 트래블 테스트는 그 어딘가를 제어하는 일입니다.
+      </p>
+      <p>
+        time machine testing이라고도 부릅니다. 이름이 무엇이든 시간을 옮길 수 있는 곳은 네 군데이고, 각각 세상의 다른 부분을 옮깁니다.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>시간을 옮기는 네 가지 방법</h2>
+    <div class="wrap">
+      <table>
+        <thead>
+          <tr><th>시간이 옮겨지는 곳</th><th>새 날짜를 보는 것</th><th>알맞은 용도</th><th>대가</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>컴퓨터의 시스템 시계</td><td>그 컴퓨터의 모든 것</td><td>운영 체제 자체, 예약 작업, 서비스 테스트. 쓰고 버릴 가상 머신이라면 무엇이든</td><td>도메인 로그온, 인증서, 시간 동기화가 망가지고, 변경하려면 관리자 권한이 필요</td></tr>
+          <tr><td>코드 안의 시계</td><td>그 시계에 묻는 코드</td><td>고칠 수 있는 코드의 단위 테스트. 주입한 시계나 테스트 프레임워크의 가짜 타이머</td><td>소스 코드와 시계를 넘겨주는 설계가 필요. 프로그램으로만 가진 앱에는 소용없음</td></tr>
+          <tr><td>프로세스 하나의 시계</td><td>앱 하나와 그 앱이 시작하는 프로세스</td><td>빌드된 앱을 지금 쓰는 컴퓨터에서 처음부터 끝까지 테스트</td><td>앱이 다른 경로로 시각을 읽을 수 있으므로 어떤 읽기가 다뤄졌는지 알아야 함</td></tr>
+          <tr><td>서버의 시각</td><td>그 서버에 묻는 모든 것</td><td>서버가 시각을 정하는 클라이언트-서버 앱</td><td>서버를 다룰 권한이 필요하며, 어떤 로컬 도구도 이를 주지 못함</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="prose">
+      <p>
+        Linux에서는 세 번째 방법이 <a href="/ko/libfaketime-windows/">libfaketime</a>입니다. Windows에서는 <a href="/ko/runasdate-alternative/">RunAsDate</a>가 그 역할을 해 왔고, Chrono Mock이 하는 일도 이것입니다. 첫 번째 방법과 그것이 작업 중인 컴퓨터에서 망가뜨리는 것은
+        <a href="/ko/change-system-date-testing/">따로 다룹니다 &rarr;</a>
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>시간이 움직이면 무엇을 테스트할까</h2>
+    <div class="prose">
+      <ul>
+        <li><strong>경계</strong> - 월, 분기, 회계 연도의 마지막 날, 그리고 앱이 실행 중일 때 해가 바뀌는 순간.</li>
+        <li><strong>달력</strong> - 2월 29일, 1970년 이전의 날짜, 2038년의 32비트 한계.</li>
+        <li><strong>직접 만든 라이선스</strong> - 체험 기간의 마지막 날, 그다음 날, 오래전에 만료된 라이선스.</li>
+        <li><strong>경과 시간</strong> - 카운트다운, 세션 시간 초과처럼 두 시점 사이를 재는 모든 것. 시간이 실제보다 빨리 흘러야 버그가 드러납니다.</li>
+        <li><strong>시간대</strong> - 다섯 시간대 떨어져 있어 당신보다 하루가 먼저 끝나는 고객.</li>
+      </ul>
+      <p>
+        <a href="/ko/date-test-scenarios/">날짜 테스트 케이스를 하나씩 &rarr;</a>
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Windows 앱의 타임 트래블 테스트</h2>
+    <div class="prose">
+      <p>
+        Chrono Mock은 앱을 자체 시계로 시작하고 시스템 시계는 건드리지 않으므로, 컴퓨터의 나머지 부분은 실제 날짜를 유지합니다. 시계는 어느 순간에서든 시작할 수 있고, 멈추거나, 더 빨리 가거나, 앱이 열린 채로 건너뛸 수 있습니다.
+      </p>
+    </div>
+
+    <pre class="term"><span class="c"># 앱은 2027년의 마지막 10초를 보고 스스로 2028년으로 넘어간다</span>
+<span class="p">chrono</span> run "C:\apps\test.exe" --at 2027-12-31T23:59:50
+
+<span class="c"># 1분에 하루: 30일 기간이 30분 만에 끝난다</span>
+<span class="p">chrono</span> run "C:\apps\test.exe" --mode x1440
+
+<span class="c"># 날짜 대신 이름 붙은 시나리오를 쓰고, 증거를 파일로 남긴다</span>
+<span class="p">chrono</span> run "C:\apps\test.exe" --preset month-end --report session.txt
+
+<span class="c"># 오늘 날짜로 시작해 몇 초 뒤 앱이 열린 채로 2038년으로 건너뛴다</span>
+<span class="p">chrono</span> run "C:\apps\test.exe" --jump-after 5:2038-01-19T03:14:05 --zone +00:00</pre>
+
+    <div class="prose">
+      <p>
+        창에서도 같습니다. 앱을 고르고, 시나리오를 고르거나 날짜를 입력하고, 속도를 고른 다음 Start를 누르세요.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>타임 트래블이 일어났는지 아는 법</h2>
+    <div class="prose">
+      <p>
+        모든 기법의 약점은 같습니다. 앱이 그 기법이 옮기지 않은 경로로 시각을 읽을 수 있다는 점입니다. 앱이 새 날짜를 한 번도 보지 못해서 통과하는 테스트는 테스트가 없는 것보다 나쁩니다. Chrono Mock 세션은 매번 판정, 앱이 실제로 읽은 시간 채널과 각각의 호출 횟수, 놓친 채널로 끝납니다.
+        <a href="/ko/time-source-audit/">감사 방식 &rarr;</a>
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>다루지 않는 것</h2>
+    <div class="prose">
+      <ul>
+        <li><strong>휴대폰과 다른 운영 체제.</strong> Chrono Mock은 Windows 앱을 실행합니다. Android나 iOS 앱, Linux나 macOS 프로그램의 타임 트래블 테스트에는 그 플랫폼용 도구가 필요합니다.</li>
+        <li><strong>서버 쪽.</strong> 앱이 서버에서 받는 날짜는 서버의 날짜 그대로입니다. 앱이 네트워크 연결을 여는 것을 보면 세션이 알려 주므로, 확인이 필요하다는 것을 알 수 있습니다.</li>
+      </ul>
+    </div>
+  </section>
+
+  <section>
+    <h2>직접 써 보세요</h2>
+    <div class="cta">
+      <a class="btn btn-primary" href="/ko/download/">Windows용 다운로드</a>
+      <a class="btn btn-ghost" href="/ko/date-test-scenarios/">날짜 테스트 케이스</a>
+    </div>
+  </section>
+
+</div>

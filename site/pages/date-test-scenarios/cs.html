@@ -3,7 +3,7 @@
 <div class="shell">
 
   <section class="plain">
-    <h1>Data, která stojí za testování</h1>
+    <h1>Testovací případy pro data, které stojí za to projít</h1>
     <p class="sub">
       Software se nerozbije v obyčejné úterý. Rozbije se v poslední den čtvrtletí, 29. února, ve chvíli,
       kdy se mění rok, a o vteřinu po vypršení licence. Tohle jsou data, která takové chyby najdou -
@@ -85,6 +85,37 @@
           na čase a ověřování tokenů.</li>
       </ul>
     </div>
+  </section>
+
+  <section>
+    <h2>Testovací případy pro datové pole</h2>
+    <div class="prose">
+      <p>
+        Datum zapsané do formuláře - datum narození, datum zahájení, datum vypršení - selhává po svém a žádný z těchto případů nevyžaduje posunout hodiny. Tyto vstupy stojí za vyzkoušení:
+      </p>
+      <ul>
+        <li><strong>29. únor</strong> - přijatý v přestupném roce (2024 a také 2000, protože rok dělitelný 400 přestupný je), odmítnutý v každém jiném (2023 a také 1900 a 2100, protože rok na přelomu století nedělitelný 400 přestupný není).</li>
+        <li><strong>Dny, které neexistují</strong> - 30. a 31. února, 31. dubna, 31. června, 31. září a 31. listopadu.</li>
+        <li><strong>Tytéž číslice čtené dvojím způsobem</strong> - 04/08/2026 je ve Spojených státech 8. dubna a v Polsku 4. srpna. Pole, které přijímá oba zápisy, se musí rozhodnout a říct pro který.</li>
+        <li><strong>Datum narození na věkové hranici</strong> - přesně 18 let před dneškem musí projít, o den později už ne. Narozeniny 29. února připadají v ostatních letech na 28. února nebo 1. března, podle pravidla, které má aplikace dodržovat.</li>
+        <li><strong>Datum narození v budoucnosti</strong> a datum starší než kdokoli žijící.</li>
+        <li><strong>1. leden 1970</strong> - skutečné datum a zároveň to, čím se často stane prázdná hodnota uložená jako číslo.</li>
+        <li><strong>Datum po 19. lednu 2038</strong> - datum vypršení z té doby někde po cestě projde 32bitovým časem, nebo ne.</li>
+      </ul>
+      <p>
+        Výběr data v kalendáři by měl dodržovat stejná pravidla a nenabízet dny, které neexistují. Kalkulačka vloženého data ho přečte zpět a u nejednoznačného ukáže obě čtení:
+      </p>
+    </div>
+
+    <pre class="term"><span class="c"># Přečíst vložené datum zpět - nejednoznačné se ukáže oběma způsoby</span>
+<span class="p">chrono</span> calc --analyze 04/08/2026
+Chrono Mock - date analysis
+  input:   04/08/2026  (ambiguous - month/day order differs by locale)
+  US MM/DD/YYYY:  2026-04-08  (Wednesday)
+  PL DD/MM/YYYY:  2026-08-04  (Tuesday)
+
+<span class="c"># Osmnáct let před dneškem: nejpozdější datum narození plnoletého</span>
+<span class="p">chrono</span> calc --base today --shift -18y</pre>
   </section>
 
   <section>

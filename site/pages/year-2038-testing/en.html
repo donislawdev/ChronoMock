@@ -9,7 +9,7 @@
 <div class="shell">
 
   <section class="plain">
-    <h1>Testing for the Year 2038 problem on Windows</h1>
+    <h1>The Year 2038 problem, and how to test for it on Windows</h1>
     <p class="sub">
       At 03:14:07 UTC on 19 January 2038, a signed 32-bit count of seconds since 1970 runs out.
       The Windows clock runs on past it - the programs, file formats and libraries that kept their
@@ -37,6 +37,18 @@
         <li><strong>Code that adds years.</strong> A twenty-year licence, a thirty-year loan
           schedule or a certificate valid until 2040 crosses the boundary years before 2038 arrives.</li>
       </ul>
+    </div>
+  </section>
+
+  <section>
+    <h2>The fix, and why it is not finished</h2>
+    <div class="prose">
+      <p>
+        The fix is a 64-bit time everywhere a time is kept or carried: in the program's own variables, and in every file, message and database column it writes. A signed 64-bit count of seconds lasts for about 292 billion years. Windows and its C runtime made that change long ago, so what is left is the code that kept a 32-bit copy of its own.
+      </p>
+      <p>
+        That is why a program cannot be declared ready for 2038 by reading it. The places a time is stored are spread across the program, its libraries and its data, and one missed field is enough. The test that settles it is the one on this page: run the program past the limit and watch what it does.
+      </p>
     </div>
   </section>
 

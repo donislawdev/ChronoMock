@@ -35,6 +35,8 @@
           <tr><td>Mã nguồn</td><td class="n">freeware, đóng</td><td class="y">GPL-3.0</td></tr>
           <tr><td>Dung lượng</td><td class="y">tải về 47 KB, 57 KB cho bản 64-bit</td><td class="n">~{{size_cli_zip}} MB bản dòng lệnh, ~{{size_app_zip}} MB có cửa sổ</td></tr>
           <tr><td>Phiên bản Windows cũ</td><td class="y">tận Windows 2000</td><td class="n">Windows 10 và 11</td></tr>
+          <tr><td>Ứng dụng 32 bit và 64 bit</td><td class="n">mỗi loại một bản tải riêng</td><td class="y">cả hai trong một lần tải, và cửa sổ tự chọn bản phù hợp</td></tr>
+          <tr><td>Windows 11 trong danh sách phiên bản được hỗ trợ</td><td class="n">không, danh sách dừng ở Windows 10</td><td class="y">có, cùng với Windows 10</td></tr>
         </tbody>
       </table>
     </div>
@@ -88,6 +90,20 @@
         <li>các <strong>kết nối mạng</strong>, được đếm như dấu hiệu thời gian có thể đến từ một máy chủ</li>
       </ul>
       <p>Trong {{channel_count}} kênh, {{substituted_count}} được đưa lên đồng hồ phiên. {{observed_count}} kênh còn lại chỉ được đếm và giữ nguyên thật, nên báo cáo liệt kê chúng mà không nói rằng chúng đã bị dịch chuyển. Đồng hồ treo tường và múi giờ được dịch chuyển trong mọi phiên. Trục thời gian trôi qua và các lệnh chờ được theo dõi khi bạn yêu cầu bằng <code>--scale-duration</code>, còn bộ đếm độ phân giải cao bằng <code>--scale-qpc</code>.</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Khi RunAsDate có vẻ không hoạt động</h2>
+    <div class="prose">
+      <p>Phần lớn nguyên nhân được chính trang của nó nêu ra, và mỗi nguyên nhân đều đáng kiểm tra trước khi bỏ cuộc:</p>
+      <ul>
+        <li><strong>Bản tải về không khớp với chương trình.</strong> Chương trình 64 bit cần RunAsDate 64 bit, là một bản tải riêng. Các phiên bản mới sẽ báo điều đó thay vì lặng lẽ thất bại.</li>
+        <li><strong>Chương trình đọc ngày trước khi RunAsDate kịp vào chỗ.</strong> Trừ khi bật Immediate Mode, RunAsDate chờ một lúc rồi mới tiêm ngày, nên chương trình đọc giờ ngay lúc khởi động vẫn giữ giờ thật. Trang của nó cũng cảnh báo Immediate Mode có thể làm rối một số chương trình, nhất là chương trình .NET.</li>
+        <li><strong>Chương trình cần quyền quản trị viên.</strong> Khi đó chính RunAsDate cũng phải chạy với quyền quản trị viên.</li>
+        <li><strong>Ngày đến từ chỗ RunAsDate không với tới</strong> - một máy chủ, một hàm nằm ngoài năm hàm nó chặn, như múi giờ hay thời gian trôi qua, hoặc một tiến trình do chương trình khởi chạy, điều mà trang của nó không nhắc tới.</li>
+      </ul>
+      <p>Nguyên nhân cuối cùng chính là chỗ Chrono Mock được xây khác đi: nó bao phủ {{channel_count}} kênh, đi theo các tiến trình mà ứng dụng khởi chạy, và báo cáo của nó liệt kê những kênh đã bỏ sót. "Có vẻ không chạy" trở thành một dòng nói rõ vì sao.</p>
     </div>
   </section>
 

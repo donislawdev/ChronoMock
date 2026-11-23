@@ -3,12 +3,39 @@
 <div class="shell">
 
   <section class="plain">
-    <h1>Mengubah tanggal sistem untuk menguji sebuah aplikasi</h1>
+    <h1>Mengubah tanggal dan waktu sistem di Windows</h1>
     <p class="sub">
       Ini trik paling tua yang ada: setel jam Windows ke tanggal yang ingin Anda uji, jalankan program,
       lalu kembalikan jamnya. Caranya berhasil - dan selama jam digeser, ia ikut menggeser semua hal lain
       di mesin itu.
     </p>
+  </section>
+
+  <section>
+    <h2>Cara mengubahnya di Windows 11 dan 10</h2>
+    <div class="prose">
+      <ol>
+        <li>Buka Pengaturan, lalu bagian waktu dan bahasa, lalu tanggal dan waktu.</li>
+        <li>Matikan pengaturan waktu otomatis.</li>
+        <li>Pilih Ubah di samping pengaturan tanggal dan waktu secara manual, masukkan tanggal dan waktu, lalu konfirmasi perubahannya.</li>
+      </ol>
+      <p>
+        Dari baris perintah, <code>Set-Date</code> melakukan hal yang sama, di PowerShell yang dijalankan sebagai administrator:
+      </p>
+    </div>
+
+    <pre class="term"><span class="c"># Seluruh mesin pindah ke sepuluh detik terakhir tahun 2027</span>
+<span class="p">Set-Date</span> -Date "2027-12-31 23:59:50"
+
+<span class="c"># Tiga puluh hari dari sekarang</span>
+<span class="p">Set-Date</span> -Date (Get-Date).AddDays(30)</pre>
+
+    <div class="prose">
+      <p>
+        Untuk mengembalikannya, nyalakan lagi pengaturan waktu otomatis. Kedua cara butuh hak administrator, dan pada mesin yang tergabung dalam domain, layanan waktu bisa memutar balik jam selagi Anda masih menguji. Menggeser jam sistem adalah salah satu dari empat cara menggeser waktu untuk pengujian.
+        <a href="/id/time-travel-testing/">Keempatnya, dibandingkan &rarr;</a>
+      </p>
+    </div>
   </section>
 
   <section>

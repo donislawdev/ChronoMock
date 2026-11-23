@@ -3,12 +3,39 @@
 <div class="shell">
 
   <section class="plain">
-    <h1>Zmiana daty systemowej, żeby przetestować aplikację</h1>
+    <h1>Zmiana daty i godziny w komputerze z Windows</h1>
     <p class="sub">
       To najstarsza sztuczka na świecie: ustaw zegar Windows na datę, którą chcesz sprawdzić,
       uruchom program, ustaw z powrotem. Działa - a dopóki zegar jest przestawiony, przestawia
       też wszystko inne na komputerze.
     </p>
+  </section>
+
+  <section>
+    <h2>Jak to zrobić w Windows 11 i 10</h2>
+    <div class="prose">
+      <ol>
+        <li>Otwórz <strong>Ustawienia &gt; Czas i język &gt; Data i godzina</strong>.</li>
+        <li>Wyłącz <strong>Ustaw czas automatycznie</strong>.</li>
+        <li>Wybierz <strong>Zmień</strong> przy ręcznym ustawianiu daty i godziny, wpisz datę i godzinę, i jeszcze raz wybierz <strong>Zmień</strong>.</li>
+      </ol>
+      <p>
+        Z wiersza poleceń to samo robi <code>Set-Date</code> w PowerShell uruchomionym przez <strong>Uruchom jako administrator</strong>:
+      </p>
+    </div>
+
+    <pre class="term"><span class="c"># Cały komputer przechodzi w ostatnie dziesięć sekund 2027</span>
+<span class="p">Set-Date</span> -Date "2027-12-31 23:59:50"
+
+<span class="c"># Trzydzieści dni od teraz</span>
+<span class="p">Set-Date</span> -Date (Get-Date).AddDays(30)</pre>
+
+    <div class="prose">
+      <p>
+        Żeby wrócić, włącz z powrotem <strong>Ustaw czas automatycznie</strong>. Obie drogi wymagają uprawnień administratora, a na komputerze w domenie usługa czasu potrafi cofnąć zegar jeszcze w trakcie testu. Przestawienie zegara systemu to jeden z czterech sposobów przesunięcia czasu na potrzeby testu.
+        <a href="/pl/time-travel-testing/">Wszystkie cztery, porównane &rarr;</a>
+      </p>
+    </div>
   </section>
 
   <section>

@@ -3,7 +3,7 @@
 <div class="shell">
 
   <section class="plain">
-    <h1>Testování problému roku 2038 ve Windows</h1>
+    <h1>Problém roku 2038 a jak ho otestovat ve Windows</h1>
     <p class="sub">
       Dne 19. ledna 2038 ve 03:14:07 UTC dojde 32bitovému znaménkovému počítadlu sekund od roku 1970.
       Hodiny Windows běží dál - programy, formáty souborů a knihovny, které si ponechaly vlastní 32bitovou
@@ -30,6 +30,18 @@
         <li><strong>Kód, který přičítá roky.</strong> Dvacetiletá licence, třicetiletý splátkový kalendář
           nebo certifikát platný do roku 2040 překročí hranici dlouho předtím, než rok 2038 nastane.</li>
       </ul>
+    </div>
+  </section>
+
+  <section>
+    <h2>Oprava a proč není hotová</h2>
+    <div class="prose">
+      <p>
+        Opravou je 64bitový čas všude, kde se čas uchovává nebo přenáší: ve vlastních proměnných programu a v každém souboru, zprávě a sloupci databáze, které zapisuje. Znaménkový 64bitový čítač sekund vydrží zhruba 292 miliard let. Windows a jeho běhová knihovna C tuto změnu udělaly už dávno, takže zbývá kód, který si nechal vlastní 32bitovou kopii.
+      </p>
+      <p>
+        Proto program nelze prohlásit za připravený na rok 2038 tím, že si přečtete jeho kód. Místa, kde se ukládá čas, jsou roztroušená po programu, jeho knihovnách a datech a stačí jedno přehlédnuté pole. Rozhodne test z této stránky: provést program přes hranici a sledovat, co udělá.
+      </p>
     </div>
   </section>
 

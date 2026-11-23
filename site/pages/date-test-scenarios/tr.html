@@ -3,7 +3,7 @@
 <div class="shell">
 
   <section class="plain">
-    <h1>Test etmeye değer tarihler</h1>
+    <h1>Denemeye değer tarih test senaryoları</h1>
     <p class="sub">
       Yazılım sıradan bir Salı günü bozulmaz. Çeyreğin son gününde, 29 Şubat’ta, bir yılın döndüğü anda
       ve bir lisansın bitmesinden bir saniye sonra bozulur. Bu hataları bulan tarihler bunlar -
@@ -81,6 +81,37 @@
           bozan durum budur.</li>
       </ul>
     </div>
+  </section>
+
+  <section>
+    <h2>Bir tarih alanı için test senaryoları</h2>
+    <div class="prose">
+      <p>
+        Bir forma yazılan tarih - doğum tarihi, başlangıç tarihi, son kullanma tarihi - kendine özgü biçimlerde bozulur ve hiçbiri saatin kaydırılmasını gerektirmez. Denemeye değer girişler şunlardır:
+      </p>
+      <ul>
+        <li><strong>29 Şubat</strong> - artık yılda kabul edilir (2024, ayrıca 2000, çünkü 400'e bölünen yıl artık yıldır), diğer her yılda reddedilir (2023, ayrıca 1900 ve 2100, çünkü 400'e bölünmeyen yüzyıl yılı artık yıl değildir).</li>
+        <li><strong>Var olmayan günler</strong> - 30 ve 31 Şubat, 31 Nisan, 31 Haziran, 31 Eylül ve 31 Kasım.</li>
+        <li><strong>Aynı rakamların iki okunuşu</strong> - 04/08/2026, ABD'de 8 Nisan, Polonya'da 4 Ağustos'tur. İkisini de kabul eden bir alan karar vermeli ve hangisini seçtiğini söylemelidir.</li>
+        <li><strong>Yaş sınırındaki doğum tarihi</strong> - bugünden tam 18 yıl önce geçmeli, bir gün sonrası geçmemelidir. 29 Şubat doğumlu birinin doğum günü diğer yıllarda, uygulamanın izlemesi gereken kurala göre 28 Şubat'a ya da 1 Mart'a düşer.</li>
+        <li><strong>Gelecekteki bir doğum tarihi</strong> ve yaşayan herkesten daha eski bir doğum tarihi.</li>
+        <li><strong>1 Ocak 1970</strong> - gerçek bir tarih, ve aynı zamanda sayı olarak saklanan boş bir değerin sık sık dönüştüğü şey.</li>
+        <li><strong>19 Ocak 2038'den sonraki bir tarih</strong> - oradaki bir son kullanma tarihi yolda bir yerde 32 bitlik bir zamandan geçer ya da geçmez.</li>
+      </ul>
+      <p>
+        Bir tarih seçici, var olmayan günleri sunmayarak aynı kurallara uymalıdır. Hesaplayıcı yapıştırılan bir tarihi geri okur ve belirsizse iki okunuşu da gösterir:
+      </p>
+    </div>
+
+    <pre class="term"><span class="c"># Yapıştırılan tarihi geri oku - belirsiz olan iki şekilde de gösterilir</span>
+<span class="p">chrono</span> calc --analyze 04/08/2026
+Chrono Mock - date analysis
+  input:   04/08/2026  (ambiguous - month/day order differs by locale)
+  US MM/DD/YYYY:  2026-04-08  (Wednesday)
+  PL DD/MM/YYYY:  2026-08-04  (Tuesday)
+
+<span class="c"># Bugünden 18 yıl önce: reşit olan en geç doğum tarihi</span>
+<span class="p">chrono</span> calc --base today --shift -18y</pre>
   </section>
 
   <section>

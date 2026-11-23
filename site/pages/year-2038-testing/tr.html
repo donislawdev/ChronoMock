@@ -3,7 +3,7 @@
 <div class="shell">
 
   <section class="plain">
-    <h1>Windows’ta 2038 yılı sorununu test etmek</h1>
+    <h1>2038 yılı sorunu ve Windows'ta nasıl test edilir</h1>
     <p class="sub">
       19 Ocak 2038’de 03:14:07 UTC’de, 1970’ten beri saniyeleri sayan 32 bitlik işaretli bir sayaç sona
       erer. Windows saati bunun ötesinde çalışmaya devam eder - kendi 32 bitlik kopyasını tutan programlar,
@@ -32,6 +32,18 @@
         <li><strong>Yıl ekleyen kod.</strong> Yirmi yıllık bir lisans, otuz yıllık bir kredi planı ya da
           2040’a kadar geçerli bir sertifika, 2038 gelmeden çok önce sınırı aşar.</li>
       </ul>
+    </div>
+  </section>
+
+  <section>
+    <h2>Düzeltme ve neden bitmedi</h2>
+    <div class="prose">
+      <p>
+        Düzeltme, zamanın saklandığı ya da taşındığı her yerde 64 bitlik zamandır: programın kendi değişkenlerinde ve yazdığı her dosyada, iletide ve veritabanı sütununda. İşaretli 64 bitlik bir saniye sayacı yaklaşık 292 milyar yıl yeter. Windows ve C çalışma zamanı bu değişikliği çoktan yaptı, geriye kendi 32 bitlik kopyasını tutan kod kalıyor.
+      </p>
+      <p>
+        Bu yüzden bir program, kodu okunarak 2038'e hazır ilan edilemez. Zamanın saklandığı yerler programa, kütüphanelerine ve verilerine dağılmıştır ve gözden kaçan tek bir alan yeter. Kesin sonucu bu sayfadaki test verir: programı sınırın ötesine geçirip ne yaptığını izlemek.
+      </p>
     </div>
   </section>
 

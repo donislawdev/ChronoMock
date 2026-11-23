@@ -1,0 +1,145 @@
+<!-- Time travel testing, Romanian. Same structure and facts as en.html. -->
+
+<div class="shell">
+
+  <section class="plain">
+    <h1>Time travel testing</h1>
+    <p class="sub">
+      Time travel testing înseamnă să rulezi un program la altă dată decât azi - luna viitoare,
+      ultima secundă a anului, 29 februarie, 2038 - ca să vezi ce face când vine ziua aceea. Găsește
+      erorile care așteaptă o dată: raportul care închide luna greșită, licența care nu expiră
+      niciodată, tokenul acceptat o zi în plus.
+    </p>
+  </section>
+
+  <section>
+    <h2>De ce e nevoie de o tehnică</h2>
+    <div class="prose">
+      <p>
+        Foarte mult comportament depinde de dată: perioade de probă și expirarea licențelor,
+        reînnoiri de abonamente, valabilitatea certificatelor și a tokenurilor, expirarea cache-ului,
+        închideri de lună și de an, dobânzi, mementouri. Nimic din toate acestea nu se testează
+        așteptând, și totul citește același lucru - ora curentă - de undeva. Time travel testing
+        înseamnă controlul asupra acelui undeva.
+      </p>
+      <p>
+        Uneori i se spune și time machine testing. Oricum s-ar numi, timpul poate fi mutat în patru
+        locuri, și fiecare mută o altă parte a lumii.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Patru moduri de a muta timpul</h2>
+    <div class="wrap">
+      <table>
+        <thead>
+          <tr><th>Unde se mută timpul</th><th>Cine vede noua dată</th><th>Bun pentru</th><th>Ce costă</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Ceasul de sistem al unei mașini</td><td>Tot ce rulează pe acea mașină</td><td>Testarea sistemului însuși, a sarcinilor programate, a serviciilor. Pe o mașină virtuală de unică folosință, orice</td><td>Se strică autentificarea în domeniu, certificatele și sincronizarea orei, iar schimbarea cere drepturi de administrator</td></tr>
+          <tr><td>Un ceas în cod</td><td>Codul care întreabă acel ceas</td><td>Teste unitare ale codului pe care îl poți schimba - un ceas injectat sau cronometrele false ale unui framework de testare</td><td>Cere codul sursă și un design care transmite ceasul. Nu ajută deloc la o aplicație pe care o ai doar ca program</td></tr>
+          <tr><td>Ceasul unui singur proces</td><td>O aplicație și procesele pe care le pornește</td><td>Testarea unei aplicații compilate cap-coadă, pe mașina pe care lucrezi</td><td>O aplicație poate citi ora pe altă cale, deci trebuie să știi ce citiri au fost acoperite</td></tr>
+          <tr><td>Ora unui server</td><td>Tot ce întreabă acel server</td><td>Aplicații client-server în care serverul decide cât e ceasul</td><td>Cere control asupra serverului, pe care niciun instrument local nu-l dă</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="prose">
+      <p>
+        Pe Linux, al treilea mod este <a href="/ro/libfaketime-windows/">libfaketime</a>. Pe Windows a
+        fost <a href="/ro/alternativa-la-runasdate/">RunAsDate</a>, și asta face Chrono Mock. Primul
+        mod, și ce strică el pe mașina pe care lucrezi, are
+        <a href="/ro/modificarea-datei-sistemului-pentru-teste/">o pagină proprie &rarr;</a>
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Ce să testezi odată ce timpul se mișcă</h2>
+    <div class="prose">
+      <ul>
+        <li><strong>Limitele</strong> - ultima zi a unei luni, a unui trimestru și a unui an fiscal,
+          și clipa în care se schimbă anul cu aplicația pornită.</li>
+        <li><strong>Calendarul</strong> - 29 februarie, o dată dinainte de 1970, limita de 32 de
+          biți din 2038.</li>
+        <li><strong>Propriile licențe</strong> - ultima zi a unei perioade de probă, prima zi de
+          după, o licență expirată de mult.</li>
+        <li><strong>Timpul scurs</strong> - numărători inverse, expirări de sesiune și tot ce se
+          măsoară între două momente, care își arată erorile doar când timpul curge mai repede decât
+          cel real.</li>
+        <li><strong>Fusurile orare</strong> - clientul aflat la cinci fusuri distanță, a cărui zi se
+          termină înaintea ta.</li>
+      </ul>
+      <p>
+        <a href="/ro/scenarii-de-testare-a-datelor/">Cazurile de test pentru date, unul câte unul &rarr;</a>
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Time travel testing pentru o aplicație Windows</h2>
+    <div class="prose">
+      <p>
+        Chrono Mock pornește aplicația cu propriul ei ceas și lasă ceasul de sistem în pace, așa că
+        restul mașinii păstrează data reală. Ceasul poate porni din orice moment, poate sta pe loc,
+        poate merge mai repede sau poate sări cât timp aplicația e deschisă.
+      </p>
+    </div>
+
+    <pre class="term"><span class="c"># Aplicația vede ultimele zece secunde din 2027 și trece singură în 2028</span>
+<span class="p">chrono</span> run "C:\apps\test.exe" --at 2027-12-31T23:59:50
+
+<span class="c"># O zi pe minut: o perioadă de 30 de zile se termină într-o jumătate de oră</span>
+<span class="p">chrono</span> run "C:\apps\test.exe" --mode x1440
+
+<span class="c"># Un scenariu cu nume în loc de o dată, cu dovada scrisă într-un fișier</span>
+<span class="p">chrono</span> run "C:\apps\test.exe" --preset month-end --report session.txt
+
+<span class="c"># Pornește azi și sari în 2038 după câteva secunde, cu aplicația deschisă</span>
+<span class="p">chrono</span> run "C:\apps\test.exe" --jump-after 5:2038-01-19T03:14:05 --zone +00:00</pre>
+
+    <div class="prose">
+      <p>
+        La fel în fereastră: alege aplicația, alege un scenariu sau scrie o dată, alege o viteză,
+        apasă Start.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Cum știi că deplasarea în timp a avut loc</h2>
+    <div class="prose">
+      <p>
+        Punctul slab al oricărei tehnici e același: aplicația poate citi ora pe un drum pe care
+        tehnica nu l-a mutat. Un test care trece pentru că aplicația n-a văzut niciodată noua dată e
+        mai rău decât niciun test. Fiecare sesiune Chrono Mock se încheie cu un verdict, canalele de
+        timp pe care aplicația le-a citit cu adevărat, cu numărul de apeluri pentru fiecare, și cele
+        ratate.
+        <a href="/ro/auditul-surselor-de-timp/">Cum funcționează auditul &rarr;</a>
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Ce nu acoperă</h2>
+    <div class="prose">
+      <ul>
+        <li><strong>Telefoanele și alte sisteme.</strong> Chrono Mock rulează aplicații Windows.
+          Time travel testing pentru o aplicație Android sau iOS, ori pentru un program pe Linux sau
+          macOS, cere un instrument pentru acea platformă.</li>
+        <li><strong>Partea de server.</strong> O dată pe care aplicația o primește de la un server
+          rămâne data serverului. Sesiunea spune când vede aplicația deschizând o conexiune de rețea,
+          ca să știi că trebuie verificat.</li>
+      </ul>
+    </div>
+  </section>
+
+  <section>
+    <h2>Încearcă-l</h2>
+    <div class="cta">
+      <a class="btn btn-primary" href="/ro/descarcare/">Descarcă pentru Windows</a>
+      <a class="btn btn-ghost" href="/ro/scenarii-de-testare-a-datelor/">Cazuri de test pentru date</a>
+    </div>
+  </section>
+
+</div>

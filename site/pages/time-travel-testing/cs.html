@@ -1,0 +1,142 @@
+<!-- Time travel testing, Czech. Same structure and facts as en.html. -->
+
+<div class="shell">
+
+  <section class="plain">
+    <h1>Time travel testing</h1>
+    <p class="sub">
+      Time travel testing znamená spustit software s jiným datem než dnes - příští měsíc, v poslední
+      sekundě roku, 29. února, v roce 2038 - a podívat se, co udělá, až ten den přijde. Najde chyby,
+      které čekají na datum: výkaz, který uzavře špatný měsíc, licenci, která nikdy nevyprší, token
+      přijímaný o den déle.
+    </p>
+  </section>
+
+  <section>
+    <h2>Proč je k tomu potřeba technika</h2>
+    <div class="prose">
+      <p>
+        Na datu závisí velmi mnoho chování: zkušební doby a vypršení licencí, obnovy předplatného,
+        platnost certifikátů a tokenů, vypršení mezipaměti, měsíční a roční uzávěrky, úroky,
+        připomínky. Nic z toho nejde otestovat čekáním a všechno čte totéž - aktuální čas - odněkud.
+        Time travel testing je vláda nad tím odněkud.
+      </p>
+      <p>
+        Někdy se mu říká také time machine testing. Ať se jmenuje jakkoli, čas lze posunout na čtyřech
+        místech a každé posune jinou část světa.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Čtyři způsoby, jak posunout čas</h2>
+    <div class="wrap">
+      <table>
+        <thead>
+          <tr><th>Kde se čas posune</th><th>Kdo vidí nové datum</th><th>K čemu se hodí</th><th>Co to stojí</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Systémové hodiny počítače</td><td>Všechno na tom počítači</td><td>Testy samotného systému, plánovaných úloh, služeb. Na jednorázovém virtuálním stroji cokoli</td><td>Rozbije se přihlášení do domény, certifikáty a synchronizace času a změna vyžaduje práva správce</td></tr>
+          <tr><td>Hodiny v kódu</td><td>Kód, který se těch hodin ptá</td><td>Jednotkové testy kódu, který můžete měnit - vložené hodiny nebo falešné časovače testovacího frameworku</td><td>Vyžaduje zdrojový kód a návrh, který hodiny předává dál. Nepomůže u aplikace, kterou máte jen jako program</td></tr>
+          <tr><td>Hodiny jednoho procesu</td><td>Jedna aplikace a procesy, které spustí</td><td>Testy sestavené aplikace od začátku do konce, na počítači, na kterém pracujete</td><td>Aplikace může číst čas jinou cestou, takže musíte vědět, která čtení byla pokryta</td></tr>
+          <tr><td>Čas serveru</td><td>Všechno, co se ptá toho serveru</td><td>Aplikace klient-server, kde o čase rozhoduje server</td><td>Vyžaduje vládu nad serverem, kterou žádný místní nástroj nedá</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="prose">
+      <p>
+        Na Linuxu je třetím způsobem <a href="/cs/libfaketime-windows/">libfaketime</a>. Na Windows to
+        byl <a href="/cs/alternativa-k-runasdate/">RunAsDate</a> a právě to dělá Chrono Mock. První
+        způsob a to, co rozbije na počítači, na kterém pracujete, má
+        <a href="/cs/zmena-systemoveho-data-pri-testovani/">vlastní stránku &rarr;</a>
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Co testovat, když se čas hýbe</h2>
+    <div class="prose">
+      <ul>
+        <li><strong>Hranice</strong> - poslední den měsíce, čtvrtletí a účetního roku a okamžik, kdy
+          se rok změní za běhu aplikace.</li>
+        <li><strong>Kalendář</strong> - 29. únor, datum před rokem 1970, hranice 32 bitů v roce
+          2038.</li>
+        <li><strong>Vaše vlastní licence</strong> - poslední den zkušební doby, první den po ní,
+          licence, která vypršela už dávno.</li>
+        <li><strong>Uplynulý čas</strong> - odpočty, vypršení relací a všechno, co se měří mezi
+          dvěma okamžiky a co ukáže své chyby, až když čas běží rychleji než skutečný.</li>
+        <li><strong>Časová pásma</strong> - zákazník o pět pásem dál, jemuž den končí dřív než
+          vám.</li>
+      </ul>
+      <p>
+        <a href="/cs/testovaci-scenare-dat/">Testovací případy pro data, jeden po druhém &rarr;</a>
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Time travel testing aplikace pro Windows</h2>
+    <div class="prose">
+      <p>
+        Chrono Mock spustí aplikaci s jejími vlastními hodinami a systémové hodiny nechá být, takže
+        zbytek počítače má skutečné datum. Hodiny mohou začít v libovolném okamžiku, stát, běžet
+        rychleji nebo přeskočit, zatímco je aplikace otevřená.
+      </p>
+    </div>
+
+    <pre class="term"><span class="c"># Aplikace vidí posledních deset sekund roku 2027 a sama přejde do roku 2028</span>
+<span class="p">chrono</span> run "C:\apps\test.exe" --at 2027-12-31T23:59:50
+
+<span class="c"># Den za minutu: třicetidenní období skončí za půl hodiny</span>
+<span class="p">chrono</span> run "C:\apps\test.exe" --mode x1440
+
+<span class="c"># Pojmenovaný scénář místo data a důkaz zapsaný do souboru</span>
+<span class="p">chrono</span> run "C:\apps\test.exe" --preset month-end --report session.txt
+
+<span class="c"># Začít dnes a po pár sekundách skočit do roku 2038, s otevřenou aplikací</span>
+<span class="p">chrono</span> run "C:\apps\test.exe" --jump-after 5:2038-01-19T03:14:05 --zone +00:00</pre>
+
+    <div class="prose">
+      <p>
+        Totéž v okně: vyberte aplikaci, vyberte scénář nebo napište datum, zvolte rychlost, stiskněte
+        Start.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Jak poznat, že se posun v čase stal</h2>
+    <div class="prose">
+      <p>
+        Slabé místo každé techniky je stejné: aplikace může číst čas cestou, kterou technika
+        neposunula. Test, který projde, protože aplikace nové datum nikdy neviděla, je horší než žádný
+        test. Každá relace Chrono Mock končí verdiktem, časovými kanály, které aplikace skutečně
+        četla, s počtem volání u každého, a těmi, které vynechala.
+        <a href="/cs/audit-zdroju-casu/">Jak audit funguje &rarr;</a>
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Co to nepokrývá</h2>
+    <div class="prose">
+      <ul>
+        <li><strong>Telefony a jiné systémy.</strong> Chrono Mock spouští aplikace pro Windows. Time
+          travel testing aplikace pro Android nebo iOS či programu na Linuxu nebo macOS potřebuje
+          nástroj pro tu platformu.</li>
+        <li><strong>Stranu serveru.</strong> Datum, které aplikace dostane ze serveru, zůstává datem
+          serveru. Relace to řekne, když uvidí, že aplikace otevírá síťové spojení, abyste věděli, že
+          je to potřeba ověřit.</li>
+      </ul>
+    </div>
+  </section>
+
+  <section>
+    <h2>Vyzkoušejte</h2>
+    <div class="cta">
+      <a class="btn btn-primary" href="/cs/stazeni/">Stáhnout pro Windows</a>
+      <a class="btn btn-ghost" href="/cs/testovaci-scenare-dat/">Testovací případy pro data</a>
+    </div>
+  </section>
+
+</div>

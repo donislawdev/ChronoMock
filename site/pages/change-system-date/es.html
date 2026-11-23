@@ -3,12 +3,39 @@
 <div class="shell">
 
   <section class="plain">
-    <h1>Cambiar la fecha del sistema para probar una aplicación</h1>
+    <h1>Cambiar la fecha y hora del sistema en Windows</h1>
     <p class="sub">
       Es el truco más viejo que existe: poner el reloj de Windows en la fecha que quieres probar, ejecutar
       el programa y volver a ponerlo. Funciona - y mientras el reloj está movido, mueve también todo lo
       demás de la máquina.
     </p>
+  </section>
+
+  <section>
+    <h2>Cómo cambiarla en Windows 11 y 10</h2>
+    <div class="prose">
+      <ol>
+        <li>Abre Configuración, luego la sección de hora e idioma, y luego fecha y hora.</li>
+        <li>Desactiva el ajuste automático de la hora.</li>
+        <li>Elige Cambiar junto al ajuste manual de fecha y hora, escribe la fecha y la hora, y confirma el cambio.</li>
+      </ol>
+      <p>
+        Desde la línea de comandos, <code>Set-Date</code> hace lo mismo, en un PowerShell abierto como administrador:
+      </p>
+    </div>
+
+    <pre class="term"><span class="c"># Toda la máquina pasa a los últimos diez segundos de 2027</span>
+<span class="p">Set-Date</span> -Date "2027-12-31 23:59:50"
+
+<span class="c"># Treinta días a partir de ahora</span>
+<span class="p">Set-Date</span> -Date (Get-Date).AddDays(30)</pre>
+
+    <div class="prose">
+      <p>
+        Para volver atrás, activa de nuevo el ajuste automático de la hora. Las dos formas necesitan permisos de administrador, y en una máquina unida a un dominio el servicio de hora puede devolver el reloj mientras todavía estás probando. Mover el reloj del sistema es una de las cuatro formas de mover el tiempo para una prueba.
+        <a href="/es/time-travel-testing/">Las cuatro, comparadas &rarr;</a>
+      </p>
+    </div>
   </section>
 
   <section>

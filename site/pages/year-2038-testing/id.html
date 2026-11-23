@@ -3,7 +3,7 @@
 <div class="shell">
 
   <section class="plain">
-    <h1>Menguji masalah tahun 2038 di Windows</h1>
+    <h1>Masalah tahun 2038, dan cara mengujinya di Windows</h1>
     <p class="sub">
       Pada 19 Januari 2038 pukul 03:14:07 UTC, penghitung detik sejak 1970 yang bertanda 32 bit habis.
       Jam Windows terus berjalan melewatinya - program, format berkas, dan pustaka yang menyimpan salinan
@@ -34,6 +34,18 @@
           puluh tahun, atau sertifikat yang berlaku hingga 2040 melewati batas itu jauh sebelum 2038
           tiba.</li>
       </ul>
+    </div>
+  </section>
+
+  <section>
+    <h2>Perbaikannya, dan mengapa belum selesai</h2>
+    <div class="prose">
+      <p>
+        Perbaikannya adalah waktu 64 bit di setiap tempat waktu disimpan atau dibawa: di variabel program itu sendiri, dan di setiap berkas, pesan, dan kolom basis data yang ditulisnya. Penghitung detik bertanda 64 bit cukup untuk sekitar 292 miliar tahun. Windows dan runtime C-nya sudah lama melakukan perubahan itu, jadi yang tersisa adalah kode yang menyimpan salinan 32 bit miliknya sendiri.
+      </p>
+      <p>
+        Karena itu, sebuah program tidak bisa dinyatakan siap untuk 2038 hanya dengan membaca kodenya. Tempat penyimpanan waktu tersebar di program, pustakanya, dan datanya, dan satu kolom yang terlewat sudah cukup. Uji yang memastikan adalah uji di halaman ini: jalankan program melewati batas itu dan lihat apa yang dilakukannya.
+      </p>
     </div>
   </section>
 

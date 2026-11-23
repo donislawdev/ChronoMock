@@ -4,7 +4,7 @@
 <div class="shell">
 
   <section class="plain">
-    <h1>Datas que valem a pena testar</h1>
+    <h1>Casos de teste de datas que valem a pena</h1>
     <p class="sub">
       Software não quebra em terças-feiras comuns. Ele quebra no último dia do trimestre, em 29 de
       fevereiro, no instante em que o ano vira e um segundo depois de uma licença expirar. Estas são as
@@ -89,6 +89,37 @@
           baseadas em tempo e a validação de tokens.</li>
       </ul>
     </div>
+  </section>
+
+  <section>
+    <h2>Casos de teste para um campo de data</h2>
+    <div class="prose">
+      <p>
+        Uma data digitada em um formulário - data de nascimento, data de início, data de validade - falha de jeitos próprios, e nenhum deles exige mover o relógio. Estas são as entradas que vale testar:
+      </p>
+      <ul>
+        <li><strong>29 de fevereiro</strong> - aceito em ano bissexto (2024, e 2000, porque um ano divisível por 400 é bissexto), recusado em qualquer outro (2023, e 1900 e 2100, porque um ano secular não divisível por 400 não é).</li>
+        <li><strong>Dias que não existem</strong> - 30 e 31 de fevereiro, 31 de abril, 31 de junho, 31 de setembro e 31 de novembro.</li>
+        <li><strong>Os mesmos dígitos lidos de dois jeitos</strong> - 04/08/2026 é 8 de abril nos Estados Unidos e 4 de agosto na Polônia. Um campo que aceita os dois tem de decidir, e dizer qual.</li>
+        <li><strong>Uma data de nascimento no limite de idade</strong> - exatamente 18 anos antes de hoje tem de passar, um dia depois não. Um aniversário em 29 de fevereiro cai em 28 de fevereiro ou em 1º de março nos outros anos, conforme a regra que o aplicativo deve seguir.</li>
+        <li><strong>Uma data de nascimento no futuro,</strong> e uma mais antiga que qualquer pessoa viva.</li>
+        <li><strong>1º de janeiro de 1970</strong> - uma data real, e também aquilo em que um valor vazio costuma virar quando é guardado como número.</li>
+        <li><strong>Uma data depois de 19 de janeiro de 2038</strong> - uma data de validade ali passa em algum ponto do caminho por um tempo de 32 bits, ou não.</li>
+      </ul>
+      <p>
+        Um seletor de datas deve seguir as mesmas regras e não oferecer os dias que não existem. A calculadora relê uma data colada e mostra as duas leituras quando ela é ambígua:
+      </p>
+    </div>
+
+    <pre class="term"><span class="c"># Reler uma data colada - uma ambígua aparece dos dois jeitos</span>
+<span class="p">chrono</span> calc --analyze 04/08/2026
+Chrono Mock - date analysis
+  input:   04/08/2026  (ambiguous - month/day order differs by locale)
+  US MM/DD/YYYY:  2026-04-08  (Wednesday)
+  PL DD/MM/YYYY:  2026-08-04  (Tuesday)
+
+<span class="c"># Dezoito anos antes de hoje: a data de nascimento mais recente de alguém maior de idade</span>
+<span class="p">chrono</span> calc --base today --shift -18y</pre>
   </section>
 
   <section>
