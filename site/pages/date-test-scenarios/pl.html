@@ -3,7 +3,7 @@
 <div class="shell">
 
   <section class="plain">
-    <h1>Daty warte testowania</h1>
+    <h1>Przypadki testowe dat, które warto przejść</h1>
     <p class="sub">
       Oprogramowanie nie psuje się w zwykłe wtorki. Psuje się ostatniego dnia kwartału,
       29 lutego, w chwili przełomu roku i sekundę po wygaśnięciu licencji. To są daty, które
@@ -87,6 +87,37 @@
           jednorazowe oparte na czasie i walidację tokenów.</li>
       </ul>
     </div>
+  </section>
+
+  <section>
+    <h2>Przypadki testowe dla pola daty</h2>
+    <div class="prose">
+      <p>
+        Data wpisana w formularz - data urodzenia, data rozpoczęcia, data ważności - psuje się na własne sposoby i żaden z nich nie wymaga przesuwania zegara. Te wartości warto wpisać:
+      </p>
+      <ul>
+        <li><strong>29 lutego</strong> - przyjęty w roku przestępnym (2024, a także 2000, bo rok podzielny przez 400 jest przestępny), odrzucony w każdym innym (2023, a także 1900 i 2100, bo wiek niepodzielny przez 400 przestępny nie jest).</li>
+        <li><strong>Dni, których nie ma</strong> - 30 i 31 lutego, 31 kwietnia, 31 czerwca, 31 września i 31 listopada.</li>
+        <li><strong>Te same cyfry czytane na dwa sposoby</strong> - 04/08/2026 to w Stanach Zjednoczonych 8 kwietnia, a w Polsce 4 sierpnia. Pole, które przyjmuje oba zapisy, musi zdecydować i powiedzieć, który przyjęło.</li>
+        <li><strong>Data urodzenia na granicy wieku</strong> - dokładnie 18 lat przed dzisiejszym dniem musi przejść, dzień później już nie. Urodziny 29 lutego wypadają w innych latach 28 lutego albo 1 marca, zależnie od reguły, której aplikacja ma się trzymać.</li>
+        <li><strong>Data urodzenia w przyszłości</strong> i taka, której nikt żyjący nie może mieć.</li>
+        <li><strong>1 stycznia 1970</strong> - prawdziwa data, a zarazem to, czym często staje się pusta wartość zapisana jako liczba.</li>
+        <li><strong>Data po 19 stycznia 2038</strong> - data ważności z tego okresu przechodzi gdzieś po drodze przez 32-bitowy czas albo nie.</li>
+      </ul>
+      <p>
+        Kalendarzyk do wyboru daty powinien trzymać te same reguły i nie podsuwać dni, których nie ma. Kalkulator odczytuje wklejoną datę i przy niejednoznacznej pokazuje oba odczyty:
+      </p>
+    </div>
+
+    <pre class="term"><span class="c"># Odczyt wklejonej daty - niejednoznaczna pokazana na oba sposoby</span>
+<span class="p">chrono</span> calc --analyze 04/08/2026
+Chrono Mock - date analysis
+  input:   04/08/2026  (ambiguous - month/day order differs by locale)
+  US MM/DD/YYYY:  2026-04-08  (Wednesday)
+  PL DD/MM/YYYY:  2026-08-04  (Tuesday)
+
+<span class="c"># 18 lat przed dzisiejszym dniem: najpóźniejsza data urodzenia osoby pełnoletniej</span>
+<span class="p">chrono</span> calc --base today --shift -18y</pre>
   </section>
 
   <section>

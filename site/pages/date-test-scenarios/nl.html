@@ -4,7 +4,7 @@
 <div class="shell">
 
   <section class="plain">
-    <h1>Datums die het testen waard zijn</h1>
+    <h1>Testgevallen voor datums die de moeite waard zijn</h1>
     <p class="sub">
       Software gaat niet stuk op gewone dinsdagen. Ze gaat stuk op de laatste dag van het kwartaal, op
       29 februari, op het moment dat een jaar omslaat, en een seconde nadat een licentie is verlopen. Dit
@@ -89,6 +89,37 @@
           breekt.</li>
       </ul>
     </div>
+  </section>
+
+  <section>
+    <h2>Testgevallen voor een datumveld</h2>
+    <div class="prose">
+      <p>
+        Een datum die in een formulier wordt getypt - een geboortedatum, een startdatum, een vervaldatum - gaat op eigen manieren mis, en voor geen van die gevallen hoeft de klok te verschuiven. Deze invoer is het proberen waard:
+      </p>
+      <ul>
+        <li><strong>29 februari</strong> - geaccepteerd in een schrikkeljaar (2024, en 2000, omdat een jaar dat deelbaar is door 400 er een is), geweigerd in elk ander jaar (2023, en 1900 en 2100, omdat een eeuwjaar dat niet deelbaar is door 400 er geen is).</li>
+        <li><strong>Dagen die niet bestaan</strong> - 30 en 31 februari, 31 april, 31 juni, 31 september en 31 november.</li>
+        <li><strong>Dezelfde cijfers op twee manieren gelezen</strong> - 04/08/2026 is in de Verenigde Staten 8 april en in Polen 4 augustus. Een veld dat beide accepteert, moet kiezen en zeggen welke.</li>
+        <li><strong>Een geboortedatum op de leeftijdsgrens</strong> - precies 18 jaar voor vandaag moet erdoor, een dag later niet. Een verjaardag op 29 februari valt in andere jaren op 28 februari of 1 maart, afhankelijk van de regel die de applicatie moet volgen.</li>
+        <li><strong>Een geboortedatum in de toekomst</strong> en een die ouder is dan wie er ook nog leeft.</li>
+        <li><strong>1 januari 1970</strong> - een echte datum, en ook wat een lege waarde vaak wordt als die als getal is opgeslagen.</li>
+        <li><strong>Een datum na 19 januari 2038</strong> - een vervaldatum daar gaat onderweg ergens door een 32-bits tijd, of niet.</li>
+      </ul>
+      <p>
+        Een datumkiezer hoort dezelfde regels aan te houden door dagen die niet bestaan niet aan te bieden. De rekenmachine leest een geplakte datum terug en toont bij een dubbelzinnige beide lezingen:
+      </p>
+    </div>
+
+    <pre class="term"><span class="c"># Een geplakte datum teruglezen - een dubbelzinnige wordt op beide manieren getoond</span>
+<span class="p">chrono</span> calc --analyze 04/08/2026
+Chrono Mock - date analysis
+  input:   04/08/2026  (ambiguous - month/day order differs by locale)
+  US MM/DD/YYYY:  2026-04-08  (Wednesday)
+  PL DD/MM/YYYY:  2026-08-04  (Tuesday)
+
+<span class="c"># Achttien jaar voor vandaag: de laatste geboortedatum van een meerderjarige</span>
+<span class="p">chrono</span> calc --base today --shift -18y</pre>
   </section>
 
   <section>

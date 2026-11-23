@@ -4,7 +4,7 @@
 <div class="shell">
 
   <section class="plain">
-    <h1>Date che vale la pena testare</h1>
+    <h1>Casi di test sulle date che vale la pena eseguire</h1>
     <p class="sub">
       Il software non si rompe nei martedì qualunque. Si rompe l'ultimo giorno del trimestre, il 29
       febbraio, nell'istante in cui cambia l'anno e un secondo dopo la scadenza di una licenza. Queste sono
@@ -89,6 +89,37 @@
           sul tempo e la validazione dei token.</li>
       </ul>
     </div>
+  </section>
+
+  <section>
+    <h2>Casi di test per un campo data</h2>
+    <div class="prose">
+      <p>
+        Una data digitata in un modulo - data di nascita, data di inizio, data di scadenza - fallisce a modo suo, e nessuno di questi casi richiede di spostare l'orologio. Ecco gli input che vale la pena provare:
+      </p>
+      <ul>
+        <li><strong>29 febbraio</strong> - accettato in un anno bisestile (2024, e 2000, perché un anno divisibile per 400 lo è), rifiutato in qualsiasi altro (2023, e 1900 e 2100, perché un anno secolare non divisibile per 400 non lo è).</li>
+        <li><strong>Giorni che non esistono</strong> - il 30 e il 31 febbraio, il 31 aprile, il 31 giugno, il 31 settembre e il 31 novembre.</li>
+        <li><strong>Le stesse cifre lette in due modi</strong> - 04/08/2026 è l'8 aprile negli Stati Uniti e il 4 agosto in Polonia. Un campo che accetta entrambe le forme deve decidere, e dire quale.</li>
+        <li><strong>Una data di nascita al limite di età</strong> - esattamente 18 anni prima di oggi deve passare, un giorno dopo no. Un compleanno il 29 febbraio cade il 28 febbraio o il 1° marzo negli altri anni, secondo la regola che l'applicazione deve seguire.</li>
+        <li><strong>Una data di nascita nel futuro,</strong> e una più vecchia di qualsiasi persona vivente.</li>
+        <li><strong>1° gennaio 1970</strong> - una data reale, e anche ciò in cui spesso si trasforma un valore vuoto salvato come numero.</li>
+        <li><strong>Una data dopo il 19 gennaio 2038</strong> - una data di scadenza in quel periodo passa da qualche parte per un tempo a 32 bit, oppure no.</li>
+      </ul>
+      <p>
+        Un selettore di date dovrebbe seguire le stesse regole non proponendo i giorni che non esistono. Il calcolatore rilegge una data incollata e mostra entrambe le letture quando è ambigua:
+      </p>
+    </div>
+
+    <pre class="term"><span class="c"># Rileggere una data incollata - una ambigua viene mostrata in entrambi i modi</span>
+<span class="p">chrono</span> calc --analyze 04/08/2026
+Chrono Mock - date analysis
+  input:   04/08/2026  (ambiguous - month/day order differs by locale)
+  US MM/DD/YYYY:  2026-04-08  (Wednesday)
+  PL DD/MM/YYYY:  2026-08-04  (Tuesday)
+
+<span class="c"># Diciotto anni prima di oggi: la data di nascita più recente di chi è maggiorenne</span>
+<span class="p">chrono</span> calc --base today --shift -18y</pre>
   </section>
 
   <section>

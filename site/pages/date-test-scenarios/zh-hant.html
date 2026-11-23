@@ -3,7 +3,7 @@
 <div class="shell">
 
   <section class="plain">
-    <h1>值得測試的日期</h1>
+    <h1>值得一測的日期測試案例</h1>
     <p class="sub">
       軟體不會在普通的星期二出問題。它出問題的時候是季度的最後一天、2 月 29 日、一年翻篇的那一刻，以及授權到期後的一秒鐘。這些日期能找出那些錯誤——其中 <strong>{{preset_count}}</strong> 個以具名情境的形式內建。
     </p>
@@ -62,6 +62,37 @@
         <li><strong>時鐘偏差，+90 s</strong>——當應用程式的時鐘比真實時間快九十秒時，它還能應對嗎？以時間為基礎的一次性密碼與權杖驗證就是在這種情形下失效的。</li>
       </ul>
     </div>
+  </section>
+
+  <section>
+    <h2>日期欄位的測試案例</h2>
+    <div class="prose">
+      <p>
+        填入表單的日期，例如出生日期、開始日期、到期日期，會以自己的方式出錯，而且都不需要移動時鐘。值得試試的輸入有：
+      </p>
+      <ul>
+        <li><strong>2 月 29 日</strong> - 閏年應接受（2024，以及 2000，因為能被 400 整除的年份是閏年），其他年份應拒絕（2023，以及 1900 和 2100，因為不能被 400 整除的整百年不是閏年）。</li>
+        <li><strong>不存在的日子</strong> - 2 月 30 日和 31 日、4 月 31 日、6 月 31 日、9 月 31 日和 11 月 31 日。</li>
+        <li><strong>同一串數字的兩種讀法</strong> - 04/08/2026 在美國是 4 月 8 日，在波蘭是 8 月 4 日。兩種寫法都接受的欄位必須做出選擇，並說明選了哪種。</li>
+        <li><strong>年齡界限上的出生日期</strong> - 恰好是今天往前 18 年的日期必須通過，晚一天就不行。2 月 29 日出生的人，在其他年份的生日落在 2 月 28 日還是 3 月 1 日，取決於應用程式應遵循的規則。</li>
+        <li><strong>未來的出生日期，</strong> 以及比任何在世者都早的出生日期。</li>
+        <li><strong>1970 年 1 月 1 日</strong> - 一個真實的日期，也常常是空值以數字儲存後變成的樣子。</li>
+        <li><strong>2038 年 1 月 19 日之後的日期</strong> - 落在那裡的到期日期，途中某處要麼經過 32 位元時間，要麼沒有。</li>
+      </ul>
+      <p>
+        日期選擇器應該遵守同樣的規則，不提供不存在的日子。計算機能讀回貼上的日期，遇到有歧義的日期會同時給出兩種讀法：
+      </p>
+    </div>
+
+    <pre class="term"><span class="c"># 讀回貼上的日期 - 有歧義的會兩種讀法都顯示</span>
+<span class="p">chrono</span> calc --analyze 04/08/2026
+Chrono Mock - date analysis
+  input:   04/08/2026  (ambiguous - month/day order differs by locale)
+  US MM/DD/YYYY:  2026-04-08  (Wednesday)
+  PL DD/MM/YYYY:  2026-08-04  (Tuesday)
+
+<span class="c"># 今天往前 18 年：成年人最晚的出生日期</span>
+<span class="p">chrono</span> calc --base today --shift -18y</pre>
   </section>
 
   <section>

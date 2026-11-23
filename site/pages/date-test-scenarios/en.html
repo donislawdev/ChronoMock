@@ -7,7 +7,7 @@
 <div class="shell">
 
   <section class="plain">
-    <h1>Dates worth testing</h1>
+    <h1>Date test cases worth running</h1>
     <p class="sub">
       Software does not break on ordinary Tuesdays. It breaks on the last day of the
       quarter, on 29 February, at the moment a year rolls over, and one second after a
@@ -92,6 +92,37 @@
           passwords and token validation.</li>
       </ul>
     </div>
+  </section>
+
+  <section>
+    <h2>Test cases for a date field</h2>
+    <div class="prose">
+      <p>
+        A date typed into a form - a date of birth, a start date, an expiry date - fails in ways of its own, and none of them needs the clock moved. These are the inputs worth trying:
+      </p>
+      <ul>
+        <li><strong>29 February</strong> - accepted in a leap year (2024, and 2000, because a year divisible by 400 is one), refused in any other (2023, and 1900 and 2100, because a century not divisible by 400 is not).</li>
+        <li><strong>Days that do not exist</strong> - 30 and 31 February, 31 April, 31 June, 31 September and 31 November.</li>
+        <li><strong>The same digits read two ways</strong> - 04/08/2026 is 8 April in the United States and 4 August in Poland. A field that accepts both has to decide, and say which.</li>
+        <li><strong>A date of birth at the age limit</strong> - exactly 18 years before today must pass, one day later must not. A birthday on 29 February falls on 28 February or 1 March in other years, depending on the rule the application is meant to follow.</li>
+        <li><strong>A date of birth in the future,</strong> and one older than anyone alive.</li>
+        <li><strong>1 January 1970</strong> - a real date, and also what an empty value often turns into when it is stored as a number.</li>
+        <li><strong>A date after 19 January 2038</strong> - an expiry date there passes through a 32-bit time somewhere on its way, or it does not.</li>
+      </ul>
+      <p>
+        A date picker should keep the same rules by not offering the days that do not exist. The calculator reads a pasted date back, and shows both readings when it is ambiguous:
+      </p>
+    </div>
+
+    <pre class="term"><span class="c"># Read a pasted date back - an ambiguous one is shown both ways</span>
+<span class="p">chrono</span> calc --analyze 04/08/2026
+Chrono Mock - date analysis
+  input:   04/08/2026  (ambiguous - month/day order differs by locale)
+  US MM/DD/YYYY:  2026-04-08  (Wednesday)
+  PL DD/MM/YYYY:  2026-08-04  (Tuesday)
+
+<span class="c"># Eighteen years before today: the latest date of birth that is old enough</span>
+<span class="p">chrono</span> calc --base today --shift -18y</pre>
   </section>
 
   <section>

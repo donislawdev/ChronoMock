@@ -3,7 +3,7 @@
 <div class="shell">
 
   <section class="plain">
-    <h1>Date care merită testate</h1>
+    <h1>Cazuri de test pentru date care merită rulate</h1>
     <p class="sub">
       Software-ul nu se strică într-o marți obișnuită. Se strică în ultima zi a trimestrului, pe
       29 februarie, în clipa în care se schimbă anul și la o secundă după ce expiră o licență. Acestea sunt
@@ -88,6 +88,37 @@
           validarea token-urilor.</li>
       </ul>
     </div>
+  </section>
+
+  <section>
+    <h2>Cazuri de test pentru un câmp de dată</h2>
+    <div class="prose">
+      <p>
+        O dată scrisă într-un formular - data nașterii, data de început, data expirării - eșuează în felul ei, și niciunul dintre aceste cazuri nu cere mutarea ceasului. Iată intrările care merită încercate:
+      </p>
+      <ul>
+        <li><strong>29 februarie</strong> - acceptat într-un an bisect (2024, și 2000, pentru că un an divizibil cu 400 este bisect), refuzat în oricare altul (2023, și 1900 și 2100, pentru că un an secular nedivizibil cu 400 nu este).</li>
+        <li><strong>Zile care nu există</strong> - 30 și 31 februarie, 31 aprilie, 31 iunie, 31 septembrie și 31 noiembrie.</li>
+        <li><strong>Aceleași cifre citite în două feluri</strong> - 04/08/2026 este 8 aprilie în Statele Unite și 4 august în Polonia. Un câmp care acceptă ambele forme trebuie să aleagă și să spună pe care.</li>
+        <li><strong>O dată a nașterii la limita de vârstă</strong> - exact 18 ani înainte de azi trebuie să treacă, o zi mai târziu nu. O zi de naștere pe 29 februarie cade pe 28 februarie sau pe 1 martie în ceilalți ani, după regula pe care trebuie s-o urmeze aplicația.</li>
+        <li><strong>O dată a nașterii în viitor</strong> și una mai veche decât orice om în viață.</li>
+        <li><strong>1 ianuarie 1970</strong> - o dată reală și totodată ceea ce devine adesea o valoare goală salvată ca număr.</li>
+        <li><strong>O dată după 19 ianuarie 2038</strong> - o dată de expirare de acolo trece undeva pe drum printr-un timp pe 32 de biți, sau nu.</li>
+      </ul>
+      <p>
+        Un selector de dată ar trebui să respecte aceleași reguli, fără să ofere zilele care nu există. Calculatorul citește înapoi o dată lipită și arată ambele citiri când e ambiguă:
+      </p>
+    </div>
+
+    <pre class="term"><span class="c"># Citește înapoi o dată lipită - una ambiguă e arătată în ambele feluri</span>
+<span class="p">chrono</span> calc --analyze 04/08/2026
+Chrono Mock - date analysis
+  input:   04/08/2026  (ambiguous - month/day order differs by locale)
+  US MM/DD/YYYY:  2026-04-08  (Wednesday)
+  PL DD/MM/YYYY:  2026-08-04  (Tuesday)
+
+<span class="c"># Optsprezece ani înainte de azi: cea mai târzie dată a nașterii a unui major</span>
+<span class="p">chrono</span> calc --base today --shift -18y</pre>
   </section>
 
   <section>

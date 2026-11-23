@@ -9,135 +9,135 @@
   "languages": {
     "en": {
       "slug": "date-test-scenarios",
-      "link_text": "Dates worth testing",
-      "title": "Dates worth testing - month end, 29 February, 2038",
-      "description": "The dates that break software: period boundaries, the leap day, epoch zero, the 32-bit limit, trial edges and clock skew. {{preset_count}} of them ship as named scenarios."
+      "link_text": "Date test cases",
+      "title": "Date test cases: leap year, month end, date of birth, 2038",
+      "description": "The dates that break software, as test cases: the leap day, period ends, age limits, date fields that accept days that do not exist, epoch zero and 2038. {{preset_count}} of them ship as named scenarios."
     },
     "pl": {
       "slug": "scenariusze-testowe-dat",
-      "link_text": "Daty warte testowania",
-      "title": "Daty warte testowania - koniec miesiąca, 29 lutego, 2038",
-      "description": "Daty, na których psuje się oprogramowanie: granice okresów, dzień przestępny, zero epoki, limit 32-bit, krawędzie wersji próbnej i dryf zegara. {{preset_count}} gotowych scenariuszy."
+      "link_text": "Przypadki testowe dat",
+      "title": "Przypadki testowe dat: rok przestępny, koniec miesiąca, data urodzenia, 2038",
+      "description": "Daty, które psują oprogramowanie, jako przypadki testowe: dzień przestępny, końce okresów, granice wieku, pola daty przyjmujące nieistniejące dni, epoka zero i 2038. {{preset_count}} z nich to gotowe scenariusze."
     },
     "de": {
       "slug": "datums-testszenarien",
-      "link_text": "Testenswerte Daten",
-      "title": "Datumstests: Monatsende, 29. Februar, 2038",
-      "description": "Die Daten, an denen Software scheitert: Periodengrenzen, Schalttag, Epoche null, die 32-Bit-Grenze, Testversionsränder und Uhrenabweichung. {{preset_count}} davon liegen als benannte Szenarien bei."
+      "link_text": "Testfälle für Datumswerte",
+      "title": "Testfälle für Datumswerte: Schaltjahr, Monatsende, Geburtsdatum, 2038",
+      "description": "Die Daten, an denen Software scheitert, als Testfälle: der Schalttag, Periodenenden, Altersgrenzen, Datumsfelder, die Tage annehmen, die es nicht gibt, Epoche null und 2038. {{preset_count}} davon werden als benannte Szenarien mitgeliefert."
     },
     "fr": {
       "slug": "scenarios-de-test-de-dates",
-      "link_text": "Dates à tester",
-      "title": "Dates à tester - fin de mois, 29 février, 2038",
-      "description": "Les dates qui font planter les logiciels : limites de période, jour bissextile, epoch zéro, limite 32 bits, bords des essais et dérive d'horloge. {{preset_count}} sont livrées comme scénarios nommés."
+      "link_text": "Cas de test de dates",
+      "title": "Cas de test de dates : année bissextile, fin de mois, date de naissance, 2038",
+      "description": "Les dates qui cassent les logiciels, sous forme de cas de test : le jour bissextile, les fins de période, les limites d'âge, les champs de date qui acceptent des jours inexistants, l'époque zéro et 2038. {{preset_count}} d'entre elles sont livrées comme scénarios nommés."
     },
     "es": {
       "slug": "escenarios-de-prueba-de-fechas",
-      "link_text": "Fechas que probar",
-      "title": "Fechas que probar - fin de mes, 29 de febrero, 2038",
-      "description": "Las fechas que rompen el software: límites de periodo, día bisiesto, epoch cero, el límite de 32 bits, bordes de pruebas y desfase de reloj. {{preset_count}} se incluyen como escenarios con nombre."
+      "link_text": "Casos de prueba de fechas",
+      "title": "Casos de prueba de fechas: año bisiesto, fin de mes, fecha de nacimiento, 2038",
+      "description": "Las fechas que rompen el software, como casos de prueba: el día bisiesto, los cierres de periodo, los límites de edad, los campos de fecha que aceptan días que no existen, la época cero y 2038. {{preset_count}} de ellas vienen como escenarios con nombre."
     },
     "pt-br": {
       "slug": "cenarios-de-teste-de-datas",
-      "link_text": "Datas para testar",
-      "title": "Datas para testar - fim de mês, 29 de fevereiro, 2038",
-      "description": "As datas que quebram software: limites de período, dia bissexto, epoch zero, o limite de 32 bits, bordas de testes e defasagem de relógio. {{preset_count}} acompanham o programa como cenários nomeados."
+      "link_text": "Casos de teste de datas",
+      "title": "Casos de teste de datas: ano bissexto, fim de mês, data de nascimento, 2038",
+      "description": "As datas que quebram software, como casos de teste: o dia bissexto, fechamentos de período, limites de idade, campos de data que aceitam dias que não existem, a época zero e 2038. {{preset_count}} delas vêm como cenários com nome."
     },
     "it": {
       "slug": "scenari-di-test-delle-date",
-      "link_text": "Date da testare",
-      "title": "Date da testare - fine mese, 29 febbraio, 2038",
-      "description": "Le date che rompono il software: confini di periodo, giorno bisestile, epoch zero, il limite a 32 bit, bordi delle prove e sfasamento dell'orologio. {{preset_count}} sono fornite come scenari con nome."
+      "link_text": "Casi di test sulle date",
+      "title": "Casi di test sulle date: anno bisestile, fine mese, data di nascita, 2038",
+      "description": "Le date che rompono il software, come casi di test: il giorno bisestile, le chiusure di periodo, i limiti di età, i campi data che accettano giorni inesistenti, l'epoca zero e il 2038. {{preset_count}} di esse sono incluse come scenari con nome."
     },
     "nl": {
       "slug": "datum-testscenarios",
-      "link_text": "Datums om te testen",
-      "title": "Datums om te testen - maandeinde, 29 februari, 2038",
-      "description": "De datums die software breken: periodegrenzen, de schrikkeldag, epoch nul, de 32-bitsgrens, randen van proefperiodes en klokafwijking. {{preset_count}} ervan worden meegeleverd als benoemde scenario's."
+      "link_text": "Testgevallen voor datums",
+      "title": "Testgevallen voor datums: schrikkeljaar, maandeinde, geboortedatum, 2038",
+      "description": "De datums waarop software breekt, als testgevallen: de schrikkeldag, periode-einden, leeftijdsgrenzen, datumvelden die dagen accepteren die niet bestaan, epoch nul en 2038. {{preset_count}} ervan komen mee als benoemde scenario's."
     },
     "ro": {
       "slug": "scenarii-de-testare-a-datelor",
-      "link_text": "Date de testat",
-      "title": "Date de testat - sfârșit de lună, 29 februarie, anul 2038",
-      "description": "Datele care strică software-ul: limite de perioadă, ziua bisectă, epoch zero, limita de 32 de biți, marginile probelor și decalajul ceasului. {{preset_count}} vin ca scenarii cu nume."
+      "link_text": "Cazuri de test pentru date",
+      "title": "Cazuri de test pentru date: an bisect, sfârșit de lună, data nașterii, 2038",
+      "description": "Datele care strică software-ul, ca și cazuri de test: ziua bisectă, sfârșiturile de perioadă, limitele de vârstă, câmpurile de dată care acceptă zile inexistente, epoca zero și 2038. {{preset_count}} dintre ele vin ca scenarii cu nume."
     },
     "cs": {
       "slug": "testovaci-scenare-dat",
-      "link_text": "Data k testování",
-      "title": "Data k testování - konec měsíce, 29. únor, rok 2038",
-      "description": "Data, na kterých se software rozbíjí: hranice období, přestupný den, nulová epocha, 32bitová hranice, okraje zkušebních dob a odchylka hodin. {{preset_count}} z nich je v balení jako pojmenované scénáře."
+      "link_text": "Testovací případy pro data",
+      "title": "Testovací případy pro data: přestupný rok, konec měsíce, datum narození, 2038",
+      "description": "Data, na kterých se software láme, jako testovací případy: přestupný den, konce období, věkové hranice, datová pole přijímající neexistující dny, nultá epocha a rok 2038. {{preset_count}} z nich je k dispozici jako pojmenované scénáře."
     },
     "tr": {
       "slug": "tarih-test-senaryolari",
-      "link_text": "Test edilecek tarihler",
-      "title": "Test edilecek tarihler - ay sonu, 29 Şubat, 2038",
-      "description": "Yazılımı bozan tarihler: dönem sınırları, artık gün, epoch sıfır, 32 bit sınırı, deneme süresi kenarları ve saat sapması. {{preset_count}} tanesi adlandırılmış senaryolar olarak gelir."
+      "link_text": "Tarih test senaryoları",
+      "title": "Tarih test senaryoları: artık yıl, ay sonu, doğum tarihi, 2038",
+      "description": "Yazılımı bozan tarihler, test senaryoları olarak: artık gün, dönem sonları, yaş sınırları, var olmayan günleri kabul eden tarih alanları, sıfır epoch ve 2038. Bunların {{preset_count}} tanesi adlandırılmış senaryo olarak gelir."
     },
     "id": {
       "slug": "skenario-uji-tanggal",
-      "link_text": "Tanggal yang diuji",
-      "title": "Tanggal yang layak diuji - akhir bulan, 29 Februari, 2038",
-      "description": "Tanggal yang merusak perangkat lunak: batas periode, hari kabisat, epoch nol, batas 32-bit, tepi masa percobaan, dan selisih jam. {{preset_count}} di antaranya tersedia sebagai skenario bernama."
+      "link_text": "Kasus uji tanggal",
+      "title": "Kasus uji tanggal: tahun kabisat, akhir bulan, tanggal lahir, 2038",
+      "description": "Tanggal yang merusak perangkat lunak, sebagai kasus uji: hari kabisat, akhir periode, batas usia, kolom tanggal yang menerima hari yang tidak ada, epoch nol, dan 2038. {{preset_count}} di antaranya disertakan sebagai skenario bernama."
     },
     "vi": {
       "slug": "kich-ban-kiem-thu-ngay",
-      "link_text": "Ngày cần kiểm thử",
-      "title": "Những ngày đáng kiểm thử - cuối tháng, 29 tháng 2, năm 2038",
-      "description": "Những ngày làm phần mềm hỏng: ranh giới kỳ, ngày nhuận, epoch bằng không, ranh giới 32-bit, biên của bản dùng thử và lệch đồng hồ. {{preset_count}} ngày được cung cấp sẵn dưới dạng kịch bản có tên."
+      "link_text": "Trường hợp kiểm thử ngày",
+      "title": "Trường hợp kiểm thử ngày: năm nhuận, cuối tháng, ngày sinh, 2038",
+      "description": "Những ngày làm hỏng phần mềm, dưới dạng trường hợp kiểm thử: ngày nhuận, cuối kỳ, giới hạn tuổi, trường ngày chấp nhận những ngày không tồn tại, mốc epoch 0 và năm 2038. {{preset_count}} trong số đó đi kèm dưới dạng kịch bản có tên."
     },
     "ru": {
       "slug": "date-test-scenarios",
-      "link_text": "Даты для тестов",
-      "title": "Даты для тестирования — конец месяца, 29 февраля, 2038 год",
-      "description": "Даты, на которых ломается ПО: границы периодов, високосный день, нулевая эпоха, 32-разрядная граница, края пробных периодов и расхождение часов. {{preset_count}} из них поставляются как именованные сценарии."
+      "link_text": "Тестовые случаи для дат",
+      "title": "Тестовые случаи для дат: високосный год, конец месяца, дата рождения, 2038",
+      "description": "Даты, на которых ломаются программы, в виде тестовых случаев: високосный день, концы периодов, возрастные границы, поля даты, принимающие несуществующие дни, нулевая эпоха и 2038 год. {{preset_count}} из них поставляются как именованные сценарии."
     },
     "uk": {
       "slug": "date-test-scenarios",
-      "link_text": "Дати для тестів",
-      "title": "Дати для тестування — кінець місяця, 29 лютого, 2038 рік",
-      "description": "Дати, на яких ламається ПЗ: межі періодів, високосний день, нульова епоха, 32-розрядна межа, краї пробних періодів і розбіжність годинника. {{preset_count}} із них постачаються як іменовані сценарії."
+      "link_text": "Тестові випадки для дат",
+      "title": "Тестові випадки для дат: високосний рік, кінець місяця, дата народження, 2038",
+      "description": "Дати, на яких ламаються програми, у вигляді тестових випадків: високосний день, кінці періодів, вікові межі, поля дати, що приймають неіснуючі дні, нульова епоха і 2038 рік. {{preset_count}} з них постачаються як іменовані сценарії."
     },
     "ja": {
       "slug": "date-test-scenarios",
-      "link_text": "テストする日付",
-      "title": "テストすべき日付 - 月末、2 月 29 日、2038 年",
-      "description": "ソフトウェアが壊れる日付。期間の境界、うるう日、エポックゼロ、32 ビットの限界、試用期間の端、時計のずれ。{{preset_count}} 件を名前付きシナリオとして同梱しています。"
+      "link_text": "日付のテストケース",
+      "title": "日付のテストケース：うるう年、月末、生年月日、2038 年",
+      "description": "ソフトウェアを壊す日付をテストケースにまとめました。うるう日、期末、年齢の境界、存在しない日を受け付ける日付欄、エポック 0、2038 年。うち {{preset_count}} 個は名前付きシナリオとして同梱しています。"
     },
     "ko": {
       "slug": "date-test-scenarios",
-      "link_text": "테스트할 날짜",
-      "title": "테스트할 가치가 있는 날짜 - 월말, 2월 29일, 2038년",
-      "description": "소프트웨어가 고장 나는 날짜. 기간 경계, 윤일, 에포크 0, 32비트 한계, 체험 기간 가장자리, 시계 오차. {{preset_count}}개가 이름이 붙은 시나리오로 제공됩니다."
+      "link_text": "날짜 테스트 케이스",
+      "title": "날짜 테스트 케이스: 윤년, 월말, 생년월일, 2038",
+      "description": "소프트웨어를 망가뜨리는 날짜를 테스트 케이스로 정리했습니다. 윤일, 기간 마감, 나이 경계, 존재하지 않는 날을 받아들이는 날짜 필드, 에포크 0, 2038년. 그중 {{preset_count}}개는 이름 붙은 시나리오로 함께 제공됩니다."
     },
     "zh-hans": {
       "slug": "date-test-scenarios",
-      "link_text": "测试日期",
-      "title": "值得测试的日期 - 月末、2 月 29 日与 2038 年",
-      "description": "软件出问题的那些日子：周期边界、闰日、纪元零点、32 位上限、试用期边缘、时钟偏差。其中 {{preset_count}} 个以命名场景内置。"
+      "link_text": "日期测试用例",
+      "title": "日期测试用例：闰年、月末、出生日期、2038",
+      "description": "会让软件出错的日期，整理成测试用例：闰日、期末、年龄界限、接受不存在日期的日期字段、纪元零点和 2038。其中 {{preset_count}} 个作为命名场景随附。"
     },
     "zh-hant": {
       "slug": "date-test-scenarios",
-      "link_text": "測試日期",
-      "title": "值得測試的日期 - 月底、2 月 29 日與 2038 年",
-      "description": "軟體出問題的那些日子：週期邊界、閏日、紀元零點、32 位元上限、試用期邊緣、時鐘偏差。其中 {{preset_count}} 個以具名情境內建。"
+      "link_text": "日期測試案例",
+      "title": "日期測試案例：閏年、月底、出生日期、2038",
+      "description": "會讓軟體出錯的日期，整理成測試案例：閏日、期末、年齡界限、接受不存在日期的日期欄位、紀元零點和 2038。其中 {{preset_count}} 個以具名情境隨附。"
     },
     "ar": {
       "slug": "date-test-scenarios",
-      "link_text": "تواريخ للاختبار",
-      "title": "تواريخ تستحق الاختبار - نهاية الشهر و29 فبراير و2038",
-      "description": "الأيام التي تتعطل فيها البرمجيات: حدود الفترات، واليوم الكبيس، وصفر الحقبة، وحدّ 32 بت، وحواف التجربة، وانحراف الساعة. و{{preset_count}} منها سيناريوهات مسمّاة."
+      "link_text": "حالات اختبار التواريخ",
+      "title": "حالات اختبار التواريخ: السنة الكبيسة ونهاية الشهر وتاريخ الميلاد و2038",
+      "description": "التواريخ التي تكسر البرامج، في صورة حالات اختبار: اليوم الكبيس ونهايات الفترات وحدود العمر وحقول التاريخ التي تقبل أيامًا لا وجود لها والحقبة صفر و2038. {{preset_count}} منها تأتي سيناريوهاتٍ مسمّاة."
     },
     "hi": {
       "slug": "date-test-scenarios",
-      "link_text": "परखने की तारीख़ें",
-      "title": "परखने लायक तारीख़ें - माह-अंत, 29 फ़रवरी और 2038",
-      "description": "वे दिन जब सॉफ़्टवेयर टूटता है: अवधि की सीमाएँ, अधिवर्ष का दिन, एपॉक शून्य, 32-बिट सीमा, ट्रायल के किनारे, घड़ी का खिसकाव। इनमें से {{preset_count}} नामित परिदृश्य हैं।"
+      "link_text": "तारीख़ों के टेस्ट केस",
+      "title": "तारीख़ों के टेस्ट केस: लीप वर्ष, महीने का अंत, जन्मतिथि, 2038",
+      "description": "सॉफ़्टवेयर तोड़ने वाली तारीख़ें, टेस्ट केस के रूप में: लीप दिवस, अवधि के अंत, उम्र की सीमाएँ, न होने वाले दिन स्वीकार करने वाले तारीख़ फ़ील्ड, शून्य एपॉक और 2038। इनमें से {{preset_count}} नाम वाले परिदृश्यों के रूप में साथ आती हैं।"
     },
     "th": {
       "slug": "date-test-scenarios",
-      "link_text": "วันที่ที่ควรทดสอบ",
-      "title": "วันที่ที่ควรทดสอบ - สิ้นเดือน 29 กุมภาพันธ์ และปี 2038",
-      "description": "วันที่ซอฟต์แวร์พัง: ขอบของช่วงเวลา วันอธิกวาร ศูนย์ของเอพอก ขีดจำกัด 32 บิต ขอบของช่วงทดลองใช้ นาฬิกาคลาดเคลื่อน มี {{preset_count}} สถานการณ์ที่ตั้งชื่อไว้"
+      "link_text": "กรณีทดสอบวันที่",
+      "title": "กรณีทดสอบวันที่: ปีอธิกสุรทิน สิ้นเดือน วันเกิด 2038",
+      "description": "วันที่ที่ทำให้ซอฟต์แวร์พัง ในรูปกรณีทดสอบ ได้แก่ วันอธิกสุรทิน สิ้นงวด เกณฑ์อายุ ช่องวันที่ที่รับวันที่ไม่มีอยู่จริง epoch ศูนย์ และปี 2038 โดย {{preset_count}} กรณีมาพร้อมเป็นสถานการณ์ที่มีชื่อ"
     }
   }
 }

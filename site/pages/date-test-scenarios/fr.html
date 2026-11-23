@@ -4,7 +4,7 @@
 <div class="shell">
 
   <section class="plain">
-    <h1>Les dates qui valent la peine d'être testées</h1>
+    <h1>Les cas de test de dates qui valent la peine</h1>
     <p class="sub">
       Les logiciels ne plantent pas un mardi ordinaire. Ils plantent le dernier jour du trimestre, le
       29 février, à l'instant où une année bascule, et une seconde après l'expiration d'une licence. Ce
@@ -89,6 +89,37 @@
           à usage unique basés sur le temps et la validation des jetons.</li>
       </ul>
     </div>
+  </section>
+
+  <section>
+    <h2>Cas de test pour un champ de date</h2>
+    <div class="prose">
+      <p>
+        Une date saisie dans un formulaire - date de naissance, date de début, date d'expiration - échoue à sa manière, et aucun de ces cas ne demande de déplacer l'horloge. Voici les saisies qui valent la peine d'être essayées :
+      </p>
+      <ul>
+        <li><strong>29 février</strong> - accepté une année bissextile (2024, et 2000, car une année divisible par 400 l'est), refusé toute autre année (2023, et 1900 et 2100, car une année séculaire non divisible par 400 ne l'est pas).</li>
+        <li><strong>Les jours qui n'existent pas</strong> - les 30 et 31 février, le 31 avril, le 31 juin, le 31 septembre et le 31 novembre.</li>
+        <li><strong>Les mêmes chiffres lus de deux façons</strong> - 04/08/2026 est le 8 avril aux États-Unis et le 4 août en Pologne. Un champ qui accepte les deux doit choisir, et dire lequel.</li>
+        <li><strong>Une date de naissance à la limite d'âge</strong> - exactement 18 ans avant aujourd'hui doit passer, un jour plus tard non. Un anniversaire le 29 février tombe le 28 février ou le 1er mars les autres années, selon la règle que l'application doit suivre.</li>
+        <li><strong>Une date de naissance dans le futur,</strong> et une plus ancienne que n'importe quelle personne vivante.</li>
+        <li><strong>1er janvier 1970</strong> - une vraie date, et aussi ce que devient souvent une valeur vide stockée sous forme de nombre.</li>
+        <li><strong>Une date après le 19 janvier 2038</strong> - une date d'expiration à cette époque passe quelque part par un temps sur 32 bits, ou pas.</li>
+      </ul>
+      <p>
+        Un sélecteur de date doit suivre les mêmes règles en ne proposant pas les jours qui n'existent pas. Le calculateur relit une date collée et montre les deux lectures quand elle est ambiguë :
+      </p>
+    </div>
+
+    <pre class="term"><span class="c"># Relire une date collée - une date ambiguë est montrée dans les deux sens</span>
+<span class="p">chrono</span> calc --analyze 04/08/2026
+Chrono Mock - date analysis
+  input:   04/08/2026  (ambiguous - month/day order differs by locale)
+  US MM/DD/YYYY:  2026-04-08  (Wednesday)
+  PL DD/MM/YYYY:  2026-08-04  (Tuesday)
+
+<span class="c"># Dix-huit ans avant aujourd'hui : la date de naissance la plus tardive d'une personne majeure</span>
+<span class="p">chrono</span> calc --base today --shift -18y</pre>
   </section>
 
   <section>
