@@ -81,6 +81,8 @@ public class LocalizationTests
         "session.c_runtime_zone_kept",
         // The sandbox of a Gecko application: switched off on request, or left on with its pages real (ADR-28).
         "session.gecko_sandbox_off", "session.gecko_pages_sandboxed", "session.squirrel_starter_skipped",
+        // A Gecko launcher that would start the application again without the session's administrator rights (ADR-31).
+        "session.gecko_restarts_without_admin",
         "chromium.launched_with_debug_port", "chromium.app_closed_before_audit",
         "chromium.rate_change_affects_running_timers", "chromium.contexts_pooled", "chromium.context_reached_running",
         // A timer the engine's 4 ms floor held back (R5-P6) and a frame the shim did not reach (R5-P5).
@@ -111,7 +113,7 @@ public class LocalizationTests
         // a browser whose processes could not be confirmed to have ended).
         "cleanup.chromium_profile_left", "cleanup.chromium_process_left",
         // Vanish reasons (VanishedEvent reason_key, shown inside report.vanish_detail).
-        "target.single_instance_suspected", "target.handed_off_uncovered", "target.crashed",
+        "target.single_instance_suspected", "target.handed_off_uncovered", "target.crashed", "target.restarted_without_admin",
         // Start/fatal error keys, surfaced as the status headline (RELEASE-001).
         "core.hook_dll_missing", "time.bad_mode", "time.bad_multiplier", "moment.invalid",
         // The session gate (R4-S7, R4-S9): a moment the clock cannot hold, and a zone it cannot carry.

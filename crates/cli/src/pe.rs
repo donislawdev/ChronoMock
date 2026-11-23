@@ -199,6 +199,11 @@ const JIFF_TAIL: usize = 3 * 5 + 2 + 1 + 3 + 1;
 const JIFF_WINDOW: usize = 1 << 20;
 const JIFF_BUDGET: u64 = 32 << 20;
 
+/// How much of `.rdata` `holds_string` reads. Measured 2026-11-23 on a Gecko browser: its launcher keeps
+/// the names of its options 24 to 27 KiB into a 71 KiB `.rdata` (tools/probes/gecko-start/launcher-flags.py).
+/// A string further in is a miss, which leaves the session saying what it said before it looked.
+const STRING_WINDOW: usize = 256 << 10;
+
 /// `IMAGE_SCN_MEM_EXECUTE`: a section of code, which the header search skips. The runtime keeps its
 /// module header in read-only data, and code is full of four-byte runs that spell anything at all -
 /// measured, both NativeAOT probes carry "RTR\0" once in `.text` as well, followed by nonsense.
@@ -231,6 +236,24 @@ pub(crate) fn is_go_binary(target_path: &Path) -> bool {
 /// a path past the budget.
 pub(crate) fn links_jiff(target_path: &Path) -> bool {
     File::open(target_path).ok().and_then(jiff_path_in_rdata).unwrap_or(false)
+}
+
+/// Whether this executable keeps `text` in `.rdata` as a C string of its own: the NUL that ends one string, or
+/// the start of the section, in front of it, and its own NUL behind it. That is how a C or C++ program keeps
+/// the name of a command-line option it compares its arguments with, so a program holding one reads it.
+///
+/// Leans to "no" on every doubt, like the other fingerprints: an unreadable file, no `.rdata`, a short read,
+/// a string past the window, or the text only inside a longer string.
+pub(crate) fn holds_string(target_path: &Path, text: &str) -> bool {
+    File::open(target_path).ok().and_then(|image| string_in_rdata(image, text.as_bytes())).unwrap_or(false)
+}
+
+/// The read `holds_string` wraps: the start of `.rdata`, up to `STRING_WINDOW`.
+fn string_in_rdata<R: Read + Seek>(image: R, text: &[u8]) -> Option<bool> {
+    let mut pe = PeFile::from_reader(image)?;
+    let bytes = pe.section_start(b".rdata\0\0", STRING_WINDOW)?;
+    let found = (0..bytes.len()).any(|at| (at == 0 || bytes[at - 1] == 0) && c_string(&bytes, at) == Some(text));
+    Some(!text.is_empty() && found)
 }
 
 /// The walk `links_jiff` wraps: `.rdata` in windows that overlap by one whole tail, within the budget.
@@ -702,7 +725,7 @@ fn c_string(bytes: &[u8], start: usize) -> Option<&[u8]> {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
     /// Where the synthetic images below put their one section, in memory and on disk.
@@ -717,7 +740,8 @@ mod tests {
     /// Built here rather than pointing at a Go or .NET binary on this machine, and that is the whole
     /// point: the probe binaries live outside the repository, so a test that read one would pass here
     /// and fail on every clean runner - the exact shape that kept CI red for four pushes once already.
-    fn synthetic_pe(magic: u16, section_name: &[u8; 8], data: &[u8], directory: Option<(usize, u32, u32)>) -> Vec<u8> {
+    /// The Gecko launcher tests build their program with it too.
+    pub(crate) fn synthetic_pe(magic: u16, section_name: &[u8; 8], data: &[u8], directory: Option<(usize, u32, u32)>) -> Vec<u8> {
         let pe_at: usize = 0x80;
         let optional_size: usize = if magic == 0x20B { 240 } else { 224 };
         let (count_at, table_at) = if magic == 0x20B { (108, 112) } else { (92, 96) };
@@ -953,6 +977,38 @@ mod tests {
             assert!(found(at, b'\\'), "the path at {at} bytes into .rdata");
         }
         assert!(!found(JIFF_WINDOW, b'x'), "another crate's name running into the first byte of a window");
+    }
+
+    /// The reversal probe for `holds_string`, both ways: the option name a C++ program compares its arguments
+    /// with answers yes wherever `.rdata` keeps it inside the window, and the same letters inside a longer
+    /// string, cut off by the end of the section, past the window or in another section answer no.
+    #[test]
+    fn a_string_is_found_only_as_a_c_string_of_its_own_in_rdata() {
+        let holds = |name: &str, section: &[u8; 8], data: &[u8]| {
+            let file = write_probe(name, &synthetic_pe(0x20B, section, data, None));
+            let found = holds_string(&file, "no-deelevate");
+            let _ = std::fs::remove_file(file);
+            found
+        };
+        let rdata = b".rdata\0\0";
+        assert!(holds("string-between", rdata, b"wait-for-browser\0no-deelevate\0force-launcher\0"));
+        assert!(holds("string-first", rdata, b"no-deelevate\0other\0"), "the string the section starts with");
+        assert!(holds("string-padded", rdata, b"other\0\0\0\0no-deelevate\0\0\0\0"), "behind alignment padding");
+        let mut late = vec![b'x'; STRING_WINDOW - 20];
+        late.extend_from_slice(b"\0no-deelevate\0");
+        assert!(holds("string-late", rdata, &late), "the last string the window holds whole");
+
+        assert!(!holds("string-inside", rdata, b"--no-deelevate\0"), "a longer string ending in it");
+        assert!(!holds("string-prefix", rdata, b"\0no-deelevated\0"), "a longer string starting with it");
+        assert!(!holds("string-cut", rdata, b"other\0no-deelevate"), "no NUL before the section ends");
+        assert!(!holds("string-wide", rdata, "\0no-deelevate\0".encode_utf16().flat_map(u16::to_le_bytes).collect::<Vec<_>>().as_slice()));
+        let mut past = vec![b'x'; STRING_WINDOW];
+        past.extend_from_slice(b"\0no-deelevate\0");
+        assert!(!holds("string-past", rdata, &past), "past the window");
+        assert!(!holds("string-data", b".data\0\0\0", b"\0no-deelevate\0"), "read .rdata, where the literals are");
+        let empty = write_probe("string-empty", &synthetic_pe(0x20B, rdata, b"\0\0\0", None));
+        assert!(!holds_string(&empty, ""), "an empty text is no string to look for");
+        let _ = std::fs::remove_file(empty);
     }
 
     /// A synthetic image whose file header says what a linker says about a program: an executable
