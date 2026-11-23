@@ -34,29 +34,54 @@ it exists.
 
 **What it can do**
 
-- **Any moment, absolute or relative** - a specific date and time, or `+30 days`, `-1 year`.
+**Move one application's clock**
+
+- **Any moment, absolute or relative** - a specific date and time, `+30 days`, `-1 year`, or a named
+  scenario such as the year rollover, the last day of a month or the 2038 boundary.
 - **Flowing, frozen, or accelerated** - run from the shifted point at normal speed, hold the clock
   still, or multiply it by any whole number up to a million (x1440 turns a day into a minute).
-- **Jump mid-session** - forward or backward, including the backward jump a laptop makes after
-  resyncing with a time server, which breaks anything measuring elapsed time without a guard.
+  Countdowns, timeouts and stopwatches can follow the same speed when you ask for it.
+- **Jump mid-session** - forward or backward, or straight to a date you type, including the backward
+  jump a laptop makes after resyncing with a time server, which breaks anything measuring elapsed
+  time without a guard.
 - **Its own time zone** - a fixed offset for that process only, while the system zone stays put.
+
+**Reach all of the application**
+
 - **Child processes come along** - installers and launchers spawn children, and without that the test
   covers only half of what ran. A launcher or a script that starts the application and ends does not
   end the session: it lasts until the last program on the session clock closes.
-- **Tells you if it worked** - a verdict, the channels covered with call counts, the channels missed,
-  and warnings with consequences. [See below](#how-do-you-know-it-worked---the-time-source-audit) - this
-  is the part no other tool does.
-- **A date calculator built for QA** - month-end, quarter close, the 2038 boundary, "the first day
-  after a 14-day trial", business days and holidays, every format at once.
+- **Native code and the common runtimes** - besides native Windows programs, applications on .NET,
+  Java, Python and JavaScript runtimes such as Node.js read the session clock too. These are still
+  marked experimental, and the [support matrix](#support-matrix) says what each one covers.
 - **Electron and Chromium apps too** - through a different mechanism, because their clock lives in a
   sandboxed renderer where injection does not reach.
 - **The web pages inside an ordinary application too** - an application with a built-in web engine
   (WebView2, Qt WebEngine) runs its pages in a process the hook cannot enter. The session asks the
   engine to open a local debugging port and puts those pages on the same clock as the rest of the
-  application, through it. On by default, off with one switch.
-- **A window and a command line** - the same engine behind both, exit codes for CI.
+  application, through it. On by default, off with one switch. An application on Mozilla's Gecko
+  engine keeps its pages in a sandbox instead, and they follow the session when you switch that
+  sandbox off for the run.
+
+**Prove that it worked**
+
+- **Tells you if it worked** - a verdict, the channels covered with call counts, the channels missed,
+  and warnings with consequences. [See below](#how-do-you-know-it-worked---the-time-source-audit) - this
+  is the part no other tool does. `--report` writes all of it to a file you can attach to a bug.
+- **A plan before the run** - `chrono run --dry-run` shows the moment the application would see, the
+  zone it is read in and how the application would be started, and starts nothing.
+
+**Around it**
+
+- **A date calculator built for QA** - month-end, quarter close, the 2038 boundary, "the first day
+  after a 14-day trial", business days and holidays, every format at once. Copy as command turns any
+  answer into the command line that gives it.
+- **A window and a command line** - the same engine behind both, `--json` and exit codes for CI. The
+  window takes a program or a shortcut dropped on it or passed on its command line, and a screen
+  reader hears its status and verdict as they change.
 - **Portable, or installed** - the zips need no installer and no administrator rights and run from a USB
-  stick, and a signed installer is there for a whole machine.
+  stick, and a signed installer is there for a whole machine. The programs are signed, and a release
+  carries checksums and a bill of materials you can [check](#download-and-run).
 
 ![Chrono Mock running another Windows application at a fake date. The left window is Chrono Mock: the application's clock reads 19 January 2038 and climbs at sixty times real speed while the real clock beside it moves a few seconds. The right window is the application under test, whose own session record shows it started on 19 January 2038 and has been running for minutes while barely half a minute has passed in the room.](site/assets/chrono-in-action.gif)
 
