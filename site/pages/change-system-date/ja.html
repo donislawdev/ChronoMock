@@ -3,10 +3,37 @@
 <div class="shell">
 
   <section class="plain">
-    <h1>アプリをテストするためにシステム日付を変更する</h1>
+    <h1>Windows でシステムの日付と時刻を変更する</h1>
     <p class="sub">
       これは昔からある最も古い手です。Windows の時計をテストしたい日付に合わせ、プログラムを実行し、時計を元に戻す。確かに効きます。ただし、時計を動かしている間は、マシン上のほかのすべても一緒に動いてしまいます。
     </p>
+  </section>
+
+  <section>
+    <h2>Windows 11 と 10 での変更方法</h2>
+    <div class="prose">
+      <ol>
+        <li>設定を開き、時刻と言語から日付と時刻に進みます。</li>
+        <li>時刻を自動的に設定するオプションをオフにします。</li>
+        <li>日付と時刻を手動で設定する項目の横の [変更] を選び、日付と時刻を入力して、もう一度変更を確定します。</li>
+      </ol>
+      <p>
+        コマンドラインでは、管理者として実行した PowerShell で <code>Set-Date</code> が同じことをします。
+      </p>
+    </div>
+
+    <pre class="term"><span class="c"># マシン全体が 2027 年の最後の 10 秒に移る</span>
+<span class="p">Set-Date</span> -Date "2027-12-31 23:59:50"
+
+<span class="c"># 今から 30 日後</span>
+<span class="p">Set-Date</span> -Date (Get-Date).AddDays(30)</pre>
+
+    <div class="prose">
+      <p>
+        元に戻すには、時刻を自動的に設定するオプションをもう一度オンにします。どちらの方法も管理者権限が必要で、ドメインに参加しているマシンでは、テスト中でも時刻サービスが時計を戻すことがあります。システム時計を動かすのは、テストのために時間を動かす 4 つの方法の 1 つです。
+        <a href="/ja/time-travel-testing/">4 つの方法の比較 &rarr;</a>
+      </p>
+    </div>
   </section>
 
   <section>

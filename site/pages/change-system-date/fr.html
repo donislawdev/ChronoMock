@@ -3,12 +3,39 @@
 <div class="shell">
 
   <section class="plain">
-    <h1>Changer la date système pour tester une application</h1>
+    <h1>Changer la date et l'heure du système sous Windows</h1>
     <p class="sub">
       C'est la plus vieille astuce qui soit&nbsp;: régler l'horloge de Windows sur la date que vous voulez
       tester, lancer le programme, la remettre. Ça marche - et tant que l'horloge est déplacée, elle
       déplace aussi tout le reste de la machine.
     </p>
+  </section>
+
+  <section>
+    <h2>Comment faire sous Windows 11 et 10</h2>
+    <div class="prose">
+      <ol>
+        <li>Ouvrez les Paramètres, puis la partie heure et langue, puis date et heure.</li>
+        <li>Désactivez le réglage automatique de l'heure.</li>
+        <li>Choisissez Modifier à côté du réglage manuel de la date et de l'heure, saisissez la date et l'heure, puis confirmez la modification.</li>
+      </ol>
+      <p>
+        En ligne de commande, <code>Set-Date</code> fait la même chose, dans un PowerShell lancé en tant qu'administrateur :
+      </p>
+    </div>
+
+    <pre class="term"><span class="c"># Toute la machine passe aux dix dernières secondes de 2027</span>
+<span class="p">Set-Date</span> -Date "2027-12-31 23:59:50"
+
+<span class="c"># Trente jours à partir de maintenant</span>
+<span class="p">Set-Date</span> -Date (Get-Date).AddDays(30)</pre>
+
+    <div class="prose">
+      <p>
+        Pour revenir en arrière, réactivez le réglage automatique de l'heure. Les deux façons demandent des droits d'administrateur, et sur une machine membre d'un domaine, le service de temps peut remettre l'horloge à l'heure pendant que vous testez encore. Déplacer l'horloge du système est l'une des quatre façons de déplacer le temps pour un test.
+        <a href="/fr/time-travel-testing/">Les quatre, comparées &rarr;</a>
+      </p>
+    </div>
   </section>
 
   <section>

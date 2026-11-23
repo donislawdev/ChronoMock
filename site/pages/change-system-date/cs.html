@@ -3,12 +3,39 @@
 <div class="shell">
 
   <section class="plain">
-    <h1>Změna systémového data kvůli otestování aplikace</h1>
+    <h1>Změna systémového data a času ve Windows</h1>
     <p class="sub">
       Je to nejstarší trik, jaký existuje: nastavit hodiny Windows na datum, které chcete otestovat,
       spustit program a hodiny vrátit. Funguje to - a dokud jsou hodiny posunuté, posouvají i všechno
       ostatní na počítači.
     </p>
+  </section>
+
+  <section>
+    <h2>Jak to udělat ve Windows 11 a 10</h2>
+    <div class="prose">
+      <ol>
+        <li>Otevřete Nastavení, pak oddíl čas a jazyk a pak datum a čas.</li>
+        <li>Vypněte automatické nastavení času.</li>
+        <li>U ručního nastavení data a času vyberte Změnit, zadejte datum a čas a změnu potvrďte.</li>
+      </ol>
+      <p>
+        Z příkazového řádku udělá totéž <code>Set-Date</code> v PowerShellu spuštěném jako správce:
+      </p>
+    </div>
+
+    <pre class="term"><span class="c"># Celý počítač přejde do posledních deseti sekund roku 2027</span>
+<span class="p">Set-Date</span> -Date "2027-12-31 23:59:50"
+
+<span class="c"># Třicet dní od teď</span>
+<span class="p">Set-Date</span> -Date (Get-Date).AddDays(30)</pre>
+
+    <div class="prose">
+      <p>
+        Pro návrat znovu zapněte automatické nastavení času. Obě cesty vyžadují práva správce a na počítači v doméně může služba času vrátit hodiny, ještě když testujete. Posunutí systémových hodin je jeden ze čtyř způsobů, jak posunout čas pro test.
+        <a href="/cs/time-travel-testing/">Všechny čtyři v porovnání &rarr;</a>
+      </p>
+    </div>
   </section>
 
   <section>

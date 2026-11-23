@@ -3,10 +3,37 @@
 <div class="shell">
 
   <section class="plain">
-    <h1>애플리케이션을 테스트하려고 시스템 날짜를 바꾸기</h1>
+    <h1>Windows에서 시스템 날짜와 시간 바꾸기</h1>
     <p class="sub">
       가장 오래된 방법입니다. Windows 시계를 테스트하려는 날짜로 맞추고, 프로그램을 실행하고, 시계를 되돌립니다. 이 방법은 통합니다. 다만 시계가 옮겨져 있는 동안에는 컴퓨터의 다른 모든 것도 함께 옮겨집니다.
     </p>
+  </section>
+
+  <section>
+    <h2>Windows 11과 10에서 바꾸는 법</h2>
+    <div class="prose">
+      <ol>
+        <li>설정을 열고 시간 및 언어로 들어간 다음 날짜 및 시간으로 갑니다.</li>
+        <li>시간 자동 설정을 끕니다.</li>
+        <li>날짜와 시간을 수동으로 설정하는 항목 옆의 변경을 선택하고, 날짜와 시간을 입력한 뒤 변경을 확정합니다.</li>
+      </ol>
+      <p>
+        명령줄에서는 관리자 권한으로 실행한 PowerShell에서 <code>Set-Date</code>가 같은 일을 합니다.
+      </p>
+    </div>
+
+    <pre class="term"><span class="c"># 컴퓨터 전체가 2027년의 마지막 10초로 옮겨진다</span>
+<span class="p">Set-Date</span> -Date "2027-12-31 23:59:50"
+
+<span class="c"># 지금부터 30일 뒤</span>
+<span class="p">Set-Date</span> -Date (Get-Date).AddDays(30)</pre>
+
+    <div class="prose">
+      <p>
+        되돌리려면 시간 자동 설정을 다시 켭니다. 두 방법 모두 관리자 권한이 필요하고, 도메인에 가입된 컴퓨터에서는 테스트 중에도 시간 서비스가 시계를 되돌릴 수 있습니다. 시스템 시계를 옮기는 것은 테스트를 위해 시간을 옮기는 네 가지 방법 중 하나입니다.
+        <a href="/ko/time-travel-testing/">네 가지 방법 비교 &rarr;</a>
+      </p>
+    </div>
   </section>
 
   <section>

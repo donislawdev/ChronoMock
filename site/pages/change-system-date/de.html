@@ -3,12 +3,39 @@
 <div class="shell">
 
   <section class="plain">
-    <h1>Das Systemdatum ändern, um eine Anwendung zu testen</h1>
+    <h1>Systemdatum und Uhrzeit unter Windows ändern</h1>
     <p class="sub">
       Es ist der älteste Trick überhaupt: die Windows-Uhr auf das Datum stellen, das Sie testen wollen,
       das Programm starten, die Uhr zurückstellen. Das funktioniert - und solange die Uhr verstellt ist,
       verstellt sie auch alles andere auf dem Rechner.
     </p>
+  </section>
+
+  <section>
+    <h2>So geht es in Windows 11 und 10</h2>
+    <div class="prose">
+      <ol>
+        <li>Die Einstellungen öffnen, dort Zeit und Sprache und dann Datum und Uhrzeit.</li>
+        <li>Das automatische Festlegen der Uhrzeit ausschalten.</li>
+        <li>Neben dem manuellen Festlegen von Datum und Uhrzeit auf Ändern klicken, Datum und Uhrzeit eingeben und die Änderung bestätigen.</li>
+      </ol>
+      <p>
+        Auf der Befehlszeile macht <code>Set-Date</code> dasselbe, in einer PowerShell, die als Administrator gestartet wurde:
+      </p>
+    </div>
+
+    <pre class="term"><span class="c"># Der ganze Rechner springt in die letzten zehn Sekunden von 2027</span>
+<span class="p">Set-Date</span> -Date "2027-12-31 23:59:50"
+
+<span class="c"># Dreißig Tage ab jetzt</span>
+<span class="p">Set-Date</span> -Date (Get-Date).AddDays(30)</pre>
+
+    <div class="prose">
+      <p>
+        Zum Zurückstellen das automatische Festlegen der Uhrzeit wieder einschalten. Beide Wege brauchen Administratorrechte, und auf einem Rechner in einer Domäne kann der Zeitdienst die Uhr zurückstellen, während Sie noch testen. Die Systemuhr zu verstellen ist einer von vier Wegen, für einen Test die Zeit zu verschieben.
+        <a href="/de/time-travel-testing/">Alle vier im Vergleich &rarr;</a>
+      </p>
+    </div>
   </section>
 
   <section>

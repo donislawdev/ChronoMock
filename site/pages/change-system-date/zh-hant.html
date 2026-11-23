@@ -3,10 +3,37 @@
 <div class="shell">
 
   <section class="plain">
-    <h1>為測試應用程式而修改系統日期</h1>
+    <h1>在 Windows 上變更系統日期和時間</h1>
     <p class="sub">
       這是最古老的辦法：把 Windows 時鐘調到你想測試的日期，執行程式，再把時鐘調回來。它確實管用——但時鐘被調動期間，電腦上的其他一切也都會跟著變。
     </p>
+  </section>
+
+  <section>
+    <h2>在 Windows 11 和 10 中怎麼改</h2>
+    <div class="prose">
+      <ol>
+        <li>開啟「設定」，進入時間與語言，再進入日期和時間。</li>
+        <li>關閉自動設定時間。</li>
+        <li>在手動設定日期和時間那一項旁選擇「變更」，輸入日期和時間，然後再次確認變更。</li>
+      </ol>
+      <p>
+        在命令列中，PowerShell 的 <code>Set-Date</code> 可以做同樣的事，前提是 PowerShell 以系統管理員身分執行：
+      </p>
+    </div>
+
+    <pre class="term"><span class="c"># 整台電腦跳到 2027 年的最後十秒</span>
+<span class="p">Set-Date</span> -Date "2027-12-31 23:59:50"
+
+<span class="c"># 從現在起往後三十天</span>
+<span class="p">Set-Date</span> -Date (Get-Date).AddDays(30)</pre>
+
+    <div class="prose">
+      <p>
+        要改回來，重新開啟自動設定時間即可。兩種方式都需要系統管理員權限，而在加入網域的電腦上，時間服務可能在你還在測試時就把時鐘撥回去。改系統時鐘是為測試移動時間的四種方法之一。
+        <a href="/zh-hant/time-travel-testing/">四種方法的比較 &rarr;</a>
+      </p>
+    </div>
   </section>
 
   <section>

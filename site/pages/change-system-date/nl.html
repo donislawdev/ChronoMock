@@ -3,12 +3,39 @@
 <div class="shell">
 
   <section class="plain">
-    <h1>De systeemdatum wijzigen om een applicatie te testen</h1>
+    <h1>Systeemdatum en -tijd wijzigen in Windows</h1>
     <p class="sub">
       Het is de oudste truc die er is: de Windows-klok op de datum zetten die je wilt testen, het
       programma draaien en de klok terugzetten. Het werkt - en zolang de klok verzet is, verzet hij ook
       al het andere op de machine.
     </p>
+  </section>
+
+  <section>
+    <h2>Zo doe je het in Windows 11 en 10</h2>
+    <div class="prose">
+      <ol>
+        <li>Open Instellingen, dan het onderdeel tijd en taal, dan datum en tijd.</li>
+        <li>Zet het automatisch instellen van de tijd uit.</li>
+        <li>Kies Wijzigen naast het handmatig instellen van datum en tijd, vul datum en tijd in en bevestig de wijziging.</li>
+      </ol>
+      <p>
+        Op de opdrachtregel doet <code>Set-Date</code> hetzelfde, in een PowerShell die als administrator is gestart:
+      </p>
+    </div>
+
+    <pre class="term"><span class="c"># De hele machine gaat naar de laatste tien seconden van 2027</span>
+<span class="p">Set-Date</span> -Date "2027-12-31 23:59:50"
+
+<span class="c"># Dertig dagen vanaf nu</span>
+<span class="p">Set-Date</span> -Date (Get-Date).AddDays(30)</pre>
+
+    <div class="prose">
+      <p>
+        Om terug te zetten, zet je het automatisch instellen van de tijd weer aan. Beide manieren vragen beheerdersrechten, en op een machine in een domein kan de tijdservice de klok terugzetten terwijl je nog test. De systeemklok verzetten is een van de vier manieren om voor een test de tijd te verzetten.
+        <a href="/nl/time-travel-testing/">Alle vier, vergeleken &rarr;</a>
+      </p>
+    </div>
   </section>
 
   <section>

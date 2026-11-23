@@ -3,11 +3,38 @@
 <div class="shell">
 
   <section class="plain">
-    <h1>Đổi ngày hệ thống để kiểm thử một ứng dụng</h1>
+    <h1>Đổi ngày giờ hệ thống trên Windows</h1>
     <p class="sub">
       Đây là mẹo cũ nhất còn tồn tại: đặt đồng hồ Windows về ngày bạn muốn kiểm thử, chạy chương trình rồi
       đặt lại. Cách này hiệu quả - và chừng nào đồng hồ còn bị dời, nó dời luôn mọi thứ khác trên máy.
     </p>
+  </section>
+
+  <section>
+    <h2>Cách đổi trên Windows 11 và 10</h2>
+    <div class="prose">
+      <ol>
+        <li>Mở Cài đặt, vào mục thời gian và ngôn ngữ, rồi vào ngày và giờ.</li>
+        <li>Tắt chế độ tự động đặt giờ.</li>
+        <li>Chọn Thay đổi cạnh mục đặt ngày giờ thủ công, nhập ngày giờ rồi xác nhận thay đổi.</li>
+      </ol>
+      <p>
+        Từ dòng lệnh, <code>Set-Date</code> làm việc tương tự trong PowerShell được chạy với quyền quản trị viên:
+      </p>
+    </div>
+
+    <pre class="term"><span class="c"># Cả máy chuyển sang mười giây cuối cùng của năm 2027</span>
+<span class="p">Set-Date</span> -Date "2027-12-31 23:59:50"
+
+<span class="c"># Ba mươi ngày kể từ bây giờ</span>
+<span class="p">Set-Date</span> -Date (Get-Date).AddDays(30)</pre>
+
+    <div class="prose">
+      <p>
+        Để đặt lại, hãy bật lại chế độ tự động đặt giờ. Cả hai cách đều cần quyền quản trị viên, và trên máy thuộc miền, dịch vụ thời gian có thể kéo đồng hồ về trong khi bạn vẫn đang kiểm thử. Dời đồng hồ hệ thống là một trong bốn cách dời thời gian cho một bài kiểm thử.
+        <a href="/vi/time-travel-testing/">Cả bốn cách, so sánh &rarr;</a>
+      </p>
+    </div>
   </section>
 
   <section>
