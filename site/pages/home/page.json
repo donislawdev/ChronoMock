@@ -14,133 +14,133 @@
       "slug": "",
       "link_text": "Home",
       "title": "Chrono Mock - run any Windows app at a different date",
-      "description": "Free and open source Windows tool. Run one application at any date, freeze or speed up its clock, and never touch the system time. Then it tells you if it worked."
+      "description": "Free and open source Windows tool that changes the date and time for one application only. Run it at any date, freeze or speed up its clock, never touch the system time - and learn whether it worked."
     },
     "pl": {
       "slug": "",
       "link_text": "Start",
       "title": "Chrono Mock - uruchom aplikację Windows z inną datą",
-      "description": "Darmowe, otwarte narzędzie dla Windows. Uruchom jedną aplikację z dowolną datą, zamroź albo przyspiesz jej zegar, bez zmiany czasu systemowego. I sprawdź, czy zadziałało."
+      "description": "Darmowe narzędzie open source na Windows, które zmienia datę i godzinę tylko jednej aplikacji. Uruchom ją z dowolną datą, zatrzymaj albo przyspiesz jej zegar, nie ruszaj czasu systemu - i dowiedz się, czy zadziałało."
     },
     "de": {
       "slug": "",
       "link_text": "Start",
       "title": "Chrono Mock - Windows-Programme mit anderem Datum starten",
-      "description": "Kostenloses Open-Source-Tool für Windows: eine Anwendung mit beliebigem Datum starten, ihre Uhr einfrieren oder beschleunigen - ohne die Systemzeit zu ändern. Mit Erfolgsprüfung."
+      "description": "Kostenloses Open-Source-Werkzeug für Windows, das Datum und Uhrzeit nur für eine Anwendung ändert. Sie läuft an jedem Datum, ihre Uhr steht still oder läuft schneller, die Systemzeit bleibt unberührt - und Sie erfahren, ob es gewirkt hat."
     },
     "fr": {
       "slug": "",
       "link_text": "Accueil",
       "title": "Chrono Mock - lancer une appli Windows à une autre date",
-      "description": "Outil Windows gratuit et open source : lancez une application à n'importe quelle date, figez ou accélérez son horloge, sans toucher à l'heure système. Avec vérification du résultat."
+      "description": "Outil Windows gratuit et open source qui change la date et l'heure d'une seule application. Lancez-la à n'importe quelle date, figez ou accélérez son horloge sans toucher à l'heure du système, et sachez si ça a marché."
     },
     "es": {
       "slug": "",
       "link_text": "Inicio",
       "title": "Chrono Mock - ejecuta cualquier app de Windows con otra fecha",
-      "description": "Herramienta gratuita y de código abierto para Windows. Ejecuta una aplicación en cualquier fecha, congela o acelera su reloj sin tocar la hora del sistema. Y te dice si funcionó."
+      "description": "Herramienta gratuita y de código abierto para Windows que cambia la fecha y la hora de una sola aplicación. Ejecútala en cualquier fecha, congela o acelera su reloj sin tocar la hora del sistema, y sabrás si funcionó."
     },
     "pt-br": {
       "slug": "",
       "link_text": "Início",
       "title": "Chrono Mock - execute qualquer app do Windows com outra data",
-      "description": "Ferramenta gratuita e de código aberto para Windows. Execute um aplicativo em qualquer data, congele ou acelere o relógio dele sem mexer na hora do sistema. E ele diz se funcionou."
+      "description": "Ferramenta gratuita e de código aberto para Windows que muda a data e a hora de um só aplicativo. Rode-o em qualquer data, congele ou acelere o relógio dele sem mexer na hora do sistema, e saiba se funcionou."
     },
     "it": {
       "slug": "",
       "link_text": "Home",
       "title": "Chrono Mock - esegui qualsiasi app Windows con un'altra data",
-      "description": "Strumento gratuito e open source per Windows. Esegui un'applicazione a qualsiasi data, congela o accelera il suo orologio senza toccare l'ora di sistema. E ti dice se ha funzionato."
+      "description": "Strumento gratuito e open source per Windows che cambia data e ora di una sola applicazione. Eseguila in qualsiasi data, ferma o accelera il suo orologio senza toccare l'ora di sistema, e scopri se ha funzionato."
     },
     "nl": {
       "slug": "",
       "link_text": "Start",
       "title": "Chrono Mock - draai elke Windows-app met een andere datum",
-      "description": "Gratis en open source Windows-gereedschap. Draai een applicatie op elke datum, bevries of versnel haar klok zonder de systeemtijd aan te raken. En het zegt of het gewerkt heeft."
+      "description": "Gratis opensource-tool voor Windows die de datum en tijd van één applicatie verandert. Laat haar op elke datum draaien, zet haar klok stil of laat hem sneller lopen zonder de systeemtijd aan te raken, en weet of het gewerkt heeft."
     },
     "ro": {
       "slug": "",
       "link_text": "Acasă",
       "title": "Chrono Mock - rulează orice aplicație Windows la altă dată",
-      "description": "Instrument Windows gratuit și open source. Rulează o aplicație la orice dată, oprește sau accelerează-i ceasul fără să atingi ora sistemului. Îți spune dacă a funcționat."
+      "description": "Instrument Windows gratuit și open source care schimbă data și ora doar pentru o singură aplicație. Rulează-o la orice dată, oprește sau accelerează-i ceasul fără să atingi ora sistemului și află dacă a funcționat."
     },
     "cs": {
       "slug": "",
       "link_text": "Úvod",
       "title": "Chrono Mock - spusťte aplikaci pro Windows v jiném datu",
-      "description": "Bezplatný open source nástroj pro Windows. Spusťte aplikaci v libovolném datu, zastavte nebo zrychlete její hodiny a nesahejte na systémový čas. Řekne vám, jestli to zabralo."
+      "description": "Bezplatný open source nástroj pro Windows, který mění datum a čas jen jedné aplikaci. Spusťte ji s libovolným datem, zastavte nebo zrychlete její hodiny, systémový čas nechte být a zjistěte, zda to zabralo."
     },
     "tr": {
       "slug": "",
       "link_text": "Ana sayfa",
       "title": "Chrono Mock - Windows uygulamasını farklı bir tarihte çalıştırın",
-      "description": "Ücretsiz, açık kaynak Windows aracı. Bir uygulamayı istediğiniz tarihte çalıştırın, saatini durdurun ya da hızlandırın; sistem saatine dokunmayın. İşe yarayıp yaramadığını söyler."
+      "description": "Yalnızca tek bir uygulamanın tarihini ve saatini değiştiren ücretsiz, açık kaynak Windows aracı. Onu istediğiniz tarihte çalıştırın, saatini dondurun ya da hızlandırın, sistem saatine dokunmayın ve işe yarayıp yaramadığını öğrenin."
     },
     "id": {
       "slug": "",
       "link_text": "Beranda",
       "title": "Chrono Mock - jalankan aplikasi Windows pada tanggal lain",
-      "description": "Alat Windows gratis dan open source. Jalankan aplikasi pada tanggal apa pun, bekukan atau percepat jamnya tanpa menyentuh jam sistem. Ia memberi tahu apakah berhasil."
+      "description": "Alat Windows gratis dan sumber terbuka yang mengubah tanggal dan waktu untuk satu aplikasi saja. Jalankan pada tanggal berapa pun, bekukan atau percepat jamnya tanpa menyentuh waktu sistem, lalu ketahui apakah berhasil."
     },
     "vi": {
       "slug": "",
       "link_text": "Trang chủ",
       "title": "Chrono Mock - chạy ứng dụng Windows ở một ngày khác",
-      "description": "Công cụ Windows miễn phí, mã nguồn mở. Chạy ứng dụng ở bất kỳ ngày nào, đóng băng hoặc tăng tốc đồng hồ của nó mà không đụng đến giờ hệ thống. Nó cho bạn biết có hiệu quả hay không."
+      "description": "Công cụ Windows miễn phí, mã nguồn mở, chỉ đổi ngày giờ cho một ứng dụng. Chạy nó ở bất kỳ ngày nào, đóng băng hoặc tăng tốc đồng hồ của nó mà không động đến giờ hệ thống, và biết được nó có hiệu quả hay không."
     },
     "ru": {
       "slug": "",
       "link_text": "Главная",
       "title": "Chrono Mock — запуск приложений Windows с другой датой",
-      "description": "Бесплатный инструмент для Windows с открытым кодом. Запускайте приложение с любой датой, останавливайте или ускоряйте его часы, не трогая системное время. Он скажет, сработало ли."
+      "description": "Бесплатный инструмент с открытым кодом для Windows, который меняет дату и время только для одного приложения. Запускайте его с любой датой, останавливайте или ускоряйте его часы, не трогая системное время, и узнайте, сработало ли."
     },
     "uk": {
       "slug": "",
       "link_text": "Головна",
       "title": "Chrono Mock — запуск застосунків Windows з іншою датою",
-      "description": "Безкоштовний інструмент для Windows з відкритим кодом. Запускайте застосунок із будь-якою датою, зупиняйте чи прискорюйте його годинник, не чіпаючи системний час. Він скаже, чи спрацювало."
+      "description": "Безкоштовний інструмент із відкритим кодом для Windows, який змінює дату й час лише для одного застосунку. Запускайте його з будь-якою датою, зупиняйте чи прискорюйте його годинник, не чіпаючи системного часу, і дізнайтеся, чи спрацювало."
     },
     "ja": {
       "slug": "",
       "link_text": "ホーム",
       "title": "Chrono Mock - Windows アプリを別の日付で実行",
-      "description": "無料のオープンソース Windows ツール。システム時計に触れず、アプリを好きな日付で実行し、時計を止めたり加速したりできます。時刻の置き換えが効いたかどうかも判定します。"
+      "description": "1 つのアプリだけの日付と時刻を変える、無料でオープンソースの Windows ツール。好きな日付で動かし、時計を止めたり速めたりしても、システム時刻には触れません。効いたかどうかもわかります。"
     },
     "ko": {
       "slug": "",
       "link_text": "홈",
       "title": "Chrono Mock - Windows 앱을 다른 날짜로 실행",
-      "description": "무료 오픈 소스 Windows 도구. 시스템 시계를 건드리지 않고 앱을 원하는 날짜로 실행하고, 시계를 멈추거나 가속할 수 있습니다. 시간 대체가 적용되었는지도 알려 줍니다."
+      "description": "앱 하나의 날짜와 시간만 바꾸는 무료 오픈 소스 Windows 도구입니다. 어떤 날짜로든 실행하고, 시계를 멈추거나 빠르게 돌려도 시스템 시간은 그대로이며, 효과가 있었는지도 알려 줍니다."
     },
     "zh-hans": {
       "slug": "",
       "link_text": "首页",
       "title": "Chrono Mock - 让 Windows 应用以任意日期运行",
-      "description": "免费开源的 Windows 工具：不改系统时钟，让应用以任意日期运行，可冻结或加速时钟，并告诉你时间替换是否真的生效。"
+      "description": "免费开源的 Windows 工具，只为一个应用更改日期和时间。让它在任意日期运行，冻结或加速它的时钟，不碰系统时间，并告诉你是否生效。"
     },
     "zh-hant": {
       "slug": "",
       "link_text": "首頁",
       "title": "Chrono Mock - 讓 Windows 應用程式以任意日期執行",
-      "description": "免費開放原始碼的 Windows 工具：不改系統時鐘，讓應用程式以任意日期執行，可凍結或加速時鐘，並告訴你時間替換是否真的生效。"
+      "description": "免費開源的 Windows 工具，只為一個應用程式變更日期和時間。讓它在任意日期執行，凍結或加速它的時鐘，不碰系統時間，並告訴你是否生效。"
     },
     "ar": {
       "slug": "",
       "link_text": "الرئيسية",
       "title": "Chrono Mock - شغّل تطبيق Windows بأي تاريخ دون تغيير ساعة النظام",
-      "description": "أداة Windows مجانية ومفتوحة المصدر: شغّل أي تطبيق بتاريخ تختاره دون المساس بساعة النظام، وجمّد الساعة أو سرّعها، ثم اعرف هل سرى استبدال الوقت فعلًا."
+      "description": "أداة مجانية ومفتوحة المصدر لنظام Windows تغيّر التاريخ والوقت لتطبيق واحد فقط. شغّله بأي تاريخ، وأوقف ساعته أو سرّعها دون المساس بوقت النظام، واعرف هل نجح الأمر."
     },
     "hi": {
       "slug": "",
       "link_text": "होम",
       "title": "Chrono Mock - Windows ऐप को किसी भी तारीख़ पर चलाएँ",
-      "description": "मुफ़्त और ओपन सोर्स Windows टूल: सिस्टम घड़ी छुए बिना किसी भी ऐप को मनचाही तारीख़ पर चलाएँ, घड़ी रोकें या तेज़ करें, और जानें कि समय का बदलाव सचमुच काम किया या नहीं।"
+      "description": "मुफ़्त और ओपन सोर्स Windows टूल, जो सिर्फ़ एक ऐप की तारीख़ और समय बदलता है। उसे किसी भी तारीख़ पर चलाएँ, उसकी घड़ी रोकें या तेज़ करें, सिस्टम का समय न छुएँ - और जानें कि काम हुआ या नहीं।"
     },
     "th": {
       "slug": "",
       "link_text": "หน้าแรก",
       "title": "Chrono Mock - รันแอป Windows ที่วันใดก็ได้",
-      "description": "เครื่องมือ Windows ฟรีและโอเพนซอร์ส: รันแอปที่วันที่ใดก็ได้โดยไม่แตะนาฬิกาของระบบ หยุดหรือเร่งนาฬิกา และบอกว่าการแทนที่เวลาได้ผลจริงหรือไม่"
+      "description": "เครื่องมือ Windows ฟรีและโอเพนซอร์สที่เปลี่ยนวันที่และเวลาให้แอปเดียวเท่านั้น รันแอปในวันที่ใดก็ได้ หยุดหรือเร่งนาฬิกาของมันโดยไม่แตะเวลาของระบบ แล้วรู้ได้ว่าได้ผลหรือไม่"
     }
   }
 }
