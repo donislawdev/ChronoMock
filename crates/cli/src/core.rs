@@ -123,7 +123,9 @@ pub(crate) fn core_mode() -> i32 {
     let mut runtime_warnings = detect_runtime_warnings(std::path::Path::new(&target.path), spec.scale_qpc);
     // The Gecko sandbox (ADR-28), said from the same function the dry run asks, after the starter skipped.
     let gecko = crate::gecko::warning(std::path::Path::new(&target.path), target.gecko_sandbox, crate::gecko::pages_unsandboxed_by_tester());
-    runtime_warnings.extend(starter.into_iter().chain(gecko).map(str::to_string));
+    let restarts_without_admin = crate::gecko::restarts_without_admin(std::path::Path::new(&target.path), &target.args, elevated);
+    let admin = restarts_without_admin.then_some(crate::gecko::KEY_RESTARTS_WITHOUT_ADMIN);
+    runtime_warnings.extend(starter.into_iter().chain(gecko).chain(admin).map(str::to_string));
     let env = target_environment(&launch, &target.path, spec.moment.tz_bias_min, target.gecko_sandbox, &mut runtime_warnings);
     let m_target = chrono_mech::Target {
         path: &target.path,
@@ -168,7 +170,7 @@ pub(crate) fn core_mode() -> i32 {
             // quickly, and its session ends the way any other does (2026-10-27).
             if let Some(lived_ms) = prepared.vanished_lived_ms
                 && !prepared.session.family_alive()
-                && let Some(reason_key) = vanish_reason_key(&mut prepared.session, &mut ledger)
+                && let Some(reason_key) = vanish_reason_key(&mut prepared.session, &mut ledger, restarts_without_admin)
             {
                 emit(&Event::Vanished {
                     v: PROTOCOL_VERSION,
@@ -801,9 +803,17 @@ const KEY_FAMILY_HANDED_TO_COPY: &str = "session.family_handed_to_copy";
 /// from `session.handed_to_copy`: nothing was found, and the verdict stays what the family earned.
 const KEY_COPY_SEARCH_FAILED: &str = "session.copy_search_failed";
 
+/// The target vanished inside the guard window with nothing it started left running where the session
+/// could see it - most often a single-instance application handing its work to a copy already running (ADR-4).
+const KEY_SINGLE_INSTANCE_SUSPECTED: &str = "target.single_instance_suspected";
+
 /// The target vanished inside the guard window after starting a process the hook could not enter,
 /// usually one of the other bitness, which runs on the real clock (ADR-16).
 const KEY_HANDED_OFF_UNCOVERED: &str = "target.handed_off_uncovered";
+
+/// The target was a Gecko launcher that started the application again without administrator rights,
+/// outside the session (ADR-31).
+const KEY_RESTARTED_WITHOUT_ADMIN: &str = "target.restarted_without_admin";
 
 /// The target vanished inside the guard window with the exit code of a crash (`report::ended_by_crash`).
 /// It used to be reported as a suspected single-instance application, whose remedy - close the copy that
@@ -943,12 +953,25 @@ fn with_target_exit(mut ended: Event, code: Option<i32>) -> Event {
 ///
 /// The children this asks the hook's ring about go into `ledger` either way. The ring names each child
 /// once, and a family that ended without vanishing goes on to its report, which has to name them.
-fn vanish_reason_key(session: &mut chrono_mech::Session, ledger: &mut SessionLedger) -> Option<&'static str> {
+fn vanish_reason_key(session: &mut chrono_mech::Session, ledger: &mut SessionLedger, restarts_without_admin: bool) -> Option<&'static str> {
     let children = session.poll_uncovered_children();
     let crashed = session.exit_code().is_some_and(crate::report::ended_by_crash);
     let reason = vanish_reason(session.pid, &children, chrono_mech::process_is_alive, session.family_only_console(), crashed);
     ledger.take_ring_children(children);
-    reason
+    restarted_without_admin(reason, restarts_without_admin)
+}
+
+/// The reason for the vanish of a Gecko launcher the session knew would start the application again without
+/// administrator rights (ADR-31): that, in place of the hand-off or the single-instance suspicion the vanish
+/// looks like from the family alone. Through the shell, the application runs outside the family, and the
+/// family looks like a single-instance application. Under a token of medium integrity, it runs as a child
+/// the hook did not enter, and the family looks like a hand-off. Neither of their remedies helps. A crash is
+/// still a crash, and a vanish of any other target keeps its reason.
+fn restarted_without_admin(reason: Option<&'static str>, restarts_without_admin: bool) -> Option<&'static str> {
+    match reason {
+        Some(KEY_SINGLE_INSTANCE_SUSPECTED | KEY_HANDED_OFF_UNCOVERED) if restarts_without_admin => Some(KEY_RESTARTED_WITHOUT_ADMIN),
+        other => other,
+    }
 }
 
 /// The reason for a vanish, from the children the hook could not enter, from how the target ended and
@@ -972,7 +995,7 @@ fn vanish_reason(
     } else if crashed {
         Some(KEY_TARGET_CRASHED)
     } else {
-        Some("target.single_instance_suspected")
+        Some(KEY_SINGLE_INSTANCE_SUSPECTED)
     }
 }
 
@@ -2320,6 +2343,22 @@ mod tests {
         assert_eq!(vanish_reason(10, &[child(11, 10)], |_| false, false, true), Some(KEY_TARGET_CRASHED));
         assert_eq!(vanish_reason(10, &[child(11, 10)], |_| true, false, true), Some(KEY_HANDED_OFF_UNCOVERED));
         assert_eq!(vanish_reason(10, &[], |_| true, true, true), None);
+    }
+
+    /// A Gecko launcher the session knew would start the application again without administrator rights
+    /// was reported as a suspected single-instance application, 3 runs out of 3 (2026-11-18 and 2026-11-23),
+    /// whose remedy - close the copy already running - does nothing. Its hand-off to a child the hook did not
+    /// enter is the same restart. A crash, a session that ended, and every other target keep their reason.
+    #[test]
+    fn a_gecko_launcher_that_dropped_its_rights_is_said_to_have_restarted_without_them() {
+        let restarted = Some(KEY_RESTARTED_WITHOUT_ADMIN);
+        assert_eq!(restarted_without_admin(Some(KEY_SINGLE_INSTANCE_SUSPECTED), true), restarted);
+        assert_eq!(restarted_without_admin(Some(KEY_HANDED_OFF_UNCOVERED), true), restarted);
+        assert_eq!(restarted_without_admin(Some(KEY_TARGET_CRASHED), true), Some(KEY_TARGET_CRASHED));
+        assert_eq!(restarted_without_admin(None, true), None);
+        for reason in [Some(KEY_SINGLE_INSTANCE_SUSPECTED), Some(KEY_HANDED_OFF_UNCOVERED), Some(KEY_TARGET_CRASHED), None] {
+            assert_eq!(restarted_without_admin(reason, false), reason, "a target the session did not expect to restart");
+        }
     }
 
     /// `ended` after a vanish carries the code the target ended with, and nothing else of it changes.

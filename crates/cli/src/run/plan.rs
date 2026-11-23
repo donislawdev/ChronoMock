@@ -159,7 +159,9 @@ struct Plan<'a> {
 
 /// The warnings the core would give before the launch, from the functions it calls, about the program it
 /// would start: what that program's file says, that it is started in place of a Squirrel starter, and for
-/// a native session what the session does about the Gecko sandbox (ADR-28). A Chromium session sets no
+/// a native session what the session does about the Gecko sandbox (ADR-28) and whether a Gecko launcher
+/// would leave a session with administrator rights (ADR-31). The core runs under this process's token, so
+/// whether the session would have those rights is asked of this process. A Chromium session sets no
 /// variables of the target's, so `--no-gecko-sandbox` does nothing there and the plan says so among the
 /// session's lines instead.
 fn plan_warnings(ra: &RunArgs, program: &Path, starter_skipped: bool, chromium: bool) -> Vec<String> {
@@ -170,6 +172,10 @@ fn plan_warnings(ra: &RunArgs, program: &Path, starter_skipped: bool, chromium: 
     if !chromium {
         let gecko = crate::gecko::warning(program, ra.gecko_sandbox, crate::gecko::pages_unsandboxed_by_tester());
         keys.extend(gecko.map(str::to_string));
+        let elevated = chrono_mech::process_elevated(std::process::id()) == Some(true);
+        if crate::gecko::restarts_without_admin(program, &ra.args, elevated) {
+            keys.push(crate::gecko::KEY_RESTARTS_WITHOUT_ADMIN.to_string());
+        }
     }
     keys
 }
@@ -967,6 +973,30 @@ mod tests {
             assert!(text.contains(this_bitness()), "{text}");
             assert!(!text.contains("32-bit target"), "{text}");
         });
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The plan warns about a Gecko launcher exactly when the core would: when this process, whose token the
+    /// core would run under, has administrator rights, and the arguments do not keep them. Whether a session
+    /// has those rights is this machine's, so the test asks it and checks both answers against it - an
+    /// unelevated run checks that the warning stays away.
+    #[test]
+    fn a_gecko_launcher_is_planned_as_leaving_a_session_as_administrator() {
+        let dir = crate::testutil::unique_temp_dir("chrono-plan-gecko-launcher");
+        std::fs::create_dir_all(&dir).expect("scratch dir");
+        std::fs::write(dir.join("xul.dll"), b"").expect("the Gecko library");
+        let launcher = dir.join("browser.exe");
+        let strings = b"wait-for-browser\0no-deelevate\0force-launcher\0";
+        std::fs::write(&launcher, crate::pe::tests::synthetic_pe(0x20B, b".rdata\0\0", strings, None)).expect("launcher");
+        let elevated = chrono_mech::process_elevated(std::process::id()) == Some(true);
+        let warns = |argv: &[&str]| {
+            let mut warns = None;
+            plan_for(argv, |plan| warns = Some(plan.warning_keys.iter().any(|k| k == crate::gecko::KEY_RESTARTS_WITHOUT_ADMIN)));
+            warns.expect("planned")
+        };
+        let path = launcher.display().to_string();
+        assert_eq!(warns(&[&path, "--at", "2030-01-01T00:00:00"]), elevated, "elevated: {elevated}");
+        assert!(!warns(&[&path, "--at", "2030-01-01T00:00:00", "--args", "page.html --no-deelevate"]), "the arguments keep the rights");
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

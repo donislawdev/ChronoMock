@@ -438,6 +438,10 @@ fn describe_session_warning(key: &str) -> &'static str {
         "session.gecko_pages_sandboxed" => {
             "this is a Gecko application, which runs its pages and their scripts in processes inside the Gecko sandbox, which the session cannot enter - the application follows the session clock, but its pages stay on the real clock, and the session lists those processes as not covered - for the pages to follow the session clock too, run the session with --no-gecko-sandbox, which switches the Gecko sandbox off for it"
         }
+        // ADR-31. Said before anything runs, with both ways out, because the tester chose the rights the session has.
+        "session.gecko_restarts_without_admin" => {
+            "Chrono Mock runs as administrator, and this Gecko application, started that way, starts itself again without administrator rights, where the session cannot follow it, so the application runs on the real clock - start Chrono Mock without administrator rights, or add --no-deelevate to the arguments --args gives the application, which keeps it in the session, running as administrator"
+        }
         // ADR-26. Says what the tester sees and what to choose instead, because the cure is a choice of
         // offset or date, not anything in the application.
         "session.zone_unnamed" => {
@@ -920,6 +924,9 @@ fn vanish_cause(reason_key: &str) -> &'static str {
         }
         "target.crashed" => {
             "it crashed - it ended with the code Windows gives a program stopped by an error it did not handle (the exit code is below) - start it once without Chrono Mock to see whether it crashes there too"
+        }
+        "target.restarted_without_admin" => {
+            "it started itself again without administrator rights, where the session cannot follow it, as a Gecko application started as administrator does - start Chrono Mock without administrator rights, or add --no-deelevate to the arguments --args gives the application, which keeps it in the session, running as administrator"
         }
         _ => "",
     }
