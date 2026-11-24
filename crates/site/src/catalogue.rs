@@ -313,6 +313,19 @@ fn say(template: &str, values: &[(&str, &str)], whence: &str) -> Result<String> 
     fill(&inline(template, whence)?, values, whence)
 }
 
+/// The language the window shows. It starts in English whatever the language of the system
+/// (`gui/ChronoMock.App/App.xaml.cs` applies the default culture), and the command line speaks
+/// English, so a scenario is named on the page the way the reader finds it there, with the page's
+/// own language beside it.
+const WINDOW_LANGUAGE: &str = "en";
+
+/// A name as the window shows it, and the same name in the page's language when that differs.
+fn shown_and_read<'t>(text: &'t BTreeMap<String, String>, lang: &str, fallback: &'t str) -> (&'t str, Option<&'t str>) {
+    let shown = in_language(text, WINDOW_LANGUAGE, fallback);
+    let read = text.get(lang).map(String::as_str).filter(|read| *read != shown);
+    (shown, read)
+}
+
 /// The text in a language, the English one when that language has none, the way the window does.
 fn in_language<'t>(text: &'t BTreeMap<String, String>, lang: &str, fallback: &'t str) -> &'t str {
     text.get(lang)
@@ -403,9 +416,11 @@ fn parameter(p: &Parameter, lang: &str, words: &Words, whence: &str) -> Result<S
         Some("target_file_creation") => parts.push(say(&words.from_file, &[], &whence)?),
         Some(other) => return Err(format!("{whence}: a default hint '{other}'")),
     }
+    let (shown, read) = shown_and_read(&p.label, lang, &p.id);
+    let read = read.map(|r| format!(" ({})", esc(r))).unwrap_or_default();
     Ok(format!(
-        "<li>{} <code>{}</code>: {}.</li>",
-        esc(in_language(&p.label, lang, &p.id)),
+        "<li>{}{read} <code>{}</code>: {}.</li>",
+        esc(shown),
         esc(&p.id),
         parts.join(". ")
     ))
@@ -458,7 +473,8 @@ fn scenario(preset: &Preset, lang: &str, words: &Words, calendars_page: &str) ->
     let whence = format!("site/data/presets.json: {}", preset.id);
     let anchor = format!("scenario-{}", preset.id);
     let mut h = String::new();
-    heading(&mut h, &anchor, in_language(&preset.name, lang, &preset.id), None, words);
+    let (shown, read) = shown_and_read(&preset.name, lang, &preset.id);
+    heading(&mut h, &anchor, shown, read, words);
     h.push_str(&format!(
         "<p>{}</p>\n<dl class=\"facts\">\n",
         esc(in_language(&preset.explains, lang, ""))
@@ -725,6 +741,16 @@ mod tests {
             rule_text(&rule(r#"{"type":"nth_weekday","month":5,"weekday":"monday","order":-1}"#), &en, "t").expect("en"),
             "last Monday of May"
         );
+    }
+
+    #[test]
+    fn a_scenario_is_named_as_the_window_shows_it_with_the_page_language_beside_it() {
+        let names: BTreeMap<String, String> = [("en", "Last day of month"), ("pl", "Ostatni dzień miesiąca")]
+            .into_iter()
+            .map(|(lang, name)| (lang.to_string(), name.to_string()))
+            .collect();
+        assert_eq!(shown_and_read(&names, "pl", "id"), ("Last day of month", Some("Ostatni dzień miesiąca")));
+        assert_eq!(shown_and_read(&names, "en", "id"), ("Last day of month", None));
     }
 
     #[test]

@@ -11,15 +11,16 @@
 <h2 id="uzycie">Jak użyć scenariusza</h2>
 <p>
   Scenariusz to policzona za ciebie data i godzina, z jednym zdaniem o tym, co sprawdza. Wybór
-  scenariusza wpisuje datę i nic więcej: sesja nigdy nie startuje sama.
+  scenariusza wpisuje datę i nic więcej: sesja nigdy nie startuje sama. Okno mówi po angielsku,
+  więc jego karty, pola i przyciski nazywamy tu tak, jak je widać.
 </p>
 <ul>
-  <li><strong>Uruchom aplikację</strong> pokazuje w sekcji <strong>Scenariusze</strong> te, które
+  <li>Karta <strong>Run an app</strong> pokazuje w sekcji <strong>Scenarios</strong> te, które
     nie potrzebują od ciebie żadnej wartości. Wybór wpisuje datę w pole
-    <strong>Start od</strong>.</li>
-  <li><strong>Kalkulator</strong> pokazuje w sekcji <strong>Scenariusze</strong> te, które umie
-    policzyć, z polem na każdą wartość, o którą scenariusz pyta. <strong>Użyj tej daty</strong>
-    przenosi wynik do karty Uruchom aplikację.</li>
+    <strong>Starts at</strong>.</li>
+  <li>Karta <strong>Calculator</strong> pokazuje w sekcji <strong>Scenarios</strong> te, które umie
+    policzyć, z polem na każdą wartość, o którą scenariusz pyta. <strong>Use this date</strong>
+    przenosi wynik do karty Run an app.</li>
   <li>W wierszu poleceń <code>--preset</code> bierze nazwę do wpisania, a każda wartość to jedno
     <code>--param</code>.</li>
 </ul>
@@ -34,7 +35,7 @@
 <h2 id="wartosci">Podawanie wartości</h2>
 <p>
   Scenariusz, który liczy od daty znanej tylko tobie, pyta o nią: o datę urodzenia, o dzień
-  początku okresu próbnego. W Kalkulatorze każda wartość ma swoje pole. W wierszu poleceń to
+  początku okresu próbnego. W kalkulatorze każda wartość ma swoje pole. W wierszu poleceń to
   <code>--param</code>, nazwa wartości, znak równości i wartość.
 </p>
 <ul>
@@ -55,7 +56,8 @@
 <h2 id="lista">Scenariusze</h2>
 <p>
   Liczba scenariuszy dostarczanych z programem: {{preset_count}}. <code>chrono presets</code>
-  pokazuje te same i każdy, który dodasz. <strong>Liczony jak</strong> pokazuje datę tak, jak zapisałyby ją
+  pokazuje te same i każdy, który dodasz. Nazwa nad opisem to ta z okna, a pod nią jest
+  polska. <strong>Liczony jak</strong> pokazuje datę tak, jak zapisałyby ją
   opcje <code>chrono calc</code>, z wartością do podania w nawiasach ostrych.
 </p>
 {{scenario_list}}
@@ -87,8 +89,8 @@ Chrono Mock - date calculator
   result:  2027-03-16T08:00:00
 <span class="c">  ...</span></pre>
 <p>
-  Wiersz poleceń mówi po angielsku, więc pokazuje angielską nazwę i opis. Okno pokazuje polskie,
-  gdy plik je ma.
+  Okno i wiersz poleceń mówią po angielsku, więc pokazują angielską nazwę i opis. Polskie są w
+  pliku obok nich.
 </p>
 
 <h3>Co jest w pliku</h3>
@@ -99,10 +101,10 @@ Chrono Mock - date calculator
 <tr><td><code>id</code></td><td>Nazwa do wpisania, taka sama jak nazwa pliku: litery, cyfry,
   <code>-</code> i <code>_</code>.</td></tr>
 <tr><td><code>name</code>, <code>explains</code></td><td>Nazwa i jedno zdanie o tym, co sprawdza,
-  dla każdego języka. <code>en</code> jest wymagany, a okno pokazuje swój język, gdy plik go
-  ma.</td></tr>
+  dla każdego języka. <code>en</code> jest wymagany i to jego pokazują okno i wiersz
+  poleceń.</td></tr>
 <tr><td><code>applies_to</code></td><td><code>substitution</code> dla działającej aplikacji,
-  <code>calculator</code> dla Kalkulatora, <code>both</code> dla obu.</td></tr>
+  <code>calculator</code> dla kalkulatora, <code>both</code> dla obu.</td></tr>
 <tr><td><code>market</code></td><td><code>null</code> albo <code>us</code> lub <code>pl</code>,
   żeby dni robocze liczył kalendarz tego rynku.</td></tr>
 <tr><td><code>parameters</code></td><td>Wartości, o które pyta. Każda ma <code>id</code>,

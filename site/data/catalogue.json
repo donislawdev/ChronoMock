@@ -76,11 +76,11 @@
       "business_days": "Dni robocze",
       "speed": "Tempo w chrono run",
       "window": {
-        "both": "Na liście Scenariusze w karcie Uruchom aplikację i na liście Scenariusze w Kalkulatorze.",
-        "session": "Na liście Scenariusze w karcie Uruchom aplikację.",
-        "calculator": "Na liście Scenariusze w Kalkulatorze.",
-        "calculator_first": "Na liście Scenariusze w Kalkulatorze, z polem na każdą wartość. Karta Uruchom aplikację pokazuje tylko scenariusze, które nie potrzebują wartości: policz ten w Kalkulatorze i naciśnij Użyj tej daty.",
-        "none": "Okno go nie pokazuje. Karta Uruchom aplikację ma tylko scenariusze bez wartości, a Kalkulator tego nie liczy, więc użyj wiersza poleceń."
+        "both": "Na liście „Scenarios” w karcie „Run an app” i na liście „Scenarios” w karcie „Calculator”.",
+        "session": "Na liście „Scenarios” w karcie „Run an app”.",
+        "calculator": "Na liście „Scenarios” w karcie „Calculator”.",
+        "calculator_first": "Na liście „Scenarios” w karcie „Calculator”, z polem na każdą wartość. Karta „Run an app” pokazuje tylko scenariusze, które nie potrzebują wartości: policz ten w kalkulatorze i naciśnij „Use this date”.",
+        "none": "Okno go nie pokazuje. Karta „Run an app” ma tylko scenariusze bez wartości, a kalkulator tego nie liczy, więc użyj wiersza poleceń."
       },
       "date_value": "data w zapisie `YYYY-MM-DD` (rok, miesiąc, dzień)",
       "duration_value": "długość, np. `30d` albo `90bd`",
