@@ -12,6 +12,6 @@ contact_links:
   - name: Report a security vulnerability
     url: https://github.com/donislawdev/ChronoMock/security/advisories/new
     about: Please report security issues privately, never as a public issue.
-  - name: Read the documentation first
-    url: https://chronomock.donislawdev.com/
-    about: The CLI reference, the support matrix and the honest limits are all there.
+  - name: Read the troubleshooting page first
+    url: https://chronomock.donislawdev.com/docs/troubleshooting/
+    about: What to do when a session does not start, the application closes at once or it shows the real date, by the key the report gives.

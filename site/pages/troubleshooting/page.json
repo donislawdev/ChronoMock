@@ -1,0 +1,20 @@
+{
+  "//": "What to do when a session does not start, the application closes at once or it shows the real date. Part of the documentation (site/data/docs.json), so English and Polish only. The entries follow the sentences of the report (crates/cli/src/report.rs) and of the window (Strings.en.json), each with the key the report gives.",
+  "id": "troubleshooting",
+  "order": 94,
+  "nav": false,
+  "languages": {
+    "en": {
+      "slug": "docs/troubleshooting",
+      "link_text": "Troubleshooting",
+      "title": "Chrono Mock troubleshooting - when a session does not work",
+      "description": "What to do when a Chrono Mock session does not start, the application closes at once, the session is refused or the application shows the real date, by the key the report gives."
+    },
+    "pl": {
+      "slug": "dokumentacja/gdy-cos-nie-dziala",
+      "link_text": "Gdy coś nie działa",
+      "title": "Gdy coś nie działa w Chrono Mock - sesja, która nie działa",
+      "description": "Co zrobić, gdy sesja Chrono Mock nie rusza, program od razu się zamyka, sesja odmawia albo program pokazuje prawdziwą datę, po kluczu, który podaje raport."
+    }
+  }
+}

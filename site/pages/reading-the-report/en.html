@@ -88,11 +88,11 @@ Chrono Mock - session report
 <tbody>
 <tr><td><code>exited</code></td><td>The code the application ended with, when it closed itself. It
   is not the code <code>chrono</code> ends with, which is the verdict. A crash is said in words,
-  with the code Windows gives it. Missing when the session ended first, as with
+  with the code Windows gives it.{{next_release}} Missing when the session ended first, as with
   <code>--ticks</code>.</td></tr>
 <tr><td><code>followed</code></td><td>Programs the application started that were still running on
   the session's clock when it closed, so the session went on for them.</td></tr>
-<tr><td><code>copies</code></td><td>Copies of the application that ran outside the session, on the
+<tr><td><code>copies</code>{{next_release}}</td><td>Copies of the application that ran outside the session, on the
   real clock. A program that allows only one copy of itself most likely handed its work to one of
   them.</td></tr>
 </tbody>
@@ -143,6 +143,10 @@ Chrono Mock - session report
   <li><strong><code>not fully cleaned up</code></strong>: what the session could not undo at the
     end, such as a temporary browser profile it could not delete, and what to do about it.</li>
 </ul>
+<p>
+  <a href="/docs/troubleshooting/">Troubleshooting</a> says what to do about the warnings and
+  errors that ask something of you, by their keys.
+</p>
 
 <h2 id="evidence-file">The file <code>--report</code> writes</h2>
 <p>

@@ -88,11 +88,11 @@ Chrono Mock - session report
 <tbody>
 <tr><td><code>exited</code></td><td>Kod, którym skończył się program, gdy zamknął się sam. To nie
   jest kod, którym kończy się <code>chrono</code>, bo ten jest werdyktem. Awaria jest opisana
-  słowami, z kodem, który daje jej Windows. Brak tego wiersza, gdy sesja skończyła się pierwsza, jak
+  słowami, z kodem, który daje jej Windows.{{next_release}} Brak tego wiersza, gdy sesja skończyła się pierwsza, jak
   przy <code>--ticks</code>.</td></tr>
 <tr><td><code>followed</code></td><td>Programy uruchomione przez program, które działały jeszcze na
   zegarze sesji, gdy się zamknął, więc sesja trwała dla nich dalej.</td></tr>
-<tr><td><code>copies</code></td><td>Kopie programu, które działały poza sesją, na prawdziwym
+<tr><td><code>copies</code>{{next_release}}</td><td>Kopie programu, które działały poza sesją, na prawdziwym
   zegarze. Program, który pozwala na jedną swoją kopię, najpewniej oddał pracę którejś z
   nich.</td></tr>
 </tbody>
@@ -144,6 +144,10 @@ Chrono Mock - session report
   <li><strong><code>not fully cleaned up</code></strong>: czego sesja nie mogła cofnąć na końcu, np.
     tymczasowy profil przeglądarki, którego nie dała rady usunąć, i co z tym zrobić.</li>
 </ul>
+<p>
+  Co zrobić z ostrzeżeniami i błędami, które czegoś od Ciebie wymagają, mówi po ich kluczach
+  strona <a href="/pl/dokumentacja/gdy-cos-nie-dziala/">Gdy coś nie działa</a>.
+</p>
 
 <h2 id="plik-dowodu">Plik z <code>--report</code></h2>
 <p>
