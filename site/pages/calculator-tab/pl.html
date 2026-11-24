@@ -1,0 +1,93 @@
+<!-- Calculator, Polish. Part of the documentation (site/data/docs.json). The texts are the
+     window's own (gui/ChronoMock.App/Localization/Strings.en.json), and the window is in English,
+     so its fields are named in English. -->
+
+<h1>Kalkulator</h1>
+<p class="sub">
+  Liczy datę testową, pokazuje ją w każdym formacie, który możesz gdzieś wkleić, i odczytuje
+  wklejoną datę. Tylko liczy: niczego nie uruchamia. Te same odpowiedzi daje
+  <a href="/pl/dokumentacja-cli/#calc"><code>chrono calc</code></a>. Okno mówi po angielsku, więc
+  pola nazywamy tu tak, jak je widać.
+</p>
+<figure class="shot filled">
+  <img src="/assets/docs/calculator.png" width="1040" height="752" loading="lazy"
+       alt="Karta Calculator w trzech kolumnach. Po lewej Scenarios z wyszukiwaniem month i wybranym Last day of month. Na środku Build a date: start Today w strefie UTC-08:00 tego komputera, jeden krok Jump to End of month, przycisk Add step, Calendar ustawione na none, a pod spodem Analyze a pasted date z datą 04/08/2008 odczytaną jako niejednoznaczna: wtorek 2008-04-08 po amerykańsku i poniedziałek 2008-08-04 po polsku. Po prawej wynik Monday 2026-11-30, 23:59:59 UTC-08:00, na co wypada ta data: ostatni dzień miesiąca, i każdy format z przyciskiem Copy.">
+  <figcaption>Scenariusz po lewej, jego kroki na środku i wynik w każdym formacie po
+    prawej.</figcaption>
+</figure>
+
+<h2 id="scenariusze">Scenarios</h2>
+<p>
+  Lista po lewej ma scenariusze, które kalkulator umie policzyć, każdy z jednym zdaniem o tym, co
+  sprawdza, i pole do szukania. Wybór wpisuje kroki na środku. Scenariusz, który pyta o wartość,
+  np. datę urodzenia, dostaje pole na każdą. Pod listą stoi przypomnienie, że scenariusz to punkt
+  wyjścia, a nie dowód, że test jest kompletny.
+  <a href="/pl/dokumentacja/scenariusze/">Scenariusze</a> wymieniają wszystkie.
+</p>
+
+<h2 id="budowanie">Build a date</h2>
+<div class="wrap"><table>
+<thead><tr><th>Pole</th><th>Co robi</th></tr></thead>
+<tbody>
+<tr><td><strong>Start from</strong></td><td><strong>Today</strong> o północy,
+  <strong>Now</strong> albo <strong>Specific date</strong>. To samo co
+  <a href="/pl/dokumentacja-cli/#calc-base"><code>--base</code></a>.</td></tr>
+<tr><td><strong>Time zone</strong></td><td>Strefa, w której czytany jest start, bo po obu stronach
+  północy dziś to inny dzień. Strefa tego komputera, chyba że wybierzesz inną. To samo co
+  <a href="/pl/dokumentacja-cli/#calc-zone"><code>--zone</code></a>.</td></tr>
+<tr><td><strong>Steps</strong></td><td><strong>+ Add step</strong> dodaje krok, a kroki działają
+  od góry do dołu. ✕ usuwa krok. Rodzaje są niżej.</td></tr>
+<tr><td><strong>Calendar</strong></td><td><a href="/pl/dokumentacja/kalendarze-swiat/">Kalendarz
+  świąt</a>, którego potrzebują dni robocze i Nearest business day. Gdy jest wybrany, wynik mówi
+  też, czy dzień jest roboczy. To samo co
+  <a href="/pl/dokumentacja-cli/#calc-calendar"><code>--calendar</code></a>.</td></tr>
+</tbody>
+</table></div>
+<div class="wrap"><table>
+<thead><tr><th>Krok</th><th>Co robi</th></tr></thead>
+<tbody>
+<tr><td><strong>Shift ±</strong></td><td>Przesuwa datę o sekundy, minuty, godziny, dni, tygodnie,
+  miesiące, kwartały, lata albo dni robocze. Miesiąc po 31 stycznia to ostatni dzień lutego. To
+  samo co <a href="/pl/dokumentacja-cli/#calc-shift"><code>--shift</code></a>.</td></tr>
+<tr><td><strong>Jump to</strong></td><td>Początek albo koniec miesiąca, kwartału lub roku.
+  Początek to 00:00:00 pierwszego dnia, koniec 23:59:59 ostatniego. To samo co
+  <a href="/pl/dokumentacja-cli/#calc-snap"><code>--snap</code></a>.</td></tr>
+<tr><td><strong>Nearest business day</strong></td><td>Następny albo poprzedni dzień roboczy, a ten
+  sam dzień, gdy już nim jest. Jest tu też Next 29 February. To samo co
+  <a href="/pl/dokumentacja-cli/#calc-nearest"><code>--nearest</code></a>.</td></tr>
+<tr><td><strong>Set time</strong></td><td>Ustawia godzinę dotychczasowej daty. To samo co
+  <a href="/pl/dokumentacja-cli/#calc-set-time"><code>--set-time</code></a>.</td></tr>
+<tr><td><strong>Change time zone</strong></td><td>Pokazuje tę samą chwilę w innej strefie: zmienia
+  się data i godzina na zegarze, a chwila nie. Kroki po nim liczą w tej strefie. To samo co
+  <a href="/pl/dokumentacja-cli/#calc-to-zone"><code>--to-zone</code></a>.</td></tr>
+</tbody>
+</table></div>
+
+<h2 id="wynik">Wynik</h2>
+<ul>
+  <li>Data z dniem tygodnia, godzina i strefa. Nad nimi nazwa i zdanie scenariusza, gdy był
+    wybrany.</li>
+  <li><strong>What this date lands on</strong> nazywa granicę, na którą wypada data, np. ostatni
+    dzień miesiąca.</li>
+  <li><strong>All formats</strong> pokazuje datę jako ISO, datę amerykańską i polską, czas uniksowy
+    w sekundach i milisekundach, FILETIME Windows i postać RFC 1123, każdą z przyciskiem
+    <strong>Copy</strong>.</li>
+  <li><strong>Custom format</strong> zapisuje ją własną maską, np. <code>yyyy-MM-dd HH:mm:ss</code>.
+    To samo co <a href="/pl/dokumentacja-cli/#calc-format"><code>--format</code></a>.</li>
+  <li><strong>Details</strong> podaje dzień tygodnia, tydzień ISO i amerykański, kwartał, dzień roku
+    i czy rok jest przestępny.</li>
+  <li><strong>Copy as command</strong> kopiuje polecenie PowerShella, które w terminalu daje ten sam
+    wynik, do skryptu albo zgłoszenia.</li>
+  <li><strong>Use this date</strong> przenosi datę, godzinę i strefę do karty
+    <a href="/pl/dokumentacja/uruchamianie-aplikacji/">Run an app</a>, gotowe do startu. Działa, gdy
+    strefa jest jedną z tych, w których może biec sesja.</li>
+</ul>
+
+<h2 id="odczyt">Analyze a pasted date</h2>
+<p>
+  Wklej datę z logu, zgłoszenia albo bazy danych, żeby zobaczyć, jak się czyta. Data, która czyta
+  się na dwa sposoby, np. <code>04/08/2008</code>, dostaje oba odczyty: 8 kwietnia po amerykańsku,
+  4 sierpnia po polsku. Liczba, np. czas uniksowy, to chwila, a nie data, więc jest pokazana w
+  strefie wybranej wyżej, tak samo jak data z własnym przesunięciem od UTC. To samo co
+  <a href="/pl/dokumentacja-cli/#calc-analyze"><code>--analyze</code></a>.
+</p>

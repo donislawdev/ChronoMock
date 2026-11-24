@@ -1,0 +1,278 @@
+<!-- Troubleshooting, English. Part of the documentation (site/data/docs.json). Each entry starts
+     from what the reader sees and says what to do, in the window and on the command line. The
+     words follow the program's own: the report's (crates/cli/src/report.rs: describe_error,
+     describe_warning, describe_residue) and the window's
+     (gui/ChronoMock.App/Localization/Strings.en.json). The key the report puts in brackets is
+     beside each entry, so a reader can search this page for the key in their report. -->
+
+<h1>Troubleshooting</h1>
+<p class="sub">
+  What to do when a session does not start, the application closes at once or it shows the real
+  date. Each entry starts from what you see. The key the report gives for it, such as
+  <code>target.bitness_mismatch</code>, stands beside it, so you can search this page for the key
+  in your report.
+</p>
+
+<h2 id="did-not-start">The session did not start</h2>
+<ul>
+  <li><strong>The application and <code>chrono.exe</code> are different bitness</strong>
+    (<code>target.bitness_mismatch</code>). On the command line a 64-bit application needs
+    <code>chrono.exe</code> and a 32-bit one <code>x86\chrono.exe</code>: run the same command with
+    the other one. The window picks the right one by itself. When the window says it anyway, the
+    application runs at a different bitness than its file declares, as some .NET applications
+    built for any CPU do: copy the diagnostics and <a href="#report">report it</a>.</li>
+  <li><strong>The fake clock could not be attached to the application</strong>
+    (<code>target.inject_failed</code>). An antivirus may have stopped it, or the application
+    does not let other programs load code into it. When Windows Security reports a threat, the
+    <a href="/download/">download page</a> says how to exclude only the library Chrono Mock loads,
+    not a whole folder. Electron and Chromium applications are reached another way and are not
+    affected.</li>
+  <li><strong>Part of Chrono Mock is missing</strong> (<code>core.hook_dll_missing</code>):
+    <code>chrono_hook.dll</code> is not next to <code>chrono.exe</code>. Extract the whole package
+    again, or install it again. When the file is gone again after that, check whether your
+    antivirus removed it.</li>
+  <li><strong>The application itself could not start</strong>: Windows did not find a library
+    (DLL) it needs, or a library it loads is a different version, is built for the other bitness
+    or failed to start (<code>target.loader_dll_not_found</code>,
+    <code>target.loader_entry_missing</code>, <code>target.loader_bad_image</code>,
+    <code>target.loader_init_failed</code>). Run it once without Chrono Mock, from the same
+    working folder: Windows then names the file or the function it is missing.</li>
+  <li><strong>Another Chrono Mock session is already running</strong>
+    (<code>session.already_active</code>). One session runs at a time, so end the other one first,
+    in the other window or the other <code>chrono run</code>.</li>
+  <li><strong>The file is not a program Chrono Mock can start.</strong> It takes a
+    <code>.exe</code>. Packaged Store applications (UWP and MSIX) are not supported.
+    <code>chrono run</code> with <a href="/cli-reference/#run-dry-run"><code>--dry-run</code></a>
+    checks the file without starting anything.</li>
+</ul>
+
+<h2 id="closed-at-once">The application closed right away</h2>
+<p>
+  The window says <em>Did not take effect - the application vanished</em>, the report says
+  <em>the target vanished right after injection</em> and the command ends with code 12. The line
+  under it says which of these it most likely was:
+</p>
+<ul>
+  <li><strong>A copy of it was already running</strong>
+    (<code>target.single_instance_suspected</code>, <code>session.handed_to_copy</code>{{next_release}}).
+    Many applications allow one copy only: a second start hands its work to the first and closes,
+    and that copy runs on the real clock. Close every copy, also one that has only an icon by the
+    clock or shows only in Task Manager, and start the session again.</li>
+  <li><strong>It started another program the session could not enter</strong>
+    (<code>target.handed_off_uncovered</code>), usually one of the other bitness, and that program
+    runs on the real clock. When you know which program it starts, start that one instead.</li>
+  <li><strong>It crashed</strong> (<code>target.crashed</code>,
+    <code>session.target_crashed</code>){{next_release}}. Start it once without Chrono Mock to see
+    whether it crashes there too. When it crashes only in a session, <a href="#report">report
+    it</a>.</li>
+  <li><strong>A Gecko application, with Chrono Mock running as administrator</strong>
+    (<code>target.restarted_without_admin</code>){{next_release}}: see
+    <a href="#administrator">Running as administrator</a>.</li>
+</ul>
+<p>
+  A console program that ends this fast is not counted here. It has done its work, and it gets a
+  verdict.
+</p>
+
+<h2 id="refused">The session was refused</h2>
+<p>
+  The window says <em>Refused - the fake clock did not take effect, so the session ended the
+  application</em>. The report's verdict is <strong>DID NOT TAKE EFFECT</strong> and the command
+  ends with code 11. Right after the start the session found that what the application read did
+  not come from the fake clock, and closed it, because a test on the real date proves nothing.
+</p>
+<ul>
+  <li>The lists under the verdict say what it read instead: the channels the session did not
+    cover and the processes that ran on the real clock. The entries below give the usual
+    reasons.</li>
+  <li>To keep the application running anyway, tick
+    <a href="/docs/run-an-app/#force"><strong>Start even if the fake clock turns out not to
+    work</strong></a>, or add <a href="/cli-reference/#run-force"><code>--force</code></a>. The
+    verdict and the exit code stay the same, and the session is marked unreliable.</li>
+</ul>
+
+<h2 id="real-date">The application shows the real date</h2>
+<p>
+  The verdict says how much reached it: <strong>PARTIAL</strong>, code 10, means some of its
+  time came from the real clock, and the lines under it say where from.
+  <a href="/docs/reading-the-report/#channels">Reading the report</a> explains each of them.
+</p>
+<ul>
+  <li><strong>Processes it started ran on the real clock</strong>
+    (<code>inheritance.children_uncovered</code>, <code>inheritance.child_not_injected</code>).
+    The report names them. Most often they are of the other bitness: a 64-bit helper of a 32-bit
+    application, or the other way round.</li>
+  <li><strong>It may read the time from a server</strong>
+    (<code>source.network_at_start</code>). The report says so when the application opens a
+    network connection. A time that comes from another computer, such as a server, a database or a
+    licence service, is out of reach of any tool on this one.</li>
+  <li><strong>It read none of the clocks the session replaces</strong>
+    (<code>coverage.session_clock_never_read</code>). The session's clocks were in place and
+    working, and nothing asked them: the application took its time from somewhere else.</li>
+  <li><strong>It is a Go program</strong> (<code>runtime.go_wall_clock_unreachable</code>). Go
+    reads the date straight from memory Windows shares with every program, where no session can
+    reach it. The application sees the real date, shown in the session's time zone.</li>
+  <li><strong>Its web pages show the real date</strong>: see <a href="#web-pages">the next
+    section</a>.</li>
+</ul>
+
+<h2 id="web-pages">Web pages inside the application show the real date</h2>
+<ul>
+  <li><strong>An application with a built-in web engine</strong> (WebView2, Qt WebEngine).
+    <a href="/docs/run-an-app/#web-pages"><strong>Reach the web pages inside the
+    application</strong></a> is on from the start and puts its pages on the fake clock. Unticked,
+    or with <code>--no-embedded</code>, they stay on the real date. When the report says the engine
+    was not reached (<code>embedded.webview2_not_reached</code>,
+    <code>embedded.engine_unreachable</code>, <code>embedded.discovery_unavailable</code>), its
+    pages ran on the real clock. <a href="/webview2-qt-webengine/">WebView2 and Qt WebEngine</a>
+    explains how the pages are reached.</li>
+  <li><strong>The application runs as administrator</strong>
+    (<code>embedded.elevated_host</code>): see <a href="#administrator">Running as
+    administrator</a>.</li>
+  <li><strong>An application on Mozilla's Gecko engine, such as Firefox</strong>
+    (<code>session.gecko_pages_sandboxed</code>){{next_release}}. It runs its pages in processes
+    inside the Gecko sandbox, which the session cannot enter. Tick
+    <a href="/docs/run-an-app/#gecko"><strong>Switch off the Gecko sandbox</strong></a>, or add
+    <code>--no-gecko-sandbox</code>. The application then runs without that protection until it
+    closes, so open only pages you trust in it.</li>
+  <li><strong>An Electron application</strong> (<code>chromium.main_process_uncovered</code>). Its
+    windows run on the fake clock, but its main process, the Node.js part outside the windows,
+    reads the real one, and the session cannot reach it. A date it works out there, a reminder it
+    schedules or a check it makes at start follows the real date.
+    <a href="/electron-chromium/">Electron and Chromium</a> says more.</li>
+</ul>
+
+<h2 id="administrator">Running as administrator</h2>
+<p>
+  Chrono Mock needs no administrator rights. Started as administrator, it starts the application
+  as administrator too, and two kinds of application then slip out of the session:
+</p>
+<ul>
+  <li><strong>The pages of a WebView2 application</strong> (<code>embedded.elevated_host</code>).
+    WebView2 then ignores the setting the session reaches its pages through. Start Chrono Mock
+    without administrator rights, or tick
+    <a href="/docs/run-an-app/#administrator-pages"><strong>Reach the web pages of an application
+    that runs as administrator</strong></a> (<code>--elevated-embedded</code>). That option writes
+    one value to the machine's registry for the session and removes it at the end. While the
+    application runs, any program on this computer can reach its pages.</li>
+  <li><strong>A Gecko application</strong>
+    (<code class="long">session.gecko_restarts_without_admin</code>){{next_release}}. Started as administrator,
+    it starts itself again without those rights, where the session cannot follow it, so it runs on
+    the real clock. Chrono Mock says so before the session starts. Start Chrono Mock without
+    administrator rights. When the application has to run as administrator, add
+    <code>--no-deelevate</code> to <strong>Arguments</strong> under Speed and options, or to
+    <code>--args</code>: it then stays in the session, running as administrator, so open only
+    pages you trust in it.</li>
+</ul>
+
+<h2 id="chromium">A Chromium or Electron application starts empty</h2>
+<ul>
+  <li><strong>It starts as if it were just installed</strong>: not signed in, without your
+    settings or extensions (<code>chromium.launched_with_debug_port</code>). The session starts it
+    with a debugging port and a clean profile of its own, so it never runs on your real one. Sign
+    in during the session when the test needs it: the profile and everything in it are deleted
+    when the session ends.</li>
+  <li><strong>A session with <code>--user-data-dir</code> or <code>--remote-debugging-port</code>
+    in Arguments or <code>--args</code> does not start</strong>, because the session sets both
+    itself. Take them out.</li>
+  <li>While the session runs, any other program on this computer can use that port to control the
+    application.</li>
+</ul>
+
+<h2 id="speed">Time does not run at the speed you chose</h2>
+<ul>
+  <li><strong>The clock runs faster, but timers and countdowns do not.</strong> Only the date and
+    time follow the speed, unless you tick
+    <a href="/docs/run-an-app/#timers"><strong>Also speed up timers and countdowns inside the
+    application</strong></a> (<code>--scale-duration</code>). A wait for something else to happen,
+    such as a file or another program, keeps its real length either way.</li>
+  <li><strong>A stopwatch inside the application does not speed up</strong>
+    (<code>runtime.dotnet_stopwatch_qpc</code>, <code>runtime.python_monotonic_qpc</code>,
+    <code>runtime.java_nanotime_qpc</code>). .NET <code>Stopwatch</code>, Python 3.13+
+    <code>time.monotonic</code> and Java <code>System.nanoTime</code> read a precise counter that
+    stays real unless you tick <a href="/docs/run-an-app/#elapsed"><strong>Also speed up timers
+    that measure elapsed time</strong></a> (<code>--scale-qpc</code>). Animation and video timed by
+    that counter can then look wrong.</li>
+  <li><strong>At a high speed, short timers fall behind</strong>
+    (<code>timer.interval_floored</code>, <code>wait.timeout_collapsed</code>). With timers sped
+    up, at ×1440 a one-second timer would have to fire every 0.7 ms, more often than Windows allows: 10 ms for a
+    window's timer, 1 ms for the others. It fires at that shortest step instead, and that part of
+    the application runs slower than the session. A lower speed keeps more of them in step.</li>
+  <li><strong>A minimized window slows down</strong>
+    (<code>chromium.background_timers_slowed</code>). Chromium runs the timers of a hidden window
+    about once a second. Tick <a href="/docs/run-an-app/#hidden-windows"><strong>Keep timers at
+    speed in hidden windows</strong></a> (<code>--keep-background-timers</code>).</li>
+  <li><strong>A network request fails at a high speed</strong>
+    (<code>wait.network_timeouts_scaled</code>). A network library that times its own timeout from
+    the time since Windows started, such as WinHTTP, follows the session speed, so a server slower
+    than that timeout divided by the speed makes the request fail. Use a lower speed for that part
+    of the test, or leave timers and countdowns at real speed.</li>
+  <li><strong>A Unity game does not keep up</strong>
+    (<code>runtime.unity_delta_time_capped</code>). The engine caps how far it moves the game on in
+    one frame, so the gameplay stops following the speed well below it. The clock, dates and
+    timestamps still follow.</li>
+</ul>
+
+<h2 id="time-zone">Times are off by the time zone</h2>
+<ul>
+  <li><strong>A Node.js, Deno or Bun program shows no time zone name, or shows UTC</strong>
+    (<code>session.zone_unnamed</code>){{next_release}}. Programs built on ICU cannot name some
+    offsets on some dates. Choose a whole-hour offset from -12:00 to +14:00, or the offset of a
+    real Windows time zone without daylight saving time, with the session starting on or after the
+    date that zone took it.</li>
+  <li><strong>A page, or a library of the application, may have read this computer's time zone
+    instead of the session's</strong> (<code>chromium.zone_is_host</code>,
+    <code>embedded.zone_is_host</code>, <code>session.c_runtime_zone_kept</code>{{next_release}}).
+    The moment it shows is the session's, but the local time can be off by the difference between
+    the two zones.</li>
+</ul>
+
+<h2 id="after">After the session</h2>
+<ul>
+  <li><strong>The application is still running</strong> (<code>session.left_running</code>).
+    <strong>Stop session</strong> does not close it. It is back on the real date and time, and its
+    counters carry on from where the session left them. Restart it for a clean run on the real
+    clock.</li>
+  <li><strong>A page inside it still shows the session's date</strong>
+    (<code>embedded.pages_not_released</code>, <code>embedded.zone_kept</code>). Reload or close
+    the page. A page that kept the session's time zone keeps it until the application
+    restarts.</li>
+  <li><strong>The application's data has future dates in it.</strong> An application that ran in
+    2038 wrote 2038 wherever it keeps its data, and Chrono Mock cannot take that back. Back up its
+    data folder before a session, as the <a href="/download/">download page</a> says.</li>
+  <li><strong>The report says something was not fully cleaned up</strong>:
+    <ul>
+      <li>a temporary Chromium profile (<code>cleanup.chromium_profile_left</code>): delete it
+        from your temp folder,</li>
+      <li>the browser the session started (<code>cleanup.chromium_process_left</code>){{next_release}}:
+        when it still runs, end it in Task Manager,</li>
+      <li>a WebView2 option in the machine's registry (<code>embedded.policy_value_left</code>,
+        <code>embedded.policy_value_stale</code>), which keeps a debugging port open for the
+        application it names. Delete the value that contains <code>--chrono-mock-session</code>
+        under <code class="long">HKLM\SOFTWARE\Policies\Microsoft\Edge\WebView2\AdditionalBrowserArguments</code>.
+        One left by an earlier session that ended abruptly also goes when you run Chrono Mock as
+        administrator with <code>--elevated-embedded</code> once.</li>
+    </ul>
+  </li>
+</ul>
+
+<h2 id="report">Reporting a problem</h2>
+<p>
+  When none of this helps, open an issue on <a href="{{repo}}/issues/new/choose">GitHub</a>.
+  The form asks for:
+</p>
+<ul>
+  <li>the version, in the window's title bar or from <code>chrono version</code>,</li>
+  <li>whether you used the window or the command line, whether the application is 32-bit or
+    64-bit and what it is built with, such as .NET, Java or Electron. You do not have to name
+    the application,</li>
+  <li>the command or the steps, and the exit code,</li>
+  <li>the report: <strong>Copy summary</strong> in the window, or the file
+    <a href="/cli-reference/#run-report"><code>--report</code></a> writes. When the window offers
+    <strong>Copy diagnostics</strong>, add what it copies.</li>
+</ul>
+<p>
+  Read the report before you paste it. It holds the full path to the application, which on most
+  computers contains your user name, and an issue is public. A security problem goes to a
+  <a href="{{repo}}/security/advisories/new">private report</a> instead, never to an issue.
+</p>

@@ -26,6 +26,10 @@ on:
       - "presets/**"
       - "calendars/**"
       - "assets/chrono-bean.svg"
+      # The page on checking a download shows the README's verification commands and the certificate
+      # fingerprint packaging/codesign.json pins (crates/site/src/verify.rs).
+      - "README.md"
+      - "packaging/codesign.json"
       - ".github/workflows/pages.yml"
   workflow_dispatch:
 

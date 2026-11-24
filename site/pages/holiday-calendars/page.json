@@ -1,0 +1,20 @@
+{
+  "//": "The holiday calendars: what a calendar does, the years it covers, every holiday of each one, and writing your own. Part of the documentation (site/data/docs.json), so English and Polish only. The calendars come from calendars/*.json themselves through the calendar_list token, and the example holiday from site/examples/calendars/ through holiday_example.",
+  "id": "holiday-calendars",
+  "order": 88,
+  "nav": false,
+  "languages": {
+    "en": {
+      "slug": "docs/holiday-calendars",
+      "link_text": "Holiday calendars",
+      "title": "Chrono Mock holiday calendars - business days for the US and Poland",
+      "description": "The holiday calendars business days are counted in: every holiday of each one with the years it applies, the years each calendar covers, the day it was checked against the law, and writing your own."
+    },
+    "pl": {
+      "slug": "dokumentacja/kalendarze-swiat",
+      "link_text": "Kalendarze świąt",
+      "title": "Kalendarze świąt Chrono Mock - dni robocze dla USA i Polski",
+      "description": "Kalendarze świąt, w których liczą się dni robocze: każde święto z latami, w których obowiązuje, lata, które kalendarz obejmuje, dzień sprawdzenia z prawem i jak napisać własny."
+    }
+  }
+}

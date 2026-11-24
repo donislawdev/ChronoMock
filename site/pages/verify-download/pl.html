@@ -1,0 +1,104 @@
+<!-- Checking a download, Polish. Part of the documentation (site/data/docs.json). The attestation
+     commands are the README's verify-commands block, which the release workflow runs as written
+     (token verify_commands, crates/site/src/verify.rs), and the fingerprint is the one
+     packaging/codesign.json pins (token codesign_sha256). The checksum and signature commands were run on
+     the v0.5.0 command-line package in Windows PowerShell 5.1 and PowerShell 7 on 2026-11-24. The
+     certificate's subject names a person and stays off this page. -->
+
+<h1>Sprawdzenie pobranego pliku</h1>
+<p class="sub">
+  Każde wydanie od 0.2.0 ma sumy kontrolne, spis składników z atestacją i podpis na każdym
+  programie, który projekt buduje. Trzy sprawdzenia, od najszybszego do najdokładniejszego.
+</p>
+
+<h2 id="zawartosc">Co zawiera wydanie</h2>
+<ul>
+  <li><strong><code>SHA256SUMS</code></strong>: skrót SHA-256 każdej paczki i każdego spisu
+    składników ze strony wydania.</li>
+  <li><strong>Spis składników każdej paczki</strong> (<code>*.spdx.json</code>, SPDX 2.3): każdy
+    składnik z zewnątrz, który jest w środku, z wersją i licencją.</li>
+  <li><strong>Atestacja tego spisu</strong> (<code>*.sigstore.json</code>), podpisana przez
+    infrastrukturę GitHuba.</li>
+  <li><strong>Podpis na każdym programie, który projekt buduje</strong>, także na
+    <code>chrono_hook.dll</code>, i na instalatorze. Każdy ma znacznik czasu, dzięki któremu podpis
+    zostaje ważny po wygaśnięciu certyfikatu.</li>
+</ul>
+<p>
+  Wersja 0.1.0 nie ma nic z tego. Wyszła wcześniej, a żadnej z tych rzeczy nie da się dodać do
+  wydania po fakcie.
+</p>
+
+<h2 id="suma">Suma kontrolna</h2>
+<p>
+  W PowerShellu, w folderze, do którego pobrała się paczka i <code>SHA256SUMS</code>:
+</p>
+<pre class="term">(Get-FileHash ChronoMock-cli-win.zip).Hash -in ((Get-Content SHA256SUMS) -split '\s+')
+<span class="v">True</span></pre>
+<p>
+  <code>True</code> znaczy, że plik jest bajt w bajt jednym z tych, które wydanie opublikowało.
+  <code>False</code> znaczy, że nie jest, więc pobierz go jeszcze raz. Dla innej paczki zmień nazwę.
+  To sprawdzenie łapie plik, który zepsuł się w drodze. Nie złapie podmienionej strony wydania, bo
+  <code>SHA256SUMS</code> pochodzi z tej samej strony. To łapią dwa sprawdzenia niżej.
+</p>
+
+<h2 id="podpis">Podpis</h2>
+<p>
+  Rozpakuj paczkę i zapytaj Windows o <code>chrono_hook.dll</code>, bibliotekę, którą Chrono Mock
+  wczytuje do innych programów, więc plik, który najbardziej warto sprawdzić. W paczce wiersza
+  poleceń to <code>chrono-cli\chrono_hook.dll</code>, w paczce okna
+  <code>ChronoMock\core\x64\chrono_hook.dll</code>:
+</p>
+<pre class="term">$s = Get-AuthenticodeSignature chrono-cli\chrono_hook.dll
+$s.Status
+<span class="v">Valid</span>
+$s.SignerCertificate.GetCertHashString('SHA256')
+<span class="v">{{codesign_sha256}}</span>
+$null -ne $s.TimeStamperCertificate
+<span class="v">True</span></pre>
+<ul>
+  <li><strong><code>Valid</code></strong>: plik nie zmienił się od podpisania, a Windows ufa
+    certyfikatowi.</li>
+  <li><strong>Odcisk</strong> wskazuje sam certyfikat:
+    <code class="long">{{codesign_sha256}}</code>. Repozytorium przypina go w
+    <a href="{{repo}}/blob/main/packaging/codesign.json"><code>packaging/codesign.json</code></a>,
+    a każdy plik, który projekt podpisuje, jest z nim porównywany, gdy wychodzi wydanie. Odnowiony
+    certyfikat ma nowy odcisk. Ten plik się wtedy zmienia, a wydania podpisane wcześniej zachowują
+    odcisk, którym je podpisano.</li>
+  <li><strong><code>True</code></strong> w ostatnim wierszu: podpis ma znacznik czasu.</li>
+</ul>
+<p>
+  Tak samo sprawdzisz <code>chrono.exe</code>, plik okna <code>ChronoMock.exe</code> i instalator,
+  zanim go uruchomisz: <code class="long">Get-AuthenticodeSignature ChronoMock-app-win-x64.msi</code>. Reszta
+  paczki okna jest podpisana przez Microsoft albo nie jest podpisana wcale, tak jak przyszła od
+  swoich twórców, a które to które, mówi
+  <a href="{{repo}}/blob/main/SECURITY.md#what-is-signed-and-what-is-not">SECURITY.md</a>.
+  Eksplorator plików pokazuje ten sam podpis we Właściwościach, na karcie Podpisy cyfrowe.
+</p>
+
+<h2 id="atestacja">Atestacja</h2>
+<p>
+  Narzędziem <a href="https://cli.github.com/">GitHub CLI</a> (<code>gh</code>), w folderze z
+  paczką i jej plikiem <code>.sigstore.json</code>. To te same polecenia, które workflow uruchamia
+  przy każdym wydaniu zaraz po publikacji. Wskazują paczkę okna: dla innej zmień obie nazwy.
+</p>
+{{verify_commands}}
+<ul>
+  <li><strong>Pierwsze</strong> pyta o atestację GitHub, więc <code>gh</code> musi być zalogowane
+    na konto GitHuba (<code>gh auth login</code>).</li>
+  <li><strong>Drugie</strong> sprawdza zamiast tego plik <code>.sigstore.json</code> ze strony
+    wydania. Nie potrzebuje konta, ale pobiera z sieci klucze publiczne Sigstore.</li>
+  <li><strong>Dwa ostatnie</strong> nie potrzebują konta, a ostatnie także sieci: trzecie zapisuje
+    raz te klucze do pliku, a czwarte sprawdza z tym plikiem. Trzecie idzie przez
+    <code>cmd</code>, bo Windows PowerShell 5.1 zapisuje to, co przekierowuje <code>&gt;</code>, w
+    UTF-16, a takiego pliku <code>gh</code> nie przeczyta.</li>
+</ul>
+<p>
+  Każde kończy się kodem 0, gdy paczka zgadza się ze swoją atestacją, i innym kodem, gdy się nie
+  zgadza. Zostaw <code>--predicate-type</code>: bez tego <code>gh</code> szuka zapisu budowy,
+  którego paczki nie mają, i mówi, że nie znalazło atestacji, choć wszystko jest w porządku.
+</p>
+<p>
+  Atestacja mówi, co jest w paczce. Nie mówi, że zbudował ją workflow: workflow buduje pliki, a
+  podpisuje je człowiek na komputerze z kluczem sprzętowym, którego nie da się skopiować. Dlaczego
+  tak, wyjaśnia <a href="{{repo}}/blob/main/SECURITY.md#verifying-a-download">SECURITY.md</a>.
+</p>

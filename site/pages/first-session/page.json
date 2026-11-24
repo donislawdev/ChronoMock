@@ -1,0 +1,20 @@
+{
+  "//": "The first session in the window, step by step. Part of the documentation (site/data/docs.json), so English and Polish only. The pictures in site/assets/docs/ are a real session of the window package on a demo application that shows the date it reads, taken on a test machine. The window is in English, so the Polish page names its buttons in English too.",
+  "id": "first-session",
+  "order": 89,
+  "nav": false,
+  "languages": {
+    "en": {
+      "slug": "docs/first-session",
+      "link_text": "Your first session",
+      "title": "Your first Chrono Mock session - run an app as if it were 2038",
+      "description": "Step by step in the window: pick an application, pick the date, start it, and read what the verdict says about whether the application really read the date it was given."
+    },
+    "pl": {
+      "slug": "dokumentacja/pierwsza-sesja",
+      "link_text": "Pierwsza sesja",
+      "title": "Pierwsza sesja w Chrono Mock - uruchom aplikację tak, jakby był rok 2038",
+      "description": "Krok po kroku w oknie: wybierz aplikację, wybierz datę, uruchom ją i przeczytaj werdykt, który mówi, czy aplikacja naprawdę czytała podaną datę."
+    }
+  }
+}

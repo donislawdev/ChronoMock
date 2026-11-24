@@ -9,6 +9,10 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use crate::catalogue::{self, Catalogue, CALENDARS_PAGE};
+use crate::docs::{self, DocsConfig};
+use crate::reference::{self, CliData};
+use crate::verify;
 use crate::{
     check_download_sizes, count_json_files, esc, internal_links, link_target, load_i18n, load_pages,
     localized_tokens, output_path, parse_json, resolve_tokens, tokens, url_path, validate_languages,
@@ -20,6 +24,9 @@ pub struct Ctx<'a> {
     pub i18n: &'a BTreeMap<String, BTreeMap<String, String>>,
     pub pages: &'a [Page],
     pub tokens: &'a BTreeMap<String, String>,
+    pub docs: &'a DocsConfig,
+    pub cli: &'a CliData,
+    pub catalogue: &'a Catalogue,
 }
 
 impl Ctx<'_> {
@@ -53,8 +60,16 @@ pub fn build(root: &Path, out: &Path) -> Result<Report> {
     // The one token made of markup: the 404 lists every language's home page, and which
     // languages exist is a fact of site.json, not of that page's text.
     tok.insert("language_homes".into(), language_homes(&cfg, &i18n)?);
+    // The commands and the certificate fingerprint of the page on checking a download, from the files
+    // the release workflow runs and checks against, so the page cannot show something it did not.
+    tok.extend(verify::tokens(root)?);
 
-    check_pages(&cfg, &pages)?;
+    let docs_cfg: DocsConfig = parse_json(&site_dir.join("data").join("docs.json"))?;
+    docs::check(&docs_cfg, &cfg, &pages)?;
+    let cli: CliData = parse_json(&site_dir.join("data").join("cli.json"))?;
+    reference::check(&cli, &docs_cfg.languages)?;
+    let catalogue = catalogue::load(root)?;
+    check_pages(&cfg, &docs_cfg, &pages)?;
 
     prepare_out(out)?;
 
@@ -63,6 +78,9 @@ pub fn build(root: &Path, out: &Path) -> Result<Report> {
         i18n: &i18n,
         pages: &pages,
         tokens: &tok,
+        docs: &docs_cfg,
+        cli: &cli,
+        catalogue: &catalogue,
     };
 
     let mut report = Report {
@@ -154,7 +172,7 @@ pub fn build(root: &Path, out: &Path) -> Result<Report> {
 /// Each of them is a way to publish something wrong without an error: a page missing in one
 /// language, a footer column that does not exist, two pages claiming the same address, a
 /// language directory shadowing a page.
-fn check_pages(cfg: &SiteConfig, pages: &[Page]) -> Result<()> {
+fn check_pages(cfg: &SiteConfig, docs: &DocsConfig, pages: &[Page]) -> Result<()> {
     // A page that declares `pt-BR` where site.json says `pt-br` would otherwise be rendered
     // under a directory nobody asked for, or die later on a missing dictionary with an error
     // that names the wrong file.
@@ -172,12 +190,13 @@ fn check_pages(cfg: &SiteConfig, pages: &[Page]) -> Result<()> {
 
     // Every indexable page must exist in every language. Catching it here rather than
     // at review time is the difference between a build error and a published page
-    // that silently has no counterpart in one of the languages.
+    // that silently has no counterpart in one of the languages. A documentation page is
+    // held to the languages of the documentation instead.
     for page in pages {
         if !page.meta.indexable {
             continue;
         }
-        for lang in &cfg.languages {
+        for lang in docs.required_languages(cfg, &page.meta.id) {
             if !page.meta.languages.contains_key(lang) {
                 return Err(format!(
                     "page '{}' is indexable but has no '{lang}' version - add it, or mark the page indexable:false",
@@ -336,10 +355,26 @@ pub fn render_page(ctx: &Ctx, page: &Page, lang: &str) -> Result<String> {
     let whence = format!("site/pages/{}/{lang}.html", page.meta.id);
 
     // A size reads 2.4 on one page and 2,4 on the next, so each language gets its own table.
-    let tokens = localized_tokens(ctx.tokens, ctx.s(lang, "decimal_separator")?);
+    let mut tokens = localized_tokens(ctx.tokens, ctx.s(lang, "decimal_separator")?);
+    let base = tokens.clone();
+    let resolve = |text: &str| resolve_tokens(text, &base, &whence);
+    let docs_tokens = docs::tokens(ctx.docs, ctx.pages, lang, &resolve)?;
+    if let Some(badge) = docs_tokens.get("next_release") {
+        tokens.extend(reference::tokens(ctx.cli, lang, badge, &resolve)?);
+    }
+    let calendars_page = ctx
+        .pages
+        .iter()
+        .find(|p| p.meta.id == CALENDARS_PAGE)
+        .and_then(|p| p.url_path(lang));
+    tokens.extend(catalogue::tokens(ctx.catalogue, lang, calendars_page.as_deref())?);
+    tokens.extend(docs_tokens);
     let title = resolve_tokens(&meta.title, &tokens, &whence)?;
     let description = resolve_tokens(&meta.description, &tokens, &whence)?;
-    let body = resolve_tokens(&page.bodies[lang], &tokens, &whence)?;
+    let mut body = resolve_tokens(&page.bodies[lang], &tokens, &whence)?;
+    if ctx.docs.renders(&page.meta.id, lang) {
+        body = docs::layout(ctx.docs, ctx.pages, page, lang, &body, &whence)?;
+    }
 
     let mut html = String::with_capacity(body.len() + 4096);
     html.push_str("<!doctype html>\n");
@@ -426,7 +461,8 @@ fn render_head(
         "<meta property=\"og:locale\" content=\"{}\">\n",
         ctx.s(lang, "og_locale")?
     ));
-    for other in cfg.languages.iter().filter(|l| *l != lang) {
+    // Only the languages this page exists in - a documentation page is not offered in the rest.
+    for other in cfg.languages.iter().filter(|l| *l != lang && page.meta.languages.contains_key(*l)) {
         h.push_str(&format!(
             "<meta property=\"og:locale:alternate\" content=\"{}\">\n",
             ctx.s(other, "og_locale")?

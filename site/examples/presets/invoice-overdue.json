@@ -1,0 +1,25 @@
+{
+  "schema": "chronomock.preset/1",
+  "stability": "unstable",
+  "id": "invoice-overdue",
+  "name": { "en": "First day an invoice is overdue", "pl": "Pierwszy dzień po terminie faktury" },
+  "explains": {
+    "en": "Does the app mark an invoice overdue on the day after its due date, and not on the due date itself?",
+    "pl": "Czy aplikacja oznacza fakturę jako zaległą dzień po terminie płatności, a nie w sam dzień terminu?"
+  },
+  "applies_to": "both",
+  "market": null,
+  "parameters": [
+    { "id": "issued", "type": "date", "label": { "en": "Invoice date", "pl": "Data wystawienia" } },
+    { "id": "term", "type": "duration", "label": { "en": "Payment term", "pl": "Termin płatności" }, "default": { "amount": 14, "unit": "days" } }
+  ],
+  "moment": {
+    "base": { "parameter": "issued" },
+    "steps": [
+      { "shift": { "sign": "+", "parameter": "term" } },
+      { "shift": { "sign": "+", "amount": 1, "unit": "days" } },
+      { "set_time": "08:00:00" }
+    ]
+  },
+  "time_mode": { "multiplier": 1, "scale_duration_clock": false }
+}

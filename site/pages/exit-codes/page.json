@@ -1,0 +1,20 @@
+{
+  "//": "Exit codes of every chrono command, for scripts. Part of the documentation (site/data/docs.json), so English and Polish only. The tables come from site/data/cli.json through the exit_codes_<id> tokens.",
+  "id": "exit-codes",
+  "order": 86,
+  "nav": false,
+  "languages": {
+    "en": {
+      "slug": "docs/exit-codes",
+      "link_text": "Exit codes",
+      "title": "Chrono Mock exit codes - what each ending of chrono means",
+      "description": "Every exit code of the chrono command line: the session verdict of chrono run (0 works, 10 partially, 11 does not work, 4 undetermined) and every code that means the run did not get that far."
+    },
+    "pl": {
+      "slug": "dokumentacja/kody-wyjscia",
+      "link_text": "Kody wyjścia",
+      "title": "Kody wyjścia Chrono Mock - co znaczy każde zakończenie chrono",
+      "description": "Każdy kod wyjścia wiersza poleceń chrono: werdykt sesji chrono run (0 działa, 10 częściowo, 11 nie działa, 4 nieustalone) i każdy kod, który znaczy, że przebieg do werdyktu nie doszedł."
+    }
+  }
+}

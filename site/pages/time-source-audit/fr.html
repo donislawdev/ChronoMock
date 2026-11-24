@@ -74,8 +74,8 @@ Chrono Mock - session report
     </div>
 
     <figure class="shot filled">
-      <img src="/assets/audit-table.png" width="1560" height="1200" loading="lazy"
-           alt="L'écran de résultat de Chrono Mock avec What the application read ouvert : un tableau Function, Read from et Reads. NtCreateUserProcess est marqué comme lu sur l'horloge réelle par conception et connect comme lu sur l'horloge réelle par conception et accroché tardivement, tandis que les autres lignes - GetSystemTimeAsFileTime, NtQuerySystemTime, GetTimeZoneInformation et le reste - lisent sur l'horloge factice, chacune avec son propre compte. Deux avertissements se trouvent sous le tableau.">
+      <img src="/assets/audit-table.png" width="1040" height="752" loading="lazy"
+           alt="L'écran de résultat de Chrono Mock avec What the application read ouvert : un tableau Function, Read from et Reads. NtCreateUserProcess est marqué comme lu sur l'horloge réelle par conception et connect comme lu sur l'horloge réelle par conception, tandis que les autres lignes - GetSystemTimeAsFileTime, NtQuerySystemTime, GetTimeZoneInformation et le reste - lisent sur l'horloge factice, chacune avec son propre compte.">
       <figcaption>La même réponse dans la fenêtre. Chaque fonction que l'application aurait pu appeler, ce
         sur quoi elle a réellement lu, et combien de fois - y compris celles laissées exprès sur l'horloge
         réelle, qui sont nommées plutôt que comptées discrètement comme un succès.</figcaption>

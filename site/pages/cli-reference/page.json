@@ -1,143 +1,141 @@
 {
-  "//": "The reference the narrative pages deliberately do not carry: every flag of both commands and every exit code either can return, in one place. Written from the argument parser in crates/cli, not from the contract document - the document is what drifted, and this page is public. The CLI and CI page keeps the argument for WHY the exit code is the verdict; this one only states what the codes are.",
-
+  "//": "The command line reference. In English and Polish it is part of the documentation (site/data/docs.json): every command and option, with the tables rendered from site/data/cli.json. In the other twenty languages it is a short page in that language that leads to the English reference (owner's decision, 2026-11-24): the documentation is written in two languages, and these addresses stay so that links to them keep working.",
   "id": "cli-reference",
   "order": 85,
-  "nav": true,
+  "nav": false,
   "group": "start",
-
   "languages": {
     "en": {
       "slug": "cli-reference",
       "link_text": "CLI reference",
-      "title": "Chrono Mock CLI reference - every flag and exit code",
-      "description": "Complete reference for chrono run and chrono calc: every command-line flag, both exit code tables, and how to read the session report."
+      "title": "Chrono Mock command line reference - every command and option",
+      "description": "Every command and option of chrono.exe, the Chrono Mock command line: chrono run, chrono calc, presets, calendars, version and license, with examples."
     },
     "pl": {
       "slug": "dokumentacja-cli",
-      "link_text": "Dokumentacja CLI",
-      "title": "Dokumentacja CLI Chrono Mock - flagi i kody wyjścia",
-      "description": "Pełna dokumentacja chrono run i chrono calc: wszystkie flagi wiersza poleceń, obie tabele kodów wyjścia i jak czytać raport sesji."
+      "link_text": "Wiersz poleceń",
+      "title": "Wiersz poleceń Chrono Mock - każde polecenie i opcja",
+      "description": "Każde polecenie i każda opcja chrono.exe, wiersza poleceń Chrono Mock: chrono run, chrono calc, presets, calendars, version i license, z przykładami."
     },
     "de": {
       "slug": "cli-referenz",
       "link_text": "CLI-Referenz",
-      "title": "Chrono Mock CLI-Referenz - alle Optionen und Exit-Codes",
-      "description": "Vollständige Referenz zu chrono run und chrono calc: jede Kommandozeilenoption, beide Exit-Code-Tabellen und wie man den Sitzungsbericht liest."
+      "title": "Chrono Mock auf der Kommandozeile - die Befehle von chrono.exe",
+      "description": "chrono.exe startet eine Windows-Anwendung mit einem anderen Datum und einer anderen Uhrzeit und berechnet Testdaten für Skripte und CI. Die vollständige Referenz aller Optionen und Exit-Codes ist auf Englisch."
     },
     "fr": {
       "slug": "reference-cli",
       "link_text": "Référence CLI",
-      "title": "Référence CLI de Chrono Mock - toutes les options et codes de sortie",
-      "description": "Référence complète de chrono run et chrono calc : chaque option de la ligne de commande, les deux tableaux de codes de sortie, et comment lire le rapport de session."
+      "title": "Chrono Mock en ligne de commande - les commandes de chrono.exe",
+      "description": "chrono.exe lance une application Windows à une autre date et heure et calcule des dates de test, pour les scripts et la CI. La référence complète de chaque option et code de sortie est en anglais."
     },
     "es": {
       "slug": "referencia-cli",
       "link_text": "Referencia CLI",
-      "title": "Referencia CLI de Chrono Mock - todas las opciones y códigos de salida",
-      "description": "Referencia completa de chrono run y chrono calc: cada opción de la línea de comandos, las dos tablas de códigos de salida y cómo leer el informe de sesión."
+      "title": "Chrono Mock en la línea de comandos - los comandos de chrono.exe",
+      "description": "chrono.exe inicia una aplicación de Windows en otra fecha y hora y calcula fechas de prueba para scripts y CI. La referencia completa de cada opción y código de salida está en inglés."
     },
     "pt-br": {
       "slug": "referencia-cli",
       "link_text": "Referência da CLI",
-      "title": "Referência da CLI do Chrono Mock - todas as opções e códigos de saída",
-      "description": "Referência completa de chrono run e chrono calc: cada opção da linha de comando, as duas tabelas de códigos de saída e como ler o relatório de sessão."
+      "title": "Chrono Mock na linha de comando - os comandos do chrono.exe",
+      "description": "O chrono.exe inicia um aplicativo do Windows em outra data e hora e calcula datas de teste para scripts e CI. A referência completa de cada opção e código de saída está em inglês."
     },
     "it": {
       "slug": "riferimento-cli",
       "link_text": "Riferimento CLI",
-      "title": "Riferimento CLI di Chrono Mock - ogni opzione e codice di uscita",
-      "description": "Riferimento completo di chrono run e chrono calc: ogni opzione da riga di comando, le due tabelle dei codici di uscita e come leggere il report di sessione."
+      "title": "Chrono Mock da riga di comando - i comandi di chrono.exe",
+      "description": "chrono.exe avvia un'applicazione Windows in un'altra data e ora e calcola date di test per script e CI. Il riferimento completo di ogni opzione e codice di uscita è in inglese."
     },
     "nl": {
       "slug": "cli-referentie",
       "link_text": "CLI-referentie",
-      "title": "Chrono Mock CLI-referentie - elke optie en afsluitcode",
-      "description": "Volledige referentie voor chrono run en chrono calc: elke opdrachtregeloptie, beide tabellen met afsluitcodes en hoe je het sessierapport leest."
+      "title": "Chrono Mock op de opdrachtregel - de opdrachten van chrono.exe",
+      "description": "chrono.exe start een Windows-toepassing op een andere datum en tijd en berekent testdatums voor scripts en CI. De volledige referentie van elke optie en afsluitcode is in het Engels."
     },
     "ro": {
       "slug": "referinta-cli",
       "link_text": "Referința CLI",
-      "title": "Referința CLI Chrono Mock - fiecare opțiune și cod de ieșire",
-      "description": "Referința completă pentru chrono run și chrono calc: fiecare opțiune de linie de comandă, ambele tabele de coduri de ieșire și cum se citește raportul sesiunii."
+      "title": "Chrono Mock în linia de comandă - comenzile chrono.exe",
+      "description": "chrono.exe pornește o aplicație Windows la altă dată și oră și calculează date de test pentru scripturi și CI. Referința completă a fiecărei opțiuni și a fiecărui cod de ieșire este în engleză."
     },
     "cs": {
       "slug": "reference-cli",
       "link_text": "Reference CLI",
-      "title": "Reference CLI Chrono Mock - každý přepínač a návratový kód",
-      "description": "Úplná reference pro chrono run a chrono calc: každý přepínač příkazového řádku, obě tabulky návratových kódů a jak číst zprávu o sezení."
+      "title": "Chrono Mock na příkazové řádce - příkazy chrono.exe",
+      "description": "chrono.exe spustí aplikaci pro Windows s jiným datem a časem a počítá testovací data pro skripty a CI. Úplná reference všech přepínačů a návratových kódů je v angličtině."
     },
     "tr": {
       "slug": "cli-basvuru",
       "link_text": "CLI başvurusu",
-      "title": "Chrono Mock CLI başvurusu - her seçenek ve çıkış kodu",
-      "description": "chrono run ve chrono calc için tam başvuru: her komut satırı seçeneği, her iki çıkış kodu tablosu ve oturum raporunun nasıl okunacağı."
+      "title": "Komut satırında Chrono Mock - chrono.exe komutları",
+      "description": "chrono.exe bir Windows uygulamasını başka bir tarih ve saatte başlatır, betikler ve CI için test tarihleri hesaplar. Her seçeneğin ve çıkış kodunun tam başvurusu İngilizcedir."
     },
     "id": {
       "slug": "referensi-cli",
       "link_text": "Referensi CLI",
-      "title": "Referensi CLI Chrono Mock - setiap opsi dan kode keluar",
-      "description": "Referensi lengkap chrono run dan chrono calc: setiap opsi baris perintah, kedua tabel kode keluar, dan cara membaca laporan sesi."
+      "title": "Chrono Mock di baris perintah - perintah chrono.exe",
+      "description": "chrono.exe menjalankan aplikasi Windows pada tanggal dan waktu lain serta menghitung tanggal uji untuk skrip dan CI. Referensi lengkap setiap opsi dan kode keluar tersedia dalam bahasa Inggris."
     },
     "vi": {
       "slug": "tham-chieu-cli",
       "link_text": "Tham chiếu CLI",
-      "title": "Tham chiếu CLI Chrono Mock - mọi tùy chọn và mã thoát",
-      "description": "Tham chiếu đầy đủ cho chrono run và chrono calc: mọi tùy chọn dòng lệnh, cả hai bảng mã thoát và cách đọc báo cáo phiên."
+      "title": "Chrono Mock trên dòng lệnh - các lệnh của chrono.exe",
+      "description": "chrono.exe khởi chạy một ứng dụng Windows ở ngày giờ khác và tính ngày kiểm thử cho script và CI. Tài liệu tham chiếu đầy đủ về mọi tùy chọn và mã thoát có bằng tiếng Anh."
     },
     "ru": {
       "slug": "cli-reference",
       "link_text": "Справочник CLI",
-      "title": "Справочник CLI Chrono Mock — все флаги и коды завершения",
-      "description": "Полный справочник по chrono run и chrono calc: каждый флаг командной строки, обе таблицы кодов завершения и как читать отчёт сессии."
+      "title": "Chrono Mock в командной строке - команды chrono.exe",
+      "description": "chrono.exe запускает приложение Windows с другой датой и временем и вычисляет тестовые даты для скриптов и CI. Полный справочник всех флагов и кодов завершения - на английском."
     },
     "uk": {
       "slug": "cli-reference",
       "link_text": "Довідник CLI",
-      "title": "Довідник CLI Chrono Mock — усі прапорці й коди завершення",
-      "description": "Повний довідник із chrono run і chrono calc: кожен прапорець командного рядка, обидві таблиці кодів завершення й те, як читати звіт сесії."
+      "title": "Chrono Mock у командному рядку - команди chrono.exe",
+      "description": "chrono.exe запускає застосунок Windows з іншою датою й часом і обчислює тестові дати для скриптів і CI. Повний довідник усіх прапорців і кодів завершення - англійською."
     },
     "ja": {
       "slug": "cli-reference",
       "link_text": "CLI リファレンス",
-      "title": "Chrono Mock CLI リファレンス - 全オプションと終了コード",
-      "description": "chrono run と chrono calc の完全なリファレンス。すべてのコマンドラインフラグ、2 つの終了コード表、セッションレポートの読み方を網羅しています。"
+      "title": "コマンドラインの Chrono Mock - chrono.exe のコマンド",
+      "description": "chrono.exe は Windows アプリケーションを別の日付と時刻で起動し、スクリプトや CI 向けにテスト用の日付を計算します。すべてのオプションと終了コードの完全なリファレンスは英語です。"
     },
     "ko": {
       "slug": "cli-reference",
       "link_text": "CLI 레퍼런스",
-      "title": "Chrono Mock CLI 레퍼런스 - 모든 옵션과 종료 코드",
-      "description": "chrono run과 chrono calc의 전체 레퍼런스. 모든 명령줄 플래그, 두 가지 종료 코드 표, 세션 보고서를 읽는 방법을 담았습니다."
+      "title": "명령줄의 Chrono Mock - chrono.exe 명령",
+      "description": "chrono.exe는 Windows 애플리케이션을 다른 날짜와 시간으로 실행하고, 스크립트와 CI를 위한 테스트 날짜를 계산합니다. 모든 옵션과 종료 코드의 전체 레퍼런스는 영어로 되어 있습니다."
     },
     "zh-hans": {
       "slug": "cli-reference",
       "link_text": "CLI 参考",
-      "title": "Chrono Mock 命令行参考 - 全部参数与退出码",
-      "description": "chrono run 与 chrono calc 的完整参考：每一个命令行参数、两张退出码表，以及如何阅读会话报告。"
+      "title": "命令行中的 Chrono Mock - chrono.exe 的命令",
+      "description": "chrono.exe 以另一个日期和时间启动 Windows 应用程序，并为脚本和 CI 计算测试日期。每个参数和退出码的完整参考为英文。"
     },
     "zh-hant": {
       "slug": "cli-reference",
       "link_text": "CLI 參考",
-      "title": "Chrono Mock 命令列參考 - 全部參數與結束代碼",
-      "description": "chrono run 與 chrono calc 的完整參考：每一個命令列參數、兩張結束代碼表，以及如何閱讀工作階段報告。"
+      "title": "命令列中的 Chrono Mock - chrono.exe 的命令",
+      "description": "chrono.exe 以另一個日期和時間啟動 Windows 應用程式，並為指令碼和 CI 計算測試日期。每個參數和結束代碼的完整參考為英文。"
     },
     "ar": {
       "slug": "cli-reference",
       "link_text": "مرجع CLI",
-      "title": "مرجع سطر أوامر Chrono Mock - كل الخيارات ورموز الخروج",
-      "description": "المرجع الكامل لـ chrono run وchrono calc: كل خيار في سطر الأوامر، وجدولا رموز الخروج، وكيفية قراءة تقرير الجلسة."
+      "title": "Chrono Mock في سطر الأوامر - أوامر chrono.exe",
+      "description": "يشغّل chrono.exe تطبيق Windows بتاريخ ووقت آخرين ويحسب تواريخ الاختبار للنصوص البرمجية وCI. المرجع الكامل لكل خيار ورمز خروج متاح بالإنجليزية."
     },
     "hi": {
       "slug": "cli-reference",
       "link_text": "CLI संदर्भ",
-      "title": "Chrono Mock कमांड-लाइन संदर्भ - हर फ़्लैग और एग्ज़िट कोड",
-      "description": "chrono run और chrono calc का पूरा संदर्भ: कमांड लाइन का हर फ़्लैग, दोनों एग्ज़िट कोड तालिकाएँ, और सत्र की रिपोर्ट पढ़ने का तरीका।"
+      "title": "कमांड लाइन पर Chrono Mock - chrono.exe के कमांड",
+      "description": "chrono.exe किसी Windows ऐप्लिकेशन को दूसरी तारीख और समय पर शुरू करता है और स्क्रिप्ट और CI के लिए टेस्ट तारीखें निकालता है। हर विकल्प और एग्ज़िट कोड का पूरा संदर्भ अंग्रेज़ी में है।"
     },
     "th": {
       "slug": "cli-reference",
       "link_text": "เอกสารอ้างอิง CLI",
-      "title": "เอกสารอ้างอิงบรรทัดคำสั่ง Chrono Mock - ทุกตัวเลือกและรหัสออก",
-      "description": "เอกสารอ้างอิงฉบับเต็มของ chrono run และ chrono calc: ทุกตัวเลือกบรรทัดคำสั่ง ตารางรหัสออกสองตาราง และวิธีอ่านรายงานเซสชัน"
+      "title": "Chrono Mock บนบรรทัดคำสั่ง - คำสั่งของ chrono.exe",
+      "description": "chrono.exe เปิดแอปพลิเคชัน Windows ด้วยวันที่และเวลาอื่น และคำนวณวันที่สำหรับทดสอบให้สคริปต์และ CI เอกสารอ้างอิงฉบับเต็มของทุกตัวเลือกและรหัสออกเป็นภาษาอังกฤษ"
     }
   }
 }

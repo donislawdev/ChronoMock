@@ -1,0 +1,118 @@
+<!-- Your first session, English. Part of the documentation (site/data/docs.json). The pictures
+     are a real session of the window package on a demo application, see page.json. -->
+
+<h1>Your first session</h1>
+<p class="sub">
+  Run an application as if it were 19 January 2038, see that it read that date, and read what
+  Chrono Mock says about it. The clock of your computer stays as it is.
+</p>
+
+<h2 id="get-it">Get Chrono Mock</h2>
+<p>
+  Download it from the <a href="/download/">download page</a>. The zip runs from any folder with
+  nothing to install, and the installer adds it to the Start menu. Start
+  <code>ChronoMock.exe</code>: it opens on <strong>Run an app</strong>.
+</p>
+
+<h2 id="application">1. Pick the application</h2>
+<p>
+  Press <strong>Choose…</strong> and pick the <code>.exe</code> of the application you are
+  testing. The list beside the button keeps the applications you have run before.
+</p>
+<figure class="shot filled">
+  <img src="/assets/docs/run-setup.png" width="1040" height="752" loading="lazy"
+       alt="The Run an app tab. Under Application the list shows test.exe beside a Choose button. Date and time has Starts at set to 2038-01-19 and 03:14:07 with Today and Now buttons, a note about the 32-bit time boundary, the time zone UTC+00:00 and a From now row. Scenarios and Speed and options are folded below. The footer says the application will see Tuesday, 19 January 2038, 03:14:07 (UTC+00:00) at speed ×1, above the Start button.">
+  <figcaption>Ready to start: the application, the date and time, and in the footer the moment the
+    application will see.</figcaption>
+</figure>
+
+<h2 id="date">2. Pick the date</h2>
+<p>
+  <strong>Starts at</strong> is the date and time the application starts at. It opens on the
+  last second a 32-bit Unix clock can count, 03:14:07 UTC on 19 January 2038, which is a common
+  first test. Type another date, pick one from the calendar, or use:
+</p>
+<ul>
+  <li><strong>Today</strong> or <strong>Now</strong>, for today at midnight or this moment,</li>
+  <li><strong>From now</strong> and <strong>Fill the date</strong>, for a date counted from now,
+    such as 90 days ahead,</li>
+  <li><strong>Scenarios</strong>, for a ready-made date such as the last day of the month (see
+    <a href="/docs/scenarios/">Scenarios</a>).</li>
+</ul>
+<p>
+  <strong>Time zone</strong> is the zone the application finds itself in for the session, and the
+  date and time above are read in it. It is a fixed offset from UTC, with no change for daylight
+  saving. The footer says in words what the application will see.
+</p>
+
+<h2 id="start">3. Start</h2>
+<p>
+  <strong>Start</strong> starts the application with its clock set to that moment, while the rest
+  of the computer keeps the real time. Chrono Mock shows both clocks side by side.
+</p>
+<figure class="shot filled">
+  <img src="/assets/docs/session.png" width="1040" height="752" loading="lazy"
+       alt="A running session. The fake clock reads 2038-01-19 03:20:18 UTC+00:00 with 6 minutes 11 seconds elapsed, the real clock reads 2026-11-24 11:34:49 with 13 seconds elapsed. Below are the Speed buttons ×1, ×10, ×60 (selected), ×1440, Freeze and a box for any speed, the Jump buttons -1 day, -1 hour, +1 hour, +1 day, and Jump to with a date and a time. The footer reads Running with a Works verdict and a Stop session button.">
+  <figcaption>The fake clock is the one the application reads. At ×60 an hour passes in a
+    minute.</figcaption>
+</figure>
+<ul>
+  <li><strong>Speed</strong> runs the fake clock faster, or freezes it.</li>
+  <li><strong>Jump</strong> moves it by an hour or a day, and <strong>Jump to</strong> to any
+    date and time. A jump back moves the date and time back, but the clock an application
+    measures elapsed time with never runs backwards.</li>
+  <li><strong>Stop session</strong> puts the application back on the real clock. It does not close
+    the application.</li>
+</ul>
+<p>The application shows the date it was given:</p>
+<figure class="shot filled">
+  <img src="/assets/docs/test-app.png" width="560" height="220" loading="lazy"
+       alt="A small window titled Test app that says: This application reads today's date from Windows: Tuesday, 19 January 2038, 03:14:16.">
+  <figcaption>A demo application that only shows the date it reads from Windows. Under the session
+    it reads 19 January 2038.</figcaption>
+</figure>
+<p>
+  The verdict next to <strong>Running</strong> says whether the application really reads the fake
+  clock. When the check right after the start finds that it does not, the session ends the
+  application, rather than leave it running on dates it never got.
+</p>
+
+<h2 id="result">4. Read the result</h2>
+<p>When the application closes, or you stop the session, the result stays on screen.</p>
+<figure class="shot filled">
+  <img src="/assets/docs/result.png" width="1040" height="752" loading="lazy"
+       alt="The result of the session. The verdict Works, with the line Every process that read the time saw the fake clock. Session ended: the application exited on its own with exit code 0. A Copy summary button. What the application saw: started at Tuesday, 19 January 2038, 03:14:07, speed ×60, fake clock reached 03:24:16, 10 minutes 9 seconds on the fake clock and 19 seconds in real time. What the application read is folded, with the count fake clock: 15.">
+  <figcaption>The verdict, how the session ended and what the application saw.</figcaption>
+</figure>
+<ul>
+  <li><strong>Works</strong>: every process that read the time saw the fake clock.</li>
+  <li><strong>Partial</strong>: the application read some of its time from the real clock, so the
+    test may be unreliable.</li>
+  <li><strong>Fails</strong>: it went on reading the real clock where it matters.</li>
+  <li><strong>Undetermined</strong>: what it read could not be determined, which never counts as
+    working.</li>
+</ul>
+<p>
+  <strong>What the application saw</strong> gives the moment it started at, the speed, where the
+  fake clock got to, and how much time passed on each clock. <strong>What the application
+  read</strong> lists each way of reading the time it used, and which clock answered.
+</p>
+<figure class="shot filled">
+  <img src="/assets/docs/result-read.png" width="1040" height="752" loading="lazy"
+       alt="What the application read, unfolded: a table of Windows functions with the clock each one gave and how many times it was called. GetLocalTime, fake clock, 89. NtQuerySystemTime, fake clock, 12. GetSystemTimeAsFileTime, fake clock, 3. The time zone functions, fake clock, 0. NtCreateUserProcess and connect, real clock, by design, 0. Previous sessions is folded below, with sessions: 1.">
+  <figcaption>Each Windows function that reads the time, the clock it answered with, and how many
+    times the application called it.</figcaption>
+</figure>
+<p>
+  <strong>Copy summary</strong> copies a report to paste into a ticket.
+  <strong>New session</strong> goes back to the setup with everything you entered, and
+  <strong>Previous sessions</strong> keeps the sessions before, to set one up again. The
+  <a href="/time-source-audit/">time source audit</a> explains what is read and why.
+</p>
+
+<h2 id="next">Where next</h2>
+<ul>
+  <li><a href="/docs/run-an-app/">Run an app</a>: every field and option of the tab.</li>
+  <li><a href="/docs/calculator/">The calculator</a>: work out a test date before you run it.</li>
+  <li><a href="/cli-reference/">Command line</a>: the same session from a script.</li>
+</ul>

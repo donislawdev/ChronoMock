@@ -1,0 +1,584 @@
+{
+  "//": "Written by crates/cli/tests/site_reference.rs from `chrono presets --json`: the presets the program reads from presets/, in the form it gives them, without the folder and the file names. The scenarios page of the documentation is rendered from it. Not edited by hand: after a change to a preset, run `cargo test -p chrono-cli --test site_reference` with CHRONO_WRITE_SITE_DATA=1 set, and the test writes it again.",
+  "presets": [
+    {
+      "applies_to": "calculator",
+      "calendar": null,
+      "explains": {
+        "en": "Does the app apply the age-of-majority boundary correctly - admitting someone exactly on their 18th birthday, and refusing them the day before?",
+        "pl": "Czy aplikacja poprawnie stosuje granicę pełnoletności - dopuszcza kogoś dokładnie w 18. urodziny i odmawia dzień wcześniej?"
+      },
+      "id": "age-of-majority",
+      "market": null,
+      "moment": {
+        "base": {
+          "kind": "parameter",
+          "parameter": "birth_date"
+        },
+        "steps": [
+          {
+            "amount": 18,
+            "kind": "shift",
+            "sign": "+",
+            "unit": "y"
+          },
+          {
+            "kind": "shift",
+            "parameter": "boundary"
+          }
+        ]
+      },
+      "name": {
+        "en": "Age-of-majority boundary",
+        "pl": "Granica pełnoletności"
+      },
+      "parameters": [
+        {
+          "default": null,
+          "default_hint": null,
+          "id": "birth_date",
+          "label": {
+            "en": "Date of birth",
+            "pl": "Data urodzenia"
+          },
+          "type": "date"
+        },
+        {
+          "choices": [
+            {
+              "days": -1,
+              "label": "day_before"
+            },
+            {
+              "days": 0,
+              "label": "on_day"
+            },
+            {
+              "days": 1,
+              "label": "day_after"
+            }
+          ],
+          "default": "day_before",
+          "default_hint": null,
+          "id": "boundary",
+          "label": {
+            "en": "Day to test",
+            "pl": "Dzień do sprawdzenia"
+          },
+          "type": "variant"
+        }
+      ],
+      "time_mode": {
+        "multiplier": 1,
+        "scale_duration_clock": false
+      }
+    },
+    {
+      "applies_to": "substitution",
+      "calendar": null,
+      "explains": {
+        "en": "Does the app cope when its clock runs 90 seconds ahead of real time - a 2FA/TOTP code or a signed token rejected as expired or from the future?",
+        "pl": "Czy aplikacja radzi sobie, gdy jej zegar wyprzedza rzeczywisty o 90 sekund - kod 2FA/TOTP albo podpisany token odrzucony jako wygasły lub z przyszłości?"
+      },
+      "id": "clock-skew-plus-90s",
+      "market": null,
+      "moment": {
+        "base": {
+          "kind": "now"
+        },
+        "steps": [
+          {
+            "amount": 90,
+            "kind": "shift",
+            "sign": "+",
+            "unit": "s"
+          }
+        ]
+      },
+      "name": {
+        "en": "Clock skew, +90 s",
+        "pl": "Rozjazd zegara, +90 s"
+      },
+      "parameters": [],
+      "time_mode": {
+        "multiplier": 1,
+        "scale_duration_clock": false
+      }
+    },
+    {
+      "applies_to": "both",
+      "calendar": null,
+      "explains": {
+        "en": "Does the app behave when the clock is set before its own installation date?",
+        "pl": "Czy aplikacja zachowuje się poprawnie, gdy zegar jest ustawiony przed datą jej instalacji?"
+      },
+      "id": "date-before-install",
+      "market": null,
+      "moment": {
+        "base": {
+          "kind": "parameter",
+          "parameter": "install_date"
+        },
+        "steps": [
+          {
+            "amount": 1,
+            "kind": "shift",
+            "sign": "-",
+            "unit": "d"
+          }
+        ]
+      },
+      "name": {
+        "en": "Date before installation",
+        "pl": "Data sprzed instalacji"
+      },
+      "parameters": [
+        {
+          "default": null,
+          "default_hint": "target_file_creation",
+          "id": "install_date",
+          "label": {
+            "en": "Installation date",
+            "pl": "Data instalacji"
+          },
+          "type": "date"
+        }
+      ],
+      "time_mode": {
+        "multiplier": 1,
+        "scale_duration_clock": false
+      }
+    },
+    {
+      "applies_to": "both",
+      "calendar": null,
+      "explains": {
+        "en": "Does the app treat Unix epoch zero as a real date instead of an empty value?",
+        "pl": "Czy aplikacja traktuje zero epoki uniksowej jako realną datę zamiast pustej wartości?"
+      },
+      "id": "epoch-zero",
+      "market": null,
+      "moment": {
+        "base": {
+          "at": "1970-01-01T00:00:00",
+          "kind": "absolute_utc"
+        },
+        "steps": []
+      },
+      "name": {
+        "en": "Unix epoch zero",
+        "pl": "Zero epoki uniksowej"
+      },
+      "parameters": [],
+      "time_mode": {
+        "multiplier": 1,
+        "scale_duration_clock": false
+      }
+    },
+    {
+      "applies_to": "both",
+      "calendar": null,
+      "explains": {
+        "en": "Does the app handle 29 February - the leap day that exists only every four years, where 'one year later' has no matching date?",
+        "pl": "Czy aplikacja radzi sobie z 29 lutego - dniem przestępnym istniejącym raz na cztery lata, gdzie 'za rok' nie ma odpowiadającej daty?"
+      },
+      "id": "feb-29",
+      "market": null,
+      "moment": {
+        "base": {
+          "kind": "today"
+        },
+        "steps": [
+          {
+            "kind": "nearest",
+            "target": "next-leap-day"
+          }
+        ]
+      },
+      "name": {
+        "en": "29 February",
+        "pl": "29 lutego"
+      },
+      "parameters": [],
+      "time_mode": {
+        "multiplier": 1,
+        "scale_duration_clock": false
+      }
+    },
+    {
+      "applies_to": "calculator",
+      "calendar": null,
+      "explains": {
+        "en": "Does the app close the fiscal year on the right day - the day before the fiscal-year start you set, not calendar 31 December?",
+        "pl": "Czy aplikacja zamyka rok obrotowy we właściwym dniu - dzień przed ustawionym początkiem roku obrotowego, a nie 31 grudnia kalendarzowego?"
+      },
+      "id": "fiscal-year-end",
+      "market": null,
+      "moment": {
+        "base": {
+          "kind": "parameter",
+          "parameter": "fiscal_year_start"
+        },
+        "steps": [
+          {
+            "amount": 1,
+            "kind": "shift",
+            "sign": "+",
+            "unit": "y"
+          },
+          {
+            "amount": 1,
+            "kind": "shift",
+            "sign": "-",
+            "unit": "d"
+          }
+        ]
+      },
+      "name": {
+        "en": "Last day of fiscal year",
+        "pl": "Ostatni dzień roku obrotowego"
+      },
+      "parameters": [
+        {
+          "default": null,
+          "default_hint": null,
+          "id": "fiscal_year_start",
+          "label": {
+            "en": "Fiscal year start",
+            "pl": "Początek roku obrotowego"
+          },
+          "type": "date"
+        }
+      ],
+      "time_mode": {
+        "multiplier": 1,
+        "scale_duration_clock": false
+      }
+    },
+    {
+      "applies_to": "substitution",
+      "calendar": null,
+      "explains": {
+        "en": "Does the app handle a licence that expired long ago, not just yesterday?",
+        "pl": "Czy aplikacja radzi sobie z licencją, która wygasła dawno, a nie tylko wczoraj?"
+      },
+      "id": "license-expired-year-ago",
+      "market": null,
+      "moment": {
+        "base": {
+          "kind": "today"
+        },
+        "steps": [
+          {
+            "amount": 1,
+            "kind": "shift",
+            "sign": "-",
+            "unit": "y"
+          }
+        ]
+      },
+      "name": {
+        "en": "Licence expired a year ago",
+        "pl": "Licencja wygasła rok temu"
+      },
+      "parameters": [],
+      "time_mode": {
+        "multiplier": 1,
+        "scale_duration_clock": false
+      }
+    },
+    {
+      "applies_to": "both",
+      "calendar": null,
+      "explains": {
+        "en": "Does month-end closing and period accruals behave on the last day of the month?",
+        "pl": "Czy zamknięcie miesiąca i naliczenia okresowe działają w ostatnim dniu miesiąca?"
+      },
+      "id": "month-end",
+      "market": null,
+      "moment": {
+        "base": {
+          "kind": "today"
+        },
+        "steps": [
+          {
+            "kind": "snap",
+            "target": "eom"
+          }
+        ]
+      },
+      "name": {
+        "en": "Last day of month",
+        "pl": "Ostatni dzień miesiąca"
+      },
+      "parameters": [],
+      "time_mode": {
+        "multiplier": 1,
+        "scale_duration_clock": false
+      }
+    },
+    {
+      "applies_to": "calculator",
+      "calendar": "us-banking",
+      "explains": {
+        "en": "Does a payment due N business days out land on the right day, skipping weekends and holidays?",
+        "pl": "Czy termin płatności za N dni roboczych wypada w poprawnym dniu, pomijając weekendy i święta?"
+      },
+      "id": "payment-due-business-days",
+      "market": "us",
+      "moment": {
+        "base": {
+          "kind": "today"
+        },
+        "steps": [
+          {
+            "kind": "shift",
+            "parameter": "days",
+            "sign": "+"
+          }
+        ]
+      },
+      "name": {
+        "en": "Payment due, +N business days",
+        "pl": "Termin płatności, +N dni roboczych"
+      },
+      "parameters": [
+        {
+          "default": {
+            "amount": 90,
+            "unit": "bd"
+          },
+          "default_hint": null,
+          "id": "days",
+          "label": {
+            "en": "Payment term",
+            "pl": "Okres płatności"
+          },
+          "type": "duration"
+        }
+      ],
+      "time_mode": {
+        "multiplier": 1,
+        "scale_duration_clock": false
+      }
+    },
+    {
+      "applies_to": "both",
+      "calendar": null,
+      "explains": {
+        "en": "Does quarter-end closing and reporting behave on the last day of the quarter?",
+        "pl": "Czy zamknięcie kwartału i raporty działają w ostatnim dniu kwartału?"
+      },
+      "id": "quarter-end",
+      "market": null,
+      "moment": {
+        "base": {
+          "kind": "today"
+        },
+        "steps": [
+          {
+            "kind": "snap",
+            "target": "eoq"
+          }
+        ]
+      },
+      "name": {
+        "en": "Last day of quarter",
+        "pl": "Ostatni dzień kwartału"
+      },
+      "parameters": [],
+      "time_mode": {
+        "multiplier": 1,
+        "scale_duration_clock": false
+      }
+    },
+    {
+      "applies_to": "both",
+      "calendar": null,
+      "explains": {
+        "en": "Does the app refuse access the moment the trial ends, and how - a sensible message or a blank window? Counts the install day as day 1, so a 30-day trial started on 1 January is over on 31 January.",
+        "pl": "Czy aplikacja odmawia dostępu w chwili końca okresu próbnego i jak - sensowny komunikat czy puste okno? Dzień instalacji liczy się jako pierwszy, więc 30-dniowy trial zaczęty 1 stycznia jest skończony 31 stycznia."
+      },
+      "id": "trial-first-day-after",
+      "market": null,
+      "moment": {
+        "base": {
+          "kind": "parameter",
+          "parameter": "start_date"
+        },
+        "steps": [
+          {
+            "kind": "shift",
+            "parameter": "trial_length",
+            "sign": "+"
+          },
+          {
+            "kind": "set_time",
+            "time": "00:00:01"
+          }
+        ]
+      },
+      "name": {
+        "en": "First day after trial expiry",
+        "pl": "Pierwszy dzień po wygaśnięciu triala"
+      },
+      "parameters": [
+        {
+          "default": {
+            "amount": 30,
+            "unit": "d"
+          },
+          "default_hint": null,
+          "id": "trial_length",
+          "label": {
+            "en": "Trial length",
+            "pl": "Długość okresu próbnego"
+          },
+          "type": "duration"
+        },
+        {
+          "default": null,
+          "default_hint": "target_file_creation",
+          "id": "start_date",
+          "label": {
+            "en": "Trial start",
+            "pl": "Początek okresu próbnego"
+          },
+          "type": "date"
+        }
+      ],
+      "time_mode": {
+        "multiplier": 1,
+        "scale_duration_clock": false
+      }
+    },
+    {
+      "applies_to": "both",
+      "calendar": null,
+      "explains": {
+        "en": "Does the app still work in the very last moment of the trial - the boundary from the 'should still work' side? Counts the install day as day 1, so a 30-day trial started on 1 January ends on 30 January at 23:59:59.",
+        "pl": "Czy aplikacja jeszcze działa w ostatniej chwili okresu próbnego - granica od strony „ma działać”? Dzień instalacji liczy się jako pierwszy, więc 30-dniowy trial zaczęty 1 stycznia kończy się 30 stycznia o 23:59:59."
+      },
+      "id": "trial-last-day",
+      "market": null,
+      "moment": {
+        "base": {
+          "kind": "parameter",
+          "parameter": "start_date"
+        },
+        "steps": [
+          {
+            "kind": "shift",
+            "parameter": "trial_length",
+            "sign": "+"
+          },
+          {
+            "amount": 1,
+            "kind": "shift",
+            "sign": "-",
+            "unit": "d"
+          },
+          {
+            "kind": "set_time",
+            "time": "23:59:59"
+          }
+        ]
+      },
+      "name": {
+        "en": "Last day of trial",
+        "pl": "Ostatni dzień triala"
+      },
+      "parameters": [
+        {
+          "default": {
+            "amount": 30,
+            "unit": "d"
+          },
+          "default_hint": null,
+          "id": "trial_length",
+          "label": {
+            "en": "Trial length",
+            "pl": "Długość okresu próbnego"
+          },
+          "type": "duration"
+        },
+        {
+          "default": null,
+          "default_hint": "target_file_creation",
+          "id": "start_date",
+          "label": {
+            "en": "Trial start",
+            "pl": "Początek okresu próbnego"
+          },
+          "type": "date"
+        }
+      ],
+      "time_mode": {
+        "multiplier": 1,
+        "scale_duration_clock": false
+      }
+    },
+    {
+      "applies_to": "both",
+      "calendar": null,
+      "explains": {
+        "en": "Does the app survive the 32-bit Unix time boundary (2038-01-19T03:14:07Z)?",
+        "pl": "Czy aplikacja przetrwa granicę 32-bitowego czasu uniksowego (2038-01-19T03:14:07Z)?"
+      },
+      "id": "year-2038",
+      "market": null,
+      "moment": {
+        "base": {
+          "at": "2038-01-19T03:14:07",
+          "kind": "absolute_utc"
+        },
+        "steps": []
+      },
+      "name": {
+        "en": "2038 boundary",
+        "pl": "Granica 2038"
+      },
+      "parameters": [],
+      "time_mode": {
+        "multiplier": 1,
+        "scale_duration_clock": false
+      }
+    },
+    {
+      "applies_to": "substitution",
+      "calendar": null,
+      "explains": {
+        "en": "Do document numbering, year-in-name, and annual reports handle the rollover live, as the clock crosses midnight?",
+        "pl": "Czy numeracja dokumentów, rok w nazwach i raporty roczne obsługują przełom na żywo, gdy zegar mija północ?"
+      },
+      "id": "year-rollover",
+      "market": null,
+      "moment": {
+        "base": {
+          "kind": "today"
+        },
+        "steps": [
+          {
+            "kind": "snap",
+            "target": "eoy"
+          },
+          {
+            "amount": 9,
+            "kind": "shift",
+            "sign": "-",
+            "unit": "s"
+          }
+        ]
+      },
+      "name": {
+        "en": "Year rollover, live",
+        "pl": "Przełom roku, na żywo"
+      },
+      "parameters": [],
+      "time_mode": {
+        "multiplier": 1,
+        "scale_duration_clock": false
+      }
+    }
+  ]
+}

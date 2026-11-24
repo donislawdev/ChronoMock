@@ -1,0 +1,282 @@
+<!-- Troubleshooting, Polish. Part of the documentation (site/data/docs.json). Each entry starts
+     from what the reader sees and says what to do, in the window and on the command line. The
+     words follow the program's own: the report's (crates/cli/src/report.rs: describe_error,
+     describe_warning, describe_residue) and the window's
+     (gui/ChronoMock.App/Localization/Strings.en.json). The window and the report are in English,
+     so what they say is quoted in English. The key the report puts in brackets is beside each
+     entry, so a reader can search this page for the key in their report. -->
+
+<h1>Gdy coś nie działa</h1>
+<p class="sub">
+  Co zrobić, gdy sesja nie rusza, program od razu się zamyka albo pokazuje prawdziwą datę. Każdy
+  punkt zaczyna się od tego, co widzisz. Obok stoi klucz, który podaje raport, np.
+  <code>target.bitness_mismatch</code>, więc klucza z Twojego raportu możesz szukać na tej
+  stronie.
+</p>
+
+<h2 id="nie-startuje">Sesja nie ruszyła</h2>
+<ul>
+  <li><strong>Program i <code>chrono.exe</code> mają różną bitowość</strong>
+    (<code>target.bitness_mismatch</code>). W wierszu poleceń program 64-bitowy potrzebuje
+    <code>chrono.exe</code>, a 32-bitowy <code>x86\chrono.exe</code>: uruchom to samo polecenie
+    drugim plikiem. Okno wybiera właściwy samo. Gdy mimo to okno o tym mówi, program działa z inną
+    bitowością, niż deklaruje jego plik, jak niektóre programy .NET zbudowane na dowolny procesor:
+    skopiuj diagnostykę i <a href="#zgloszenie">zgłoś to</a>.</li>
+  <li><strong>Nie udało się podłączyć zegara sesji do programu</strong>
+    (<code>target.inject_failed</code>). Mógł to zatrzymać antywirus albo program nie pozwala
+    innym programom wczytywać do siebie kodu. Gdy Zabezpieczenia Windows zgłaszają zagrożenie,
+    <a href="/pl/pobieranie/">strona pobierania</a> mówi, jak wyłączyć ze skanowania tylko
+    bibliotekę, którą wczytuje Chrono Mock, a nie cały folder. Programów Electron i Chromium to
+    nie dotyczy, bo sesja dociera do nich inaczej.</li>
+  <li><strong>Brakuje części Chrono Mock</strong> (<code>core.hook_dll_missing</code>): obok
+    <code>chrono.exe</code> nie ma <code>chrono_hook.dll</code>. Rozpakuj całą paczkę jeszcze raz
+    albo zainstaluj ją ponownie. Gdy plik znów zniknie, sprawdź, czy nie usunął go antywirus.</li>
+  <li><strong>Sam program nie mógł wystartować</strong>: Windows nie znalazł potrzebnej mu
+    biblioteki (DLL) albo wczytywana biblioteka jest w innej wersji, zbudowana dla drugiej
+    bitowości lub nie dała rady wystartować (<code>target.loader_dll_not_found</code>,
+    <code>target.loader_entry_missing</code>, <code>target.loader_bad_image</code>,
+    <code>target.loader_init_failed</code>). Uruchom go raz bez Chrono Mock, z tego samego folderu
+    roboczego: Windows poda wtedy nazwę brakującego pliku albo funkcji.</li>
+  <li><strong>Działa już inna sesja Chrono Mock</strong>
+    (<code>session.already_active</code>). Naraz działa jedna sesja, więc najpierw zakończ tamtą,
+    w drugim oknie albo w drugim <code>chrono run</code>.</li>
+  <li><strong>Plik nie jest programem, który Chrono Mock umie uruchomić.</strong> Chrono Mock
+    przyjmuje plik <code>.exe</code>. Programy ze Sklepu w paczkach UWP i MSIX nie są obsługiwane.
+    <code>chrono run</code> z <a href="/pl/dokumentacja-cli/#run-dry-run"><code>--dry-run</code></a>
+    sprawdza plik, niczego nie uruchamiając.</li>
+</ul>
+
+<h2 id="zamyka-sie">Program od razu się zamknął</h2>
+<p>
+  Okno mówi <em>Did not take effect - the application vanished</em>, raport <em>the target
+  vanished right after injection</em>, a polecenie kończy się kodem 12. Wiersz pod spodem mówi,
+  co z poniższych najpewniej się stało:
+</p>
+<ul>
+  <li><strong>Działała już jego kopia</strong>
+    (<code>target.single_instance_suspected</code>, <code>session.handed_to_copy</code>{{next_release}}).
+    Wiele programów pozwala na jedną kopię: drugie uruchomienie oddaje pracę pierwszej i się
+    zamyka, a tamta kopia działa na prawdziwym zegarze. Zamknij każdą kopię, także taką, która ma
+    tylko ikonę przy zegarze albo widać ją tylko w Menedżerze zadań, i uruchom sesję jeszcze
+    raz.</li>
+  <li><strong>Uruchomił inny program, do którego sesja nie weszła</strong>
+    (<code>target.handed_off_uncovered</code>), zwykle program drugiej bitowości, który działa na
+    prawdziwym zegarze. Gdy wiesz, jaki program uruchamia, uruchom w sesji od razu jego.</li>
+  <li><strong>Uległ awarii</strong> (<code>target.crashed</code>,
+    <code>session.target_crashed</code>){{next_release}}. Uruchom go raz bez Chrono Mock i
+    sprawdź, czy tam też pada. Gdy pada tylko w sesji, <a href="#zgloszenie">zgłoś to</a>.</li>
+  <li><strong>Program na silniku Gecko, gdy Chrono Mock działa jako administrator</strong>
+    (<code>target.restarted_without_admin</code>){{next_release}}: patrz
+    <a href="#administrator">Praca jako administrator</a>.</li>
+</ul>
+<p>
+  Program konsolowy, który kończy się tak szybko, nie należy do tej grupy. Zrobił swoje i
+  dostaje werdykt.
+</p>
+
+<h2 id="odmowa">Sesja odmówiła</h2>
+<p>
+  Okno mówi <em>Refused - the fake clock did not take effect, so the session ended the
+  application</em>. Werdykt raportu to <strong>DID NOT TAKE EFFECT</strong>, a polecenie kończy
+  się kodem 11. Zaraz po starcie sesja stwierdziła, że to, co program czytał, nie przyszło z
+  zegara sesji, i zamknęła go, bo test na prawdziwej dacie niczego nie dowodzi.
+</p>
+<ul>
+  <li>Listy pod werdyktem mówią, co czytał zamiast tego: kanały, których sesja nie objęła, i
+    procesy, które działały na prawdziwym zegarze. Punkty niżej podają zwykłe przyczyny.</li>
+  <li>Żeby program mimo to działał dalej, zaznacz
+    <a href="/pl/dokumentacja/uruchamianie-aplikacji/#mimo-to"><strong>Start even if the fake
+    clock turns out not to work</strong></a> albo dodaj
+    <a href="/pl/dokumentacja-cli/#run-force"><code>--force</code></a>. Werdykt i kod wyjścia
+    zostają te same, a sesja jest oznaczona jako niewiarygodna.</li>
+</ul>
+
+<h2 id="prawdziwa-data">Program pokazuje prawdziwą datę</h2>
+<p>
+  Werdykt mówi, ile do niego dotarło: <strong>PARTIAL</strong>, kod 10, znaczy, że część czasu
+  przyszła z prawdziwego zegara, a wiersze pod spodem mówią skąd. Każdy z nich wyjaśnia
+  <a href="/pl/dokumentacja/czytanie-raportu/#zegary">Czytanie raportu</a>.
+</p>
+<ul>
+  <li><strong>Procesy, które uruchomił, działały na prawdziwym zegarze</strong>
+    (<code>inheritance.children_uncovered</code>, <code>inheritance.child_not_injected</code>).
+    Raport podaje ich nazwy. Najczęściej mają drugą bitowość: 64-bitowy pomocnik programu
+    32-bitowego albo odwrotnie.</li>
+  <li><strong>Może czytać czas z serwera</strong> (<code>source.network_at_start</code>). Raport
+    mówi o tym, gdy program otwiera połączenie sieciowe. Czas, który przychodzi z innego
+    komputera, np. z serwera, bazy danych albo usługi licencji, jest poza zasięgiem każdego
+    narzędzia na tym komputerze.</li>
+  <li><strong>Nie przeczytał żadnego zegara, który podmienia sesja</strong>
+    (<code>coverage.session_clock_never_read</code>). Zegary sesji były na miejscu i działały, a
+    nikt o nie nie pytał: program wziął czas skądinąd.</li>
+  <li><strong>To program w Go</strong> (<code>runtime.go_wall_clock_unreachable</code>). Go czyta
+    datę wprost z pamięci, którą Windows udostępnia każdemu programowi, a tam żadna sesja nie
+    sięga. Program widzi prawdziwą datę, pokazaną w strefie czasowej sesji.</li>
+  <li><strong>Jego strony WWW pokazują prawdziwą datę</strong>: patrz
+    <a href="#strony">następna sekcja</a>.</li>
+</ul>
+
+<h2 id="strony">Strony WWW w programie pokazują prawdziwą datę</h2>
+<ul>
+  <li><strong>Program z wbudowanym silnikiem WWW</strong> (WebView2, Qt WebEngine).
+    <a href="/pl/dokumentacja/uruchamianie-aplikacji/#strony"><strong>Reach the web pages inside
+    the application</strong></a> jest włączone od początku i przenosi jego strony na zegar sesji.
+    Odznaczone, albo z <code>--no-embedded</code>, zostawia je na prawdziwej dacie. Gdy raport
+    mówi, że sesja nie dotarła do silnika (<code>embedded.webview2_not_reached</code>,
+    <code>embedded.engine_unreachable</code>, <code>embedded.discovery_unavailable</code>), jego
+    strony działały na prawdziwym zegarze. Jak sesja do nich dociera, wyjaśnia strona
+    <a href="/pl/webview2-qt-webengine/">WebView2 i Qt WebEngine</a>.</li>
+  <li><strong>Program działa jako administrator</strong> (<code>embedded.elevated_host</code>):
+    patrz <a href="#administrator">Praca jako administrator</a>.</li>
+  <li><strong>Program na silniku Gecko Mozilli, np. Firefox</strong>
+    (<code>session.gecko_pages_sandboxed</code>){{next_release}}. Swoje strony uruchamia w
+    procesach wewnątrz piaskownicy Gecko, do której sesja nie wchodzi. Zaznacz
+    <a href="/pl/dokumentacja/uruchamianie-aplikacji/#gecko"><strong>Switch off the Gecko
+    sandbox</strong></a> albo dodaj <code>--no-gecko-sandbox</code>. Program działa wtedy bez tej
+    ochrony, dopóki się nie zamknie, więc otwieraj w nim tylko strony, którym ufasz.</li>
+  <li><strong>Program Electron</strong> (<code>chromium.main_process_uncovered</code>). Jego okna
+    działają na zegarze sesji, ale proces główny, czyli część w Node.js poza oknami, czyta
+    prawdziwy zegar, a sesja do niego nie sięga. Data, którą tam wylicza, przypomnienie, które tam
+    planuje, albo sprawdzenie przy starcie idą za prawdziwą datą. Więcej mówi strona
+    <a href="/pl/electron-chromium/">Electron i Chromium</a>.</li>
+</ul>
+
+<h2 id="administrator">Praca jako administrator</h2>
+<p>
+  Chrono Mock nie potrzebuje praw administratora. Uruchomiony jako administrator uruchamia też
+  program z prawami administratora, a wtedy dwa rodzaje programów wymykają się sesji:
+</p>
+<ul>
+  <li><strong>Strony programu z WebView2</strong> (<code>embedded.elevated_host</code>). WebView2
+    pomija wtedy ustawienie, przez które sesja dociera do jego stron. Uruchom Chrono Mock bez praw
+    administratora albo zaznacz
+    <a href="/pl/dokumentacja/uruchamianie-aplikacji/#strony-administratora"><strong>Reach the web
+    pages of an application that runs as administrator</strong></a>
+    (<code>--elevated-embedded</code>). Ta opcja zapisuje na czas sesji jedną wartość w rejestrze
+    komputera i usuwa ją na końcu. Dopóki program działa, każdy program na tym komputerze może
+    dotrzeć do jego stron.</li>
+  <li><strong>Program na silniku Gecko</strong>
+    (<code class="long">session.gecko_restarts_without_admin</code>){{next_release}}. Uruchomiony jako
+    administrator uruchamia się jeszcze raz bez tych praw, tam, gdzie sesja za nim nie idzie, więc
+    działa na prawdziwym zegarze. Chrono Mock mówi o tym przed startem sesji. Uruchom Chrono Mock
+    bez praw administratora. Gdy program musi działać jako administrator, dodaj
+    <code>--no-deelevate</code> do pola <strong>Arguments</strong> w sekcji Speed and options albo
+    do <code>--args</code>: zostanie wtedy w sesji, jako administrator, więc otwieraj w nim tylko
+    strony, którym ufasz.</li>
+</ul>
+
+<h2 id="chromium">Program na Chromium lub Electron startuje pusty</h2>
+<ul>
+  <li><strong>Startuje jak świeżo zainstalowany</strong>: niezalogowany, bez Twoich ustawień i
+    rozszerzeń (<code>chromium.launched_with_debug_port</code>). Sesja uruchamia go z portem
+    debugowania i własnym czystym profilem, więc nigdy nie działa na Twoim prawdziwym. Zaloguj się
+    w trakcie sesji, gdy test tego wymaga: profil ze wszystkim, co w nim jest, znika z końcem
+    sesji.</li>
+  <li><strong>Sesja z <code>--user-data-dir</code> albo <code>--remote-debugging-port</code> w
+    polu Arguments lub w <code>--args</code> nie rusza</strong>, bo sesja ustawia oba sama. Usuń
+    je.</li>
+  <li>Dopóki sesja trwa, każdy inny program na tym komputerze może przez ten port sterować
+    programem.</li>
+</ul>
+
+<h2 id="tempo">Czas nie biegnie w wybranym tempie</h2>
+<ul>
+  <li><strong>Zegar biegnie szybciej, ale minutniki i odliczania nie.</strong> Za tempem idą tylko
+    data i godzina, chyba że zaznaczysz
+    <a href="/pl/dokumentacja/uruchamianie-aplikacji/#minutniki"><strong>Also speed up timers and
+    countdowns inside the application</strong></a> (<code>--scale-duration</code>). Czekanie na
+    coś innego, np. na plik albo inny program, i tak trwa tyle, co naprawdę.</li>
+  <li><strong>Stoper w programie nie przyspiesza</strong>
+    (<code>runtime.dotnet_stopwatch_qpc</code>, <code>runtime.python_monotonic_qpc</code>,
+    <code>runtime.java_nanotime_qpc</code>). <code>Stopwatch</code> w .NET,
+    <code>time.monotonic</code> w Pythonie 3.13+ i <code>System.nanoTime</code> w Javie czytają
+    precyzyjny licznik, który zostaje prawdziwy, chyba że zaznaczysz
+    <a href="/pl/dokumentacja/uruchamianie-aplikacji/#uplyw"><strong>Also speed up timers that
+    measure elapsed time</strong></a> (<code>--scale-qpc</code>). Animacja i wideo mierzone tym
+    licznikiem mogą wtedy wyglądać źle.</li>
+  <li><strong>Przy dużym tempie krótkie minutniki zostają w tyle</strong>
+    (<code>timer.interval_floored</code>, <code>wait.timeout_collapsed</code>). Przy
+    przyspieszonych minutnikach i tempie ×1440 minutnik sekundowy musiałby tykać co 0,7 ms, częściej,
+    niż pozwala Windows: 10 ms dla minutnika okna, 1 ms dla pozostałych. Tyka wtedy w tym
+    najkrótszym kroku i ta część programu biegnie wolniej niż sesja. Przy mniejszym tempie więcej
+    z nich nadąża.</li>
+  <li><strong>Zminimalizowane okno zwalnia</strong>
+    (<code>chromium.background_timers_slowed</code>). Chromium uruchamia minutniki ukrytego okna
+    mniej więcej raz na sekundę. Zaznacz
+    <a href="/pl/dokumentacja/uruchamianie-aplikacji/#ukryte-okna"><strong>Keep timers at speed in
+    hidden windows</strong></a> (<code>--keep-background-timers</code>).</li>
+  <li><strong>Przy dużym tempie zapytanie sieciowe się nie udaje</strong>
+    (<code>wait.network_timeouts_scaled</code>). Biblioteka sieciowa, która mierzy swój limit
+    czasu licznikiem czasu od startu Windows, np. WinHTTP, idzie za tempem sesji, więc serwer wolniejszy
+    niż ten limit podzielony przez tempo kończy zapytanie błędem. Do tej części testu wybierz
+    mniejsze tempo albo zostaw minutniki i odliczania w prawdziwym tempie.</li>
+  <li><strong>Gra na Unity nie nadąża</strong>
+    (<code>runtime.unity_delta_time_capped</code>). Silnik ogranicza, o ile przesuwa grę w jednej
+    klatce, więc rozgrywka przestaje iść za tempem dużo poniżej niego. Zegar, daty i znaczniki
+    czasu dalej za nim idą.</li>
+</ul>
+
+<h2 id="strefa">Godziny są przesunięte o strefę</h2>
+<ul>
+  <li><strong>Program na Node.js, Deno albo Bun nie pokazuje nazwy strefy albo pokazuje
+    UTC</strong> (<code>session.zone_unnamed</code>){{next_release}}. Programy oparte na ICU nie
+    umieją nazwać niektórych przesunięć w niektóre daty. Wybierz pełną godzinę od -12:00 do
+    +14:00 albo przesunięcie prawdziwej strefy Windows bez czasu letniego, z sesją, która zaczyna
+    się w dniu, od którego ta strefa je ma, albo później.</li>
+  <li><strong>Strona albo biblioteka programu mogła przeczytać strefę tego komputera zamiast
+    strefy sesji</strong> (<code>chromium.zone_is_host</code>,
+    <code>embedded.zone_is_host</code>, <code>session.c_runtime_zone_kept</code>{{next_release}}).
+    Moment, który pokazuje, jest momentem sesji, ale godzina lokalna może się różnić o różnicę
+    między strefami.</li>
+</ul>
+
+<h2 id="po-sesji">Po sesji</h2>
+<ul>
+  <li><strong>Program dalej działa</strong> (<code>session.left_running</code>).
+    <strong>Stop session</strong> go nie zamyka. Wrócił na prawdziwą datę i godzinę, a jego
+    liczniki biegną dalej od miejsca, w którym zostawiła je sesja. Uruchom go od nowa, żeby
+    działał czysto na prawdziwym zegarze.</li>
+  <li><strong>Strona w programie dalej pokazuje datę sesji</strong>
+    (<code>embedded.pages_not_released</code>, <code>embedded.zone_kept</code>). Odśwież albo
+    zamknij stronę. Strona, która zachowała strefę sesji, trzyma ją do ponownego uruchomienia
+    programu.</li>
+  <li><strong>W danych programu są przyszłe daty.</strong> Program, który działał w 2038 roku,
+    zapisał 2038 wszędzie, gdzie trzyma dane, a Chrono Mock tego nie cofnie. Przed sesją zrób kopię
+    folderu z jego danymi, jak radzi <a href="/pl/pobieranie/">strona pobierania</a>.</li>
+  <li><strong>Raport mówi, że coś nie zostało w pełni posprzątane</strong>:
+    <ul>
+      <li>tymczasowy profil Chromium (<code>cleanup.chromium_profile_left</code>): usuń go z
+        folderu plików tymczasowych,</li>
+      <li>przeglądarka uruchomiona przez sesję
+        (<code>cleanup.chromium_process_left</code>){{next_release}}: gdy dalej działa, zakończ ją w
+        Menedżerze zadań,</li>
+      <li>opcja WebView2 w rejestrze komputera (<code>embedded.policy_value_left</code>,
+        <code>embedded.policy_value_stale</code>), która trzyma otwarty port debugowania programu,
+        którego dotyczy. Usuń wartość zawierającą <code>--chrono-mock-session</code> w kluczu
+        <code class="long">HKLM\SOFTWARE\Policies\Microsoft\Edge\WebView2\AdditionalBrowserArguments</code>.
+        Taką, która została po wcześniejszej sesji przerwanej w pół, usuwa też jednorazowe
+        uruchomienie Chrono Mock jako administratora z <code>--elevated-embedded</code>.</li>
+    </ul>
+  </li>
+</ul>
+
+<h2 id="zgloszenie">Zgłoszenie problemu</h2>
+<p>
+  Gdy nic z tego nie pomaga, otwórz zgłoszenie na <a href="{{repo}}/issues/new/choose">GitHubie</a>.
+  Formularz jest po angielsku i pyta o:
+</p>
+<ul>
+  <li>wersję, widoczną na pasku tytułu okna albo w <code>chrono version</code>,</li>
+  <li>to, czy używasz okna, czy wiersza poleceń, czy program jest 32-bitowy, czy 64-bitowy, i na
+    czym jest zbudowany, np. .NET, Java albo Electron. Nazwy programu podawać nie musisz,</li>
+  <li>polecenie albo kroki i kod wyjścia,</li>
+  <li>raport: <strong>Copy summary</strong> w oknie albo plik, który zapisuje
+    <a href="/pl/dokumentacja-cli/#run-report"><code>--report</code></a>. Gdy okno pokazuje
+    <strong>Copy diagnostics</strong>, dołącz też to, co kopiuje.</li>
+</ul>
+<p>
+  Przeczytaj raport, zanim go wkleisz. Zawiera pełną ścieżkę do programu, w której na większości
+  komputerów jest nazwa Twojego konta, a zgłoszenie jest publiczne. Problem z bezpieczeństwem
+  zgłoś <a href="{{repo}}/security/advisories/new">prywatnie</a>, nigdy w publicznym
+  zgłoszeniu.
+</p>

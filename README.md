@@ -19,6 +19,7 @@
 [![License: GPLv3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
 ![Platform: Windows](https://img.shields.io/badge/platform-Windows-0078D6)
 [![Website](https://img.shields.io/badge/website-chronomock.donislawdev.com-e4573f)](https://chronomock.donislawdev.com/)
+[![Documentation](https://img.shields.io/badge/documentation-window%2C%20CLI%2C%20troubleshooting-e4573f)](https://chronomock.donislawdev.com/docs/)
 
 **Chrono Mock** is a tool for testers and developers: run one application as if it were a different
 date, and find out whether it actually worked. Set the clock to next year, freeze it, or speed it up
@@ -125,20 +126,26 @@ installer says so with exit code 3010.
 
 **Checking what you downloaded.** From v0.2.0 onward, each release also carries `SHA256SUMS`,
 a bill of materials per package (`*.spdx.json`, SPDX 2.3), and an attestation of that bill of
-materials, signed by GitHub's infrastructure. Two ways to check it, both of which work on either
-archive:
+materials, signed by GitHub's infrastructure. Three ways to check it with the GitHub CLI (`gh`), each
+of which works on any of the packages:
 
 <!-- verify-commands -->
 ```
 gh attestation verify ChronoMock-app-win-x64.zip --repo donislawdev/ChronoMock --predicate-type https://spdx.dev/Document/v2.3
 gh attestation verify ChronoMock-app-win-x64.zip --repo donislawdev/ChronoMock --predicate-type https://spdx.dev/Document/v2.3 --bundle ChronoMock-app-win-x64.zip.sigstore.json
+cmd /c "gh attestation trusted-root > trusted_root.jsonl"
+gh attestation verify ChronoMock-app-win-x64.zip --repo donislawdev/ChronoMock --predicate-type https://spdx.dev/Document/v2.3 --bundle ChronoMock-app-win-x64.zip.sigstore.json --custom-trusted-root trusted_root.jsonl
 ```
 <!-- /verify-commands -->
 
-The first asks GitHub. The second asks nothing and nobody: it checks the `.sigstore.json` published
-beside the archive, so it works with no network and no account.
+The first command asks GitHub for the attestation, so `gh` has to be signed in to a GitHub account.
+The second checks the `.sigstore.json` published beside the archive. It needs no account, but it
+fetches Sigstore's public keys, so it needs a network. The third saves those keys to
+`trusted_root.jsonl`. It needs no account, and it needs a network once. The fourth checks the archive
+with that file and needs neither an account nor a network. The third goes through `cmd` because
+Windows PowerShell 5.1 writes what `>` redirects as UTF-16, which `gh` cannot read.
 
-**Both need `--predicate-type`, and leaving it off is the mistake worth naming.** The tool asks for
+**Every `verify` needs `--predicate-type`, and leaving it off is the mistake worth naming.** The tool asks for
 build provenance by default, and a released archive deliberately has none - it was signed by a person
 on a machine with a hardware key, not built by a workflow. Without the flag one spelling reports "no
 attestation found" and another returns 404, and both look like a broken release when nothing is wrong.
@@ -147,7 +154,9 @@ The binaries inside also carry an Authenticode signature with an RFC 3161 timest
 names the publisher instead of warning about an unknown one. **The v0.1.0 archives, which are still
 on the releases list, do not** - they predate all of this, and neither a signature nor an
 attestation can be granted after the fact. [SECURITY.md](SECURITY.md#verifying-a-download) says what
-is signed, what is not, and why.
+is signed, what is not, and why, and
+[Checking what you downloaded](https://chronomock.donislawdev.com/docs/verify-download/) shows how to
+check the checksum and the signature in PowerShell.
 
 > **Early release.** The substitution core is implemented and covered by an automated suite that runs
 > on every commit, plus an end-to-end harness exercised against real applications on both 32-bit and
@@ -178,7 +187,7 @@ command-line arguments or a particular working folder, they are under *Arguments
 Once it starts, the panel shows the application's clock and the real clock side by side, the
 verdict, and which time channels the application is actually reading.
 
-![The Chrono Mock session panel: the application's clock reading 19 January 2038 at 03:14:14 beside the real clock reading 22 September 2026 at 15:50:30, each with its own elapsed time, then the speeds from ×1 to ×1440 with a Freeze, the relative jumps and a jump to a typed date, and on the footer a green Works verdict beside a red Stop session.](site/assets/session-panel.png)
+![The Chrono Mock session panel: the application's clock reading 19 January 2038 at 03:14:11 beside the real clock reading 24 November 2026 at 13:41:44, each with its own elapsed time, then the speeds from ×1 to ×1440 with a Freeze, the relative jumps and a jump to a typed date, and on the footer a green Works verdict beside a red Stop session.](site/assets/session-panel.png)
 
 **From the command line:**
 
@@ -225,7 +234,10 @@ command line accepts it.
 
 Every command speaks `--json` as well, and exits with a code your pipeline can branch on. Every flag
 and every exit code of both commands is listed in the
-[CLI reference](https://chronomock.donislawdev.com/cli-reference/).
+[CLI reference](https://chronomock.donislawdev.com/cli-reference/), and every field of `--json` on
+[JSON output](https://chronomock.donislawdev.com/docs/json/). The rest of the
+[documentation](https://chronomock.donislawdev.com/docs/) covers the window, the scenarios, reading
+the report and what to do when a session does not work.
 
 A console application's own output appears on `chrono run`'s standard error while it runs, so
 standard output holds the report, or with `--json` the events, and nothing else. An application
@@ -321,7 +333,7 @@ speaks in QA terms rather than arithmetic:
 
 Any calculated date goes straight into a time-shift session with one click.
 
-![The Chrono Mock calculator: a searchable scenario list with its explanations on the left, the date builder in the middle where a pasted 04/08/2008 is reported as ambiguous with both the American and the Polish reading shown, and on the right the result in every format with a copy button against each one and Use this date below them.](site/assets/calculator.png)
+![The Chrono Mock calculator: a searchable scenario list with its explanations on the left, the date builder in the middle where a pasted 04/08/2008 is reported as ambiguous with both the American and the Polish reading shown, and on the right the result in every format with a copy button against each one.](site/assets/calculator.png)
 
 ---
 

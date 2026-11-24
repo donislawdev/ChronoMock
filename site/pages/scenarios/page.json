@@ -1,0 +1,20 @@
+{
+  "//": "The scenarios (presets): what each one tests, where it works, what it asks for, and how to write one. Part of the documentation (site/data/docs.json), so English and Polish only. The list comes from site/data/presets.json, the program's own list of its presets, through the scenario_list token, and the example file from site/examples/presets/ through preset_example.",
+  "id": "scenarios",
+  "order": 87,
+  "nav": false,
+  "languages": {
+    "en": {
+      "slug": "docs/scenarios",
+      "link_text": "Scenarios",
+      "title": "Chrono Mock scenarios - ready-made test dates, and writing your own",
+      "description": "Every scenario (preset) that comes with Chrono Mock: the date it gives, what it tests, where it works and which values it asks for, and the file format for writing your own."
+    },
+    "pl": {
+      "slug": "dokumentacja/scenariusze",
+      "link_text": "Scenariusze",
+      "title": "Scenariusze Chrono Mock - gotowe daty testowe i własne pliki",
+      "description": "Każdy scenariusz (preset) dostarczany z Chrono Mock: jaką datę daje, co sprawdza, gdzie działa i o jakie wartości pyta, oraz format pliku, w którym zapiszesz własny."
+    }
+  }
+}

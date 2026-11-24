@@ -12,8 +12,9 @@
 //!   and resolved from the code. An unknown token is a build failure, not a literal
 //!   printed to a visitor.
 //! * **Language parity.** Every indexable page must exist in every language, and the
-//!   two dictionaries must carry the same keys. A half-translated page otherwise
-//!   reaches production looking finished.
+//!   dictionaries must carry the same keys. A half-translated page otherwise
+//!   reaches production looking finished. The one exception is the documentation,
+//!   whose pages must exist in every language `site/data/docs.json` names instead.
 //! * **Internal links.** Every `/...` link must resolve to something actually
 //!   emitted. GitHub Pages cannot redirect, so a dead internal link is permanent
 //!   until someone notices it by hand.
@@ -24,8 +25,8 @@
 //! crate is not reachable at all: it ships with nothing, no other crate depends on it,
 //! and it is not in either distribution package. It runs twice, from `cargo run -p
 //! chrono-site` in CI and on a maintainer's machine, and every path it opens is either
-//! a directory named on its own command line or a name read out of `site/` in this
-//! repository. There is no request, no upload and no visitor - the output is static
+//! a directory named on its own command line or a file of this repository: `site/`,
+//! the preset and calendar folders, `README.md` and `packaging/codesign.json`. There is no request, no upload and no visitor - the output is static
 //! files a web server hands out afterwards, and that server is not this program.
 //!
 //! One place does delete, and it carries a guard the rule would not have asked for:
@@ -39,7 +40,11 @@ use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
 
+pub mod catalogue;
+pub mod docs;
+pub mod reference;
 pub mod render;
+pub mod verify;
 
 pub type Result<T> = std::result::Result<T, String>;
 
@@ -453,16 +458,23 @@ pub fn load_pages(site_dir: &Path) -> Result<Vec<Page>> {
 /// Count the catalogue files that ship with the program. Used for the tokens, so a
 /// preset added to the repository shows up on the site without anyone editing prose.
 pub fn count_json_files(dir: &Path) -> Result<usize> {
+    Ok(json_files(dir)?.len())
+}
+
+/// The `.json` files of a catalogue folder, ordered by name so every machine builds the same
+/// page.
+pub fn json_files(dir: &Path) -> Result<Vec<PathBuf>> {
     // nosemgrep: rust.actix.path-traversal.tainted-path.tainted-path
     let entries = fs::read_dir(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
-    let mut n = 0;
+    let mut files = Vec::new();
     for entry in entries {
-        let entry = entry.map_err(|e| format!("{}: {e}", dir.display()))?;
-        if entry.path().extension().is_some_and(|e| e == "json") {
-            n += 1;
+        let path = entry.map_err(|e| format!("{}: {e}", dir.display()))?.path();
+        if path.extension().is_some_and(|e| e == "json") {
+            files.push(path);
         }
     }
-    Ok(n)
+    files.sort();
+    Ok(files)
 }
 
 #[cfg(test)]

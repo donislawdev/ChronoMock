@@ -146,7 +146,7 @@ From v0.2.0 onward, each release carries four things beside the archives:
   project builds, including `chrono_hook.dll` - the library the tool injects into
   other processes, and so the file worth checking most.
 
-The two verification commands are in [the README](README.md#download-and-run), and
+The verification commands are in [the README](README.md#download-and-run), and
 they are run verbatim by a workflow every time a release is published, so a command
 that stops working turns red here rather than in your terminal.
 

@@ -1,5 +1,5 @@
 {
-  "//": "The long-tail page. Somebody searching '29 February test case' or 'year 2038 problem how to test' has a specific date in mind, and this is the page that has it. The list is the shipped preset catalogue, with the names and explanations read out of presets/*.json rather than retyped.",
+  "//": "The long-tail page. Somebody searching '29 February test case' or 'year 2038 problem how to test' has a specific date in mind, and this is the page that has it. The list follows the shipped preset catalogue, its names taken from presets/*.json and its lines shortened for this page, and only the count is a token. The documentation's scenarios page (site/pages/scenarios/) is the one rendered from the program's own list.",
 
   "id": "date-test-scenarios",
   "order": 75,

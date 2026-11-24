@@ -1,0 +1,370 @@
+{
+  "//": "Every command of chrono.exe, every option and every exit code, as the documentation shows them. The site renders the tables from this file (cli_commands, cli_options_<command> and exit_codes_<id>), and the test crates/cli/tests/site_reference.rs compares the options of each command here with the usage lines `chrono --help` prints, in both directions, so an option added to the program and not to this file, or the other way round, fails the build. Exit codes have no such guard: in the program they are numbers returned from many places. Text is written for a person who has not read the code: what they will see, not how it works inside. A pair of backticks marks code. An option the latest release does not have yet carries \"unreleased\": true, which shows the next-release mark beside it, and the release check refuses to tag while one is left.",
+
+  "words": {
+    "en": { "command": "Command", "option": "Option", "does": "What it does", "code": "Code", "meaning": "Meaning", "link": "Link to" },
+    "pl": { "command": "Polecenie", "option": "Opcja", "does": "Co robi", "code": "Kod", "meaning": "Znaczenie", "link": "Odnośnik do" }
+  },
+
+  "commands": [
+    {
+      "name": "run",
+      "synopsis": "chrono run <application> [options]",
+      "en": "Starts an application at another date and time, and tells you afterwards whether the date reached it.",
+      "pl": "Uruchamia program w innej dacie i godzinie, a potem mówi, czy ta data do niego dotarła.",
+      "groups": [
+        {
+          "en": "When, and how fast",
+          "pl": "Kiedy i jak szybko",
+          "flags": [
+            {
+              "flag": "--at", "value": "<moment>",
+              "en": "The date and time the application starts at, in the session's time zone. A full moment such as `2038-01-19T03:14:07`, or a step from now with its sign, such as `+1d` or `-2h`. Units: `s m h d w mo q y` - `m` is minutes and `mo` is months. Without it the application starts at the real current time.",
+              "pl": "Data i godzina, od której program startuje, w strefie sesji. Pełny moment, np. `2038-01-19T03:14:07`, albo krok od teraz ze znakiem, np. `+1d` lub `-2h`. Jednostki: `s m h d w mo q y` - `m` to minuty, a `mo` to miesiące. Bez tej opcji program startuje w prawdziwym bieżącym czasie."
+            },
+            {
+              "flag": "--preset", "value": "<id>",
+              "en": "Takes the date and time, and the speed, from a preset: a named moment such as the end of the month. `chrono presets` lists them. Not with `--at`, `--mode` or `--scale-duration`, because the preset sets those.",
+              "pl": "Bierze datę, godzinę i tempo z presetu, czyli nazwanego momentu, np. końca miesiąca. Listę wypisuje `chrono presets`. Nie razem z `--at`, `--mode` ani `--scale-duration`, bo te ustawia preset."
+            },
+            {
+              "flag": "--param", "value": "id=value",
+              "en": "A value the preset asks for, such as a date of birth. Can be given more than once, and only with `--preset`. A preset that counts from the day of installation takes the date the application's file was created when you leave its start date out.",
+              "pl": "Wartość, o którą prosi preset, np. data urodzenia. Można podać kilka razy, tylko razem z `--preset`. Preset liczący od dnia instalacji bierze datę utworzenia pliku programu, gdy nie podasz daty początku."
+            },
+            {
+              "flag": "--zone", "value": "+HH:MM",
+              "en": "The time zone the application sees, as an offset from UTC such as `+09:00` or `-05:00`. The moment of `--at` is read in it too. An offset has no daylight saving time. Without it, the time zone of this computer.",
+              "pl": "Strefa czasowa, którą widzi program, jako przesunięcie względem UTC, np. `+09:00` albo `-05:00`. W niej czytany jest też moment z `--at`. Przesunięcie nie ma czasu letniego. Bez tej opcji strefa tego komputera."
+            },
+            {
+              "flag": "--mode", "value": "flow|frozen|xN",
+              "en": "How the clock moves: `flow` at normal speed (the default), `frozen` not at all, `xN` N times faster - `x60` turns an hour into a minute, `x1440` a day.",
+              "pl": "Jak biegnie zegar: `flow` normalnie (domyślnie), `frozen` stoi, `xN` N razy szybciej - `x60` zamienia godzinę w minutę, a `x1440` dobę."
+            },
+            {
+              "flag": "--scale-duration",
+              "en": "Also speeds up what measures elapsed time: the time since Windows started, pauses and timers. Without it only the date and time run faster, and a one-minute pause still takes a minute. A wait for something else to happen, such as a file or another program, keeps its real length either way. A timer set for a date and time follows the session's clock with or without it.",
+              "pl": "Przyspiesza też to, co mierzy upływ czasu: czas od startu Windows, pauzy i timery. Bez tej opcji szybciej biegną tylko data i godzina, a minutowa pauza dalej trwa minutę. Czekanie na coś innego, np. na plik albo inny program, zawsze trwa naprawdę. Timer ustawiony na konkretną datę i godzinę idzie za zegarem sesji z tą opcją i bez niej."
+            },
+            {
+              "flag": "--scale-qpc",
+              "en": "Also speeds up the precise counter stopwatches read: Python 3.13+ `time.monotonic`, .NET `Stopwatch`, Java `System.nanoTime`. Off by default, because an application that times its animation with that counter can then look distorted.",
+              "pl": "Przyspiesza też dokładny licznik, z którego czytają stopery: Python 3.13+ `time.monotonic`, .NET `Stopwatch`, Java `System.nanoTime`. Domyślnie wyłączone, bo program, który mierzy nim animację, może wtedy wyglądać na zniekształcony."
+            }
+          ]
+        },
+        {
+          "en": "During the session",
+          "pl": "W trakcie sesji",
+          "flags": [
+            {
+              "flag": "--set-after", "value": "T:M",
+              "en": "After T seconds, changes the speed to M times, for example `--set-after 30:60`. M is a whole number of at least 1, so a running session can go faster or slower but not stand still.",
+              "pl": "Po T sekundach zmienia tempo na M razy, np. `--set-after 30:60`. M to liczba całkowita co najmniej 1, więc trwająca sesja może przyspieszyć albo zwolnić, ale nie stanąć."
+            },
+            {
+              "flag": "--jump-after", "value": "T:moment",
+              "en": "After T seconds, moves the clock to that moment: a full one, or a step such as `+1d`, in the session's time zone.",
+              "pl": "Po T sekundach przestawia zegar na ten moment: pełny albo krok, np. `+1d`, w strefie sesji."
+            },
+            {
+              "flag": "--ticks", "value": "N",
+              "en": "Ends the session after N seconds and writes the report. The application is not closed, and from then on it runs on the real clock again. Without it the session lasts until the application, and every program it started on the session's clock, has closed. A launcher that ends at once leaves the session to the application it started.",
+              "pl": "Kończy sesję po N sekundach i wypisuje raport. Program nie jest zamykany i od tej chwili znowu chodzi na prawdziwym zegarze. Bez tej opcji sesja trwa, dopóki program i każdy program przez niego uruchomiony na zegarze sesji się nie zamkną. Program startowy, który od razu się kończy, oddaje sesję programowi, który uruchomił."
+            },
+            {
+              "flag": "--timeout", "value": "<seconds>",
+              "en": "Gives up after this many seconds and ends with exit code 6, so a pipeline cannot hang on it. A session that stops responding for 15 seconds also ends with 6. Such a run has no verdict.",
+              "pl": "Poddaje się po tylu sekundach i kończy kodem 6, żeby pipeline na nim nie zawisł. Sesja, która przestaje odpowiadać na 15 sekund, też kończy się kodem 6. Taki przebieg nie ma werdyktu."
+            }
+          ]
+        },
+        {
+          "en": "The application",
+          "pl": "Program",
+          "flags": [
+            {
+              "flag": "--args", "value": "\"...\"",
+              "en": "Arguments for the application, as one string, split the way Windows splits a command line, so an argument with spaces in quotes stays whole. For a Chromium-based application `--user-data-dir` and `--remote-debugging-port` are refused: the session gives it a temporary profile of its own, so it never runs on your real one.",
+              "pl": "Argumenty dla programu jako jeden napis, dzielony tak, jak Windows dzieli wiersz poleceń, więc argument ze spacjami w cudzysłowie zostaje w całości. Programowi na Chromium nie da się podać `--user-data-dir` ani `--remote-debugging-port`: sesja daje mu własny tymczasowy profil, więc nigdy nie działa na Twoim prawdziwym."
+            },
+            {
+              "flag": "--cwd", "value": "<folder>",
+              "en": "Starts the application in this folder. Without it, in the current folder. A folder that does not exist stops the session before anything starts.",
+              "pl": "Uruchamia program w tym folderze. Bez tej opcji w bieżącym folderze. Folder, którego nie ma, zatrzymuje sesję, zanim cokolwiek wystartuje."
+            },
+            {
+              "flag": "--force",
+              "en": "Keeps the application running when the session finds at the start that the date did not reach it. Without it the application is closed then, because a test on the real date proves nothing. The verdict and the exit code stay the same.",
+              "pl": "Zostawia program uruchomiony, gdy sesja na starcie stwierdzi, że data do niego nie dotarła. Bez tej opcji program jest wtedy zamykany, bo test na prawdziwej dacie niczego nie dowodzi. Werdykt i kod wyjścia się nie zmieniają."
+            }
+          ]
+        },
+        {
+          "en": "Web pages inside the application",
+          "pl": "Strony WWW w programie",
+          "flags": [
+            {
+              "flag": "--no-embedded",
+              "en": "Leaves the web pages inside the application (WebView2, Qt WebEngine) on the real date and opens no debugging port. Without it the session asks that web engine to open a local port and moves its pages to the session's date through it. While the port is open, any other program on this computer can use it to reach those pages.",
+              "pl": "Zostawia strony WWW wewnątrz programu (WebView2, Qt WebEngine) na prawdziwej dacie i nie otwiera portu debugowania. Bez tej opcji sesja prosi silnik o otwarcie lokalnego portu i przez niego przenosi jego strony na datę sesji. Dopóki port jest otwarty, każdy inny program na tym komputerze może przez niego sięgnąć do tych stron."
+            },
+            {
+              "flag": "--elevated-embedded",
+              "en": "For an application that runs as administrator, with Chrono Mock also running as administrator. WebView2 ignores the usual setting for such an application, so the session writes one WebView2 value to the machine registry, named after the application's `.exe`, and removes it at the end. While the session lasts, any other program on this computer can reach the application's pages through the port, and another program started under the same file name gets the port too. Not with `--no-embedded`.",
+              "pl": "Dla programu działającego jako administrator, przy Chrono Mock też uruchomionym jako administrator. WebView2 pomija w takim programie zwykłe ustawienie, więc sesja zapisuje jedną wartość WebView2 w rejestrze komputera, nazwaną od pliku `.exe` programu, i usuwa ją na końcu. Przez czas sesji każdy inny program na tym komputerze może przez port sięgnąć do stron programu, a inny program uruchomiony pod tą samą nazwą pliku też dostaje port. Nie razem z `--no-embedded`."
+            },
+            {
+              "flag": "--keep-background-timers",
+              "en": "Starts the web engine - the browser of a Chromium or Electron application, or the engine inside an application - without its slowdown of timers in hidden windows, so a minimised window keeps the session's speed. The application then works as hard while hidden as when it is shown. An application started with `--elevated-embedded` does not get it.",
+              "pl": "Uruchamia silnik WWW - przeglądarkę programu na Chromium albo Electronie lub silnik wewnątrz programu - bez spowalniania timerów w ukrytych oknach, więc zminimalizowane okno trzyma tempo sesji. Program pracuje wtedy w ukryciu tak samo intensywnie jak na wierzchu. Program uruchomiony z `--elevated-embedded` tego nie dostaje."
+            },
+            {
+              "flag": "--no-gecko-sandbox", "unreleased": true,
+              "en": "Starts an application on Mozilla's Gecko engine, such as Firefox, without the Gecko sandbox, so the processes its pages run in join the session and see its date. Without it they run in that sandbox on the real date. The application then runs without that protection until it closes, so open only pages you trust in it.",
+              "pl": "Uruchamia program na silniku Gecko Mozilli, np. Firefoksa, bez piaskownicy Gecko, więc procesy, w których działają jego strony, dołączają do sesji i widzą jej datę. Bez tej opcji działają w tej piaskownicy na prawdziwej dacie. Program działa wtedy bez tej ochrony aż do zamknięcia, więc otwieraj w nim tylko zaufane strony."
+            }
+          ]
+        },
+        {
+          "en": "What it writes",
+          "pl": "Co wypisuje",
+          "flags": [
+            {
+              "flag": "--dry-run",
+              "en": "Shows what the session would be and starts nothing: the moment and the time zone and where each came from, what a preset filled in, the arguments after splitting, and how the session would reach the application. Writes no file. Ends with 0 for a plan that can run and 2 for an application that is not there. With `--json` the plan is JSON.",
+              "pl": "Pokazuje, jaka byłaby sesja, i niczego nie uruchamia: moment i strefę oraz skąd się wzięły, co wypełnił preset, argumenty po podziale i jak sesja dotarłaby do programu. Nie zapisuje żadnego pliku. Kończy się kodem 0 dla planu, który da się uruchomić, i 2, gdy programu nie ma. Z `--json` plan jest w JSON."
+            },
+            {
+              "flag": "--report", "value": "<file>",
+              "en": "Also writes the report to a file, with the version, the start time, the application, its folder and the options. A verdict other than works starts the file with a warning that the evidence is not reliable, and so does a works when the application read none of the clocks the session replaces, or when it is a Go program.",
+              "pl": "Zapisuje też raport do pliku, z wersją, czasem startu, programem, jego folderem i opcjami. Werdykt inny niż działa zaczyna plik ostrzeżeniem, że dowód nie jest pewny, i tak samo działa, gdy program nie odczytał żadnego z zegarów, które sesja podmienia, albo gdy jest programem w Go."
+            },
+            {
+              "flag": "--report-args",
+              "en": "With `--report`, also writes the application's arguments into the file, word for word. Off by default, because an argument can carry a password: the file then says only how many there were.",
+              "pl": "Razem z `--report` zapisuje do pliku także argumenty programu, słowo w słowo. Domyślnie wyłączone, bo argument może zawierać hasło: plik podaje wtedy tylko, ile ich było."
+            },
+            {
+              "flag": "--json",
+              "en": "Writes the session as JSON lines for a program to read, instead of the report. The application's own console output goes to standard error, so standard output carries the JSON alone.",
+              "pl": "Wypisuje sesję jako wiersze JSON do odczytu przez program, zamiast raportu. Własne wyjście konsoli programu idzie na standardowe wyjście błędów, więc standardowe wyjście niesie wyłącznie JSON."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "calc",
+      "synopsis": "chrono calc [options]",
+      "en": "Works out a date from steps, one option per step in the order you write them, and tells you what is special about the result.",
+      "pl": "Wylicza datę z kroków, jedna opcja na krok w kolejności, w jakiej je wpiszesz, i mówi, co szczególnego jest w wyniku.",
+      "groups": [
+        {
+          "en": "Where to start",
+          "pl": "Od czego zacząć",
+          "flags": [
+            {
+              "flag": "--base", "value": "today|now|<moment>",
+              "en": "The starting point: `today` (the default), `now`, or a moment such as `2026-03-31T12:00:00`, in the session's time zone. An impossible date such as `2025-02-31` is refused rather than moved into March.",
+              "pl": "Punkt startu: `today` (domyślnie), `now` albo moment, np. `2026-03-31T12:00:00`, w strefie sesji. Niemożliwa data, np. `2025-02-31`, jest odrzucana, a nie przesuwana na marzec."
+            },
+            {
+              "flag": "--base-utc", "value": "<moment>",
+              "en": "Like `--base`, but the moment is in UTC, with an optional `Z` at the end.",
+              "pl": "Jak `--base`, ale moment jest w UTC, z opcjonalnym `Z` na końcu."
+            },
+            {
+              "flag": "--zone", "value": "+HH:MM",
+              "en": "The time zone `today`, `now` and the result are in. Without it, the time zone of this computer. Not the same as `--to-zone`, which is a step.",
+              "pl": "Strefa, w której są `today`, `now` i wynik. Bez tej opcji strefa tego komputera. To nie to samo co `--to-zone`, które jest krokiem."
+            },
+            {
+              "flag": "--calendar", "value": "<id>",
+              "en": "A holiday calendar: `pl`, `us-banking` or `us-federal` (`chrono calendars` lists them). Adds business day and holiday to the result and makes `bd` and `--nearest` possible. The two American calendars differ in how they move a holiday that falls on a weekend. Each calendar covers a range of years: a business-day step that reaches outside it is refused, a date outside it is shown as not judged, and a day after the calendar was last checked against the law is marked as possibly out of date.",
+              "pl": "Kalendarz świąt: `pl`, `us-banking` albo `us-federal` (listę wypisuje `chrono calendars`). Dodaje do wyniku dzień roboczy i święto oraz umożliwia `bd` i `--nearest`. Dwa kalendarze amerykańskie różnią się tym, jak przesuwają święto wypadające w weekend. Każdy kalendarz obejmuje zakres lat: krok w dniach roboczych, który z niego wychodzi, jest odrzucany, data spoza niego jest pokazana jako nieoceniona, a dzień po ostatnim sprawdzeniu kalendarza z prawem jest oznaczony jako być może nieaktualny."
+            }
+          ]
+        },
+        {
+          "en": "Steps, in the order you write them",
+          "pl": "Kroki, w kolejności wpisania",
+          "flags": [
+            {
+              "flag": "--shift", "value": "±N<unit>",
+              "en": "Moves the date by N units. The sign is required: `+1mo`, `-3bd`. Units `s m h d w mo q y bd`, or their full names - `m` is minutes, `mo` months and `bd` business days, which need `--calendar`. A month after 31 January is the last day of February, not a fixed number of days. Can be given more than once.",
+              "pl": "Przesuwa datę o N jednostek. Znak jest wymagany: `+1mo`, `-3bd`. Jednostki `s m h d w mo q y bd` albo ich pełne nazwy - `m` to minuty, `mo` miesiące, a `bd` dni robocze, które wymagają `--calendar`. Miesiąc po 31 stycznia to ostatni dzień lutego, a nie stała liczba dni. Można podać kilka razy."
+            },
+            {
+              "flag": "--set-time", "value": "HH:MM:SS",
+              "en": "Sets the time of day of the result so far.",
+              "pl": "Ustawia godzinę dotychczasowego wyniku."
+            },
+            {
+              "flag": "--snap", "value": "<target>",
+              "en": "Jumps to the start or the end of a period: `som eom soq eoq soy eoy` - start or end of the month, the quarter, the year. A start is 00:00:00 on the first day, an end 23:59:59 on the last.",
+              "pl": "Skacze na początek albo koniec okresu: `som eom soq eoq soy eoy` - początek lub koniec miesiąca, kwartału, roku. Początek to 00:00:00 pierwszego dnia, koniec to 23:59:59 ostatniego."
+            },
+            {
+              "flag": "--nearest", "value": "nbd|pbd|next-leap-day",
+              "en": "Moves to the nearest business day forward (`nbd`) or back (`pbd`), and stays when the day already is one. These two need `--calendar`. `next-leap-day` moves to the next 29 February, and stays on one.",
+              "pl": "Przechodzi do najbliższego dnia roboczego naprzód (`nbd`) albo wstecz (`pbd`), a zostaje, gdy dzień już nim jest. Te dwa wymagają `--calendar`. `next-leap-day` przechodzi do najbliższego 29 lutego, a na 29 lutego zostaje."
+            },
+            {
+              "flag": "--to-zone", "value": "+HH:MM",
+              "en": "Shows the same instant in another time zone. Only the date and time on the clock change, the instant does not move.",
+              "pl": "Pokazuje ten sam moment w innej strefie. Zmieniają się tylko data i godzina na zegarze, sam moment się nie przesuwa."
+            }
+          ]
+        },
+        {
+          "en": "Instead of steps",
+          "pl": "Zamiast kroków",
+          "flags": [
+            {
+              "flag": "--preset", "value": "<id>",
+              "en": "A named moment from a preset, such as the end of the month. Not with the steps or with `--analyze`, and it goes with `--calendar`, `--zone` and `--format`. A preset with a market counts business days in that market's calendar unless `--calendar` names another.",
+              "pl": "Nazwany moment z presetu, np. koniec miesiąca. Nie razem z krokami ani z `--analyze`, za to razem z `--calendar`, `--zone` i `--format`. Preset z rynkiem liczy dni robocze w kalendarzu tego rynku, chyba że `--calendar` wskaże inny."
+            },
+            {
+              "flag": "--param", "value": "id=value",
+              "en": "A value the preset asks for. Can be given more than once, and only with `--preset`.",
+              "pl": "Wartość, o którą prosi preset. Można podać kilka razy, tylko razem z `--preset`."
+            },
+            {
+              "flag": "--analyze", "value": "<date>",
+              "en": "Reads a pasted date and tells you what it is. An ambiguous one such as `04/08/2026` is shown in both readings, the American one (month first) and the Polish one (day first), rather than guessed.",
+              "pl": "Czyta wklejoną datę i mówi, czym jest. Niejednoznaczną, np. `04/08/2026`, pokazuje w obu odczytach, amerykańskim (najpierw miesiąc) i polskim (najpierw dzień), zamiast zgadywać."
+            }
+          ]
+        },
+        {
+          "en": "What it writes",
+          "pl": "Co wypisuje",
+          "flags": [
+            {
+              "flag": "--format", "value": "<mask>",
+              "en": "Also writes the result in your own format, such as `yyyy-MM-dd HH:mm:ss`, to match the application you test. Letters are case-sensitive as in .NET and Java: `M` is the month and `m` the minute.",
+              "pl": "Wypisuje wynik także we własnym formacie, np. `yyyy-MM-dd HH:mm:ss`, zgodnym z testowanym programem. Wielkość liter ma znaczenie jak w .NET i Javie: `M` to miesiąc, a `m` minuta."
+            },
+            {
+              "flag": "--json",
+              "en": "Writes the result as JSON (`chronomock.calc/1`) for a program to read.",
+              "pl": "Wypisuje wynik jako JSON (`chronomock.calc/1`) do odczytu przez program."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "presets",
+      "synopsis": "chrono presets [options]",
+      "en": "Lists the presets `--preset` can use, as it reads them, and every file it would refuse, with the reason.",
+      "pl": "Wypisuje presety, których może użyć `--preset`, tak jak je czyta, i każdy plik, który by odrzucił, z powodem.",
+      "groups": [
+        {
+          "en": "Options",
+          "pl": "Opcje",
+          "flags": [
+            {
+              "flag": "--dir", "value": "<folder>",
+              "en": "Reads this folder instead of the one `--preset` uses: `presets` beside the program, otherwise `presets` in the current folder.",
+              "pl": "Czyta ten folder zamiast tego, którego używa `--preset`: `presets` obok programu, a w drugiej kolejności `presets` w bieżącym folderze."
+            },
+            {
+              "flag": "--json",
+              "en": "Writes the list as JSON (`chronomock.presets/1`).",
+              "pl": "Wypisuje listę jako JSON (`chronomock.presets/1`)."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "calendars",
+      "synopsis": "chrono calendars [options]",
+      "en": "Lists the holiday calendars `--calendar` can use, and every file it would refuse, with the reason.",
+      "pl": "Wypisuje kalendarze świąt, których może użyć `--calendar`, i każdy plik, który by odrzucił, z powodem.",
+      "groups": [
+        {
+          "en": "Options",
+          "pl": "Opcje",
+          "flags": [
+            {
+              "flag": "--dir", "value": "<folder>",
+              "en": "Reads this folder instead of the one `--calendar` uses: `calendars` beside the program, otherwise `calendars` in the current folder.",
+              "pl": "Czyta ten folder zamiast tego, którego używa `--calendar`: `calendars` obok programu, a w drugiej kolejności `calendars` w bieżącym folderze."
+            },
+            {
+              "flag": "--json",
+              "en": "Writes the list as JSON (`chronomock.calendars/1`).",
+              "pl": "Wypisuje listę jako JSON (`chronomock.calendars/1`)."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "version",
+      "synopsis": "chrono version",
+      "en": "Prints one line: the version, whether this is the 64-bit or the 32-bit program, and the protocol version, such as `chrono {{version}} (x64, protocol 1)`. Also `--version` and `-V`.",
+      "pl": "Wypisuje jeden wiersz: wersję, czy to program 64- czy 32-bitowy, i wersję protokołu, np. `chrono {{version}} (x64, protocol 1)`. Działa też `--version` i `-V`.",
+      "groups": []
+    },
+    {
+      "name": "license",
+      "synopsis": "chrono license [options]",
+      "en": "Prints the licence, the warranty disclaimer and the components bundled with the program, and where the full texts are on disk. Also `--license`.",
+      "pl": "Wypisuje licencję, wyłączenie gwarancji i komponenty dołączone do programu oraz miejsce pełnych tekstów na dysku. Działa też `--license`.",
+      "groups": [
+        {
+          "en": "Options",
+          "pl": "Opcje",
+          "flags": [
+            {
+              "flag": "--components",
+              "en": "Lists every bundled component with its version instead of a summary.",
+              "pl": "Wypisuje każdy dołączony komponent z wersją zamiast podsumowania."
+            }
+          ]
+        }
+      ]
+    }
+  ],
+
+  "exit_codes": [
+    {
+      "id": "run",
+      "codes": [
+        { "code": 0, "en": "Works: every process that read the time saw the session's date.", "pl": "Działa: każdy proces, który czytał czas, widział datę sesji." },
+        { "code": 10, "en": "Works partially: some ways of reading the time were covered, some were not.", "pl": "Działa częściowo: część sposobów odczytu czasu objęta, część nie." },
+        { "code": 11, "en": "Does not work: the date did not reach the main ways the application reads the time.", "pl": "Nie działa: data nie dotarła do głównych sposobów, którymi program czyta czas." },
+        { "code": 4, "en": "Undetermined: the session could not establish what it covered. An honest \"cannot tell\", never a pretended pass.", "pl": "Nieustalone: sesja nie umiała ustalić, co objęła. Uczciwe „nie wiem”, nigdy udawany sukces." },
+        { "code": 12, "en": "The application closed right after it started and left nothing running on the session's clock. Usually it handed over to a copy of itself that was already running, or to a program of the other bitness the session could not enter. Only a program with a window raises this: a console program that ends that fast has done its work, and gets a verdict.", "pl": "Program zamknął się zaraz po starcie i nie zostawił niczego na zegarze sesji. Zwykle przekazał pracę swojej kopii, która już działała, albo programowi o innej bitowości, do którego sesja nie weszła. Dotyczy tylko programu z oknem: program konsolowy, który kończy się tak szybko, zrobił swoje i dostaje werdykt." },
+        { "code": 1, "en": "Usage error: a bad option, a bad date or step, or a preset this command does not accept.", "pl": "Błąd użycia: zła opcja, zła data lub krok albo preset, którego to polecenie nie przyjmuje." },
+        { "code": 2, "en": "The application could not be started, or the session could not enter it.", "pl": "Nie udało się uruchomić programu albo sesja nie weszła do niego." },
+        { "code": 3, "en": "Internal error: the session could not start, met something it did not expect, or stopped before it finished. No verdict.", "pl": "Błąd wewnętrzny: sesja nie wystartowała, trafiła na coś nieoczekiwanego albo zatrzymała się przed końcem. Bez werdyktu." },
+        { "code": 5, "en": "Not in this release: you asked for something that does not exist yet, such as a preset whose moment needs a calendar, which `run` cannot load yet. Separate from a usage error, so a script can tell \"not yet\" from \"wrong\".", "pl": "Nie w tym wydaniu: prośba o coś, czego jeszcze nie ma, np. preset, którego moment wymaga kalendarza, a `run` jeszcze go nie wczytuje. Osobno od błędu użycia, żeby skrypt odróżnił „jeszcze nie” od „źle”." },
+        { "code": 6, "en": "Cut short: `--timeout` ran out, or the session stopped responding for 15 seconds. No verdict, because it proves nothing about the application either way.", "pl": "Przerwane: minął `--timeout` albo sesja przestała odpowiadać na 15 sekund. Bez werdyktu, bo niczego nie dowodzi w żadną stronę." },
+        { "code": 7, "en": "Another session is already running. One session at a time: try again once it has ended.", "pl": "Trwa już inna sesja. Jedna sesja naraz: spróbuj ponownie, gdy się skończy." },
+        { "code": 8, "en": "The session has a verdict, but the file `--report` names could not be written: the disk was full, or another program held the old file open, which then stays as it was. The verdict is still in the report on the screen.", "pl": "Sesja ma werdykt, ale pliku z `--report` nie udało się zapisać: dysk był pełny albo inny program trzymał stary plik otwarty, który wtedy zostaje bez zmian. Werdykt nadal jest w raporcie na ekranie." }
+      ]
+    },
+    {
+      "id": "calc",
+      "codes": [
+        { "code": 0, "en": "Worked out.", "pl": "Wyliczone." },
+        { "code": 1, "en": "Usage error: a bad option, an impossible date, a result out of range, or a calendar file with no business day in it.", "pl": "Błąd użycia: zła opcja, niemożliwa data, wynik poza zakresem albo plik kalendarza bez żadnego dnia roboczego." },
+        { "code": 5, "en": "The step or unit is not in this release, or the step needs a calendar you did not give. Separate from a usage error, so a script can tell \"not yet\" from \"wrong\".", "pl": "Tego kroku lub jednostki nie ma w tym wydaniu albo krok wymaga kalendarza, którego nie podano. Osobno od błędu użycia, żeby skrypt odróżnił „jeszcze nie” od „źle”." }
+      ]
+    },
+    {
+      "id": "catalogue",
+      "codes": [
+        { "code": 0, "en": "The folder was read. A file it refused is part of the answer, not an error.", "pl": "Folder został odczytany. Odrzucony plik jest częścią odpowiedzi, a nie błędem." },
+        { "code": 1, "en": "A bad option, or a folder that is missing or cannot be read.", "pl": "Zła opcja albo folder, którego nie ma lub nie da się go odczytać." }
+      ]
+    }
+  ]
+}
