@@ -138,11 +138,12 @@ gh attestation verify ChronoMock-app-win-x64.zip --repo donislawdev/ChronoMock -
 ```
 <!-- /verify-commands -->
 
-The first asks GitHub for the attestation, so `gh` has to be signed in to a GitHub account. The second
-checks the `.sigstore.json` published beside the archive and needs no account, but it still fetches
-Sigstore's public keys over the network. The last two need no account, and the last one no network:
-the first of them saves those keys to a file once, and the last checks with that file. It goes through
-`cmd` because Windows PowerShell 5.1 writes what `>` redirects as UTF-16, which `gh` cannot read.
+The first command asks GitHub for the attestation, so `gh` has to be signed in to a GitHub account.
+The second checks the `.sigstore.json` published beside the archive. It needs no account, but it
+fetches Sigstore's public keys, so it needs a network. The third saves those keys to
+`trusted_root.jsonl`. It needs no account, and it needs a network once. The fourth checks the archive
+with that file and needs neither an account nor a network. The third goes through `cmd` because
+Windows PowerShell 5.1 writes what `>` redirects as UTF-16, which `gh` cannot read.
 
 **Every `verify` needs `--predicate-type`, and leaving it off is the mistake worth naming.** The tool asks for
 build provenance by default, and a released archive deliberately has none - it was signed by a person

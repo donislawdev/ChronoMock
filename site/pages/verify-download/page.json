@@ -6,7 +6,7 @@
   "languages": {
     "en": {
       "slug": "docs/verify-download",
-      "link_text": "Checking the download",
+      "link_text": "Checking what you downloaded",
       "title": "Checking a Chrono Mock download - checksum, signature and attestation",
       "description": "How to check a downloaded Chrono Mock package: its SHA-256 checksum, the signature on every program the project builds, and the attestation of its bill of materials, with or without a network."
     },
