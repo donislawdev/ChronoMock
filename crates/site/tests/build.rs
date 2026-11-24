@@ -10,7 +10,8 @@ use std::path::{Path, PathBuf};
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use chrono_site::{load_i18n, output_path, parse_json, render, repo_root, PageMeta, SiteConfig};
+use chrono_site::docs::{headings, DocsConfig};
+use chrono_site::{load_i18n, load_pages, output_path, parse_json, render, repo_root, url_path, Page, PageMeta, SiteConfig};
 
 /// Build into a directory of this test's own, so tests running in parallel do not
 /// wipe each other's output.
@@ -349,6 +350,15 @@ fn every_language_page_announces_the_whole_set_and_every_member_announces_it_bac
     let out = built("hreflang-all");
     let (cfg, i18n) = configured();
     let mut checked = 0;
+    // Which languages each address is built in, from the same page files the build read. A
+    // documentation page exists in fewer languages than the rest, and must name exactly those.
+    let mut built_in: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+    for page in load_pages(&repo_root().join("site")).expect("pages") {
+        for (lang, entry) in &page.meta.languages {
+            let tags = page.meta.languages.keys().map(|l| i18n[l]["html_lang"].clone()).collect();
+            built_in.insert(format!("{}{}", cfg.host, url_path(lang, &entry.slug)), tags);
+        }
+    }
 
     for lang in &cfg.languages {
         let mut files = Vec::new();
@@ -366,12 +376,14 @@ fn every_language_page_announces_the_whole_set_and_every_member_announces_it_bac
 
             let set = alternates(&html);
             let tags: Vec<&str> = set.iter().map(|(t, _)| t.as_str()).collect();
+            let expected = &built_in[&own];
             for l in &cfg.languages {
                 let tag = &i18n[l]["html_lang"];
+                let want = usize::from(expected.contains(tag));
                 assert_eq!(
                     tags.iter().filter(|t| *t == tag).count(),
-                    1,
-                    "{rel}: hreflang '{tag}' must appear exactly once, got {tags:?}"
+                    want,
+                    "{rel}: hreflang '{tag}' must appear {want} time(s), got {tags:?}"
                 );
             }
             assert_eq!(
@@ -523,6 +535,67 @@ fn the_link_preview_description_is_in_the_language_of_the_page() {
         assert!(home.contains(&format!(r#"<meta property="og:image:alt" content="{alt}">"#)), "{lang}");
         assert!(home.contains(&format!(r#"<meta name="twitter:image:alt" content="{alt}">"#)), "{lang}");
     }
+}
+
+/// The part of `html` from `open` up to the first `close` after it.
+fn between<'h>(html: &'h str, open: &str, close: &str) -> &'h str {
+    let i = html.find(open).unwrap_or_else(|| panic!("no {open}"));
+    let rest = &html[i..];
+    &rest[..rest.find(close).unwrap_or_else(|| panic!("{open} is never closed by {close}"))]
+}
+
+fn slug_of<'p>(pages: &'p [Page], id: &str, lang: &str) -> &'p str {
+    let page = pages.iter().find(|p| p.meta.id == id).unwrap_or_else(|| panic!("no page {id}"));
+    &page.meta.languages[lang].slug
+}
+
+#[test]
+fn every_documentation_page_offers_the_whole_menu_its_headings_and_its_neighbours() {
+    // The menu, the headings list and the pager are composed from docs.json for every page, so a
+    // page that drops out of one of them does it silently: the page itself still renders.
+    let out = built("docs-layout");
+    let site = repo_root().join("site");
+    let docs: DocsConfig = parse_json(&site.join("data").join("docs.json")).expect("docs.json");
+    let pages = load_pages(&site).expect("pages");
+    let order = docs.order();
+    let mut checked = 0;
+
+    for lang in &docs.languages {
+        let hrefs: Vec<String> = order.iter().map(|id| url_path(lang, slug_of(&pages, id, lang))).collect();
+        for (i, id) in order.iter().enumerate() {
+            let rel = output_path(lang, slug_of(&pages, id, lang)).to_string_lossy().replace('\\', "/");
+            let html = read(&out, &rel);
+
+            let menu = between(&html, r#"<nav class="docnav""#, "</nav>");
+            for href in &hrefs {
+                assert!(menu.contains(&format!(r#"href="{href}""#)), "{rel}: the menu has no link to {href}");
+            }
+            assert_eq!(menu.matches("aria-current").count(), 1, "{rel}: one current page in the menu");
+            assert!(menu.contains(&format!(r#"<a href="{}" aria-current="page">"#, hrefs[i])), "{rel}: the current page is not marked");
+
+            let article = between(&html, r#"<article class="doc">"#, "</article>");
+            let heads = headings(article, &rel).expect("headings");
+            if !heads.is_empty() {
+                let toc = between(&html, r#"<nav class="toc""#, "</nav>");
+                assert_eq!(toc.matches("<li>").count(), heads.len(), "{rel}: one entry per heading");
+                for (anchor, _) in &heads {
+                    assert!(toc.contains(&format!(r##"href="#{anchor}""##)), "{rel}: no entry for #{anchor}");
+                }
+            }
+
+            let pager = between(article, r#"<nav class="pager""#, "</nav>");
+            match i.checked_sub(1) {
+                Some(p) => assert!(pager.contains(&format!(r#"class="prev" href="{}""#, hrefs[p])), "{rel}: previous"),
+                None => assert!(!pager.contains("class=\"prev\""), "{rel}: the first page has no previous one"),
+            }
+            match hrefs.get(i + 1) {
+                Some(n) => assert!(pager.contains(&format!(r#"class="next" href="{n}""#)), "{rel}: next"),
+                None => assert!(!pager.contains("class=\"next\""), "{rel}: the last page has no next one"),
+            }
+            checked += 1;
+        }
+    }
+    assert_eq!(checked, order.len() * docs.languages.len(), "every page in every documentation language");
 }
 
 #[test]

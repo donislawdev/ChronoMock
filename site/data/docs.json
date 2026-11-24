@@ -1,0 +1,37 @@
+{
+  "//": "The documentation section: which pages belong to it, in which order, under which headings, and the words the layout around them needs. This file is the only place a page joins the documentation. A page listed here is rendered with the documentation menu, the list of its own headings and the links to the previous and next page, in every language of `languages` - and it must exist in all of them. Every other indexable page of the site must still exist in every language of site.json. The words live here rather than in i18n/, because those dictionaries must carry the same keys in all twenty-two languages and the documentation is written in two.",
+
+  "//languages": "The languages the documentation is written in. The owner decided on English and Polish (2026-11-24), the two languages of the program's window. The first must be the site's root language.",
+  "languages": ["en", "pl"],
+
+  "text": {
+    "en": {
+      "menu": "Documentation",
+      "menu_label": "Documentation pages",
+      "on_this_page": "On this page",
+      "pager_label": "Previous and next page",
+      "previous": "Previous",
+      "next": "Next",
+      "next_release": "In the next release",
+      "next_release_title": "Not in the latest release yet. It comes with the next one."
+    },
+    "pl": {
+      "menu": "Dokumentacja",
+      "menu_label": "Strony dokumentacji",
+      "on_this_page": "Na tej stronie",
+      "pager_label": "Poprzednia i następna strona",
+      "previous": "Poprzednia",
+      "next": "Następna",
+      "next_release": "W następnym wydaniu",
+      "next_release_title": "Jeszcze nie ma tego w ostatnim wydaniu. Przyjdzie z następnym."
+    }
+  },
+
+  "sections": [
+    {
+      "id": "start",
+      "title": { "en": "Start", "pl": "Start" },
+      "pages": ["docs"]
+    }
+  ]
+}

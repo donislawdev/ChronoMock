@@ -12,8 +12,9 @@
 //!   and resolved from the code. An unknown token is a build failure, not a literal
 //!   printed to a visitor.
 //! * **Language parity.** Every indexable page must exist in every language, and the
-//!   two dictionaries must carry the same keys. A half-translated page otherwise
-//!   reaches production looking finished.
+//!   dictionaries must carry the same keys. A half-translated page otherwise
+//!   reaches production looking finished. The one exception is the documentation,
+//!   whose pages must exist in every language `site/data/docs.json` names instead.
 //! * **Internal links.** Every `/...` link must resolve to something actually
 //!   emitted. GitHub Pages cannot redirect, so a dead internal link is permanent
 //!   until someone notices it by hand.
@@ -39,6 +40,7 @@ use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
 
+pub mod docs;
 pub mod render;
 
 pub type Result<T> = std::result::Result<T, String>;

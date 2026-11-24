@@ -1,0 +1,21 @@
+{
+  "//": "The first page of the documentation. It lists every documentation page with its description through the docs_contents token, so the list cannot fall behind the menu. The documentation is in English and Polish only (site/data/docs.json), so this page has no other languages, and it takes the place of the CLI reference in the header bar of those two.",
+  "id": "docs",
+  "order": 84,
+  "nav": true,
+  "group": "start",
+  "languages": {
+    "en": {
+      "slug": "docs",
+      "link_text": "Documentation",
+      "title": "Chrono Mock documentation - the window, the command line and the report",
+      "description": "How to run a Windows application at another date and time with Chrono Mock: your first session, the window, presets, holiday calendars, every command line option and exit code, and what to do when something does not work."
+    },
+    "pl": {
+      "slug": "dokumentacja",
+      "link_text": "Dokumentacja",
+      "title": "Dokumentacja Chrono Mock - okno, wiersz poleceń i raport",
+      "description": "Jak uruchomić program na Windows w innej dacie i godzinie z Chrono Mock: pierwsza sesja, okno, presety, kalendarze świąt, każda opcja wiersza poleceń i kod wyjścia oraz co zrobić, gdy coś nie działa."
+    }
+  }
+}
