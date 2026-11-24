@@ -10,6 +10,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::docs::{self, DocsConfig};
+use crate::reference::{self, CliData};
 use crate::{
     check_download_sizes, count_json_files, esc, internal_links, link_target, load_i18n, load_pages,
     localized_tokens, output_path, parse_json, resolve_tokens, tokens, url_path, validate_languages,
@@ -22,6 +23,7 @@ pub struct Ctx<'a> {
     pub pages: &'a [Page],
     pub tokens: &'a BTreeMap<String, String>,
     pub docs: &'a DocsConfig,
+    pub cli: &'a CliData,
 }
 
 impl Ctx<'_> {
@@ -58,6 +60,8 @@ pub fn build(root: &Path, out: &Path) -> Result<Report> {
 
     let docs_cfg: DocsConfig = parse_json(&site_dir.join("data").join("docs.json"))?;
     docs::check(&docs_cfg, &cfg, &pages)?;
+    let cli: CliData = parse_json(&site_dir.join("data").join("cli.json"))?;
+    reference::check(&cli, &docs_cfg.languages)?;
     check_pages(&cfg, &docs_cfg, &pages)?;
 
     prepare_out(out)?;
@@ -68,6 +72,7 @@ pub fn build(root: &Path, out: &Path) -> Result<Report> {
         pages: &pages,
         tokens: &tok,
         docs: &docs_cfg,
+        cli: &cli,
     };
 
     let mut report = Report {
@@ -345,7 +350,11 @@ pub fn render_page(ctx: &Ctx, page: &Page, lang: &str) -> Result<String> {
     let mut tokens = localized_tokens(ctx.tokens, ctx.s(lang, "decimal_separator")?);
     let base = tokens.clone();
     let resolve = |text: &str| resolve_tokens(text, &base, &whence);
-    tokens.extend(docs::tokens(ctx.docs, ctx.pages, lang, &resolve)?);
+    let docs_tokens = docs::tokens(ctx.docs, ctx.pages, lang, &resolve)?;
+    if let Some(badge) = docs_tokens.get("next_release") {
+        tokens.extend(reference::tokens(ctx.cli, lang, badge, &resolve)?);
+    }
+    tokens.extend(docs_tokens);
     let title = resolve_tokens(&meta.title, &tokens, &whence)?;
     let description = resolve_tokens(&meta.description, &tokens, &whence)?;
     let mut body = resolve_tokens(&page.bodies[lang], &tokens, &whence)?;

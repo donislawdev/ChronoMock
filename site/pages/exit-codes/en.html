@@ -1,0 +1,41 @@
+<!-- Exit codes, English. Part of the documentation (site/data/docs.json). The tables come from
+     site/data/cli.json through the exit_codes_<id> tokens. -->
+
+<h1>Exit codes</h1>
+<p class="sub">
+  What the code at the end of each <code>chrono</code> command means, for a script that has to
+  decide what happens next.
+</p>
+
+<h2 id="run"><code>chrono run</code></h2>
+<p>
+  The code is the session's verdict, not the code the application ended with. An application
+  that ran happily on the real date has not tested the date at all, and a script that read only
+  the application's own code would never notice. That code is still there: in the report, on the
+  line <code>exited</code>, and in <code>--json</code>.
+</p>
+{{exit_codes_run}}
+<ul>
+  <li><strong>0, 10, 11 and 4</strong> are the verdict: whether the date reached the
+    application.</li>
+  <li><strong>8</strong> also comes after a verdict, which is then on the screen but not in the
+    file.</li>
+  <li><strong>12</strong> means the application left before it could be judged.</li>
+  <li><strong>The rest</strong> mean the run did not get that far, so they say nothing about
+    the application.</li>
+</ul>
+<p>
+  In a pipeline, a step that only passes on a full verdict looks like this. The
+  <a href="/cli-and-ci/">CLI and CI page</a> has the reasoning and the caveats about runners.
+</p>
+<pre class="term"><span class="p">chrono</span> run .\build\app.exe --at 2038-01-19T03:14:00 --ticks 20 --timeout 120 --report evidence.txt
+<span class="p">if</span> ($LASTEXITCODE -ne 0) { throw "chrono run ended with $LASTEXITCODE" }</pre>
+
+<h2 id="calc"><code>chrono calc</code></h2>
+<p>
+  The calculator has no verdict to give, so its table is short.
+</p>
+{{exit_codes_calc}}
+
+<h2 id="presets-and-calendars"><code>chrono presets</code> and <code>chrono calendars</code></h2>
+{{exit_codes_catalogue}}

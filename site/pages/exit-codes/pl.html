@@ -1,0 +1,40 @@
+<!-- Exit codes, Polish. Part of the documentation (site/data/docs.json). The tables come from
+     site/data/cli.json through the exit_codes_<id> tokens. -->
+
+<h1>Kody wyjścia</h1>
+<p class="sub">
+  Co znaczy kod na końcu każdego polecenia <code>chrono</code> - dla skryptu, który musi
+  zdecydować, co dalej.
+</p>
+
+<h2 id="run"><code>chrono run</code></h2>
+<p>
+  Kod to werdykt sesji, a nie kod, którym zakończył się program. Program, który spokojnie
+  przeszedł na prawdziwej dacie, wcale nie przetestował daty, a skrypt czytający tylko jego kod
+  nigdy by tego nie zauważył. Ten kod nadal jest: w raporcie, w wierszu <code>exited</code>, i w
+  <code>--json</code>.
+</p>
+{{exit_codes_run}}
+<ul>
+  <li><strong>0, 10, 11 i 4</strong> to werdykt: czy data dotarła do programu.</li>
+  <li><strong>8</strong> też przychodzi po werdykcie, który jest wtedy na ekranie, ale nie w
+    pliku.</li>
+  <li><strong>12</strong> znaczy, że program odszedł, zanim dało się go ocenić.</li>
+  <li><strong>Pozostałe</strong> znaczą, że przebieg tak daleko nie doszedł, więc nic nie mówią
+    o programie.</li>
+</ul>
+<p>
+  W pipeline krok, który przechodzi tylko przy pełnym werdykcie, wygląda tak. Uzasadnienie i
+  zastrzeżenia co do runnerów są na stronie <a href="/pl/cli-i-ci/">CLI i CI</a>.
+</p>
+<pre class="term"><span class="p">chrono</span> run .\build\app.exe --at 2038-01-19T03:14:00 --ticks 20 --timeout 120 --report dowod.txt
+<span class="p">if</span> ($LASTEXITCODE -ne 0) { throw "chrono run ended with $LASTEXITCODE" }</pre>
+
+<h2 id="calc"><code>chrono calc</code></h2>
+<p>
+  Kalkulator nie wydaje werdyktu, więc jego tabela jest krótka.
+</p>
+{{exit_codes_calc}}
+
+<h2 id="presets-i-calendars"><code>chrono presets</code> i <code>chrono calendars</code></h2>
+{{exit_codes_catalogue}}

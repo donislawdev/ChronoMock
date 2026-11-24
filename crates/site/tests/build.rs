@@ -484,6 +484,42 @@ fn the_language_menu_and_the_footer_each_list_every_language_once() {
     }
 }
 
+/// The language an internal address belongs to: the first path segment when it is a language of
+/// the site, the root language otherwise.
+fn language_of<'l>(link: &str, languages: &'l [String]) -> &'l str {
+    let first = link.trim_start_matches('/').split('/').next().unwrap_or_default();
+    languages
+        .iter()
+        .find(|l| l.as_str() != "en" && l.as_str() == first)
+        .or_else(|| languages.iter().find(|l| l.as_str() == "en"))
+        .map(String::as_str)
+        .expect("en is a language of the site")
+}
+
+/// The document with every link taken out that says, with `hreflang`, which language it leads to,
+/// when that is the language of the address. Such a link leaves the language on purpose - the
+/// short pages that lead to the English documentation - and says so to the reader's browser. A
+/// link whose hreflang names another language than its address is left in, so it still fails.
+fn without_declared_language(html: &str, languages: &[String]) -> String {
+    let mut out = String::with_capacity(html.len());
+    let mut rest = html;
+    while let Some(i) = rest.find("<a ") {
+        out.push_str(&rest[..i]);
+        let tag_end = rest[i..].find('>').map_or(rest.len(), |e| i + e + 1);
+        let tag = &rest[i..tag_end];
+        let declared = tag.split("hreflang=\"").nth(1).and_then(|s| s.split('"').next());
+        let href = tag.split("href=\"").nth(1).and_then(|s| s.split('"').next());
+        match (declared, href) {
+            // hreflang is the tag (pt-BR), the address uses the code (pt-br).
+            (Some(lang), Some(href)) if href.starts_with('/') && language_of(href, languages).eq_ignore_ascii_case(lang) => {}
+            _ => out.push_str(tag),
+        }
+        rest = &rest[tag_end..];
+    }
+    out.push_str(rest);
+    out
+}
+
 #[test]
 fn a_page_links_only_within_its_own_language() {
     // A German page that links to the English FAQ strands the reader in another language
@@ -512,7 +548,7 @@ fn a_page_links_only_within_its_own_language() {
                     body.replace_range(i..j, "");
                 }
             }
-            for link in chrono_site::internal_links(&body) {
+            for link in chrono_site::internal_links(&without_declared_language(&body, &cfg.languages)) {
                 let fine = link.starts_with("/assets/")
                     || if lang == "en" {
                         !cfg.languages.iter().any(|l| l != "en" && link.starts_with(&format!("/{l}/")))

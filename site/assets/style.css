@@ -347,7 +347,10 @@ td.n{color:var(--dim)}
 .doc li{margin:6px 0}
 .doc strong{color:var(--text);font-weight:620}
 .doc pre.term,.doc .wrap,.doc .note,.doc .shot{margin:18px 0}
-.doc td code{white-space:nowrap}
+/* An option breaks after its dashes otherwise, and "--" alone at the end of a line reads as a
+   different option. The code on these pages is short enough to stay on one line at phone width:
+   no documentation page scrolled sideways at 375px when this was written (measured 2026-11-24). */
+.doc code{white-space:nowrap}
 .doc tr:target td{background:rgba(228,87,63,.08)}
 .doc a.anchor{color:var(--line);margin-inline-start:6px}
 .doc a.anchor:hover,.doc a.anchor:focus-visible{color:var(--accent);text-decoration:none}
@@ -405,6 +408,17 @@ td.n{color:var(--dim)}
   .docmenu summary:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
   .docmenu .docsec{padding:0 16px}
   .pager a{max-width:none;flex:1 1 0}
+}
+/* A two-column table of options does not fit a phone: the option column alone is wider than half
+   the screen, and the description was left a sliver beside it that scrolled sideways. Here each row
+   becomes a block, the option above its description, and the headings go because a block has no
+   columns to name. */
+@media (max-width:640px){
+  .doc .wrap table,.doc .wrap tbody,.doc .wrap tr,.doc .wrap td{display:block;width:auto}
+  .doc .wrap thead{display:none}
+  .doc .wrap tr{border-bottom:1px solid var(--line-soft);padding:12px 0}
+  .doc .wrap tr:last-child{border-bottom:0}
+  .doc .wrap td{border-bottom:0;padding:2px 14px}
 }
 
 /* ---------------------------------------------------------------- footer --- */

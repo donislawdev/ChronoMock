@@ -41,6 +41,7 @@ use std::path::{Path, PathBuf};
 use serde::Deserialize;
 
 pub mod docs;
+pub mod reference;
 pub mod render;
 
 pub type Result<T> = std::result::Result<T, String>;

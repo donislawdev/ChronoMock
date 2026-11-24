@@ -32,6 +32,11 @@
       "id": "start",
       "title": { "en": "Start", "pl": "Start" },
       "pages": ["docs"]
+    },
+    {
+      "id": "command-line",
+      "title": { "en": "Command line", "pl": "Wiersz poleceń" },
+      "pages": ["cli-reference", "exit-codes"]
     }
   ]
 }
