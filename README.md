@@ -46,7 +46,7 @@ it exists.
   time without a guard.
 - **Its own time zone** - a fixed offset for that process only, while the system zone stays put.
 
-**Reach all of the application**
+**Beyond the main process**
 
 - **Child processes come along** - installers and launchers spawn children, and without that the test
   covers only half of what ran. A launcher or a script that starts the application and ends does not
@@ -68,7 +68,7 @@ it exists.
 - **Tells you if it worked** - a verdict, the channels covered with call counts, the channels missed,
   and warnings with consequences. [See below](#how-do-you-know-it-worked---the-time-source-audit) - this
   is the part no other tool does. `--report` writes all of it to a file you can attach to a bug.
-- **A plan before the run** - `chrono run --dry-run` shows the moment the application would see, the
+- **A plan before the run** - `chrono run app.exe --dry-run` shows the moment the application would see, the
   zone it is read in and how the application would be started, and starts nothing.
 
 **Around it**
@@ -80,8 +80,8 @@ it exists.
   window takes a program or a shortcut dropped on it or passed on its command line, and a screen
   reader hears its status and verdict as they change.
 - **Portable, or installed** - the zips need no installer and no administrator rights and run from a USB
-  stick, and a signed installer is there for a whole machine. The programs are signed, and a release
-  carries checksums and a bill of materials you can [check](#download-and-run).
+  stick, and a signed installer is there for a whole machine. From v0.2.0 on, the programs are signed
+  and every release carries checksums and a bill of materials you can [check](#download-and-run).
 
 ![Chrono Mock running another Windows application at a fake date. The left window is Chrono Mock: the application's clock reads 19 January 2038 and climbs at sixty times real speed while the real clock beside it moves a few seconds. The right window is the application under test, whose own session record shows it started on 19 January 2038 and has been running for minutes while barely half a minute has passed in the room.](site/assets/chrono-in-action.gif)
 
