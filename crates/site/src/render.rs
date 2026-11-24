@@ -12,6 +12,7 @@ use std::path::{Path, PathBuf};
 use crate::catalogue::{self, Catalogue, CALENDARS_PAGE};
 use crate::docs::{self, DocsConfig};
 use crate::reference::{self, CliData};
+use crate::verify;
 use crate::{
     check_download_sizes, count_json_files, esc, internal_links, link_target, load_i18n, load_pages,
     localized_tokens, output_path, parse_json, resolve_tokens, tokens, url_path, validate_languages,
@@ -59,6 +60,9 @@ pub fn build(root: &Path, out: &Path) -> Result<Report> {
     // The one token made of markup: the 404 lists every language's home page, and which
     // languages exist is a fact of site.json, not of that page's text.
     tok.insert("language_homes".into(), language_homes(&cfg, &i18n)?);
+    // The commands and the certificate fingerprint of the page on checking a download, from the files
+    // the release workflow runs and checks against, so the page cannot show something it did not.
+    tok.extend(verify::tokens(root)?);
 
     let docs_cfg: DocsConfig = parse_json(&site_dir.join("data").join("docs.json"))?;
     docs::check(&docs_cfg, &cfg, &pages)?;

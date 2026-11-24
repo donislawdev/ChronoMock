@@ -1,0 +1,20 @@
+{
+  "//": "How to check a downloaded package: the checksum, the signature and the attestation. Part of the documentation (site/data/docs.json), so English and Polish only. The attestation commands and the certificate fingerprint come from README.md and packaging/codesign.json through crates/site/src/verify.rs.",
+  "id": "verify-download",
+  "order": 95,
+  "nav": false,
+  "languages": {
+    "en": {
+      "slug": "docs/verify-download",
+      "link_text": "Checking the download",
+      "title": "Checking a Chrono Mock download - checksum, signature and attestation",
+      "description": "How to check a downloaded Chrono Mock package: its SHA-256 checksum, the signature on every program the project builds, and the attestation of its bill of materials, with or without a network."
+    },
+    "pl": {
+      "slug": "dokumentacja/sprawdzenie-pobranego-pliku",
+      "link_text": "Sprawdzenie pobranego pliku",
+      "title": "Sprawdzenie pobranego pliku Chrono Mock - suma, podpis i atestacja",
+      "description": "Jak sprawdzić pobraną paczkę Chrono Mock: sumę kontrolną SHA-256, podpis na każdym programie, który projekt buduje, i atestację spisu składników, z siecią albo bez."
+    }
+  }
+}

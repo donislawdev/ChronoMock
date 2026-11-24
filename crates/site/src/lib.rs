@@ -25,8 +25,8 @@
 //! crate is not reachable at all: it ships with nothing, no other crate depends on it,
 //! and it is not in either distribution package. It runs twice, from `cargo run -p
 //! chrono-site` in CI and on a maintainer's machine, and every path it opens is either
-//! a directory named on its own command line or a name read out of `site/` in this
-//! repository. There is no request, no upload and no visitor - the output is static
+//! a directory named on its own command line or a file of this repository: `site/`,
+//! the preset and calendar folders, `README.md` and `packaging/codesign.json`. There is no request, no upload and no visitor - the output is static
 //! files a web server hands out afterwards, and that server is not this program.
 //!
 //! One place does delete, and it carries a guard the rule would not have asked for:
@@ -44,6 +44,7 @@ pub mod catalogue;
 pub mod docs;
 pub mod reference;
 pub mod render;
+pub mod verify;
 
 pub type Result<T> = std::result::Result<T, String>;
 

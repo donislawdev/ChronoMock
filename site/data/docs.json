@@ -51,7 +51,7 @@
     {
       "id": "help",
       "title": { "en": "Help", "pl": "Pomoc" },
-      "pages": ["troubleshooting"]
+      "pages": ["troubleshooting", "verify-download"]
     }
   ]
 }

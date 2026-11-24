@@ -1,0 +1,107 @@
+<!-- Checking a download, English. Part of the documentation (site/data/docs.json). The attestation
+     commands are the README's verify-commands block, which the release workflow runs as written
+     (token verify_commands, crates/site/src/verify.rs), and the fingerprint is the one
+     packaging/codesign.json pins (token codesign_sha256). The checksum and signature commands were run on
+     the v0.5.0 command-line package in Windows PowerShell 5.1 and PowerShell 7 on 2026-11-24. The
+     certificate's subject names a person and stays off this page. -->
+
+<h1>Checking what you downloaded</h1>
+<p class="sub">
+  Every release from 0.2.0 on carries checksums, a bill of materials with an attestation, and a
+  signature on every program the project builds. Three checks, from the quickest to the most
+  thorough.
+</p>
+
+<h2 id="contents">What a release carries</h2>
+<ul>
+  <li><strong><code>SHA256SUMS</code></strong>: the SHA-256 hash of every package and bill of
+    materials on the release page.</li>
+  <li><strong>A bill of materials for each package</strong> (<code>*.spdx.json</code>, SPDX 2.3):
+    every component from elsewhere inside it, with its version and licence.</li>
+  <li><strong>An attestation of that bill of materials</strong> (<code>*.sigstore.json</code>),
+    signed by GitHub's infrastructure.</li>
+  <li><strong>A signature on every program the project builds</strong>,
+    <code>chrono_hook.dll</code> included, and on the installer. Each carries a timestamp, which
+    keeps the signature valid after the certificate expires.</li>
+</ul>
+<p>
+  Version 0.1.0 has none of this. It came out before all of it, and none of it can be added to a
+  release afterwards.
+</p>
+
+<h2 id="checksum">The checksum</h2>
+<p>
+  In PowerShell, in the folder the package and <code>SHA256SUMS</code> were downloaded to:
+</p>
+<pre class="term">(Get-FileHash ChronoMock-cli-win.zip).Hash -in ((Get-Content SHA256SUMS) -split '\s+')
+<span class="v">True</span></pre>
+<p>
+  <code>True</code> means the file is, byte for byte, one the release published. <code>False</code>
+  means it is not, so download it again. For another package, change the name. This check catches a
+  download that broke on the way. It cannot catch a release page someone replaced, because
+  <code>SHA256SUMS</code> comes from the same page. The two checks below can.
+</p>
+
+<h2 id="signature">The signature</h2>
+<p>
+  Unzip the package and ask Windows about <code>chrono_hook.dll</code>, the library Chrono Mock
+  loads into other programs and so the file most worth checking. In the command-line package it is
+  <code>chrono-cli\chrono_hook.dll</code>, in the window package
+  <code>ChronoMock\core\x64\chrono_hook.dll</code>:
+</p>
+<pre class="term">$s = Get-AuthenticodeSignature chrono-cli\chrono_hook.dll
+$s.Status
+<span class="v">Valid</span>
+$s.SignerCertificate.GetCertHashString('SHA256')
+<span class="v">{{codesign_sha256}}</span>
+$null -ne $s.TimeStamperCertificate
+<span class="v">True</span></pre>
+<ul>
+  <li><strong><code>Valid</code></strong>: the file has not changed since it was signed, and Windows
+    trusts the certificate.</li>
+  <li><strong>The fingerprint</strong> names the certificate itself:
+    <code class="long">{{codesign_sha256}}</code>. The repository pins it in
+    <a href="{{repo}}/blob/main/packaging/codesign.json"><code>packaging/codesign.json</code></a>,
+    and every file the project signs is checked against it when a release comes out. A renewed
+    certificate has a new fingerprint. That file then changes, and the releases signed before keep
+    the fingerprint they were signed with.</li>
+  <li><strong><code>True</code></strong> on the last line: the signature has a timestamp.</li>
+</ul>
+<p>
+  The same works for <code>chrono.exe</code>, for the window's own <code>ChronoMock.exe</code>, and
+  for the installer before you run it: <code class="long">Get-AuthenticodeSignature
+  ChronoMock-app-win-x64.msi</code>. The rest of the window package is signed by Microsoft or by
+  nobody, as it came from its makers, and
+  <a href="{{repo}}/blob/main/SECURITY.md#what-is-signed-and-what-is-not">SECURITY.md</a> says
+  which. File Explorer shows the same signature under Properties, Digital Signatures.
+</p>
+
+<h2 id="attestation">The attestation</h2>
+<p>
+  With the <a href="https://cli.github.com/">GitHub CLI</a> (<code>gh</code>), in the folder with the
+  package and its <code>.sigstore.json</code>. These are the commands a workflow runs on every
+  release as soon as it is published. They name the window package: for another one, change both
+  names.
+</p>
+{{verify_commands}}
+<ul>
+  <li><strong>The first</strong> asks GitHub for the attestation, so <code>gh</code> has to be
+    signed in to a GitHub account (<code>gh auth login</code>).</li>
+  <li><strong>The second</strong> checks the <code>.sigstore.json</code> from the release page
+    instead. It needs no account, but it fetches Sigstore's public keys over the network.</li>
+  <li><strong>The last two</strong> need no account, and the last one no network: the third saves
+    those keys to a file once, and the fourth checks with that file. The third goes through
+    <code>cmd</code> because Windows PowerShell 5.1 writes what <code>&gt;</code> redirects as
+    UTF-16, which <code>gh</code> cannot read.</li>
+</ul>
+<p>
+  Each ends with code 0 when the package matches its attestation, and with another code when it
+  does not. Leave <code>--predicate-type</code> in: without it, <code>gh</code> looks for a record of
+  a build, which the packages do not have, and says it found no attestation though nothing is
+  wrong.
+</p>
+<p>
+  The attestation says what is inside the package. It does not say a workflow built it: a workflow
+  builds the files, and a person signs them on a machine with a hardware key that cannot be copied.
+  <a href="{{repo}}/blob/main/SECURITY.md#verifying-a-download">SECURITY.md</a> explains why.
+</p>
