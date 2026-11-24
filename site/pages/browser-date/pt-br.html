@@ -1,0 +1,109 @@
+<!-- Changing the date in Chrome or Firefox for testing, pt-br.
+
+     Change date in browser for testing, change browser date and time, change date in chrome, firefox
+     change date and time and firefox spoof date are what people type (search suggestions,
+     2026-11-23). The browsers are named because those are the names people search under. Measured
+     on 2026-11-23 with a session set to 2040: an HTTPS site loaded in Chrome, whose browser process
+     keeps the real date, and showed a security warning in Firefox, whose whole browser follows the
+     session. The DevTools time zone is the location preset of its Sensors panel. -->
+
+<div class="shell">
+
+  <section class="plain">
+    <h1>Mudar a data no Chrome ou no Firefox para testes</h1>
+    <p class="sub">
+      As respostas de costume são uma extensão que troca a data em uma página ou o relógio de um framework de testes. O Chrono Mock inicia o próprio navegador com um relógio só dele - cada aba e cada worker, em qualquer data, congelada ou acelerada - e deixa em paz o relógio do Windows e todos os outros programas.
+    </p>
+  </section>
+
+  <section>
+    <h2>O que as respostas de costume cobrem</h2>
+    <div class="wrap">
+      <table>
+        <thead>
+          <tr><th>Abordagem</th><th>Quem vê a nova data</th><th>O que fica de fora</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Uma extensão do navegador</td><td>A data do JavaScript nas páginas em que ela pode entrar</td><td>Muitas vezes uma aba por vez, e nada diz o que ela deixou passar</td></tr>
+          <tr><td>O DevTools do Chrome</td><td>Um fuso horário, definido por um local no painel Sensors</td><td>A data em si</td></tr>
+          <tr><td>O relógio de um framework de testes</td><td>As páginas que um teste escrito por você abre</td><td>Testes manuais, e toda página que o teste não conduz</td></tr>
+          <tr><td>O relógio do Windows</td><td>Tudo na máquina</td><td>Nada, e esse é o problema: certificados, logon no domínio e sincronização de hora também se movem</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="prose">
+      <p>
+        <a href="/pt-br/alterar-a-data-do-sistema-para-testar/">O que mudar o relógio do Windows quebra &rarr;</a>
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Chrome</h2>
+    <div class="prose">
+      <p>
+        O Chrome é iniciado com um perfil descartável limpo e uma porta de depuração local, e cada página e cada worker pega a hora do JavaScript da sessão: <code>Date.now</code>, <code>new Date()</code>, <code>performance.now</code>, <code>setTimeout</code>, <code>setInterval</code> e o fuso horário da sessão. O próprio navegador mantém a data real, então os sites HTTPS continuam carregando - verificado com uma sessão em 2040.
+      </p>
+    </div>
+
+    <pre class="term"><span class="c"># Chrome nos últimos dez segundos de 2027, sessenta vezes mais rápido</span>
+<span class="p">chrono</span> run "C:\Program Files\Google\Chrome\Application\chrome.exe" --at 2027-12-31T23:59:50 --mode x60 --args "http://localhost:8080/"</pre>
+
+    <div class="prose">
+      <p>
+        O perfil não é o seu: sem logins salvos, sem extensões, e ele é apagado quando a sessão termina. Outros navegadores baseados no Chromium funcionam do mesmo jeito.
+        <a href="/pt-br/electron-chromium/">Como funciona o modo Chromium &rarr;</a>
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Firefox</h2>
+    <div class="prose">
+      <p>
+        O Firefox roda as páginas em processos isolados em sandbox, onde a sessão não entra, então precisa de <code>--no-gecko-sandbox</code>. As páginas passam a iniciar fora dessa sandbox, entram na sessão e seguem o relógio, a velocidade, os saltos e o fuso horário dela. O Firefox fica sem essa proteção até ser fechado, então abra nele só páginas em que você confia. Dê a ele um perfil próprio com <code>-no-remote -profile</code> e uma pasta vazia, para que ele não entregue a página a um Firefox que você já tem aberto.
+      </p>
+    </div>
+
+    <pre class="term"><span class="c"># Firefox nos últimos dez segundos de 2027, com uma pasta de perfil própria</span>
+<span class="p">chrono</span> run "C:\Program Files\Mozilla Firefox\firefox.exe" --at 2027-12-31T23:59:50 --no-gecko-sandbox --args "-no-remote -profile C:\ff-test http://localhost:8080/"</pre>
+
+    <div class="prose">
+      <p>
+        No Firefox o navegador inteiro se move, não só as páginas, e isso inclui a verificação de certificados: em uma sessão em 2040, um site HTTPS real mostrou um aviso de segurança. Funciona com páginas abertas de um arquivo, com um servidor de testes seu ou com uma data que o certificado do site ainda cobre.
+      </p>
+      <p>
+        Iniciado como administrador, o Firefox abre mão dos direitos e reinicia fora da sessão, a menos que <code>--no-deelevate</code> esteja entre os argumentos dele, e a sessão avisa isso desde o início.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Saber que as páginas receberam a data</h2>
+    <div class="prose">
+      <p>
+        O relatório diz a quais páginas e workers a sessão chegou e quais ficaram no relógio real - por contexto de JavaScript no Chrome, por processo no Firefox.
+        <a href="/pt-br/auditoria-das-fontes-de-tempo/">O que o relatório diz &rarr;</a>
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>O que ele não faz</h2>
+    <div class="prose">
+      <ul>
+        <li><strong>O lado do servidor.</strong> Uma data que um site recebe do próprio servidor continua sendo a do servidor.</li>
+        <li><strong>Seu navegador do dia a dia.</strong> A sessão inicia um navegador próprio. Ela não se conecta ao que você tem aberto e não mexe nas abas nem nos logins dele.</li>
+      </ul>
+    </div>
+  </section>
+
+  <section>
+    <h2>Experimente</h2>
+    <div class="cta">
+      <a class="btn btn-primary" href="/pt-br/baixar/">Baixar para Windows</a>
+      <a class="btn btn-ghost" href="/pt-br/time-travel-testing/">Time travel testing</a>
+    </div>
+  </section>
+
+</div>

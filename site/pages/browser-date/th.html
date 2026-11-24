@@ -1,0 +1,109 @@
+<!-- Changing the date in Chrome or Firefox for testing, th.
+
+     Change date in browser for testing, change browser date and time, change date in chrome, firefox
+     change date and time and firefox spoof date are what people type (search suggestions,
+     2026-11-23). The browsers are named because those are the names people search under. Measured
+     on 2026-11-23 with a session set to 2040: an HTTPS site loaded in Chrome, whose browser process
+     keeps the real date, and showed a security warning in Firefox, whose whole browser follows the
+     session. The DevTools time zone is the location preset of its Sensors panel. -->
+
+<div class="shell">
+
+  <section class="plain">
+    <h1>การเปลี่ยนวันที่ใน Chrome หรือ Firefox เพื่อทดสอบ</h1>
+    <p class="sub">
+      คำตอบทั่วไปคือส่วนขยายที่แทนวันที่ในหน้าเว็บ หรือนาฬิกาของเฟรมเวิร์กทดสอบ Chrono Mock เริ่มตัวเบราว์เซอร์เองด้วยนาฬิกาของมันเอง ทุกแท็บและทุก worker ในวันที่ใดก็ได้ หยุดนิ่งหรือเร่ง โดยไม่แตะนาฬิกา Windows และโปรแกรมอื่นทั้งหมด
+    </p>
+  </section>
+
+  <section>
+    <h2>คำตอบทั่วไปครอบคลุมอะไร</h2>
+    <div class="wrap">
+      <table>
+        <thead>
+          <tr><th>วิธี</th><th>ใครเห็นวันที่ใหม่</th><th>สิ่งที่ตกหล่น</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>ส่วนขยายเบราว์เซอร์</td><td>วันที่ของ JavaScript ในหน้าที่มันได้รับอนุญาตให้เข้า</td><td>มักทีละแท็บ และไม่มีอะไรบอกว่ามันพลาดอะไรไป</td></tr>
+          <tr><td>Chrome DevTools</td><td>เขตเวลา ตั้งผ่านตำแหน่งในแผง Sensors</td><td>ตัววันที่เอง</td></tr>
+          <tr><td>นาฬิกาของเฟรมเวิร์กทดสอบ</td><td>หน้าที่การทดสอบที่คุณเขียนเปิด</td><td>การทดสอบด้วยมือ และทุกหน้าที่การทดสอบไม่ได้ควบคุม</td></tr>
+          <tr><td>นาฬิกา Windows</td><td>ทุกอย่างบนเครื่อง</td><td>ไม่ตกหล่นอะไร และนั่นคือปัญหา ใบรับรอง การล็อกออนโดเมน และการซิงก์เวลาก็เลื่อนตามไปด้วย</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="prose">
+      <p>
+        <a href="/th/change-system-date-testing/">การเปลี่ยนนาฬิกา Windows ทำอะไรพังบ้าง &rarr;</a>
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Chrome</h2>
+    <div class="prose">
+      <p>
+        Chrome เริ่มด้วยโปรไฟล์ใช้ครั้งเดียวที่สะอาดและพอร์ตดีบักในเครื่อง ทุกหน้าและทุก worker รับเวลา JavaScript จากเซสชัน ได้แก่ <code>Date.now</code>, <code>new Date()</code>, <code>performance.now</code>, <code>setTimeout</code>, <code>setInterval</code> และเขตเวลาของเซสชัน ตัวเบราว์เซอร์เองยังใช้วันที่จริง เว็บไซต์ HTTPS จึงยังโหลดได้ ตรวจแล้วกับเซสชันที่ตั้งเป็นปี 2040
+      </p>
+    </div>
+
+    <pre class="term"><span class="c"># Chrome ในสิบวินาทีสุดท้ายของปี 2027 เร็วขึ้นหกสิบเท่า</span>
+<span class="p">chrono</span> run "C:\Program Files\Google\Chrome\Application\chrome.exe" --at 2027-12-31T23:59:50 --mode x60 --args "http://localhost:8080/"</pre>
+
+    <div class="prose">
+      <p>
+        โปรไฟล์นั้นไม่ใช่ของคุณ ไม่มีการล็อกอินที่บันทึกไว้ ไม่มีส่วนขยาย และจะถูกลบเมื่อเซสชันจบ เบราว์เซอร์อื่นที่สร้างบน Chromium ก็ทำงานแบบเดียวกัน
+        <a href="/th/electron-chromium/">โหมด Chromium ทำงานอย่างไร &rarr;</a>
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Firefox</h2>
+    <div class="prose">
+      <p>
+        Firefox รันหน้าเว็บในโปรเซสแซนด์บ็อกซ์ที่เซสชันเข้าไปไม่ได้ จึงต้องใช้ <code>--no-gecko-sandbox</code> เมื่อนั้นหน้าเว็บจะเริ่มนอกแซนด์บ็อกซ์ เข้าร่วมเซสชัน และตามนาฬิกา ความเร็ว การกระโดด และเขตเวลาของเซสชัน Firefox จะทำงานโดยไม่มีการป้องกันนั้นจนกว่าจะปิด จึงควรเปิดเฉพาะหน้าที่คุณไว้ใจ ให้โปรไฟล์ของมันเองด้วย <code>-no-remote -profile</code> และโฟลเดอร์ว่าง เพื่อไม่ให้มันส่งหน้าเว็บไปให้ Firefox ที่คุณเปิดอยู่แล้ว
+      </p>
+    </div>
+
+    <pre class="term"><span class="c"># Firefox ในสิบวินาทีสุดท้ายของปี 2027 พร้อมโฟลเดอร์โปรไฟล์ของตัวเอง</span>
+<span class="p">chrono</span> run "C:\Program Files\Mozilla Firefox\firefox.exe" --at 2027-12-31T23:59:50 --no-gecko-sandbox --args "-no-remote -profile C:\ff-test http://localhost:8080/"</pre>
+
+    <div class="prose">
+      <p>
+        ใน Firefox ทั้งเบราว์เซอร์เลื่อนไป ไม่ใช่แค่หน้าเว็บ และรวมถึงการตรวจใบรับรองด้วย ในเซสชันที่ตั้งเป็นปี 2040 เว็บไซต์ HTTPS จริงแสดงคำเตือนด้านความปลอดภัย กรณีที่ใช้ได้คือหน้าจากไฟล์ เซิร์ฟเวอร์ทดสอบที่คุณรันเอง หรือวันที่ที่ใบรับรองของเว็บไซต์ยังครอบคลุมอยู่
+      </p>
+      <p>
+        เมื่อเริ่มแบบผู้ดูแลระบบ Firefox จะทิ้งสิทธิ์นั้นและเริ่มใหม่นอกเซสชัน เว้นแต่จะมี <code>--no-deelevate</code> ในอาร์กิวเมนต์ และเซสชันจะบอกเรื่องนี้ตั้งแต่ต้น
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>รู้ได้อย่างไรว่าหน้าเว็บได้รับวันที่แล้ว</h2>
+    <div class="prose">
+      <p>
+        รายงานบอกว่าเซสชันเข้าถึงหน้าและ worker ใดบ้าง และอันใดยังอยู่บนนาฬิกาจริง ใน Chrome แยกตามบริบท JavaScript ใน Firefox แยกตามโปรเซส
+        <a href="/th/time-source-audit/">รายงานบอกอะไร &rarr;</a>
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>สิ่งที่มันไม่ทำ</h2>
+    <div class="prose">
+      <ul>
+        <li><strong>ฝั่งเซิร์ฟเวอร์</strong> วันที่ที่เว็บไซต์ได้จากเซิร์ฟเวอร์ของมันยังคงเป็นวันที่ของเซิร์ฟเวอร์</li>
+        <li><strong>เบราว์เซอร์ที่คุณใช้ทุกวัน</strong> เซสชันเริ่มเบราว์เซอร์ของตัวเอง ไม่เกาะกับเบราว์เซอร์ที่คุณเปิดอยู่ และไม่แตะแท็บหรือการล็อกอินของมัน</li>
+      </ul>
+    </div>
+  </section>
+
+  <section>
+    <h2>ลองใช้</h2>
+    <div class="cta">
+      <a class="btn btn-primary" href="/th/download/">ดาวน์โหลดสำหรับ Windows</a>
+      <a class="btn btn-ghost" href="/th/time-travel-testing/">การทดสอบข้ามเวลา</a>
+    </div>
+  </section>
+
+</div>

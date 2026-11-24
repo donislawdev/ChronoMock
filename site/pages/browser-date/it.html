@@ -1,0 +1,109 @@
+<!-- Changing the date in Chrome or Firefox for testing, it.
+
+     Change date in browser for testing, change browser date and time, change date in chrome, firefox
+     change date and time and firefox spoof date are what people type (search suggestions,
+     2026-11-23). The browsers are named because those are the names people search under. Measured
+     on 2026-11-23 with a session set to 2040: an HTTPS site loaded in Chrome, whose browser process
+     keeps the real date, and showed a security warning in Firefox, whose whole browser follows the
+     session. The DevTools time zone is the location preset of its Sensors panel. -->
+
+<div class="shell">
+
+  <section class="plain">
+    <h1>Cambiare la data in Chrome o Firefox per i test</h1>
+    <p class="sub">
+      Le risposte solite sono un'estensione che sostituisce la data in una pagina, o l'orologio di un framework di test. Chrono Mock avvia il browser stesso con un orologio tutto suo - ogni scheda e ogni worker, in qualsiasi data, fermo o accelerato - e lascia stare l'orologio di Windows e tutti gli altri programmi.
+    </p>
+  </section>
+
+  <section>
+    <h2>Cosa coprono le risposte solite</h2>
+    <div class="wrap">
+      <table>
+        <thead>
+          <tr><th>Approccio</th><th>Chi vede la nuova data</th><th>Cosa lascia fuori</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Un'estensione del browser</td><td>La data JavaScript delle pagine in cui può entrare</td><td>Spesso una scheda alla volta, e nulla dice cosa le è sfuggito</td></tr>
+          <tr><td>I DevTools di Chrome</td><td>Un fuso orario, impostato tramite una posizione nel pannello Sensors</td><td>La data stessa</td></tr>
+          <tr><td>L'orologio di un framework di test</td><td>Le pagine aperte da un test che scrivi tu</td><td>I test manuali, e ogni pagina che il test non guida</td></tr>
+          <tr><td>L'orologio di Windows</td><td>Tutto ciò che gira sulla macchina</td><td>Niente, ed è questo il problema: certificati, accesso al dominio e sincronizzazione dell'ora si spostano anche loro</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="prose">
+      <p>
+        <a href="/it/cambiare-la-data-di-sistema-nei-test/">Cosa rompe cambiare l'orologio di Windows &rarr;</a>
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Chrome</h2>
+    <div class="prose">
+      <p>
+        Chrome viene avviato con un profilo usa e getta pulito e una porta di debug locale, e ogni pagina e ogni worker prende l'ora JavaScript dalla sessione: <code>Date.now</code>, <code>new Date()</code>, <code>performance.now</code>, <code>setTimeout</code>, <code>setInterval</code> e il fuso orario della sessione. Il browser stesso mantiene la data reale, quindi i siti HTTPS continuano a caricarsi - verificato con una sessione impostata sul 2040.
+      </p>
+    </div>
+
+    <pre class="term"><span class="c"># Chrome negli ultimi dieci secondi del 2027, sessanta volte più veloce</span>
+<span class="p">chrono</span> run "C:\Program Files\Google\Chrome\Application\chrome.exe" --at 2027-12-31T23:59:50 --mode x60 --args "http://localhost:8080/"</pre>
+
+    <div class="prose">
+      <p>
+        Il profilo non è il tuo: niente accessi salvati, niente estensioni, e viene cancellato alla fine della sessione. Gli altri browser basati su Chromium funzionano allo stesso modo.
+        <a href="/it/electron-chromium/">Come funziona la modalità Chromium &rarr;</a>
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Firefox</h2>
+    <div class="prose">
+      <p>
+        Firefox esegue le pagine in processi in sandbox dove la sessione non può entrare, quindi gli serve <code>--no-gecko-sandbox</code>. Le pagine partono allora fuori da quella sandbox, entrano nella sessione e ne seguono orologio, velocità, salti e fuso orario. Firefox resta senza quella protezione finché non lo chiudi, quindi aprici solo pagine di cui ti fidi. Dagli un profilo suo con <code>-no-remote -profile</code> e una cartella vuota, così non passa la pagina a un Firefox già aperto.
+      </p>
+    </div>
+
+    <pre class="term"><span class="c"># Firefox negli ultimi dieci secondi del 2027, con una cartella di profilo sua</span>
+<span class="p">chrono</span> run "C:\Program Files\Mozilla Firefox\firefox.exe" --at 2027-12-31T23:59:50 --no-gecko-sandbox --args "-no-remote -profile C:\ff-test http://localhost:8080/"</pre>
+
+    <div class="prose">
+      <p>
+        In Firefox si sposta l'intero browser, non solo le pagine, e questo include il controllo dei certificati: in una sessione impostata sul 2040, un vero sito HTTPS ha mostrato un avviso di sicurezza. Funziona con pagine aperte da un file, con un tuo server di test o con una data che il certificato del sito copre ancora.
+      </p>
+      <p>
+        Avviato come amministratore, Firefox rinuncia ai diritti e riparte fuori dalla sessione, a meno che <code>--no-deelevate</code> sia tra i suoi argomenti, e la sessione lo dice fin dall'inizio.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Sapere che le pagine hanno ricevuto la data</h2>
+    <div class="prose">
+      <p>
+        Il report dice quali pagine e worker la sessione ha raggiunto e quali sono rimasti sull'orologio reale - per contesto JavaScript in Chrome, per processo in Firefox.
+        <a href="/it/audit-delle-fonti-di-tempo/">Cosa dice il report &rarr;</a>
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Cosa non fa</h2>
+    <div class="prose">
+      <ul>
+        <li><strong>Il lato server.</strong> Una data che un sito riceve dal proprio server resta la data del server.</li>
+        <li><strong>Il browser di tutti i giorni.</strong> La sessione avvia un browser suo. Non si aggancia a quello che hai aperto e non tocca le sue schede né i suoi accessi.</li>
+      </ul>
+    </div>
+  </section>
+
+  <section>
+    <h2>Provalo</h2>
+    <div class="cta">
+      <a class="btn btn-primary" href="/it/scarica/">Scarica per Windows</a>
+      <a class="btn btn-ghost" href="/it/time-travel-testing/">Time travel testing</a>
+    </div>
+  </section>
+
+</div>

@@ -1,0 +1,109 @@
+<!-- Changing the date in Chrome or Firefox for testing, de.
+
+     Change date in browser for testing, change browser date and time, change date in chrome, firefox
+     change date and time and firefox spoof date are what people type (search suggestions,
+     2026-11-23). The browsers are named because those are the names people search under. Measured
+     on 2026-11-23 with a session set to 2040: an HTTPS site loaded in Chrome, whose browser process
+     keeps the real date, and showed a security warning in Firefox, whose whole browser follows the
+     session. The DevTools time zone is the location preset of its Sensors panel. -->
+
+<div class="shell">
+
+  <section class="plain">
+    <h1>Das Datum in Chrome oder Firefox zum Testen ändern</h1>
+    <p class="sub">
+      Die üblichen Antworten sind eine Erweiterung, die das Datum in einer Seite überschreibt, oder die Uhr eines Testframeworks. Chrono Mock startet den Browser selbst mit eigener Uhr - jeder Tab und jeder Worker, beliebiges Datum, angehalten oder beschleunigt - und lässt die Windows-Uhr und alle anderen Programme in Ruhe.
+    </p>
+  </section>
+
+  <section>
+    <h2>Was die üblichen Antworten abdecken</h2>
+    <div class="wrap">
+      <table>
+        <thead>
+          <tr><th>Ansatz</th><th>Wer das neue Datum sieht</th><th>Was fehlt</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Eine Browser-Erweiterung</td><td>Das JavaScript-Datum der Seiten, in die sie darf</td><td>Oft nur ein Tab auf einmal, und nichts sagt, was sie verpasst hat</td></tr>
+          <tr><td>Chrome DevTools</td><td>Eine Zeitzone, gesetzt über einen Standort im Sensors-Bereich</td><td>Das Datum selbst</td></tr>
+          <tr><td>Die Uhr eines Testframeworks</td><td>Die Seiten, die ein von Ihnen geschriebener Test öffnet</td><td>Manuelles Testen und jede Seite, die der Test nicht steuert</td></tr>
+          <tr><td>Die Windows-Uhr</td><td>Alles auf dem Rechner</td><td>Nichts, und genau das ist das Problem: Zertifikate, Domänenanmeldung und Zeitsynchronisierung verschieben sich mit</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="prose">
+      <p>
+        <a href="/de/systemdatum-aendern-testen/">Was das Verstellen der Windows-Uhr kaputtmacht &rarr;</a>
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Chrome</h2>
+    <div class="prose">
+      <p>
+        Chrome startet mit einem sauberen Wegwerfprofil und einem lokalen Debug-Port, und jede Seite und jeder Worker bezieht die JavaScript-Zeit aus der Sitzung: <code>Date.now</code>, <code>new Date()</code>, <code>performance.now</code>, <code>setTimeout</code>, <code>setInterval</code> und die Zeitzone der Sitzung. Der Browser selbst behält das echte Datum, deshalb laden HTTPS-Seiten weiter - geprüft mit einer Sitzung auf 2040.
+      </p>
+    </div>
+
+    <pre class="term"><span class="c"># Chrome in den letzten zehn Sekunden von 2027, sechzigmal schneller</span>
+<span class="p">chrono</span> run "C:\Program Files\Google\Chrome\Application\chrome.exe" --at 2027-12-31T23:59:50 --mode x60 --args "http://localhost:8080/"</pre>
+
+    <div class="prose">
+      <p>
+        Das Profil ist nicht Ihres: keine gespeicherten Anmeldungen, keine Erweiterungen, und es wird am Ende der Sitzung gelöscht. Andere Browser auf Chromium-Basis funktionieren genauso.
+        <a href="/de/electron-chromium/">So funktioniert der Chromium-Modus &rarr;</a>
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Firefox</h2>
+    <div class="prose">
+      <p>
+        Firefox lässt seine Seiten in Sandbox-Prozessen laufen, in die die Sitzung nicht hineinkommt, deshalb braucht er <code>--no-gecko-sandbox</code>. Die Seiten starten dann außerhalb dieser Sandbox, treten der Sitzung bei und folgen ihrer Uhr, ihrem Tempo, ihren Sprüngen und ihrer Zeitzone. Firefox läuft bis zum Schließen ohne diesen Schutz, öffnen Sie darin also nur Seiten, denen Sie vertrauen. Geben Sie ihm mit <code>-no-remote -profile</code> und einem leeren Ordner ein eigenes Profil, damit er die Seite nicht an ein schon offenes Firefox weiterreicht.
+      </p>
+    </div>
+
+    <pre class="term"><span class="c"># Firefox in den letzten zehn Sekunden von 2027, mit eigenem Profilordner</span>
+<span class="p">chrono</span> run "C:\Program Files\Mozilla Firefox\firefox.exe" --at 2027-12-31T23:59:50 --no-gecko-sandbox --args "-no-remote -profile C:\ff-test http://localhost:8080/"</pre>
+
+    <div class="prose">
+      <p>
+        In Firefox bewegt sich der ganze Browser, nicht nur seine Seiten, und dazu gehört die Zertifikatsprüfung: In einer Sitzung auf 2040 zeigte eine echte HTTPS-Seite eine Sicherheitswarnung. Es funktioniert mit Seiten aus einer Datei, mit einem eigenen Testserver oder mit einem Datum, das das Zertifikat der Seite noch abdeckt.
+      </p>
+      <p>
+        Als Administrator gestartet, gibt Firefox die Rechte ab und startet außerhalb der Sitzung neu, es sei denn, <code>--no-deelevate</code> steht unter seinen Argumenten, und die Sitzung sagt das von Anfang an.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Woran man sieht, dass die Seiten das Datum bekommen haben</h2>
+    <div class="prose">
+      <p>
+        Der Bericht sagt, welche Seiten und Worker die Sitzung erreicht hat und welche bei der echten Uhr blieben - in Chrome je JavaScript-Kontext, in Firefox je Prozess.
+        <a href="/de/zeitquellen-pruefung/">Was der Bericht sagt &rarr;</a>
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Was es nicht tut</h2>
+    <div class="prose">
+      <ul>
+        <li><strong>Die Serverseite.</strong> Ein Datum, das eine Seite von ihrem Server bekommt, bleibt das Datum des Servers.</li>
+        <li><strong>Ihren Alltagsbrowser.</strong> Die Sitzung startet einen eigenen Browser. Sie hängt sich nicht an den, den Sie offen haben, und lässt seine Tabs und Anmeldungen in Ruhe.</li>
+      </ul>
+    </div>
+  </section>
+
+  <section>
+    <h2>Ausprobieren</h2>
+    <div class="cta">
+      <a class="btn btn-primary" href="/de/herunterladen/">Für Windows herunterladen</a>
+      <a class="btn btn-ghost" href="/de/time-travel-testing/">Time Travel Testing</a>
+    </div>
+  </section>
+
+</div>

@@ -1,0 +1,109 @@
+<!-- Changing the date in Chrome or Firefox for testing, hi.
+
+     Change date in browser for testing, change browser date and time, change date in chrome, firefox
+     change date and time and firefox spoof date are what people type (search suggestions,
+     2026-11-23). The browsers are named because those are the names people search under. Measured
+     on 2026-11-23 with a session set to 2040: an HTTPS site loaded in Chrome, whose browser process
+     keeps the real date, and showed a security warning in Firefox, whose whole browser follows the
+     session. The DevTools time zone is the location preset of its Sensors panel. -->
+
+<div class="shell">
+
+  <section class="plain">
+    <h1>टेस्ट के लिए Chrome या Firefox में तारीख़ बदलना</h1>
+    <p class="sub">
+      आम जवाब होते हैं किसी पेज में तारीख़ बदलने वाला एक्सटेंशन, या किसी टेस्ट फ़्रेमवर्क की घड़ी। Chrono Mock ख़ुद ब्राउज़र को उसकी अपनी घड़ी के साथ शुरू करता है - हर टैब और हर worker, किसी भी तारीख़ पर, रुका हुआ या तेज़ - और Windows की घड़ी व बाक़ी सब प्रोग्राम को नहीं छूता।
+    </p>
+  </section>
+
+  <section>
+    <h2>आम जवाब क्या कवर करते हैं</h2>
+    <div class="wrap">
+      <table>
+        <thead>
+          <tr><th>तरीका</th><th>नई तारीख़ किसे दिखती है</th><th>क्या छूट जाता है</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>ब्राउज़र एक्सटेंशन</td><td>उन पेजों की JavaScript तारीख़ जिनमें उसे जाने की अनुमति है</td><td>अक्सर एक बार में एक ही टैब, और कुछ नहीं बताता कि क्या छूटा</td></tr>
+          <tr><td>Chrome DevTools</td><td>एक टाइम ज़ोन, Sensors पैनल में किसी लोकेशन से सेट किया गया</td><td>ख़ुद तारीख़</td></tr>
+          <tr><td>टेस्ट फ़्रेमवर्क की घड़ी</td><td>आपके लिखे टेस्ट द्वारा खोले गए पेज</td><td>हाथ से की गई टेस्टिंग, और हर वह पेज जिसे टेस्ट नहीं चलाता</td></tr>
+          <tr><td>Windows की घड़ी</td><td>मशीन पर सब कुछ</td><td>कुछ नहीं, और यही समस्या है: सर्टिफ़िकेट, डोमेन लॉगऑन और समय सिंक भी खिसक जाते हैं</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="prose">
+      <p>
+        <a href="/hi/change-system-date-testing/">Windows की घड़ी बदलने से क्या टूटता है &rarr;</a>
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Chrome</h2>
+    <div class="prose">
+      <p>
+        Chrome एक साफ़, एक बार इस्तेमाल होने वाली प्रोफ़ाइल और लोकल डीबगिंग पोर्ट के साथ शुरू होता है, और हर पेज व हर worker अपना JavaScript समय सेशन से लेता है: <code>Date.now</code>, <code>new Date()</code>, <code>performance.now</code>, <code>setTimeout</code>, <code>setInterval</code> और सेशन का टाइम ज़ोन। ब्राउज़र ख़ुद असली तारीख़ पर रहता है, इसलिए HTTPS साइटें लोड होती रहती हैं - 2040 पर सेट सेशन से जाँचा गया।
+      </p>
+    </div>
+
+    <pre class="term"><span class="c"># Chrome 2027 के आख़िरी दस सेकंड में, साठ गुना तेज़</span>
+<span class="p">chrono</span> run "C:\Program Files\Google\Chrome\Application\chrome.exe" --at 2027-12-31T23:59:50 --mode x60 --args "http://localhost:8080/"</pre>
+
+    <div class="prose">
+      <p>
+        यह प्रोफ़ाइल आपकी नहीं है: न सहेजे गए लॉगिन, न एक्सटेंशन, और सेशन ख़त्म होते ही मिटा दी जाती है। Chromium पर बने दूसरे ब्राउज़र भी इसी तरह काम करते हैं।
+        <a href="/hi/electron-chromium/">Chromium मोड कैसे काम करता है &rarr;</a>
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Firefox</h2>
+    <div class="prose">
+      <p>
+        Firefox अपने पेज ऐसे सैंडबॉक्स प्रोसेस में चलाता है जिनमें सेशन नहीं जा सकता, इसलिए उसे <code>--no-gecko-sandbox</code> चाहिए। तब पेज सैंडबॉक्स के बाहर शुरू होते हैं, सेशन से जुड़ते हैं और उसकी घड़ी, रफ़्तार, छलाँगों और टाइम ज़ोन के साथ चलते हैं। Firefox बंद होने तक इस सुरक्षा के बिना चलता है, इसलिए उसमें सिर्फ़ वही पेज खोलें जिन पर आपको भरोसा है। <code>-no-remote -profile</code> और एक ख़ाली फ़ोल्डर से उसे अपनी प्रोफ़ाइल दें, ताकि वह पेज किसी पहले से खुले Firefox को न सौंप दे।
+      </p>
+    </div>
+
+    <pre class="term"><span class="c"># Firefox 2027 के आख़िरी दस सेकंड में, अपने प्रोफ़ाइल फ़ोल्डर के साथ</span>
+<span class="p">chrono</span> run "C:\Program Files\Mozilla Firefox\firefox.exe" --at 2027-12-31T23:59:50 --no-gecko-sandbox --args "-no-remote -profile C:\ff-test http://localhost:8080/"</pre>
+
+    <div class="prose">
+      <p>
+        Firefox में सिर्फ़ पेज नहीं, पूरा ब्राउज़र खिसकता है, और इसमें सर्टिफ़िकेट की जाँच भी शामिल है: 2040 पर सेट सेशन में एक असली HTTPS साइट ने सुरक्षा चेतावनी दिखाई। काम करने वाला मामला है फ़ाइल से खुले पेज, आपका अपना टेस्ट सर्वर, या ऐसी तारीख़ जिसे साइट का सर्टिफ़िकेट अब भी कवर करता है।
+      </p>
+      <p>
+        एडमिनिस्ट्रेटर के रूप में शुरू होने पर Firefox अधिकार छोड़ देता है और सेशन के बाहर फिर से शुरू होता है, जब तक उसके आर्ग्युमेंट में <code>--no-deelevate</code> न हो, और सेशन यह शुरू से ही बता देता है।
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>कैसे जानें कि पेजों को तारीख़ मिली</h2>
+    <div class="prose">
+      <p>
+        रिपोर्ट बताती है कि सेशन किन पेजों और worker तक पहुँचा और कौन असली घड़ी पर रहे - Chrome में हर JavaScript कॉन्टेक्स्ट के हिसाब से, Firefox में हर प्रोसेस के हिसाब से।
+        <a href="/hi/time-source-audit/">रिपोर्ट क्या बताती है &rarr;</a>
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>यह क्या नहीं करता</h2>
+    <div class="prose">
+      <ul>
+        <li><strong>सर्वर की तरफ़।</strong> किसी साइट को अपने सर्वर से मिली तारीख़ सर्वर की ही तारीख़ रहती है।</li>
+        <li><strong>आपका रोज़ का ब्राउज़र।</strong> सेशन अपना ब्राउज़र शुरू करता है। वह आपके खुले ब्राउज़र से नहीं जुड़ता, और उसके टैब व लॉगिन नहीं छूता।</li>
+      </ul>
+    </div>
+  </section>
+
+  <section>
+    <h2>आज़माएँ</h2>
+    <div class="cta">
+      <a class="btn btn-primary" href="/hi/download/">Windows के लिए डाउनलोड करें</a>
+      <a class="btn btn-ghost" href="/hi/time-travel-testing/">टाइम ट्रैवल टेस्टिंग</a>
+    </div>
+  </section>
+
+</div>

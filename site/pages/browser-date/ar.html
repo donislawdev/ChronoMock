@@ -1,0 +1,109 @@
+<!-- Changing the date in Chrome or Firefox for testing, ar.
+
+     Change date in browser for testing, change browser date and time, change date in chrome, firefox
+     change date and time and firefox spoof date are what people type (search suggestions,
+     2026-11-23). The browsers are named because those are the names people search under. Measured
+     on 2026-11-23 with a session set to 2040: an HTTPS site loaded in Chrome, whose browser process
+     keeps the real date, and showed a security warning in Firefox, whose whole browser follows the
+     session. The DevTools time zone is the location preset of its Sensors panel. -->
+
+<div class="shell">
+
+  <section class="plain">
+    <h1>تغيير التاريخ في Chrome أو Firefox للاختبار</h1>
+    <p class="sub">
+      الإجابات المعتادة إضافة تستبدل التاريخ في صفحة، أو ساعة إطار اختبار. أما Chrono Mock فيشغّل المتصفح نفسه بساعة خاصة به - كل علامة تبويب وكل worker، بأي تاريخ، ثابتًا أو مسرّعًا - ويترك ساعة Windows وكل البرامج الأخرى على حالها.
+    </p>
+  </section>
+
+  <section>
+    <h2>ما الذي تغطيه الإجابات المعتادة</h2>
+    <div class="wrap">
+      <table>
+        <thead>
+          <tr><th>الطريقة</th><th>من يرى التاريخ الجديد</th><th>ما الذي تتركه</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>إضافة للمتصفح</td><td>تاريخ JavaScript في الصفحات المسموح لها بدخولها</td><td>غالبًا علامة تبويب واحدة في كل مرة، ولا شيء يخبرك بما فاتها</td></tr>
+          <tr><td>أدوات المطوّر في Chrome</td><td>منطقة زمنية تُضبط عبر موقع في لوحة Sensors</td><td>التاريخ نفسه</td></tr>
+          <tr><td>ساعة إطار اختبار</td><td>الصفحات التي يفتحها اختبار تكتبه</td><td>الاختبار اليدوي، وكل صفحة لا يقودها الاختبار</td></tr>
+          <tr><td>ساعة Windows</td><td>كل ما على الجهاز</td><td>لا شيء، وهذه هي المشكلة: الشهادات وتسجيل الدخول إلى النطاق ومزامنة الوقت تتحرك معها</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="prose">
+      <p>
+        <a href="/ar/change-system-date-testing/">ما الذي يعطّله تغيير ساعة Windows &larr;</a>
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Chrome</h2>
+    <div class="prose">
+      <p>
+        يبدأ Chrome بملف تعريف نظيف للاستعمال مرة واحدة ومنفذ تصحيح محلي، وتأخذ كل صفحة وكل worker وقت JavaScript من الجلسة: <code>Date.now</code>, <code>new Date()</code>, <code>performance.now</code>, <code>setTimeout</code>, <code>setInterval</code> والمنطقة الزمنية للجلسة. ويبقى المتصفح نفسه على التاريخ الحقيقي، فتظل مواقع HTTPS تُحمَّل - جرى التحقق بجلسة مضبوطة على 2040.
+      </p>
+    </div>
+
+    <pre class="term"><span class="c"># Chrome في آخر عشر ثوانٍ من 2027، أسرع بستين مرة</span>
+<span class="p">chrono</span> run "C:\Program Files\Google\Chrome\Application\chrome.exe" --at 2027-12-31T23:59:50 --mode x60 --args "http://localhost:8080/"</pre>
+
+    <div class="prose">
+      <p>
+        ملف التعريف ليس ملفك: لا تسجيلات دخول محفوظة ولا إضافات، ويُحذف عند انتهاء الجلسة. والمتصفحات الأخرى المبنية على Chromium تعمل بالطريقة نفسها.
+        <a href="/ar/electron-chromium/">كيف يعمل وضع Chromium &larr;</a>
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Firefox</h2>
+    <div class="prose">
+      <p>
+        يشغّل Firefox صفحاته في عمليات داخل بيئة معزولة لا تستطيع الجلسة دخولها، لذا يحتاج إلى <code>--no-gecko-sandbox</code>. عندها تبدأ الصفحات خارج تلك البيئة المعزولة، وتنضم إلى الجلسة وتتبع ساعتها وسرعتها وقفزاتها ومنطقتها الزمنية. ويعمل Firefox دون تلك الحماية حتى يُغلق، فلا تفتح فيه إلا صفحات تثق بها. وامنحه ملف تعريف خاصًا به عبر <code>-no-remote -profile</code> ومجلد فارغ، كي لا يسلّم الصفحة إلى Firefox مفتوح لديك.
+      </p>
+    </div>
+
+    <pre class="term"><span class="c"># Firefox في آخر عشر ثوانٍ من 2027، بمجلد ملف تعريف خاص به</span>
+<span class="p">chrono</span> run "C:\Program Files\Mozilla Firefox\firefox.exe" --at 2027-12-31T23:59:50 --no-gecko-sandbox --args "-no-remote -profile C:\ff-test http://localhost:8080/"</pre>
+
+    <div class="prose">
+      <p>
+        في Firefox يتحرك المتصفح كله لا صفحاته وحدها، ويشمل ذلك فحص الشهادات: في جلسة مضبوطة على 2040 أظهر موقع HTTPS حقيقي تحذيرًا أمنيًا. وما ينجح هو صفحات من ملف، أو خادم اختبار تشغّله أنت، أو تاريخ ما زالت شهادة الموقع تغطيه.
+      </p>
+      <p>
+        إذا شُغّل Firefox بصفة المسؤول فإنه يتخلى عن الصلاحيات ويبدأ من جديد خارج الجلسة، ما لم يكن <code>--no-deelevate</code> بين وسائطه، وتقول الجلسة ذلك منذ البداية.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>كيف تعرف أن الصفحات تلقّت التاريخ</h2>
+    <div class="prose">
+      <p>
+        يذكر التقرير الصفحات وعمليات worker التي بلغتها الجلسة، وتلك التي بقيت على الساعة الحقيقية - لكل سياق JavaScript في Chrome، ولكل عملية في Firefox.
+        <a href="/ar/time-source-audit/">ماذا يقول التقرير &larr;</a>
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>ما لا يفعله</h2>
+    <div class="prose">
+      <ul>
+        <li><strong>جهة الخادم.</strong> التاريخ الذي يتلقاه موقع من خادمه يبقى تاريخ الخادم.</li>
+        <li><strong>متصفحك اليومي.</strong> تشغّل الجلسة متصفحًا خاصًا بها. لا ترتبط بالمتصفح المفتوح لديك، ولا تمسّ علامات تبويبه ولا تسجيلات دخوله.</li>
+      </ul>
+    </div>
+  </section>
+
+  <section>
+    <h2>جرّبه</h2>
+    <div class="cta">
+      <a class="btn btn-primary" href="/ar/download/">نزّل نسخة Windows</a>
+      <a class="btn btn-ghost" href="/ar/time-travel-testing/">اختبار السفر عبر الزمن</a>
+    </div>
+  </section>
+
+</div>

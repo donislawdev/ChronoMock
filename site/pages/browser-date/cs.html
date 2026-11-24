@@ -1,0 +1,109 @@
+<!-- Changing the date in Chrome or Firefox for testing, cs.
+
+     Change date in browser for testing, change browser date and time, change date in chrome, firefox
+     change date and time and firefox spoof date are what people type (search suggestions,
+     2026-11-23). The browsers are named because those are the names people search under. Measured
+     on 2026-11-23 with a session set to 2040: an HTTPS site loaded in Chrome, whose browser process
+     keeps the real date, and showed a security warning in Firefox, whose whole browser follows the
+     session. The DevTools time zone is the location preset of its Sensors panel. -->
+
+<div class="shell">
+
+  <section class="plain">
+    <h1>Změna data v Chrome nebo Firefoxu pro testování</h1>
+    <p class="sub">
+      Obvyklé odpovědi jsou rozšíření, které na stránce podmění datum, nebo hodiny testovacího frameworku. Chrono Mock spustí samotný prohlížeč s vlastními hodinami - každá karta a každý worker, libovolné datum, zastavené nebo zrychlené - a hodiny Windows i všechny ostatní programy nechá být.
+    </p>
+  </section>
+
+  <section>
+    <h2>Co obvyklé odpovědi pokrývají</h2>
+    <div class="wrap">
+      <table>
+        <thead>
+          <tr><th>Přístup</th><th>Kdo vidí nové datum</th><th>Co vynechá</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Rozšíření prohlížeče</td><td>Datum JavaScriptu na stránkách, kam smí</td><td>Často jen jednu kartu najednou a nic neřekne, co minulo</td></tr>
+          <tr><td>Chrome DevTools</td><td>Časové pásmo, nastavené přes polohu v panelu Sensors</td><td>Samotné datum</td></tr>
+          <tr><td>Hodiny testovacího frameworku</td><td>Stránky, které otevře test, který napíšete</td><td>Ruční testování a každou stránku, kterou test neřídí</td></tr>
+          <tr><td>Hodiny Windows</td><td>Všechno v počítači</td><td>Nic, a v tom je problém: certifikáty, přihlášení do domény a synchronizace času se posunou taky</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="prose">
+      <p>
+        <a href="/cs/zmena-systemoveho-data-pri-testovani/">Co rozbije změna hodin Windows &rarr;</a>
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Chrome</h2>
+    <div class="prose">
+      <p>
+        Chrome se spustí s čistým jednorázovým profilem a místním ladicím portem a každá stránka i každý worker bere čas JavaScriptu z relace: <code>Date.now</code>, <code>new Date()</code>, <code>performance.now</code>, <code>setTimeout</code>, <code>setInterval</code> a časové pásmo relace. Samotný prohlížeč má skutečné datum, takže stránky přes HTTPS se dál načítají - ověřeno s relací nastavenou na rok 2040.
+      </p>
+    </div>
+
+    <pre class="term"><span class="c"># Chrome v posledních deseti sekundách roku 2027, šedesátkrát rychleji</span>
+<span class="p">chrono</span> run "C:\Program Files\Google\Chrome\Application\chrome.exe" --at 2027-12-31T23:59:50 --mode x60 --args "http://localhost:8080/"</pre>
+
+    <div class="prose">
+      <p>
+        Profil není váš: žádná uložená přihlášení, žádná rozšíření a po konci relace se smaže. Ostatní prohlížeče postavené na Chromiu fungují stejně.
+        <a href="/cs/electron-chromium/">Jak funguje režim Chromium &rarr;</a>
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Firefox</h2>
+    <div class="prose">
+      <p>
+        Firefox spouští stránky v procesech v sandboxu, kam relace nemůže, proto potřebuje <code>--no-gecko-sandbox</code>. Stránky pak startují mimo sandbox, připojí se k relaci a řídí se jejími hodinami, rychlostí, skoky a časovým pásmem. Firefox běží bez této ochrany, dokud ho nezavřete, takže v něm otevírejte jen stránky, kterým věříte. Dejte mu vlastní profil přes <code>-no-remote -profile</code> a prázdnou složku, aby stránku nepředal Firefoxu, který už máte otevřený.
+      </p>
+    </div>
+
+    <pre class="term"><span class="c"># Firefox v posledních deseti sekundách roku 2027, s vlastní složkou profilu</span>
+<span class="p">chrono</span> run "C:\Program Files\Mozilla Firefox\firefox.exe" --at 2027-12-31T23:59:50 --no-gecko-sandbox --args "-no-remote -profile C:\ff-test http://localhost:8080/"</pre>
+
+    <div class="prose">
+      <p>
+        Ve Firefoxu se posune celý prohlížeč, nejen stránky, a to včetně kontroly certifikátů: v relaci nastavené na rok 2040 ukázala skutečná stránka přes HTTPS bezpečnostní varování. Funguje to pro stránky ze souboru, váš vlastní testovací server nebo datum, které certifikát stránky ještě pokrývá.
+      </p>
+      <p>
+        Spuštěný jako správce Firefox se práv vzdá a spustí se znovu mimo relaci, pokud mezi jeho argumenty není <code>--no-deelevate</code>, a relace to řekne hned od začátku.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Jak poznat, že stránky datum dostaly</h2>
+    <div class="prose">
+      <p>
+        Zpráva říká, ke kterým stránkám a workerům relace dosáhla a které zůstaly na skutečných hodinách - v Chrome po kontextech JavaScriptu, ve Firefoxu po procesech.
+        <a href="/cs/audit-zdroju-casu/">Co zpráva říká &rarr;</a>
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Co to nedělá</h2>
+    <div class="prose">
+      <ul>
+        <li><strong>Strana serveru.</strong> Datum, které stránka dostane od svého serveru, zůstává datem serveru.</li>
+        <li><strong>Váš každodenní prohlížeč.</strong> Relace spouští vlastní prohlížeč. K tomu, který máte otevřený, se nepřipojí a jeho karty ani přihlášení nechá být.</li>
+      </ul>
+    </div>
+  </section>
+
+  <section>
+    <h2>Vyzkoušejte</h2>
+    <div class="cta">
+      <a class="btn btn-primary" href="/cs/stazeni/">Stáhnout pro Windows</a>
+      <a class="btn btn-ghost" href="/cs/time-travel-testing/">Time travel testing</a>
+    </div>
+  </section>
+
+</div>

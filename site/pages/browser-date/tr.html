@@ -1,0 +1,109 @@
+<!-- Changing the date in Chrome or Firefox for testing, tr.
+
+     Change date in browser for testing, change browser date and time, change date in chrome, firefox
+     change date and time and firefox spoof date are what people type (search suggestions,
+     2026-11-23). The browsers are named because those are the names people search under. Measured
+     on 2026-11-23 with a session set to 2040: an HTTPS site loaded in Chrome, whose browser process
+     keeps the real date, and showed a security warning in Firefox, whose whole browser follows the
+     session. The DevTools time zone is the location preset of its Sensors panel. -->
+
+<div class="shell">
+
+  <section class="plain">
+    <h1>Test için Chrome veya Firefox'ta tarihi değiştirmek</h1>
+    <p class="sub">
+      Alışılmış yanıtlar, bir sayfadaki tarihi değiştiren bir eklenti ya da bir test çatısının saatidir. Chrono Mock tarayıcının kendisini kendi saatiyle başlatır - her sekme ve her worker, istediğiniz tarihte, dondurulmuş ya da hızlandırılmış - ve Windows saatine ve diğer tüm programlara dokunmaz.
+    </p>
+  </section>
+
+  <section>
+    <h2>Alışılmış yanıtlar neyi kapsar</h2>
+    <div class="wrap">
+      <table>
+        <thead>
+          <tr><th>Yaklaşım</th><th>Yeni tarihi kim görür</th><th>Neyi dışarıda bırakır</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Bir tarayıcı eklentisi</td><td>Girmesine izin verilen sayfaların JavaScript tarihi</td><td>Çoğu zaman bir seferde tek sekme, ve neyi kaçırdığını hiçbir şey söylemez</td></tr>
+          <tr><td>Chrome DevTools</td><td>Bir saat dilimi, Sensors panelindeki bir konumla ayarlanır</td><td>Tarihin kendisi</td></tr>
+          <tr><td>Bir test çatısının saati</td><td>Yazdığınız bir testin açtığı sayfalar</td><td>Elle yapılan testler ve testin yönetmediği her sayfa</td></tr>
+          <tr><td>Windows saati</td><td>Makinedeki her şey</td><td>Hiçbir şey, sorun da bu: sertifikalar, etki alanı oturum açma ve zaman eşitleme de kayar</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="prose">
+      <p>
+        <a href="/tr/sistem-tarihini-degistirerek-test/">Windows saatini değiştirmek neyi bozar &rarr;</a>
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Chrome</h2>
+    <div class="prose">
+      <p>
+        Chrome temiz, tek kullanımlık bir profil ve yerel bir hata ayıklama bağlantı noktasıyla başlar, ve her sayfa ve her worker JavaScript zamanını oturumdan alır: <code>Date.now</code>, <code>new Date()</code>, <code>performance.now</code>, <code>setTimeout</code>, <code>setInterval</code> ve oturumun saat dilimi. Tarayıcının kendisi gerçek tarihte kalır, bu yüzden HTTPS siteleri yüklenmeye devam eder - 2040'a ayarlı bir oturumla denendi.
+      </p>
+    </div>
+
+    <pre class="term"><span class="c"># Chrome, 2027'nin son on saniyesinde, altmış kat hızlı</span>
+<span class="p">chrono</span> run "C:\Program Files\Google\Chrome\Application\chrome.exe" --at 2027-12-31T23:59:50 --mode x60 --args "http://localhost:8080/"</pre>
+
+    <div class="prose">
+      <p>
+        Profil sizin değil: kayıtlı oturum yok, eklenti yok ve oturum bitince silinir. Chromium tabanlı diğer tarayıcılar da aynı şekilde çalışır.
+        <a href="/tr/electron-chromium/">Chromium modu nasıl çalışır &rarr;</a>
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Firefox</h2>
+    <div class="prose">
+      <p>
+        Firefox sayfalarını oturumun giremediği korumalı alan süreçlerinde çalıştırır, bu yüzden <code>--no-gecko-sandbox</code> gerekir. Sayfalar o zaman korumalı alanın dışında başlar, oturuma katılır ve onun saatini, hızını, atlamalarını ve saat dilimini izler. Firefox kapanana kadar bu koruma olmadan çalışır, bu yüzden içinde yalnızca güvendiğiniz sayfaları açın. <code>-no-remote -profile</code> ve boş bir klasörle ona kendi profilini verin ki sayfayı zaten açık olan bir Firefox'a devretmesin.
+      </p>
+    </div>
+
+    <pre class="term"><span class="c"># Firefox, 2027'nin son on saniyesinde, kendi profil klasörüyle</span>
+<span class="p">chrono</span> run "C:\Program Files\Mozilla Firefox\firefox.exe" --at 2027-12-31T23:59:50 --no-gecko-sandbox --args "-no-remote -profile C:\ff-test http://localhost:8080/"</pre>
+
+    <div class="prose">
+      <p>
+        Firefox'ta yalnızca sayfalar değil tüm tarayıcı kayar ve buna sertifika denetimi de dahildir: 2040'a ayarlı bir oturumda gerçek bir HTTPS sitesi güvenlik uyarısı gösterdi. İşe yarayan durum, dosyadan açılan sayfalar, kendi çalıştırdığınız bir test sunucusu ya da sitenin sertifikasının hâlâ kapsadığı bir tarihtir.
+      </p>
+      <p>
+        Yönetici olarak başlatılan Firefox, argümanları arasında <code>--no-deelevate</code> yoksa haklarını bırakır ve oturumun dışında yeniden başlar, oturum da bunu en baştan söyler.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Sayfaların tarihi aldığını bilmek</h2>
+    <div class="prose">
+      <p>
+        Rapor, oturumun hangi sayfalara ve worker'lara ulaştığını, hangilerinin gerçek saatte kaldığını söyler - Chrome'da her JavaScript bağlamı için, Firefox'ta her süreç için.
+        <a href="/tr/zaman-kaynagi-denetimi/">Raporun söyledikleri &rarr;</a>
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Yapmadıkları</h2>
+    <div class="prose">
+      <ul>
+        <li><strong>Sunucu tarafı.</strong> Bir sitenin kendi sunucusundan aldığı tarih sunucunun tarihi olarak kalır.</li>
+        <li><strong>Günlük tarayıcınız.</strong> Oturum kendi tarayıcısını başlatır. Açık olan tarayıcınıza bağlanmaz, sekmelerine ve oturumlarına dokunmaz.</li>
+      </ul>
+    </div>
+  </section>
+
+  <section>
+    <h2>Deneyin</h2>
+    <div class="cta">
+      <a class="btn btn-primary" href="/tr/indir/">Windows için indir</a>
+      <a class="btn btn-ghost" href="/tr/time-travel-testing/">Time travel testing</a>
+    </div>
+  </section>
+
+</div>

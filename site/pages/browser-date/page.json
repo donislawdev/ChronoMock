@@ -1,0 +1,141 @@
+{
+  "//": "Change date in browser for testing, change browser date and time, change date in chrome, firefox change date and time and firefox spoof date are what people type (search suggestions, 2026-11-23), and nobody searches under the engine names. So this page, unlike the rest of the site, names the two browsers. Not in the header bar: it is reached from the footer map.",
+  "id": "browser-date",
+  "order": 58,
+  "nav": false,
+  "group": "tools",
+  "languages": {
+    "en": {
+      "slug": "change-date-in-browser",
+      "link_text": "Date in Chrome and Firefox",
+      "title": "Change the date in Chrome or Firefox for testing, without the system clock",
+      "description": "Run Chrome or Firefox at another date and time, frozen or sped up, with its own time zone - every tab and worker, no extension, and the Windows clock untouched. What works, and where the limits are."
+    },
+    "pl": {
+      "slug": "zmiana-daty-w-przegladarce",
+      "link_text": "Data w Chrome i Firefoksie",
+      "title": "Zmiana daty w Chrome albo Firefoksie do testów, bez zegara systemu",
+      "description": "Uruchom Chrome albo Firefoksa z inną datą i godziną, zatrzymaną albo przyspieszoną, z własną strefą czasową - każda karta i worker, bez rozszerzenia i bez ruszania zegara Windows. Co działa i gdzie są granice."
+    },
+    "zh-hans": {
+      "slug": "change-date-in-browser",
+      "link_text": "Chrome 和 Firefox 中的日期",
+      "title": "为测试更改 Chrome 或 Firefox 的日期，无需改系统时钟",
+      "description": "让 Chrome 或 Firefox 在另一个日期和时间运行，可冻结或加速，并有独立时区。覆盖每个标签页和 worker，无需扩展，Windows 时钟不受影响。哪些可行，界限在哪里。"
+    },
+    "ja": {
+      "slug": "change-date-in-browser",
+      "link_text": "Chrome と Firefox の日付",
+      "title": "テストのために Chrome や Firefox の日付を変更する - システム時計はそのまま",
+      "description": "Chrome や Firefox を別の日付と時刻で、止めたり速めたり、独自のタイムゾーンで動かせます。すべてのタブと worker が対象で、拡張機能は不要、Windows の時計には触れません。できることと限界。"
+    },
+    "de": {
+      "slug": "datum-im-browser-aendern",
+      "link_text": "Datum in Chrome und Firefox",
+      "title": "Datum in Chrome oder Firefox zum Testen ändern, ohne die Systemuhr",
+      "description": "Chrome oder Firefox mit anderem Datum und anderer Uhrzeit laufen lassen, angehalten oder beschleunigt, mit eigener Zeitzone - jeder Tab und jeder Worker, ohne Erweiterung, die Windows-Uhr bleibt unberührt. Was geht und wo die Grenzen sind."
+    },
+    "fr": {
+      "slug": "changer-la-date-du-navigateur",
+      "link_text": "Date dans Chrome et Firefox",
+      "title": "Changer la date dans Chrome ou Firefox pour tester, sans l'horloge système",
+      "description": "Lancez Chrome ou Firefox à une autre date et heure, figée ou accélérée, avec son propre fuseau horaire - chaque onglet et chaque worker, sans extension, et sans toucher à l'horloge de Windows. Ce qui marche, et les limites."
+    },
+    "es": {
+      "slug": "cambiar-la-fecha-del-navegador",
+      "link_text": "Fecha en Chrome y Firefox",
+      "title": "Cambiar la fecha en Chrome o Firefox para pruebas, sin tocar el reloj del sistema",
+      "description": "Ejecuta Chrome o Firefox en otra fecha y hora, congelada o acelerada, con su propia zona horaria - cada pestaña y cada worker, sin extensión y sin tocar el reloj de Windows. Qué funciona y dónde están los límites."
+    },
+    "pt-br": {
+      "slug": "mudar-a-data-do-navegador",
+      "link_text": "Data no Chrome e no Firefox",
+      "title": "Mudar a data no Chrome ou no Firefox para testes, sem mexer no relógio do sistema",
+      "description": "Rode o Chrome ou o Firefox em outra data e hora, congelada ou acelerada, com fuso horário próprio - cada aba e cada worker, sem extensão e sem mexer no relógio do Windows. O que funciona e onde estão os limites."
+    },
+    "it": {
+      "slug": "cambiare-la-data-del-browser",
+      "link_text": "Data in Chrome e Firefox",
+      "title": "Cambiare la data in Chrome o Firefox per i test, senza l'orologio di sistema",
+      "description": "Esegui Chrome o Firefox in un'altra data e ora, ferma o accelerata, con un fuso orario proprio - ogni scheda e ogni worker, senza estensioni e senza toccare l'orologio di Windows. Cosa funziona e dove sono i limiti."
+    },
+    "id": {
+      "slug": "mengubah-tanggal-di-browser",
+      "link_text": "Tanggal di Chrome dan Firefox",
+      "title": "Mengubah tanggal di Chrome atau Firefox untuk pengujian, tanpa jam sistem",
+      "description": "Jalankan Chrome atau Firefox pada tanggal dan waktu lain, dibekukan atau dipercepat, dengan zona waktunya sendiri - setiap tab dan worker, tanpa ekstensi, dan jam Windows tidak tersentuh. Apa yang berfungsi dan di mana batasnya."
+    },
+    "ru": {
+      "slug": "change-date-in-browser",
+      "link_text": "Дата в Chrome и Firefox",
+      "title": "Как изменить дату в Chrome или Firefox для тестов, не трогая системные часы",
+      "description": "Запускайте Chrome или Firefox с другой датой и временем, остановленными или ускоренными, со своим часовым поясом - каждая вкладка и каждый worker, без расширения и без перевода часов Windows. Что работает и где границы."
+    },
+    "tr": {
+      "slug": "tarayicida-tarihi-degistirme",
+      "link_text": "Chrome ve Firefox'ta tarih",
+      "title": "Test için Chrome veya Firefox'ta tarihi değiştirmek, sistem saatine dokunmadan",
+      "description": "Chrome veya Firefox'u başka bir tarih ve saatte, dondurulmuş ya da hızlandırılmış, kendi saat dilimiyle çalıştırın - her sekme ve her worker, eklenti olmadan ve Windows saatine dokunmadan. Neyin işe yaradığı ve sınırların nerede olduğu."
+    },
+    "cs": {
+      "slug": "zmena-data-v-prohlizeci",
+      "link_text": "Datum v Chrome a Firefoxu",
+      "title": "Změna data v Chrome nebo Firefoxu pro testování, bez systémových hodin",
+      "description": "Spusťte Chrome nebo Firefox s jiným datem a časem, zastaveným nebo zrychleným, s vlastním časovým pásmem - každá karta a každý worker, bez rozšíření a bez zásahu do hodin Windows. Co funguje a kde jsou hranice."
+    },
+    "vi": {
+      "slug": "doi-ngay-trong-trinh-duyet",
+      "link_text": "Ngày trong Chrome và Firefox",
+      "title": "Đổi ngày trong Chrome hoặc Firefox để kiểm thử, không đụng đến đồng hồ hệ thống",
+      "description": "Chạy Chrome hoặc Firefox ở ngày giờ khác, đóng băng hoặc tăng tốc, với múi giờ riêng - mọi tab và mọi worker, không cần tiện ích mở rộng và không đụng đến đồng hồ Windows. Điều gì hoạt động và giới hạn nằm ở đâu."
+    },
+    "hi": {
+      "slug": "change-date-in-browser",
+      "link_text": "Chrome और Firefox में तारीख़",
+      "title": "टेस्ट के लिए Chrome या Firefox में तारीख़ बदलें, सिस्टम घड़ी छुए बिना",
+      "description": "Chrome या Firefox को किसी और तारीख़ और समय पर चलाएँ, रुका हुआ या तेज़, अपने टाइम ज़ोन के साथ - हर टैब और हर worker, बिना एक्सटेंशन, और Windows की घड़ी अछूती। क्या काम करता है और सीमाएँ कहाँ हैं।"
+    },
+    "ko": {
+      "slug": "change-date-in-browser",
+      "link_text": "Chrome과 Firefox의 날짜",
+      "title": "테스트를 위해 Chrome이나 Firefox의 날짜 바꾸기 - 시스템 시계는 그대로",
+      "description": "Chrome이나 Firefox를 다른 날짜와 시간에서, 멈추거나 빠르게, 자체 시간대로 실행하세요. 모든 탭과 worker가 대상이며, 확장 프로그램 없이 Windows 시계는 건드리지 않습니다. 되는 것과 한계."
+    },
+    "ar": {
+      "slug": "change-date-in-browser",
+      "link_text": "التاريخ في Chrome وFirefox",
+      "title": "تغيير التاريخ في Chrome أو Firefox للاختبار دون ساعة النظام",
+      "description": "شغّل Chrome أو Firefox بتاريخ ووقت آخرين، ثابتين أو مسرّعين، وبمنطقة زمنية خاصة - كل علامة تبويب وكل worker، بلا إضافة، ودون المساس بساعة Windows. ما الذي ينجح وأين الحدود."
+    },
+    "ro": {
+      "slug": "schimbarea-datei-in-browser",
+      "link_text": "Data în Chrome și Firefox",
+      "title": "Schimbarea datei în Chrome sau Firefox pentru teste, fără ceasul sistemului",
+      "description": "Rulează Chrome sau Firefox la altă dată și oră, oprită sau accelerată, cu propriul fus orar - fiecare filă și fiecare worker, fără extensie și fără să atingi ceasul Windows. Ce funcționează și unde sunt limitele."
+    },
+    "nl": {
+      "slug": "datum-in-browser-wijzigen",
+      "link_text": "Datum in Chrome en Firefox",
+      "title": "De datum in Chrome of Firefox wijzigen om te testen, zonder de systeemklok",
+      "description": "Laat Chrome of Firefox draaien op een andere datum en tijd, stilgezet of versneld, met een eigen tijdzone - elk tabblad en elke worker, zonder extensie en zonder de Windows-klok aan te raken. Wat werkt en waar de grenzen liggen."
+    },
+    "zh-hant": {
+      "slug": "change-date-in-browser",
+      "link_text": "Chrome 和 Firefox 中的日期",
+      "title": "為測試變更 Chrome 或 Firefox 的日期，無需改系統時鐘",
+      "description": "讓 Chrome 或 Firefox 在另一個日期和時間執行，可凍結或加速，並有獨立時區。涵蓋每個分頁和 worker，無需擴充功能，Windows 時鐘不受影響。哪些可行，界限在哪裡。"
+    },
+    "uk": {
+      "slug": "change-date-in-browser",
+      "link_text": "Дата в Chrome і Firefox",
+      "title": "Як змінити дату в Chrome або Firefox для тестів, не чіпаючи системний годинник",
+      "description": "Запускайте Chrome або Firefox з іншою датою й часом, зупиненими чи прискореними, зі своїм часовим поясом - кожна вкладка й кожен worker, без розширення і без переведення годинника Windows. Що працює і де межі."
+    },
+    "th": {
+      "slug": "change-date-in-browser",
+      "link_text": "วันที่ใน Chrome และ Firefox",
+      "title": "เปลี่ยนวันที่ใน Chrome หรือ Firefox เพื่อทดสอบ โดยไม่แตะนาฬิการะบบ",
+      "description": "รัน Chrome หรือ Firefox ในวันที่และเวลาอื่น หยุดนิ่งหรือเร่ง พร้อมเขตเวลาของตัวเอง ครอบคลุมทุกแท็บและทุก worker ไม่ต้องใช้ส่วนขยาย และไม่แตะนาฬิกา Windows อะไรใช้ได้และขีดจำกัดอยู่ตรงไหน"
+    }
+  }
+}

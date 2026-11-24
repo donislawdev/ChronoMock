@@ -1,0 +1,109 @@
+<!-- Changing the date in Chrome or Firefox for testing, uk.
+
+     Change date in browser for testing, change browser date and time, change date in chrome, firefox
+     change date and time and firefox spoof date are what people type (search suggestions,
+     2026-11-23). The browsers are named because those are the names people search under. Measured
+     on 2026-11-23 with a session set to 2040: an HTTPS site loaded in Chrome, whose browser process
+     keeps the real date, and showed a security warning in Firefox, whose whole browser follows the
+     session. The DevTools time zone is the location preset of its Sensors panel. -->
+
+<div class="shell">
+
+  <section class="plain">
+    <h1>Зміна дати в Chrome або Firefox для тестів</h1>
+    <p class="sub">
+      Звичайні відповіді - розширення, яке підміняє дату на сторінці, або годинник тестового фреймворку. Chrono Mock запускає сам браузер із його власним годинником - кожна вкладка й кожен worker, будь-яка дата, зупинена чи прискорена, - і не чіпає годинник Windows та всі інші програми.
+    </p>
+  </section>
+
+  <section>
+    <h2>Що охоплюють звичайні відповіді</h2>
+    <div class="wrap">
+      <table>
+        <thead>
+          <tr><th>Підхід</th><th>Хто бачить нову дату</th><th>Що лишається поза ним</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Розширення браузера</td><td>Дата JavaScript на сторінках, куди йому дозволено заходити</td><td>Часто одна вкладка за раз, і ніщо не каже, що воно пропустило</td></tr>
+          <tr><td>Chrome DevTools</td><td>Часовий пояс, що задається через місцезнаходження на панелі Sensors</td><td>Сама дата</td></tr>
+          <tr><td>Годинник тестового фреймворку</td><td>Сторінки, які відкриває написаний вами тест</td><td>Ручне тестування і будь-яка сторінка, якою тест не керує</td></tr>
+          <tr><td>Годинник Windows</td><td>Усе на комп'ютері</td><td>Нічого, і в цьому проблема: сертифікати, вхід у домен і синхронізація часу теж зсуваються</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="prose">
+      <p>
+        <a href="/uk/change-system-date-testing/">Що ламає переведення годинника Windows &rarr;</a>
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Chrome</h2>
+    <div class="prose">
+      <p>
+        Chrome запускається з чистим одноразовим профілем і локальним портом налагодження, і кожна сторінка й кожен worker бере час JavaScript із сесії: <code>Date.now</code>, <code>new Date()</code>, <code>performance.now</code>, <code>setTimeout</code>, <code>setInterval</code> і часовий пояс сесії. Сам браузер живе за справжньою датою, тому сайти за HTTPS далі відкриваються - перевірено на сесії, встановленій на 2040 рік.
+      </p>
+    </div>
+
+    <pre class="term"><span class="c"># Chrome в останні десять секунд 2027 року, у шістдесят разів швидше</span>
+<span class="p">chrono</span> run "C:\Program Files\Google\Chrome\Application\chrome.exe" --at 2027-12-31T23:59:50 --mode x60 --args "http://localhost:8080/"</pre>
+
+    <div class="prose">
+      <p>
+        Профіль не ваш: ні збережених входів, ні розширень, і його видаляють після завершення сесії. Інші браузери на основі Chromium працюють так само.
+        <a href="/uk/electron-chromium/">Як працює режим Chromium &rarr;</a>
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Firefox</h2>
+    <div class="prose">
+      <p>
+        Firefox запускає сторінки в процесах у пісочниці, куди сесія не може увійти, тому йому потрібен <code>--no-gecko-sandbox</code>. Тоді сторінки стартують поза пісочницею, приєднуються до сесії й ідуть за її годинником, швидкістю, стрибками й часовим поясом. Firefox працює без цього захисту, доки його не закриють, тож відкривайте в ньому лише сторінки, яким довіряєте. Дайте йому власний профіль через <code>-no-remote -profile</code> і порожню теку, щоб він не передав сторінку вже відкритому Firefox.
+      </p>
+    </div>
+
+    <pre class="term"><span class="c"># Firefox в останні десять секунд 2027 року, із власною текою профілю</span>
+<span class="p">chrono</span> run "C:\Program Files\Mozilla Firefox\firefox.exe" --at 2027-12-31T23:59:50 --no-gecko-sandbox --args "-no-remote -profile C:\ff-test http://localhost:8080/"</pre>
+
+    <div class="prose">
+      <p>
+        У Firefox зсувається весь браузер, а не лише сторінки, зокрема й перевірка сертифікатів: у сесії, встановленій на 2040 рік, справжній сайт за HTTPS показав попередження про безпеку. Працює це для сторінок із файлу, вашого тестового сервера або дати, яку сертифікат сайту ще охоплює.
+      </p>
+      <p>
+        Запущений від імені адміністратора Firefox відмовляється від прав і перезапускається поза сесією, якщо серед його аргументів немає <code>--no-deelevate</code>, і сесія повідомляє про це від самого початку.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Як дізнатися, що сторінки отримали дату</h2>
+    <div class="prose">
+      <p>
+        Звіт каже, до яких сторінок і worker'ів сесія дісталася, а які лишилися на справжньому годиннику, - у Chrome для кожного контексту JavaScript, у Firefox для кожного процесу.
+        <a href="/uk/time-source-audit/">Що каже звіт &rarr;</a>
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Чого це не робить</h2>
+    <div class="prose">
+      <ul>
+        <li><strong>Серверний бік.</strong> Дата, яку сайт отримує від свого сервера, лишається датою сервера.</li>
+        <li><strong>Ваш повсякденний браузер.</strong> Сесія запускає власний браузер. Вона не під'єднується до вже відкритого і не чіпає його вкладок і входів.</li>
+      </ul>
+    </div>
+  </section>
+
+  <section>
+    <h2>Спробуйте</h2>
+    <div class="cta">
+      <a class="btn btn-primary" href="/uk/download/">Завантажити для Windows</a>
+      <a class="btn btn-ghost" href="/uk/time-travel-testing/">Тестування з переміщенням у часі</a>
+    </div>
+  </section>
+
+</div>

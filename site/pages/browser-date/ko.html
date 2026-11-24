@@ -1,0 +1,109 @@
+<!-- Changing the date in Chrome or Firefox for testing, ko.
+
+     Change date in browser for testing, change browser date and time, change date in chrome, firefox
+     change date and time and firefox spoof date are what people type (search suggestions,
+     2026-11-23). The browsers are named because those are the names people search under. Measured
+     on 2026-11-23 with a session set to 2040: an HTTPS site loaded in Chrome, whose browser process
+     keeps the real date, and showed a security warning in Firefox, whose whole browser follows the
+     session. The DevTools time zone is the location preset of its Sensors panel. -->
+
+<div class="shell">
+
+  <section class="plain">
+    <h1>테스트를 위해 Chrome이나 Firefox의 날짜 바꾸기</h1>
+    <p class="sub">
+      흔한 답은 페이지의 날짜를 바꾸는 확장 프로그램이나 테스트 프레임워크의 시계입니다. Chrono Mock은 브라우저 자체를 자기만의 시계로 시작합니다. 모든 탭과 모든 worker가 어떤 날짜든, 멈추거나 빠르게 움직이며, Windows 시계와 다른 모든 프로그램은 그대로 둡니다.
+    </p>
+  </section>
+
+  <section>
+    <h2>흔한 답이 다루는 범위</h2>
+    <div class="wrap">
+      <table>
+        <thead>
+          <tr><th>방법</th><th>새 날짜를 보는 것</th><th>빠지는 것</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>브라우저 확장 프로그램</td><td>들어갈 수 있는 페이지의 JavaScript 날짜</td><td>흔히 한 번에 탭 하나뿐이고, 무엇을 놓쳤는지 알려 주지 않음</td></tr>
+          <tr><td>Chrome DevTools</td><td>시간대. Sensors 패널의 위치로 설정</td><td>날짜 자체</td></tr>
+          <tr><td>테스트 프레임워크의 시계</td><td>직접 작성한 테스트가 여는 페이지</td><td>수동 테스트와 테스트가 조작하지 않는 모든 페이지</td></tr>
+          <tr><td>Windows 시계</td><td>컴퓨터의 모든 것</td><td>빠지는 것은 없음. 그게 문제로, 인증서, 도메인 로그온, 시간 동기화까지 함께 움직임</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="prose">
+      <p>
+        <a href="/ko/change-system-date-testing/">Windows 시계를 바꾸면 무엇이 망가지나 &rarr;</a>
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Chrome</h2>
+    <div class="prose">
+      <p>
+        Chrome은 깨끗한 일회용 프로필과 로컬 디버깅 포트로 시작하며, 모든 페이지와 worker가 JavaScript 시간을 세션에서 받습니다. <code>Date.now</code>, <code>new Date()</code>, <code>performance.now</code>, <code>setTimeout</code>, <code>setInterval</code>, 그리고 세션의 시간대입니다. 브라우저 자체는 실제 날짜를 유지하므로 HTTPS 사이트가 계속 열립니다. 2040년으로 설정한 세션에서 확인했습니다.
+      </p>
+    </div>
+
+    <pre class="term"><span class="c"># Chrome을 2027년의 마지막 10초에서 60배 빠르게</span>
+<span class="p">chrono</span> run "C:\Program Files\Google\Chrome\Application\chrome.exe" --at 2027-12-31T23:59:50 --mode x60 --args "http://localhost:8080/"</pre>
+
+    <div class="prose">
+      <p>
+        이 프로필은 당신의 것이 아닙니다. 저장된 로그인도 확장 프로그램도 없고, 세션이 끝나면 삭제됩니다. Chromium 기반의 다른 브라우저도 같은 방식으로 동작합니다.
+        <a href="/ko/electron-chromium/">Chromium 모드의 동작 방식 &rarr;</a>
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Firefox</h2>
+    <div class="prose">
+      <p>
+        Firefox는 세션이 들어갈 수 없는 샌드박스 프로세스에서 페이지를 실행하므로 <code>--no-gecko-sandbox</code>가 필요합니다. 그러면 페이지가 샌드박스 밖에서 시작해 세션에 합류하고, 세션의 시계, 속도, 건너뛰기, 시간대를 따릅니다. Firefox는 닫을 때까지 그 보호 없이 실행되므로, 신뢰하는 페이지만 여세요. <code>-no-remote -profile</code>와 빈 폴더로 전용 프로필을 주면, 이미 열려 있는 Firefox에 페이지를 넘기지 않습니다.
+      </p>
+    </div>
+
+    <pre class="term"><span class="c"># Firefox를 2027년의 마지막 10초에서 전용 프로필 폴더로</span>
+<span class="p">chrono</span> run "C:\Program Files\Mozilla Firefox\firefox.exe" --at 2027-12-31T23:59:50 --no-gecko-sandbox --args "-no-remote -profile C:\ff-test http://localhost:8080/"</pre>
+
+    <div class="prose">
+      <p>
+        Firefox에서는 페이지만이 아니라 브라우저 전체가 움직이며 인증서 검사도 포함됩니다. 2040년으로 설정한 세션에서 실제 HTTPS 사이트가 보안 경고를 표시했습니다. 잘 되는 경우는 파일로 연 페이지, 직접 운영하는 테스트 서버, 또는 사이트 인증서가 아직 유효한 날짜입니다.
+      </p>
+      <p>
+        관리자로 시작하면 Firefox는 인수에 <code>--no-deelevate</code>가 없는 한 권한을 버리고 세션 밖에서 다시 시작하며, 세션은 처음부터 이를 알려 줍니다.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>페이지가 날짜를 받았는지 아는 법</h2>
+    <div class="prose">
+      <p>
+        보고서는 세션이 닿은 페이지와 worker, 그리고 실제 시계에 남은 것을 알려 줍니다. Chrome에서는 JavaScript 컨텍스트마다, Firefox에서는 프로세스마다입니다.
+        <a href="/ko/time-source-audit/">보고서 내용 &rarr;</a>
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>하지 않는 것</h2>
+    <div class="prose">
+      <ul>
+        <li><strong>서버 쪽.</strong> 사이트가 자기 서버에서 받는 날짜는 서버의 날짜 그대로입니다.</li>
+        <li><strong>평소 쓰는 브라우저.</strong> 세션은 자기 브라우저를 시작합니다. 열려 있는 브라우저에 붙지 않으며, 그 탭과 로그인을 건드리지 않습니다.</li>
+      </ul>
+    </div>
+  </section>
+
+  <section>
+    <h2>직접 써 보세요</h2>
+    <div class="cta">
+      <a class="btn btn-primary" href="/ko/download/">Windows용 다운로드</a>
+      <a class="btn btn-ghost" href="/ko/time-travel-testing/">타임 트래블 테스트</a>
+    </div>
+  </section>
+
+</div>
