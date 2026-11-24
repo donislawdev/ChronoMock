@@ -57,8 +57,8 @@ Chrono Mock - session report
     </div>
 
     <figure class="shot filled">
-      <img src="/assets/audit-table.png" width="1560" height="1200" loading="lazy"
-           alt="Chrono Mock 的结果界面，What the application read 已展开：一张包含 Function、Read from 和 Reads 列的表。NtCreateUserProcess 被标为按设计读取真实时钟，connect 被标为按设计读取真实时钟且较晚才挂钩，其余各行——GetSystemTimeAsFileTime、NtQuerySystemTime、GetTimeZoneInformation 等——读取的是伪造的时钟，每一行都有各自的次数。表格下方有两条警告。">
+      <img src="/assets/audit-table.png" width="1040" height="752" loading="lazy"
+           alt="Chrono Mock 的结果界面，What the application read 已展开：一张包含 Function、Read from 和 Reads 列的表。NtCreateUserProcess 被标为按设计读取真实时钟，connect 被标为按设计读取真实时钟，其余各行——GetSystemTimeAsFileTime、NtQuerySystemTime、GetTimeZoneInformation 等——读取的是伪造的时钟，每一行都有各自的次数。">
       <figcaption>窗口里的同一个答案。应用本来可能询问的每一个函数、它实际读取的来源，以及次数——包括那些有意留在真实时钟上的函数，它们会被点名，而不是被悄悄算作通过。</figcaption>
     </figure>
   </section>

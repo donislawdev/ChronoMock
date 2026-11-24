@@ -57,8 +57,8 @@ Chrono Mock - session report
     </div>
 
     <figure class="shot filled">
-      <img src="/assets/audit-table.png" width="1560" height="1200" loading="lazy"
-           alt="شاشة نتيجة Chrono Mock وقسم What the application read مفتوح: جدول بأعمدة Function وRead from وReads. تُعلَّم NtCreateUserProcess بأنها تقرأ من الساعة الحقيقية بحكم التصميم، وتُعلَّم connect بأنها تقرأ من الساعة الحقيقية بحكم التصميم وربطت متأخرة، بينما تقرأ بقية الصفوف - GetSystemTimeAsFileTime وNtQuerySystemTime وGetTimeZoneInformation وغيرها - من الساعة المزيّفة، ولكل منها عدده. وتحت الجدول تحذيران.">
+      <img src="/assets/audit-table.png" width="1040" height="752" loading="lazy"
+           alt="شاشة نتيجة Chrono Mock وقسم What the application read مفتوح: جدول بأعمدة Function وRead from وReads. تُعلَّم NtCreateUserProcess بأنها تقرأ من الساعة الحقيقية بحكم التصميم، وتُعلَّم connect بأنها تقرأ من الساعة الحقيقية بحكم التصميم، بينما تقرأ بقية الصفوف - GetSystemTimeAsFileTime وNtQuerySystemTime وGetTimeZoneInformation وغيرها - من الساعة المزيّفة، ولكل منها عدده.">
       <figcaption>الجواب نفسه في النافذة. كل دالة كان في وسع التطبيق أن يسأل عنها، وما قرأه منها فعلًا، وكم مرة - بما فيها ما تُرك على الساعة الحقيقية عمدًا، وهذه تُسمّى ولا تُحسب بصمت نجاحًا.</figcaption>
     </figure>
   </section>

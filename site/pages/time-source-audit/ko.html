@@ -57,8 +57,8 @@ Chrono Mock - session report
     </div>
 
     <figure class="shot filled">
-      <img src="/assets/audit-table.png" width="1560" height="1200" loading="lazy"
-           alt="What the application read가 열린 Chrono Mock 결과 화면. Function, Read from, Reads 열이 있는 표에서 NtCreateUserProcess는 설계상 실제 시계에서 읽는 것으로, connect는 설계상 실제 시계에서 읽고 늦게 훅이 걸린 것으로 표시되며, 나머지 행 - GetSystemTimeAsFileTime, NtQuerySystemTime, GetTimeZoneInformation 등 - 은 가짜 시계에서 읽고 각각 자신의 횟수가 있습니다. 표 아래에는 두 개의 경고가 있습니다.">
+      <img src="/assets/audit-table.png" width="1040" height="752" loading="lazy"
+           alt="What the application read가 열린 Chrono Mock 결과 화면. Function, Read from, Reads 열이 있는 표에서 NtCreateUserProcess는 설계상 실제 시계에서 읽는 것으로, connect는 설계상 실제 시계에서 읽는 것으로 표시되며, 나머지 행 - GetSystemTimeAsFileTime, NtQuerySystemTime, GetTimeZoneInformation 등 - 은 가짜 시계에서 읽고 각각 자신의 횟수가 있습니다.">
       <figcaption>같은 답을 창에서 본 모습입니다. 앱이 물었을 수 있는 모든 함수, 실제로 어디에서 읽었는지, 그리고 몇 번인지가 나옵니다. 일부러 실제 시계에 남겨 둔 것도 포함되며, 이들은 조용히 통과로 세어지지 않고 이름이 밝혀집니다.</figcaption>
     </figure>
   </section>

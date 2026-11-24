@@ -178,7 +178,7 @@ command-line arguments or a particular working folder, they are under *Arguments
 Once it starts, the panel shows the application's clock and the real clock side by side, the
 verdict, and which time channels the application is actually reading.
 
-![The Chrono Mock session panel: the application's clock reading 19 January 2038 at 03:14:14 beside the real clock reading 22 September 2026 at 15:50:30, each with its own elapsed time, then the speeds from ×1 to ×1440 with a Freeze, the relative jumps and a jump to a typed date, and on the footer a green Works verdict beside a red Stop session.](site/assets/session-panel.png)
+![The Chrono Mock session panel: the application's clock reading 19 January 2038 at 03:14:11 beside the real clock reading 24 November 2026 at 13:41:44, each with its own elapsed time, then the speeds from ×1 to ×1440 with a Freeze, the relative jumps and a jump to a typed date, and on the footer a green Works verdict beside a red Stop session.](site/assets/session-panel.png)
 
 **From the command line:**
 
@@ -321,7 +321,7 @@ speaks in QA terms rather than arithmetic:
 
 Any calculated date goes straight into a time-shift session with one click.
 
-![The Chrono Mock calculator: a searchable scenario list with its explanations on the left, the date builder in the middle where a pasted 04/08/2008 is reported as ambiguous with both the American and the Polish reading shown, and on the right the result in every format with a copy button against each one and Use this date below them.](site/assets/calculator.png)
+![The Chrono Mock calculator: a searchable scenario list with its explanations on the left, the date builder in the middle where a pasted 04/08/2008 is reported as ambiguous with both the American and the Polish reading shown, and on the right the result in every format with a copy button against each one.](site/assets/calculator.png)
 
 ---
 

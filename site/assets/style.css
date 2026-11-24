@@ -196,7 +196,7 @@ h1 .hl{color:var(--accent)}
 
 /* Empty, the slot holds a 16:9 dashed box describing what belongs there. Filled, it
    drops the fixed ratio entirely and lets the picture keep its own - the screenshots
-   are 13:10 and the recording is 2.17:1, and forcing either into 16:9 crops the part
+   are 1.38:1 and the recording is 2.17:1, and forcing either into 16:9 crops the part
    that matters. */
 .shot{
   margin:52px 0 0;border:1px dashed var(--line);border-radius:12px;background:var(--surface);

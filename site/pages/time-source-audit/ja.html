@@ -57,8 +57,8 @@ Chrono Mock - session report
     </div>
 
     <figure class="shot filled">
-      <img src="/assets/audit-table.png" width="1560" height="1200" loading="lazy"
-           alt="Chrono Mock の結果画面で、What the application read が開いています。Function、Read from、Reads の列を持つ表で、NtCreateUserProcess は設計上実際の時計から読むもの、connect は設計上実際の時計から読み、フックが遅れたものとして示され、そのほかの行 - GetSystemTimeAsFileTime、NtQuerySystemTime、GetTimeZoneInformation など - は偽の時計から読み、それぞれに独自の回数が付いています。表の下には 2 つの警告があります。">
+      <img src="/assets/audit-table.png" width="1040" height="752" loading="lazy"
+           alt="Chrono Mock の結果画面で、What the application read が開いています。Function、Read from、Reads の列を持つ表で、NtCreateUserProcess と connect は設計上実際の時計から読むものとして示され、そのほかの行 - GetSystemTimeAsFileTime、NtQuerySystemTime、GetTimeZoneInformation など - は偽の時計から読み、それぞれに独自の回数が付いています。">
       <figcaption>同じ答えをウィンドウで見たところです。アプリが尋ねた可能性のあるすべての関数、実際にどこから読んだか、そして何回か。意図的に実際の時計のままにしてあるものも含まれ、それらは黙って合格に数えられず、名前を挙げて示されます。</figcaption>
     </figure>
   </section>
