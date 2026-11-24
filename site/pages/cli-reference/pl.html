@@ -16,14 +16,20 @@
 <ul>
   <li><strong>Dwa pliki <code>chrono.exe</code>.</strong> Paczka wiersza poleceń ma
     <code>chrono.exe</code> dla programów 64-bitowych i <code>x86\chrono.exe</code> dla
-    32-bitowych. Okno wybiera właściwy samo, wiersz poleceń nie.
-    <code>chrono run app.exe --dry-run</code> mówi, którego potrzebuje dany program.</li>
+    32-bitowych. Okno wybiera właściwy samo, wiersz poleceń nie. Z tym drugim sesja nie rusza:
+    raport mówi <em>different bitness</em>, polecenie kończy się kodem 1 i wtedy trzeba je
+    powtórzyć drugim <code>chrono.exe</code>.</li>
   <li><strong>Datę i godzinę</strong> zapisuje się <code>RRRR-MM-DDTGG:MM:SS</code>, np.
     <code>2026-03-31T23:59:00</code>, w strefie sesji, chyba że opcja mówi o UTC.</li>
   <li><strong>Krok</strong> to znak, liczba i jednostka: <code>+1d</code>, <code>-2h</code>,
     <code>+3mo</code>. <code>m</code> to minuty, a <code>mo</code> miesiące.</li>
   <li><strong>Pomoc</strong> jest też w programie: <code>chrono --help</code> dla wszystkich
     poleceń, <code>chrono run --help</code> dla jednego. Program odpowiada po angielsku.</li>
+  <li><strong>Raport</strong> na końcu <code>chrono run</code> wyjaśnia wiersz po wierszu strona
+    <a href="/pl/dokumentacja/czytanie-raportu/">Czytanie raportu</a>.</li>
+  <li><strong>Do odczytu przez program</strong> <code>--json</code> wypisuje odpowiedź każdego
+    polecenia jako JSON. Każde pole opisuje strona
+    <a href="/pl/dokumentacja/json/">Wyjście JSON</a>.</li>
 </ul>
 
 <h2 id="polecenia">Polecenia</h2>

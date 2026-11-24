@@ -1,0 +1,173 @@
+<!-- Reading the report, English. Part of the documentation (site/data/docs.json). The lines are
+     the ones crates/cli/src/report.rs writes. The example is pasted from the program, with the path
+     of the application changed to C:\apps\test.exe. -->
+
+<h1>Reading the report</h1>
+<p class="sub">
+  At the end of a session, <code>chrono run</code> prints a report: whether the date reached the
+  application, which clocks it read and how often, how it ended and what to keep in mind. This
+  page goes through it line by line.
+</p>
+
+<h2 id="example">An example</h2>
+<p>
+  A session on a small test application that shows the date it reads, closed from its own window
+  after a few seconds:
+</p>
+<pre class="term"><span class="p">chrono</span> run C:\apps\test.exe --at 2038-01-19T03:14:07 --zone +00:00
+Chrono Mock - session report
+  target:   C:\apps\test.exe
+  verdict:  WORKS - time substitution took effect  (processes: 1)
+            every process that read time saw the session clock
+  session:  fake clock reached 2038-01-19T03:14:11
+            real elapsed 4.5s, fake elapsed 4.5s
+  exited:   the target closed itself with code 0
+  covered channels (substituted, with call counts, 30 calls in all):
+            - pid 101552: GetSystemTimeAsFileTime (1 call)
+            - pid 101552: GetSystemTimePreciseAsFileTime (0 calls)
+            - pid 101552: GetSystemTime (0 calls)
+            - pid 101552: GetLocalTime (19 calls)
+            - pid 101552: NtQuerySystemTime (10 calls)
+            - pid 101552: GetTimeZoneInformation (0 calls)
+            - pid 101552: GetDynamicTimeZoneInformation (0 calls)
+            - pid 101552: SystemTimeToTzSpecificLocalTime (0 calls)
+            - pid 101552: SystemTimeToTzSpecificLocalTimeEx (0 calls)
+            - pid 101552: FileTimeToLocalFileTime (0 calls)
+            - pid 101552: LocalFileTimeToFileTime (0 calls)
+            - pid 101552: TzSpecificLocalTimeToSystemTime (0 calls)
+            - pid 101552: TzSpecificLocalTimeToSystemTimeEx (0 calls)
+            - pid 101552: NtQuerySystemInformation (0 calls)
+            - pid 101552: GetTimeZoneInformationForYear (0 calls)
+  observed channels (hooked but left real):
+            - pid 101552: NtCreateUserProcess (0 calls)
+            - pid 101552: connect (0 calls)</pre>
+<p>
+  A line is there only when it has something to say. A session that went well has no warnings and
+  nothing left behind, so those lines are missing rather than empty.
+</p>
+
+<h2 id="verdict">The verdict</h2>
+<div class="wrap"><table>
+<thead><tr><th>Line</th><th>What it says</th></tr></thead>
+<tbody>
+<tr><td><code>target</code></td><td>The application, as you gave it.</td></tr>
+<tr><td><code>browser</code></td><td>In the Chromium mode, the browser the session drove and its
+  version.</td></tr>
+<tr><td><code>stopped</code></td><td><code>CUT SHORT</code>: <code>--timeout</code> ran out, or
+  the session stopped answering. Everything below is what came in before that, so it is not the
+  whole story.</td></tr>
+<tr><td><code>verdict</code></td><td>Whether the date reached the application, for the application
+  and every process it started, with how many there were. The line under it says why.
+  <a href="#verdicts">The verdicts</a> are below.</td></tr>
+<tr><td><code>refused</code></td><td>The date did not reach the application, so the session ended
+  it rather than let it run on the real date. <code>--force</code> lets it run on.</td></tr>
+<tr><td><code>errors</code></td><td>Something the session could not do while it ran, such as a
+  jump to a date out of range. The session went on.</td></tr>
+<tr><td><code>session</code></td><td>Where the session's clock got to, and how long the session
+  took on the real clock and on the session's.</td></tr>
+</tbody>
+</table></div>
+<ul id="verdicts">
+  <li><strong>WORKS</strong>: every process that read the time got the session's date. The command
+    ends with 0.</li>
+  <li><strong>PARTIAL</strong>: some of it was read from the real clock, which the lines further
+    down name. The command ends with 10.</li>
+  <li><strong>DID NOT TAKE EFFECT</strong>: what the application read did not come from the session.
+    The command ends with 11. With <em>the target vanished right after injection</em> instead, the
+    application closed at once, most likely handing its work to a copy of it that was already
+    running, and the command ends with 12.</li>
+  <li><strong>UNDETERMINED</strong>: the session could not establish what it covered, which never
+    counts as working. The command ends with 4.</li>
+  <li><strong>DID NOT START</strong>: the session never began. The line under it says why, with a
+    key in square brackets, such as <code>[target.bitness_mismatch]</code>.</li>
+</ul>
+
+<h2 id="ending">How the application ended</h2>
+<div class="wrap"><table>
+<thead><tr><th>Line</th><th>What it says</th></tr></thead>
+<tbody>
+<tr><td><code>exited</code></td><td>The code the application ended with, when it closed itself. It
+  is not the code <code>chrono</code> ends with, which is the verdict. A crash is said in words,
+  with the code Windows gives it. Missing when the session ended first, as with
+  <code>--ticks</code>.</td></tr>
+<tr><td><code>followed</code></td><td>Programs the application started that were still running on
+  the session's clock when it closed, so the session went on for them.</td></tr>
+<tr><td><code>copies</code></td><td>Copies of the application that ran outside the session, on the
+  real clock. A program that allows only one copy of itself most likely handed its work to one of
+  them.</td></tr>
+</tbody>
+</table></div>
+
+<h2 id="channels">The clocks the application read</h2>
+<p>
+  A <em>channel</em> is one of the ways Windows gives a program the time, named after the Windows
+  function, such as <code>GetLocalTime</code>. Each row is one process, named by its
+  <code>pid</code>, and its own count: counts are never added across processes, except in the total
+  in the heading.
+</p>
+<div class="wrap"><table>
+<thead><tr><th>Lines</th><th>What they say</th></tr></thead>
+<tbody>
+<tr><td><code>covered channels</code></td><td>The ones the session answered with its own date, and
+  how many times the application asked. A count that reached the most the session can count says
+  <em>at least</em>.</td></tr>
+<tr><td><code>observed channels</code></td><td>Ones the session watches and leaves on the real
+  clock on purpose, such as starting a process or opening a network connection, so they are never
+  taken for covered.</td></tr>
+<tr><td><code>uncovered channels</code></td><td>Ones the application asked and the session did not
+  answer. They are what makes a verdict PARTIAL.</td></tr>
+<tr><td><code class="long">channels we meant to watch and could not hook</code></td><td>A watch that did not
+  start. The session did not miss the time there, it just cannot say how often it was
+  asked.</td></tr>
+<tr><td><code class="long">channels hooked only once their module loaded</code></td><td>The session reached
+  these only once the application loaded the part of Windows they live in, so the calls before
+  that are not counted: their counts are the least there were.</td></tr>
+<tr><td><code class="long">processes this app spawned that the hook could not follow</code></td><td>Processes
+  the application started that ran on the real clock, by name. Usually ones of the other bitness,
+  64-bit from a 32-bit application or the other way round.</td></tr>
+<tr><td><code class="long">web engines reached inside the app</code></td><td>A built-in web engine the session
+  reached, with the port it reached it through. Its pages are the rows marked as contexts.</td></tr>
+</tbody>
+</table></div>
+<p>
+  The <a href="/time-source-audit/">time source audit</a> explains why each of these is listed
+  rather than counted as a pass.
+</p>
+
+<h2 id="warnings">Warnings and what was left behind</h2>
+<ul>
+  <li><strong><code>warnings</code></strong>: one sentence each about what to keep in mind, such as
+    an application still running after the session, which is back on the real date, or a computer
+    that slept, which stopped the session's clock. Each ends with its key in brackets, such as
+    <code>(session.left_running)</code>, the same key <code>--json</code> gives.</li>
+  <li><strong><code>not fully cleaned up</code></strong>: what the session could not undo at the
+    end, such as a temporary browser profile it could not delete, and what to do about it.</li>
+</ul>
+
+<h2 id="evidence-file">The file <code>--report</code> writes</h2>
+<p>
+  <code>--report session.txt</code> saves the same report to a file, to attach to a ticket or keep
+  with a test run. Two things are added:
+</p>
+<ul>
+  <li><strong>A first line, <code>!! UNRELIABLE EVIDENCE</code></strong>, when the session does not
+    prove anything about the date: any verdict but WORKS, a session cut short, an application that
+    never read a clock the session replaces, or a Go program, which reads the time where no session
+    reaches.</li>
+  <li><strong>Lines about the run at the end</strong>: the date and zone you asked for, the version
+    of <code>chrono</code>, when the session started on the real clock, the application, the folder
+    it ran in, its arguments and the options. The arguments are counted rather than written, since
+    one may hold a password. <code>--report-args</code> writes them out.</li>
+</ul>
+<pre class="term">  requested:  2038-01-19T03:14:07 (zone +00:00, mode flow)
+  chrono:     0.6.0-rc.1, 64-bit core
+  started:    2026-11-24T14:06:09Z (real clock)
+  target:     C:\apps\test.exe
+  folder:     C:\work (inherited from this command)
+  arguments:  none
+  flags:      none</pre>
+<p>
+  In the window, the result screen shows the same facts, and <strong>Copy summary</strong> copies
+  them: <a href="/docs/run-an-app/#result">Run an app</a> shows it. With <code>--json</code> the
+  session writes them as <a href="/docs/json/#run">JSON lines</a> instead.
+</p>

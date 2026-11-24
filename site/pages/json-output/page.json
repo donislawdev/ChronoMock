@@ -1,0 +1,20 @@
+{
+  "//": "The JSON every chrono command can write, for a program that reads it. Part of the documentation (site/data/docs.json), so English and Polish only. crates/cli/tests/site_reference.rs holds the field tables (data-schema) and the table of lines (data-events) to what the program writes.",
+  "id": "json-output",
+  "order": 92,
+  "nav": false,
+  "languages": {
+    "en": {
+      "slug": "docs/json",
+      "link_text": "JSON output",
+      "title": "Chrono Mock JSON output - every field chrono writes for a program",
+      "description": "What chrono calc, presets, calendars and run write with --json: every field of chronomock.calc/1, presets/1, calendars/1 and plan/1, and every line of a session as it runs."
+    },
+    "pl": {
+      "slug": "dokumentacja/json",
+      "link_text": "Wyjście JSON",
+      "title": "Wyjście JSON Chrono Mock - każde pole, które chrono zapisuje dla programu",
+      "description": "Co chrono calc, presets, calendars i run wypisują z --json: każde pole chronomock.calc/1, presets/1, calendars/1 i plan/1 oraz każdy wiersz sesji w trakcie."
+    }
+  }
+}

@@ -1,0 +1,175 @@
+<!-- Reading the report, Polish. Part of the documentation (site/data/docs.json). The lines are
+     the ones crates/cli/src/report.rs writes, in English, as the program prints them. The example
+     is pasted from the program, with the path of the application changed to C:\apps\test.exe. -->
+
+<h1>Czytanie raportu</h1>
+<p class="sub">
+  Na końcu sesji <code>chrono run</code> wypisuje raport: czy data dotarła do programu, które zegary
+  czytał i jak często, jak się skończył i o czym pamiętać. Ta strona przechodzi przez niego wiersz po
+  wierszu. Raport jest po angielsku, tak jak cały wiersz poleceń.
+</p>
+
+<h2 id="przyklad">Przykład</h2>
+<p>
+  Sesja na małym programie testowym, który pokazuje odczytaną datę, zamkniętym z jego własnego okna
+  po kilku sekundach:
+</p>
+<pre class="term"><span class="p">chrono</span> run C:\apps\test.exe --at 2038-01-19T03:14:07 --zone +00:00
+Chrono Mock - session report
+  target:   C:\apps\test.exe
+  verdict:  WORKS - time substitution took effect  (processes: 1)
+            every process that read time saw the session clock
+  session:  fake clock reached 2038-01-19T03:14:11
+            real elapsed 4.5s, fake elapsed 4.5s
+  exited:   the target closed itself with code 0
+  covered channels (substituted, with call counts, 30 calls in all):
+            - pid 101552: GetSystemTimeAsFileTime (1 call)
+            - pid 101552: GetSystemTimePreciseAsFileTime (0 calls)
+            - pid 101552: GetSystemTime (0 calls)
+            - pid 101552: GetLocalTime (19 calls)
+            - pid 101552: NtQuerySystemTime (10 calls)
+            - pid 101552: GetTimeZoneInformation (0 calls)
+            - pid 101552: GetDynamicTimeZoneInformation (0 calls)
+            - pid 101552: SystemTimeToTzSpecificLocalTime (0 calls)
+            - pid 101552: SystemTimeToTzSpecificLocalTimeEx (0 calls)
+            - pid 101552: FileTimeToLocalFileTime (0 calls)
+            - pid 101552: LocalFileTimeToFileTime (0 calls)
+            - pid 101552: TzSpecificLocalTimeToSystemTime (0 calls)
+            - pid 101552: TzSpecificLocalTimeToSystemTimeEx (0 calls)
+            - pid 101552: NtQuerySystemInformation (0 calls)
+            - pid 101552: GetTimeZoneInformationForYear (0 calls)
+  observed channels (hooked but left real):
+            - pid 101552: NtCreateUserProcess (0 calls)
+            - pid 101552: connect (0 calls)</pre>
+<p>
+  Wiersz pojawia się tylko wtedy, gdy ma coś do powiedzenia. Udana sesja nie ma ostrzeżeń ani
+  niczego, co zostało po niej, więc tych wierszy po prostu nie ma.
+</p>
+
+<h2 id="werdykt">Werdykt</h2>
+<div class="wrap"><table>
+<thead><tr><th>Wiersz</th><th>Co mówi</th></tr></thead>
+<tbody>
+<tr><td><code>target</code></td><td>Program, tak jak go podano.</td></tr>
+<tr><td><code>browser</code></td><td>W trybie Chromium: przeglądarka, którą prowadziła sesja, i jej
+  wersja.</td></tr>
+<tr><td><code>stopped</code></td><td><code>CUT SHORT</code>: skończył się czas z
+  <code>--timeout</code> albo sesja przestała odpowiadać. Wszystko niżej to to, co przyszło do tej
+  chwili, więc nie cała historia.</td></tr>
+<tr><td><code>verdict</code></td><td>Czy data dotarła do programu, dla programu i każdego procesu,
+  który uruchomił, z ich liczbą. Wiersz pod spodem mówi dlaczego.
+  <a href="#werdykty">Werdykty</a> są niżej.</td></tr>
+<tr><td><code>refused</code></td><td>Data nie dotarła do programu, więc sesja go zakończyła, zamiast
+  zostawić go na prawdziwej dacie. <code>--force</code> pozwala mu działać dalej.</td></tr>
+<tr><td><code>errors</code></td><td>Coś, czego sesja nie mogła zrobić w trakcie, np. skok do daty
+  spoza zakresu. Sesja trwała dalej.</td></tr>
+<tr><td><code>session</code></td><td>Dokąd doszedł zegar sesji i ile sesja trwała na prawdziwym
+  zegarze i na zegarze sesji.</td></tr>
+</tbody>
+</table></div>
+<ul id="werdykty">
+  <li><strong>WORKS</strong>: każdy proces, który czytał czas, dostał datę sesji. Polecenie kończy
+    się kodem 0.</li>
+  <li><strong>PARTIAL</strong>: część czasu przyszła z prawdziwego zegara, a wiersze niżej mówią
+    skąd. Polecenie kończy się kodem 10.</li>
+  <li><strong>DID NOT TAKE EFFECT</strong>: to, co program czytał, nie przyszło z sesji. Polecenie
+    kończy się kodem 11. Gdy zamiast tego jest <em>the target vanished right after
+    injection</em>, program zamknął się od razu, najpewniej oddając pracę swojej kopii, która już
+    działała, a polecenie kończy się kodem 12.</li>
+  <li><strong>UNDETERMINED</strong>: sesja nie mogła ustalić, co objęła, a to nigdy nie liczy się
+    jako działanie. Polecenie kończy się kodem 4.</li>
+  <li><strong>DID NOT START</strong>: sesja w ogóle nie ruszyła. Wiersz pod spodem mówi dlaczego, z
+    kluczem w nawiasie kwadratowym, np. <code>[target.bitness_mismatch]</code>.</li>
+</ul>
+
+<h2 id="koniec">Jak skończył się program</h2>
+<div class="wrap"><table>
+<thead><tr><th>Wiersz</th><th>Co mówi</th></tr></thead>
+<tbody>
+<tr><td><code>exited</code></td><td>Kod, którym skończył się program, gdy zamknął się sam. To nie
+  jest kod, którym kończy się <code>chrono</code>, bo ten jest werdyktem. Awaria jest opisana
+  słowami, z kodem, który daje jej Windows. Brak tego wiersza, gdy sesja skończyła się pierwsza, jak
+  przy <code>--ticks</code>.</td></tr>
+<tr><td><code>followed</code></td><td>Programy uruchomione przez program, które działały jeszcze na
+  zegarze sesji, gdy się zamknął, więc sesja trwała dla nich dalej.</td></tr>
+<tr><td><code>copies</code></td><td>Kopie programu, które działały poza sesją, na prawdziwym
+  zegarze. Program, który pozwala na jedną swoją kopię, najpewniej oddał pracę którejś z
+  nich.</td></tr>
+</tbody>
+</table></div>
+
+<h2 id="zegary">Zegary, które czytał program</h2>
+<p>
+  <em>Kanał</em> to jeden ze sposobów, w jaki Windows podaje programowi czas, nazwany od funkcji
+  Windows, np. <code>GetLocalTime</code>. Każdy wiersz to jeden proces, nazwany przez swój
+  <code>pid</code>, i jego własna liczba: liczby nigdy nie są sumowane między procesami, z wyjątkiem
+  sumy w nagłówku.
+</p>
+<div class="wrap"><table>
+<thead><tr><th>Wiersze</th><th>Co mówią</th></tr></thead>
+<tbody>
+<tr><td><code>covered channels</code></td><td>Te, na które sesja odpowiedziała swoją datą, i ile
+  razy program pytał. Liczba, która doszła do największej, jaką sesja umie policzyć, mówi
+  <em>at least</em>, czyli co najmniej.</td></tr>
+<tr><td><code>observed channels</code></td><td>Te, które sesja obserwuje i celowo zostawia na
+  prawdziwym zegarze, np. start procesu albo otwarcie połączenia sieciowego, żeby nikt nie wziął ich
+  za objęte.</td></tr>
+<tr><td><code>uncovered channels</code></td><td>Te, o które program pytał, a sesja nie
+  odpowiedziała. To one robią z werdyktu PARTIAL.</td></tr>
+<tr><td><code class="long">channels we meant to watch and could not hook</code></td><td>Obserwacja, która nie
+  ruszyła. Sesja nie przegapiła tam czasu, tylko nie umie powiedzieć, ile razy o niego
+  pytano.</td></tr>
+<tr><td><code class="long">channels hooked only once their module loaded</code></td><td>Sesja dotarła do nich
+  dopiero, gdy program wczytał część Windows, w której leżą, więc wywołania sprzed tej chwili nie są
+  policzone i prawdziwa liczba może być większa.</td></tr>
+<tr><td><code class="long">processes this app spawned that the hook could not follow</code></td><td>Procesy
+  uruchomione przez program, które działały na prawdziwym zegarze, z nazwami. Zwykle to procesy
+  drugiej bitowości: 64-bitowe z programu 32-bitowego albo odwrotnie.</td></tr>
+<tr><td><code class="long">web engines reached inside the app</code></td><td>Wbudowany silnik WWW, do którego
+  sesja dotarła, z portem, przez który to zrobiła. Jego strony to wiersze oznaczone jako
+  konteksty.</td></tr>
+</tbody>
+</table></div>
+<p>
+  <a href="/pl/audyt-zrodel-czasu/">Audyt źródeł czasu</a> wyjaśnia, dlaczego każde z nich jest
+  wymienione, a nie liczone jako zaliczone.
+</p>
+
+<h2 id="ostrzezenia">Ostrzeżenia i to, co zostało</h2>
+<ul>
+  <li><strong><code>warnings</code></strong>: po jednym zdaniu o tym, o czym pamiętać, np. o
+    programie, który działa jeszcze po sesji i wrócił do prawdziwej daty, albo o komputerze, który
+    zasnął, przez co zegar sesji stał. Każde kończy się kluczem w nawiasie, np.
+    <code>(session.left_running)</code>, tym samym, który podaje <code>--json</code>.</li>
+  <li><strong><code>not fully cleaned up</code></strong>: czego sesja nie mogła cofnąć na końcu, np.
+    tymczasowy profil przeglądarki, którego nie dała rady usunąć, i co z tym zrobić.</li>
+</ul>
+
+<h2 id="plik-dowodu">Plik z <code>--report</code></h2>
+<p>
+  <code>--report sesja.txt</code> zapisuje ten sam raport do pliku, do dołączenia do zgłoszenia albo
+  do przechowania z przebiegiem testu. Dochodzą dwie rzeczy:
+</p>
+<ul>
+  <li><strong>Pierwszy wiersz <code>!! UNRELIABLE EVIDENCE</code></strong>, gdy sesja niczego nie
+    dowodzi o dacie: przy każdym werdykcie poza WORKS, przy sesji przerwanej, przy programie, który
+    nie odczytał żadnego zegara podmienianego przez sesję, i przy programie w Go, który czyta czas
+    tam, gdzie żadna sesja nie sięga.</li>
+  <li><strong>Wiersze o przebiegu na końcu</strong>: data i strefa, o które prosiłeś, wersja
+    <code>chrono</code>, kiedy sesja ruszyła według prawdziwego zegara, program, folder, w którym
+    działał, jego argumenty i opcje. Argumenty są policzone, a nie wypisane, bo któryś może zawierać
+    hasło. <code>--report-args</code> wypisuje je w całości.</li>
+</ul>
+<pre class="term">  requested:  2038-01-19T03:14:07 (zone +00:00, mode flow)
+  chrono:     0.6.0-rc.1, 64-bit core
+  started:    2026-11-24T14:06:09Z (real clock)
+  target:     C:\apps\test.exe
+  folder:     C:\work (inherited from this command)
+  arguments:  none
+  flags:      none</pre>
+<p>
+  W oknie te same fakty pokazuje ekran wyniku, a <strong>Copy summary</strong> je kopiuje: pokazuje
+  to strona <a href="/pl/dokumentacja/uruchamianie-aplikacji/#wynik">Run an app</a>. Z
+  <code>--json</code> sesja wypisuje je zamiast tego jako
+  <a href="/pl/dokumentacja/json/#run">wiersze JSON</a>.
+</p>

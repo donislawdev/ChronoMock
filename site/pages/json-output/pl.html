@@ -1,0 +1,459 @@
+<!-- JSON output, Polish. Part of the documentation (site/data/docs.json). Every table marked
+     data-schema lists the fields of that schema, and the table marked data-events the lines of a
+     session: crates/cli/tests/site_reference.rs holds both to what the program writes, so a field
+     the program gains and this page does not name fails there. The examples are pasted from the
+     program, with the path of the application changed to C:\apps\test.exe. -->
+
+<h1>Wyjście JSON</h1>
+<p class="sub">
+  Z <code>--json</code> każde polecenie <code>chrono</code> wypisuje odpowiedź do odczytu przez
+  program, a nie przez człowieka: skrypt, test albo krok pipeline'u. Ta strona opisuje każde pole.
+</p>
+
+<h2 id="zasady">Jak to działa</h2>
+<ul>
+  <li><strong>Standardowe wyjście niesie JSON i nic więcej.</strong> Komunikaty dla ludzi idą na
+    standardowe wyjście błędów, tak samo jak wyjście konsoli programu, który uruchamia
+    <code>chrono run</code>.</li>
+  <li><strong>Kod wyjścia jest taki sam jak bez <code>--json</code></strong>, więc skrypt może się
+    nim kierować, zanim przeczyta choćby jedno pole. Wymienia je strona
+    <a href="/pl/dokumentacja/kody-wyjscia/">Kody wyjścia</a>.</li>
+  <li><strong><code>calc</code>, <code>presets</code>, <code>calendars</code> i
+    <code>run --dry-run</code> wypisują jeden dokument JSON w jednym wierszu.</strong> Jego pierwsze
+    pole, <code>schema</code>, mówi, który to dokument. <code>chrono run</code> wypisuje wiersz na
+    każde zdarzenie w trakcie sesji.</li>
+  <li><strong>Z wersji na wersję dochodzą pola i rodzaje wierszy.</strong> Program, który czyta to
+    wyjście, powinien pomijać to, czego nie zna. Każdą zmianę pola wymienia
+    <a href="{{repo}}/blob/main/CHANGELOG.md">changelog</a>.</li>
+  <li><strong>Pola oznaczonego {{next_release}}</strong> jeszcze nie ma w ostatnim wydaniu, przyjdzie
+    z następnym.</li>
+</ul>
+
+<h2 id="strefy">Daty, godziny i strefy</h2>
+<p>
+  Data i godzina są zapisane tak, jak pokazuje je zegar na ścianie, bez strefy, np.
+  <code>2038-01-19T03:14:07</code>. Strefa jest w polu obok, <code>zone_bias_min</code>: liczba
+  minut, którą trzeba dodać do tej godziny, żeby dostać UTC, tak jak liczy to Windows. UTC+02:00 to
+  <code>-120</code>, UTC-05:00 to <code>300</code>, a samo UTC to <code>0</code>. Znak jest
+  odwrotny niż w <code>+02:00</code>, więc sprawdź go przed przeliczeniem.
+</p>
+
+<h2 id="calc"><code>chrono calc --json</code></h2>
+<p>
+  Schemat <code>chronomock.calc/1</code>. Data zbudowana z kroków albo z presetu przychodzi jako
+  <code>moment</code>. Program wypisuje ją w jednym wierszu, tu pokazaną w kilku:
+</p>
+<pre class="term"><span class="p">chrono</span> calc --base 2026-01-31T00:00:00 --shift +1mo --zone +02:00 --json
+{
+  "schema": "chronomock.calc/1",
+  "moment": {
+    "iso": "2026-02-28T00:00:00",
+    "zone_bias_min": -120,
+    "base": "2026-01-31T00:00:00",
+    "steps": ["2026-02-28T00:00:00"],
+    "formats": {
+      "iso_date": "2026-02-28",
+      "iso_datetime": "2026-02-28T00:00:00+02:00",
+      "us": "02/28/2026",
+      "pl": "28.02.2026",
+      "epoch_seconds": 1772229600,
+      "epoch_millis": 1772229600000,
+      "filetime": 134167032000000000,
+      "rfc1123": "Fri, 27 Feb 2026 22:00:00 GMT"
+    },
+    "metadata": {
+      "weekday": "Saturday",
+      "iso_week_year": 2026,
+      "iso_week": 9,
+      "us_week": 9,
+      "day_of_year": 59,
+      "quarter": 1,
+      "is_leap_year": false,
+      "days_from_today": -269,
+      "business_day": null,
+      "holiday": null,
+      "calendar": null,
+      "calendar_valid_from": null,
+      "calendar_law_as_of": null
+    },
+    "significance": ["last_day_of_february_common_year"],
+    "clamped_steps": [{ "step": 1, "requested_day": 31, "clamped_to": 28 }]
+  }
+}</pre>
+<div class="wrap"><table class="fields" data-schema="chronomock.calc/1">
+<thead><tr><th>Pole</th><th>Co zawiera</th></tr></thead>
+<tbody>
+<tr><td><code>schema</code></td><td><code>chronomock.calc/1</code>.</td></tr>
+<tr><td><code>moment.iso</code></td><td>Wynik: data i godzina w strefie z następnego pola.</td></tr>
+<tr><td><code>moment.zone_bias_min</code></td><td>Strefa wyniku: strefa sesji, chyba że przesunął ją
+  krok <code>--to-zone</code>.</td></tr>
+<tr><td><code>moment.base</code></td><td>Skąd ruszyły kroki: <code>--base</code> albo dziś o
+  północy.</td></tr>
+<tr><td><code>moment.steps</code></td><td>Data po każdym kroku, po kolei. Ostatnia to
+  wynik.</td></tr>
+<tr><td><code>moment.formats.iso_date</code></td><td><code>2026-02-28</code>.</td></tr>
+<tr><td><code>moment.formats.iso_datetime</code></td><td>Z przesunięciem od UTC:
+  <code>2026-02-28T00:00:00+02:00</code>.</td></tr>
+<tr><td><code>moment.formats.us</code></td><td>Najpierw miesiąc: <code>02/28/2026</code>.</td></tr>
+<tr><td><code>moment.formats.pl</code></td><td>Najpierw dzień: <code>28.02.2026</code>.</td></tr>
+<tr><td><code>moment.formats.epoch_seconds</code></td><td>Sekundy od 1970-01-01 00:00 UTC. Null dla
+  chwili spoza lat, które mieści Windows, czyli 1601-30828, i tak samo trzy następne
+  pola.</td></tr>
+<tr><td><code>moment.formats.epoch_millis</code></td><td>To samo w milisekundach.</td></tr>
+<tr><td><code>moment.formats.filetime</code></td><td>FILETIME Windows: liczba odcinków po 100
+  nanosekund od 1601-01-01 00:00 UTC.</td></tr>
+<tr><td><code>moment.formats.rfc1123</code></td><td>Postać z nagłówków HTTP, w GMT:
+  <code>Fri, 27 Feb 2026 22:00:00 GMT</code>.</td></tr>
+<tr><td><code>moment.metadata.weekday</code></td><td>Od <code>Monday</code> do
+  <code>Sunday</code>, po angielsku.</td></tr>
+<tr><td><code>moment.metadata.iso_week_year</code></td><td>Rok, do którego należy tydzień ISO. Na
+  przełomie roku bywa inny niż rok daty.</td></tr>
+<tr><td><code>moment.metadata.iso_week</code></td><td>Tydzień ISO, od 1 do 53, tygodnie od
+  poniedziałku.</td></tr>
+<tr><td><code>moment.metadata.us_week</code></td><td>Tydzień liczony po amerykańsku: tygodnie od
+  niedzieli, a tydzień 1 zawiera 1 stycznia.</td></tr>
+<tr><td><code>moment.metadata.day_of_year</code></td><td>Od 1 do 366.</td></tr>
+<tr><td><code>moment.metadata.quarter</code></td><td>Od 1 do 4.</td></tr>
+<tr><td><code>moment.metadata.is_leap_year</code></td><td><code>true</code> albo
+  <code>false</code>.</td></tr>
+<tr><td><code>moment.metadata.days_from_today</code></td><td>Pełne dni od dziś, liczone w strefie
+  sesji. Ujemne dla daty w przeszłości.</td></tr>
+<tr><td><code>moment.metadata.business_day</code></td><td>Z <code>--calendar</code>: czy data jest
+  w nim dniem roboczym. Null bez kalendarza i dla roku sprzed pierwszego roku
+  kalendarza.</td></tr>
+<tr><td><code>moment.metadata.holiday</code></td><td>Angielska nazwa święta w tym dniu albo
+  null.</td></tr>
+<tr><td><code>moment.metadata.calendar</code></td><td>Kalendarz, z którego są dwa pola wyżej, albo
+  null.</td></tr>
+<tr><td><code>moment.metadata.calendar_valid_from</code></td><td>Pierwszy rok, który ten kalendarz
+  obejmuje.</td></tr>
+<tr><td><code>moment.metadata.calendar_law_as_of</code></td><td>Dzień, w którym jego święta ostatnio
+  sprawdzono z prawem, <code>YYYY-MM-DD</code>.</td></tr>
+<tr><td><code>moment.significance</code></td><td>Na co wypada data, słowami wymienionymi
+  <a href="#znaczenie">niżej</a>. Puste, gdy nie wypada na nic szczególnego.</td></tr>
+<tr><td><code>moment.custom_format</code></td><td>Z <code>--format</code>: data zapisana twoją
+  maską.</td></tr>
+<tr><td><code>moment.custom_format_unknown</code></td><td>Litery maski, które nie należą do żadnego
+  formatu, więc zostały wypisane tak, jak są. Tylko gdy jakieś są.</td></tr>
+<tr><td><code>moment.clamped_steps</code></td><td>Kroki, które chciały dnia, jakiego miesiąc nie ma,
+  np. 31 lutego. Każdy podaje <code>step</code> (1 to pierwszy krok),
+  <code>requested_day</code> i <code>clamped_to</code>, czyli ostatni dzień tego miesiąca. Tylko
+  gdy jakieś są.</td></tr>
+<tr><td><code>moment.preset</code></td><td>Z <code>--preset</code>: jego <code>id</code>,
+  <code>name</code> i <code>explains</code>, czyli zdanie o tym, co sprawdza.</td></tr>
+</tbody>
+</table></div>
+<p>
+  Wklejona data, <code>--analyze</code>, przychodzi zamiast tego jako <code>analysis</code>, z
+  jednym odczytem albo dwoma:
+</p>
+<div class="wrap"><table class="fields" data-schema="chronomock.calc/1">
+<thead><tr><th>Pole</th><th>Co zawiera</th></tr></thead>
+<tbody>
+<tr><td><code>analysis.input</code></td><td>Tekst w takiej postaci, w jakiej przyszedł.</td></tr>
+<tr><td><code>analysis.ambiguous</code></td><td><code>true</code>, gdy czyta się na dwa sposoby,
+  jak <code>04/08/2008</code>.</td></tr>
+<tr><td><code>analysis.zone_bias_min</code></td><td>Strefa odczytów. Ma znaczenie dla liczby, np.
+  czasu uniksowego, która jest chwilą: jej data i godzina są podane w tej strefie. Data zapisana
+  wprost się z nią nie przesuwa.</td></tr>
+<tr><td><code>analysis.readings[].reading</code></td><td>Który odczyt: <code>iso</code>,
+  <code>us_month_day</code>, <code>pl_day_month</code>, <code>epoch_seconds</code> albo
+  <code>epoch_millis</code>.</td></tr>
+<tr><td><code>analysis.readings[].iso</code></td><td>Odczyt jako data i godzina.</td></tr>
+<tr><td><code>analysis.readings[].instant</code></td><td><code>true</code> dla liczby sekund albo
+  milisekund od 1970.</td></tr>
+<tr><td><code>analysis.readings[].time</code></td><td>Godzina do pokazania obok,
+  <code>HH:MM:SS</code>, albo null, gdy nie ma czego pokazać, jak przy dacie zapisanej bez
+  godziny.</td></tr>
+<tr><td><code>analysis.readings[].significance</code></td><td>Na co wypada, tymi samymi słowami co
+  <code>moment.significance</code>.</td></tr>
+<tr><td><code>analysis.readings[].metadata</code></td><td>Te same pola co
+  <code>moment.metadata</code>.</td></tr>
+</tbody>
+</table></div>
+<p id="znaczenie">Słowa w <code>significance</code>:</p>
+<ul>
+  <li><code>start_of_month</code>, <code>start_of_quarter</code>, <code>start_of_year</code>:
+    pierwszy dzień okresu, o dowolnej godzinie. Tylko największy z nich, więc 1 stycznia to samo
+    <code>start_of_year</code>.</li>
+  <li><code>end_of_month</code>, <code>end_of_quarter</code>, <code>end_of_year</code>: ostatni
+    dzień, tak samo.</li>
+  <li><code>leap_day</code>: 29 lutego. <code>last_day_of_february_common_year</code>: 28 lutego w
+    roku, który nie ma 29.</li>
+  <li><code>unix_epoch</code>: dokładnie 1970-01-01 00:00:00 UTC. <code>year_2038_boundary</code>:
+    2038-01-19 03:14:07 UTC albo później, gdzie kończy się licznik sekund na 32 bitach.</li>
+  <li>Z <code>--calendar</code>: <code>weekend</code>, <code>public_holiday</code> (święto we własnym
+    dniu) i <code>observed_holiday</code> (wolny dzień powszedni, bo święto wypadło w
+    weekend).</li>
+  <li><code>before_calendar</code>: rok sprzed pierwszego roku kalendarza, więc data nie została
+    oceniona.</li>
+  <li><code>calendar_outdated</code>: kalendarz ostatnio sprawdzono z prawem ponad rok temu, a
+    odpowiedź zależy od dnia po tym sprawdzeniu, więc może brakować zmiany w prawie, która przyszła
+    później.</li>
+</ul>
+<p>
+  Gdy <code>calc</code> nie może zrobić tego, o co prosisz, standardowe wyjście zostaje puste,
+  powód jest na standardowym wyjściu błędów, a kod wyjścia to jeden z tych, które wymienia strona
+  <a href="/pl/dokumentacja/kody-wyjscia/#calc">Kody wyjścia</a>.
+</p>
+
+<h2 id="presets"><code>chrono presets --json</code></h2>
+<p>
+  Schemat <code>chronomock.presets/1</code>. Każdy preset, który program czyta, tak jak czyta go
+  <code>--preset</code>, i każdy plik, którego nie przyjmuje, z powodem. Nieprzyjęty plik jest
+  częścią odpowiedzi, więc polecenie i tak kończy się kodem 0. Kod 1 dostaje tylko przy złej opcji
+  albo folderze, którego nie da się przeczytać. Do czego służy każdy preset, mówi strona
+  <a href="/pl/dokumentacja/scenariusze/">Scenariusze</a>.
+</p>
+<div class="wrap"><table class="fields" data-schema="chronomock.presets/1">
+<thead><tr><th>Pole</th><th>Co zawiera</th></tr></thead>
+<tbody>
+<tr><td><code>schema</code></td><td><code>chronomock.presets/1</code>.</td></tr>
+<tr><td><code>dir</code></td><td>Przeczytany folder: <code>--dir</code>, a bez niego folder
+  <code>presets</code> obok <code>chrono.exe</code>, a bez niego ten w bieżącym folderze.</td></tr>
+<tr><td><code>presets[].file</code></td><td>Nazwa pliku.</td></tr>
+<tr><td><code>presets[].id</code></td><td>To, co przyjmuje <code>--preset</code>.</td></tr>
+<tr><td><code>presets[].applies_to</code></td><td><code>calculator</code> tylko dla
+  <code>chrono calc</code>, <code>substitution</code> tylko dla <code>chrono run</code> albo
+  <code>both</code>.</td></tr>
+<tr><td><code>presets[].market</code></td><td><code>us</code> albo <code>pl</code> dla presetu,
+  który trzyma się zasad jednego kraju, albo null.</td></tr>
+<tr><td><code>presets[].calendar</code></td><td>Kalendarz, w którym liczy dni robocze, wynikający z
+  rynku, albo null.</td></tr>
+<tr><td><code>presets[].name</code></td><td>Nazwa, jako <code>en</code> i <code>pl</code>.</td></tr>
+<tr><td><code>presets[].explains</code></td><td>Zdanie o tym, co sprawdza, jako <code>en</code> i
+  <code>pl</code>.</td></tr>
+<tr><td><code>presets[].time_mode</code></td><td>Jak biegnie sesja na nim:
+  <code>multiplier</code>, czyli tempo (1 to prawdziwe tempo), i
+  <code>scale_duration_clock</code>, czyli czy timery idą w tym tempie, jak przy
+  <code>--scale-duration</code>.</td></tr>
+<tr><td><code>presets[].parameters[].id</code></td><td>To, co nazywa
+  <code>--param id=wartość</code>.</td></tr>
+<tr><td><code>presets[].parameters[].type</code></td><td><code>date</code>,
+  <code>duration</code> (np. <code>30d</code>) albo <code>variant</code>, czyli jedno ze słów z
+  <code>choices</code>.</td></tr>
+<tr><td><code>presets[].parameters[].label</code></td><td>Jak go nazywać, jako <code>en</code> i
+  <code>pl</code>.</td></tr>
+<tr><td><code>presets[].parameters[].default</code></td><td>Wartość, gdy <code>--param</code> go
+  pomija: słowo albo <code>{"amount": 30, "unit": "d"}</code> dla czasu trwania. Null, gdy trzeba
+  ją podać.</td></tr>
+<tr><td><code>presets[].parameters[].default_hint</code></td><td><code>target_file_creation</code>,
+  gdy za niepodaną wartość <code>chrono run</code> bierze datę pliku samego programu, albo
+  null.</td></tr>
+<tr><td><code>presets[].parameters[].choices</code></td><td>Tylko dla wariantu: każde słowo jako
+  <code>label</code> i o ile dni (<code>days</code>) przesuwa datę.</td></tr>
+<tr><td><code>presets[].moment.base</code></td><td>Skąd rusza data, według <code>kind</code>:
+  <code>today</code>, <code>now</code>, <code>absolute</code> albo <code>absolute_utc</code> z
+  <code>at</code>, albo <code>parameter</code> z czytanym parametrem w
+  <code>parameter</code>.</td></tr>
+<tr><td><code>presets[].moment.steps</code></td><td>Co się z nią dzieje dalej, po kolei, według
+  <code>kind</code>: <code>shift</code> (<code>sign</code>, a potem <code>amount</code> i
+  <code>unit</code> albo <code>parameter</code>, z którego pochodzą), <code>snap</code> i
+  <code>nearest</code> (<code>target</code>), <code>set_time</code> (<code>time</code>) i
+  <code>zone</code> (<code>offset</code>). Słowa są te same, które przyjmują opcje
+  <a href="/pl/dokumentacja-cli/#calc"><code>chrono calc</code></a>.</td></tr>
+<tr><td><code>refused[].file</code></td><td>Nazwa pliku, którego program nie przyjmuje.</td></tr>
+<tr><td><code>refused[].id</code></td><td>Id, które daje mu nazwa, albo null, gdy nazwa nie może nim
+  być.</td></tr>
+<tr><td><code>refused[].reason</code></td><td>Dlaczego: zdanie, które podaje dla niego
+  <code>--preset</code>.</td></tr>
+<tr><td><code>refused[].exit_code</code></td><td>Kod, którym kończy się dla niego
+  <code>--preset</code>.</td></tr>
+</tbody>
+</table></div>
+
+<h2 id="calendars"><code>chrono calendars --json</code></h2>
+<p>
+  Schemat <code>chronomock.calendars/1</code>. Kalendarze, w których może liczyć
+  <code>--calendar</code>, i każdy plik, którego program nie przyjmuje, z kodami 0 i 1 jak przy
+  <code>presets</code>. Same święta są w plikach, opisanych na stronie
+  <a href="/pl/dokumentacja/kalendarze-swiat/">Kalendarze świąt</a>.
+</p>
+<div class="wrap"><table class="fields" data-schema="chronomock.calendars/1">
+<thead><tr><th>Pole</th><th>Co zawiera</th></tr></thead>
+<tbody>
+<tr><td><code>schema</code></td><td><code>chronomock.calendars/1</code>.</td></tr>
+<tr><td><code>dir</code></td><td>Przeczytany folder: <code>--dir</code>, a bez niego folder
+  <code>calendars</code> obok <code>chrono.exe</code>, a bez niego ten w bieżącym
+  folderze.</td></tr>
+<tr><td><code>calendars[].file</code></td><td>Nazwa pliku.</td></tr>
+<tr><td><code>calendars[].id</code></td><td>To, co przyjmuje <code>--calendar</code>.</td></tr>
+<tr><td><code>calendars[].country</code></td><td>Dwuliterowy kod kraju, np.
+  <code>PL</code>.</td></tr>
+<tr><td><code>calendars[].name</code></td><td>Nazwa, jako <code>en</code> i w języku kraju jako
+  <code>local</code>.</td></tr>
+<tr><td><code>refused[].file</code></td><td>Nazwa pliku, którego program nie przyjmuje.</td></tr>
+<tr><td><code>refused[].id</code></td><td>Id, które daje mu nazwa, albo null, gdy nazwa nie może nim
+  być.</td></tr>
+<tr><td><code>refused[].reason</code></td><td>Dlaczego program go nie przyjmuje.</td></tr>
+</tbody>
+</table></div>
+
+<h2 id="dry-run"><code>chrono run --dry-run --json</code></h2>
+<p>
+  Schemat <code>chronomock.plan/1</code>. Jaka byłaby sesja, ustalone bez uruchamiania czegokolwiek:
+  żaden program nie rusza i żaden plik nie powstaje. Kończy się kodem 0, gdy sesja mogłaby ruszyć,
+  a kodem, którym skończyłaby się sesja, gdy nie mogłaby.
+</p>
+<pre class="term"><span class="p">chrono</span> run C:\apps\test.exe --at 2038-01-19T03:14:07 --zone +00:00 --dry-run --json
+{
+  "schema": "chronomock.plan/1",
+  "started": false,
+  "target": { "path": "C:\\apps\\test.exe", "resolved": "C:\\apps\\test.exe", "state": "found",
+              "program": null, "args": [], "cwd": null },
+  "mechanism": "native",
+  "core_bitness": "x64",
+  "time": { "moment": "2038-01-19T03:14:07", "zone_bias_min": 0, "zone_from_flag": true,
+            "mode": "flow", "multiplier": null, "scale_duration": false, "scale_qpc": false },
+  "origin": { "kind": "at", "at": "2038-01-19T03:14:07", "preset": null, "parameters": [] },
+  "session": { "ticks": 0, "timeout_secs": null, "set_after": null, "jump_after": null,
+               "force": false, "embedded": true, "elevated_embedded": false,
+               "elevated_embedded_value": null, "keep_background_timers": false,
+               "gecko_sandbox": true, "report": null },
+  "warnings": []
+}</pre>
+<div class="wrap"><table class="fields" data-schema="chronomock.plan/1">
+<thead><tr><th>Pole</th><th>Co zawiera</th></tr></thead>
+<tbody>
+<tr><td><code>schema</code></td><td><code>chronomock.plan/1</code>.</td></tr>
+<tr><td><code>started</code></td><td>Zawsze <code>false</code>, żeby odpowiedzi nie dało się wziąć
+  za sesję.</td></tr>
+<tr><td><code>target.path</code></td><td>Program, tak jak go wpisano.</td></tr>
+<tr><td><code>target.resolved</code></td><td>Pełna ścieżka pliku, który uruchomiłaby sesja, albo
+  null, gdy takiego nie ma.</td></tr>
+<tr><td><code>target.state</code></td><td><code>found</code>; <code>not_a_program</code>, czyli
+  plik, którego Windows nie uruchomi; <code>missing</code>; albo <code>unchecked</code>, czyli
+  sama nazwa, którą tryb Chromium szuka w <code>PATH</code> sam.</td></tr>
+<tr><td><code>target.program</code>{{next_release}}</td><td>Dla programu startowego, który
+  instalator kładzie obok <code>Update.exe</code>: program, który sesja uruchomiłaby w jego
+  miejsce. W innych przypadkach null.</td></tr>
+<tr><td><code>target.args</code></td><td>Argumenty z <code>--args</code>.</td></tr>
+<tr><td><code>target.cwd</code></td><td>Folder z <code>--cwd</code> albo null.</td></tr>
+<tr><td><code>mechanism</code></td><td><code>native</code> albo <code>chromium-cdp</code> dla
+  programu na Chromium albo Electronie.</td></tr>
+<tr><td><code>core_bitness</code></td><td><code>x64</code> albo <code>x86</code>: bitowość tego
+  <code>chrono.exe</code>, nie programu, którą znać dopiero, gdy program działa.</td></tr>
+<tr><td><code>time.moment</code></td><td>Data i godzina, od których ruszyłaby sesja.</td></tr>
+<tr><td><code>time.zone_bias_min</code></td><td>Strefa sesji.</td></tr>
+<tr><td><code>time.zone_from_flag</code></td><td><code>true</code>, gdy podało ją
+  <code>--zone</code>, <code>false</code>, gdy jest strefą tego komputera.</td></tr>
+<tr><td><code>time.mode</code></td><td><code>flow</code>, <code>frozen</code> albo
+  <code>multiplier</code>.</td></tr>
+<tr><td><code>time.multiplier</code></td><td>Tempo dla <code>multiplier</code>, np.
+  <code>60</code>. W innych przypadkach null.</td></tr>
+<tr><td><code>time.scale_duration</code></td><td>Czy podano <code>--scale-duration</code>.</td></tr>
+<tr><td><code>time.scale_qpc</code></td><td>Czy podano <code>--scale-qpc</code>.</td></tr>
+<tr><td><code>origin.kind</code></td><td>Skąd jest data: <code>at</code>, <code>preset</code>
+  albo <code>now</code>, gdy nie podano żadnego.</td></tr>
+<tr><td><code>origin.at</code></td><td>Wartość <code>--at</code> tak, jak ją wpisano, albo
+  null.</td></tr>
+<tr><td><code>origin.preset</code></td><td>Preset albo null.</td></tr>
+<tr><td><code>origin.parameters[].id</code></td><td>Parametr presetu.</td></tr>
+<tr><td><code>origin.parameters[].value</code></td><td>Wartość, którą dostał.</td></tr>
+<tr><td><code>origin.parameters[].source</code></td><td>Skąd ta wartość, słowami po angielsku, np.
+  <code>the target's file date</code>.</td></tr>
+<tr><td><code>session.ticks</code></td><td>Limit <code>--ticks</code>, 0, gdy go nie ma.</td></tr>
+<tr><td><code>session.timeout_secs</code></td><td>Limit <code>--timeout</code> albo null.</td></tr>
+<tr><td><code>session.set_after</code></td><td><code>--set-after</code> jako
+  <code>[takt, tempo]</code> albo null.</td></tr>
+<tr><td><code>session.jump_after</code></td><td><code>--jump-after</code> jako
+  <code>[takt, chwila]</code> albo null.</td></tr>
+<tr><td><code>session.force</code></td><td>Czy podano <code>--force</code>.</td></tr>
+<tr><td><code>session.embedded</code></td><td>Czy sesja spróbuje dosięgnąć stron WWW wewnątrz
+  programu, co wyłącza <code>--no-embedded</code>.</td></tr>
+<tr><td><code>session.elevated_embedded</code></td><td>Czy podano
+  <code>--elevated-embedded</code>.</td></tr>
+<tr><td><code>session.elevated_embedded_value</code></td><td>Nazwa, pod którą sesja zapisałaby dla
+  niego wartość w rejestrze, albo null.</td></tr>
+<tr><td><code>session.keep_background_timers</code></td><td>Czy podano
+  <code>--keep-background-timers</code>.</td></tr>
+<tr><td><code>session.gecko_sandbox</code>{{next_release}}</td><td>Czy piaskownica Gecko zostałaby
+  włączona: <code>false</code> z <code>--no-gecko-sandbox</code>.</td></tr>
+<tr><td><code>session.report</code></td><td>Plik <code>--report</code> albo null.</td></tr>
+<tr><td><code>warnings</code></td><td>O czym sesja ostrzegłaby przed startem, jako klucze, które
+  raport podaje w nawiasach.</td></tr>
+</tbody>
+</table></div>
+
+<h2 id="run"><code>chrono run --json</code></h2>
+<p>
+  Zamiast <a href="/pl/dokumentacja/czytanie-raportu/">raportu</a> sesja wypisuje wiersz JSON na
+  każde zdarzenie, w chwili, gdy się dzieje. Każdy wiersz ma <code>type</code>, który mówi, czym
+  jest, i <code>v</code>, wersję wierszy. Krótka sesja wygląda tak, ze skróconą listą zegarów:
+</p>
+<pre class="term"><span class="p">chrono</span> run C:\apps\test.exe --at 2038-01-19T03:14:07 --zone +00:00 --ticks 2 --json
+{"type":"ready","v":1,"protocol":1,"core_version":"0.6.0-rc.1","bitness":"x64","capabilities":[]}
+{"type":"coverage","v":1,"pid":71984,"kind":"process","covered":[{"channel":"GetSystemTimeAsFileTime","calls":1},...],"observed":[...],"uncovered":[],"unobserved":[],"installed_late":[],"warning_keys":[]}
+{"type":"verdict","v":1,"id":1,"verdict":"works","refuse_start":false,"reason_key":"coverage.time_channels_covered"}
+{"type":"state","v":1,"fake":{"wall":"2038-01-19T03:14:08","zone_bias_min":0},"real":{"wall":"2026-11-24T13:51:09","zone_bias_min":0},"multiplier":1,"elapsed_fake_ms":1563,"elapsed_real_ms":1563}
+{"type":"state","v":1,"fake":{"wall":"2038-01-19T03:14:09","zone_bias_min":0},"real":{"wall":"2026-11-24T13:51:10","zone_bias_min":0},"multiplier":1,"elapsed_fake_ms":2565,"elapsed_real_ms":2565}
+{"type":"coverage","v":1,"pid":71984,"kind":"process","covered":[...],...}
+{"type":"session_verdict","v":1,"verdict":"works","reason_key":"session.family_covered","process_count":1,"warning_keys":["session.left_running"],...}
+{"type":"ended","v":1,"clean":true,"residue_keys":[],"target_exit_code":null,"elapsed_real_ms":2569,"elapsed_fake_ms":2569,"fake_end_wall":"2038-01-19T03:14:09"}</pre>
+<div class="wrap"><table class="fields" data-events>
+<thead><tr><th>Wiersz</th><th>Kiedy</th><th>Pola</th></tr></thead>
+<tbody>
+<tr data-event="ready"><td><code>ready</code></td><td>Pierwszy: sesja jest gotowa do
+  startu.</td><td class="keys"><code>protocol</code>, <code>core_version</code>,
+  <code>bitness</code>, <code>capabilities</code></td></tr>
+<tr data-event="coverage"><td><code>coverage</code></td><td>Dla każdego procesu, do którego sesja
+  dotrze, albo każdej strony WWW w trybie Chromium, gdy do niego dotrze i jeszcze raz na końcu:
+  które zegary czytał i ile razy.</td><td class="keys"><code>pid</code>, <code>kind</code>,
+  <code>covered</code>, <code>observed</code>, <code>uncovered</code>, <code>unobserved</code>,
+  <code>installed_late</code>, <code>warning_keys</code></td></tr>
+<tr data-event="verdict"><td><code>verdict</code></td><td>Zaraz po starcie: czy program czyta zegar
+  sesji. Z <code>refuse_start</code> sesja kończy program, chyba że podano
+  <code>--force</code>.</td><td class="keys"><code>id</code>, <code>verdict</code>,
+  <code>refuse_start</code>, <code>reason_key</code>, <code>left_running</code>,
+  <code>family_search_incomplete</code></td></tr>
+<tr data-event="ack"><td><code>ack</code></td><td>Zmiana tempa albo skok z
+  <code>--set-after</code> lub <code>--jump-after</code> zostały wykonane.</td><td class="keys"><code>id</code></td></tr>
+<tr data-event="state"><td><code>state</code></td><td>Mniej więcej co sekundę: zegar sesji i
+  prawdziwy obok siebie.</td><td class="keys"><code>fake</code>, <code>real</code>,
+  <code>multiplier</code>, <code>elapsed_fake_ms</code>, <code>elapsed_real_ms</code></td></tr>
+<tr data-event="host_slept"><td><code>host_slept</code></td><td>Komputer spał w trakcie sesji. Przez
+  ten czas zegar sesji stał.</td><td class="keys"><code>slept_ms</code>,
+  <code>total_slept_ms</code></td></tr>
+<tr data-event="vanished"><td><code>vanished</code></td><td>Program zamknął się zaraz po starcie,
+  najpewniej oddając pracę swojej kopii, która już działała. Polecenie kończy się kodem
+  12.</td><td class="keys"><code>pid</code>, <code>reason_key</code>,
+  <code>lived_ms</code></td></tr>
+<tr data-event="error"><td><code>error</code></td><td>Coś się nie udało, nazwane w
+  <code>key</code>. Przed startem znaczy, że sesja w ogóle nie ruszyła.</td><td class="keys"><code>id</code>,
+  <code>code</code>, <code>key</code>, <code>origin</code></td></tr>
+<tr data-event="session_verdict"><td><code>session_verdict</code></td><td>Raz, na końcu: werdykt
+  dla programu i każdego procesu, który uruchomił. Kod wyjścia mówi to
+  samo.</td><td class="keys"><code>verdict</code>, <code>reason_key</code>,
+  <code>process_count</code>, <code>warning_keys</code>, <code>uncovered_children</code>,
+  <code>uncovered_children_total</code>, <code>context_count</code>, <code>engines</code>,
+  <code>followed</code>, <code>copies_outside</code>, <code>host_slept_ms</code>,
+  <code>browser</code></td></tr>
+<tr data-event="ended"><td><code>ended</code></td><td>Ostatni: sesja się
+  skończyła.</td><td class="keys"><code>clean</code>, <code>residue_keys</code>,
+  <code>target_exit_code</code>, <code>elapsed_real_ms</code>, <code>elapsed_fake_ms</code>,
+  <code>fake_end_wall</code></td></tr>
+</tbody>
+</table></div>
+<p>Pola, których pipeline zwykle potrzebuje:</p>
+<ul>
+  <li><strong><code>verdict</code></strong> z <code>session_verdict</code>: <code>works</code>,
+    <code>partial</code>, <code>fails</code> albo <code>undetermined</code>, czyli cztery werdykty,
+    które niosą kody wyjścia 0, 10, 11 i 4.</li>
+  <li><strong><code>reason_key</code>, <code>warning_keys</code>, <code>residue_keys</code> i
+    <code>key</code></strong> nazywają to, co się stało, kilkoma słowami, które nie zmieniają się
+    między wersjami, np. <code>session.left_running</code>.
+    <a href="/pl/dokumentacja/czytanie-raportu/">Raport</a> podaje klucz ostrzeżenia albo błędu w
+    nawiasie po zdaniu, które je wyjaśnia.</li>
+  <li><strong><code>process_count</code></strong>: ile procesów obejmuje werdykt, czyli program i
+    wszystko, co uruchomił.</li>
+  <li><strong><code>target_exit_code</code></strong> z <code>ended</code>: kod, którym skończył się
+    program, gdy zamknął się sam. Null, gdy sesja skończyła się pierwsza, co robią
+    <code>--ticks</code> i <code>--timeout</code>. To nie jest kod wyjścia
+    <code>chrono</code>.</li>
+  <li><strong><code>fake</code> i <code>real</code></strong> z <code>state</code>: każde to zegar
+    <code>wall</code> i jego <code>zone_bias_min</code>.</li>
+</ul>
+<p>
+  Sesja przerwana przez <code>--timeout</code> kończy się bez dwóch ostatnich wierszy, a polecenie
+  kodem 6.
+</p>

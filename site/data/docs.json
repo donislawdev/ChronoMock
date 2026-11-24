@@ -46,7 +46,7 @@
     {
       "id": "command-line",
       "title": { "en": "Command line", "pl": "Wiersz poleceń" },
-      "pages": ["cli-reference", "exit-codes"]
+      "pages": ["cli-reference", "reading-the-report", "exit-codes", "json-output"]
     }
   ]
 }

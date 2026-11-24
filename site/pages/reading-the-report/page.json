@@ -1,0 +1,20 @@
+{
+  "//": "What each line of the session report says. Part of the documentation (site/data/docs.json), so English and Polish only. The lines are the ones crates/cli/src/report.rs writes, and the example is pasted from the program.",
+  "id": "reading-the-report",
+  "order": 93,
+  "nav": false,
+  "languages": {
+    "en": {
+      "slug": "docs/reading-the-report",
+      "link_text": "Reading the report",
+      "title": "Reading the Chrono Mock session report - what every line means",
+      "description": "The report chrono run prints at the end of a session, line by line: the verdict, the clocks the application read and how often, what it ended with, the warnings, and the evidence file --report writes."
+    },
+    "pl": {
+      "slug": "dokumentacja/czytanie-raportu",
+      "link_text": "Czytanie raportu",
+      "title": "Czytanie raportu sesji Chrono Mock - co znaczy każdy wiersz",
+      "description": "Raport, który chrono run wypisuje na końcu sesji, wiersz po wierszu: werdykt, zegary, które program czytał, i jak często, czym się skończył, ostrzeżenia oraz plik dowodu z --report."
+    }
+  }
+}

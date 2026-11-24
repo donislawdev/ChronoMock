@@ -15,8 +15,9 @@
 <ul>
   <li><strong>Two copies of <code>chrono.exe</code>.</strong> The command line download has
     <code>chrono.exe</code> for 64-bit applications and <code>x86\chrono.exe</code> for 32-bit
-    ones. The window picks the right one by itself, the command line does not.
-    <code>chrono run app.exe --dry-run</code> says which one an application needs.</li>
+    ones. The window picks the right one by itself, the command line does not. With the other
+    one the session does not start: the report says <em>different bitness</em> and the command
+    ends with code 1, so run it again with the other <code>chrono.exe</code>.</li>
   <li><strong>Dates and times</strong> are written <code>YYYY-MM-DDTHH:MM:SS</code>, such as
     <code>2026-03-31T23:59:00</code>, in the session's time zone unless the option says UTC.</li>
   <li><strong>A step</strong> is a sign, a number and a unit: <code>+1d</code>,
@@ -24,6 +25,10 @@
     months.</li>
   <li><strong>Help</strong> is in the program too: <code>chrono --help</code> for every command,
     <code>chrono run --help</code> for one.</li>
+  <li><strong>The report</strong> at the end of <code>chrono run</code> is explained line by line
+    on <a href="/docs/reading-the-report/">Reading the report</a>.</li>
+  <li><strong>For a program to read</strong>, <code>--json</code> writes the answer of any command
+    as JSON. <a href="/docs/json/">JSON output</a> names every field.</li>
 </ul>
 
 <h2 id="commands">Commands</h2>
