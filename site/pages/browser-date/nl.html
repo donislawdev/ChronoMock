@@ -1,0 +1,109 @@
+<!-- Changing the date in Chrome or Firefox for testing, nl.
+
+     Change date in browser for testing, change browser date and time, change date in chrome, firefox
+     change date and time and firefox spoof date are what people type (search suggestions,
+     2026-11-23). The browsers are named because those are the names people search under. Measured
+     on 2026-11-23 with a session set to 2040: an HTTPS site loaded in Chrome, whose browser process
+     keeps the real date, and showed a security warning in Firefox, whose whole browser follows the
+     session. The DevTools time zone is the location preset of its Sensors panel. -->
+
+<div class="shell">
+
+  <section class="plain">
+    <h1>De datum in Chrome of Firefox wijzigen om te testen</h1>
+    <p class="sub">
+      De gebruikelijke antwoorden zijn een extensie die de datum in een pagina vervangt, of de klok van een testframework. Chrono Mock start de browser zelf met een eigen klok - elk tabblad en elke worker, op elke datum, stilgezet of versneld - en laat de Windows-klok en alle andere programma's met rust.
+    </p>
+  </section>
+
+  <section>
+    <h2>Wat de gebruikelijke antwoorden dekken</h2>
+    <div class="wrap">
+      <table>
+        <thead>
+          <tr><th>Aanpak</th><th>Wie de nieuwe datum ziet</th><th>Wat erbuiten valt</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Een browserextensie</td><td>De JavaScript-datum van de pagina's waar ze in mag</td><td>Vaak één tabblad tegelijk, en niets zegt wat ze miste</td></tr>
+          <tr><td>Chrome DevTools</td><td>Een tijdzone, ingesteld via een locatie in het Sensors-paneel</td><td>De datum zelf</td></tr>
+          <tr><td>De klok van een testframework</td><td>De pagina's die een test die jij schrijft opent</td><td>Handmatig testen, en elke pagina die de test niet aanstuurt</td></tr>
+          <tr><td>De Windows-klok</td><td>Alles op de machine</td><td>Niets, en dat is het probleem: certificaten, domeinaanmelding en tijdsynchronisatie schuiven mee</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="prose">
+      <p>
+        <a href="/nl/systeemdatum-wijzigen-testen/">Wat het verzetten van de Windows-klok stukmaakt &rarr;</a>
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Chrome</h2>
+    <div class="prose">
+      <p>
+        Chrome start met een schoon wegwerpprofiel en een lokale debugpoort, en elke pagina en elke worker haalt de JavaScript-tijd uit de sessie: <code>Date.now</code>, <code>new Date()</code>, <code>performance.now</code>, <code>setTimeout</code>, <code>setInterval</code> en de tijdzone van de sessie. De browser zelf houdt de echte datum, dus HTTPS-sites blijven laden - gecontroleerd met een sessie op 2040.
+      </p>
+    </div>
+
+    <pre class="term"><span class="c"># Chrome in de laatste tien seconden van 2027, zestig keer sneller</span>
+<span class="p">chrono</span> run "C:\Program Files\Google\Chrome\Application\chrome.exe" --at 2027-12-31T23:59:50 --mode x60 --args "http://localhost:8080/"</pre>
+
+    <div class="prose">
+      <p>
+        Het profiel is niet het jouwe: geen opgeslagen aanmeldingen, geen extensies, en het wordt aan het eind van de sessie gewist. Andere browsers op basis van Chromium werken net zo.
+        <a href="/nl/electron-chromium/">Hoe de Chromium-modus werkt &rarr;</a>
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Firefox</h2>
+    <div class="prose">
+      <p>
+        Firefox draait zijn pagina's in sandboxprocessen waar de sessie niet in kan, dus heeft hij <code>--no-gecko-sandbox</code> nodig. De pagina's starten dan buiten die sandbox, doen mee in de sessie en volgen haar klok, tempo, sprongen en tijdzone. Firefox draait zonder die bescherming tot je hem sluit, dus open er alleen pagina's in die je vertrouwt. Geef hem een eigen profiel met <code>-no-remote -profile</code> en een lege map, zodat hij de pagina niet doorgeeft aan een Firefox die je al open hebt.
+      </p>
+    </div>
+
+    <pre class="term"><span class="c"># Firefox in de laatste tien seconden van 2027, met een eigen profielmap</span>
+<span class="p">chrono</span> run "C:\Program Files\Mozilla Firefox\firefox.exe" --at 2027-12-31T23:59:50 --no-gecko-sandbox --args "-no-remote -profile C:\ff-test http://localhost:8080/"</pre>
+
+    <div class="prose">
+      <p>
+        In Firefox schuift de hele browser mee, niet alleen de pagina's, en dat geldt ook voor de controle van certificaten: in een sessie op 2040 toonde een echte HTTPS-site een beveiligingswaarschuwing. Het werkt voor pagina's uit een bestand, een eigen testserver, of een datum die het certificaat van de site nog dekt.
+      </p>
+      <p>
+        Als administrator gestart, geeft Firefox de rechten op en start hij opnieuw buiten de sessie, tenzij <code>--no-deelevate</code> bij zijn argumenten staat, en de sessie zegt dat vanaf het begin.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Weten dat de pagina's de datum kregen</h2>
+    <div class="prose">
+      <p>
+        Het rapport zegt welke pagina's en workers de sessie bereikte en welke op de echte klok bleven - per JavaScript-context in Chrome, per proces in Firefox.
+        <a href="/nl/tijdbronnen-audit/">Wat het rapport zegt &rarr;</a>
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Wat het niet doet</h2>
+    <div class="prose">
+      <ul>
+        <li><strong>De serverkant.</strong> Een datum die een site van haar server krijgt, blijft de datum van de server.</li>
+        <li><strong>Je dagelijkse browser.</strong> De sessie start een eigen browser. Ze haakt niet in op de browser die je open hebt en laat zijn tabbladen en aanmeldingen met rust.</li>
+      </ul>
+    </div>
+  </section>
+
+  <section>
+    <h2>Probeer het</h2>
+    <div class="cta">
+      <a class="btn btn-primary" href="/nl/downloaden/">Downloaden voor Windows</a>
+      <a class="btn btn-ghost" href="/nl/time-travel-testing/">Time travel testing</a>
+    </div>
+  </section>
+
+</div>

@@ -1,0 +1,109 @@
+<!-- Changing the date in Chrome or Firefox for testing, en.
+
+     Change date in browser for testing, change browser date and time, change date in chrome, firefox
+     change date and time and firefox spoof date are what people type (search suggestions,
+     2026-11-23). The browsers are named because those are the names people search under. Measured
+     on 2026-11-23 with a session set to 2040: an HTTPS site loaded in Chrome, whose browser process
+     keeps the real date, and showed a security warning in Firefox, whose whole browser follows the
+     session. The DevTools time zone is the location preset of its Sensors panel. -->
+
+<div class="shell">
+
+  <section class="plain">
+    <h1>Changing the date in Chrome or Firefox for testing</h1>
+    <p class="sub">
+      The usual answers are an extension that overrides the date in a page, or the clock of a test framework. Chrono Mock starts the browser itself on a clock of its own - every tab and every worker, at any date, frozen or sped up - and leaves the Windows clock and every other program alone.
+    </p>
+  </section>
+
+  <section>
+    <h2>What the usual answers cover</h2>
+    <div class="wrap">
+      <table>
+        <thead>
+          <tr><th>Approach</th><th>What sees the new date</th><th>What it leaves out</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>A browser extension</td><td>The JavaScript date of the pages it is allowed into</td><td>Often one tab at a time, and nothing tells you what it missed</td></tr>
+          <tr><td>Chrome DevTools</td><td>A time zone, set through a location in the Sensors panel</td><td>The date itself</td></tr>
+          <tr><td>A test framework's clock</td><td>The pages a test you write opens</td><td>Manual testing, and every page the test does not drive</td></tr>
+          <tr><td>The Windows clock</td><td>Everything on the machine</td><td>Nothing, which is the problem: certificates, domain logon and time sync move too</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="prose">
+      <p>
+        <a href="/change-system-date-testing/">What changing the Windows clock breaks &rarr;</a>
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Chrome</h2>
+    <div class="prose">
+      <p>
+        Chrome is started with a clean throwaway profile and a local debugging port, and every page and worker takes its JavaScript time from the session: <code>Date.now</code>, <code>new Date()</code>, <code>performance.now</code>, <code>setTimeout</code>, <code>setInterval</code> and the session time zone. The browser itself keeps the real date, so HTTPS sites keep loading - checked with a session set to 2040.
+      </p>
+    </div>
+
+    <pre class="term"><span class="c"># Chrome at the last ten seconds of 2027, running sixty times faster</span>
+<span class="p">chrono</span> run "C:\Program Files\Google\Chrome\Application\chrome.exe" --at 2027-12-31T23:59:50 --mode x60 --args "http://localhost:8080/"</pre>
+
+    <div class="prose">
+      <p>
+        The profile is not yours: no saved logins, no extensions, and it is deleted when the session ends. Other browsers built on Chromium work the same way.
+        <a href="/electron-chromium/">How the Chromium mode works &rarr;</a>
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Firefox</h2>
+    <div class="prose">
+      <p>
+        Firefox runs its pages in sandboxed processes the session cannot enter, so it needs <code>--no-gecko-sandbox</code>. The pages then start outside that sandbox, join the session and follow its clock, speed, jumps and time zone. Firefox runs without that protection until it closes, so open only pages you trust in it. Give it a profile of its own with <code>-no-remote -profile</code> and an empty folder, so it does not hand the page to a Firefox you already have open.
+      </p>
+    </div>
+
+    <pre class="term"><span class="c"># Firefox at the last ten seconds of 2027, with a profile folder of its own</span>
+<span class="p">chrono</span> run "C:\Program Files\Mozilla Firefox\firefox.exe" --at 2027-12-31T23:59:50 --no-gecko-sandbox --args "-no-remote -profile C:\ff-test http://localhost:8080/"</pre>
+
+    <div class="prose">
+      <p>
+        In Firefox the whole browser moves, not only its pages, and that includes its certificate checks: in a session set to 2040, a real HTTPS site showed a security warning. Pages from a file, a test server you run, or a date the site's certificate still covers are the case that works.
+      </p>
+      <p>
+        Started as administrator, Firefox drops the rights and restarts outside the session unless <code>--no-deelevate</code> is among its arguments, and the session says so from the start.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Knowing that the pages got the date</h2>
+    <div class="prose">
+      <p>
+        The report says which pages and workers the session reached and which kept the real clock - per JavaScript context in Chrome, per process in Firefox.
+        <a href="/time-source-audit/">What the report says &rarr;</a>
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>What it does not do</h2>
+    <div class="prose">
+      <ul>
+        <li><strong>The server side.</strong> A date a site gets from its server stays the server's date.</li>
+        <li><strong>Your everyday browser.</strong> The session starts a browser of its own. It does not attach to the one you have open, and leaves its tabs and logins alone.</li>
+      </ul>
+    </div>
+  </section>
+
+  <section>
+    <h2>Try it</h2>
+    <div class="cta">
+      <a class="btn btn-primary" href="/download/">Download for Windows</a>
+      <a class="btn btn-ghost" href="/time-travel-testing/">Time travel testing</a>
+    </div>
+  </section>
+
+</div>

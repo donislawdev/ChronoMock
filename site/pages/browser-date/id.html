@@ -1,0 +1,109 @@
+<!-- Changing the date in Chrome or Firefox for testing, id.
+
+     Change date in browser for testing, change browser date and time, change date in chrome, firefox
+     change date and time and firefox spoof date are what people type (search suggestions,
+     2026-11-23). The browsers are named because those are the names people search under. Measured
+     on 2026-11-23 with a session set to 2040: an HTTPS site loaded in Chrome, whose browser process
+     keeps the real date, and showed a security warning in Firefox, whose whole browser follows the
+     session. The DevTools time zone is the location preset of its Sensors panel. -->
+
+<div class="shell">
+
+  <section class="plain">
+    <h1>Mengubah tanggal di Chrome atau Firefox untuk pengujian</h1>
+    <p class="sub">
+      Jawaban yang biasa adalah ekstensi yang mengganti tanggal di sebuah halaman, atau jam dari framework pengujian. Chrono Mock menjalankan browser itu sendiri dengan jamnya sendiri - setiap tab dan setiap worker, pada tanggal berapa pun, dibekukan atau dipercepat - dan membiarkan jam Windows serta semua program lain.
+    </p>
+  </section>
+
+  <section>
+    <h2>Apa yang dicakup jawaban yang biasa</h2>
+    <div class="wrap">
+      <table>
+        <thead>
+          <tr><th>Pendekatan</th><th>Siapa yang melihat tanggal baru</th><th>Apa yang terlewat</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Ekstensi browser</td><td>Tanggal JavaScript di halaman yang boleh dimasukinya</td><td>Sering hanya satu tab sekaligus, dan tidak ada yang memberi tahu apa yang terlewat</td></tr>
+          <tr><td>Chrome DevTools</td><td>Zona waktu, diatur lewat lokasi di panel Sensors</td><td>Tanggalnya sendiri</td></tr>
+          <tr><td>Jam framework pengujian</td><td>Halaman yang dibuka uji yang Anda tulis</td><td>Pengujian manual, dan setiap halaman yang tidak dijalankan uji</td></tr>
+          <tr><td>Jam Windows</td><td>Semua yang ada di mesin</td><td>Tidak ada, dan itulah masalahnya: sertifikat, login domain, dan sinkronisasi waktu ikut bergeser</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="prose">
+      <p>
+        <a href="/id/mengubah-tanggal-sistem-untuk-pengujian/">Apa yang rusak bila jam Windows diubah &rarr;</a>
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Chrome</h2>
+    <div class="prose">
+      <p>
+        Chrome dijalankan dengan profil sekali pakai yang bersih dan port debug lokal, dan setiap halaman serta worker mengambil waktu JavaScript dari sesi: <code>Date.now</code>, <code>new Date()</code>, <code>performance.now</code>, <code>setTimeout</code>, <code>setInterval</code> dan zona waktu sesi. Browser itu sendiri tetap memakai tanggal asli, jadi situs HTTPS tetap termuat - sudah dicek dengan sesi bertanggal 2040.
+      </p>
+    </div>
+
+    <pre class="term"><span class="c"># Chrome pada sepuluh detik terakhir tahun 2027, enam puluh kali lebih cepat</span>
+<span class="p">chrono</span> run "C:\Program Files\Google\Chrome\Application\chrome.exe" --at 2027-12-31T23:59:50 --mode x60 --args "http://localhost:8080/"</pre>
+
+    <div class="prose">
+      <p>
+        Profil itu bukan milik Anda: tanpa login tersimpan, tanpa ekstensi, dan dihapus saat sesi berakhir. Browser lain berbasis Chromium bekerja dengan cara yang sama.
+        <a href="/id/electron-chromium/">Cara kerja mode Chromium &rarr;</a>
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Firefox</h2>
+    <div class="prose">
+      <p>
+        Firefox menjalankan halamannya di proses ber-sandbox yang tidak bisa dimasuki sesi, jadi ia butuh <code>--no-gecko-sandbox</code>. Halaman lalu dimulai di luar sandbox itu, bergabung dengan sesi, dan mengikuti jam, kecepatan, lompatan, serta zona waktunya. Firefox berjalan tanpa perlindungan itu sampai ditutup, jadi buka hanya halaman yang Anda percaya. Beri ia profil sendiri dengan <code>-no-remote -profile</code> dan folder kosong, agar ia tidak menyerahkan halaman ke Firefox yang sudah Anda buka.
+      </p>
+    </div>
+
+    <pre class="term"><span class="c"># Firefox pada sepuluh detik terakhir tahun 2027, dengan folder profilnya sendiri</span>
+<span class="p">chrono</span> run "C:\Program Files\Mozilla Firefox\firefox.exe" --at 2027-12-31T23:59:50 --no-gecko-sandbox --args "-no-remote -profile C:\ff-test http://localhost:8080/"</pre>
+
+    <div class="prose">
+      <p>
+        Di Firefox seluruh browser yang bergeser, bukan hanya halamannya, termasuk pemeriksaan sertifikat: dalam sesi bertanggal 2040, situs HTTPS sungguhan menampilkan peringatan keamanan. Yang berfungsi adalah halaman dari berkas, server uji milik Anda sendiri, atau tanggal yang masih dicakup sertifikat situs itu.
+      </p>
+      <p>
+        Bila dijalankan sebagai administrator, Firefox melepas hak itu dan memulai ulang di luar sesi, kecuali <code>--no-deelevate</code> ada di antara argumennya, dan sesi memberitahukannya sejak awal.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Mengetahui bahwa halaman menerima tanggalnya</h2>
+    <div class="prose">
+      <p>
+        Laporan menyebutkan halaman dan worker mana yang dijangkau sesi dan mana yang tetap memakai jam asli - per konteks JavaScript di Chrome, per proses di Firefox.
+        <a href="/id/audit-sumber-waktu/">Isi laporannya &rarr;</a>
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Yang tidak dilakukannya</h2>
+    <div class="prose">
+      <ul>
+        <li><strong>Sisi server.</strong> Tanggal yang diterima situs dari servernya tetap tanggal server.</li>
+        <li><strong>Browser harian Anda.</strong> Sesi menjalankan browser miliknya sendiri. Ia tidak menempel ke browser yang sedang Anda buka dan tidak menyentuh tab maupun login-nya.</li>
+      </ul>
+    </div>
+  </section>
+
+  <section>
+    <h2>Cobalah</h2>
+    <div class="cta">
+      <a class="btn btn-primary" href="/id/unduh/">Unduh untuk Windows</a>
+      <a class="btn btn-ghost" href="/id/time-travel-testing/">Time travel testing</a>
+    </div>
+  </section>
+
+</div>

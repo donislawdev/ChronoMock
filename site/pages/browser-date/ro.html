@@ -1,0 +1,109 @@
+<!-- Changing the date in Chrome or Firefox for testing, ro.
+
+     Change date in browser for testing, change browser date and time, change date in chrome, firefox
+     change date and time and firefox spoof date are what people type (search suggestions,
+     2026-11-23). The browsers are named because those are the names people search under. Measured
+     on 2026-11-23 with a session set to 2040: an HTTPS site loaded in Chrome, whose browser process
+     keeps the real date, and showed a security warning in Firefox, whose whole browser follows the
+     session. The DevTools time zone is the location preset of its Sensors panel. -->
+
+<div class="shell">
+
+  <section class="plain">
+    <h1>Schimbarea datei în Chrome sau Firefox pentru teste</h1>
+    <p class="sub">
+      Răspunsurile obișnuite sunt o extensie care înlocuiește data într-o pagină sau ceasul unui framework de testare. Chrono Mock pornește chiar browserul cu un ceas al lui - fiecare filă și fiecare worker, la orice dată, oprit sau accelerat - și lasă în pace ceasul Windows și toate celelalte programe.
+    </p>
+  </section>
+
+  <section>
+    <h2>Ce acoperă răspunsurile obișnuite</h2>
+    <div class="wrap">
+      <table>
+        <thead>
+          <tr><th>Abordare</th><th>Cine vede noua dată</th><th>Ce lasă deoparte</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>O extensie de browser</td><td>Data JavaScript din paginile în care are voie să intre</td><td>Adesea o singură filă odată, și nimic nu spune ce a ratat</td></tr>
+          <tr><td>Chrome DevTools</td><td>Un fus orar, setat printr-o locație în panoul Sensors</td><td>Data în sine</td></tr>
+          <tr><td>Ceasul unui framework de testare</td><td>Paginile deschise de un test scris de tine</td><td>Testarea manuală și orice pagină pe care testul nu o conduce</td></tr>
+          <tr><td>Ceasul Windows</td><td>Tot ce e pe mașină</td><td>Nimic, și asta e problema: certificatele, autentificarea în domeniu și sincronizarea orei se mută și ele</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="prose">
+      <p>
+        <a href="/ro/modificarea-datei-sistemului-pentru-teste/">Ce strică schimbarea ceasului Windows &rarr;</a>
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Chrome</h2>
+    <div class="prose">
+      <p>
+        Chrome pornește cu un profil de unică folosință curat și un port de depanare local, iar fiecare pagină și fiecare worker își ia ora JavaScript din sesiune: <code>Date.now</code>, <code>new Date()</code>, <code>performance.now</code>, <code>setTimeout</code>, <code>setInterval</code> și fusul orar al sesiunii. Browserul însuși păstrează data reală, deci site-urile HTTPS se încarcă în continuare - verificat cu o sesiune setată pe 2040.
+      </p>
+    </div>
+
+    <pre class="term"><span class="c"># Chrome în ultimele zece secunde din 2027, de șaizeci de ori mai repede</span>
+<span class="p">chrono</span> run "C:\Program Files\Google\Chrome\Application\chrome.exe" --at 2027-12-31T23:59:50 --mode x60 --args "http://localhost:8080/"</pre>
+
+    <div class="prose">
+      <p>
+        Profilul nu e al tău: fără autentificări salvate, fără extensii, și e șters la sfârșitul sesiunii. Celelalte browsere bazate pe Chromium funcționează la fel.
+        <a href="/ro/electron-chromium/">Cum funcționează modul Chromium &rarr;</a>
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Firefox</h2>
+    <div class="prose">
+      <p>
+        Firefox rulează paginile în procese izolate într-un sandbox în care sesiunea nu poate intra, așa că are nevoie de <code>--no-gecko-sandbox</code>. Paginile pornesc atunci în afara acelui sandbox, se alătură sesiunii și îi urmează ceasul, viteza, salturile și fusul orar. Firefox rulează fără acea protecție până îl închizi, așa că deschide în el doar pagini în care ai încredere. Dă-i un profil propriu cu <code>-no-remote -profile</code> și un folder gol, ca să nu predea pagina unui Firefox deja deschis.
+      </p>
+    </div>
+
+    <pre class="term"><span class="c"># Firefox în ultimele zece secunde din 2027, cu propriul folder de profil</span>
+<span class="p">chrono</span> run "C:\Program Files\Mozilla Firefox\firefox.exe" --at 2027-12-31T23:59:50 --no-gecko-sandbox --args "-no-remote -profile C:\ff-test http://localhost:8080/"</pre>
+
+    <div class="prose">
+      <p>
+        În Firefox se mută tot browserul, nu doar paginile, inclusiv verificarea certificatelor: într-o sesiune setată pe 2040, un site HTTPS real a afișat un avertisment de securitate. Funcționează cu pagini dintr-un fișier, un server de test al tău sau o dată pe care certificatul site-ului încă o acoperă.
+      </p>
+      <p>
+        Pornit ca administrator, Firefox renunță la drepturi și repornește în afara sesiunii, dacă printre argumentele lui nu e <code>--no-deelevate</code>, iar sesiunea spune asta de la început.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Cum știi că paginile au primit data</h2>
+    <div class="prose">
+      <p>
+        Raportul spune la ce pagini și worker-e a ajuns sesiunea și care au rămas pe ceasul real - pe fiecare context JavaScript în Chrome, pe fiecare proces în Firefox.
+        <a href="/ro/auditul-surselor-de-timp/">Ce spune raportul &rarr;</a>
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Ce nu face</h2>
+    <div class="prose">
+      <ul>
+        <li><strong>Partea de server.</strong> O dată pe care un site o primește de la serverul lui rămâne data serverului.</li>
+        <li><strong>Browserul tău de zi cu zi.</strong> Sesiunea pornește un browser propriu. Nu se atașează la cel pe care îl ai deschis și nu-i atinge filele sau autentificările.</li>
+      </ul>
+    </div>
+  </section>
+
+  <section>
+    <h2>Încearcă-l</h2>
+    <div class="cta">
+      <a class="btn btn-primary" href="/ro/descarcare/">Descarcă pentru Windows</a>
+      <a class="btn btn-ghost" href="/ro/time-travel-testing/">Time travel testing</a>
+    </div>
+  </section>
+
+</div>

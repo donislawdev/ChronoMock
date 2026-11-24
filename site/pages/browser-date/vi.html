@@ -1,0 +1,109 @@
+<!-- Changing the date in Chrome or Firefox for testing, vi.
+
+     Change date in browser for testing, change browser date and time, change date in chrome, firefox
+     change date and time and firefox spoof date are what people type (search suggestions,
+     2026-11-23). The browsers are named because those are the names people search under. Measured
+     on 2026-11-23 with a session set to 2040: an HTTPS site loaded in Chrome, whose browser process
+     keeps the real date, and showed a security warning in Firefox, whose whole browser follows the
+     session. The DevTools time zone is the location preset of its Sensors panel. -->
+
+<div class="shell">
+
+  <section class="plain">
+    <h1>Đổi ngày trong Chrome hoặc Firefox để kiểm thử</h1>
+    <p class="sub">
+      Những câu trả lời thường gặp là một tiện ích mở rộng thay ngày trong một trang, hoặc đồng hồ của framework kiểm thử. Chrono Mock khởi chạy chính trình duyệt với đồng hồ riêng của nó - mọi tab và mọi worker, ở bất kỳ ngày nào, đóng băng hoặc tăng tốc - và để yên đồng hồ Windows cùng mọi chương trình khác.
+    </p>
+  </section>
+
+  <section>
+    <h2>Những câu trả lời thường gặp bao phủ gì</h2>
+    <div class="wrap">
+      <table>
+        <thead>
+          <tr><th>Cách làm</th><th>Ai thấy ngày mới</th><th>Bỏ sót gì</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Một tiện ích mở rộng của trình duyệt</td><td>Ngày của JavaScript trong các trang nó được phép vào</td><td>Thường mỗi lần một tab, và không gì cho bạn biết nó đã bỏ sót gì</td></tr>
+          <tr><td>Chrome DevTools</td><td>Một múi giờ, đặt qua một vị trí trong bảng Sensors</td><td>Chính ngày tháng</td></tr>
+          <tr><td>Đồng hồ của framework kiểm thử</td><td>Các trang mà bài kiểm thử bạn viết mở ra</td><td>Kiểm thử thủ công, và mọi trang mà bài kiểm thử không điều khiển</td></tr>
+          <tr><td>Đồng hồ Windows</td><td>Mọi thứ trên máy</td><td>Không gì cả, và đó chính là vấn đề: chứng chỉ, đăng nhập miền và đồng bộ giờ cũng dời theo</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="prose">
+      <p>
+        <a href="/vi/doi-ngay-he-thong-de-kiem-thu/">Đổi đồng hồ Windows làm hỏng những gì &rarr;</a>
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Chrome</h2>
+    <div class="prose">
+      <p>
+        Chrome được khởi chạy với một hồ sơ dùng một lần sạch sẽ và một cổng gỡ lỗi cục bộ, và mọi trang cùng mọi worker lấy giờ JavaScript từ phiên: <code>Date.now</code>, <code>new Date()</code>, <code>performance.now</code>, <code>setTimeout</code>, <code>setInterval</code> và múi giờ của phiên. Bản thân trình duyệt vẫn giữ ngày thật, nên các trang HTTPS vẫn tải được - đã kiểm tra với một phiên đặt ở năm 2040.
+      </p>
+    </div>
+
+    <pre class="term"><span class="c"># Chrome ở mười giây cuối của năm 2027, nhanh gấp sáu mươi lần</span>
+<span class="p">chrono</span> run "C:\Program Files\Google\Chrome\Application\chrome.exe" --at 2027-12-31T23:59:50 --mode x60 --args "http://localhost:8080/"</pre>
+
+    <div class="prose">
+      <p>
+        Hồ sơ đó không phải của bạn: không có đăng nhập đã lưu, không có tiện ích mở rộng, và bị xóa khi phiên kết thúc. Các trình duyệt khác dựa trên Chromium cũng hoạt động như vậy.
+        <a href="/vi/electron-chromium/">Chế độ Chromium hoạt động thế nào &rarr;</a>
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Firefox</h2>
+    <div class="prose">
+      <p>
+        Firefox chạy các trang trong tiến trình hộp cát mà phiên không vào được, nên cần <code>--no-gecko-sandbox</code>. Khi đó các trang khởi động bên ngoài hộp cát, tham gia phiên và theo đồng hồ, tốc độ, các lần nhảy và múi giờ của phiên. Firefox chạy không có lớp bảo vệ đó cho tới khi bị đóng, nên chỉ mở trong đó những trang bạn tin tưởng. Hãy cho nó một hồ sơ riêng bằng <code>-no-remote -profile</code> và một thư mục trống, để nó không chuyển trang sang một Firefox bạn đang mở sẵn.
+      </p>
+    </div>
+
+    <pre class="term"><span class="c"># Firefox ở mười giây cuối của năm 2027, với thư mục hồ sơ riêng</span>
+<span class="p">chrono</span> run "C:\Program Files\Mozilla Firefox\firefox.exe" --at 2027-12-31T23:59:50 --no-gecko-sandbox --args "-no-remote -profile C:\ff-test http://localhost:8080/"</pre>
+
+    <div class="prose">
+      <p>
+        Trong Firefox, cả trình duyệt dời theo chứ không chỉ các trang, kể cả việc kiểm tra chứng chỉ: trong một phiên đặt ở năm 2040, một trang HTTPS thật đã hiện cảnh báo bảo mật. Trường hợp hoạt động được là trang mở từ tệp, máy chủ kiểm thử do bạn chạy, hoặc một ngày mà chứng chỉ của trang vẫn còn bao phủ.
+      </p>
+      <p>
+        Khi được khởi chạy với quyền quản trị viên, Firefox bỏ quyền đó và khởi động lại bên ngoài phiên, trừ khi trong các đối số của nó có <code>--no-deelevate</code>, và phiên sẽ báo điều này ngay từ đầu.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Biết rằng các trang đã nhận được ngày</h2>
+    <div class="prose">
+      <p>
+        Báo cáo cho biết phiên đã tới được những trang và worker nào, và những cái nào vẫn ở đồng hồ thật - trong Chrome theo từng ngữ cảnh JavaScript, trong Firefox theo từng tiến trình.
+        <a href="/vi/kiem-toan-nguon-thoi-gian/">Báo cáo nói gì &rarr;</a>
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Những gì nó không làm</h2>
+    <div class="prose">
+      <ul>
+        <li><strong>Phía máy chủ.</strong> Ngày mà một trang nhận từ máy chủ của nó vẫn là ngày của máy chủ.</li>
+        <li><strong>Trình duyệt hằng ngày của bạn.</strong> Phiên khởi chạy trình duyệt riêng. Nó không gắn vào trình duyệt bạn đang mở và không đụng đến các tab hay đăng nhập của trình duyệt đó.</li>
+      </ul>
+    </div>
+  </section>
+
+  <section>
+    <h2>Dùng thử</h2>
+    <div class="cta">
+      <a class="btn btn-primary" href="/vi/tai-xuong/">Tải về cho Windows</a>
+      <a class="btn btn-ghost" href="/vi/time-travel-testing/">Time travel testing</a>
+    </div>
+  </section>
+
+</div>

@@ -1,0 +1,109 @@
+<!-- Changing the date in Chrome or Firefox for testing, zh-hant.
+
+     Change date in browser for testing, change browser date and time, change date in chrome, firefox
+     change date and time and firefox spoof date are what people type (search suggestions,
+     2026-11-23). The browsers are named because those are the names people search under. Measured
+     on 2026-11-23 with a session set to 2040: an HTTPS site loaded in Chrome, whose browser process
+     keeps the real date, and showed a security warning in Firefox, whose whole browser follows the
+     session. The DevTools time zone is the location preset of its Sensors panel. -->
+
+<div class="shell">
+
+  <section class="plain">
+    <h1>為測試變更 Chrome 或 Firefox 的日期</h1>
+    <p class="sub">
+      常見的答案是一個在頁面裡替換日期的擴充功能，或測試框架的時鐘。Chrono Mock 直接用獨立的時鐘啟動瀏覽器本身：每個分頁和每個 worker，任意日期，可凍結或加速，而 Windows 時鐘和其他所有程式都不受影響。
+    </p>
+  </section>
+
+  <section>
+    <h2>常見答案涵蓋了什麼</h2>
+    <div class="wrap">
+      <table>
+        <thead>
+          <tr><th>方法</th><th>誰看到新日期</th><th>漏掉了什麼</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>瀏覽器擴充功能</td><td>它能進入的頁面裡的 JavaScript 日期</td><td>往往一次只管一個分頁，而且不會告訴你漏掉了什麼</td></tr>
+          <tr><td>Chrome DevTools</td><td>時區，透過 Sensors 面板裡的位置設定</td><td>日期本身</td></tr>
+          <tr><td>測試框架的時鐘</td><td>你寫的測試開啟的頁面</td><td>手動測試，以及測試沒有驅動的每個頁面</td></tr>
+          <tr><td>Windows 時鐘</td><td>整台電腦上的一切</td><td>什麼都不漏，這正是問題：憑證、網域登入和時間同步也一起移動</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="prose">
+      <p>
+        <a href="/zh-hant/change-system-date-testing/">修改 Windows 時鐘會弄壞什麼 &rarr;</a>
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Chrome</h2>
+    <div class="prose">
+      <p>
+        Chrome 以乾淨的一次性設定檔和本機偵錯連接埠啟動，每個頁面和 worker 都從工作階段取得 JavaScript 時間：<code>Date.now</code>, <code>new Date()</code>, <code>performance.now</code>, <code>setTimeout</code>, <code>setInterval</code>，以及工作階段的時區。瀏覽器本身保持真實日期，所以 HTTPS 網站照常載入 - 已在設為 2040 年的工作階段中驗證。
+      </p>
+    </div>
+
+    <pre class="term"><span class="c"># Chrome 處於 2027 年最後十秒，以六十倍速執行</span>
+<span class="p">chrono</span> run "C:\Program Files\Google\Chrome\Application\chrome.exe" --at 2027-12-31T23:59:50 --mode x60 --args "http://localhost:8080/"</pre>
+
+    <div class="prose">
+      <p>
+        這個設定檔不是你的：沒有儲存的登入、沒有擴充功能，工作階段結束後即被刪除。其他以 Chromium 為基礎的瀏覽器同樣適用。
+        <a href="/zh-hant/electron-chromium/">Chromium 模式如何運作 &rarr;</a>
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Firefox</h2>
+    <div class="prose">
+      <p>
+        Firefox 在工作階段進不去的沙箱處理程序中執行頁面，因此需要 <code>--no-gecko-sandbox</code>。這樣頁面會在沙箱外啟動，加入工作階段，跟隨它的時鐘、速度、跳轉和時區。在關閉之前，Firefox 都沒有這層保護，所以只在裡面開啟你信任的頁面。用 <code>-no-remote -profile</code> 加一個空資料夾給它一個獨立設定檔，這樣它不會把頁面交給你已經開啟的 Firefox。
+      </p>
+    </div>
+
+    <pre class="term"><span class="c"># Firefox 處於 2027 年最後十秒，使用獨立的設定檔資料夾</span>
+<span class="p">chrono</span> run "C:\Program Files\Mozilla Firefox\firefox.exe" --at 2027-12-31T23:59:50 --no-gecko-sandbox --args "-no-remote -profile C:\ff-test http://localhost:8080/"</pre>
+
+    <div class="prose">
+      <p>
+        在 Firefox 中，移動的是整個瀏覽器而不只是頁面，憑證檢查也包括在內：在設為 2040 年的工作階段中，一個真實的 HTTPS 網站顯示了安全警告。來自檔案的頁面、你自己執行的測試伺服器，或網站憑證仍然涵蓋的日期，才是可行的情況。
+      </p>
+      <p>
+        以系統管理員身分啟動時，Firefox 會放棄權限並在工作階段之外重新啟動，除非它的引數裡有 <code>--no-deelevate</code>，工作階段從一開始就會說明這一點。
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>如何知道頁面拿到了日期</h2>
+    <div class="prose">
+      <p>
+        報告會說明工作階段到達了哪些頁面和 worker，哪些仍用真實時鐘：Chrome 按每個 JavaScript 內容，Firefox 按每個處理程序。
+        <a href="/zh-hant/time-source-audit/">報告說明了什麼 &rarr;</a>
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>它不做什麼</h2>
+    <div class="prose">
+      <ul>
+        <li><strong>伺服器端。</strong> 網站從自己伺服器拿到的日期仍是伺服器的日期。</li>
+        <li><strong>你日常用的瀏覽器。</strong> 工作階段啟動的是它自己的瀏覽器。它不會附加到你已經開啟的瀏覽器，也不碰其中的分頁和登入。</li>
+      </ul>
+    </div>
+  </section>
+
+  <section>
+    <h2>親自試試</h2>
+    <div class="cta">
+      <a class="btn btn-primary" href="/zh-hant/download/">下載 Windows 版</a>
+      <a class="btn btn-ghost" href="/zh-hant/time-travel-testing/">時間旅行測試</a>
+    </div>
+  </section>
+
+</div>

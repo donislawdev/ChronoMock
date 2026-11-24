@@ -1,0 +1,109 @@
+<!-- Changing the date in Chrome or Firefox for testing, ja.
+
+     Change date in browser for testing, change browser date and time, change date in chrome, firefox
+     change date and time and firefox spoof date are what people type (search suggestions,
+     2026-11-23). The browsers are named because those are the names people search under. Measured
+     on 2026-11-23 with a session set to 2040: an HTTPS site loaded in Chrome, whose browser process
+     keeps the real date, and showed a security warning in Firefox, whose whole browser follows the
+     session. The DevTools time zone is the location preset of its Sensors panel. -->
+
+<div class="shell">
+
+  <section class="plain">
+    <h1>テストのために Chrome や Firefox の日付を変更する</h1>
+    <p class="sub">
+      よくある答えは、ページの日付を置き換える拡張機能か、テスト フレームワークの時計です。Chrono Mock はブラウザーそのものを専用の時計で起動します。すべてのタブとすべての worker が、任意の日付で、止めることも速めることもでき、Windows の時計とほかのプログラムには手を触れません。
+    </p>
+  </section>
+
+  <section>
+    <h2>よくある答えがカバーする範囲</h2>
+    <div class="wrap">
+      <table>
+        <thead>
+          <tr><th>方法</th><th>新しい日付が見えるもの</th><th>カバーしないもの</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>ブラウザー拡張機能</td><td>入ることを許されたページの JavaScript の日付</td><td>多くは一度に 1 つのタブだけで、何を取りこぼしたかは教えてくれない</td></tr>
+          <tr><td>Chrome DevTools</td><td>タイムゾーン。Sensors パネルの位置で設定</td><td>日付そのもの</td></tr>
+          <tr><td>テスト フレームワークの時計</td><td>自分で書いたテストが開くページ</td><td>手動テストと、テストが操作しないすべてのページ</td></tr>
+          <tr><td>Windows の時計</td><td>マシン上のすべて</td><td>取りこぼしはない。それが問題で、証明書、ドメイン ログオン、時刻同期まで動く</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="prose">
+      <p>
+        <a href="/ja/change-system-date-testing/">Windows の時計を変えると何が壊れるか &rarr;</a>
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Chrome</h2>
+    <div class="prose">
+      <p>
+        Chrome はまっさらな使い捨てプロファイルとローカルのデバッグ ポートで起動し、すべてのページと worker が JavaScript の時刻をセッションから受け取ります。<code>Date.now</code>, <code>new Date()</code>, <code>performance.now</code>, <code>setTimeout</code>, <code>setInterval</code>、そしてセッションのタイムゾーンです。ブラウザー自体は本物の日付のままなので、HTTPS のサイトは問題なく読み込めます。2040 年に設定したセッションで確認済みです。
+      </p>
+    </div>
+
+    <pre class="term"><span class="c"># Chrome を 2027 年の最後の 10 秒で、60 倍速で動かす</span>
+<span class="p">chrono</span> run "C:\Program Files\Google\Chrome\Application\chrome.exe" --at 2027-12-31T23:59:50 --mode x60 --args "http://localhost:8080/"</pre>
+
+    <div class="prose">
+      <p>
+        このプロファイルはあなたのものではありません。保存されたログインも拡張機能もなく、セッション終了時に削除されます。Chromium ベースのほかのブラウザーも同じように動きます。
+        <a href="/ja/electron-chromium/">Chromium モードのしくみ &rarr;</a>
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Firefox</h2>
+    <div class="prose">
+      <p>
+        Firefox はセッションが入れないサンドボックス内のプロセスでページを動かすので、<code>--no-gecko-sandbox</code> が必要です。するとページはサンドボックスの外で起動し、セッションに加わって、その時計、速度、ジャンプ、タイムゾーンに従います。Firefox は閉じるまでその保護なしで動くので、信頼できるページだけを開いてください。<code>-no-remote -profile</code> と空のフォルダーで専用のプロファイルを与えれば、すでに開いている Firefox にページを渡してしまうこともありません。
+      </p>
+    </div>
+
+    <pre class="term"><span class="c"># Firefox を 2027 年の最後の 10 秒で、専用のプロファイル フォルダーで動かす</span>
+<span class="p">chrono</span> run "C:\Program Files\Mozilla Firefox\firefox.exe" --at 2027-12-31T23:59:50 --no-gecko-sandbox --args "-no-remote -profile C:\ff-test http://localhost:8080/"</pre>
+
+    <div class="prose">
+      <p>
+        Firefox ではページだけでなくブラウザー全体が動き、証明書の検査も含まれます。2040 年に設定したセッションでは、本物の HTTPS サイトがセキュリティ警告を表示しました。うまくいくのは、ファイルから開くページ、自分で動かすテスト サーバー、またはサイトの証明書がまだ有効な日付です。
+      </p>
+      <p>
+        管理者として起動すると、Firefox は権限を捨ててセッションの外で起動し直します。引数に <code>--no-deelevate</code> があれば別で、セッションはこのことを最初から伝えます。
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>ページに日付が届いたと知るには</h2>
+    <div class="prose">
+      <p>
+        レポートは、セッションが届いたページと worker、本物の時計のままだったものを示します。Chrome では JavaScript のコンテキストごと、Firefox ではプロセスごとです。
+        <a href="/ja/time-source-audit/">レポートの内容 &rarr;</a>
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>できないこと</h2>
+    <div class="prose">
+      <ul>
+        <li><strong>サーバー側。</strong> サイトが自分のサーバーから受け取る日付は、サーバーの日付のままです。</li>
+        <li><strong>普段使いのブラウザー。</strong> セッションは専用のブラウザーを起動します。開いているブラウザーにはつながらず、そのタブやログインには触れません。</li>
+      </ul>
+    </div>
+  </section>
+
+  <section>
+    <h2>試してみる</h2>
+    <div class="cta">
+      <a class="btn btn-primary" href="/ja/download/">Windows 版をダウンロード</a>
+      <a class="btn btn-ghost" href="/ja/time-travel-testing/">タイムトラベルテスト</a>
+    </div>
+  </section>
+
+</div>

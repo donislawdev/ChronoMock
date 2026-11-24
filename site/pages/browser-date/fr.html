@@ -1,0 +1,109 @@
+<!-- Changing the date in Chrome or Firefox for testing, fr.
+
+     Change date in browser for testing, change browser date and time, change date in chrome, firefox
+     change date and time and firefox spoof date are what people type (search suggestions,
+     2026-11-23). The browsers are named because those are the names people search under. Measured
+     on 2026-11-23 with a session set to 2040: an HTTPS site loaded in Chrome, whose browser process
+     keeps the real date, and showed a security warning in Firefox, whose whole browser follows the
+     session. The DevTools time zone is the location preset of its Sensors panel. -->
+
+<div class="shell">
+
+  <section class="plain">
+    <h1>Changer la date dans Chrome ou Firefox pour tester</h1>
+    <p class="sub">
+      Les réponses habituelles sont une extension qui remplace la date dans une page, ou l'horloge d'un framework de test. Chrono Mock lance le navigateur lui-même avec sa propre horloge - chaque onglet et chaque worker, à n'importe quelle date, figée ou accélérée - et laisse tranquilles l'horloge de Windows et tous les autres programmes.
+    </p>
+  </section>
+
+  <section>
+    <h2>Ce que couvrent les réponses habituelles</h2>
+    <div class="wrap">
+      <table>
+        <thead>
+          <tr><th>Approche</th><th>Qui voit la nouvelle date</th><th>Ce qu'elle laisse de côté</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Une extension de navigateur</td><td>La date JavaScript des pages où elle a le droit d'entrer</td><td>Souvent un onglet à la fois, et rien ne dit ce qu'elle a manqué</td></tr>
+          <tr><td>Les DevTools de Chrome</td><td>Un fuseau horaire, réglé via un lieu dans le panneau Sensors</td><td>La date elle-même</td></tr>
+          <tr><td>L'horloge d'un framework de test</td><td>Les pages qu'ouvre un test que vous écrivez</td><td>Les tests manuels, et toute page que le test ne pilote pas</td></tr>
+          <tr><td>L'horloge de Windows</td><td>Tout ce qui tourne sur la machine</td><td>Rien, et c'est le problème : certificats, connexion au domaine et synchronisation de l'heure bougent aussi</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="prose">
+      <p>
+        <a href="/fr/changer-la-date-systeme-pour-tester/">Ce que casse le changement de l'horloge de Windows &rarr;</a>
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Chrome</h2>
+    <div class="prose">
+      <p>
+        Chrome est lancé avec un profil jetable tout neuf et un port de débogage local, et chaque page et chaque worker prend son heure JavaScript dans la session : <code>Date.now</code>, <code>new Date()</code>, <code>performance.now</code>, <code>setTimeout</code>, <code>setInterval</code> et le fuseau horaire de la session. Le navigateur lui-même garde la vraie date, donc les sites HTTPS continuent de se charger - vérifié avec une session réglée sur 2040.
+      </p>
+    </div>
+
+    <pre class="term"><span class="c"># Chrome dans les dix dernières secondes de 2027, soixante fois plus vite</span>
+<span class="p">chrono</span> run "C:\Program Files\Google\Chrome\Application\chrome.exe" --at 2027-12-31T23:59:50 --mode x60 --args "http://localhost:8080/"</pre>
+
+    <div class="prose">
+      <p>
+        Le profil n'est pas le vôtre : pas de connexions enregistrées, pas d'extensions, et il est supprimé à la fin de la session. Les autres navigateurs basés sur Chromium fonctionnent de la même façon.
+        <a href="/fr/electron-chromium/">Comment marche le mode Chromium &rarr;</a>
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Firefox</h2>
+    <div class="prose">
+      <p>
+        Firefox fait tourner ses pages dans des processus en bac à sable où la session ne peut pas entrer, il lui faut donc <code>--no-gecko-sandbox</code>. Les pages démarrent alors hors de ce bac à sable, rejoignent la session et suivent son horloge, sa vitesse, ses sauts et son fuseau horaire. Firefox tourne sans cette protection jusqu'à sa fermeture, n'y ouvrez donc que des pages de confiance. Donnez-lui un profil à lui avec <code>-no-remote -profile</code> et un dossier vide, pour qu'il ne passe pas la page à un Firefox déjà ouvert.
+      </p>
+    </div>
+
+    <pre class="term"><span class="c"># Firefox dans les dix dernières secondes de 2027, avec son propre dossier de profil</span>
+<span class="p">chrono</span> run "C:\Program Files\Mozilla Firefox\firefox.exe" --at 2027-12-31T23:59:50 --no-gecko-sandbox --args "-no-remote -profile C:\ff-test http://localhost:8080/"</pre>
+
+    <div class="prose">
+      <p>
+        Dans Firefox, c'est tout le navigateur qui bouge, pas seulement ses pages, et cela inclut la vérification des certificats : dans une session réglée sur 2040, un vrai site HTTPS a affiché un avertissement de sécurité. Ça marche avec des pages ouvertes depuis un fichier, un serveur de test à vous, ou une date que le certificat du site couvre encore.
+      </p>
+      <p>
+        Lancé en tant qu'administrateur, Firefox abandonne les droits et redémarre hors de la session, sauf si <code>--no-deelevate</code> figure parmi ses arguments, et la session le dit dès le départ.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Savoir que les pages ont reçu la date</h2>
+    <div class="prose">
+      <p>
+        Le rapport dit quelles pages et quels workers la session a atteints et lesquels sont restés sur la vraie horloge - par contexte JavaScript dans Chrome, par processus dans Firefox.
+        <a href="/fr/audit-des-sources-de-temps/">Ce que dit le rapport &rarr;</a>
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Ce que ça ne fait pas</h2>
+    <div class="prose">
+      <ul>
+        <li><strong>Le côté serveur.</strong> Une date qu'un site reçoit de son serveur reste la date du serveur.</li>
+        <li><strong>Votre navigateur de tous les jours.</strong> La session lance son propre navigateur. Elle ne s'attache pas à celui que vous avez ouvert et laisse ses onglets et ses connexions tranquilles.</li>
+      </ul>
+    </div>
+  </section>
+
+  <section>
+    <h2>L'essayer</h2>
+    <div class="cta">
+      <a class="btn btn-primary" href="/fr/telecharger/">Télécharger pour Windows</a>
+      <a class="btn btn-ghost" href="/fr/time-travel-testing/">Time travel testing</a>
+    </div>
+  </section>
+
+</div>

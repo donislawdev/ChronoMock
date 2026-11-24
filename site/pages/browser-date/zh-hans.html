@@ -1,0 +1,109 @@
+<!-- Changing the date in Chrome or Firefox for testing, zh-hans.
+
+     Change date in browser for testing, change browser date and time, change date in chrome, firefox
+     change date and time and firefox spoof date are what people type (search suggestions,
+     2026-11-23). The browsers are named because those are the names people search under. Measured
+     on 2026-11-23 with a session set to 2040: an HTTPS site loaded in Chrome, whose browser process
+     keeps the real date, and showed a security warning in Firefox, whose whole browser follows the
+     session. The DevTools time zone is the location preset of its Sensors panel. -->
+
+<div class="shell">
+
+  <section class="plain">
+    <h1>为测试更改 Chrome 或 Firefox 的日期</h1>
+    <p class="sub">
+      常见的答案是一个在页面里替换日期的扩展，或测试框架的时钟。Chrono Mock 直接用独立的时钟启动浏览器本身：每个标签页和每个 worker，任意日期，可冻结或加速，而 Windows 时钟和其他所有程序都不受影响。
+    </p>
+  </section>
+
+  <section>
+    <h2>常见答案覆盖了什么</h2>
+    <div class="wrap">
+      <table>
+        <thead>
+          <tr><th>方法</th><th>谁看到新日期</th><th>漏掉了什么</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>浏览器扩展</td><td>它能进入的页面里的 JavaScript 日期</td><td>往往一次只管一个标签页，而且不会告诉你漏掉了什么</td></tr>
+          <tr><td>Chrome DevTools</td><td>时区，通过 Sensors 面板里的位置设置</td><td>日期本身</td></tr>
+          <tr><td>测试框架的时钟</td><td>你写的测试打开的页面</td><td>手动测试，以及测试没有驱动的每个页面</td></tr>
+          <tr><td>Windows 时钟</td><td>整台机器上的一切</td><td>什么都不漏，这正是问题：证书、域登录和时间同步也一起移动</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="prose">
+      <p>
+        <a href="/zh-hans/change-system-date-testing/">修改 Windows 时钟会弄坏什么 &rarr;</a>
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Chrome</h2>
+    <div class="prose">
+      <p>
+        Chrome 以干净的一次性配置文件和本地调试端口启动，每个页面和 worker 都从会话获取 JavaScript 时间：<code>Date.now</code>, <code>new Date()</code>, <code>performance.now</code>, <code>setTimeout</code>, <code>setInterval</code>，以及会话时区。浏览器本身保持真实日期，所以 HTTPS 网站照常加载 - 已在设为 2040 年的会话中验证。
+      </p>
+    </div>
+
+    <pre class="term"><span class="c"># Chrome 处于 2027 年最后十秒，以六十倍速运行</span>
+<span class="p">chrono</span> run "C:\Program Files\Google\Chrome\Application\chrome.exe" --at 2027-12-31T23:59:50 --mode x60 --args "http://localhost:8080/"</pre>
+
+    <div class="prose">
+      <p>
+        这个配置文件不是你的：没有保存的登录、没有扩展，会话结束后即被删除。其他基于 Chromium 的浏览器同样适用。
+        <a href="/zh-hans/electron-chromium/">Chromium 模式如何工作 &rarr;</a>
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Firefox</h2>
+    <div class="prose">
+      <p>
+        Firefox 在会话进不去的沙盒进程中运行页面，因此需要 <code>--no-gecko-sandbox</code>。这样页面会在沙盒外启动，加入会话，跟随它的时钟、速度、跳转和时区。在关闭之前，Firefox 都没有这层保护，所以只在里面打开你信任的页面。用 <code>-no-remote -profile</code> 加一个空文件夹给它一个独立配置文件，这样它不会把页面交给你已经打开的 Firefox。
+      </p>
+    </div>
+
+    <pre class="term"><span class="c"># Firefox 处于 2027 年最后十秒，使用独立的配置文件夹</span>
+<span class="p">chrono</span> run "C:\Program Files\Mozilla Firefox\firefox.exe" --at 2027-12-31T23:59:50 --no-gecko-sandbox --args "-no-remote -profile C:\ff-test http://localhost:8080/"</pre>
+
+    <div class="prose">
+      <p>
+        在 Firefox 中，移动的是整个浏览器而不只是页面，证书检查也包括在内：在设为 2040 年的会话中，一个真实的 HTTPS 网站显示了安全警告。来自文件的页面、你自己运行的测试服务器，或网站证书仍然覆盖的日期，才是可行的情况。
+      </p>
+      <p>
+        以管理员身份启动时，Firefox 会放弃权限并在会话之外重新启动，除非它的参数里有 <code>--no-deelevate</code>，会话从一开始就会说明这一点。
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>如何知道页面拿到了日期</h2>
+    <div class="prose">
+      <p>
+        报告会说明会话到达了哪些页面和 worker，哪些仍用真实时钟：Chrome 按每个 JavaScript 上下文，Firefox 按每个进程。
+        <a href="/zh-hans/time-source-audit/">报告说明了什么 &rarr;</a>
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>它不做什么</h2>
+    <div class="prose">
+      <ul>
+        <li><strong>服务器端。</strong> 网站从自己服务器拿到的日期仍是服务器的日期。</li>
+        <li><strong>你日常用的浏览器。</strong> 会话启动的是它自己的浏览器。它不会附加到你已经打开的浏览器，也不碰其中的标签页和登录。</li>
+      </ul>
+    </div>
+  </section>
+
+  <section>
+    <h2>亲自试试</h2>
+    <div class="cta">
+      <a class="btn btn-primary" href="/zh-hans/download/">下载 Windows 版</a>
+      <a class="btn btn-ghost" href="/zh-hans/time-travel-testing/">时间旅行测试</a>
+    </div>
+  </section>
+
+</div>
