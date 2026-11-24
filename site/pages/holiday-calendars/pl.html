@@ -1,0 +1,131 @@
+<!-- Holiday calendars, Polish. Part of the documentation (site/data/docs.json). The calendars
+     come from calendars/*.json themselves, through calendar_list. The example holiday is
+     site/examples/calendars/holiday.json, through holiday_example. -->
+
+<h1>Kalendarze świąt</h1>
+<p class="sub">
+  Które dni są robocze: do liczenia dni roboczych i do oznaczeń weekendu i świąt przy wyniku.
+  Liczba kalendarzy dostarczanych z programem: {{calendar_count}}.
+</p>
+
+<h2 id="co-robi-kalendarz">Co robi kalendarz</h2>
+<p>
+  Kalendarz zna weekend i święta ustawowe jednego miejsca. Gdy go wybierzesz, kalkulator może:
+</p>
+<ul>
+  <li>liczyć dni robocze: <code>--shift +5bd</code> pomija weekendy i święta,</li>
+  <li>przejść do najbliższego dnia roboczego przez <code>--nearest nbd</code> albo
+    <code>pbd</code>,</li>
+  <li>powiedzieć przy wyniku, czy to dzień roboczy i jakie to święto.</li>
+</ul>
+<p>
+  W oknie wybierasz go w polu <strong>Kalendarz</strong> w Kalkulatorze. W wierszu poleceń to
+  <code>chrono calc --calendar</code> z nazwą do wpisania.
+  <a href="/pl/dokumentacja/scenariusze/">Scenariusz</a> zrobiony dla jednego rynku sam liczy w
+  kalendarzu tego rynku. Sesja używa kalendarza tylko do policzenia daty, od której startuje, ze
+  scenariusza, który liczy dni robocze.
+</p>
+<pre class="term"><span class="p">chrono</span> calc --base 2026-12-22T09:00:00 --shift +3bd --calendar pl
+Chrono Mock - date calculator
+  base:    2026-12-22T09:00:00
+  step 1:  shift +3 business_days  -&gt; 2026-12-29T09:00:00
+  result:  2026-12-29T09:00:00
+<span class="c">  ...</span>
+    business day  yes  (pl)
+    holiday       no</pre>
+<p>
+  Trzy dni robocze od wtorku 22 grudnia kończą się 29 grudnia: w Polsce wolne są Wigilia, oba dni
+  Bożego Narodzenia i weekend między nimi.
+</p>
+
+<h2 id="lata">Lata, które kalendarz obejmuje</h2>
+<p>
+  Święta się zmieniają: ustawa jedno dodaje, inne przesuwa. Dlatego każdy kalendarz mówi, od
+  którego roku jest pewny i którego dnia ostatnio sprawdzono jego święta z prawem.
+</p>
+<ul>
+  <li><strong>Przed pierwszym rokiem</strong> krok o dni robocze jest odrzucany z komunikatem, a
+    data jest pokazana jako nieoceniona, a nie jako dzień roboczy.</li>
+  <li><strong>Po dniu sprawdzenia</strong> kalendarz liczy dalej według prawa z tego dnia. Gdy ten
+    dzień minął ponad rok temu, wynik późniejszy niż on jest oznaczony jako być może nieaktualny,
+    bo od tamtej pory mogło dojść święto.</li>
+</ul>
+
+<h2 id="weekend">Święto w weekend</h2>
+<p>
+  Niektóre miejsca dają dzień wolny w zamian za święto, które wypada w sobotę albo w niedzielę, a
+  każdy kalendarz niżej mówi, który to dzień. Gdy ten dzień jest już wolny, dzień wolny przesuwa
+  się na następny dzień roboczy w tym samym kierunku.
+</p>
+
+<h2 id="kalendarze">Kalendarze</h2>
+<p>
+  <code>chrono calendars</code> pokazuje te same i każdy, który dodasz. Każde święto ma lata, w
+  których obowiązuje, w granicach lat, które obejmuje kalendarz.
+</p>
+{{calendar_list}}
+
+<h2 id="wlasny">Własny kalendarz</h2>
+<p>
+  Kalendarz sam trzyma wszystkie dni wolne swojego miejsca: nie da się dopisać czegoś do innego.
+  Żeby liczyć też dni wolne twojej firmy, skopiuj kalendarz swojego kraju i dopisz je do kopii.
+</p>
+<ol>
+  <li>Skopiuj <code>pl.json</code> z folderu, który <code>chrono calendars</code> podaje w drugim
+    wierszu, np. do <code>pl-office.json</code>, i ustaw w nim <code>id</code> na
+    <code>pl-office</code>. Nazwa pliku bez <code>.json</code> musi być taka sama jak
+    <code>id</code>.</li>
+  <li>Dopisz każdy dzień do <code>holidays</code> w takim kształcie jak niżej, ze źródłem
+    <code>source</code>, które mówi, skąd ten dzień jest. Święto bez źródła jest odrzucane, bo z
+    tych plików ludzie liczą terminy płatności.</li>
+  <li>Uruchom <code>chrono calendars</code> jeszcze raz. Twój kalendarz jest na liście albo wśród
+    pominiętych plików, z powodem. Od tej chwili <code>--calendar pl-office</code> z niego
+    liczy.</li>
+</ol>
+{{holiday_example}}
+
+<h3>Co jest w pliku</h3>
+<div class="wrap"><table>
+<thead><tr><th>Klucz</th><th>Co to jest</th></tr></thead>
+<tbody>
+<tr><td><code>schema</code></td><td>Zawsze <code>chronomock.calendar/1</code>.</td></tr>
+<tr><td><code>id</code></td><td>Nazwa do wpisania, taka sama jak nazwa pliku.</td></tr>
+<tr><td><code>country</code>, <code>subregion</code></td><td>Kraj dwiema literami, np.
+  <code>PL</code>, i <code>null</code>.</td></tr>
+<tr><td><code>name</code></td><td><code>en</code> i <code>local</code> w języku tego
+  miejsca.</td></tr>
+<tr><td><code>weekend</code></td><td>Dni wolne w każdym tygodniu, np.
+  <code>["saturday", "sunday"]</code>.</td></tr>
+<tr><td><code>observed</code></td><td>Który dzień jest wolny za święto w weekend:
+  <code>none</code>, <code>sat_to_fri_sun_to_mon</code>, <code>sun_to_mon</code> albo
+  <code>weekend_to_mon</code>. Wszystko poza <code>none</code> wymaga weekendu w sobotę i
+  niedzielę.</td></tr>
+<tr><td><code>valid_from</code></td><td>Pierwszy rok, dla którego wszystko w kalendarzu ma źródło:
+  święta, weekend i reguła dla weekendów.</td></tr>
+<tr><td><code>law_as_of</code></td><td>Dzień, w którym święta sprawdzono z prawem, w zapisie
+  <code>YYYY-MM-DD</code>.</td></tr>
+<tr><td><code>source</code></td><td>Skąd pierwszy rok, weekend i reguła dla weekendów.</td></tr>
+<tr><td><code>holidays</code></td><td>Każde z <code>id</code>, nazwą <code>name</code>, regułą
+  daty <code>rule</code>, latami <code>valid_from</code> i <code>valid_to</code>
+  (<code>null</code> bez granicy) i własnym źródłem <code>source</code>.</td></tr>
+</tbody>
+</table></div>
+<p>
+  Klucz, którego program nie zna, jest odrzucany z nazwą, więc literówka nie zgubi święta bez
+  słowa.
+</p>
+
+<h3>Data święta</h3>
+<div class="wrap"><table>
+<thead><tr><th><code>rule</code></th><th>Dzień</th></tr></thead>
+<tbody>
+<tr><td><code class="long">{ "type": "fixed", "month": 11, "day": 11 }</code></td><td>Ta sama data
+  co roku: 11 listopada.</td></tr>
+<tr><td><code class="long">{ "type": "nth_weekday", "month": 1, "weekday": "monday", "order": 3 }</code></td><td>Trzeci
+  poniedziałek stycznia. <code>order</code> to od 1 do 5 albo <code>-1</code> dla ostatniego w
+  miesiącu.</td></tr>
+<tr><td><code class="long">{ "type": "easter_offset", "offset": 60 }</code></td><td>60 dni po
+  Wielkanocy. <code>0</code> to sama Wielkanoc, a minus liczy wstecz. Od <code>-80</code> do
+  <code>250</code>, co trzyma dzień w roku jego Wielkanocy.</td></tr>
+</tbody>
+</table></div>

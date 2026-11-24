@@ -9,6 +9,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use crate::catalogue::{self, Catalogue, CALENDARS_PAGE};
 use crate::docs::{self, DocsConfig};
 use crate::reference::{self, CliData};
 use crate::{
@@ -24,6 +25,7 @@ pub struct Ctx<'a> {
     pub tokens: &'a BTreeMap<String, String>,
     pub docs: &'a DocsConfig,
     pub cli: &'a CliData,
+    pub catalogue: &'a Catalogue,
 }
 
 impl Ctx<'_> {
@@ -62,6 +64,7 @@ pub fn build(root: &Path, out: &Path) -> Result<Report> {
     docs::check(&docs_cfg, &cfg, &pages)?;
     let cli: CliData = parse_json(&site_dir.join("data").join("cli.json"))?;
     reference::check(&cli, &docs_cfg.languages)?;
+    let catalogue = catalogue::load(root)?;
     check_pages(&cfg, &docs_cfg, &pages)?;
 
     prepare_out(out)?;
@@ -73,6 +76,7 @@ pub fn build(root: &Path, out: &Path) -> Result<Report> {
         tokens: &tok,
         docs: &docs_cfg,
         cli: &cli,
+        catalogue: &catalogue,
     };
 
     let mut report = Report {
@@ -354,6 +358,12 @@ pub fn render_page(ctx: &Ctx, page: &Page, lang: &str) -> Result<String> {
     if let Some(badge) = docs_tokens.get("next_release") {
         tokens.extend(reference::tokens(ctx.cli, lang, badge, &resolve)?);
     }
+    let calendars_page = ctx
+        .pages
+        .iter()
+        .find(|p| p.meta.id == CALENDARS_PAGE)
+        .and_then(|p| p.url_path(lang));
+    tokens.extend(catalogue::tokens(ctx.catalogue, lang, calendars_page.as_deref())?);
     tokens.extend(docs_tokens);
     let title = resolve_tokens(&meta.title, &tokens, &whence)?;
     let description = resolve_tokens(&meta.description, &tokens, &whence)?;

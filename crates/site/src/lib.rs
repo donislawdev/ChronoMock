@@ -40,6 +40,7 @@ use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
 
+pub mod catalogue;
 pub mod docs;
 pub mod reference;
 pub mod render;
@@ -456,16 +457,23 @@ pub fn load_pages(site_dir: &Path) -> Result<Vec<Page>> {
 /// Count the catalogue files that ship with the program. Used for the tokens, so a
 /// preset added to the repository shows up on the site without anyone editing prose.
 pub fn count_json_files(dir: &Path) -> Result<usize> {
+    Ok(json_files(dir)?.len())
+}
+
+/// The `.json` files of a catalogue folder, ordered by name so every machine builds the same
+/// page.
+pub fn json_files(dir: &Path) -> Result<Vec<PathBuf>> {
     // nosemgrep: rust.actix.path-traversal.tainted-path.tainted-path
     let entries = fs::read_dir(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
-    let mut n = 0;
+    let mut files = Vec::new();
     for entry in entries {
-        let entry = entry.map_err(|e| format!("{}: {e}", dir.display()))?;
-        if entry.path().extension().is_some_and(|e| e == "json") {
-            n += 1;
+        let path = entry.map_err(|e| format!("{}: {e}", dir.display()))?.path();
+        if path.extension().is_some_and(|e| e == "json") {
+            files.push(path);
         }
     }
-    Ok(n)
+    files.sort();
+    Ok(files)
 }
 
 #[cfg(test)]

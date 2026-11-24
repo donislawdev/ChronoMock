@@ -1,0 +1,161 @@
+<!-- Scenarios, Polish. Part of the documentation (site/data/docs.json). The list comes from
+     site/data/presets.json, the program's own list of its presets, through scenario_list. The
+     example is site/examples/presets/invoice-overdue.json, through preset_example. -->
+
+<h1>Scenariusze</h1>
+<p class="sub">
+  Gotowe daty do testów: ostatni dzień miesiąca, dzień przestępny, ostatnia sekunda okresu
+  próbnego. Okno nazywa je scenariuszami, a wiersz poleceń presetami.
+</p>
+
+<h2 id="uzycie">Jak użyć scenariusza</h2>
+<p>
+  Scenariusz to policzona za ciebie data i godzina, z jednym zdaniem o tym, co sprawdza. Wybór
+  scenariusza wpisuje datę i nic więcej: sesja nigdy nie startuje sama.
+</p>
+<ul>
+  <li><strong>Uruchom aplikację</strong> pokazuje w sekcji <strong>Scenariusze</strong> te, które
+    nie potrzebują od ciebie żadnej wartości. Wybór wpisuje datę w pole
+    <strong>Start od</strong>.</li>
+  <li><strong>Kalkulator</strong> pokazuje w sekcji <strong>Scenariusze</strong> te, które umie
+    policzyć, z polem na każdą wartość, o którą scenariusz pyta. <strong>Użyj tej daty</strong>
+    przenosi wynik do karty Uruchom aplikację.</li>
+  <li>W wierszu poleceń <code>--preset</code> bierze nazwę do wpisania, a każda wartość to jedno
+    <code>--param</code>.</li>
+</ul>
+<pre class="term"><span class="p">chrono</span> run "C:\apps\test.exe" --preset month-end
+<span class="p">chrono</span> calc --preset trial-last-day --param start_date=2027-01-01 --param trial_length=45d</pre>
+<p>
+  Część scenariuszy ma sens tylko dla działającej aplikacji: zegar 90 sekund do przodu coś znaczy
+  dla aplikacji, a nie dla kalkulatora. Inne mają sens tylko w kalkulatorze, jak dzień, w którym
+  ktoś kończy 18 lat. Przy każdym niżej jest napisane, gdzie działa.
+</p>
+
+<h2 id="wartosci">Podawanie wartości</h2>
+<p>
+  Scenariusz, który liczy od daty znanej tylko tobie, pyta o nią: o datę urodzenia, o dzień
+  początku okresu próbnego. W Kalkulatorze każda wartość ma swoje pole. W wierszu poleceń to
+  <code>--param</code>, nazwa wartości, znak równości i wartość.
+</p>
+<ul>
+  <li><strong>Data</strong> zaczyna się od roku: <code>2027-01-01</code>.</li>
+  <li><strong>Długość</strong> to liczba i jednostka bez spacji: <code>45d</code>. Jednostki są
+    te same co w <a href="/pl/dokumentacja-cli/#calc-shift"><code>--shift</code></a>, a
+    <code>bd</code> liczy dni robocze. Sama liczba jest odrzucana, bo nie mówi, co liczy.</li>
+  <li><strong>Wybór</strong> to jedno ze słów, które scenariusz wymienia, np.
+    <code>on_day</code>.</li>
+</ul>
+<p>
+  Wartość, dla której scenariusz ma domyślną, np. okres próbny 30 dni, można pominąć. Wartość bez
+  domyślnej zatrzymuje polecenie komunikatem, który ją nazywa. Dni robocze liczy
+  <a href="/pl/dokumentacja/kalendarze-swiat/">kalendarz świąt</a>: scenariusz zrobiony dla
+  jednego rynku liczy w kalendarzu tego rynku, a <code>chrono calc --calendar</code> wybiera inny.
+</p>
+
+<h2 id="lista">Scenariusze</h2>
+<p>
+  Liczba scenariuszy dostarczanych z programem: {{preset_count}}. <code>chrono presets</code>
+  pokazuje te same i każdy, który dodasz. <strong>Liczony jak</strong> pokazuje datę tak, jak zapisałyby ją
+  opcje <code>chrono calc</code>, z wartością do podania w nawiasach ostrych.
+</p>
+{{scenario_list}}
+
+<h2 id="wlasny">Własny scenariusz</h2>
+<p>
+  Scenariusz to mały plik tekstowy w formacie JSON. Ten sprawdza pierwszy dzień po terminie
+  płatności faktury:
+</p>
+{{preset_example}}
+<ol>
+  <li>Zapisz go jako <code>invoice-overdue.json</code>. Nazwa pliku bez <code>.json</code> musi
+    być taka sama jak <code>id</code>.</li>
+  <li>Połóż go w folderze, który program czyta. <code>chrono presets</code> podaje ten folder w
+    drugim wierszu. W paczce zip z oknem to folder <code>presets</code> obok
+    <code>ChronoMock.exe</code>. Zmiana folderu w Program Files wymaga uprawnień
+    administratora.</li>
+  <li>Uruchom <code>chrono presets</code> jeszcze raz. Twój scenariusz jest na liście albo wśród
+    pominiętych plików, z powodem.</li>
+</ol>
+<pre class="term"><span class="p">chrono</span> calc --preset invoice-overdue --param issued=2027-03-01
+Chrono Mock - date calculator
+  preset:   invoice-overdue - First day an invoice is overdue
+  explains: Does the app mark an invoice overdue on the day after its due date, and not on the due date itself?
+  base:    2027-03-01T00:00:00
+  step 1:  shift +14 days  -&gt; 2027-03-15T00:00:00
+  step 2:  shift +1 days  -&gt; 2027-03-16T00:00:00
+  step 3:  set time 08:00:00  -&gt; 2027-03-16T08:00:00
+  result:  2027-03-16T08:00:00
+<span class="c">  ...</span></pre>
+<p>
+  Wiersz poleceń mówi po angielsku, więc pokazuje angielską nazwę i opis. Okno pokazuje polskie,
+  gdy plik je ma.
+</p>
+
+<h3>Co jest w pliku</h3>
+<div class="wrap"><table>
+<thead><tr><th>Klucz</th><th>Co to jest</th></tr></thead>
+<tbody>
+<tr><td><code>schema</code></td><td>Zawsze <code>chronomock.preset/1</code>.</td></tr>
+<tr><td><code>id</code></td><td>Nazwa do wpisania, taka sama jak nazwa pliku: litery, cyfry,
+  <code>-</code> i <code>_</code>.</td></tr>
+<tr><td><code>name</code>, <code>explains</code></td><td>Nazwa i jedno zdanie o tym, co sprawdza,
+  dla każdego języka. <code>en</code> jest wymagany, a okno pokazuje swój język, gdy plik go
+  ma.</td></tr>
+<tr><td><code>applies_to</code></td><td><code>substitution</code> dla działającej aplikacji,
+  <code>calculator</code> dla Kalkulatora, <code>both</code> dla obu.</td></tr>
+<tr><td><code>market</code></td><td><code>null</code> albo <code>us</code> lub <code>pl</code>,
+  żeby dni robocze liczył kalendarz tego rynku.</td></tr>
+<tr><td><code>parameters</code></td><td>Wartości, o które pyta. Każda ma <code>id</code>,
+  <code>type</code> (<code>date</code>, <code>duration</code> dla długości albo
+  <code>variant</code> dla dnia przed, w dniu albo po: <code>day_before</code>,
+  <code>on_day</code>, <code>day_after</code>), <code>label</code> dla każdego języka i, jeśli
+  chcesz, <code>default</code>.</td></tr>
+<tr><td><code>moment</code></td><td>Skąd data startuje, <code>base</code>, i kroki
+  <code>steps</code> wykonywane po kolei.</td></tr>
+<tr><td><code>time_mode</code></td><td>Tempo, z jakim startuje <code>chrono run</code>.
+  <code>multiplier</code> 1 to prawdziwe tempo.</td></tr>
+</tbody>
+</table></div>
+
+<h3>Skąd data startuje</h3>
+<div class="wrap"><table>
+<thead><tr><th><code>base</code></th><th>Co to jest</th></tr></thead>
+<tbody>
+<tr><td><code>"today"</code></td><td>Dzisiejsza północ w strefie czasowej sesji.</td></tr>
+<tr><td><code>"now"</code></td><td>Ta chwila, co do sekundy.</td></tr>
+<tr><td><code class="long">{ "absolute": "2027-03-01T09:00:00" }</code></td><td>Ta godzina na zegarze
+  strefy sesji: 9 rano tam, gdzie biegnie test.</td></tr>
+<tr><td><code class="long">{ "absolute_utc": "2038-01-19T03:14:07Z" }</code></td><td>Ta chwila w UTC,
+  ta sama w każdej strefie. Dla dat, w których chodzi o samą chwilę, jak granica
+  2038.</td></tr>
+<tr><td><code class="long">{ "parameter": "issued" }</code></td><td>Data, którą poda osoba
+  używająca scenariusza.</td></tr>
+</tbody>
+</table></div>
+
+<h3>Kroki</h3>
+<p>
+  Każdy krok to to samo co opcja <code>chrono calc</code> i bierze te same wartości, więc co robi,
+  mówią <a href="/pl/dokumentacja-cli/#calc">opcje calc</a>.
+</p>
+<div class="wrap"><table>
+<thead><tr><th>Krok</th><th>To samo co</th></tr></thead>
+<tbody>
+<tr><td><code class="long">{ "shift": { "sign": "+", "amount": 1, "unit": "days" } }</code></td><td><code>--shift +1d</code>.
+  Jednostka to kod albo jej pełna nazwa.</td></tr>
+<tr><td><code class="long">{ "shift": { "sign": "+", "parameter": "term" } }</code></td><td><code>--shift</code>
+  o długość podaną przez osobę używającą scenariusza.</td></tr>
+<tr><td><code class="long">{ "shift": { "parameter": "boundary" } }</code></td><td>Dzień wstecz, bez
+  zmiany albo dzień naprzód, według wyboru tej osoby. Bez znaku: wybór ma swój.</td></tr>
+<tr><td><code class="long">{ "set_time": "08:00:00" }</code></td><td><code>--set-time</code></td></tr>
+<tr><td><code class="long">{ "snap": "eom" }</code></td><td><code>--snap</code></td></tr>
+<tr><td><code class="long">{ "nearest": "nbd" }</code></td><td><code>--nearest</code></td></tr>
+<tr><td><code class="long">{ "zone": "+05:45" }</code></td><td><code>--to-zone</code>: kroki po nim
+  liczą w tej strefie.</td></tr>
+</tbody>
+</table></div>
+<p>
+  Scenariusz mówi, kiedy jest data, a nigdy, jaki program uruchomić, więc w pliku nie ma miejsca na
+  ścieżkę. Plik od kogoś innego może ustawić datę i tempo, z jakimi startuje twój test, ale nie
+  może uruchomić programu.
+</p>

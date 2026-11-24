@@ -1,0 +1,8 @@
+{
+  "id": "company_day",
+  "name": { "en": "Company day", "local": "Dzień firmy" },
+  "rule": { "type": "fixed", "month": 6, "day": 2 },
+  "valid_from": 2027,
+  "valid_to": null,
+  "source": "Staff handbook, 2027 edition"
+}

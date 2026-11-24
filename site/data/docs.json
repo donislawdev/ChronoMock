@@ -34,6 +34,11 @@
       "pages": ["docs"]
     },
     {
+      "id": "dates",
+      "title": { "en": "Scenarios and calendars", "pl": "Scenariusze i kalendarze" },
+      "pages": ["scenarios", "holiday-calendars"]
+    },
+    {
       "id": "command-line",
       "title": { "en": "Command line", "pl": "Wiersz poleceń" },
       "pages": ["cli-reference", "exit-codes"]

@@ -1,0 +1,134 @@
+{
+  "//": "The words of the scenarios page and the holiday calendars page, in the languages of the documentation (site/data/docs.json). The scenarios themselves come from site/data/presets.json, the program's own list, and the calendars from calendars/*.json. A text may hold code between backticks and a {name} where a value goes, and every {name} must get a value. The facts of a parameter are sentences: the first starts after a colon, the others with a capital, and a full stop ends each. Rendered by crates/site/src/catalogue.rs.",
+
+  "words": {
+    "en": {
+      "link": "Link to",
+      "name_to_type": "Name to type",
+      "in_window": "In the window",
+      "on_command_line": "On the command line",
+      "asks_for": "Asks for",
+      "computed_like": "Worked out as",
+      "business_days": "Business days",
+      "speed": "Speed in chrono run",
+      "window": {
+        "both": "In the Scenarios list of Run an app, and in the Scenarios list of the Calculator.",
+        "session": "In the Scenarios list of Run an app.",
+        "calculator": "In the Scenarios list of the Calculator.",
+        "calculator_first": "In the Scenarios list of the Calculator, with a field for each value. Run an app lists only the scenarios that need no value: work this one out in the Calculator and press Use this date.",
+        "none": "Not offered. Run an app lists only the scenarios that need no value, and the Calculator does not work this one out, so use the command line."
+      },
+      "date_value": "a date, written `YYYY-MM-DD`",
+      "duration_value": "a length such as `30d` or `90bd`",
+      "variant_value": "one of {choices}",
+      "when_left_out": "Left out, it is `{value}`",
+      "from_file": "With `chrono run` you can leave it out, and it is then the day the application's file was created",
+      "counted_in": "Counted in the {calendar} calendar.",
+
+      "years": "Years",
+      "from_year": "from {year}",
+      "checked": "Checked against the law on",
+      "weekend": "Weekend",
+      "on_weekend": "A holiday on a weekend",
+      "sources": "Sources:",
+      "holiday": "Holiday",
+      "date": "Date",
+      "every_year": "every year",
+      "since": "since {year}",
+      "until": "until {year}",
+      "only": "only in {year}",
+      "between": "{from} to {to}",
+      "and": "and",
+      "months": ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"],
+      "weekdays": {
+        "monday": { "name": "Monday", "form": "any" },
+        "tuesday": { "name": "Tuesday", "form": "any" },
+        "wednesday": { "name": "Wednesday", "form": "any" },
+        "thursday": { "name": "Thursday", "form": "any" },
+        "friday": { "name": "Friday", "form": "any" },
+        "saturday": { "name": "Saturday", "form": "any" },
+        "sunday": { "name": "Sunday", "form": "any" }
+      },
+      "ordinals": {
+        "any": { "1": "first", "2": "second", "3": "third", "4": "fourth", "5": "fifth", "-1": "last" }
+      },
+      "fixed": "{day} {month}",
+      "nth_weekday": "{nth} {weekday} of {month}",
+      "easter": "Easter Sunday",
+      "after_easter": { "one": "the day after Easter Sunday", "other": "{n} days after Easter Sunday" },
+      "before_easter": { "one": "the day before Easter Sunday", "other": "{n} days before Easter Sunday" },
+      "long_date": "{day} {month} {year}",
+      "observed": {
+        "none": "Stays on that day, and no other day is marked off in its place.",
+        "sat_to_fri_sun_to_mon": "On a Saturday the Friday before is off, on a Sunday the Monday after.",
+        "sun_to_mon": "On a Sunday the Monday after is off. On a Saturday it stays on that day.",
+        "weekend_to_mon": "On a Saturday or a Sunday the Monday after is off."
+      }
+    },
+
+    "pl": {
+      "link": "Odnośnik do",
+      "name_to_type": "Nazwa do wpisania",
+      "in_window": "W oknie",
+      "on_command_line": "W wierszu poleceń",
+      "asks_for": "Pyta o",
+      "computed_like": "Liczony jak",
+      "business_days": "Dni robocze",
+      "speed": "Tempo w chrono run",
+      "window": {
+        "both": "Na liście Scenariusze w karcie Uruchom aplikację i na liście Scenariusze w Kalkulatorze.",
+        "session": "Na liście Scenariusze w karcie Uruchom aplikację.",
+        "calculator": "Na liście Scenariusze w Kalkulatorze.",
+        "calculator_first": "Na liście Scenariusze w Kalkulatorze, z polem na każdą wartość. Karta Uruchom aplikację pokazuje tylko scenariusze, które nie potrzebują wartości: policz ten w Kalkulatorze i naciśnij Użyj tej daty.",
+        "none": "Okno go nie pokazuje. Karta Uruchom aplikację ma tylko scenariusze bez wartości, a Kalkulator tego nie liczy, więc użyj wiersza poleceń."
+      },
+      "date_value": "data w zapisie `YYYY-MM-DD` (rok, miesiąc, dzień)",
+      "duration_value": "długość, np. `30d` albo `90bd`",
+      "variant_value": "jedno ze słów {choices}",
+      "when_left_out": "Bez podania to `{value}`",
+      "from_file": "W `chrono run` można ją pominąć, a wtedy to dzień utworzenia pliku aplikacji",
+      "counted_in": "Liczone w kalendarzu {calendar}.",
+
+      "years": "Lata",
+      "from_year": "od {year}",
+      "checked": "Sprawdzony z prawem",
+      "weekend": "Weekend",
+      "on_weekend": "Święto w weekend",
+      "sources": "Źródła (po angielsku):",
+      "holiday": "Święto",
+      "date": "Data",
+      "every_year": "co roku",
+      "since": "od {year}",
+      "until": "do {year}",
+      "only": "tylko w {year}",
+      "between": "od {from} do {to}",
+      "and": "i",
+      "months": ["stycznia", "lutego", "marca", "kwietnia", "maja", "czerwca", "lipca", "sierpnia", "września", "października", "listopada", "grudnia"],
+      "weekdays": {
+        "monday": { "name": "poniedziałek", "form": "m" },
+        "tuesday": { "name": "wtorek", "form": "m" },
+        "wednesday": { "name": "środa", "form": "f" },
+        "thursday": { "name": "czwartek", "form": "m" },
+        "friday": { "name": "piątek", "form": "m" },
+        "saturday": { "name": "sobota", "form": "f" },
+        "sunday": { "name": "niedziela", "form": "f" }
+      },
+      "ordinals": {
+        "m": { "1": "pierwszy", "2": "drugi", "3": "trzeci", "4": "czwarty", "5": "piąty", "-1": "ostatni" },
+        "f": { "1": "pierwsza", "2": "druga", "3": "trzecia", "4": "czwarta", "5": "piąta", "-1": "ostatnia" }
+      },
+      "fixed": "{day} {month}",
+      "nth_weekday": "{nth} {weekday} {month}",
+      "easter": "Wielkanoc",
+      "after_easter": { "one": "dzień po Wielkanocy", "other": "{n} dni po Wielkanocy" },
+      "before_easter": { "one": "dzień przed Wielkanocą", "other": "{n} dni przed Wielkanocą" },
+      "long_date": "{day} {month} {year}",
+      "observed": {
+        "none": "Zostaje w swoim dniu, a kalendarz nie oznacza w zamian innego dnia wolnego.",
+        "sat_to_fri_sun_to_mon": "W sobotę wolny jest piątek przed nim, w niedzielę poniedziałek po nim.",
+        "sun_to_mon": "W niedzielę wolny jest poniedziałek po nim. W sobotę zostaje w swoim dniu.",
+        "weekend_to_mon": "W sobotę albo w niedzielę wolny jest poniedziałek po nim."
+      }
+    }
+  }
+}

@@ -207,9 +207,9 @@
               "pl": "Skacze na początek albo koniec okresu: `som eom soq eoq soy eoy` - początek lub koniec miesiąca, kwartału, roku. Początek to 00:00:00 pierwszego dnia, koniec to 23:59:59 ostatniego."
             },
             {
-              "flag": "--nearest", "value": "nbd|pbd",
-              "en": "Moves to the nearest business day forward (`nbd`) or back (`pbd`), and stays when the day already is one. Needs `--calendar`.",
-              "pl": "Przechodzi do najbliższego dnia roboczego naprzód (`nbd`) albo wstecz (`pbd`), a zostaje, gdy dzień już nim jest. Wymaga `--calendar`."
+              "flag": "--nearest", "value": "nbd|pbd|next-leap-day",
+              "en": "Moves to the nearest business day forward (`nbd`) or back (`pbd`), and stays when the day already is one. These two need `--calendar`. `next-leap-day` moves to the next 29 February, and stays on one.",
+              "pl": "Przechodzi do najbliższego dnia roboczego naprzód (`nbd`) albo wstecz (`pbd`), a zostaje, gdy dzień już nim jest. Te dwa wymagają `--calendar`. `next-leap-day` przechodzi do najbliższego 29 lutego, a na 29 lutego zostaje."
             },
             {
               "flag": "--to-zone", "value": "+HH:MM",

@@ -1,0 +1,155 @@
+<!-- Scenarios, English. Part of the documentation (site/data/docs.json). The list comes from
+     site/data/presets.json, the program's own list of its presets, through scenario_list. The
+     example is site/examples/presets/invoice-overdue.json, through preset_example. -->
+
+<h1>Scenarios</h1>
+<p class="sub">
+  Ready-made dates to test with: the last day of a month, the leap day, the last second of a
+  trial. The window calls them scenarios and the command line calls them presets.
+</p>
+
+<h2 id="using">Using a scenario</h2>
+<p>
+  A scenario is a date and time worked out for you, with one line on what it tests. Picking one
+  fills in the date and nothing more: it never starts a session on its own.
+</p>
+<ul>
+  <li><strong>Run an app</strong> lists, under <strong>Scenarios</strong>, the ones that need no
+    value from you. Picking one fills in <strong>Starts at</strong>.</li>
+  <li><strong>Calculator</strong> lists, under <strong>Scenarios</strong>, the ones it can work
+    out, with a field for each value a scenario asks for. <strong>Use this date</strong> takes the
+    result over to Run an app.</li>
+  <li>On the command line, <code>--preset</code> takes the name to type, and each value is one
+    <code>--param</code>.</li>
+</ul>
+<pre class="term"><span class="p">chrono</span> run "C:\apps\test.exe" --preset month-end
+<span class="p">chrono</span> calc --preset trial-last-day --param start_date=2027-01-01 --param trial_length=45d</pre>
+<p>
+  Some scenarios only make sense for an application that is running: a clock 90 seconds ahead
+  means something to an application, not to a calculator. Others only make sense in the
+  calculator, such as the day someone turns 18. Each one below says where it works.
+</p>
+
+<h2 id="values">Giving a value</h2>
+<p>
+  A scenario that counts from a date only you know asks for it: a date of birth, the day a trial
+  started. In the Calculator each value has its own field. On the command line it is
+  <code>--param</code>, the value's name, an equals sign and the value.
+</p>
+<ul>
+  <li><strong>A date</strong> is written year first: <code>2027-01-01</code>.</li>
+  <li><strong>A length</strong> is a number and a unit with no space between them:
+    <code>45d</code>. The units are those of <a href="/cli-reference/#calc-shift"><code>--shift</code></a>,
+    and <code>bd</code> counts business days. A number on its own is refused, because it does
+    not say what it counts.</li>
+  <li><strong>A choice</strong> is one of the words the scenario lists, such as
+    <code>on_day</code>.</li>
+</ul>
+<p>
+  A value the scenario has a default for, such as a trial of 30 days, can be left out. A value
+  with nothing to fall back on stops the command with a message that names it. Business days are
+  counted in a <a href="/docs/holiday-calendars/">holiday calendar</a>: a scenario made for one
+  market counts in that market's calendar, and <code>chrono calc --calendar</code> picks another.
+</p>
+
+<h2 id="list">The scenarios</h2>
+<p>
+  {{preset_count}} scenarios come with the program, and <code>chrono presets</code> lists the same
+  ones, with any you add. <strong>Worked out as</strong> shows the date the way the options of
+  <code>chrono calc</code> would write it, with a value you give in angle brackets.
+</p>
+{{scenario_list}}
+
+<h2 id="your-own">Writing your own</h2>
+<p>
+  A scenario is a small text file in JSON. This one checks the first day an invoice is overdue:
+</p>
+{{preset_example}}
+<ol>
+  <li>Save it as <code>invoice-overdue.json</code>. The file name without <code>.json</code>
+    must be the same as <code>id</code>.</li>
+  <li>Put it in the folder the program reads. <code>chrono presets</code> names that folder on
+    its second line. In the window's zip package it is the <code>presets</code> folder beside
+    <code>ChronoMock.exe</code>. A folder under Program Files takes administrator rights to
+    change.</li>
+  <li>Run <code>chrono presets</code> again. Your scenario is in the list, or among the files
+    left out, with the reason.</li>
+</ol>
+<pre class="term"><span class="p">chrono</span> calc --preset invoice-overdue --param issued=2027-03-01
+Chrono Mock - date calculator
+  preset:   invoice-overdue - First day an invoice is overdue
+  explains: Does the app mark an invoice overdue on the day after its due date, and not on the due date itself?
+  base:    2027-03-01T00:00:00
+  step 1:  shift +14 days  -&gt; 2027-03-15T00:00:00
+  step 2:  shift +1 days  -&gt; 2027-03-16T00:00:00
+  step 3:  set time 08:00:00  -&gt; 2027-03-16T08:00:00
+  result:  2027-03-16T08:00:00
+<span class="c">  ...</span></pre>
+
+<h3>What the file holds</h3>
+<div class="wrap"><table>
+<thead><tr><th>Key</th><th>What it is</th></tr></thead>
+<tbody>
+<tr><td><code>schema</code></td><td>Always <code>chronomock.preset/1</code>.</td></tr>
+<tr><td><code>id</code></td><td>The name to type, the same as the file name: letters, digits,
+  <code>-</code> and <code>_</code>.</td></tr>
+<tr><td><code>name</code>, <code>explains</code></td><td>The name and the one line on what it
+  tests, for each language. <code>en</code> is required, and the window shows its own language
+  when the file has it.</td></tr>
+<tr><td><code>applies_to</code></td><td><code>substitution</code> for an application that runs,
+  <code>calculator</code> for the Calculator, <code>both</code> for both.</td></tr>
+<tr><td><code>market</code></td><td><code>null</code>, or <code>us</code> or <code>pl</code> to
+  count business days in that market's calendar.</td></tr>
+<tr><td><code>parameters</code></td><td>The values it asks for. Each has an <code>id</code>, a
+  <code>type</code> (<code>date</code>, <code>duration</code> for a length, or
+  <code>variant</code> for the day before, on or after: <code>day_before</code>,
+  <code>on_day</code>, <code>day_after</code>), a <code>label</code> for each language and, if
+  you want one, a <code>default</code>.</td></tr>
+<tr><td><code>moment</code></td><td>Where the date starts, <code>base</code>, and the
+  <code>steps</code> taken from there, in order.</td></tr>
+<tr><td><code>time_mode</code></td><td>The speed <code>chrono run</code> starts at.
+  <code>multiplier</code> 1 is real speed.</td></tr>
+</tbody>
+</table></div>
+
+<h3>Where the date starts</h3>
+<div class="wrap"><table>
+<thead><tr><th><code>base</code></th><th>What it is</th></tr></thead>
+<tbody>
+<tr><td><code>"today"</code></td><td>Midnight today, in the session's time zone.</td></tr>
+<tr><td><code>"now"</code></td><td>This moment, to the second.</td></tr>
+<tr><td><code class="long">{ "absolute": "2027-03-01T09:00:00" }</code></td><td>That time on the clock of the
+  session's time zone: 9 in the morning wherever the test runs.</td></tr>
+<tr><td><code class="long">{ "absolute_utc": "2038-01-19T03:14:07Z" }</code></td><td>That moment in UTC, the
+  same instant in every zone. For dates whose point is the instant, such as the 2038
+  limit.</td></tr>
+<tr><td><code class="long">{ "parameter": "issued" }</code></td><td>A date the person using it gives.</td></tr>
+</tbody>
+</table></div>
+
+<h3>Steps</h3>
+<p>
+  Each step is the same as an option of <code>chrono calc</code> and takes the same values, so the
+  <a href="/cli-reference/#calc">calc options</a> say what each one does.
+</p>
+<div class="wrap"><table>
+<thead><tr><th>Step</th><th>Same as</th></tr></thead>
+<tbody>
+<tr><td><code class="long">{ "shift": { "sign": "+", "amount": 1, "unit": "days" } }</code></td><td><code>--shift +1d</code>.
+  The unit is a code or its full name.</td></tr>
+<tr><td><code class="long">{ "shift": { "sign": "+", "parameter": "term" } }</code></td><td><code>--shift</code>
+  by a length the person gives.</td></tr>
+<tr><td><code class="long">{ "shift": { "parameter": "boundary" } }</code></td><td>A day back, none or a day
+  forward, by the choice the person makes. No sign: the choice has one.</td></tr>
+<tr><td><code class="long">{ "set_time": "08:00:00" }</code></td><td><code>--set-time</code></td></tr>
+<tr><td><code class="long">{ "snap": "eom" }</code></td><td><code>--snap</code></td></tr>
+<tr><td><code class="long">{ "nearest": "nbd" }</code></td><td><code>--nearest</code></td></tr>
+<tr><td><code class="long">{ "zone": "+05:45" }</code></td><td><code>--to-zone</code>: the steps after it count
+  in that zone.</td></tr>
+</tbody>
+</table></div>
+<p>
+  A scenario says when a date is, never which program to run, so there is no place in the file
+  for a path. A file from someone else can set the date and the speed your test starts with, and it cannot
+  start a program.
+</p>

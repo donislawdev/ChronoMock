@@ -374,6 +374,22 @@ td.n{color:var(--dim)}
 .pager a:hover{border-color:var(--dim);text-decoration:none}
 .pager .next{margin-inline-start:auto;text-align:end}
 
+/* JSON written out in a table, or a command with a long name: longer than a phone is wide, so it
+   may break at its spaces. */
+.doc code.long{white-space:normal}
+
+/* One scenario or one calendar: its name, what it is for, and its facts as labels and values
+   beside each other, one under the other on a phone. */
+.entry{margin-top:34px;padding-top:24px;border-top:1px solid var(--line-soft)}
+.entry h3{margin:0 0 6px}
+.entry .alt,.entry td .alt{display:block;font-size:14px;font-weight:400;color:var(--dim)}
+.facts{display:grid;grid-template-columns:max-content minmax(0,1fr);gap:6px 18px;margin:12px 0 0;font-size:15px}
+.facts dt{color:var(--dim)}
+.facts dd{margin:0}
+.facts ul{margin:0;padding-inline-start:18px}
+.facts li{margin:0 0 4px}
+.entry .src{font-size:13.5px}
+
 /* The first page lists every page with its description. */
 .doclist h3{
   margin:30px 0 4px;font-size:12px;font-weight:600;letter-spacing:.075em;
@@ -419,6 +435,8 @@ td.n{color:var(--dim)}
   .doc .wrap tr{border-bottom:1px solid var(--line-soft);padding:12px 0}
   .doc .wrap tr:last-child{border-bottom:0}
   .doc .wrap td{border-bottom:0;padding:2px 14px}
+  .facts{grid-template-columns:minmax(0,1fr);gap:0}
+  .facts dd{margin-bottom:10px}
 }
 
 /* ---------------------------------------------------------------- footer --- */

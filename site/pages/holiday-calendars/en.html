@@ -1,0 +1,131 @@
+<!-- Holiday calendars, English. Part of the documentation (site/data/docs.json). The calendars
+     come from calendars/*.json themselves, through calendar_list. The example holiday is
+     site/examples/calendars/holiday.json, through holiday_example. -->
+
+<h1>Holiday calendars</h1>
+<p class="sub">
+  Which days are working days, for counting business days and for the weekend and holiday marks
+  on a result. {{calendar_count}} calendars come with the program.
+</p>
+
+<h2 id="what-a-calendar-does">What a calendar does</h2>
+<p>
+  A calendar knows the weekend and the public holidays of one place. With one picked, the
+  calculator can:
+</p>
+<ul>
+  <li>count business days: <code>--shift +5bd</code> skips weekends and holidays,</li>
+  <li>move to the nearest business day with <code>--nearest nbd</code> or <code>pbd</code>,</li>
+  <li>say of the result whether it is a business day, and which holiday it is.</li>
+</ul>
+<p>
+  In the window, pick one in the <strong>Calendar</strong> field of the Calculator. On the command
+  line it is <code>chrono calc --calendar</code> with the name to type. A
+  <a href="/docs/scenarios/">scenario</a> made for one market counts in that market's calendar by
+  itself. A session uses a calendar only to work out the date it starts at, from a scenario that
+  counts business days.
+</p>
+<pre class="term"><span class="p">chrono</span> calc --base 2026-12-22T09:00:00 --shift +3bd --calendar pl
+Chrono Mock - date calculator
+  base:    2026-12-22T09:00:00
+  step 1:  shift +3 business_days  -&gt; 2026-12-29T09:00:00
+  result:  2026-12-29T09:00:00
+<span class="c">  ...</span>
+    business day  yes  (pl)
+    holiday       no</pre>
+<p>
+  Three business days from Tuesday 22 December end on the 29th: in Poland Christmas Eve, both days
+  of Christmas and the weekend between them are off.
+</p>
+
+<h2 id="years">The years a calendar covers</h2>
+<p>
+  Holidays change: a law adds one, another moves. So each calendar says from which year it is
+  sure, and on which day its holidays were last checked against the law.
+</p>
+<ul>
+  <li><strong>Before its first year</strong> a business-day step is refused with a message, and a
+    date there is shown as not judged rather than as a working day.</li>
+  <li><strong>After the day it was checked</strong> the calendar goes on with the law of that day.
+    Once that day is more than a year ago, a result after it is marked as possibly out of date,
+    because a holiday may have been added since.</li>
+</ul>
+
+<h2 id="weekend">A holiday on a weekend</h2>
+<p>
+  Some places give a day off in place of a holiday that falls on a Saturday or a Sunday, and each
+  calendar below says which day that is. When that day is off already, the day off moves on to the
+  next working day in the same direction.
+</p>
+
+<h2 id="calendars">The calendars</h2>
+<p>
+  <code>chrono calendars</code> lists the same ones, with any you add. Each holiday is listed with
+  the years it applies in, within the years the calendar covers.
+</p>
+{{calendar_list}}
+
+<h2 id="your-own">Your own calendar</h2>
+<p>
+  A calendar holds every day off of its place by itself: it cannot add to another one. To count
+  your company's own days off too, copy the calendar of your country and add them to the copy.
+</p>
+<ol>
+  <li>Copy <code>pl.json</code> from the folder <code>chrono calendars</code> names on its second
+    line, for example to <code>pl-office.json</code>, and set <code>id</code> in it to
+    <code>pl-office</code>. The file name without <code>.json</code> must be the same as
+    <code>id</code>.</li>
+  <li>Add each day to <code>holidays</code>, shaped like the one below, with a <code>source</code>
+    that says where it comes from. A holiday without a source is refused, because people count
+    payment dates from these files.</li>
+  <li>Run <code>chrono calendars</code> again. Your calendar is in the list, or among the files
+    left out, with the reason. From then on <code>--calendar pl-office</code> counts with it.</li>
+</ol>
+{{holiday_example}}
+
+<h3>What the file holds</h3>
+<div class="wrap"><table>
+<thead><tr><th>Key</th><th>What it is</th></tr></thead>
+<tbody>
+<tr><td><code>schema</code></td><td>Always <code>chronomock.calendar/1</code>.</td></tr>
+<tr><td><code>id</code></td><td>The name to type, the same as the file name.</td></tr>
+<tr><td><code>country</code>, <code>subregion</code></td><td>The country in two letters, such as
+  <code>PL</code>, and <code>null</code>.</td></tr>
+<tr><td><code>name</code></td><td><code>en</code>, and <code>local</code> in the place's own
+  language.</td></tr>
+<tr><td><code>weekend</code></td><td>The days off every week, such as
+  <code>["saturday", "sunday"]</code>.</td></tr>
+<tr><td><code>observed</code></td><td>Which day is off for a holiday on a weekend:
+  <code>none</code>, <code>sat_to_fri_sun_to_mon</code>, <code>sun_to_mon</code> or
+  <code>weekend_to_mon</code>. Anything but <code>none</code> needs a Saturday and Sunday
+  weekend.</td></tr>
+<tr><td><code>valid_from</code></td><td>The first year everything in the calendar has a source
+  for: the holidays, the weekend and the rule for weekends.</td></tr>
+<tr><td><code>law_as_of</code></td><td>The day the holidays were checked against the law, written
+  <code>YYYY-MM-DD</code>.</td></tr>
+<tr><td><code>source</code></td><td>Where the first year, the weekend and the rule for weekends
+  come from.</td></tr>
+<tr><td><code>holidays</code></td><td>Each with an <code>id</code>, a <code>name</code>, the
+  <code>rule</code> for its date, the years <code>valid_from</code> and <code>valid_to</code>
+  (<code>null</code> for no limit) and its own <code>source</code>.</td></tr>
+</tbody>
+</table></div>
+<p>
+  A key the program does not know is refused with its name, so a typo cannot drop a holiday
+  without a word.
+</p>
+
+<h3>The date of a holiday</h3>
+<div class="wrap"><table>
+<thead><tr><th><code>rule</code></th><th>The day</th></tr></thead>
+<tbody>
+<tr><td><code class="long">{ "type": "fixed", "month": 11, "day": 11 }</code></td><td>The same
+  date every year: 11 November.</td></tr>
+<tr><td><code class="long">{ "type": "nth_weekday", "month": 1, "weekday": "monday", "order": 3 }</code></td><td>The
+  third Monday of January. <code>order</code> is 1 to 5, or <code>-1</code> for the last one of
+  the month.</td></tr>
+<tr><td><code class="long">{ "type": "easter_offset", "offset": 60 }</code></td><td>60 days after
+  Easter Sunday. <code>0</code> is Easter Sunday itself, and a minus counts back. From
+  <code>-80</code> to <code>250</code>, which keeps the day in the year of its Easter.</td></tr>
+</tbody>
+</table></div>
