@@ -189,6 +189,14 @@ const ALLOWED: &[(&str, &str, &str)] = &[
          what it answers. It starts no target and reaches nothing past this machine",
     ),
     (
+        "crates/cli/tests/site_reference.rs",
+        "spawn",
+        "runs the built binary to read its help, the presets and calendars it loads, and what calc, \
+         presets, calendars and a dry run write with --json, so the documentation pages can be held \
+         to it. The dry run starts nothing, the files it reads are the repository's and one the test \
+         writes, and nothing reaches past this machine",
+    ),
+    (
         "crates/cli/tests/calc_cli.rs",
         "spawn",
         "runs the built binary's calculator, which starts nothing and reads only this machine's \

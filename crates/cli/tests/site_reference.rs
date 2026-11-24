@@ -356,41 +356,115 @@ fn snake(name: &str) -> String {
 
 /// The lines `chrono run --json` writes are the protocol's events, passed on as the core sends them.
 /// Their types and fields are read from the `Event` enum itself, because a session that sends every
-/// type of line (a sleep, a vanish, a failed start) cannot be staged here. A serde attribute that
-/// renames, skips or flattens a field would make that reading wrong, so it stops the test instead.
+/// type of line (a sleep, a vanish, a failed start) cannot be staged here.
 fn protocol_events() -> BTreeMap<String, BTreeSet<String>> {
     let path = repository().join("crates/proto/src/lib.rs");
     let source = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
-    let start = source.find("pub enum Event {").expect("the protocol's Event enum");
+    read_events(&source).unwrap_or_else(|e| panic!("{}: {e}", path.display()))
+}
+
+/// The one attribute of `Event` this reading follows: each line names its type in `type`, in the
+/// variant's name in snake case. Anything else on the enum (a different tag, `rename_all` of another
+/// case, `rename_all_fields`) would put other names on the wire than the ones read here.
+const EVENT_ATTRIBUTE: &str = r#"#[serde(tag = "type", rename_all = "snake_case")]"#;
+
+/// Whether a line of code drops a field from what is written whatever its value: `skip` or
+/// `skip_serializing` without `_if`. `skip_serializing_if` leaves the field out only when it is empty,
+/// so the field is still one the line can carry, and `skip_deserializing` does not touch the output.
+fn always_skipped(code: &str) -> bool {
+    code.match_indices("skip").any(|(at, _)| {
+        let rest = &code[at + "skip".len()..];
+        let rest = rest.strip_prefix("_serializing").unwrap_or(rest);
+        rest.trim_start().starts_with([',', ')'])
+    })
+}
+
+/// The types and fields of the `Event` enum in `source`. A serde attribute that renames, skips or
+/// flattens would make this reading wrong, so it is an error rather than a guess.
+fn read_events(source: &str) -> Result<BTreeMap<String, BTreeSet<String>>, String> {
+    let start = source.find("pub enum Event {").ok_or("no `pub enum Event {`")?;
+    let serde: Vec<&str> = source[..start]
+        .lines()
+        .rev()
+        .map(str::trim)
+        .take_while(|l| l.starts_with("#["))
+        .filter(|l| l.starts_with("#[serde"))
+        .collect();
+    if serde != [EVENT_ATTRIBUTE] {
+        return Err(format!("`Event` carries {serde:?}, and this reading follows {EVENT_ATTRIBUTE} only"));
+    }
     let mut events = BTreeMap::new();
     let mut current = String::new();
     let mut depth = 0usize;
     for line in source[start..].lines() {
         let code = line.split("//").next().unwrap_or("").trim();
-        for word in ["rename", "flatten", "skip)", "skip,", "alias"] {
-            assert!(!code.contains(word), "{}: `{code}` changes a name on the wire, which this reading does not follow", path.display());
+        if ["rename", "flatten", "alias"].iter().any(|w| code.contains(w)) || always_skipped(code) {
+            return Err(format!("`{code}` changes what is on the wire, which this reading does not follow"));
         }
         let (opens, closes) = (code.matches('{').count(), code.matches('}').count());
         if depth == 1 && opens > 0 {
             let name = code.split_whitespace().next().unwrap_or("");
-            assert!(name.starts_with(|c: char| c.is_ascii_uppercase()), "{}: `{code}` is not a variant", path.display());
+            if !name.starts_with(|c: char| c.is_ascii_uppercase()) {
+                return Err(format!("`{code}` is not a variant"));
+            }
+            // Its fields would stand on this line, which is read as the variant's name only.
+            if closes > 0 {
+                return Err(format!("`{code}` is a variant on one line, which this reading does not follow"));
+            }
             current = snake(name);
             events.insert(current.clone(), BTreeSet::new());
         } else if depth == 1 && !code.is_empty() && !code.starts_with('#') && closes == 0 {
-            panic!("{}: `{code}` is a variant without named fields, which this reading does not follow", path.display());
+            return Err(format!("`{code}` is a variant without named fields, which this reading does not follow"));
         } else if depth == 2
             && !code.starts_with('#')
             && let Some((field, _)) = code.split_once(':')
         {
             let field = field.trim().trim_start_matches("pub ").trim();
-            events.get_mut(&current).expect("a field inside a variant").insert(field.to_string());
+            events.get_mut(&current).ok_or("a field outside a variant")?.insert(field.to_string());
         }
         depth = depth + opens - closes;
         if depth == 0 && opens + closes > 0 {
             break;
         }
     }
-    events
+    Ok(events)
+}
+
+/// The reading above must refuse what it cannot follow, or the comparison of the page with the enum
+/// compares the page with names the program does not write.
+#[test]
+fn the_event_reader_refuses_what_it_cannot_follow() {
+    let enum_with = |attribute: &str, field: &str| {
+        format!(
+            "#[derive(Serialize)]\n{attribute}\npub enum Event {{\n    SessionVerdict {{\n        verdict: String,\n        {field}\n        followed: Vec<u32>,\n    }},\n    Ended {{\n        clean: bool,\n    }},\n}}\n"
+        )
+    };
+    let read = read_events(&enum_with(EVENT_ATTRIBUTE, "#[serde(default, skip_serializing_if = \"Option::is_none\")]")).unwrap();
+    let want: BTreeMap<String, BTreeSet<String>> = [
+        ("session_verdict".to_string(), ["verdict", "followed"].map(String::from).into()),
+        ("ended".to_string(), BTreeSet::from(["clean".to_string()])),
+    ]
+    .into();
+    assert_eq!(read, want, "a field left out only when empty is still a field");
+
+    let refused = [
+        (r#"#[serde(tag = "type", rename_all = "camelCase")]"#, "", "camelCase"),
+        (r#"#[serde(tag = "kind", rename_all = "snake_case")]"#, "", "tag = \\\"kind"),
+        (r#"#[serde(tag = "type", rename_all = "snake_case", rename_all_fields = "camelCase")]"#, "", "rename_all_fields"),
+        (EVENT_ATTRIBUTE, "#[serde(skip_serializing)]", "skip_serializing)"),
+        (EVENT_ATTRIBUTE, "#[serde(default, skip)]", "skip)"),
+        (EVENT_ATTRIBUTE, "#[serde(rename = \"why\")]", "rename"),
+        (EVENT_ATTRIBUTE, "#[serde(flatten)]", "flatten"),
+    ];
+    for (attribute, field, named) in refused {
+        let err = read_events(&enum_with(attribute, field)).expect_err(&format!("{attribute} {field} was read"));
+        assert!(err.contains(named), "{attribute} {field}: {err}");
+    }
+    let one_line = enum_with(EVENT_ATTRIBUTE, "").replace("Ended {\n        clean: bool,\n    },", "Ended { clean: bool },");
+    let err = read_events(&one_line).expect_err("a variant on one line was read");
+    assert!(err.contains("on one line"), "{err}");
+    assert!(!always_skipped("#[serde(skip_deserializing)]"));
+    assert!(!always_skipped("skipped_count: u32,"));
 }
 
 /// The program, from the repository's root, so `--preset` and `--calendar` find the shipped folders.
