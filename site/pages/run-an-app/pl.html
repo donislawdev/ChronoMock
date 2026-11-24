@@ -1,0 +1,163 @@
+<!-- Run an app, Polish. Part of the documentation (site/data/docs.json). The texts of the
+     options are the window's own (gui/ChronoMock.App/Localization/Strings.en.json), and the window
+     is in English, so its fields are named in English. -->
+
+<h1>Karta Run an app</h1>
+<p class="sub">
+  Karta, która uruchamia aplikację w innej dacie. Każde pole i opcja od góry do dołu, z
+  <a href="/pl/dokumentacja-cli/#run">opcją wiersza poleceń</a>, która robi to samo. Okno mówi po
+  angielsku, więc pola nazywamy tu tak, jak je widać.
+</p>
+
+<h2 id="aplikacja">Application</h2>
+<p>
+  <strong>Choose…</strong> wskazuje plik <code>.exe</code> do uruchomienia. Lista obok pamięta
+  aplikacje, które były już uruchamiane, więc drugi test tej samej to wybór z listy. W wierszu
+  poleceń aplikacja to pierwsza wartość po <code>chrono run</code>.
+</p>
+
+<h2 id="data-i-godzina">Date and time</h2>
+<div class="wrap"><table>
+<thead><tr><th>Pole</th><th>Co robi</th></tr></thead>
+<tbody>
+<tr><td><strong>Starts at</strong></td><td>Data i godzina, od których startuje aplikacja. Datę
+  wpisz jako <code>YYYY-MM-DD</code> albo wybierz z kalendarza. Godzina jest 24-godzinna, a puste
+  pole to północ. To samo co <a href="/pl/dokumentacja-cli/#run-at"><code>--at</code></a>.</td></tr>
+<tr><td><strong>Today</strong>, <strong>Now</strong></td><td>Wpisują dzisiejszą północ albo tę
+  chwilę, w strefie sesji.</td></tr>
+<tr><td><strong>Time zone</strong></td><td>Strefa, w której aplikacja się znajduje, i w której są
+  czytane data i godzina. Stałe przesunięcie od UTC, bez zmiany czasu letniego. To samo co
+  <a href="/pl/dokumentacja-cli/#run-zone"><code>--zone</code></a>.</td></tr>
+<tr><td><strong>From now</strong></td><td>Znak, liczba i jednostka, np. <code>+ 90 days</code>.
+  <strong>Fill the date</strong> wpisuje tę chwilę w Starts at.</td></tr>
+</tbody>
+</table></div>
+
+<h2 id="scenariusze">Scenarios</h2>
+<p>
+  Gotowe daty, każda z jednym zdaniem o tym, co sprawdza, i pole do szukania. Wybór wpisuje datę w
+  Starts at i nigdy nie startuje sesji. Ta lista ma scenariusze, które nie potrzebują od ciebie
+  wartości. Te, które pytają o wartość, np. datę urodzenia, liczy
+  <a href="/pl/dokumentacja/kalkulator/">kalkulator</a>, a <strong>Use this date</strong> przenosi
+  stamtąd wynik tutaj. <a href="/pl/dokumentacja/scenariusze/">Scenariusze</a> wymieniają
+  wszystkie.
+</p>
+
+<h2 id="tempo-i-opcje">Speed and options</h2>
+<p>
+  Zwinięta sekcja pokazuje krótki znacznik każdej opcji, którą zmieniłeś, więc zmiana nie znika
+  z oczu.
+</p>
+<figure class="shot filled">
+  <img src="/assets/docs/run-options.png" width="1040" height="752" loading="lazy"
+       alt="Rozwinięta sekcja Speed and options. Speed ustawione na ×1. Niżej pola wyboru: Also speed up timers and countdowns inside the application. Also speed up timers that measure elapsed time, z notą, że animacja i wideo mogą wyglądać źle. Start even if the fake clock turns out not to work, z notą, że sesja jest wtedy oznaczona jako niewiarygodna. Reach the web pages inside the application, zaznaczone. Reach the web pages of an application that runs as administrator. Keep timers at speed in hidden windows. Switch off the Gecko sandbox. Potem pola Arguments i Working folder z przyciskiem Browse.">
+  <figcaption>Każda opcja z własną notą. Tylko Reach the web pages inside the application jest
+    zaznaczona od początku.</figcaption>
+</figure>
+<div class="wrap"><table>
+<thead><tr><th>Opcja</th><th>Co dostajesz</th></tr></thead>
+<tbody>
+<tr id="tempo"><td><strong>Speed</strong></td><td>Jak szybko biegnie fałszywy zegar. ×1 to
+  prawdziwe tempo, Frozen go zatrzymuje, a ×10, ×60 i ×1440 przyspieszają go tyle razy: przy ×1440
+  doba mija w minutę. To samo co <a href="/pl/dokumentacja-cli/#run-mode"><code>--mode</code></a>.</td></tr>
+<tr id="minutniki"><td><strong>Also speed up timers and countdowns inside the application</strong></td>
+  <td>Minutniki, oczekiwania i odliczania też idą w tym tempie, a nie tylko data i godzina na
+  zegarze: przypomnienie ustawione na godzinę przychodzi przy ×60 po minucie. To samo co
+  <a href="/pl/dokumentacja-cli/#run-scale-duration"><code>--scale-duration</code></a>.</td></tr>
+<tr id="uplyw"><td><strong>Also speed up timers that measure elapsed time</strong></td>
+  <td>Zegary, którymi aplikacja mierzy, ile coś trwało, też idą w tym tempie. Animacja i wideo w
+  aplikacji mogą przez to wyglądać źle. To samo co
+  <a href="/pl/dokumentacja-cli/#run-scale-qpc"><code>--scale-qpc</code></a>.</td></tr>
+<tr id="mimo-to"><td><strong>Start even if the fake clock turns out not to work</strong></td>
+  <td>Gdy sprawdzenie zaraz po starcie pokaże, że aplikacja nie czyta fałszywego zegara, zwykle
+  zostaje zakończona, bo to, co pokazuje, pochodziłoby z prawdziwego zegara. Z tą opcją działa
+  dalej, a sesja jest oznaczona jako niewiarygodna wszędzie, gdzie się pojawia. To samo co
+  <a href="/pl/dokumentacja-cli/#run-force"><code>--force</code></a>.</td></tr>
+<tr id="strony"><td><strong>Reach the web pages inside the application</strong></td>
+  <td>Włączona od początku. Strony, które aplikacja pokazuje wbudowanym silnikiem WWW, też idą za
+  fałszywym zegarem. Na czas sesji silnik otwiera lokalny port debugowania, do którego mogą się
+  dostać inne programy na tym komputerze, dopóki aplikacja działa. Wyłączona to
+  <a href="/pl/dokumentacja-cli/#run-no-embedded"><code>--no-embedded</code></a>.</td></tr>
+<tr id="strony-administratora"><td><strong>Reach the web pages of an application that runs as
+  administrator</strong></td><td>To samo dla aplikacji uruchomionej jako administrator, co wymaga
+  jednego ustawienia w rejestrze komputera na czas sesji, usuwanego po niej. Dopóki aplikacja
+  działa, każdy program na tym komputerze może dostać się do jej stron. Tylko gdy sam Chrono Mock
+  działa jako administrator. To samo co
+  <a href="/pl/dokumentacja-cli/#run-elevated-embedded"><code>--elevated-embedded</code></a>.</td></tr>
+<tr id="ukryte-okna"><td><strong>Keep timers at speed in hidden windows</strong></td>
+  <td>Dla aplikacji na Chromium i Electronie oraz stron w aplikacji, które zwalniają minutniki
+  zminimalizowanego okna. Aplikacja pracuje w pełnym tempie także zminimalizowana. To samo co
+  <a href="/pl/dokumentacja-cli/#run-keep-background-timers"><code>--keep-background-timers</code></a>.</td></tr>
+<tr id="gecko"><td><strong>Switch off the Gecko sandbox</strong>{{next_release}}</td>
+  <td>Dla aplikacji na silniku Gecko Mozilli: ich strony WWW też idą za fałszywym zegarem.
+  Aplikacja działa bez piaskownicy Gecko, dopóki się nie zamknie, więc otwieraj w niej tylko
+  strony, którym ufasz. To samo co
+  <a href="/pl/dokumentacja-cli/#run-no-gecko-sandbox"><code>--no-gecko-sandbox</code></a>.</td></tr>
+<tr id="argumenty"><td><strong>Arguments</strong></td><td>Z czym aplikacja startuje, tak jak
+  wpisałbyś to w terminalu: argument ze spacjami idzie w cudzysłowie. To samo co
+  <a href="/pl/dokumentacja-cli/#run-args"><code>--args</code></a>.</td></tr>
+<tr id="folder"><td><strong>Working folder</strong></td><td>Folder, w którym aplikacja startuje.
+  Puste pole uruchamia ją tam, gdzie zwykle. To samo co
+  <a href="/pl/dokumentacja-cli/#run-cwd"><code>--cwd</code></a>.</td></tr>
+</tbody>
+</table></div>
+<p>
+  Stopka mówi słowami, co zobaczy aplikacja i w jakim tempie, a <strong>Start</strong> ją
+  uruchamia.
+</p>
+
+<h2 id="sesja">W trakcie sesji</h2>
+<figure class="shot filled">
+  <img src="/assets/docs/session.png" width="1040" height="752" loading="lazy"
+       alt="Trwająca sesja: fałszywy zegar na 2038-01-19 03:20:18 obok prawdziwego, przyciski Speed z wybranym ×60, przyciski Jump i Jump to, a w stopce Running z werdyktem Works i przycisk Stop session.">
+  <figcaption>Fałszywy zegar obok prawdziwego i to, co możesz z nim zrobić, gdy aplikacja
+    działa.</figcaption>
+</figure>
+<ul>
+  <li><strong>Fake clock</strong> czyta aplikacja, <strong>Real clock</strong> reszta komputera. Pod
+    każdym jest czas, który na nim minął.</li>
+  <li><strong>Speed</strong> przełącza między ×1, ×10, ×60, ×1440 i Freeze. Pole obok przyjmuje
+    dowolne tempo, np. 500, a <strong>Set</strong> je ustawia.</li>
+  <li><strong>Jump</strong> przesuwa fałszywy zegar o godzinę albo dzień w każdą stronę, a
+    <strong>Jump to</strong> na datę i godzinę czytane w strefie sesji. Czas, który aplikacja mierzy
+    jako upływ, nigdy się nie cofa, także po skoku wstecz.</li>
+  <li>Obok <strong>Running</strong> stoi werdykt do tej chwili.</li>
+  <li><strong>Stop session</strong> przywraca aplikacji prawdziwy zegar. Nie zamyka aplikacji, a
+    wynik mówi, czy dalej działa.</li>
+</ul>
+
+<h2 id="wynik">Wynik</h2>
+<p>
+  Sesja kończy się, gdy aplikacja się zamknie albo gdy ją zatrzymasz. Najpierw stoi werdykt z
+  jednym zdaniem o tym, co znaczy, potem jak sesja się skończyła.
+</p>
+<div class="wrap"><table>
+<thead><tr><th>Werdykt</th><th>Co znaczy</th></tr></thead>
+<tbody>
+<tr><td><strong>Works</strong></td><td>Każdy proces, który czytał czas, widział fałszywy
+  zegar.</td></tr>
+<tr><td><strong>Partial</strong></td><td>Aplikacja czytała część czasu z prawdziwego zegara, więc
+  test może być niewiarygodny.</td></tr>
+<tr><td><strong>Fails</strong></td><td>Czytała dalej prawdziwy zegar tam, gdzie to ma znaczenie,
+  więc sesja została odrzucona jako niewiarygodna.</td></tr>
+<tr><td><strong>Undetermined</strong></td><td>Nie dało się ustalić, co czytała. To nigdy nie
+  liczy się jako działanie.</td></tr>
+</tbody>
+</table></div>
+<ul>
+  <li><strong>What the application saw</strong>: chwila startu, tempo, dokąd doszedł fałszywy
+    zegar i ile czasu minęło na każdym zegarze. Gdy komputer w trakcie sesji spał, też to
+    mówi.</li>
+  <li><strong>What the application read</strong>: każda funkcja Windows czytająca czas, której
+    aplikacja użyła, zegar, którym odpowiedziała, i liczba wywołań. <em>fake clock</em> i <em>real
+    clock</em> mówią, który zegar odpowiedział. <em>real clock, by design</em> to funkcja zostawiona
+    przy prawdziwym zegarze celowo. <em>not watched</em> to funkcja, której Chrono Mock nie mógł
+    obserwować, więc nie wie. <em>late</em> znaczy, że funkcja dostała fałszywy zegar dopiero po
+    starcie aplikacji. <a href="/pl/audyt-zrodel-czasu/">Audyt źródeł czasu</a> wyjaśnia to
+    w całości.</li>
+  <li><strong>Copy summary</strong> kopiuje raport do wklejenia w zgłoszenie.</li>
+  <li><strong>Previous sessions</strong> wymienia wcześniejsze sesje. <strong>Set up again</strong>
+    wpisuje jedną z nich do karty, nie startując jej, <strong>Forget this session</strong> usuwa
+    jedną, a <strong>Clear the history</strong> wszystkie.</li>
+  <li><strong>New session</strong> wraca do ustawień i zachowuje wszystko, co wpisałeś.</li>
+</ul>

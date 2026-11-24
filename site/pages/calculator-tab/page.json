@@ -1,0 +1,20 @@
+{
+  "//": "The Calculator tab of the window, part by part, with the command line option that does the same. Part of the documentation (site/data/docs.json), so English and Polish only. The picture in site/assets/docs/ is real, see first-session/page.json. The window is in English, so the Polish page names its fields in English too.",
+  "id": "calculator-tab",
+  "order": 91,
+  "nav": false,
+  "languages": {
+    "en": {
+      "slug": "docs/calculator",
+      "link_text": "Calculator",
+      "title": "The Chrono Mock calculator - build, check and copy a test date",
+      "description": "The Calculator tab part by part: scenarios, building a date from steps, business days in a holiday calendar, every format with a copy button, the command that gives the same result, and reading a pasted date."
+    },
+    "pl": {
+      "slug": "dokumentacja/kalkulator",
+      "link_text": "Kalkulator",
+      "title": "Kalkulator Chrono Mock - zbuduj, sprawdź i skopiuj datę testową",
+      "description": "Karta Calculator część po części: scenariusze, budowanie daty z kroków, dni robocze w kalendarzu świąt, każdy format z przyciskiem kopiowania, polecenie dające ten sam wynik i odczyt wklejonej daty."
+    }
+  }
+}

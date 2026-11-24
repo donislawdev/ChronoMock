@@ -31,7 +31,12 @@
     {
       "id": "start",
       "title": { "en": "Start", "pl": "Start" },
-      "pages": ["docs"]
+      "pages": ["docs", "first-session"]
+    },
+    {
+      "id": "window",
+      "title": { "en": "The window", "pl": "Okno" },
+      "pages": ["run-an-app", "calculator-tab"]
     },
     {
       "id": "dates",

@@ -1,0 +1,92 @@
+<!-- Calculator, English. Part of the documentation (site/data/docs.json). The texts are the
+     window's own (gui/ChronoMock.App/Localization/Strings.en.json). -->
+
+<h1>Calculator</h1>
+<p class="sub">
+  Works out a test date, shows it in every format you might paste somewhere, and reads a pasted
+  date back. It only counts: nothing is started. The same answers come from
+  <a href="/cli-reference/#calc"><code>chrono calc</code></a>.
+</p>
+<figure class="shot filled">
+  <img src="/assets/docs/calculator.png" width="1040" height="752" loading="lazy"
+       alt="The Calculator tab in three columns. Left: Scenarios, searched for month, with Last day of month selected and its line on month-end closing. Middle: Build a date, starting from Today in the zone UTC-08:00 of this machine, with one step Jump to End of month, an Add step button, the Calendar set to none, and under it Analyze a pasted date with 04/08/2008 read as ambiguous: Tuesday 2008-04-08 the US way and Monday 2008-08-04 the Polish way. Right: the result Monday 2026-11-30, 23:59:59 UTC-08:00, what this date lands on: last day of the month, and every format with a Copy button.">
+  <figcaption>A scenario on the left, the steps it is made of in the middle, and the result with
+    every format on the right.</figcaption>
+</figure>
+
+<h2 id="scenarios">Scenarios</h2>
+<p>
+  The list on the left holds the scenarios the calculator can work out, each with one line on what
+  it tests, and a box to search them. Picking one fills in the steps in the middle. A scenario that
+  asks for a value, such as a date of birth, gets a field for each one. Under the list stands a
+  reminder that a scenario is a starting point, not a certificate that the test is complete.
+  <a href="/docs/scenarios/">Scenarios</a> lists them all.
+</p>
+
+<h2 id="build">Build a date</h2>
+<div class="wrap"><table>
+<thead><tr><th>Field</th><th>What it does</th></tr></thead>
+<tbody>
+<tr><td><strong>Start from</strong></td><td><strong>Today</strong> at midnight,
+  <strong>Now</strong>, or a <strong>Specific date</strong>. Same as
+  <a href="/cli-reference/#calc-base"><code>--base</code></a>.</td></tr>
+<tr><td><strong>Time zone</strong></td><td>The zone the start is read in, because today is a
+  different day either side of midnight. The zone of this machine unless you pick another. Same
+  as <a href="/cli-reference/#calc-zone"><code>--zone</code></a>.</td></tr>
+<tr><td><strong>Steps</strong></td><td><strong>+ Add step</strong> adds one, and they run top to
+  bottom. ✕ removes one. The kinds are below.</td></tr>
+<tr><td><strong>Calendar</strong></td><td>A <a href="/docs/holiday-calendars/">holiday
+  calendar</a>, which counting business days and Nearest business day need. With one picked, the
+  result also says whether the day is a business day. Same as
+  <a href="/cli-reference/#calc-calendar"><code>--calendar</code></a>.</td></tr>
+</tbody>
+</table></div>
+<div class="wrap"><table>
+<thead><tr><th>Step</th><th>What it does</th></tr></thead>
+<tbody>
+<tr><td><strong>Shift ±</strong></td><td>Moves the date by a number of seconds, minutes, hours,
+  days, weeks, months, quarters, years or business days. A month after 31 January is the last day
+  of February. Same as <a href="/cli-reference/#calc-shift"><code>--shift</code></a>.</td></tr>
+<tr><td><strong>Jump to</strong></td><td>The start or the end of the month, the quarter or the
+  year. A start is 00:00:00 on the first day, an end 23:59:59 on the last. Same as
+  <a href="/cli-reference/#calc-snap"><code>--snap</code></a>.</td></tr>
+<tr><td><strong>Nearest business day</strong></td><td>The next or the previous business day, and
+  the same day when it already is one. Next 29 February is here too. Same as
+  <a href="/cli-reference/#calc-nearest"><code>--nearest</code></a>.</td></tr>
+<tr><td><strong>Set time</strong></td><td>Sets the time of day of the date so far. Same as
+  <a href="/cli-reference/#calc-set-time"><code>--set-time</code></a>.</td></tr>
+<tr><td><strong>Change time zone</strong></td><td>Shows the same moment in another zone: the
+  date and time on the clock change, the moment does not. Steps after it count in that zone. Same
+  as <a href="/cli-reference/#calc-to-zone"><code>--to-zone</code></a>.</td></tr>
+</tbody>
+</table></div>
+
+<h2 id="result">The result</h2>
+<ul>
+  <li>The date with its day of the week, the time and the zone. For a scenario, its name and line
+    stand above.</li>
+  <li><strong>What this date lands on</strong> names an edge the date falls on, such as the last
+    day of the month.</li>
+  <li><strong>All formats</strong> shows the date as ISO, as US and Polish dates, as Unix time in
+    seconds and milliseconds, as a Windows FILETIME and in the RFC 1123 form, each with a
+    <strong>Copy</strong> button.</li>
+  <li><strong>Custom format</strong> writes it with your own mask, such as
+    <code>yyyy-MM-dd HH:mm:ss</code>. Same as
+    <a href="/cli-reference/#calc-format"><code>--format</code></a>.</li>
+  <li><strong>Details</strong> gives the day of the week, the ISO and US week, the quarter, the
+    day of the year and whether the year is a leap year.</li>
+  <li><strong>Copy as command</strong> copies the PowerShell command that gives the same result in
+    a terminal, for a script or a ticket.</li>
+  <li><strong>Use this date</strong> sends the date, the time and the zone to
+    <a href="/docs/run-an-app/">Run an app</a>, ready to start. It works when the zone is one a
+    session can run in.</li>
+</ul>
+
+<h2 id="analyze">Analyze a pasted date</h2>
+<p>
+  Paste a date from a log, a ticket or a database to see how it reads. A date that reads two ways,
+  such as <code>04/08/2008</code>, gets both readings: 8 April the US way, 4 August the Polish way.
+  A number, such as Unix time, is a moment rather than a date, so it is shown in the zone chosen
+  above, and so is a date that carries its own offset from UTC. Same as
+  <a href="/cli-reference/#calc-analyze"><code>--analyze</code></a>.
+</p>

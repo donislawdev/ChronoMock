@@ -1,0 +1,20 @@
+{
+  "//": "The Run an app tab of the window, field by field and option by option, with the command line option that does the same. Part of the documentation (site/data/docs.json), so English and Polish only. The pictures in site/assets/docs/ are real, see first-session/page.json. The window is in English, so the Polish page names its fields in English too.",
+  "id": "run-an-app",
+  "order": 90,
+  "nav": false,
+  "languages": {
+    "en": {
+      "slug": "docs/run-an-app",
+      "link_text": "Run an app",
+      "title": "The Run an app tab of Chrono Mock - every field and option",
+      "description": "Every field and option of the tab that starts an application on another date: the date and time zone, the speed, the options for web pages inside an application, the session screen and the result."
+    },
+    "pl": {
+      "slug": "dokumentacja/uruchamianie-aplikacji",
+      "link_text": "Karta Run an app",
+      "title": "Karta Run an app w Chrono Mock - każde pole i opcja",
+      "description": "Każde pole i opcja karty, która uruchamia aplikację w innej dacie: data i strefa, tempo, opcje dla stron w aplikacji, ekran sesji i wynik."
+    }
+  }
+}

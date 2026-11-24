@@ -1,0 +1,161 @@
+<!-- Run an app, English. Part of the documentation (site/data/docs.json). The texts of the
+     options are the window's own (gui/ChronoMock.App/Localization/Strings.en.json). -->
+
+<h1>Run an app</h1>
+<p class="sub">
+  The tab that starts an application on another date. Every field and option from top to bottom,
+  with the <a href="/cli-reference/#run">command line option</a> that does the same.
+</p>
+
+<h2 id="application">Application</h2>
+<p>
+  <strong>Choose…</strong> picks the <code>.exe</code> to run. The list beside it holds the
+  applications you have run before, so a second test of the same one is a pick from the list.
+  On the command line the application is the first value after <code>chrono run</code>.
+</p>
+
+<h2 id="date-and-time">Date and time</h2>
+<div class="wrap"><table>
+<thead><tr><th>Field</th><th>What it does</th></tr></thead>
+<tbody>
+<tr><td><strong>Starts at</strong></td><td>The date and the time the application starts at. Type
+  the date as <code>YYYY-MM-DD</code> or pick it from the calendar. The time is 24-hour, and empty
+  means midnight. Same as <a href="/cli-reference/#run-at"><code>--at</code></a>.</td></tr>
+<tr><td><strong>Today</strong>, <strong>Now</strong></td><td>Fill in today at midnight, or this
+  moment, in the session's time zone.</td></tr>
+<tr><td><strong>Time zone</strong></td><td>The zone the application finds itself in, and the one
+  the date and time are read in. A fixed offset from UTC, with no change for daylight saving.
+  Same as <a href="/cli-reference/#run-zone"><code>--zone</code></a>.</td></tr>
+<tr><td><strong>From now</strong></td><td>A sign, a number and a unit, such as <code>+ 90
+  days</code>. <strong>Fill the date</strong> puts that moment into Starts at.</td></tr>
+</tbody>
+</table></div>
+
+<h2 id="scenarios">Scenarios</h2>
+<p>
+  Ready-made dates, each with one line on what it tests, and a box to search them. Picking one
+  fills in Starts at and never starts the session. This list has the scenarios that need no value
+  from you. The ones that ask for a value, such as a date of birth, are worked out in the
+  <a href="/docs/calculator/">calculator</a>, and <strong>Use this date</strong> there brings the
+  result back here. <a href="/docs/scenarios/">Scenarios</a> lists them all.
+</p>
+
+<h2 id="speed-and-options">Speed and options</h2>
+<p>
+  Folded, the section shows a short tag for each option you changed, so a change does not stay
+  out of sight.
+</p>
+<figure class="shot filled">
+  <img src="/assets/docs/run-options.png" width="1040" height="752" loading="lazy"
+       alt="The Speed and options section unfolded. Speed is ×1. Below are the checkboxes: Also speed up timers and countdowns inside the application. Also speed up timers that measure elapsed time, with the note that it can make animation and video look wrong. Start even if the fake clock turns out not to work, with the note that the session is then marked unreliable. Reach the web pages inside the application, ticked. Reach the web pages of an application that runs as administrator. Keep timers at speed in hidden windows. Switch off the Gecko sandbox. Then the Arguments and Working folder fields, with a Browse button.">
+  <figcaption>Every option with its own note. Reach the web pages inside the application is the only
+    one ticked from the start.</figcaption>
+</figure>
+<div class="wrap"><table>
+<thead><tr><th>Option</th><th>What you get</th></tr></thead>
+<tbody>
+<tr id="speed"><td><strong>Speed</strong></td><td>How fast the fake clock runs. ×1 is real speed,
+  Frozen stops it, and ×10, ×60 and ×1440 run it that many times faster: at ×1440 a day passes in
+  a minute. Same as <a href="/cli-reference/#run-mode"><code>--mode</code></a>.</td></tr>
+<tr id="timers"><td><strong>Also speed up timers and countdowns inside the application</strong></td>
+  <td>Timers, waits and countdowns follow the speed too, not only the date and time on the clock:
+  a reminder set for an hour comes after a minute at ×60. Same as
+  <a href="/cli-reference/#run-scale-duration"><code>--scale-duration</code></a>.</td></tr>
+<tr id="elapsed"><td><strong>Also speed up timers that measure elapsed time</strong></td>
+  <td>The clocks an application measures how long something took with follow the speed too. It
+  can make animation and video inside the application look wrong. Same as
+  <a href="/cli-reference/#run-scale-qpc"><code>--scale-qpc</code></a>.</td></tr>
+<tr id="force"><td><strong>Start even if the fake clock turns out not to work</strong></td>
+  <td>When the check right after the start finds that the application does not read the fake
+  clock, it is normally ended, because what it shows would come from the real clock. With this
+  ticked it goes on, and the session is marked unreliable everywhere it appears. Same as
+  <a href="/cli-reference/#run-force"><code>--force</code></a>.</td></tr>
+<tr id="web-pages"><td><strong>Reach the web pages inside the application</strong></td>
+  <td>On from the start. Pages an application shows through a built-in web engine follow the fake
+  clock too. For the session the engine opens a local debugging port, which other programs on
+  this computer can reach while the application runs. Unticked, it is
+  <a href="/cli-reference/#run-no-embedded"><code>--no-embedded</code></a>.</td></tr>
+<tr id="administrator-pages"><td><strong>Reach the web pages of an application that runs as
+  administrator</strong></td><td>The same for an application that runs as administrator, which
+  needs one setting written to the machine's registry for the session and removed afterwards.
+  While the application runs, any program on this computer can reach its pages. Only when Chrono
+  Mock itself runs as administrator. Same as
+  <a href="/cli-reference/#run-elevated-embedded"><code>--elevated-embedded</code></a>.</td></tr>
+<tr id="hidden-windows"><td><strong>Keep timers at speed in hidden windows</strong></td>
+  <td>For Chromium and Electron applications and for pages inside an application, which slow the
+  timers of a minimized window down. The application keeps working at full pace while its window
+  is minimized. Same as
+  <a href="/cli-reference/#run-keep-background-timers"><code>--keep-background-timers</code></a>.</td></tr>
+<tr id="gecko"><td><strong>Switch off the Gecko sandbox</strong>{{next_release}}</td>
+  <td>For applications on Mozilla's Gecko engine: their web pages follow the fake clock too. The
+  application runs without the Gecko sandbox until it closes, so open only pages you trust in it.
+  Same as
+  <a href="/cli-reference/#run-no-gecko-sandbox"><code>--no-gecko-sandbox</code></a>.</td></tr>
+<tr id="arguments"><td><strong>Arguments</strong></td><td>What the application is started with, as
+  you would type it in a terminal: an argument with spaces goes in quotes. Same as
+  <a href="/cli-reference/#run-args"><code>--args</code></a>.</td></tr>
+<tr id="working-folder"><td><strong>Working folder</strong></td><td>The folder the application
+  starts in. Empty starts it where it normally would. Same as
+  <a href="/cli-reference/#run-cwd"><code>--cwd</code></a>.</td></tr>
+</tbody>
+</table></div>
+<p>
+  The footer says in words what the application will see and at what speed, and
+  <strong>Start</strong> starts it.
+</p>
+
+<h2 id="session">During the session</h2>
+<figure class="shot filled">
+  <img src="/assets/docs/session.png" width="1040" height="752" loading="lazy"
+       alt="A running session: the fake clock at 2038-01-19 03:20:18 beside the real clock, the Speed buttons with ×60 selected, the Jump buttons and Jump to, and in the footer Running with a Works verdict and a Stop session button.">
+  <figcaption>The fake clock beside the real one, and what you can do with it while the
+    application runs.</figcaption>
+</figure>
+<ul>
+  <li><strong>Fake clock</strong> is what the application reads, <strong>Real clock</strong>
+    what the rest of the computer reads. Under each is the time that has passed on it.</li>
+  <li><strong>Speed</strong> switches between ×1, ×10, ×60, ×1440 and Freeze. The box beside them
+    takes any speed, such as 500, and <strong>Set</strong> applies it.</li>
+  <li><strong>Jump</strong> moves the fake clock an hour or a day either way, and <strong>Jump
+    to</strong> to a date and time read in the session's zone. Time an application measures as
+    elapsed never runs backwards, also after a jump back.</li>
+  <li>Next to <strong>Running</strong> is the verdict so far.</li>
+  <li><strong>Stop session</strong> puts the application back on the real clock. It does not close
+    the application, and the result says if it is still running.</li>
+</ul>
+
+<h2 id="result">The result</h2>
+<p>
+  The session ends when the application closes, or when you stop it. The verdict comes first,
+  with one line on what it means, then how the session ended.
+</p>
+<div class="wrap"><table>
+<thead><tr><th>Verdict</th><th>What it means</th></tr></thead>
+<tbody>
+<tr><td><strong>Works</strong></td><td>Every process that read the time saw the fake
+  clock.</td></tr>
+<tr><td><strong>Partial</strong></td><td>The application read some of its time from the real
+  clock, so the test may be unreliable.</td></tr>
+<tr><td><strong>Fails</strong></td><td>It went on reading the real clock where it matters, so the
+  session was refused as unreliable.</td></tr>
+<tr><td><strong>Undetermined</strong></td><td>What it read could not be determined. That never
+  counts as working.</td></tr>
+</tbody>
+</table></div>
+<ul>
+  <li><strong>What the application saw</strong>: the moment it started at, the speed, where the
+    fake clock got to, and how much time passed on each clock. When the computer slept during the
+    session, it says so.</li>
+  <li><strong>What the application read</strong>: each Windows function that reads the time and
+    that the application used, the clock it answered with and how many times it was called.
+    <em>fake clock</em> and <em>real clock</em> say which one answered. <em>real clock, by
+    design</em> is one left on the real clock on purpose. <em>not watched</em> is one Chrono Mock
+    could not watch, so it cannot say. <em>late</em> means the function was put on the fake clock
+    only after the application had started. The <a href="/time-source-audit/">time source
+    audit</a> explains it in full.</li>
+  <li><strong>Copy summary</strong> copies a report to paste into a ticket.</li>
+  <li><strong>Previous sessions</strong> lists the sessions before. <strong>Set up again</strong>
+    fills the tab with one of them without starting it, <strong>Forget this session</strong>
+    removes one, and <strong>Clear the history</strong> removes them all.</li>
+  <li><strong>New session</strong> goes back to the setup and keeps everything you entered.</li>
+</ul>

@@ -1,0 +1,122 @@
+<!-- Your first session, Polish. Part of the documentation (site/data/docs.json). The pictures
+     are a real session of the window package on a demo application, see page.json. The window is
+     in English, so its buttons are named in English. -->
+
+<h1>Pierwsza sesja</h1>
+<p class="sub">
+  Uruchom aplikację tak, jakby był 19 stycznia 2038, zobacz, że przeczytała tę datę, i przeczytaj,
+  co mówi o tym Chrono Mock. Zegar twojego komputera zostaje taki, jaki jest.
+</p>
+
+<h2 id="pobranie">Pobranie</h2>
+<p>
+  Pobierz Chrono Mock ze <a href="/pl/pobieranie/">strony pobierania</a>. Zip działa z dowolnego
+  folderu bez instalacji, a instalator dodaje program do menu Start. Uruchom
+  <code>ChronoMock.exe</code>: otwiera się na karcie <strong>Run an app</strong>. Okno mówi po
+  angielsku, więc jego przyciski i pola nazywamy tu tak, jak je widać.
+</p>
+
+<h2 id="aplikacja">1. Wybierz aplikację</h2>
+<p>
+  Naciśnij <strong>Choose…</strong> i wskaż plik <code>.exe</code> testowanej aplikacji. Lista obok
+  przycisku pamięta aplikacje, które były już uruchamiane.
+</p>
+<figure class="shot filled">
+  <img src="/assets/docs/run-setup.png" width="1040" height="752" loading="lazy"
+       alt="Karta Run an app. W sekcji Application lista pokazuje test.exe obok przycisku Choose. Sekcja Date and time ma pole Starts at z datą 2038-01-19 i godziną 03:14:07, przyciski Today i Now, notę o granicy 32-bitowego czasu, strefę UTC+00:00 i wiersz From now. Niżej zwinięte sekcje Scenarios oraz Speed and options. Stopka mówi, że aplikacja zobaczy Tuesday, 19 January 2038, 03:14:07 (UTC+00:00) w tempie ×1, nad przyciskiem Start.">
+  <figcaption>Gotowe do startu: aplikacja, data i godzina, a w stopce chwila, którą zobaczy
+    aplikacja.</figcaption>
+</figure>
+
+<h2 id="data">2. Wybierz datę</h2>
+<p>
+  <strong>Starts at</strong> to data i godzina, od których startuje aplikacja. Na początku stoi tam
+  ostatnia sekunda, jaką policzy 32-bitowy zegar uniksowy, 03:14:07 UTC 19 stycznia 2038, czyli
+  częsty pierwszy test. Wpisz inną datę, wybierz ją z kalendarza albo użyj:
+</p>
+<ul>
+  <li><strong>Today</strong> albo <strong>Now</strong>, dla dzisiejszej północy albo tej chwili,</li>
+  <li><strong>From now</strong> i <strong>Fill the date</strong>, dla daty liczonej od teraz, np. 90
+    dni naprzód,</li>
+  <li><strong>Scenarios</strong>, dla gotowej daty, np. ostatniego dnia miesiąca (zobacz
+    <a href="/pl/dokumentacja/scenariusze/">Scenariusze</a>).</li>
+</ul>
+<p>
+  <strong>Time zone</strong> to strefa, w której aplikacja się znajduje na czas sesji, i w niej są
+  czytane data i godzina powyżej. To stałe przesunięcie od UTC, bez zmiany czasu letniego. Stopka
+  mówi słowami, co zobaczy aplikacja.
+</p>
+
+<h2 id="start">3. Start</h2>
+<p>
+  <strong>Start</strong> uruchamia aplikację z zegarem ustawionym na tę chwilę, a reszta komputera
+  zostaje przy prawdziwym czasie. Chrono Mock pokazuje oba zegary obok siebie.
+</p>
+<figure class="shot filled">
+  <img src="/assets/docs/session.png" width="1040" height="752" loading="lazy"
+       alt="Trwająca sesja. Fake clock pokazuje 2038-01-19 03:20:18 UTC+00:00, upłynęło 6 minut 11 sekund, Real clock pokazuje 2026-11-24 11:34:49, upłynęło 13 sekund. Niżej przyciski Speed: ×1, ×10, ×60 (wybrany), ×1440, Freeze i pole na dowolne tempo, przyciski Jump: -1 day, -1 hour, +1 hour, +1 day, oraz Jump to z datą i godziną. W stopce Running z werdyktem Works i przycisk Stop session.">
+  <figcaption>Fake clock to zegar, który czyta aplikacja. Przy ×60 godzina mija w
+    minutę.</figcaption>
+</figure>
+<ul>
+  <li><strong>Speed</strong> przyspiesza fałszywy zegar albo go zatrzymuje.</li>
+  <li><strong>Jump</strong> przesuwa go o godzinę albo dzień, a <strong>Jump to</strong> na dowolną
+    datę i godzinę. Skok wstecz cofa datę i godzinę, ale zegar, którym aplikacja mierzy upływ
+    czasu, nigdy się nie cofa.</li>
+  <li><strong>Stop session</strong> przywraca aplikacji prawdziwy zegar. Nie zamyka
+    aplikacji.</li>
+</ul>
+<p>Aplikacja pokazuje datę, którą dostała:</p>
+<figure class="shot filled">
+  <img src="/assets/docs/test-app.png" width="560" height="220" loading="lazy"
+       alt="Małe okno Test app z tekstem: This application reads today's date from Windows: Tuesday, 19 January 2038, 03:14:16.">
+  <figcaption>Aplikacja demo, która tylko pokazuje datę czytaną z Windows. W sesji czyta 19 stycznia
+    2038.</figcaption>
+</figure>
+<p>
+  Werdykt obok <strong>Running</strong> mówi, czy aplikacja naprawdę czyta fałszywy zegar. Gdy
+  sprawdzenie zaraz po starcie pokaże, że nie, sesja kończy aplikację, zamiast zostawić ją przy
+  datach, których nie dostała.
+</p>
+
+<h2 id="wynik">4. Przeczytaj wynik</h2>
+<p>Gdy aplikacja się zamknie albo zatrzymasz sesję, wynik zostaje na ekranie.</p>
+<figure class="shot filled">
+  <img src="/assets/docs/result.png" width="1040" height="752" loading="lazy"
+       alt="Wynik sesji. Werdykt Works ze zdaniem Every process that read the time saw the fake clock. Session ended: aplikacja zakończyła się sama z kodem 0. Przycisk Copy summary. What the application saw: start Tuesday, 19 January 2038, 03:14:07, tempo ×60, fałszywy zegar doszedł do 03:24:16, 10 minut 9 sekund na fałszywym zegarze i 19 sekund prawdziwego czasu. What the application read jest zwinięte, z licznikiem fake clock: 15.">
+  <figcaption>Werdykt, jak sesja się skończyła i co aplikacja zobaczyła.</figcaption>
+</figure>
+<ul>
+  <li><strong>Works</strong>: każdy proces, który czytał czas, widział fałszywy zegar.</li>
+  <li><strong>Partial</strong>: aplikacja czytała część czasu z prawdziwego zegara, więc test może
+    być niewiarygodny.</li>
+  <li><strong>Fails</strong>: czytała dalej prawdziwy zegar tam, gdzie to ma znaczenie.</li>
+  <li><strong>Undetermined</strong>: nie dało się ustalić, co czytała, a to nigdy nie liczy się
+    jako działanie.</li>
+</ul>
+<p>
+  <strong>What the application saw</strong> podaje chwilę startu, tempo, dokąd doszedł fałszywy
+  zegar i ile czasu minęło na każdym zegarze. <strong>What the application read</strong> wymienia
+  każdy sposób czytania czasu, którego aplikacja użyła, i który zegar odpowiedział.
+</p>
+<figure class="shot filled">
+  <img src="/assets/docs/result-read.png" width="1040" height="752" loading="lazy"
+       alt="Rozwinięta sekcja What the application read: tabela funkcji Windows z zegarem, który każda podała, i liczbą wywołań. GetLocalTime, fake clock, 89. NtQuerySystemTime, fake clock, 12. GetSystemTimeAsFileTime, fake clock, 3. Funkcje strefy czasowej, fake clock, 0. NtCreateUserProcess i connect, real clock, by design, 0. Niżej zwinięte Previous sessions z licznikiem sessions: 1.">
+  <figcaption>Każda funkcja Windows, która czyta czas, zegar, którym odpowiedziała, i ile razy
+    aplikacja ją wywołała.</figcaption>
+</figure>
+<p>
+  <strong>Copy summary</strong> kopiuje raport do wklejenia w zgłoszenie. <strong>New
+  session</strong> wraca do ustawień ze wszystkim, co wpisałeś, a <strong>Previous
+  sessions</strong> trzyma wcześniejsze sesje, żeby ustawić którąś jeszcze raz.
+  <a href="/pl/audyt-zrodel-czasu/">Audyt źródeł czasu</a> wyjaśnia, co jest czytane i
+  dlaczego.
+</p>
+
+<h2 id="dalej">Co dalej</h2>
+<ul>
+  <li><a href="/pl/dokumentacja/uruchamianie-aplikacji/">Karta Run an app</a>: każde pole i opcja.</li>
+  <li><a href="/pl/dokumentacja/kalkulator/">Kalkulator</a>: policz datę testową, zanim ją
+    uruchomisz.</li>
+  <li><a href="/pl/dokumentacja-cli/">Wiersz poleceń</a>: ta sama sesja ze skryptu.</li>
+</ul>
