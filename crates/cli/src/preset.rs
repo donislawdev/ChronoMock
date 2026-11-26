@@ -20,9 +20,9 @@ use std::collections::{BTreeMap, HashMap};
 
 use serde::Deserialize;
 
-use chrono_core::calc::{Base, MomentExpr, Sign, Step, Unit};
-use chrono_core::calendar::Calendar;
-use chrono_core::filetime_utc_to_wall;
+use chronomock::calc::{Base, MomentExpr, Sign, Step, Unit};
+use chronomock::calendar::Calendar;
+use chronomock::filetime_utc_to_wall;
 use chrono_proto::TimeModeKind;
 
 use crate::calendar::{catalogue_search_places, check_declared_id, find_catalogue_file, is_valid_catalogue_id};
@@ -96,7 +96,7 @@ impl ParamKind {
 /// A resolved parameter value, ready to substitute into the moment.
 #[derive(Debug, Clone)]
 pub(crate) enum ParamValue {
-    Date(chrono_core::calc::CivilDateTime),
+    Date(chronomock::calc::CivilDateTime),
     Duration { amount: i64, unit: Unit },
     /// A boundary variant (docs/05 3.6) resolved to a signed day offset: day_before -1, on_day 0,
     /// day_after +1. It fills a shift and carries its own direction, so that shift step needs no sign.
@@ -491,7 +491,7 @@ impl Preset {
     pub(crate) fn fill(
         &self,
         given: &HashMap<String, String>,
-        target_date: Option<chrono_core::calc::CivilDateTime>,
+        target_date: Option<chronomock::calc::CivilDateTime>,
     ) -> Result<(HashMap<String, ParamValue>, MomentExpr), (PresetError, PresetStage)> {
         let values = resolve_parameters(&self.parameters, given, target_date).map_err(|e| (e, PresetStage::Parameters))?;
         let moment = resolve_moment(self.moment.clone(), &values).map_err(|e| (e, PresetStage::File))?;
@@ -525,7 +525,7 @@ pub(crate) fn base_from(dto: BaseDto, values: &HashMap<String, ParamValue>) -> R
             None => Err(PresetError::BadFile(format!("base parameter '{id}' has no value"))),
         },
         BaseDto::Object { absolute: Some(s), absolute_utc: None, parameter: None } => {
-            let civil = chrono_core::calc::parse_civil_datetime(&s).map_err(PresetError::BadFile)?;
+            let civil = chronomock::calc::parse_civil_datetime(&s).map_err(PresetError::BadFile)?;
             Ok(Base::Absolute(civil))
         }
         // A trailing `Z` is accepted and required to BE UTC: the field already says so, and writing
@@ -542,7 +542,7 @@ pub(crate) fn base_from(dto: BaseDto, values: &HashMap<String, ParamValue>) -> R
                     "preset base 'absolute_utc' carries an offset ('{s}') - it is already UTC, so write it without one (a trailing 'Z' is allowed)"
                 )));
             }
-            let civil = chrono_core::calc::parse_civil_datetime(trimmed).map_err(PresetError::BadFile)?;
+            let civil = chronomock::calc::parse_civil_datetime(trimmed).map_err(PresetError::BadFile)?;
             Ok(Base::AbsoluteUtc(civil))
         }
         BaseDto::Object { absolute: None, absolute_utc: None, parameter: None } => Err(PresetError::BadFile(
@@ -838,7 +838,7 @@ pub(crate) fn param_value_from_json(id: &str, kind: ParamKind, v: &serde_json::V
 pub(crate) fn resolve_parameters(
     params: &[Parameter],
     cli: &HashMap<String, String>,
-    target_date: Option<chrono_core::calc::CivilDateTime>,
+    target_date: Option<chronomock::calc::CivilDateTime>,
 ) -> Result<HashMap<String, ParamValue>, PresetError> {
     for id in cli.keys() {
         if !params.iter().any(|p| &p.id == id) {
@@ -920,7 +920,7 @@ pub(crate) fn resolve_hint(
     id: &str,
     kind: ParamKind,
     hint: &str,
-    target_date: Option<chrono_core::calc::CivilDateTime>,
+    target_date: Option<chronomock::calc::CivilDateTime>,
 ) -> Result<ParamValue, PresetError> {
     match hint {
         "target_file_creation" => {
@@ -1007,11 +1007,11 @@ pub(crate) fn duration_value(id: &str, amount: i64, unit_str: &str) -> Result<Pa
 /// A refusal quotes what was written. It quoted the date with the midnight added, `'2026-13-01T00:00:00'`
 /// for a `default` or a `--param` that said `2026-13-01` - text its author never wrote (found by the
 /// search in step 2d, the class of R5-D5 item 5).
-pub(crate) fn parse_param_date(s: &str) -> Result<chrono_core::calc::CivilDateTime, String> {
+pub(crate) fn parse_param_date(s: &str) -> Result<chronomock::calc::CivilDateTime, String> {
     if s.contains('T') || s.contains(' ') {
-        chrono_core::calc::parse_civil_datetime(s)
+        chronomock::calc::parse_civil_datetime(s)
     } else {
-        chrono_core::calc::parse_civil_datetime_as(&format!("{s}T00:00:00"), s)
+        chronomock::calc::parse_civil_datetime_as(&format!("{s}T00:00:00"), s)
     }
 }
 
@@ -1042,7 +1042,7 @@ pub(crate) fn time_mode_from(dto: Option<TimeModeDto>) -> Result<PresetTimeMode,
 pub(crate) fn read_target_creation_date(
     target: &str,
     tz_bias_min: Option<i32>,
-) -> Option<chrono_core::calc::CivilDateTime> {
+) -> Option<chronomock::calc::CivilDateTime> {
     use std::os::windows::fs::MetadataExt;
     let meta = std::fs::metadata(target).ok()?;
     // creation_time() is a Windows FILETIME (100ns since 1601-01-01 UTC) - the same shape the
@@ -1061,9 +1061,9 @@ pub(crate) fn read_target_creation_date(
     // `--param install_date=...` is one. The time of day the file was written leaked through here into
     // every preset without a `set_time` step: `date-before-install` put the session at 23:00:35 the
     // day before, where the same preset with the same date given by hand gives midnight.
-    chrono_core::calc::parse_civil_datetime(&wall)
+    chronomock::calc::parse_civil_datetime(&wall)
         .ok()
-        .map(|d| chrono_core::calc::CivilDateTime { hour: 0, minute: 0, second: 0, ..d })
+        .map(|d| chronomock::calc::CivilDateTime { hour: 0, minute: 0, second: 0, ..d })
 }
 
 /// Locate a preset file: next to the executable (portable layout), else in ./presets.
@@ -1105,7 +1105,7 @@ pub(crate) fn load_preset_at(path: &std::path::Path, id: &str) -> Result<Preset,
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono_core::calc::SnapTarget;
+    use chronomock::calc::SnapTarget;
     use crate::calendar::calendar_from_text;
     use crate::testutil::read_data;
 
@@ -1133,7 +1133,7 @@ mod tests {
 
     #[test]
     fn shipped_presets_parse_and_hit_golden_dates() {
-        use chrono_core::calc::{CivilDateTime, EvalContext};
+        use chronomock::calc::{CivilDateTime, EvalContext};
         let now = CivilDateTime { year: 2026, month: 2, day: 15, hour: 12, minute: 0, second: 0 };
 
         // Every shipped preset parses (a malformed one, or a bad schema/field, fails here).
@@ -1163,7 +1163,7 @@ mod tests {
             let p = parse_preset(&read_data(&format!("presets/{id}.json"))).unwrap();
             let values = resolve_parameters(&p.parameters, &HashMap::new(), None).unwrap();
             let expr = resolve_moment(p.moment, &values).unwrap();
-            chrono_core::calc::eval(&expr, ctx).unwrap().result()
+            chronomock::calc::eval(&expr, ctx).unwrap().result()
         };
 
         let no_cal = EvalContext { now, zone_bias_min: 0, calendar: None };
@@ -1190,14 +1190,14 @@ mod tests {
         let aom = parse_preset(&read_data("presets/age-of-majority.json")).unwrap();
         let aom_vals = resolve_parameters(&aom.parameters, &param_map(&[("birth_date", "2008-03-15")]), None).unwrap();
         let aom_expr = resolve_moment(aom.moment, &aom_vals).unwrap();
-        assert_eq!(chrono_core::calc::eval(&aom_expr, &no_cal).unwrap().result().to_iso(), "2026-03-14T00:00:00");
+        assert_eq!(chronomock::calc::eval(&aom_expr, &no_cal).unwrap().result().to_iso(), "2026-03-14T00:00:00");
 
         // fiscal-year-end takes a fiscal-year start date and returns its last day (start + 1 year - 1 day),
         // never a hardcoded 31 December (docs/05 3.4). US federal 2025-10-01 -> 2026-09-30.
         let fye = parse_preset(&read_data("presets/fiscal-year-end.json")).unwrap();
         let fye_vals = resolve_parameters(&fye.parameters, &param_map(&[("fiscal_year_start", "2025-10-01")]), None).unwrap();
         let fye_expr = resolve_moment(fye.moment, &fye_vals).unwrap();
-        assert_eq!(chrono_core::calc::eval(&fye_expr, &no_cal).unwrap().result().to_iso(), "2026-09-30T00:00:00");
+        assert_eq!(chronomock::calc::eval(&fye_expr, &no_cal).unwrap().result().to_iso(), "2026-09-30T00:00:00");
 
         // payment-due-business-days is calendar-aware: +90 business days from today lands on a different
         // day per market, which is the whole point of a calendar-aware preset. Anchor at 2026-06-01 so the
@@ -1222,7 +1222,7 @@ mod tests {
     /// checked too - it is what a tester reads - but the number is what pins the instant.
     #[test]
     fn instant_targeted_presets_hit_their_instant_in_every_zone() {
-        use chrono_core::calc::{CivilDateTime, EvalContext, Significance, formats, significance};
+        use chronomock::calc::{CivilDateTime, EvalContext, Significance, formats, significance};
         let now = CivilDateTime { year: 2026, month: 2, day: 15, hour: 12, minute: 0, second: 0 };
 
         // id, the epoch second the preset's own description promises, and the marker that says so.
@@ -1238,7 +1238,7 @@ mod tests {
                 let p = parse_preset(&read_data(&format!("presets/{id}.json"))).unwrap();
                 let values = resolve_parameters(&p.parameters, &HashMap::new(), None).unwrap();
                 let expr = resolve_moment(p.moment, &values).unwrap();
-                let result = chrono_core::calc::eval(&expr, &ctx).unwrap().result();
+                let result = chronomock::calc::eval(&expr, &ctx).unwrap().result();
 
                 let got = formats(&result, zone_bias_min).epoch_seconds;
                 assert_eq!(
@@ -1267,7 +1267,7 @@ mod tests {
     /// bug by the tester who ran them back to back.
     #[test]
     fn the_trial_pair_counts_the_install_day_as_day_one() {
-        use chrono_core::calc::{CivilDateTime, EvalContext};
+        use chronomock::calc::{CivilDateTime, EvalContext};
         let now = CivilDateTime { year: 2026, month: 2, day: 15, hour: 12, minute: 0, second: 0 };
         let ctx = EvalContext { now, zone_bias_min: 0, calendar: None };
 
@@ -1276,7 +1276,7 @@ mod tests {
             let values =
                 resolve_parameters(&p.parameters, &param_map(&[("start_date", "2026-01-01")]), None).unwrap();
             let expr = resolve_moment(p.moment, &values).unwrap();
-            chrono_core::calc::eval(&expr, &ctx).unwrap().result().to_iso()
+            chronomock::calc::eval(&expr, &ctx).unwrap().result().to_iso()
         };
 
         assert_eq!(at("trial-last-day"), "2026-01-30T23:59:59");
@@ -1293,7 +1293,7 @@ mod tests {
             )
             .unwrap();
             let expr = resolve_moment(p.moment, &values).unwrap();
-            chrono_core::calc::eval(&expr, &ctx).unwrap().result().to_iso()
+            chronomock::calc::eval(&expr, &ctx).unwrap().result().to_iso()
         };
         assert_eq!(at_len("trial-last-day", "7days"), "2026-01-07T23:59:59");
         assert_eq!(at_len("trial-first-day-after", "7days"), "2026-01-08T00:00:01");
@@ -1410,7 +1410,7 @@ mod tests {
         ] {
             let said = parse_preset(&text).unwrap_err().message().to_string();
             assert!(said.contains("unknown name"), "{case}: {said}");
-            assert!(!said.chars().any(chrono_core::text::is_hidden_char), "{case}: {said:?}");
+            assert!(!said.chars().any(chronomock::text::is_hidden_char), "{case}: {said:?}");
             assert!(said.contains("x\\u{001b}[2K"), "{case}: {said}");
         }
     }
@@ -1427,7 +1427,7 @@ mod tests {
         let m = resolve_no_params(parse_preset(ok).unwrap()).unwrap();
         assert_eq!(
             m.base,
-            Base::Absolute(chrono_core::calc::CivilDateTime {
+            Base::Absolute(chronomock::calc::CivilDateTime {
                 year: 1970, month: 1, day: 1, hour: 0, minute: 0, second: 0
             })
         );
@@ -1469,7 +1469,7 @@ mod tests {
     /// (docs/05 3.6): day_before -1, on_day 0, day_after +1. The shift carries the variant's direction.
     #[test]
     fn variant_parameter_fills_a_signless_shift() {
-        use chrono_core::calc::{eval, CivilDateTime, EvalContext};
+        use chronomock::calc::{eval, CivilDateTime, EvalContext};
         let json = r#"{
             "schema": "chronomock.preset/1", "id": "b",
             "name": { "en": "n" }, "explains": { "en": "e" }, "applies_to": "calculator",
@@ -1889,8 +1889,8 @@ mod tests {
         );
     }
 
-    fn civil(y: i64, mo: u32, d: u32, h: u32, mi: u32, s: u32) -> chrono_core::calc::CivilDateTime {
-        chrono_core::calc::CivilDateTime { year: y, month: mo, day: d, hour: h, minute: mi, second: s }
+    fn civil(y: i64, mo: u32, d: u32, h: u32, mi: u32, s: u32) -> chronomock::calc::CivilDateTime {
+        chronomock::calc::CivilDateTime { year: y, month: mo, day: d, hour: h, minute: mi, second: s }
     }
 
     #[test]

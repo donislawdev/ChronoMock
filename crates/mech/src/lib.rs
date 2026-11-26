@@ -439,7 +439,7 @@ const _: () = {
         "the last instant a session may start at must be the instant the hook clamps to"
     );
     assert!(
-        (chrono_core::ZONE_BIAS_MAX_MIN as i64) * 60 * 10_000_000 <= chrono_ctl::MAX_ZONE_BIAS_TICKS,
+        (chronomock::ZONE_BIAS_MAX_MIN as i64) * 60 * 10_000_000 <= chrono_ctl::MAX_ZONE_BIAS_TICKS,
         "every zone the session accepts must fit the headroom the clamp leaves for the local-time channels"
     );
 };
@@ -746,13 +746,13 @@ impl Session {
     /// (ADR-5). Returns Err if the step is unsupported (business days) or overflows.
     pub fn jump_step(
         &self,
-        step: &chrono_core::calc::Step,
-    ) -> Result<(), chrono_core::calc::EvalError> {
+        step: &chronomock::calc::Step,
+    ) -> Result<(), chronomock::calc::EvalError> {
         let now = quitp_now();
         let (a_fake, a_real, cur_m) = unsafe { read_anchor(self.ctl()) };
         // From the clock the target actually reads, clamp included - see `set_multiplier` (R4-S7a).
         let fake_now = project_fake_ft(a_fake, a_real, now, cur_m);
-        let target = chrono_core::calc::step_target(fake_now, self.tz_bias, step)?;
+        let target = chrono_core::step_target(fake_now, self.tz_bias, step)?;
         unsafe { write_anchor(self.ctl_mut(), target, now, cur_m) };
         self.zone.note_landing(target);
         Ok(())
@@ -3474,12 +3474,12 @@ mod tests {
                 // A moment the session takes: at or after 1601 as local time in its zone too (R4-S7d).
                 let ticks = ticks.max(i64::from(bias.max(0)) * 600_000_000);
                 prop_assert!(chrono_core::instant_in_session_range(ticks, bias), "{} in a zone {} minutes off", ticks, bias);
-                prop_assert_eq!(windows_reads(ticks), Some(chrono_core::filetime_utc_to_wall(ticks, 0)), "UTC of {}", ticks);
+                prop_assert_eq!(windows_reads(ticks), Some(chronomock::filetime_utc_to_wall(ticks, 0)), "UTC of {}", ticks);
                 // The hook's own arithmetic for the local channels, and the one `chrono-ctl` keeps for the
                 // FILETIME ones (`shift_filetime`).
                 let local = ticks - i64::from(bias) * 600_000_000;
                 prop_assert_eq!(chrono_ctl::shift_ticks_by_bias(ticks, bias, false), Some(local));
-                let reported = chrono_core::filetime_utc_to_wall(ticks, bias);
+                let reported = chronomock::filetime_utc_to_wall(ticks, bias);
                 prop_assert_eq!(windows_reads(local), Some(reported.clone()), "{} in a zone {} minutes off", ticks, bias);
                 let whole = ticks - ticks % 10_000_000;
                 let moment = chrono_core::Moment { local: reported, tz_bias_min: Some(bias) };
@@ -3528,7 +3528,7 @@ mod tests {
         /// A session zone: either end of the band, the hour offsets most tested, a minute either side of
         /// UTC, or anything the band holds.
         fn zone_bias() -> impl Strategy<Value = i32> {
-            let band = chrono_core::ZONE_BIAS_MAX_MIN;
+            let band = chronomock::ZONE_BIAS_MAX_MIN;
             prop_oneof![1 => select(vec![-band, -840, -60, -1, 0, 1, 60, 300, band]), 1 => -band..=band]
         }
     }

@@ -215,7 +215,7 @@ pub(crate) fn driver_run(argv: &[String]) -> i32 {
         }
     };
 
-    let started_utc = format!("{}Z", chrono_core::filetime_utc_to_wall(now_filetime_utc(), 0));
+    let started_utc = format!("{}Z", chronomock::filetime_utc_to_wall(now_filetime_utc(), 0));
     let mut child = match PCommand::new(exe)
         .arg("__core")
         .stdin(Stdio::piped())

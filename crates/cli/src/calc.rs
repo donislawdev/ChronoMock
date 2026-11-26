@@ -11,8 +11,8 @@
 //! takes now as data), evaluates, and renders. No natural language (6.2): each flag is one step,
 //! order is step order.
 //!
-//! The calc engine lives in `chrono-core` (serde-free), so the CLI owns serialization: the JSON DTOs
-//! here are populated from the core's typed results, the mirror of the calendar and preset loaders.
+//! The calc engine lives in the date library `chronomock` (serde-free), so the CLI owns serialization:
+//! the JSON DTOs here are populated from the engine's typed results, the mirror of the calendar and preset loaders.
 //! The GUI is a thin client of this contract (ADR-6), consuming the same engine output the human
 //! render shows. Contract keys are public names (rule 17) - a breaking change needs a schema bump.
 //! An error still goes to stderr with a non-zero exit - stdout carries a result only on success.
@@ -20,8 +20,8 @@
 
 use std::collections::HashMap;
 
-use chrono_core::calc::{Base, EvalContext, EvalError, MomentExpr, Sign, Step};
-use chrono_core::filetime_utc_to_wall;
+use chronomock::calc::{Base, EvalContext, EvalError, MomentExpr, Sign, Step};
+use chronomock::filetime_utc_to_wall;
 
 use crate::cli::{flag_value, print_calc_usage};
 use crate::grammar::{parse_base, parse_nearest, parse_set_time, parse_shift, parse_snap};
@@ -107,7 +107,7 @@ pub(crate) fn calc_run(argv: &[String]) -> i32 {
     // Reverse analysis (7.3): with --analyze, interpret a pasted date instead of building a moment.
     // The build flags (--base/--shift/...) do not apply. --calendar and --zone still do.
     if let Some(input) = &ca.analyze {
-        return match chrono_core::calc::analyze_date(input, zone_bias) {
+        return match chronomock::calc::analyze_date(input, zone_bias) {
             Ok(analysis) => {
                 if ca.json {
                     outln!("{}", calc_analysis_json(&analysis, input, &now, Some(zone_bias), calendar.as_ref()));
@@ -167,7 +167,7 @@ pub(crate) fn calc_run(argv: &[String]) -> i32 {
         }
         None => (MomentExpr { base: ca.base, steps: ca.steps }, None, None),
     };
-    match chrono_core::calc::eval(
+    match chronomock::calc::eval(
         &expr,
         &EvalContext { now, zone_bias_min: zone_bias, calendar: calendar.as_ref() },
     ) {
@@ -195,7 +195,7 @@ pub(crate) fn calc_run(argv: &[String]) -> i32 {
                 render_calc(&expr, &outcome, Some(zone_bias), zone_from_host, &today, calendar.as_ref(), preset_header.as_deref());
             // A custom mask (7.3) adds one more line in the target app's exact format.
             if let Some(mask) = &ca.format {
-                let rendered = chrono_core::calc::format_with_mask(&outcome.result(), mask);
+                let rendered = chronomock::calc::format_with_mask(&outcome.result(), mask);
                 text.push_str(&format!("  custom format:  {}\n", rendered.text));
                 // Named right under the line they affect. Without this the output carries raw mask
                 // letters and still looks like a formatted date, so the reader's first guess is their
@@ -345,8 +345,8 @@ pub(crate) struct ReadingJson {
     metadata: MetadataJson,
 }
 
-pub(crate) fn formats_json(civil: &chrono_core::calc::CivilDateTime, bias: i32) -> FormatsJson {
-    let f = chrono_core::calc::formats(civil, bias);
+pub(crate) fn formats_json(civil: &chronomock::calc::CivilDateTime, bias: i32) -> FormatsJson {
+    let f = chronomock::calc::formats(civil, bias);
     FormatsJson {
         iso_date: f.iso_date,
         iso_datetime: f.iso_datetime,
@@ -360,17 +360,17 @@ pub(crate) fn formats_json(civil: &chrono_core::calc::CivilDateTime, bias: i32) 
 }
 
 pub(crate) fn metadata_json(
-    civil: &chrono_core::calc::CivilDateTime,
-    now: &chrono_core::calc::CivilDateTime,
-    calendar: Option<&chrono_core::calendar::Calendar>,
+    civil: &chronomock::calc::CivilDateTime,
+    now: &chronomock::calc::CivilDateTime,
+    calendar: Option<&chronomock::calendar::Calendar>,
 ) -> MetadataJson {
-    let m = chrono_core::calc::metadata(civil, now);
+    let m = chronomock::calc::metadata(civil, now);
     // A calendar says nothing about a date before its first year - not "a business day", not "no
     // holiday" - where its rules were not the ones in force (R4-S20).
     let (business_day, holiday) = match calendar.filter(|cal| cal.judges_year(civil.year)) {
         Some(cal) => (
-            Some(chrono_core::calendar::is_business_day(civil, cal)),
-            chrono_core::calendar::holiday_on(civil, cal).map(|h| h.name_en.clone()),
+            Some(chronomock::calendar::is_business_day(civil, cal)),
+            chronomock::calendar::holiday_on(civil, cal).map(|h| h.name_en.clone()),
         ),
         None => (None, None),
     };
@@ -392,7 +392,7 @@ pub(crate) fn metadata_json(
 }
 
 /// A civil date as `YYYY-MM-DD`, the way a calendar file writes `law_as_of`.
-fn date_text(civil: &chrono_core::calc::CivilDateTime) -> String {
+fn date_text(civil: &chronomock::calc::CivilDateTime) -> String {
     let iso = civil.to_iso();
     iso.split('T').next().unwrap_or(&iso).to_string()
 }
@@ -403,44 +403,44 @@ fn date_text(civil: &chrono_core::calc::CivilDateTime) -> String {
 /// `reach`, the latest day a business-day step judged on the way (R4/20, the owner's case of data from
 /// 2030 read in 2032).
 pub(crate) fn significance_of(
-    civil: &chrono_core::calc::CivilDateTime,
+    civil: &chronomock::calc::CivilDateTime,
     bias: i32,
-    calendar: Option<&chrono_core::calendar::Calendar>,
-    today: &chrono_core::calc::CivilDateTime,
-    reach: Option<&chrono_core::calc::CivilDateTime>,
-) -> Vec<chrono_core::calc::Significance> {
-    let mut marks = chrono_core::calc::significance(civil, bias, calendar);
+    calendar: Option<&chronomock::calendar::Calendar>,
+    today: &chronomock::calc::CivilDateTime,
+    reach: Option<&chronomock::calc::CivilDateTime>,
+) -> Vec<chronomock::calc::Significance> {
+    let mut marks = chronomock::calc::significance(civil, bias, calendar);
     if let Some(cal) = calendar {
-        let judged_here = cal.judges_year(civil.year) && chrono_core::calendar::outdated(cal, today, civil);
-        if judged_here || reach.is_some_and(|day| chrono_core::calendar::outdated(cal, today, day)) {
-            marks.push(chrono_core::calc::Significance::CalendarOutdated);
+        let judged_here = cal.judges_year(civil.year) && chronomock::calendar::outdated(cal, today, civil);
+        if judged_here || reach.is_some_and(|day| chronomock::calendar::outdated(cal, today, day)) {
+            marks.push(chronomock::calc::Significance::CalendarOutdated);
         }
     }
     marks
 }
 
 pub(crate) fn significance_keys(
-    civil: &chrono_core::calc::CivilDateTime,
+    civil: &chronomock::calc::CivilDateTime,
     bias: i32,
-    calendar: Option<&chrono_core::calendar::Calendar>,
-    today: &chrono_core::calc::CivilDateTime,
-    reach: Option<&chrono_core::calc::CivilDateTime>,
+    calendar: Option<&chronomock::calendar::Calendar>,
+    today: &chronomock::calc::CivilDateTime,
+    reach: Option<&chronomock::calc::CivilDateTime>,
 ) -> Vec<&'static str> {
     significance_of(civil, bias, calendar, today, reach).iter().map(|s| s.key()).collect()
 }
 
 pub(crate) fn calc_moment_json(
-    outcome: &chrono_core::calc::EvalOutcome,
+    outcome: &chronomock::calc::EvalOutcome,
     // Now, read in the RESULT's zone (`outcome.result_bias`), which is where `days_from_today` has to
     // count from - see `calc_run` (R4-N31).
-    today: &chrono_core::calc::CivilDateTime,
-    calendar: Option<&chrono_core::calendar::Calendar>,
+    today: &chronomock::calc::CivilDateTime,
+    calendar: Option<&chronomock::calendar::Calendar>,
     format_mask: Option<&str>,
     preset: Option<PresetJson>,
 ) -> String {
     let result = outcome.result();
     let bias = outcome.result_bias;
-    let rendered_mask = format_mask.map(|m| chrono_core::calc::format_with_mask(&result, m));
+    let rendered_mask = format_mask.map(|m| chronomock::calc::format_with_mask(&result, m));
     let moment = MomentJson {
         iso: result.to_iso(),
         zone_bias_min: bias,
@@ -475,7 +475,7 @@ pub(crate) fn calc_moment_json(
 /// is (R5-D5, item 2). The window translates the key, and these came to it as a bare English sentence:
 /// a calendar that is not there and one that is there and cannot be used need different hands, and an
 /// id that cannot be a file name is an argument to fix.
-fn load_named_calendar(id: &str) -> Result<chrono_core::calendar::Calendar, String> {
+fn load_named_calendar(id: &str) -> Result<chronomock::calendar::Calendar, String> {
     let path = crate::calendar::find_calendar_file(id).map_err(|e| {
         if crate::calendar::is_valid_catalogue_id(id) {
             format!("chrono calc: {e} (calc.calendar_not_found)")
@@ -510,7 +510,7 @@ fn preset_refusal(e: &crate::preset::PresetError, stage: PresetStage) -> String 
 /// calendar and where it came from, empty when none was implied.
 fn adopt_market_calendar(
     preset: &crate::preset::Preset,
-    calendar: &mut Option<chrono_core::calendar::Calendar>,
+    calendar: &mut Option<chronomock::calendar::Calendar>,
 ) -> Result<String, String> {
     if calendar.is_some() {
         return Ok(String::new());
@@ -529,11 +529,11 @@ fn adopt_market_calendar(
 }
 
 pub(crate) fn calc_analysis_json(
-    analysis: &chrono_core::calc::DateAnalysis,
+    analysis: &chronomock::calc::DateAnalysis,
     input: &str,
-    now: &chrono_core::calc::CivilDateTime,
+    now: &chronomock::calc::CivilDateTime,
     zone_bias_min: Option<i32>,
-    calendar: Option<&chrono_core::calendar::Calendar>,
+    calendar: Option<&chronomock::calendar::Calendar>,
 ) -> String {
     let bias = zone_bias_min.unwrap_or(0);
     let written = time_written(input);
@@ -629,7 +629,7 @@ pub(crate) fn parse_calc_args(argv: &[String]) -> Result<CalcArgs, String> {
                 reject_second_base(&mut saw_base, "--base-utc")?;
                 let raw = flag_value(argv, i, "--base-utc", "a value like 1970-01-01T00:00:00Z")?;
                 let trimmed = raw.strip_suffix('Z').unwrap_or(raw);
-                base = Base::AbsoluteUtc(chrono_core::calc::parse_civil_datetime(trimmed)?);
+                base = Base::AbsoluteUtc(chronomock::calc::parse_civil_datetime(trimmed)?);
                 saw_step_flag = true;
             }
             "--param" => {
@@ -735,14 +735,14 @@ pub(crate) fn parse_calc_args(argv: &[String]) -> Result<CalcArgs, String> {
 
 /// Real current time in the session zone, as a civil date-time for the pure core.
 /// Reuses the tested UTC-now and wall-clock conversion, then parses back to civil.
-pub(crate) fn resolve_now_civil(zone_bias_min: Option<i32>) -> Result<chrono_core::calc::CivilDateTime, String> {
+pub(crate) fn resolve_now_civil(zone_bias_min: Option<i32>) -> Result<chronomock::calc::CivilDateTime, String> {
     civil_at(now_filetime_utc(), zone_bias_min.unwrap_or(0))
 }
 
 /// One instant as a civil date-time in a zone. Apart from reading the clock, so a caller that needs
 /// the same "now" in two zones reads the clock once.
-fn civil_at(ft_utc: i64, zone_bias_min: i32) -> Result<chrono_core::calc::CivilDateTime, String> {
-    chrono_core::calc::parse_civil_datetime(&filetime_utc_to_wall(ft_utc, zone_bias_min))
+fn civil_at(ft_utc: i64, zone_bias_min: i32) -> Result<chronomock::calc::CivilDateTime, String> {
+    chronomock::calc::parse_civil_datetime(&filetime_utc_to_wall(ft_utc, zone_bias_min))
 }
 
 /// Exit code for a calc error (a small table separate from the substitution verdict
@@ -790,8 +790,8 @@ pub(crate) fn describe_calc_error(e: &EvalError) -> String {
         }
         EvalError::BaseYearOutOfRange => format!(
             "chrono calc: the base year is outside the range this build computes on ({}..={}) (calc.year_out_of_range)",
-            chrono_core::CIVIL_YEAR_MIN,
-            chrono_core::CIVIL_YEAR_MAX
+            chronomock::CIVIL_YEAR_MIN,
+            chronomock::CIVIL_YEAR_MAX
         ),
         // Names the base, never a step number: this base converts before step 1 runs, and an
         // expression with no steps can still reach here.
@@ -809,13 +809,13 @@ pub(crate) fn describe_calc_error(e: &EvalError) -> String {
         EvalError::YearOutOfRange { index } => format!(
             "chrono calc: step {} lands on a year outside the range this build computes on ({}..={}) (calc.year_out_of_range)",
             index + 1,
-            chrono_core::CIVIL_YEAR_MIN,
-            chrono_core::CIVIL_YEAR_MAX
+            chronomock::CIVIL_YEAR_MIN,
+            chronomock::CIVIL_YEAR_MAX
         ),
         EvalError::TooManyBusinessDays { index } => format!(
             "chrono calc: step {} takes the business days of this calculation past {limit} - the most one calculation counts, all its steps together. Lower the counts so they add up to {limit} or less (calc.business_days_limit)",
             index + 1,
-            limit = chrono_core::calendar::MAX_BUSINESS_DAYS
+            limit = chronomock::calendar::MAX_BUSINESS_DAYS
         ),
         EvalError::BeforeCalendar { index, first_year } => format!(
             "chrono calc: step {} reaches a day before {first_year}, the first year the calendar covers - pick a later date or another calendar (calc.before_calendar)",
@@ -828,14 +828,14 @@ pub(crate) fn describe_calc_error(e: &EvalError) -> String {
 /// final moment (7.3 - the user sees where they went wrong, not just the final number).
 pub(crate) fn render_calc(
     expr: &MomentExpr,
-    outcome: &chrono_core::calc::EvalOutcome,
+    outcome: &chronomock::calc::EvalOutcome,
     zone_bias_min: Option<i32>,
     // True when the caller named no `--zone` and this is the host's offset. Printed, so a reader
     // never has to wonder whether a zone they did not type is one they can rely on (rule 2).
     zone_from_host: bool,
     // Now, read in the RESULT's zone, which is where "days from now" counts from (R4-N31).
-    today: &chrono_core::calc::CivilDateTime,
-    calendar: Option<&chrono_core::calendar::Calendar>,
+    today: &chronomock::calc::CivilDateTime,
+    calendar: Option<&chronomock::calendar::Calendar>,
     preset_header: Option<&str>,
 ) -> String {
     let zone = match (zone_bias_min.map(format_bias), zone_from_host) {
@@ -901,9 +901,9 @@ pub(crate) fn render_calc(
 /// lines under an `explains:` that said something else entirely. Both were true and the reader had to
 /// pick which one to believe.
 pub(crate) fn render_significance(
-    civil: &chrono_core::calc::CivilDateTime,
-    marks: &[chrono_core::calc::Significance],
-    calendar: Option<&chrono_core::calendar::Calendar>,
+    civil: &chronomock::calc::CivilDateTime,
+    marks: &[chronomock::calc::Significance],
+    calendar: Option<&chronomock::calendar::Calendar>,
 ) -> String {
     if marks.is_empty() {
         return String::new();
@@ -924,7 +924,7 @@ pub(crate) fn render_significance(
 /// calendar whose weekend falls elsewhere in the week. A calendar read from a file also says when its
 /// holidays were checked against the law, and a date before its first year says that the calendar did not
 /// judge it at all (R4-S20, R4/20).
-fn calendar_line(civil: &chrono_core::calc::CivilDateTime, cal: &chrono_core::calendar::Calendar) -> String {
+fn calendar_line(civil: &chronomock::calc::CivilDateTime, cal: &chronomock::calendar::Calendar) -> String {
     if let Some(first) = cal.valid_from.filter(|_| !cal.judges_year(civil.year)) {
         return format!("the {} calendar starts in {first} and does not judge this date", cal.id);
     }
@@ -942,13 +942,13 @@ fn calendar_line(civil: &chrono_core::calc::CivilDateTime, cal: &chrono_core::ca
 /// weekday, and the "what this date lands on" markers. Two readings mean an ambiguous numeric order
 /// (04/08 is April 8 in the US, August 4 in Poland) - both are shown rather than one chosen silently.
 pub(crate) fn render_analysis(
-    analysis: &chrono_core::calc::DateAnalysis,
+    analysis: &chronomock::calc::DateAnalysis,
     input: &str,
-    now: &chrono_core::calc::CivilDateTime,
+    now: &chronomock::calc::CivilDateTime,
     zone_bias_min: Option<i32>,
     // True when the caller named no `--zone` and this is the host's offset, said beside it (rule 2).
     zone_from_host: bool,
-    calendar: Option<&chrono_core::calendar::Calendar>,
+    calendar: Option<&chronomock::calendar::Calendar>,
 ) -> String {
     let mut out = String::from("Chrono Mock - date analysis\n");
     let instant = analysis.readings.iter().any(|(r, _)| r.is_instant());
@@ -968,13 +968,13 @@ pub(crate) fn render_analysis(
     if instant {
         let from_host = if zone_from_host { ", from the host" } else { "" };
         // A date with its own offset is an instant for another reason than a number is (R5-D5, item 5).
-        let offset = analysis.readings.iter().any(|(r, _)| *r == chrono_core::calc::DateReading::IsoOffset);
+        let offset = analysis.readings.iter().any(|(r, _)| *r == chronomock::calc::DateReading::IsoOffset);
         let what = if offset { "the date carries its own UTC offset, so it is an instant" } else { "the number is an instant" };
         out.push_str(&format!("  zone:    {}{from_host}  ({what}, shown in this zone)\n", format_bias(bias)));
     }
     let written = time_written(input);
     for (reading, civil) in &analysis.readings {
-        let weekday = chrono_core::calc::metadata(civil, now).weekday;
+        let weekday = chronomock::calc::metadata(civil, now).weekday;
         out.push_str(&format!(
             "  {}:  {}  ({weekday})\n",
             reading.label(),
@@ -995,8 +995,8 @@ pub(crate) fn render_analysis(
 /// date, and for an ISO input that wrote a time, midnight included (`time_written`). A date written
 /// without a time keeps the short form.
 fn reading_text(
-    reading: chrono_core::calc::DateReading,
-    civil: &chrono_core::calc::CivilDateTime,
+    reading: chronomock::calc::DateReading,
+    civil: &chronomock::calc::CivilDateTime,
     time_written: bool,
 ) -> String {
     let iso = civil.to_iso();
@@ -1015,9 +1015,9 @@ fn time_written(input: &str) -> bool {
 /// Whether a reading has a time of day to show: always for an epoch reading, which names an instant
 /// down to the second, and for an ISO reading when the input wrote a time. One rule for the text output
 /// and for the `time` field of the JSON one, which the window shows.
-fn reading_shows_time(reading: chrono_core::calc::DateReading, time_written: bool) -> bool {
+fn reading_shows_time(reading: chronomock::calc::DateReading, time_written: bool) -> bool {
     match reading {
-        chrono_core::calc::DateReading::Iso => time_written,
+        chronomock::calc::DateReading::Iso => time_written,
         _ => reading.is_instant(),
     }
 }
@@ -1027,11 +1027,11 @@ fn reading_shows_time(reading: chrono_core::calc::DateReading, time_written: boo
 /// from today. With a calendar, also the business-day and holiday fields (which need one) -
 /// omitted entirely without a calendar, never guessed.
 pub(crate) fn render_metadata(
-    civil: &chrono_core::calc::CivilDateTime,
-    now: &chrono_core::calc::CivilDateTime,
-    calendar: Option<&chrono_core::calendar::Calendar>,
+    civil: &chronomock::calc::CivilDateTime,
+    now: &chronomock::calc::CivilDateTime,
+    calendar: Option<&chronomock::calendar::Calendar>,
 ) -> String {
-    let m = chrono_core::calc::metadata(civil, now);
+    let m = chronomock::calc::metadata(civil, now);
     let days = match m.days_from_today {
         0 => "today".to_string(),
         n if n > 0 => format!("+{n} days"),
@@ -1056,9 +1056,9 @@ pub(crate) fn render_metadata(
             out.push_str("    holiday       not judged\n");
             return out;
         }
-        let business = if chrono_core::calendar::is_business_day(civil, cal) { "yes" } else { "no" };
+        let business = if chronomock::calendar::is_business_day(civil, cal) { "yes" } else { "no" };
         out.push_str(&format!("    business day  {business}  ({})\n", cal.id));
-        let holiday = match chrono_core::calendar::holiday_on(civil, cal) {
+        let holiday = match chronomock::calendar::holiday_on(civil, cal) {
             Some(h) => h.name_en.as_str(),
             None => "no",
         };
@@ -1070,8 +1070,8 @@ pub(crate) fn render_metadata(
 /// Render the result in every output format, each on its own labelled line ready to copy
 /// (docs/02 section 8, in that order). An instant-based format outside FILETIME range shows
 /// "(out of range)" rather than a wrong number or nothing.
-pub(crate) fn render_formats(civil: &chrono_core::calc::CivilDateTime, tz_bias_min: i32) -> String {
-    let f = chrono_core::calc::formats(civil, tz_bias_min);
+pub(crate) fn render_formats(civil: &chronomock::calc::CivilDateTime, tz_bias_min: i32) -> String {
+    let f = chronomock::calc::formats(civil, tz_bias_min);
     let num = |n: Option<i64>| n.map(|v| v.to_string()).unwrap_or_else(|| "(out of range)".into());
     let mut out = String::from("  formats:\n");
     out.push_str(&format!("    ISO date      {}\n", f.iso_date));
@@ -1111,8 +1111,8 @@ mod tests {
     #[test]
     fn a_date_with_an_offset_is_analysed_as_an_instant() {
         let input = "2026-01-01T10:00:00+02:00";
-        let analysis = chrono_core::calc::analyze_date(input, 0).unwrap();
-        let now = chrono_core::calc::parse_civil_datetime("2026-06-01T00:00:00").unwrap();
+        let analysis = chronomock::calc::analyze_date(input, 0).unwrap();
+        let now = chronomock::calc::parse_civil_datetime("2026-06-01T00:00:00").unwrap();
         let text = render_analysis(&analysis, input, &now, Some(0), false, None);
         assert!(text.contains("ISO 8601 with UTC offset:  2026-01-01T08:00:00"), "{text}");
         assert!(text.contains("the date carries its own UTC offset, so it is an instant"), "{text}");
@@ -1180,10 +1180,10 @@ mod tests {
         for bias in [0, -120, 300, -345] {
             let ca = parse_calc_args(&["--base-utc".into(), "1970-01-01T00:00:00Z".into()]).unwrap();
             let expr = MomentExpr { base: ca.base, steps: ca.steps };
-            let now = chrono_core::calc::CivilDateTime { year: 2026, month: 1, day: 1, hour: 0, minute: 0, second: 0 };
-            let out = chrono_core::calc::eval(&expr, &EvalContext { now, zone_bias_min: bias, calendar: None }).unwrap();
+            let now = chronomock::calc::CivilDateTime { year: 2026, month: 1, day: 1, hour: 0, minute: 0, second: 0 };
+            let out = chronomock::calc::eval(&expr, &EvalContext { now, zone_bias_min: bias, calendar: None }).unwrap();
             assert_eq!(
-                chrono_core::calc::formats(&out.result(), bias).epoch_seconds,
+                chronomock::calc::formats(&out.result(), bias).epoch_seconds,
                 Some(0),
                 "bias {bias} must still name epoch 0"
             );
@@ -1193,9 +1193,9 @@ mod tests {
         // instant per zone. Without this the two flags could quietly become one.
         let plain = parse_calc_args(&["--base".into(), "1970-01-01T00:00:00".into()]).unwrap();
         let expr = MomentExpr { base: plain.base, steps: plain.steps };
-        let now = chrono_core::calc::CivilDateTime { year: 2026, month: 1, day: 1, hour: 0, minute: 0, second: 0 };
-        let out = chrono_core::calc::eval(&expr, &EvalContext { now, zone_bias_min: -120, calendar: None }).unwrap();
-        assert_eq!(chrono_core::calc::formats(&out.result(), -120).epoch_seconds, Some(-7200));
+        let now = chronomock::calc::CivilDateTime { year: 2026, month: 1, day: 1, hour: 0, minute: 0, second: 0 };
+        let out = chronomock::calc::eval(&expr, &EvalContext { now, zone_bias_min: -120, calendar: None }).unwrap();
+        assert_eq!(chronomock::calc::formats(&out.result(), -120).epoch_seconds, Some(-7200));
     }
 
     /// Two base flags are a contradiction, not a preference order - "last one wins" would move the
@@ -1225,8 +1225,8 @@ mod tests {
         ])
         .unwrap();
         let expr = MomentExpr { base: ca.base, steps: ca.steps };
-        let now = chrono_core::calc::CivilDateTime { year: 2000, month: 1, day: 1, hour: 0, minute: 0, second: 0 };
-        let out = chrono_core::calc::eval(&expr, &EvalContext { now, zone_bias_min: 0, calendar: None }).unwrap();
+        let now = chronomock::calc::CivilDateTime { year: 2000, month: 1, day: 1, hour: 0, minute: 0, second: 0 };
+        let out = chronomock::calc::eval(&expr, &EvalContext { now, zone_bias_min: 0, calendar: None }).unwrap();
         assert_eq!(out.result().to_iso(), "2025-02-28T12:00:00");
     }
 
@@ -1244,8 +1244,8 @@ mod tests {
         ])
         .unwrap();
         let expr = MomentExpr { base: ca.base, steps: ca.steps };
-        let now = chrono_core::calc::CivilDateTime { year: 2000, month: 1, day: 1, hour: 0, minute: 0, second: 0 };
-        let out = chrono_core::calc::eval(&expr, &EvalContext { now, zone_bias_min: 0, calendar: None }).unwrap();
+        let now = chronomock::calc::CivilDateTime { year: 2000, month: 1, day: 1, hour: 0, minute: 0, second: 0 };
+        let out = chronomock::calc::eval(&expr, &EvalContext { now, zone_bias_min: 0, calendar: None }).unwrap();
         let text = render_calc(&expr, &out, None, false, &now, None, None);
         assert!(text.contains("base:    2008-08-04T00:00:00"), "got:\n{text}");
         assert!(text.contains("step 1:  shift -18 years  -> 1990-08-04T00:00:00"), "got:\n{text}");
@@ -1265,8 +1265,8 @@ mod tests {
     fn render_calc_includes_the_formats_block() {
         let ca = parse_calc_args(&["--base".into(), "1970-01-01T00:00:00".into()]).unwrap();
         let expr = MomentExpr { base: ca.base, steps: ca.steps };
-        let now = chrono_core::calc::CivilDateTime { year: 2000, month: 1, day: 1, hour: 0, minute: 0, second: 0 };
-        let out = chrono_core::calc::eval(&expr, &EvalContext { now, zone_bias_min: 0, calendar: None }).unwrap();
+        let now = chronomock::calc::CivilDateTime { year: 2000, month: 1, day: 1, hour: 0, minute: 0, second: 0 };
+        let out = chronomock::calc::eval(&expr, &EvalContext { now, zone_bias_min: 0, calendar: None }).unwrap();
         let text = render_calc(&expr, &out, Some(0), false, &now, None, None);
         assert!(text.contains("formats:"), "got:\n{text}");
         assert!(text.contains("ISO datetime  1970-01-01T00:00:00+00:00"), "got:\n{text}");
@@ -1281,8 +1281,8 @@ mod tests {
         let ca = parse_calc_args(&["--base".into(), "2026-01-01T00:00:00".into()]).unwrap();
         let expr = MomentExpr { base: ca.base, steps: ca.steps };
         // A fixed "today" makes days-from-now deterministic: 2026-01-01 is 9 days before 2026-01-10.
-        let now = chrono_core::calc::CivilDateTime { year: 2026, month: 1, day: 10, hour: 0, minute: 0, second: 0 };
-        let out = chrono_core::calc::eval(&expr, &EvalContext { now, zone_bias_min: 0, calendar: None }).unwrap();
+        let now = chronomock::calc::CivilDateTime { year: 2026, month: 1, day: 10, hour: 0, minute: 0, second: 0 };
+        let out = chronomock::calc::eval(&expr, &EvalContext { now, zone_bias_min: 0, calendar: None }).unwrap();
         let text = render_calc(&expr, &out, Some(0), false, &now, None, None);
         assert!(text.contains("metadata:"), "got:\n{text}");
         assert!(text.contains("weekday       Thursday"), "got:\n{text}"); // 2026-01-01 is a Thursday
@@ -1292,8 +1292,8 @@ mod tests {
         assert!(text.contains("days from now -9 days"), "got:\n{text}");
     }
 
-    fn test_calendar() -> chrono_core::calendar::Calendar {
-        use chrono_core::calendar::{Calendar, Holiday, HolidayRule, Observed};
+    fn test_calendar() -> chronomock::calendar::Calendar {
+        use chronomock::calendar::{Calendar, Holiday, HolidayRule, Observed};
         Calendar {
             id: "us-test".into(),
             country: "US".into(),
@@ -1315,7 +1315,7 @@ mod tests {
 
     #[test]
     fn render_metadata_with_calendar_shows_business_day_and_holiday() {
-        let civil = chrono_core::calc::CivilDateTime { year: 2026, month: 7, day: 4, hour: 0, minute: 0, second: 0 };
+        let civil = chronomock::calc::CivilDateTime { year: 2026, month: 7, day: 4, hour: 0, minute: 0, second: 0 };
         let cal = test_calendar();
         let text = render_metadata(&civil, &civil, Some(&cal));
         assert!(text.contains("holiday       Independence Day"), "got:\n{text}");
@@ -1328,18 +1328,18 @@ mod tests {
     /// from a file names the day it was checked against the law under the marks it decided.
     #[test]
     fn the_text_says_what_a_calendar_does_not_judge_and_when_it_was_checked() {
-        let day = |d: u32| chrono_core::calc::CivilDateTime { year: 2026, month: 7, day: d, hour: 0, minute: 0, second: 0 };
-        let later = chrono_core::calendar::Calendar { valid_from: Some(2030), ..test_calendar() };
+        let day = |d: u32| chronomock::calc::CivilDateTime { year: 2026, month: 7, day: d, hour: 0, minute: 0, second: 0 };
+        let later = chronomock::calendar::Calendar { valid_from: Some(2030), ..test_calendar() };
         let text = render_metadata(&day(4), &day(4), Some(&later));
         assert!(text.contains("business day  not judged - the us-test calendar starts in 2030"), "got:\n{text}");
         assert!(text.contains("holiday       not judged"), "got:\n{text}");
         assert!(!text.contains("Independence Day"), "got:\n{text}");
         let marks = significance_of(&day(4), 0, Some(&later), &day(4), None);
-        assert_eq!(marks, vec![chrono_core::calc::Significance::BeforeCalendar]);
+        assert_eq!(marks, vec![chronomock::calc::Significance::BeforeCalendar]);
         let block = render_significance(&day(4), &marks, Some(&later));
         assert!(block.contains("(the us-test calendar starts in 2030 and does not judge this date)"), "got:\n{block}");
 
-        let checked = chrono_core::calendar::Calendar { law_as_of: Some(day(1)), ..test_calendar() };
+        let checked = chronomock::calendar::Calendar { law_as_of: Some(day(1)), ..test_calendar() };
         let marks = significance_of(&day(4), 0, Some(&checked), &day(4), None);
         let block = render_significance(&day(4), &marks, Some(&checked));
         assert!(
@@ -1358,8 +1358,8 @@ mod tests {
         ])
         .unwrap();
         let expr = MomentExpr { base: ca.base, steps: ca.steps };
-        let now = chrono_core::calc::CivilDateTime { year: 2000, month: 1, day: 1, hour: 0, minute: 0, second: 0 };
-        let out = chrono_core::calc::eval(&expr, &EvalContext { now, zone_bias_min: 0, calendar: None }).unwrap();
+        let now = chronomock::calc::CivilDateTime { year: 2000, month: 1, day: 1, hour: 0, minute: 0, second: 0 };
+        let out = chronomock::calc::eval(&expr, &EvalContext { now, zone_bias_min: 0, calendar: None }).unwrap();
         assert_eq!(out.result().to_iso(), "2026-06-30T23:59:59");
     }
 
@@ -1369,8 +1369,8 @@ mod tests {
         let ca = parse_calc_args(&["--base".into(), "2026-05-15T00:00:00".into(), "--snap".into(), "eoy".into()])
             .unwrap();
         let expr = MomentExpr { base: ca.base, steps: ca.steps };
-        let now = chrono_core::calc::CivilDateTime { year: 2000, month: 1, day: 1, hour: 0, minute: 0, second: 0 };
-        let out = chrono_core::calc::eval(&expr, &EvalContext { now, zone_bias_min: 0, calendar: None }).unwrap();
+        let now = chronomock::calc::CivilDateTime { year: 2000, month: 1, day: 1, hour: 0, minute: 0, second: 0 };
+        let out = chronomock::calc::eval(&expr, &EvalContext { now, zone_bias_min: 0, calendar: None }).unwrap();
         let text = render_calc(&expr, &out, Some(0), false, &now, None, None);
         assert!(text.contains("what this date lands on:"), "got:\n{text}");
         assert!(text.contains("last day of the year (year-end rollover)"), "got:\n{text}");
@@ -1381,8 +1381,8 @@ mod tests {
         // A mid-month weekday hits no landmark, so the block is absent (positive signal only).
         let ca = parse_calc_args(&["--base".into(), "2026-08-12T09:00:00".into()]).unwrap();
         let expr = MomentExpr { base: ca.base, steps: ca.steps };
-        let now = chrono_core::calc::CivilDateTime { year: 2000, month: 1, day: 1, hour: 0, minute: 0, second: 0 };
-        let out = chrono_core::calc::eval(&expr, &EvalContext { now, zone_bias_min: 0, calendar: None }).unwrap();
+        let now = chronomock::calc::CivilDateTime { year: 2000, month: 1, day: 1, hour: 0, minute: 0, second: 0 };
+        let out = chronomock::calc::eval(&expr, &EvalContext { now, zone_bias_min: 0, calendar: None }).unwrap();
         let text = render_calc(&expr, &out, Some(0), false, &now, None, None);
         assert!(!text.contains("what this date lands on:"), "got:\n{text}");
     }
@@ -1392,8 +1392,8 @@ mod tests {
         // 2026-07-04 is a Saturday and Independence Day: with a calendar the block names both.
         let ca = parse_calc_args(&["--base".into(), "2026-07-04T00:00:00".into()]).unwrap();
         let expr = MomentExpr { base: ca.base, steps: ca.steps };
-        let now = chrono_core::calc::CivilDateTime { year: 2000, month: 1, day: 1, hour: 0, minute: 0, second: 0 };
-        let out = chrono_core::calc::eval(&expr, &EvalContext { now, zone_bias_min: 0, calendar: None }).unwrap();
+        let now = chronomock::calc::CivilDateTime { year: 2000, month: 1, day: 1, hour: 0, minute: 0, second: 0 };
+        let out = chronomock::calc::eval(&expr, &EvalContext { now, zone_bias_min: 0, calendar: None }).unwrap();
         let cal = test_calendar();
         let text = render_calc(&expr, &out, Some(0), false, &now, Some(&cal), None);
         assert!(text.contains("what this date lands on:"), "got:\n{text}");
@@ -1409,8 +1409,8 @@ mod tests {
         // day under a calendar whose weekend falls elsewhere. So the block says whose judgement it is.
         let ca = parse_calc_args(&["--base".into(), "2026-07-04T00:00:00".into()]).unwrap();
         let expr = MomentExpr { base: ca.base, steps: ca.steps };
-        let now = chrono_core::calc::CivilDateTime { year: 2000, month: 1, day: 1, hour: 0, minute: 0, second: 0 };
-        let out = chrono_core::calc::eval(&expr, &EvalContext { now, zone_bias_min: 0, calendar: None }).unwrap();
+        let now = chronomock::calc::CivilDateTime { year: 2000, month: 1, day: 1, hour: 0, minute: 0, second: 0 };
+        let out = chronomock::calc::eval(&expr, &EvalContext { now, zone_bias_min: 0, calendar: None }).unwrap();
         let cal = test_calendar();
         let text = render_calc(&expr, &out, Some(0), false, &now, Some(&cal), None);
         assert!(
@@ -1422,7 +1422,7 @@ mod tests {
         // the ABSENCE of a weekend mark is that calendar's judgement too.
         let ca = parse_calc_args(&["--base".into(), "2026-12-31T00:00:00".into()]).unwrap();
         let expr = MomentExpr { base: ca.base, steps: ca.steps };
-        let out = chrono_core::calc::eval(&expr, &EvalContext { now, zone_bias_min: 0, calendar: None }).unwrap();
+        let out = chronomock::calc::eval(&expr, &EvalContext { now, zone_bias_min: 0, calendar: None }).unwrap();
         let text = render_calc(&expr, &out, Some(0), false, &now, Some(&cal), None);
         assert!(text.contains("last day of the year"), "got:\n{text}");
         assert!(text.contains("marks follow the us-test calendar"), "got:\n{text}");
@@ -1439,8 +1439,8 @@ mod tests {
         // incidental to it. Both appear in one render, so they must not both be called the same thing.
         let ca = parse_calc_args(&["--base".into(), "2026-07-04T00:00:00".into()]).unwrap();
         let expr = MomentExpr { base: ca.base, steps: ca.steps };
-        let now = chrono_core::calc::CivilDateTime { year: 2000, month: 1, day: 1, hour: 0, minute: 0, second: 0 };
-        let out = chrono_core::calc::eval(&expr, &EvalContext { now, zone_bias_min: 0, calendar: None }).unwrap();
+        let now = chronomock::calc::CivilDateTime { year: 2000, month: 1, day: 1, hour: 0, minute: 0, second: 0 };
+        let out = chronomock::calc::eval(&expr, &EvalContext { now, zone_bias_min: 0, calendar: None }).unwrap();
         let cal = test_calendar();
         let header = "  preset:   demo - Demo\n  explains: Does the app do the thing?\n";
         let text = render_calc(&expr, &out, Some(0), false, &now, Some(&cal), Some(header));
@@ -1463,19 +1463,19 @@ mod tests {
         ])
         .unwrap();
         let expr = MomentExpr { base: ca.base, steps: ca.steps };
-        let now = chrono_core::calc::CivilDateTime { year: 2000, month: 1, day: 1, hour: 0, minute: 0, second: 0 };
+        let now = chronomock::calc::CivilDateTime { year: 2000, month: 1, day: 1, hour: 0, minute: 0, second: 0 };
         let bias = ca.zone_bias_min.unwrap_or(0);
-        let out = chrono_core::calc::eval(&expr, &EvalContext { now, zone_bias_min: bias, calendar: None }).unwrap();
+        let out = chronomock::calc::eval(&expr, &EvalContext { now, zone_bias_min: bias, calendar: None }).unwrap();
         assert_eq!(out.result().to_iso(), "2026-01-15T15:45:00");
         assert_eq!(out.result_bias, -345);
         let text = render_calc(&expr, &out, ca.zone_bias_min, false, &now, None, None);
         assert!(text.contains("step 1:  zone +05:45"), "got:\n{text}");
         assert!(text.contains("ISO datetime  2026-01-15T15:45:00+05:45"), "got:\n{text}");
         // Same instant as the +02:00 base (12:00+02:00 = 10:00 UTC).
-        let base = chrono_core::calc::CivilDateTime { year: 2026, month: 1, day: 15, hour: 12, minute: 0, second: 0 };
+        let base = chronomock::calc::CivilDateTime { year: 2026, month: 1, day: 15, hour: 12, minute: 0, second: 0 };
         assert_eq!(
-            chrono_core::calc::formats(&out.result(), out.result_bias).epoch_seconds,
-            chrono_core::calc::formats(&base, -120).epoch_seconds
+            chronomock::calc::formats(&out.result(), out.result_bias).epoch_seconds,
+            chronomock::calc::formats(&base, -120).epoch_seconds
         );
     }
 
@@ -1487,8 +1487,8 @@ mod tests {
 
     #[test]
     fn render_analysis_shows_both_readings_for_an_ambiguous_date() {
-        let analysis = chrono_core::calc::analyze_date("04/08/2008", 0).unwrap();
-        let now = chrono_core::calc::CivilDateTime { year: 2026, month: 8, day: 25, hour: 0, minute: 0, second: 0 };
+        let analysis = chronomock::calc::analyze_date("04/08/2008", 0).unwrap();
+        let now = chronomock::calc::CivilDateTime { year: 2026, month: 8, day: 25, hour: 0, minute: 0, second: 0 };
         let text = render_analysis(&analysis, "04/08/2008", &now, Some(0), false, None);
         assert!(text.contains("ambiguous"), "got:\n{text}");
         assert!(text.contains("US MM/DD/YYYY:  2008-04-08  (Tuesday)"), "got:\n{text}");
@@ -1504,11 +1504,11 @@ mod tests {
 
     #[test]
     fn calc_moment_json_carries_the_contract_fields() {
-        let base = chrono_core::calc::CivilDateTime { year: 2026, month: 9, day: 30, hour: 23, minute: 59, second: 59 };
-        let now = chrono_core::calc::CivilDateTime { year: 2026, month: 8, day: 26, hour: 0, minute: 0, second: 0 };
+        let base = chronomock::calc::CivilDateTime { year: 2026, month: 9, day: 30, hour: 23, minute: 59, second: 59 };
+        let now = chronomock::calc::CivilDateTime { year: 2026, month: 8, day: 26, hour: 0, minute: 0, second: 0 };
         let expr = MomentExpr { base: Base::Absolute(base), steps: vec![] };
         let outcome =
-            chrono_core::calc::eval(&expr, &EvalContext { now, zone_bias_min: 0, calendar: None }).unwrap();
+            chronomock::calc::eval(&expr, &EvalContext { now, zone_bias_min: 0, calendar: None }).unwrap();
         let json = calc_moment_json(&outcome, &now, None, None, None);
         let v: serde_json::Value = serde_json::from_str(&json).unwrap();
         assert_eq!(v["schema"], "chronomock.calc/1");
@@ -1527,12 +1527,12 @@ mod tests {
     fn calc_moment_json_names_the_calendar_that_decided_the_business_day() {
         // The text output has always named it beside the verdict, and the machine output did not, so
         // a GUI reading business_day over the wire could not say whose rule it was showing.
-        let base = chrono_core::calc::CivilDateTime { year: 2026, month: 7, day: 4, hour: 0, minute: 0, second: 0 };
-        let now = chrono_core::calc::CivilDateTime { year: 2026, month: 1, day: 1, hour: 0, minute: 0, second: 0 };
+        let base = chronomock::calc::CivilDateTime { year: 2026, month: 7, day: 4, hour: 0, minute: 0, second: 0 };
+        let now = chronomock::calc::CivilDateTime { year: 2026, month: 1, day: 1, hour: 0, minute: 0, second: 0 };
         let expr = MomentExpr { base: Base::Absolute(base), steps: vec![] };
         let cal = test_calendar();
         let outcome =
-            chrono_core::calc::eval(&expr, &EvalContext { now, zone_bias_min: 0, calendar: None }).unwrap();
+            chronomock::calc::eval(&expr, &EvalContext { now, zone_bias_min: 0, calendar: None }).unwrap();
         let json = calc_moment_json(&outcome, &now, Some(&cal), None, None);
         let v: serde_json::Value = serde_json::from_str(&json).unwrap();
         assert_eq!(v["moment"]["metadata"]["calendar"], "us-test");
@@ -1541,8 +1541,8 @@ mod tests {
 
     #[test]
     fn calc_analysis_json_shows_both_readings_with_stable_keys() {
-        let analysis = chrono_core::calc::analyze_date("04/08/2008", 0).unwrap();
-        let now = chrono_core::calc::CivilDateTime { year: 2026, month: 8, day: 26, hour: 0, minute: 0, second: 0 };
+        let analysis = chronomock::calc::analyze_date("04/08/2008", 0).unwrap();
+        let now = chronomock::calc::CivilDateTime { year: 2026, month: 8, day: 26, hour: 0, minute: 0, second: 0 };
         let json = calc_analysis_json(&analysis, "04/08/2008", &now, Some(0), None);
         let v: serde_json::Value = serde_json::from_str(&json).unwrap();
         assert_eq!(v["schema"], "chronomock.calc/1");
@@ -1559,8 +1559,8 @@ mod tests {
     #[test]
     fn render_analysis_names_a_holiday_with_a_calendar() {
         // 07/04/2026: the US reading is Independence Day (a Saturday), named only with a calendar.
-        let analysis = chrono_core::calc::analyze_date("07/04/2026", 0).unwrap();
-        let now = chrono_core::calc::CivilDateTime { year: 2026, month: 1, day: 1, hour: 0, minute: 0, second: 0 };
+        let analysis = chronomock::calc::analyze_date("07/04/2026", 0).unwrap();
+        let now = chronomock::calc::CivilDateTime { year: 2026, month: 1, day: 1, hour: 0, minute: 0, second: 0 };
         let cal = test_calendar();
         let text = render_analysis(&analysis, "07/04/2026", &now, Some(0), false, Some(&cal));
         assert!(text.contains("public holiday"), "got:\n{text}");
@@ -1688,18 +1688,18 @@ mod tests {
     /// was cut to its date while the JSON beside it carried the time.
     #[test]
     fn an_analysis_prints_the_year_in_full_and_an_instant_with_its_time() {
-        let now = chrono_core::calc::CivilDateTime { year: 2026, month: 1, day: 1, hour: 0, minute: 0, second: 0 };
-        let past = chrono_core::calc::analyze_date("-0009-05-05", 0).unwrap();
+        let now = chronomock::calc::CivilDateTime { year: 2026, month: 1, day: 1, hour: 0, minute: 0, second: 0 };
+        let past = chronomock::calc::analyze_date("-0009-05-05", 0).unwrap();
         let text = render_analysis(&past, "-0009-05-05", &now, Some(0), false, None);
         assert!(text.contains("ISO 8601:  -0009-05-05  ("), "got:\n{text}");
 
-        let epoch = chrono_core::calc::analyze_date("1740607200", -120).unwrap();
+        let epoch = chronomock::calc::analyze_date("1740607200", -120).unwrap();
         let text = render_analysis(&epoch, "1740607200", &now, Some(-120), true, None);
         assert!(text.contains("Unix epoch seconds:  2025-02-27T00:00:00  ("), "got:\n{text}");
         assert!(text.contains("zone:    +02:00, from the host"), "the zone of the instant is named: {text}");
 
         // A date written as fields has no time of its own and no zone to name.
-        let date = chrono_core::calc::analyze_date("04/08/2008", -120).unwrap();
+        let date = chronomock::calc::analyze_date("04/08/2008", -120).unwrap();
         let text = render_analysis(&date, "04/08/2008", &now, Some(-120), true, None);
         assert!(text.contains("US MM/DD/YYYY:  2008-04-08  ("), "got:\n{text}");
         assert!(!text.contains("zone:"), "got:\n{text}");
@@ -1711,7 +1711,7 @@ mod tests {
             ("2026-01-31 00:00:00", "2026-01-31T00:00:00"),
             ("2026-01-31", "2026-01-31"),
         ] {
-            let analysis = chrono_core::calc::analyze_date(input, 0).unwrap();
+            let analysis = chronomock::calc::analyze_date(input, 0).unwrap();
             let text = render_analysis(&analysis, input, &now, Some(0), false, None);
             assert!(text.contains(&format!("ISO 8601:  {shown}  (")), "{input}, got:\n{text}");
         }
@@ -1720,8 +1720,8 @@ mod tests {
     /// R4-N36: the JSON analysis carried wall clocks in the session zone and no zone at all.
     #[test]
     fn the_analysis_json_names_its_zone() {
-        let analysis = chrono_core::calc::analyze_date("0", -120).unwrap();
-        let now = chrono_core::calc::CivilDateTime { year: 2026, month: 1, day: 1, hour: 0, minute: 0, second: 0 };
+        let analysis = chronomock::calc::analyze_date("0", -120).unwrap();
+        let now = chronomock::calc::CivilDateTime { year: 2026, month: 1, day: 1, hour: 0, minute: 0, second: 0 };
         let v: serde_json::Value =
             serde_json::from_str(&calc_analysis_json(&analysis, "0", &now, Some(-120), None)).unwrap();
         assert_eq!(v["analysis"]["zone_bias_min"], -120);
@@ -1732,9 +1732,9 @@ mod tests {
     /// nothing said it was an instant. Each reading now says both, by the rule the text output prints by.
     #[test]
     fn each_reading_says_whether_it_is_an_instant_and_which_time_to_show() {
-        let now = chrono_core::calc::CivilDateTime { year: 2026, month: 1, day: 1, hour: 0, minute: 0, second: 0 };
+        let now = chronomock::calc::CivilDateTime { year: 2026, month: 1, day: 1, hour: 0, minute: 0, second: 0 };
         let readings = |input: &str| {
-            let analysis = chrono_core::calc::analyze_date(input, -120).unwrap();
+            let analysis = chronomock::calc::analyze_date(input, -120).unwrap();
             let v: serde_json::Value =
                 serde_json::from_str(&calc_analysis_json(&analysis, input, &now, Some(-120), None)).unwrap();
             v["analysis"]["readings"]

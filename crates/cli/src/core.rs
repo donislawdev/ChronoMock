@@ -13,9 +13,8 @@ use std::io::{BufRead, BufReader};
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
-use chrono_core::{
-    filetime_utc_to_wall, verdict_from_coverage, Coverage, Moment, SessionSpec, Verdict,
-};
+use chrono_core::{verdict_from_coverage, Coverage, Moment, SessionSpec, Verdict};
+use chronomock::filetime_utc_to_wall;
 use chrono_mech::{FamilyMember, RunningCopy, UncoveredChild};
 use chrono_proto::{
     parse_command, Command, Event, FollowedProcess, ReachedEngine, TargetConsole, TargetSpec, TimeSpec,

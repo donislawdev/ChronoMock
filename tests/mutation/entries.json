@@ -265,8 +265,8 @@
     "edits": [
       {
         "file": "crates/cli/src/calendar.rs",
-        "from": "format!(\"bad {kind} JSON{place}: {}\", chrono_core::text::escape_hidden(&said))",
-        "to": "format!(\"bad {kind} JSON: {}{place}\", chrono_core::text::escape_hidden(&said))"
+        "from": "format!(\"bad {kind} JSON{place}: {}\", chronomock::text::escape_hidden(&said))",
+        "to": "format!(\"bad {kind} JSON: {}{place}\", chronomock::text::escape_hidden(&said))"
       }
     ],
     "runner": "rust",
@@ -360,8 +360,8 @@
     "edits": [
       {
         "file": "crates/cli/src/calendar.rs",
-        "from": "format!(\"bad {kind} JSON{place}: {}\", chrono_core::text::escape_hidden(&said))",
-        "to": "format!(\"bad {kind} JSON: {}\", chrono_core::text::escape_hidden(&said))"
+        "from": "format!(\"bad {kind} JSON{place}: {}\", chronomock::text::escape_hidden(&said))",
+        "to": "format!(\"bad {kind} JSON: {}\", chronomock::text::escape_hidden(&said))"
       }
     ],
     "runner": "rust",
@@ -6448,8 +6448,8 @@
     "edits": [
       {
         "file": "crates/cli/src/preset_catalogue.rs",
-        "from": "            if !chrono_core::calc::is_time_of_day(hour, minute, second) {",
-        "to": "            if false && !chrono_core::calc::is_time_of_day(hour, minute, second) {"
+        "from": "            if !chronomock::calc::is_time_of_day(hour, minute, second) {",
+        "to": "            if false && !chronomock::calc::is_time_of_day(hour, minute, second) {"
       }
     ],
     "runner": "rust",
@@ -6466,7 +6466,7 @@
     "name": "r4-18 hour range widened in the core",
     "edits": [
       {
-        "file": "crates/core/src/calc.rs",
+        "file": "crates/dates/src/calc.rs",
         "from": "    hour <= 23 && minute <= 59 && second <= 59",
         "to": "    hour <= 25 && minute <= 59 && second <= 59"
       }
@@ -6717,8 +6717,8 @@
     "edits": [
       {
         "file": "crates/cli/src/calc.rs",
-        "from": "        chrono_core::calc::DateReading::Iso => time_written,\n        _ => reading.is_instant(),",
-        "to": "        chrono_core::calc::DateReading::Iso => time_written,\n        _ => false,"
+        "from": "        chronomock::calc::DateReading::Iso => time_written,\n        _ => reading.is_instant(),",
+        "to": "        chronomock::calc::DateReading::Iso => time_written,\n        _ => false,"
       }
     ],
     "runner": "rust",
@@ -7629,9 +7629,9 @@
     "name": "r4-1b S7c step_target range",
     "edits": [
       {
-        "file": "crates/core/src/calc.rs",
-        "from": "    if !crate::instant_in_session_range(target, tz_bias_min) {",
-        "to": "    if false && !crate::instant_in_session_range(target, tz_bias_min) {"
+        "file": "crates/core/src/lib.rs",
+        "from": "    if !instant_in_session_range(target, tz_bias_min) {",
+        "to": "    if false && !instant_in_session_range(target, tz_bias_min) {"
       }
     ],
     "runner": "rust",
@@ -7639,7 +7639,7 @@
     "target": [
       "--lib"
     ],
-    "test": "calc::tests::step_target_stays_inside_the_session_range",
+    "test": "tests::step_target_stays_inside_the_session_range",
     "match": "exact",
     "build": "",
     "notHere": ""
@@ -7725,7 +7725,7 @@
     "edits": [
       {
         "file": "crates/cli/src/cdp_clock.rs",
-        "from": "            .filter(|&b| chrono_core::zone_bias_in_range(b))\n            .ok_or(\"time.bad_zone\")?;",
+        "from": "            .filter(|&b| chronomock::zone_bias_in_range(b))\n            .ok_or(\"time.bad_zone\")?;",
         "to": "            .unwrap_or(0);"
       }
     ],
@@ -7838,13 +7838,13 @@
     "name": "r4-20 transition without the range",
     "edits": [
       {
-        "file": "crates/core/src/calendar.rs",
+        "file": "crates/dates/src/calendar.rs",
         "from": "        d += step;\n        if first.is_some_and(|f| d < f) {",
         "to": "        d += step;\n        if false && first.is_some_and(|f| d < f) {"
       }
     ],
     "runner": "rust",
-    "package": "chrono-core",
+    "package": "chronomock",
     "target": [
       "--lib"
     ],
@@ -7857,13 +7857,13 @@
     "name": "r4-20 transition judges the start day",
     "edits": [
       {
-        "file": "crates/core/src/calendar.rs",
+        "file": "crates/dates/src/calendar.rs",
         "from": "        d += step;\n        if first.is_some_and(|f| d < f) {",
         "to": "        d += step;\n        if first.is_some_and(|f| d <= f) {"
       }
     ],
     "runner": "rust",
-    "package": "chrono-core",
+    "package": "chronomock",
     "target": [
       "--lib"
     ],
@@ -7876,13 +7876,13 @@
     "name": "r4-20 nearest without the range",
     "edits": [
       {
-        "file": "crates/core/src/calendar.rs",
+        "file": "crates/dates/src/calendar.rs",
         "from": "        // for before its first year.\n        if first.is_some_and(|f| d < f) {",
         "to": "        // for before its first year.\n        if false && first.is_some_and(|f| d < f) {"
       }
     ],
     "runner": "rust",
-    "package": "chrono-core",
+    "package": "chronomock",
     "target": [
       "--lib"
     ],
@@ -7895,13 +7895,13 @@
     "name": "r4-20 freshness 365 inclusive",
     "edits": [
       {
-        "file": "crates/core/src/calendar.rs",
+        "file": "crates/dates/src/calendar.rs",
         "from": "&& days(today.year, today.month, today.day) - law_day > LAW_AS_OF_FRESH_DAYS",
         "to": "&& days(today.year, today.month, today.day) - law_day >= LAW_AS_OF_FRESH_DAYS"
       }
     ],
     "runner": "rust",
-    "package": "chrono-core",
+    "package": "chronomock",
     "target": [
       "--lib"
     ],
@@ -7914,13 +7914,13 @@
     "name": "r4-20 stale without the judged date",
     "edits": [
       {
-        "file": "crates/core/src/calendar.rs",
+        "file": "crates/dates/src/calendar.rs",
         "from": "    days(judged.year, judged.month, judged.day) > law_day\n",
         "to": "    true\n"
       }
     ],
     "runner": "rust",
-    "package": "chrono-core",
+    "package": "chronomock",
     "target": [
       "--lib"
     ],
@@ -7933,13 +7933,13 @@
     "name": "r4-20 before range marker lost",
     "edits": [
       {
-        "file": "crates/core/src/calc.rs",
+        "file": "crates/dates/src/calc.rs",
         "from": "        Some(cal) if !cal.judges_year(civil.year) => out.push(Significance::BeforeCalendar),",
         "to": "        Some(cal) if false && !cal.judges_year(civil.year) => out.push(Significance::BeforeCalendar),"
       }
     ],
     "runner": "rust",
-    "package": "chrono-core",
+    "package": "chronomock",
     "target": [
       "--lib"
     ],
@@ -7952,13 +7952,13 @@
     "name": "r4-20 reach only the result",
     "edits": [
       {
-        "file": "crates/core/src/calc.rs",
+        "file": "crates/dates/src/calc.rs",
         "from": "                let latest = later(cur, next);",
         "to": "                let latest = next;"
       }
     ],
     "runner": "rust",
-    "package": "chrono-core",
+    "package": "chronomock",
     "target": [
       "--lib"
     ],
@@ -7971,13 +7971,13 @@
     "name": "r4-20 nearest does not ask the calendar",
     "edits": [
       {
-        "file": "crates/core/src/calc.rs",
+        "file": "crates/dates/src/calc.rs",
         "from": "                matches!(target, NearestTarget::NextBusinessDay | NearestTarget::PrevBusinessDay)",
         "to": "                matches!(target, NearestTarget::NextLeapDay)"
       }
     ],
     "runner": "rust",
-    "package": "chrono-core",
+    "package": "chronomock",
     "target": [
       "--lib"
     ],
@@ -7990,13 +7990,13 @@
     "name": "r4-20 start year lost",
     "edits": [
       {
-        "file": "crates/core/src/calc.rs",
+        "file": "crates/dates/src/calc.rs",
         "from": "EvalError::BeforeCalendar { index, first_year: cal.valid_from.unwrap_or_default() }",
         "to": "EvalError::BeforeCalendar { index, first_year: cal.valid_from.unwrap_or_default() - 1 }"
       }
     ],
     "runner": "rust",
-    "package": "chrono-core",
+    "package": "chronomock",
     "target": [
       "--lib"
     ],
@@ -8182,7 +8182,7 @@
     "edits": [
       {
         "file": "crates/cli/src/calc.rs",
-        "from": "        if judged_here || reach.is_some_and(|day| chrono_core::calendar::outdated(cal, today, day)) {",
+        "from": "        if judged_here || reach.is_some_and(|day| chronomock::calendar::outdated(cal, today, day)) {",
         "to": "        if judged_here || reach.is_some_and(|_| false) {"
       }
     ],
@@ -8267,7 +8267,7 @@
     "edits": [
       {
         "file": "crates/cli/src/run/moment.rs",
-        "from": "                    && out.calendar_reach.is_some_and(|day| chrono_core::calendar::outdated(&calendar, &now, &day))",
+        "from": "                    && out.calendar_reach.is_some_and(|day| chronomock::calendar::outdated(&calendar, &now, &day))",
         "to": "                    && out.calendar_reach.is_some_and(|_| false)"
       }
     ],
@@ -8413,7 +8413,7 @@
       {
         "file": "crates/cli/src/run/moment.rs",
         "from": "    chrono_core::session_instant(&Moment { local: moment.clone(), tz_bias_min: Some(session_bias) })\n        .map(|_| ())",
-        "to": "    chrono_core::calc::parse_civil_datetime(moment)\n        .map(|_| ())"
+        "to": "    chronomock::calc::parse_civil_datetime(moment)\n        .map(|_| ())"
       }
     ],
     "runner": "rust",
@@ -8432,7 +8432,7 @@
       {
         "file": "crates/cli/src/run/moment.rs",
         "from": "        && let Err(e) = chrono_core::session_instant(&Moment { local: local.clone(), tz_bias_min: session_bias })",
-        "to": "        && let Err(e) = chrono_core::calc::parse_civil_datetime(local)"
+        "to": "        && let Err(e) = chronomock::calc::parse_civil_datetime(local)"
       }
     ],
     "runner": "rust",
@@ -8451,7 +8451,7 @@
       {
         "file": "crates/cli/src/run/moment.rs",
         "from": "        && let Err(e) = chrono_core::session_instant(&Moment { local: local.clone(), tz_bias_min: session_bias })",
-        "to": "        && let Err(e) = chrono_core::calc::parse_civil_datetime(local)"
+        "to": "        && let Err(e) = chronomock::calc::parse_civil_datetime(local)"
       }
     ],
     "runner": "rust",
@@ -8974,13 +8974,13 @@
     "name": "r4-4a N36 ISO year gate",
     "edits": [
       {
-        "file": "crates/core/src/calc.rs",
+        "file": "crates/dates/src/calc.rs",
         "from": "if year.len() < 4 || !year.chars().all(|c| c.is_ascii_digit()) {",
         "to": "if false {"
       }
     ],
     "runner": "rust",
-    "package": "chrono-core",
+    "package": "chronomock",
     "target": [
       "--lib"
     ],
@@ -8993,13 +8993,13 @@
     "name": "r4-4a N36 one instant once",
     "edits": [
       {
-        "file": "crates/core/src/calc.rs",
+        "file": "crates/dates/src/calc.rs",
         "from": "let repeat = readings.last().is_some_and(|(_, earlier)| *earlier == civil);",
         "to": "let repeat = false;"
       }
     ],
     "runner": "rust",
-    "package": "chrono-core",
+    "package": "chronomock",
     "target": [
       "--lib"
     ],
@@ -9012,13 +9012,13 @@
     "name": "r4-4b N40 moves on",
     "edits": [
       {
-        "file": "crates/core/src/calendar.rs",
+        "file": "crates/dates/src/calendar.rs",
         "from": "if !self.cal.weekend.contains(&weekday(day)) && self.days.binary_search(&day).is_err() {",
         "to": "if true {"
       }
     ],
     "runner": "rust",
-    "package": "chrono-core",
+    "package": "chronomock",
     "target": [
       "--lib"
     ],
@@ -9031,13 +9031,13 @@
     "name": "r4-4b N40 own direction",
     "edits": [
       {
-        "file": "crates/core/src/calendar.rs",
+        "file": "crates/dates/src/calendar.rs",
         "from": "let step = (observed - d).signum();",
         "to": "let step = 1;"
       }
     ],
     "runner": "rust",
-    "package": "chrono-core",
+    "package": "chronomock",
     "target": [
       "--lib"
     ],
@@ -9050,13 +9050,13 @@
     "name": "r4-4b N40 steps over a weekend",
     "edits": [
       {
-        "file": "crates/core/src/calendar.rs",
+        "file": "crates/dates/src/calendar.rs",
         "from": "if !self.cal.weekend.contains(&weekday(day)) && self.days.binary_search(&day).is_err() {",
         "to": "if self.days.binary_search(&day).is_err() {"
       }
     ],
     "runner": "rust",
-    "package": "chrono-core",
+    "package": "chronomock",
     "target": [
       "--lib"
     ],
@@ -9069,13 +9069,13 @@
     "name": "r4-4b N41 gap resets",
     "edits": [
       {
-        "file": "crates/core/src/calendar.rs",
+        "file": "crates/dates/src/calendar.rs",
         "from": "            days_off_in_a_row = 0;\n",
         "to": ""
       }
     ],
     "runner": "rust",
-    "package": "chrono-core",
+    "package": "chronomock",
     "target": [
       "--lib"
     ],
@@ -9088,13 +9088,13 @@
     "name": "r4-4b N41 nearest shares the bound",
     "edits": [
       {
-        "file": "crates/core/src/calendar.rs",
+        "file": "crates/dates/src/calendar.rs",
         "from": "for _ in 0..DEGENERATE_GAP_DAYS {",
         "to": "for _ in 0..31 {"
       }
     ],
     "runner": "rust",
-    "package": "chrono-core",
+    "package": "chronomock",
     "target": [
       "--lib"
     ],
@@ -9107,13 +9107,13 @@
     "name": "r4-4b N41 bound above a year",
     "edits": [
       {
-        "file": "crates/core/src/calendar.rs",
+        "file": "crates/dates/src/calendar.rs",
         "from": "const DEGENERATE_GAP_DAYS: i64 = 400;",
         "to": "const DEGENERATE_GAP_DAYS: i64 = 365;"
       }
     ],
     "runner": "rust",
-    "package": "chrono-core",
+    "package": "chronomock",
     "target": [
       "--lib"
     ],
@@ -9126,13 +9126,13 @@
     "name": "r4-4b N41 bound below two years",
     "edits": [
       {
-        "file": "crates/core/src/calendar.rs",
+        "file": "crates/dates/src/calendar.rs",
         "from": "const DEGENERATE_GAP_DAYS: i64 = 400;",
         "to": "const DEGENERATE_GAP_DAYS: i64 = 800;"
       }
     ],
     "runner": "rust",
-    "package": "chrono-core",
+    "package": "chronomock",
     "target": [
       "--lib"
     ],
@@ -9259,7 +9259,7 @@
     "name": "r4-4b N39 range",
     "edits": [
       {
-        "file": "crates/core/src/calendar.rs",
+        "file": "crates/dates/src/calendar.rs",
         "from": "= -80..=250;",
         "to": "= -366..=366;"
       }
@@ -14583,7 +14583,7 @@
     "edits": [
       {
         "file": "crates/cli/src/calendar.rs",
-        "from": "    format!(\"bad {kind} JSON{place}: {}\", chrono_core::text::escape_hidden(&said))",
+        "from": "    format!(\"bad {kind} JSON{place}: {}\", chronomock::text::escape_hidden(&said))",
         "to": "    format!(\"bad {kind} JSON{place}: {said}\")"
       }
     ],
@@ -14831,13 +14831,13 @@
     "name": "r5-w2 an offset east of UTC is taken as west",
     "edits": [
       {
-        "file": "crates/core/src/calc.rs",
+        "file": "crates/dates/src/calc.rs",
         "from": "    let bias = if offset.starts_with('+') { -span } else { span };",
         "to": "    let bias = if offset.starts_with('+') { span } else { -span };"
       }
     ],
     "runner": "rust",
-    "package": "chrono-core",
+    "package": "chronomock",
     "target": [
       "--lib"
     ],
@@ -14850,13 +14850,13 @@
     "name": "r5-w2 every business-day step gets a budget of its own",
     "edits": [
       {
-        "file": "crates/core/src/calc.rs",
+        "file": "crates/dates/src/calc.rs",
         "from": "            self.spent = self.spent.saturating_add(amount.unsigned_abs());",
         "to": "            self.spent = amount.unsigned_abs();"
       }
     ],
     "runner": "rust",
-    "package": "chrono-core",
+    "package": "chronomock",
     "target": [
       "--lib"
     ],
@@ -14869,13 +14869,13 @@
     "name": "r5-w2 a control character shows",
     "edits": [
       {
-        "file": "crates/core/src/text.rs",
+        "file": "crates/dates/src/text.rs",
         "from": "    c.is_control() || HIDDEN_RANGES.iter()",
         "to": "    HIDDEN_RANGES.iter()"
       }
     ],
     "runner": "rust",
-    "package": "chrono-core",
+    "package": "chronomock",
     "target": [
       "--lib"
     ],
@@ -14888,13 +14888,13 @@
     "name": "r5-w2 the neighbours of each range are hidden too",
     "edits": [
       {
-        "file": "crates/core/src/text.rs",
+        "file": "crates/dates/src/text.rs",
         "from": ".any(|&(first, last)| (first..=last).contains(&code))",
         "to": ".any(|&(first, last)| (first - 1..=last + 1).contains(&code))"
       }
     ],
     "runner": "rust",
-    "package": "chrono-core",
+    "package": "chronomock",
     "target": [
       "--lib"
     ],
@@ -14907,13 +14907,13 @@
     "name": "r5-w2 the position of a hidden character counts from zero",
     "edits": [
       {
-        "file": "crates/core/src/text.rs",
+        "file": "crates/dates/src/text.rs",
         "from": ".map(|(i, c)| (i + 1, c))",
         "to": ".map(|(i, c)| (i, c))"
       }
     ],
     "runner": "rust",
-    "package": "chrono-core",
+    "package": "chronomock",
     "target": [
       "--lib"
     ],
@@ -14926,13 +14926,13 @@
     "name": "r5-w2 a hidden character is kept as itself",
     "edits": [
       {
-        "file": "crates/core/src/text.rs",
+        "file": "crates/dates/src/text.rs",
         "from": "        if is_hidden_char(c) {",
         "to": "        if false && is_hidden_char(c) {"
       }
     ],
     "runner": "rust",
-    "package": "chrono-core",
+    "package": "chronomock",
     "target": [
       "--lib"
     ],
@@ -16341,13 +16341,13 @@
     "name": "prop-k1 S-1 a calendar without a working day is walked for ever",
     "edits": [
       {
-        "file": "crates/core/src/calendar.rs",
+        "file": "crates/dates/src/calendar.rs",
         "from": "            if days_off_in_a_row >= DEGENERATE_GAP_DAYS {\n                return Err(BusinessDayLimit::DegenerateCalendar);",
         "to": "            if days_off_in_a_row >= i64::MAX {\n                return Err(BusinessDayLimit::DegenerateCalendar);"
       }
     ],
     "runner": "rust",
-    "package": "chrono-core",
+    "package": "chronomock",
     "target": [
       "--lib"
     ],
@@ -16360,13 +16360,13 @@
     "name": "prop-k1 a count just past the limit is walked",
     "edits": [
       {
-        "file": "crates/core/src/calendar.rs",
+        "file": "crates/dates/src/calendar.rs",
         "from": "    if n.unsigned_abs() > MAX_BUSINESS_DAYS as u64 {\n        return Err(BusinessDayLimit::TooManyDays);",
         "to": "    if n.unsigned_abs() > MAX_BUSINESS_DAYS as u64 + 3 {\n        return Err(BusinessDayLimit::TooManyDays);"
       }
     ],
     "runner": "rust",
-    "package": "chrono-core",
+    "package": "chronomock",
     "target": [
       "--lib"
     ],
@@ -16379,13 +16379,13 @@
     "name": "prop-k1 R4-N41 the days off are counted over the whole walk",
     "edits": [
       {
-        "file": "crates/core/src/calendar.rs",
+        "file": "crates/dates/src/calendar.rs",
         "from": "            remaining -= 1;\n            days_off_in_a_row = 0;\n",
         "to": "            remaining -= 1;\n"
       }
     ],
     "runner": "rust",
-    "package": "chrono-core",
+    "package": "chronomock",
     "target": [
       "--lib"
     ],
@@ -16398,13 +16398,13 @@
     "name": "prop-k1 R3-1 a step may leave the year band",
     "edits": [
       {
-        "file": "crates/core/src/calc.rs",
+        "file": "crates/dates/src/calc.rs",
         "from": "        if !crate::civil_year_in_band(cur.year) {\n            return Err(EvalError::YearOutOfRange { index: i });",
         "to": "        if false {\n            return Err(EvalError::YearOutOfRange { index: i });"
       }
     ],
     "runner": "rust",
-    "package": "chrono-core",
+    "package": "chronomock",
     "target": [
       "--lib"
     ],
@@ -16417,7 +16417,7 @@
     "name": "prop-k1 R3-1 a step may leave the year band, through the command line",
     "edits": [
       {
-        "file": "crates/core/src/calc.rs",
+        "file": "crates/dates/src/calc.rs",
         "from": "        if !crate::civil_year_in_band(cur.year) {\n            return Err(EvalError::YearOutOfRange { index: i });",
         "to": "        if false {\n            return Err(EvalError::YearOutOfRange { index: i });"
       }
@@ -16437,13 +16437,13 @@
     "name": "prop-k1 the bias label turns the sign in 32 bits",
     "edits": [
       {
-        "file": "crates/core/src/lib.rs",
+        "file": "crates/dates/src/lib.rs",
         "from": "    let offset = -i64::from(tz_bias_min);",
         "to": "    let offset = i64::from(-tz_bias_min);"
       }
     ],
     "runner": "rust",
-    "package": "chrono-core",
+    "package": "chronomock",
     "target": [
       "--lib"
     ],
@@ -16514,7 +16514,7 @@
     "edits": [
       {
         "file": "crates/cli/src/zone.rs",
-        "from": "    if !chrono_core::is_ascii_digits(h) {",
+        "from": "    if !chronomock::is_ascii_digits(h) {",
         "to": "    if h.is_empty() {"
       }
     ],
@@ -16590,13 +16590,13 @@
     "name": "prop-k1 the core canary fails without being asked",
     "edits": [
       {
-        "file": "crates/core/src/search.rs",
+        "file": "crates/dates/src/search.rs",
         "from": "prop_assert!(!asked,",
         "to": "prop_assert!(asked,"
       }
     ],
     "runner": "rust",
-    "package": "chrono-core",
+    "package": "chronomock",
     "target": [
       "--lib"
     ],
@@ -16628,7 +16628,7 @@
     "name": "prop-k1 the random properties runner is built into the product",
     "edits": [
       {
-        "file": "crates/core/Cargo.toml",
+        "file": "crates/dates/Cargo.toml",
         "from": "[dev-dependencies]\nproptest = { workspace = true }",
         "to": "[build-dependencies]\nproptest = { workspace = true }"
       }
@@ -16808,7 +16808,7 @@
     "name": "prop-k1 a crate only the tests build ships with the product",
     "edits": [
       {
-        "file": "crates/core/Cargo.toml",
+        "file": "crates/dates/Cargo.toml",
         "from": "[dev-dependencies]\nproptest = { workspace = true }",
         "to": "[target.'cfg(windows)'.dependencies]\nproptest = { workspace = true }"
       }
@@ -17212,7 +17212,7 @@
     "edits": [
       {
         "file": "crates/cli/src/cdp/mod.rs",
-        "from": "            c if chrono_core::text::is_hidden_char(c) => {",
+        "from": "            c if chronomock::text::is_hidden_char(c) => {",
         "to": "            c if c.is_control() => {"
       }
     ],
@@ -17442,13 +17442,13 @@
     "name": "prop-k2 R3-6 a year before 1 CE reads back from the way the tool writes it",
     "edits": [
       {
-        "file": "crates/core/src/lib.rs",
+        "file": "crates/dates/src/lib.rs",
         "from": "    let (negative_year, date) = match date.strip_prefix('-') {\n        Some(rest) => (true, rest),\n        None => (false, date),\n    };",
         "to": "    let (negative_year, date) = (false, date);"
       }
     ],
     "runner": "rust",
-    "package": "chrono-core",
+    "package": "chronomock",
     "target": [
       "--lib"
     ],
@@ -17461,13 +17461,13 @@
     "name": "prop-k2 R4-N34 a sign in a field of a typed moment is refused",
     "edits": [
       {
-        "file": "crates/core/src/lib.rs",
+        "file": "crates/dates/src/lib.rs",
         "from": "        if !is_ascii_digits(s) {",
         "to": "        if s.is_empty() {"
       }
     ],
     "runner": "rust",
-    "package": "chrono-core",
+    "package": "chronomock",
     "target": [
       "--lib"
     ],
@@ -17480,13 +17480,13 @@
     "name": "prop-k2 R5-D5 the analyser reads the offset the calculator prints",
     "edits": [
       {
-        "file": "crates/core/src/calc.rs",
+        "file": "crates/dates/src/calc.rs",
         "from": "    if let Some(rest) = time.strip_suffix(['Z', 'z']) {\n        return Ok((rest, Some(0)));\n    }",
         "to": "    if !time.is_empty() {\n        return Ok((time, None));\n    }"
       }
     ],
     "runner": "rust",
-    "package": "chrono-core",
+    "package": "chronomock",
     "target": [
       "--lib"
     ],
@@ -17499,13 +17499,13 @@
     "name": "prop-k2 R4-N36 a numeric date that reads the same both ways is listed once",
     "edits": [
       {
-        "file": "crates/core/src/calc.rs",
+        "file": "crates/dates/src/calc.rs",
         "from": "        if readings.first().map(|(_, uc)| *uc) != Some(c) {",
         "to": "        if readings.len() < 2 {"
       }
     ],
     "runner": "rust",
-    "package": "chrono-core",
+    "package": "chronomock",
     "target": [
       "--lib"
     ],
@@ -17518,13 +17518,13 @@
     "name": "prop-k2 R5-D5 a refusal of a pasted date quotes what was pasted",
     "edits": [
       {
-        "file": "crates/core/src/calc.rs",
+        "file": "crates/dates/src/calc.rs",
         "from": "        return Ok((DateReading::Iso, parse_civil_datetime_as(&format!(\"{s}T00:00:00\"), input)?));",
         "to": "        return Ok((DateReading::Iso, parse_civil_datetime(&format!(\"{s}T00:00:00\"))?));"
       }
     ],
     "runner": "rust",
-    "package": "chrono-core",
+    "package": "chronomock",
     "target": [
       "--lib"
     ],
@@ -17538,7 +17538,7 @@
     "edits": [
       {
         "file": "crates/cli/src/grammar.rs",
-        "from": "    if !p.iter().all(|f| chrono_core::is_ascii_digits(f)) {",
+        "from": "    if !p.iter().all(|f| chronomock::is_ascii_digits(f)) {",
         "to": "    if p.iter().any(|f| f.is_empty()) {"
       }
     ],
@@ -17575,13 +17575,13 @@
     "name": "prop-k2 R4-N34 a sign in a number of a numeric date is refused",
     "edits": [
       {
-        "file": "crates/core/src/calc.rs",
+        "file": "crates/dates/src/calc.rs",
         "from": "        if !crate::is_ascii_digits(p) {",
         "to": "        if p.is_empty() {"
       }
     ],
     "runner": "rust",
-    "package": "chrono-core",
+    "package": "chronomock",
     "target": [
       "--lib"
     ],
@@ -17614,8 +17614,8 @@
     "edits": [
       {
         "file": "crates/cli/src/calendar.rs",
-        "from": "                    if let Some((at, c)) = chrono_core::text::first_hidden_char(key) {",
-        "to": "                    if let Some((at, c)) = chrono_core::text::first_hidden_char(\"\") {"
+        "from": "                    if let Some((at, c)) = chronomock::text::first_hidden_char(key) {",
+        "to": "                    if let Some((at, c)) = chronomock::text::first_hidden_char(\"\") {"
       }
     ],
     "runner": "rust",
@@ -17652,8 +17652,8 @@
     "edits": [
       {
         "file": "crates/cli/src/calendar.rs",
-        "from": "    if observed != chrono_core::calendar::Observed::None && weekend != [0, 6] {",
-        "to": "    if observed != chrono_core::calendar::Observed::None && weekend != [0, 6] && false {"
+        "from": "    if observed != chronomock::calendar::Observed::None && weekend != [0, 6] {",
+        "to": "    if observed != chronomock::calendar::Observed::None && weekend != [0, 6] && false {"
       }
     ],
     "runner": "rust",
@@ -17785,8 +17785,8 @@
     "edits": [
       {
         "file": "crates/cli/src/preset.rs",
-        "from": "        chrono_core::calc::parse_civil_datetime_as(&format!(\"{s}T00:00:00\"), s)",
-        "to": "        chrono_core::calc::parse_civil_datetime(&format!(\"{s}T00:00:00\"))"
+        "from": "        chronomock::calc::parse_civil_datetime_as(&format!(\"{s}T00:00:00\"), s)",
+        "to": "        chronomock::calc::parse_civil_datetime(&format!(\"{s}T00:00:00\"))"
       }
     ],
     "runner": "rust",
@@ -18037,7 +18037,7 @@
     "edits": [
       {
         "file": "crates/cli/src/run/args.rs",
-        "from": "    if !chrono_core::is_ascii_digits(field) {",
+        "from": "    if !chronomock::is_ascii_digits(field) {",
         "to": "    if field.is_empty() {"
       }
     ],
@@ -18718,8 +18718,8 @@
     "edits": [
       {
         "file": "crates/cli/src/zone.rs",
-        "from": "pub(crate) const FT_UNIX_EPOCH: i64 = chrono_core::DAYS_1601_TO_1970 * 86_400 * 10_000_000;",
-        "to": "pub(crate) const FT_UNIX_EPOCH: i64 = chrono_core::DAYS_1601_TO_1970 * 86_400 * 1_000_000;"
+        "from": "pub(crate) const FT_UNIX_EPOCH: i64 = chronomock::DAYS_1601_TO_1970 * 86_400 * 10_000_000;",
+        "to": "pub(crate) const FT_UNIX_EPOCH: i64 = chronomock::DAYS_1601_TO_1970 * 86_400 * 1_000_000;"
       }
     ],
     "runner": "rust",
@@ -18736,13 +18736,13 @@
     "name": "r5-9a A11 the engine computes a rule outside its bounds",
     "edits": [
       {
-        "file": "crates/core/src/calendar.rs",
+        "file": "crates/dates/src/calendar.rs",
         "from": "    if rule.check().is_err() {\n        return None;\n    }\n",
         "to": ""
       }
     ],
     "runner": "rust",
-    "package": "chrono-core",
+    "package": "chronomock",
     "target": [
       "--lib"
     ],
@@ -18755,13 +18755,13 @@
     "name": "r5-9a A11 a weekday of 20 passes the check",
     "edits": [
       {
-        "file": "crates/core/src/calendar.rs",
+        "file": "crates/dates/src/calendar.rs",
         "from": "    if weekday <= 6 { Ok(()) } else { Err(RuleError::Weekday(weekday)) }",
         "to": "    if weekday <= 20 { Ok(()) } else { Err(RuleError::Weekday(weekday)) }"
       }
     ],
     "runner": "rust",
-    "package": "chrono-core",
+    "package": "chronomock",
     "target": [
       "--lib"
     ],

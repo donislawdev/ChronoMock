@@ -15,6 +15,7 @@ name = "chrono_mech"
 # The mechanism layer is the ONLY place that touches the OS and the target process.
 # It may depend on the logical core (inward) but never on an interface layer.
 [dependencies]
+chronomock = { workspace = true }
 chrono-core = { workspace = true }
 chrono-ctl = { workspace = true }
 windows = { workspace = true }

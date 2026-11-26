@@ -21,7 +21,7 @@
 use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 
-use chrono_core::calc::{Base, CivilDateTime, Step, Unit};
+use chronomock::calc::{Base, CivilDateTime, Step, Unit};
 use serde::Serialize;
 
 use crate::calendar::{find_catalogue_dir, is_valid_catalogue_id, parse_catalogue_args};
@@ -283,7 +283,7 @@ fn canonical_step(
             let time = format!("{hour:02}:{minute:02}:{second:02}");
             // Refused at every use whatever the moment (the evaluator's own range check), so a file
             // carrying it is a file `--preset` never accepts.
-            if !chrono_core::calc::is_time_of_day(hour, minute, second) {
+            if !chronomock::calc::is_time_of_day(hour, minute, second) {
                 return Err(PresetError::BadFile(format!(
                     "set_time {time} is not a time of day (00:00:00 to 23:59:59)"
                 )));
@@ -406,7 +406,7 @@ mod tests {
     use crate::grammar::{parse_nearest, parse_set_time, parse_shift, parse_snap};
     use crate::preset::resolve_moment;
     use crate::zone::parse_zone_to_bias;
-    use chrono_core::calc::{parse_civil_datetime, MomentExpr};
+    use chronomock::calc::{parse_civil_datetime, MomentExpr};
 
     fn words(list: &[&str]) -> Vec<String> {
         list.iter().map(|w| (*w).to_string()).collect()

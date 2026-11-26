@@ -6,7 +6,7 @@
 //! `ack` and `state` - and the copies had drifted before (R5-P18, R5-P19). The protocol half is written
 //! here once, and each mechanism says only how its clock moves, through [`SessionClock`].
 
-use chrono_core::calc::Step;
+use chronomock::calc::Step;
 use chrono_proto::{Command, Event, MomentKind, MomentSpec, PROTOCOL_VERSION};
 
 use crate::events::{command_id, emit, error_event, unsupported_command};

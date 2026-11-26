@@ -292,7 +292,7 @@ public class RustConstantMirrorTests
     public void Every_label_the_engine_writes_has_its_text_in_both_languages()
     {
         var preset = ReadRustSource("crates", "cli", "src", "preset.rs");
-        var calc = ReadRustSource("crates", "core", "src", "calc.rs");
+        var calc = ReadRustSource("crates", "dates", "src", "calc.rs");
         var variants = Regex.Matches(
                 CaptureOne(preset, @"const VARIANTS: \[\(&str, i64\); \d+\] = \[(.*?)\];", "VARIANTS"),
                 @"\(""([^""]+)"", -?\d+\)")

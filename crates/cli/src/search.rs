@@ -9,7 +9,7 @@
 
 use std::collections::HashMap;
 
-use chrono_core::calc::{Base, CivilDateTime, MomentExpr, NearestTarget, Sign, SnapTarget, Step, Unit};
+use chronomock::calc::{Base, CivilDateTime, MomentExpr, NearestTarget, Sign, SnapTarget, Step, Unit};
 use proptest::prelude::*;
 use proptest::strategy::Union;
 

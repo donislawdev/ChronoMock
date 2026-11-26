@@ -462,46 +462,35 @@ fn the_reach_of_a_detour_follows_every_chain_of_calls() {
 // H5. The logical core never swallows an error
 // ---------------------------------------------------------------------------------------------
 
-/// `chrono-core` is the one layer that does no I/O and touches no Windows API: its result is a
-/// returned value, never a side effect (docs/07 section 3). A discarded error there is always a
-/// hidden defect, so the rule can be absolute - unlike in the mechanism and the CLI, where 74
-/// `let _ =` are legitimate Win32 returns (measured 2026-09-06) and a blanket ban would need an
-/// exception list longer than itself.
+/// `chrono-core` and the date library beneath it are the layers that do no I/O and touch no Windows
+/// API: their result is a returned value, never a side effect (docs/07 section 3). A discarded error
+/// there is always a hidden defect, so the rule can be absolute - unlike in the mechanism and the
+/// CLI, where 74 `let _ =` are legitimate Win32 returns (measured 2026-09-06) and a blanket ban would
+/// need an exception list longer than itself.
 #[test]
 fn the_logical_core_never_discards_an_error() {
-    let mut files = 0;
     let mut offenders = Vec::new();
-    let core = repo_root().join("crates/core/src");
-    let mut stack = vec![core];
-    while let Some(dir) = stack.pop() {
-        for entry in std::fs::read_dir(&dir).expect("chrono-core has a src directory") {
-            let path = entry.expect("directory entry").path();
-            if path.is_dir() {
-                stack.push(path);
-                continue;
-            }
-            if !has_extension(&path, &["rs"]) {
-                continue;
-            }
-            files += 1;
-            let text = std::fs::read_to_string(&path).expect("core source is readable");
-            // Tests may discard freely - they are asserting, not handling.
-            let production = match text.find("#[cfg(test)]") {
-                Some(cut) => &text[..cut],
-                None => &text[..],
-            };
-            for (number, line) in production.lines().enumerate() {
-                let code = code_only(line);
-                for bad in ["let _ = ", ".ok();", "if let Err(_)"] {
-                    if code.contains(bad) {
-                        offenders.push(format!("{}:{} has `{bad}`", rel(&path), number + 1));
-                    }
+    // Each root with the fewest files it has today, so a move that empties one is seen rather than
+    // passed over as clean.
+    for (root, least) in [("crates/core/src", 1), ("crates/dates/src", 4)] {
+        let mut sources = Vec::new();
+        let mut stack = vec![repo_root().join(root)];
+        while let Some(dir) = stack.pop() {
+            for entry in std::fs::read_dir(&dir).unwrap_or_else(|e| panic!("cannot read {root}: {e}")) {
+                let path = entry.expect("directory entry").path();
+                if path.is_dir() {
+                    stack.push(path);
+                } else if has_extension(&path, &["rs"]) {
+                    let text = std::fs::read_to_string(&path).expect("core source is readable");
+                    sources.push((rel(&path), text));
                 }
             }
         }
+        let (files, found) = discarded_errors(&sources);
+        offenders.extend(found);
+        assert!(files >= least, "the scan of {root} read only {files} production files");
     }
 
-    assert!(files >= 2, "the core scan read only {files} files");
     assert!(
         offenders.is_empty(),
         "the logical core discarded an error - it does no I/O, so this is always a hidden bug, \
@@ -509,25 +498,69 @@ fn the_logical_core_never_discards_an_error() {
     );
 }
 
+/// The discarded errors in the production code of one crate's sources (`(path, text)`), and how many
+/// production files were read.
+///
+/// Tests may discard freely - they are asserting, not handling. So a file compiled for the tests only
+/// (`#[cfg(test)] mod search;`) is skipped whole, and a source is read up to its test module - not up
+/// to its first `#[cfg(test)]`, which in a `lib.rs` is that declaration near the top, and cutting
+/// there left the rest of the file unread.
+fn discarded_errors(sources: &[(String, String)]) -> (usize, Vec<String>) {
+    let test_only: Vec<String> = sources.iter().flat_map(|(r, text)| test_only_files(r, text)).collect();
+    let mut files = 0;
+    let mut found = Vec::new();
+    for (path, text) in sources.iter().filter(|(r, _)| !test_only.contains(r)) {
+        files += 1;
+        for (number, line) in production_rust(text).lines().enumerate() {
+            let code = code_only(line);
+            for bad in ["let _ = ", ".ok();", "if let Err(_)"] {
+                if code.contains(bad) {
+                    found.push(format!("{path}:{} has `{bad}`", number + 1));
+                }
+            }
+        }
+    }
+    (files, found)
+}
+
+/// The canary of the scan above: a discard after a test file declared at the top of `lib.rs` is
+/// found, one in that test file and one in the test module are not.
+#[test]
+fn the_discard_scan_reads_past_a_test_file_declared_at_the_top() {
+    let lib = "#[cfg(test)]\nmod search;\n\npub fn f(x: Option<i32>) {\n    let _ = x;\n}\n\n#[cfg(test)]\nmod tests {\n    fn t() { let _ = 1; }\n}\n";
+    let search = "pub(crate) fn g() {\n    let _ = 2;\n}\n";
+    let sources = [
+        ("crates/x/src/lib.rs".to_string(), lib.to_string()),
+        ("crates/x/src/search.rs".to_string(), search.to_string()),
+    ];
+    let (files, found) = discarded_errors(&sources);
+    assert_eq!(files, 1, "the test file counts as production");
+    assert_eq!(found, ["crates/x/src/lib.rs:5 has `let _ = `"], "the discard in production was missed");
+}
+
 // ---------------------------------------------------------------------------------------------
 // H6. The dependency direction, for the whole graph
 // ---------------------------------------------------------------------------------------------
 
 /// The layering docs/07 section 2 calls an invariant: dependencies point INWARD, and nothing in a
-/// lower layer knows a higher one. `architecture.rs` guards one seventh of that sentence -
+/// lower layer knows a higher one. `architecture.rs` guards one crate of that sentence -
 /// `chrono-core` - and this guards the rest.
 ///
 /// Written as the allowed set rather than a forbidden one: a new crate with no entry here fails
 /// until somebody decides where it belongs, which is the point.
 const ALLOWED_DEPENDENCIES: &[(&str, &[&str])] = &[
-    ("core", &[]),
+    // The date library is the bottom layer and goes out on its own to other systems, so it depends
+    // on nothing at all - no chrono crate (rule 16 holds for it too) and no third-party one.
+    ("dates", &[]),
+    ("core", &["chronomock"]),
     ("ctl", &[]),
     ("proto", &["serde", "serde_json"]),
-    ("mech", &["chrono-core", "chrono-ctl", "windows"]),
+    ("mech", &["chronomock", "chrono-core", "chrono-ctl", "windows"]),
     ("hook", &["chrono-ctl", "minhook", "windows"]),
     (
         "cli",
         &[
+            "chronomock",
             "chrono-core",
             "chrono-mech",
             "chrono-proto",

@@ -10,8 +10,9 @@
 
 use std::io::Write;
 
-use chrono_core::calc::EvalError;
-use chrono_core::{filetime_utc_to_wall, SessionMomentError, TimeMode};
+use chronomock::calc::EvalError;
+use chrono_core::{SessionMomentError, TimeMode};
+use chronomock::filetime_utc_to_wall;
 use chrono_proto::{Clock, Command, CoveredChannel, Event, TimeModeKind, TimeSpec, PROTOCOL_VERSION};
 /// Translation key for a relative-jump eval error (docs/08 section 10). A session has no calendar,
 /// so a business-day step needs one. A step or a base that lands outside the range a session clock
@@ -224,7 +225,8 @@ pub(crate) fn state_event_from(s: &chrono_mech::SessionState) -> Event {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono_core::calc::{step_target, Sign, Step, Unit};
+    use chrono_core::step_target;
+    use chronomock::calc::{Sign, Step, Unit};
 
     fn days(sign: Sign, amount: i64) -> Step {
         Step::Shift { sign, amount, unit: Unit::Days }

@@ -445,7 +445,7 @@ mod tests {
     fn the_browser_product_is_quoted_escaped_and_a_missing_one_is_a_question_mark() {
         let hidden = format!("Chromium{}[2K", char::from_u32(0x1B).unwrap());
         let said = product_of(&serde_json::json!({ "product": hidden }));
-        assert!(!said.chars().any(chrono_core::text::is_hidden_char), "{said:?}");
+        assert!(!said.chars().any(chronomock::text::is_hidden_char), "{said:?}");
         assert!(said.starts_with("Chromium") && said.contains("[2K"), "{said}");
         assert_eq!(product_of(&serde_json::json!({ "product": "Chromium/140.0" })), "Chromium/140.0");
         assert_eq!(product_of(&serde_json::json!({})), "?");

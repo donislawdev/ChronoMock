@@ -18,7 +18,7 @@
 
 use serde::Deserialize;
 
-use chrono_core::calendar::{check_day, check_easter_offset, check_month, check_order, RuleError, EASTER_OFFSET_RANGE};
+use chronomock::calendar::{check_day, check_easter_offset, check_month, check_order, RuleError, EASTER_OFFSET_RANGE};
 
 /// The schema field on its own, read before the rest of the file. A file written to a later version
 /// has to be refused as that - read strictly first, it would be refused over whichever of its new
@@ -120,8 +120,8 @@ pub(crate) fn weekday_index(name: &str) -> Result<u32, String> {
     })
 }
 
-pub(crate) fn observed_from(s: &str) -> Result<chrono_core::calendar::Observed, String> {
-    use chrono_core::calendar::Observed;
+pub(crate) fn observed_from(s: &str) -> Result<chronomock::calendar::Observed, String> {
+    use chronomock::calendar::Observed;
     Ok(match s {
         "none" => Observed::None,
         "sat_to_fri_sun_to_mon" => Observed::SatToFriSunToMon,
@@ -136,8 +136,8 @@ pub(crate) fn observed_from(s: &str) -> Result<chrono_core::calendar::Observed, 
 /// refused HERE, naming the field. Left unchecked it does not fail, which is worse: `days_from_civil`
 /// happily rolls month 13 into the next January and day 40 into the following month, so the calendar
 /// silently marks the wrong dates as holidays and every business-day answer built on it is quietly wrong.
-pub(crate) fn rule_from(id: &str, dto: RuleDto) -> Result<chrono_core::calendar::HolidayRule, String> {
-    use chrono_core::calendar::HolidayRule;
+pub(crate) fn rule_from(id: &str, dto: RuleDto) -> Result<chronomock::calendar::HolidayRule, String> {
+    use chronomock::calendar::HolidayRule;
     Ok(match dto {
         RuleDto::Fixed { month, day } => {
             // The month's longest length in ANY year, not a flat 1..=31. Two different things look
@@ -176,7 +176,7 @@ pub(crate) fn rule_from(id: &str, dto: RuleDto) -> Result<chrono_core::calendar:
 }
 
 /// The loader's sentence for a rule field outside the dates a year has, naming the holiday and the field.
-/// The bounds are the engine's (`chrono_core::calendar::RuleError`, R5-A11), the words are the loader's.
+/// The bounds are the engine's (`chronomock::calendar::RuleError`, R5-A11), the words are the loader's.
 fn rule_refusal(id: &str, e: RuleError) -> String {
     match e {
         RuleError::Month(month) => format!("holiday '{id}': month {month} out of range (1..=12)"),
@@ -342,14 +342,14 @@ pub(crate) fn find_calendar_file(id: &str) -> Result<std::path::PathBuf, String>
 }
 
 /// Load and validate a calendar by id, mapping the JSON schema to the core engine's types.
-pub(crate) fn load_calendar(id: &str) -> Result<chrono_core::calendar::Calendar, String> {
+pub(crate) fn load_calendar(id: &str) -> Result<chronomock::calendar::Calendar, String> {
     let path = find_calendar_file(id)?;
     load_calendar_at(&path, id)
 }
 
 /// Load and validate the calendar file at `path`, found as `id`. Apart from the lookup, so a caller
 /// can tell a calendar that is not there from one that is there and cannot be used (R5-D5, item 2).
-pub(crate) fn load_calendar_at(path: &std::path::Path, id: &str) -> Result<chrono_core::calendar::Calendar, String> {
+pub(crate) fn load_calendar_at(path: &std::path::Path, id: &str) -> Result<chronomock::calendar::Calendar, String> {
     read_calendar_at(path, id).map(|(calendar, _)| calendar)
 }
 
@@ -383,7 +383,7 @@ pub(crate) fn calendar_title_at(path: &std::path::Path, id: &str) -> Result<Cale
 }
 
 /// Read, validate and match the id of the calendar file at `path`, keeping the text it was read from.
-fn read_calendar_at(path: &std::path::Path, id: &str) -> Result<(chrono_core::calendar::Calendar, String), String> {
+fn read_calendar_at(path: &std::path::Path, id: &str) -> Result<(chronomock::calendar::Calendar, String), String> {
     let text = read_catalogue_file(path)?;
     let calendar = calendar_from_text(&text).map_err(|e| format!("{e} (in {})", path.display()))?;
     check_declared_id("calendar", path, &calendar.id, id)?;
@@ -548,7 +548,7 @@ pub(crate) fn json_refusal(kind: &str, error: &serde_json::Error) -> String {
     // sentence without [`refuse_hidden_characters`] having seen every text in them: one that is not
     // JSON at all, read up to the field before the fault, and one with a key given twice, whose first
     // value the walk never holds. A hidden character in such a quote is written as its code.
-    format!("bad {kind} JSON{place}: {}", chrono_core::text::escape_hidden(&said))
+    format!("bad {kind} JSON{place}: {}", chronomock::text::escape_hidden(&said))
 }
 
 /// A catalogue file's top level, which answers a struct only from an object.
@@ -594,7 +594,7 @@ pub(crate) fn from_object<'de, T: Deserialize<'de>>(text: &'de str) -> serde_jso
 }
 
 /// Refuse a catalogue file - a calendar or a preset - that holds a character which does not show as
-/// itself anywhere in it, in a text or in a key (R5-B1, [`chrono_core::text::is_hidden_char`]).
+/// itself anywhere in it, in a text or in a key (R5-B1, [`chronomock::text::is_hidden_char`]).
 ///
 /// Catalogue files are written to be shared, calendars by outsiders on purpose, and their texts reach a
 /// terminal and the evidence a tester quotes. A preset whose `explains` held a carriage return and an
@@ -619,7 +619,7 @@ pub(crate) fn refuse_hidden_characters(kind: &str, text: &str) -> Result<(), Str
     while let Some((path, value)) = pending.pop() {
         match value {
             serde_json::Value::String(s) => {
-                if let Some((at, c)) = chrono_core::text::first_hidden_char(s) {
+                if let Some((at, c)) = chronomock::text::first_hidden_char(s) {
                     return Err(refusal(format!("the text {}", json_place(&path)), at, c));
                 }
             }
@@ -628,7 +628,7 @@ pub(crate) fn refuse_hidden_characters(kind: &str, text: &str) -> Result<(), Str
             }
             serde_json::Value::Object(map) => {
                 for (key, item) in map.iter().rev() {
-                    if let Some((at, c)) = chrono_core::text::first_hidden_char(key) {
+                    if let Some((at, c)) = chronomock::text::first_hidden_char(key) {
                         return Err(refusal(format!("a key {}", json_place(&path)), at, c));
                     }
                     pending.push((json_child(&path, key), item));
@@ -653,7 +653,7 @@ fn json_child(path: &str, key: &str) -> String {
 /// Parse and validate a calendar from its JSON text, mapping the `chronomock.calendar/1` schema to the
 /// engine's types. Separated from the on-disk lookup (symmetry with `parse_preset`) so the shipped
 /// calendars can be golden-tested against the real engine without the file-resolution step.
-pub(crate) fn calendar_from_text(text: &str) -> Result<chrono_core::calendar::Calendar, String> {
+pub(crate) fn calendar_from_text(text: &str) -> Result<chronomock::calendar::Calendar, String> {
     refuse_hidden_characters("calendar", text)?;
     let schema: SchemaDto = from_object(text).map_err(|e| json_refusal("calendar", &e))?;
     // An unknown major schema version is refused, not half-understood (docs/04 section 3.1).
@@ -703,7 +703,7 @@ pub(crate) fn calendar_from_text(text: &str) -> Result<chrono_core::calendar::Ca
     // than the missing feature does. That wants a real market to define it, not a guess. A calendar
     // with a different weekend can still ship today with `"observed": "none"`.
     let observed = observed_from(&dto.observed)?;
-    if observed != chrono_core::calendar::Observed::None && weekend != [0, 6] {
+    if observed != chronomock::calendar::Observed::None && weekend != [0, 6] {
         return Err(format!(
             "calendar 'observed' is '{}', which is defined for a Saturday-Sunday weekend, but 'weekend' is {:?} - use \"observed\": \"none\" until an observance rule exists for that weekend",
             dto.observed, dto.weekend
@@ -753,7 +753,7 @@ pub(crate) fn calendar_from_text(text: &str) -> Result<chrono_core::calendar::Ca
 
             seen_ids.insert(h.id.clone());
             let rule = rule_from(&h.id, h.rule)?;
-            Ok(chrono_core::calendar::Holiday {
+            Ok(chronomock::calendar::Holiday {
                 id: h.id,
                 name_en: h.name.en,
                 name_local: h.name.local,
@@ -764,7 +764,7 @@ pub(crate) fn calendar_from_text(text: &str) -> Result<chrono_core::calendar::Ca
             })
         })
         .collect::<Result<Vec<_>, String>>()?;
-    Ok(chrono_core::calendar::Calendar {
+    Ok(chronomock::calendar::Calendar {
         id: dto.id,
         country: dto.country,
         weekend,
@@ -777,12 +777,12 @@ pub(crate) fn calendar_from_text(text: &str) -> Result<chrono_core::calendar::Ca
 
 /// The calendar's `law_as_of`, a plain `YYYY-MM-DD` that names a real day, read through the same
 /// civil-date parser as every other date here.
-fn law_as_of_from(text: &str) -> Result<chrono_core::calc::CivilDateTime, String> {
+fn law_as_of_from(text: &str) -> Result<chronomock::calc::CivilDateTime, String> {
     let refuse = || format!("calendar 'law_as_of' is '{text}', not a date written YYYY-MM-DD");
     if text.len() != 10 {
         return Err(refuse());
     }
-    chrono_core::calc::parse_civil_datetime(&format!("{text}T00:00:00")).map_err(|_| refuse())
+    chronomock::calc::parse_civil_datetime(&format!("{text}T00:00:00")).map_err(|_| refuse())
 }
 
 #[cfg(test)]
@@ -1322,8 +1322,8 @@ mod tests {
 
     #[test]
     fn shipped_calendars_parse_and_hit_golden_dates() {
-        use chrono_core::calc::CivilDateTime;
-        use chrono_core::calendar::{holiday_on, is_business_day};
+        use chronomock::calc::CivilDateTime;
+        use chronomock::calendar::{holiday_on, is_business_day};
         let d = |y: i64, m: u32, day: u32| CivilDateTime {
             year: y,
             month: m,
@@ -1382,8 +1382,8 @@ mod tests {
     /// Reserve schedule read, and judges none of these years.
     #[test]
     fn us_calendars_follow_the_uniform_monday_holiday_act() {
-        use chrono_core::calc::CivilDateTime;
-        use chrono_core::calendar::holiday_on;
+        use chronomock::calc::CivilDateTime;
+        use chronomock::calendar::holiday_on;
         let d = |y: i64, m: u32, day: u32| CivilDateTime {
             year: y,
             month: m,
@@ -1444,18 +1444,18 @@ mod tests {
 
     /// Every weekday a calendar closes in a year, the way a holiday table lists them - weekends left out,
     /// because a table does not list them either.
-    fn weekdays_off(cal: &chrono_core::calendar::Calendar, year: i64) -> Vec<(u32, u32)> {
-        use chrono_core::calc::CivilDateTime;
+    fn weekdays_off(cal: &chronomock::calendar::Calendar, year: i64) -> Vec<(u32, u32)> {
+        use chronomock::calc::CivilDateTime;
         let mut out = Vec::new();
         for month in 1..=12u32 {
             for day in 1..=31u32 {
                 let date = CivilDateTime { year, month, day, hour: 0, minute: 0, second: 0 };
-                if chrono_core::calc::parse_civil_datetime(&date.to_iso()).is_err() {
+                if chronomock::calc::parse_civil_datetime(&date.to_iso()).is_err() {
                     continue; // 30 February and its kind
                 }
-                let weekend = chrono_core::calc::metadata(&date, &date).weekday == "Saturday"
-                    || chrono_core::calc::metadata(&date, &date).weekday == "Sunday";
-                if !weekend && !chrono_core::calendar::is_business_day(&date, cal) {
+                let weekend = chronomock::calc::metadata(&date, &date).weekday == "Saturday"
+                    || chronomock::calc::metadata(&date, &date).weekday == "Sunday";
+                if !weekend && !chronomock::calendar::is_business_day(&date, cal) {
                     out.push((month, day));
                 }
             }
@@ -1560,7 +1560,7 @@ mod tests {
         assert_eq!(weekday_index("Monday").unwrap(), 1);
         assert_eq!(weekday_index("sunday").unwrap(), 0);
         assert!(weekday_index("funday").is_err());
-        assert!(matches!(observed_from("sun_to_mon").unwrap(), chrono_core::calendar::Observed::SunToMon));
+        assert!(matches!(observed_from("sun_to_mon").unwrap(), chronomock::calendar::Observed::SunToMon));
         assert!(observed_from("whenever").is_err());
     }
 
@@ -2247,11 +2247,11 @@ mod tests {
         /// bound a fixed holiday is held to (February 29 is a holiday a calendar may name, R2-N7).
         const LONGEST: [u32; 12] = [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
 
-        const OBSERVANCES: [(&str, chrono_core::calendar::Observed); 4] = [
-            ("none", chrono_core::calendar::Observed::None),
-            ("sat_to_fri_sun_to_mon", chrono_core::calendar::Observed::SatToFriSunToMon),
-            ("sun_to_mon", chrono_core::calendar::Observed::SunToMon),
-            ("weekend_to_mon", chrono_core::calendar::Observed::WeekendToMon),
+        const OBSERVANCES: [(&str, chronomock::calendar::Observed); 4] = [
+            ("none", chronomock::calendar::Observed::None),
+            ("sat_to_fri_sun_to_mon", chronomock::calendar::Observed::SatToFriSunToMon),
+            ("sun_to_mon", chronomock::calendar::Observed::SunToMon),
+            ("weekend_to_mon", chronomock::calendar::Observed::WeekendToMon),
         ];
 
         /// Saturday and Sunday, the one weekend an observance rule is defined for (R2-N8).
@@ -2323,8 +2323,8 @@ mod tests {
             }
 
             /// The calendar this file describes, worked out from the model.
-            fn calendar(&self) -> chrono_core::calendar::Calendar {
-                use chrono_core::calendar::{Calendar, Holiday, HolidayRule};
+            fn calendar(&self) -> chronomock::calendar::Calendar {
+                use chronomock::calendar::{Calendar, Holiday, HolidayRule};
                 let mut weekend: Vec<u32> = self.weekend.iter().map(|&(day, _)| day).collect();
                 weekend.sort_unstable();
                 weekend.dedup();
@@ -2348,7 +2348,7 @@ mod tests {
                     weekend,
                     observed: OBSERVANCES[self.observed].1,
                     valid_from: Some(self.valid_from),
-                    law_as_of: Some(chrono_core::calc::CivilDateTime { year, month, day, hour: 0, minute: 0, second: 0 }),
+                    law_as_of: Some(chronomock::calc::CivilDateTime { year, month, day, hour: 0, minute: 0, second: 0 }),
                     holidays: holidays.collect(),
                 }
             }

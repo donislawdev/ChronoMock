@@ -757,7 +757,7 @@ const BUILT: [Built; 4] = [
         prefix: "calc.reading.",
         builder: ("gui/ChronoMock.App/Calc/CalculatorViewModel.cs", "$\"calc.reading.{"),
         words: |root| {
-            let words = quoted_words_in(&read(root, "crates/core/src/calc.rs"), &["impl DateReading {", "fn key(&self)"], "\n    }");
+            let words = quoted_words_in(&read(root, "crates/dates/src/calc.rs"), &["impl DateReading {", "fn key(&self)"], "\n    }");
             words.into_iter().filter(|w| !w.contains(' ')).collect()
         },
     },
@@ -765,7 +765,7 @@ const BUILT: [Built; 4] = [
         prefix: "calc.sig.",
         builder: ("gui/ChronoMock.App/Calc/CalculatorViewModel.cs", "$\"calc.sig.{"),
         words: |root| {
-            let words = quoted_words_in(&read(root, "crates/core/src/calc.rs"), &["impl Significance {", "fn key(&self)"], "\n    }");
+            let words = quoted_words_in(&read(root, "crates/dates/src/calc.rs"), &["impl Significance {", "fn key(&self)"], "\n    }");
             words.into_iter().filter(|w| !w.contains(' ')).collect()
         },
     },
@@ -774,7 +774,7 @@ const BUILT: [Built; 4] = [
         prefix: "calc.weekday.",
         builder: ("gui/ChronoMock.App/Calc/ResultProjection.cs", "$\"calc.weekday.{"),
         words: |root| {
-            let names = quoted_words_in(&read(root, "crates/core/src/calc.rs"), &["const DOW_FULL"], "];");
+            let names = quoted_words_in(&read(root, "crates/dates/src/calc.rs"), &["const DOW_FULL"], "];");
             names.iter().map(|n| n.to_lowercase()).collect()
         },
     },

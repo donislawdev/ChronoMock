@@ -317,7 +317,7 @@ fn quoted(raw: &str) -> Option<String> {
 
 /// Our own crates, which are not third-party and are not declared as components.
 fn workspace_crates() -> BTreeSet<&'static str> {
-    ["chrono-cli", "chrono-core", "chrono-ctl", "chrono-hook", "chrono-mech", "chrono-proto", "chrono-site"]
+    ["chrono-cli", "chrono-core", "chrono-ctl", "chrono-hook", "chrono-mech", "chrono-proto", "chrono-site", "chronomock"]
         .into_iter()
         .collect()
 }

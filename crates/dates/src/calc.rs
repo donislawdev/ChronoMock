@@ -59,6 +59,17 @@ impl CivilDateTime {
         )
     }
 
+    /// The UTC FILETIME (100 ns ticks since 1601-01-01) of this wall-clock moment read in the zone
+    /// `tz_bias_min` (UTC = local + bias), or `None` when the fields name no moment - a month, day or
+    /// time of day out of range, a year outside [`crate::CIVIL_YEAR_MIN`]..=[`crate::CIVIL_YEAR_MAX`] -
+    /// or FILETIME cannot hold the instant (before 1601-01-01 UTC, or after the year 30828).
+    pub fn to_filetime_utc(&self, tz_bias_min: i32) -> Option<i64> {
+        if !crate::civil_year_in_band(self.year) || !is_a_civil_moment(self) {
+            return None;
+        }
+        instant_filetime(self, tz_bias_min)
+    }
+
     /// The same date at 00:00:00 - used to resolve the `today` base.
     fn at_midnight(&self) -> Self {
         Self { hour: 0, minute: 0, second: 0, ..*self }
@@ -290,7 +301,7 @@ pub enum EvalError {
     BadSetTime { index: usize },
     /// The base moment's year is outside the band this build computes on
     /// ([`crate::CIVIL_YEAR_MIN`]..=[`crate::CIVIL_YEAR_MAX`]). Everything that reaches `eval`
-    /// through the CLI has been through `parse_civil` and cannot hit this - `eval` is public API, so
+    /// through the CLI has been through `parse_civil_as` and cannot hit this - `eval` is public API, so
     /// it checks rather than trusting its caller with a value that would panic the civil math.
     BaseYearOutOfRange,
     /// A UTC base could not be re-expressed in the session zone: the instant it names is outside
@@ -304,7 +315,7 @@ pub enum EvalError {
     /// parser ever produced. The year was checked and the rest was not, which left the month running
     /// through arithmetic written for 1..=12: `(month - 1)` underflows on 0 in `apply_snap`, `metadata`
     /// and `mask_token`, and `MONTH_ABBR[month - 1]` indexes past its end above 12. Unreachable through
-    /// every surface this build ships - all of them go through `parse_civil` - so this is about the API
+    /// every surface this build ships - all of them go through `parse_civil_as` - so this is about the API
     /// keeping the promise its own doc comment makes, on a horizon where a second consumer is likely
     /// (rule 28).
     BaseNotACivilDate,
@@ -327,8 +338,8 @@ pub enum EvalError {
     BeforeCalendar { index: usize, first_year: i64 },
 }
 
-/// Parse a civil date-time in "YYYY-MM-DDTHH:MM:SS" form (a space may replace the `T`). The core's
-/// `parse_civil` already rejects a day that cannot exist in its month (e.g. 2025-02-31), so this
+/// Parse a civil date-time in "YYYY-MM-DDTHH:MM:SS" form (a space may replace the `T`). The civil
+/// parser `parse_civil_as` already rejects a day that cannot exist in its month (e.g. 2025-02-31), so this
 /// maps the validated fields to `CivilDateTime` - one validation path shared with the substitution
 /// moment, no silent normalization to March.
 pub fn parse_civil_datetime(s: &str) -> Result<CivilDateTime, String> {
@@ -529,7 +540,7 @@ fn convert_zone(
     index: usize,
 ) -> Result<CivilDateTime, EvalError> {
     // Straight through the shared instant arithmetic, with no string in the middle. The round trip
-    // through `to_iso` + `parse_civil` that used to sit here made this the only calculator step
+    // through `to_iso` + `parse_civil_as` that used to sit here made this the only calculator step
     // that could fail on FORMATTING, and it reported every such failure as `Overflow` - a message
     // about the size of numbers handed to someone whose date simply could not be written in the
     // form the parser read (R3-6). Now the only way this fails is the real one: an instant outside
@@ -803,9 +814,9 @@ pub fn fixed_shift_ticks(step: &Step) -> Result<Option<i64>, EvalError> {
 }
 
 /// Apply one calendar shift step to a UTC FILETIME read as wall-clock in `tz_bias_min`.
-/// Round-trips ft -> session-local civil -> shifted civil -> ft, reusing the canonical
-/// `moment_to_filetime_utc` (the same civil->ft the mechanism uses). Overflow of the
-/// resulting instant is reported.
+/// Round-trips ft -> session-local civil -> shifted civil -> ft, reusing the canonical civil ->
+/// FILETIME conversion (the same one a session moment is read with). Overflow of the resulting
+/// instant is reported.
 fn shift_filetime(ft_utc: i64, tz_bias_min: i32, step: &Step) -> Result<i64, EvalError> {
     let civil = filetime_to_civil(ft_utc, tz_bias_min);
     // No calendar on the jump path, so a business-day step stays unsupported here. The clamp report
@@ -831,23 +842,23 @@ fn shift_filetime(ft_utc: i64, tz_bias_min: i32, step: &Step) -> Result<i64, Eva
     .ok_or(EvalError::Overflow { index: 0 })
 }
 
-/// The target UTC FILETIME after applying ONE shift step to the current fake instant - the
-/// single source of truth for "current fake + one step" on the substitution jump path. A
-/// fixed-length unit adds a tick delta (sub-second precision preserved) - a calendar unit
-/// folds through the civil date in the session zone. Business days need a calendar, which a session
-/// does not have, so they are refused as `NeedsCalendar`.
+/// A UTC FILETIME moved by ONE step, read as wall-clock in the zone `tz_bias_min`.
 ///
-/// A target outside the session range is `Overflow`: rejected, never clamped (R4-S7c). Only an i64
-/// overflow was caught before, so `jump -300000d` was accepted and parked the clock on 1601-01-01 with
-/// nothing said, and in a zone west of UTC the local-time channels went back to the real clock. The
-/// range is the one [`crate::session_instant`] holds a start to, so a jump cannot reach an instant
-/// the session could not have started at.
-pub fn step_target(fake_now_ft: i64, tz_bias_min: i32, step: &Step) -> Result<i64, EvalError> {
+/// A shift by a fixed-length unit adds a tick delta, so sub-second precision survives. Every other
+/// step folds through the civil date in that zone the way the calculator applies it, so `+1 month`
+/// from 31 January lands on the last day of February. This path takes no calendar, so a step that
+/// asks about business days is `NeedsCalendar`, and a `zone` step is `StepUnsupported`: moving an
+/// instant does not change the zone it is read in.
+///
+/// A result FILETIME cannot hold - before 1601, or past the end of `i64` - is `Overflow`, never a
+/// wrapped or negative number. A caller with a narrower range checks it on the result, as the Chrono
+/// Mock session does for a jump.
+pub fn step_instant(ft_utc: i64, tz_bias_min: i32, step: &Step) -> Result<i64, EvalError> {
     let target = match fixed_shift_ticks(step)? {
-        Some(ticks) => fake_now_ft.checked_add(ticks).ok_or(EvalError::Overflow { index: 0 })?,
-        None => shift_filetime(fake_now_ft, tz_bias_min, step)?,
+        Some(ticks) => ft_utc.checked_add(ticks).ok_or(EvalError::Overflow { index: 0 })?,
+        None => shift_filetime(ft_utc, tz_bias_min, step)?,
     };
-    if !crate::instant_in_session_range(target, tz_bias_min) {
+    if target < 0 {
         return Err(EvalError::Overflow { index: 0 });
     }
     Ok(target)
@@ -2284,105 +2295,81 @@ mod tests {
         assert_eq!(DateReading::PlDayMonth.key(), "pl_day_month");
     }
 
-    // --- step_target: the substitution jump bridge ---------------------------
+    // --- step_instant: one step on an instant, the substitution jump bridge ---
 
     fn ft_of(local: &str, bias: i32) -> i64 {
-        crate::moment_to_filetime_utc(&crate::Moment { local: local.into(), tz_bias_min: Some(bias) }).unwrap()
+        parse_civil_datetime(local).unwrap().to_filetime_utc(bias).unwrap()
     }
 
     #[test]
-    fn step_target_fixed_is_exact_and_keeps_sub_second() {
+    fn step_instant_fixed_is_exact_and_keeps_sub_second() {
         // Fixed units add a precise tick delta - sub-second bits survive (no civil truncation),
         // exactly as the old jump_relative did.
         // A sub-second remainder on an ordinary date. The base used to be 100 s after 1601, where
         // the two-hour step below landed BEFORE 1601 and the test asserted that as a success - the
         // very jump R4-S7c is about.
         let ft = ft_of("2026-01-01T00:00:00", 0) + 123;
-        assert_eq!(step_target(ft, 0, &shift(Sign::Plus, 1, Unit::Seconds)).unwrap(), ft + 10_000_000);
-        assert_eq!(step_target(ft, 0, &shift(Sign::Minus, 2, Unit::Hours)).unwrap(), ft - 2 * 3600 * 10_000_000);
-    }
-
-    /// R4-S7c: a jump lands inside the range a session may start at, or is refused - never parked
-    /// on 1601 or past the top, whichever kind of step took it there.
-    #[test]
-    fn step_target_stays_inside_the_session_range() {
-        let ft = ft_of("2026-01-01T00:00:00", 0);
-        // The report's example, and the same by a calendar unit.
-        assert_eq!(
-            step_target(ft, 0, &shift(Sign::Minus, 300_000, Unit::Days)),
-            Err(EvalError::Overflow { index: 0 })
-        );
-        assert_eq!(
-            step_target(ft, 0, &shift(Sign::Minus, 500, Unit::Years)),
-            Err(EvalError::Overflow { index: 0 })
-        );
-        // Past the top by one second, and exactly onto it.
-        let top = crate::FAKE_WALL_MAX;
-        assert_eq!(
-            step_target(top, 0, &shift(Sign::Plus, 1, Unit::Seconds)),
-            Err(EvalError::Overflow { index: 0 })
-        );
-        assert_eq!(step_target(top - 10_000_000, 0, &shift(Sign::Plus, 1, Unit::Seconds)), Ok(top));
-        // West of UTC the local time is the one that crosses first: 1601-01-01T01:00 UTC is fine in
-        // UTC and 20:00 the day before in UTC-05:00.
-        let first_day = ft_of("1601-01-01T05:00:00", 0);
-        assert_eq!(
-            step_target(first_day, 300, &shift(Sign::Minus, 4, Unit::Hours)),
-            Err(EvalError::Overflow { index: 0 })
-        );
-        assert_eq!(
-            step_target(first_day, 300, &shift(Sign::Minus, 5, Unit::Hours)),
-            Err(EvalError::Overflow { index: 0 })
-        );
-        assert_eq!(step_target(first_day, 0, &shift(Sign::Minus, 4, Unit::Hours)), Ok(first_day - 4 * 3600 * 10_000_000));
+        assert_eq!(step_instant(ft, 0, &shift(Sign::Plus, 1, Unit::Seconds)).unwrap(), ft + 10_000_000);
+        assert_eq!(step_instant(ft, 0, &shift(Sign::Minus, 2, Unit::Hours)).unwrap(), ft - 2 * 3600 * 10_000_000);
     }
 
     #[test]
-    fn step_target_calendar_folds_through_civil_with_clamp() {
+    fn step_instant_calendar_folds_through_civil_with_clamp() {
         // +1 month on the fake clock clamps like the calculator: Jan 31 -> Feb 28.
         let jan31 = ft_of("2025-01-31T12:00:00", 0);
         let feb28 = ft_of("2025-02-28T12:00:00", 0);
-        assert_eq!(step_target(jan31, 0, &shift(Sign::Plus, 1, Unit::Months)).unwrap(), feb28);
+        assert_eq!(step_instant(jan31, 0, &shift(Sign::Plus, 1, Unit::Months)).unwrap(), feb28);
     }
 
     #[test]
-    fn step_target_calendar_respects_session_zone() {
+    fn step_instant_calendar_respects_session_zone() {
         // The fold reads and writes the civil date at the same session bias.
         let jan31 = ft_of("2025-01-31T12:00:00", -120); // UTC+2 session
         let feb28 = ft_of("2025-02-28T12:00:00", -120);
-        assert_eq!(step_target(jan31, -120, &shift(Sign::Plus, 1, Unit::Months)).unwrap(), feb28);
+        assert_eq!(step_instant(jan31, -120, &shift(Sign::Plus, 1, Unit::Months)).unwrap(), feb28);
     }
 
     #[test]
-    fn step_target_business_days_needs_a_calendar() {
+    fn step_instant_business_days_needs_a_calendar() {
         // The jump path has no calendar, so a business-day step needs one it does not have.
         let ft = ft_of("2026-01-01T00:00:00", 0);
         assert_eq!(
-            step_target(ft, 0, &shift(Sign::Plus, 5, Unit::BusinessDays)),
+            step_instant(ft, 0, &shift(Sign::Plus, 5, Unit::BusinessDays)),
             Err(EvalError::NeedsCalendar { index: 0 })
         );
     }
 
     #[test]
-    fn step_target_zone_is_unsupported_on_the_jump_path() {
+    fn step_instant_zone_is_unsupported_on_the_jump_path() {
         // The substitution jump advances the fake clock by a time delta - it cannot change zone.
         // `eval` builds the `zone` step - `jump` never does, so the jump path reports it unsupported.
         let ft = ft_of("2026-01-01T00:00:00", 0);
         assert_eq!(
-            step_target(ft, 0, &Step::Zone(-345)),
+            step_instant(ft, 0, &Step::Zone(-345)),
             Err(EvalError::StepUnsupported { kind: "zone", index: 0 })
         );
     }
 
     #[test]
-    fn step_target_overflow_is_reported_not_wrapped() {
+    fn step_instant_overflow_is_reported_not_wrapped() {
         let ft = ft_of("2026-01-01T00:00:00", 0);
-        assert!(step_target(ft, 0, &shift(Sign::Plus, i64::MAX, Unit::Years)).is_err());
-        assert!(step_target(ft, 0, &shift(Sign::Plus, i64::MAX, Unit::Weeks)).is_err());
+        assert!(step_instant(ft, 0, &shift(Sign::Plus, i64::MAX, Unit::Years)).is_err());
+        assert!(step_instant(ft, 0, &shift(Sign::Plus, i64::MAX, Unit::Weeks)).is_err());
+    }
+
+    /// Below 1601 there is no FILETIME, whichever kind of step gets there - a fixed unit as well as a
+    /// calendar one - and past the end of `i64` there is none either.
+    #[test]
+    fn step_instant_refuses_an_instant_filetime_cannot_hold() {
+        let overflow = Err(EvalError::Overflow { index: 0 });
+        assert_eq!(step_instant(0, 0, &shift(Sign::Minus, 1, Unit::Seconds)), overflow);
+        assert_eq!(step_instant(0, 0, &shift(Sign::Minus, 1, Unit::Months)), overflow);
+        assert_eq!(step_instant(10_000_000, 0, &shift(Sign::Minus, 1, Unit::Seconds)), Ok(0));
+        assert_eq!(step_instant(i64::MAX, 0, &shift(Sign::Plus, 1, Unit::Seconds)), overflow);
     }
 
     #[test]
-    fn filetime_to_civil_inverts_moment_to_filetime() {
+    fn filetime_to_civil_inverts_to_filetime_utc() {
         for (local, bias) in
             [("2038-01-19T03:14:07", 0), ("2025-02-28T12:00:00", -120), ("1990-08-03T23:59:59", 300)]
         {

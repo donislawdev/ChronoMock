@@ -46,7 +46,7 @@ on:
     branches: [main]
     paths:
       - .github/workflows/search.yml
-      - crates/core/src/search.rs
+      - crates/dates/src/search.rs
       - crates/cli/src/search.rs
       - crates/proto/src/search.rs
       - crates/mech/src/search.rs
@@ -64,7 +64,7 @@ jobs:
     name: ${{ matrix.part }}
     runs-on: windows-latest
     # The first Sunday is the measurement: the cases below were set from one machine's numbers
-    # (about 1.5 ms a case in the core, 2 ms in the command line's unit properties - 3 ms for the
+    # (about 1.5 ms a case in the date library, 2 ms in the command line's unit properties - 3 ms for the
     # protocol line readers, which draw lines of a megabyte - 60 ms a run of the built calculator,
     # 0.4 ms an event of the protocol), aiming at ten to fifteen minutes a part. The ceiling is far
     # above that, so a hang ends as a part without its summary rather than as six hours of a held
@@ -74,8 +74,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - part: core
-            package: chrono-core
+          - part: date library
+            package: chronomock
             target: --lib
             canary: --lib
             cases: 200000
