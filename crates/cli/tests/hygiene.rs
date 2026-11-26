@@ -26,8 +26,6 @@ const TRACKED_TREES: &[&str] = &[
     "crates",
     "gui",
     "site",
-    "calendars",
-    "presets",
     "packaging",
     "assets",
     ".github",
@@ -62,10 +60,12 @@ fn tracked_files(extensions: &[&str]) -> Vec<PathBuf> {
     let root = repo_root();
     let mut out = Vec::new();
     for tree in TRACKED_TREES.iter().copied() {
+        // A listed tree that is not there is a list a move left behind, read as clean if skipped.
+        assert!(root.join(tree).is_dir(), "{tree} is a tracked tree and is not in the repository");
         let mut stack = vec![root.join(tree)];
         while let Some(dir) = stack.pop() {
             let Ok(entries) = std::fs::read_dir(&dir) else {
-                continue; // a tree that does not exist yet is not a failure
+                continue;
             };
             for entry in entries {
                 let path = entry.expect("directory entry").path();

@@ -57,8 +57,9 @@ internal static class AppPaths
     internal static bool IsInstalledLayout(bool portable, string exeDir)
         => portable && File.Exists(Path.Combine(exeDir, InstalledMarker));
 
-    /// <summary>Root holding calendars/ and presets/ (and, when portable, core/).</summary>
-    public static string DataRoot => IsPortable ? AppContext.BaseDirectory : DevPaths.RepoRoot();
+    /// <summary>Root holding calendars/ and presets/: beside the window when portable, the date library's
+    /// catalogue folder in a dev checkout.</summary>
+    public static string DataRoot => IsPortable ? AppContext.BaseDirectory : EnginePaths.RepoCatalogue(DevPaths.RepoRoot());
 
     /// <summary>Locator for the substitution core matching a target's bitness.</summary>
     public static CoreLocator SubstitutionCores => IsPortable

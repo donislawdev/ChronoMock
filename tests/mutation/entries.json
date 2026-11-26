@@ -8085,7 +8085,7 @@
     "name": "r4-20 z1 lost",
     "edits": [
       {
-        "file": "calendars/pl.json",
+        "file": "crates/dates/catalogue/calendars/pl.json",
         "from": "      \"valid_from\": 2018,\n      \"valid_to\": 2018,",
         "to": "      \"valid_from\": 2019,\n      \"valid_to\": 2019,"
       }
@@ -8104,7 +8104,7 @@
     "name": "r4-20 fed saturday shifted",
     "edits": [
       {
-        "file": "calendars/us-banking.json",
+        "file": "crates/dates/catalogue/calendars/us-banking.json",
         "from": "\"observed\": \"sun_to_mon\",",
         "to": "\"observed\": \"sat_to_fri_sun_to_mon\","
       }

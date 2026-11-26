@@ -39,10 +39,12 @@ public sealed class CalcClient : ICalcEngine
     }
 
     /// <summary>Dev-checkout factory: the x64 core build (calc is pure computation, so its bitness does not
-    /// matter), run from the repo root so its <c>calendars/</c> and <c>presets/</c> resolve. Named by its
-    /// explicit target triple, like <see cref="CoreLocator.ForRepo"/> - <c>target/release/</c> is only
-    /// written by a build without <c>--target</c>, so it goes stale silently (R2-X3).</summary>
-    public static CalcClient ForRepo(string repoRoot) => new(() => EnginePaths.Repo(repoRoot), repoRoot);
+    /// matter), run from the checkout's catalogue folder so its <c>calendars/</c> and <c>presets/</c>
+    /// resolve. Named by its explicit target triple, like <see cref="CoreLocator.ForRepo"/> -
+    /// <c>target/release/</c> is only written by a build without <c>--target</c>, so it goes stale
+    /// silently (R2-X3).</summary>
+    public static CalcClient ForRepo(string repoRoot)
+        => new(() => EnginePaths.Repo(repoRoot), EnginePaths.RepoCatalogue(repoRoot));
 
     /// <summary>Portable-install factory (the shipped layout, Stage 5): the x64 core at
     /// <paramref name="baseDir"/>/core/x64/chrono.exe (calc is pure computation, bitness does not matter),

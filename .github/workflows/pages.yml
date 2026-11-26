@@ -23,8 +23,7 @@ on:
       - "site/**"
       - "crates/site/**"
       - "crates/ctl/**"
-      - "presets/**"
-      - "calendars/**"
+      - "crates/dates/catalogue/**"
       - "assets/chrono-bean.svg"
       # The page on checking a download shows the README's verification commands and the certificate
       # fingerprint packaging/codesign.json pins (crates/site/src/verify.rs).

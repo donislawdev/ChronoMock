@@ -1,6 +1,6 @@
 {
   "schema": "chronomock.presets/1",
-  "dir": "../../presets",
+  "dir": "../dates/catalogue/presets",
   "presets": [
     {
       "file": "age-of-majority.json",

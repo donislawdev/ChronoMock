@@ -54,8 +54,9 @@ pub fn build(root: &Path, out: &Path) -> Result<Report> {
     check_download_sizes(&cfg)?;
     let pages = load_pages(&site_dir)?;
 
-    let preset_count = count_json_files(&root.join("presets"))?;
-    let calendar_count = count_json_files(&root.join("calendars"))?;
+    let catalogue = crate::catalogue_root(root);
+    let preset_count = count_json_files(&catalogue.join("presets"))?;
+    let calendar_count = count_json_files(&catalogue.join("calendars"))?;
     let mut tok = tokens(&cfg, preset_count, calendar_count);
     // The one token made of markup: the 404 lists every language's home page, and which
     // languages exist is a fact of site.json, not of that page's text.

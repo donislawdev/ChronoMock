@@ -1740,7 +1740,7 @@ mod tests {
     /// The golden test above names fourteen files, so a fifteenth was read by nothing.
     #[test]
     fn every_shipped_preset_loads_under_its_own_name() {
-        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../presets");
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../dates/catalogue/presets");
         let mut seen = 0;
         for entry in std::fs::read_dir(&dir).expect("the presets folder") {
             let path = entry.expect("an entry").path();

@@ -418,7 +418,7 @@ mod tests {
     const RECORDED_ANSWER: &str = "tests/data/preset-catalogue.json";
 
     fn shipped_catalogue() -> PathBuf {
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../presets")
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../dates/catalogue/presets")
     }
 
     /// The answer for `dir`, compared with the one recorded in `recorded` - or recorded there when
@@ -456,7 +456,7 @@ mod tests {
     /// turns this red, so the window's tests never run against a catalogue that no longer ships.
     #[test]
     fn the_shipped_catalogue_gives_its_recorded_answer() {
-        gives_its_recorded_answer("../../presets", "tests/data/presets-shipped.json");
+        gives_its_recorded_answer("../dates/catalogue/presets", "tests/data/presets-shipped.json");
     }
 
     /// Every shipped preset is listed and none is refused - a shipped file the catalogue leaves out is a

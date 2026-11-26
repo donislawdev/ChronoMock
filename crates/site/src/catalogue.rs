@@ -246,9 +246,10 @@ pub fn load(root: &Path) -> Result<Catalogue> {
     let data = root.join("site").join("data");
     let words: CatalogueWords = parse_json(&data.join("catalogue.json"))?;
     let list: PresetList = parse_json(&data.join("presets.json"))?;
-    check_presets(&list.presets, &stems(&root.join("presets"))?)?;
+    let catalogue = crate::catalogue_root(root);
+    check_presets(&list.presets, &stems(&catalogue.join("presets"))?)?;
     let mut calendars = Vec::new();
-    for path in json_files(&root.join("calendars"))? {
+    for path in json_files(&catalogue.join("calendars"))? {
         calendars.push(parse_json::<Calendar>(&path)?);
     }
     Ok(Catalogue {

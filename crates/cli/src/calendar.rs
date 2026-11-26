@@ -1145,7 +1145,7 @@ mod tests {
     /// was checked by nothing (rule 12).
     #[test]
     fn every_shipped_calendar_loads_under_its_own_name() {
-        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../calendars");
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../dates/catalogue/calendars");
         let mut seen = 0;
         for entry in std::fs::read_dir(&dir).expect("the calendars folder") {
             let path = entry.expect("an entry").path();
@@ -2139,7 +2139,7 @@ mod tests {
             SHIPPED.get_or_init(|| {
                 let mut files = Vec::new();
                 for (folder, calendar) in [("calendars", true), ("presets", false)] {
-                    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..").join(folder);
+                    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../dates/catalogue").join(folder);
                     let mut paths: Vec<_> = std::fs::read_dir(&dir).expect("a shipped folder").map(|e| e.expect("an entry").path()).collect();
                     paths.sort();
                     for path in paths.into_iter().filter(|p| p.extension().is_some_and(|x| x == "json")) {
