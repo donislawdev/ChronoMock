@@ -24,11 +24,12 @@ a bug in the data model and worth an issue on its own.
 
 ### What a calendar file looks like
 
-Drop a new file into `calendars/`, named for its identifier: a file whose `id` is not its file name
-is refused. Start from
-[`calendars/pl.json`](calendars/pl.json) or
-[`calendars/us-federal.json`](calendars/us-federal.json) rather than from this
-description, because they are the tested examples.
+Drop a new file into `crates/dates/catalogue/calendars/`, named for its identifier: a file whose
+`id` is not its file name is refused. Start from
+[`pl.json`](crates/dates/catalogue/calendars/pl.json) or
+[`us-federal.json`](crates/dates/catalogue/calendars/us-federal.json) rather than from this
+description, because they are the tested examples. The calendars live with the date library, so the
+program and the library packages ship the same files.
 
 ```json
 {
@@ -108,7 +109,7 @@ rule with the same year in both, like Poland's 12 November 2018.
   States files exist for exactly that reason. If your country has both, two files
   is the right answer.
 - Run `cargo test --workspace` before opening the pull request. Every file in
-  `calendars/` is parsed and validated by the suite, so a malformed file fails
+  `crates/dates/catalogue/calendars/` is parsed and validated by the suite, so a malformed file fails
   there rather than in somebody's test run.
 
 ## Interface translations

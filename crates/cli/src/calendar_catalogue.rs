@@ -198,7 +198,7 @@ mod tests {
     use super::*;
 
     fn shipped_calendars() -> PathBuf {
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../calendars")
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../dates/catalogue/calendars")
     }
 
     /// A folder holding the shipped Polish calendar under its own name, plus `files` written as given.
@@ -221,7 +221,7 @@ mod tests {
     /// red. A deliberate change is recorded with `CHRONO_BLESS=1` and read as a diff.
     #[test]
     fn the_shipped_calendars_give_their_recorded_answer() {
-        let catalogue = read_calendar_catalogue(Path::new("../../calendars")).expect("the shipped calendars are readable");
+        let catalogue = read_calendar_catalogue(Path::new("../dates/catalogue/calendars")).expect("the shipped calendars are readable");
         let got = serde_json::to_string_pretty(&catalogue).expect("the catalogue serialises") + "\n";
         if std::env::var_os("CHRONO_BLESS").is_some() {
             std::fs::write(RECORDED_SHIPPED, &got).expect("the recorded answer is writable");

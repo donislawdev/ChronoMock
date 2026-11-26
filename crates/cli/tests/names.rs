@@ -40,7 +40,7 @@
 use std::path::{Path, PathBuf};
 
 /// Committed trees, mirroring `hygiene.rs`. A file outside them is not in anyone's checkout.
-const TRACKED_TREES: &[&str] = &["crates", "gui", "site", "calendars", "presets", "packaging", ".github", "tests"];
+const TRACKED_TREES: &[&str] = &["crates", "gui", "site", "packaging", ".github", "tests"];
 
 const SKIP_DIRS: &[&str] = &["target", "obj", "bin", "node_modules", ".vs", ".git"];
 
@@ -171,6 +171,8 @@ fn scanned_files() -> Vec<PathBuf> {
     let root = repo_root();
     let mut out = Vec::new();
     for tree in TRACKED_TREES.iter().copied() {
+        // A listed tree that is not there is a list a move left behind, read as clean if skipped.
+        assert!(root.join(tree).is_dir(), "{tree} is a tracked tree and is not in the repository");
         let mut stack = vec![root.join(tree)];
         while let Some(dir) = stack.pop() {
             let Ok(entries) = std::fs::read_dir(&dir) else {

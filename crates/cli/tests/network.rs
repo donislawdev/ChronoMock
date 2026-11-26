@@ -471,7 +471,8 @@ const ALLOWED: &[(&str, &str, &str)] = &[
 /// Crates that must never reach outside their own process at all, whatever the register says.
 ///
 /// `chrono-hook` is loaded into a program somebody else wrote. `chrono-mech`, `chrono-ctl`,
-/// `chrono-core` and `chrono-proto` are the layers beneath the interface. A socket or a spawn in
+/// `chrono-core`, the date library `chronomock` and `chrono-proto` are the layers beneath the
+/// interface. A socket or a spawn in
 /// any of them would be a different product. The winsock grant above is deliberately narrow: it
 /// permits naming the module, never opening one.
 const SILENT_CRATES: &[&str] = &[
@@ -479,6 +480,7 @@ const SILENT_CRATES: &[&str] = &[
     "crates/mech",
     "crates/ctl",
     "crates/core",
+    "crates/dates",
     "crates/proto",
     "crates/site",
 ];
@@ -828,7 +830,7 @@ fn ordinary_code_and_prose_raise_no_finding() {
         /// Spawning is not done here - see crates/cli/src/run/mod.rs for Command::new.\n\
         let moment = zone.to_utc(local)?;\n\
         let count = coverage.calls_for(Channel::GetSystemTime);\n";
-    let found = findings(clean, "crates/core/src/calc.rs");
+    let found = findings(clean, "crates/dates/src/calc.rs");
     assert!(found.is_empty(), "ordinary code and prose raised a finding: {found:?}");
 }
 

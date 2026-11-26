@@ -4,7 +4,7 @@
 # guard test in crates/cli/tests/architecture.rs.
 [workspace]
 resolver = "2"
-members = ["crates/core", "crates/ctl", "crates/mech", "crates/hook", "crates/proto", "crates/cli", "crates/site"]
+members = ["crates/dates", "crates/core", "crates/ctl", "crates/mech", "crates/hook", "crates/proto", "crates/cli", "crates/site"]
 # The spike lives in tools/ (its own workspace, outside git) - keep it out of ours.
 exclude = ["tools"]
 
@@ -12,8 +12,8 @@ exclude = ["tools"]
 version = "0.6.0-rc.1"
 edition = "2024"
 license = "GPL-3.0-only"
-# None of these crates goes to crates.io - the product ships as executables, and the layer crates
-# only make sense together. Saying so is not decoration: `cargo deny check bans` refuses to exempt
+# None of these crates goes to crates.io by default - the product ships as executables, and the layer
+# crates only make sense together. The date library is the one exception, and its manifest says so. Saying so is not decoration: `cargo deny check bans` refuses to exempt
 # a workspace path dependency from the wildcard rule unless the crate is private, because crates.io
 # forbids path dependencies in the first place. It also means `cargo publish` cannot go off by
 # accident.
@@ -65,6 +65,7 @@ windows = { version = "0.62", features = [
     # hook never calls it.
     "Win32_UI_WindowsAndMessaging",
 ] }
+chronomock = { path = "crates/dates" }
 chrono-core = { path = "crates/core" }
 chrono-ctl = { path = "crates/ctl" }
 chrono-mech = { path = "crates/mech" }

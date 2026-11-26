@@ -259,7 +259,7 @@ impl CdpClock {
         let bias = time
             .moment
             .tz_bias_min
-            .filter(|&b| chrono_core::zone_bias_in_range(b))
+            .filter(|&b| chronomock::zone_bias_in_range(b))
             .ok_or("time.bad_zone")?;
         let fake_start_ms = match time.moment.local.as_deref() {
             Some(local) => moment_epoch_ms(local, bias).map_err(|e| moment_error_key(&e))?,
@@ -421,7 +421,7 @@ pub(crate) fn cdp_release_expr() -> String {
 
 /// Resolve a CDP jump target to a fake epoch-ms instant: an absolute moment in the zone it names (the
 /// session zone when it names none), or a relative delta applied to the CURRENT fake instant by the
-/// native jump's own step (`chrono_core::calc::step_target`, the grammar `calc` reads). Both go through
+/// native jump's own step (`chrono_core::step_target`, the grammar `calc` reads). Both go through
 /// the session range, so a jump cannot land where a start could not (R4-S7). Returns a translation key
 /// on a bad moment (rule 6).
 ///
@@ -437,7 +437,7 @@ pub(crate) fn cdp_jump_target(clock: &CdpClock, to: &JumpTo<'_>, now: i64) -> Re
     match to {
         JumpTo::Step(step) => {
             let fake_ft = epoch_ms_to_filetime(clock.fake_wall_ms(now));
-            let target = chrono_core::calc::step_target(fake_ft, clock.bias, step).map_err(jump_error_key)?;
+            let target = chrono_core::step_target(fake_ft, clock.bias, step).map_err(jump_error_key)?;
             Ok(filetime_to_epoch_ms(target))
         }
         JumpTo::At { local, bias } => {

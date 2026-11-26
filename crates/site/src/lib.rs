@@ -59,6 +59,12 @@ pub fn repo_root() -> PathBuf {
         .to_path_buf()
 }
 
+/// The shipped calendars and presets under `root`: they live with the date library, inside its crate
+/// folder, so the package that goes to crates.io carries them too.
+pub fn catalogue_root(root: &Path) -> PathBuf {
+    root.join("crates").join("dates").join("catalogue")
+}
+
 /// Language whose pages own the site root. Everything else lives under `/<lang>/`.
 /// This is the first entry of `languages` in `site.json` - kept as a named constant
 /// because several places have to agree on it.

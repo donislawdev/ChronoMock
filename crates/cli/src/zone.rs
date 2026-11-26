@@ -5,7 +5,8 @@
 //! scattered across the driver, the calculator and the CDP path, which is how the session-zone
 //! default drifted into three different answers once (R2-S7).
 
-use chrono_core::{filetime_utc_to_wall, Moment, SessionMomentError};
+use chrono_core::{Moment, SessionMomentError};
+use chronomock::filetime_utc_to_wall;
 
 pub(crate) fn now_epoch_ms() -> i64 {
     std::time::SystemTime::now()
@@ -16,7 +17,7 @@ pub(crate) fn now_epoch_ms() -> i64 {
 
 /// FILETIME ticks (100 ns since 1601) at the Unix epoch (1970-01-01T00:00:00Z), from the one count of days
 /// between the two epochs (R5-A11) rather than a second literal beside it.
-pub(crate) const FT_UNIX_EPOCH: i64 = chrono_core::DAYS_1601_TO_1970 * 86_400 * 10_000_000;
+pub(crate) const FT_UNIX_EPOCH: i64 = chronomock::DAYS_1601_TO_1970 * 86_400 * 10_000_000;
 
 /// The last fake instant a session clock shows, in Unix-epoch ms: the native clamp
 /// (`chrono_core::FAKE_WALL_MAX`, a whole second, so the division is exact). A Chromium session's
@@ -71,10 +72,10 @@ pub(crate) fn parse_zone_to_bias(raw: &str) -> Result<i32, String> {
     // because no country uses it would drop coverage to buy nothing (untouchable rule 27). The
     // session stays internally consistent at any offset in the band. What was wrong was the MESSAGE,
     // which said "0..=14" as if that were the map - it now says which part is real.
-    if !chrono_core::is_ascii_digits(h) {
+    if !chronomock::is_ascii_digits(h) {
         return Err(format!("bad zone hours in '{raw}' (digits only)"));
     }
-    if !chrono_core::is_ascii_digits(m) {
+    if !chronomock::is_ascii_digits(m) {
         return Err(format!("bad zone minutes in '{raw}' (digits only)"));
     }
     let hours: u32 = h.parse().map_err(|_| format!("bad zone hours in '{raw}' (digits only)"))?;
@@ -100,9 +101,9 @@ pub(crate) fn now_filetime_utc() -> i64 {
 }
 
 /// Format a session bias (minutes, UTC = local + bias) back to a "+HH:MM" zone label - the core's one
-/// label ([`chrono_core::bias_label`]), which the calculator's own output uses too (R5-A11).
+/// label ([`chronomock::bias_label`]), which the calculator's own output uses too (R5-A11).
 pub(crate) fn format_bias(bias: i32) -> String {
-    chrono_core::bias_label(bias)
+    chronomock::bias_label(bias)
 }
 
 /// The name a POSIX `TZ` value gives the session zone. Exactly three letters, because the C runtime

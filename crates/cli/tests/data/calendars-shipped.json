@@ -1,6 +1,6 @@
 {
   "schema": "chronomock.calendars/1",
-  "dir": "../../calendars",
+  "dir": "../dates/catalogue/calendars",
   "calendars": [
     {
       "file": "pl.json",

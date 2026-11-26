@@ -55,6 +55,9 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
 $root = Split-Path -Parent $PSScriptRoot
+# The calendars and presets that ship live with the date library, which carries them inside its own
+# crate folder so the package that goes to crates.io holds them too. Every copy below takes them from here.
+$catalogue = Join-Path $root 'crates\dates\catalogue'
 $dist = Join-Path $root 'dist'
 $stage = Join-Path $dist 'ChronoMock'
 $publish = Join-Path $root 'target/publish-gui'
@@ -256,8 +259,8 @@ Copy-Item -LiteralPath $x86hook -Destination $coreX86
 # 3c. Shared data once at the root. A core in core/x64 or core/x86 recognises this layout and reads the
 #     root's calendars and presets as its own catalogue, so it never falls back to the working directory
 #     (R5-B6). One copy, so a calendar added by hand is added in one place.
-Copy-Item -Path (Join-Path $root 'calendars') -Destination $stage -Recurse
-Copy-Item -Path (Join-Path $root 'presets') -Destination $stage -Recurse
+Copy-Item -Path (Join-Path $catalogue 'calendars') -Destination $stage -Recurse
+Copy-Item -Path (Join-Path $catalogue 'presets') -Destination $stage -Recurse
 
 # 3d. Licence and third-party notices - their licences require the notice to travel with every copy.
 Copy-Item -LiteralPath (Join-Path $root 'LICENSE') -Destination $stage
@@ -351,12 +354,12 @@ Copy-Item -LiteralPath $x64hook -Destination $cliStage
 Copy-Item -LiteralPath $x86core -Destination $cliX86
 Copy-Item -LiteralPath $x86hook -Destination $cliX86
 # Data beside the x64 exe, so chrono's next-to-exe lookup resolves with no working-directory trick.
-Copy-Item -Path (Join-Path $root 'calendars') -Destination $cliStage -Recurse
-Copy-Item -Path (Join-Path $root 'presets') -Destination $cliStage -Recurse
+Copy-Item -Path (Join-Path $catalogue 'calendars') -Destination $cliStage -Recurse
+Copy-Item -Path (Join-Path $catalogue 'presets') -Destination $cliStage -Recurse
 # A second copy beside the x86 exe (a few KB of JSON), so the 32-bit tool resolves calendars and
 # presets next-to-exe as well, regardless of the working directory.
-Copy-Item -Path (Join-Path $root 'calendars') -Destination $cliX86 -Recurse
-Copy-Item -Path (Join-Path $root 'presets') -Destination $cliX86 -Recurse
+Copy-Item -Path (Join-Path $catalogue 'calendars') -Destination $cliX86 -Recurse
+Copy-Item -Path (Join-Path $catalogue 'presets') -Destination $cliX86 -Recurse
 Copy-Item -LiteralPath (Join-Path $root 'LICENSE') -Destination $cliStage
 Copy-Item -LiteralPath (Join-Path $root 'THIRD-PARTY-NOTICES.md') -Destination $cliStage
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'cli-readme.md') -Destination (Join-Path $cliStage 'README.md')

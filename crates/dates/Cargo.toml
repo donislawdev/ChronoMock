@@ -1,0 +1,24 @@
+[package]
+name = "chronomock"
+version.workspace = true
+edition.workspace = true
+# The date library is the one part of Chrono Mock that people also use from their own code, on any
+# system, so it carries a file-level licence of its own rather than the program's GPL-3.0-only. The
+# program links it like any other MPL-2.0 library.
+license = "MPL-2.0"
+publish.workspace = true
+
+# Shape ceilings - see [workspace.lints.clippy] and clippy.toml in the repository root.
+[lints]
+workspace = true
+
+[lib]
+name = "chronomock"
+
+# Nothing: no clock, no file, no system call, no other crate. The caller hands over "now" and the
+# zone as data. The dependency guard in crates/cli/tests/hygiene.rs holds this list empty.
+[dependencies]
+
+# The random properties only (see proptest in the workspace manifest).
+[dev-dependencies]
+proptest = { workspace = true }

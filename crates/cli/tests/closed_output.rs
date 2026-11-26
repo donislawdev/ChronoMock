@@ -83,7 +83,7 @@ fn describe(out: &Output) -> String {
 #[test]
 fn a_closed_standard_output_leaves_every_answer_its_exit_code() {
     let interpreter = command_interpreter();
-    let calendars = concat!(env!("CARGO_MANIFEST_DIR"), "/../../calendars");
+    let calendars = concat!(env!("CARGO_MANIFEST_DIR"), "/../dates/catalogue/calendars");
     let cases: [&[&str]; 8] = [
         &["version"],
         &["license"],

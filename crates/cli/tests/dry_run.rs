@@ -378,7 +378,7 @@ fn catalogue_with(id: &str, market: &str, moment: &str, multiplier: i64) -> Path
         r#"{{"schema":"chronomock.preset/1","stability":"unstable","id":"{id}","name":{{"en":"{id}","pl":"{id}"}},"explains":{{"en":"{id}","pl":"{id}"}},"applies_to":"substitution","market":{market},"moment":{moment},"time_mode":{{"multiplier":{multiplier},"scale_duration_clock":false}}}}"#
     );
     std::fs::write(presets.join(format!("{id}.json")), preset).expect("the preset");
-    let shipped = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..").join("..").join("calendars");
+    let shipped = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..").join("dates").join("catalogue").join("calendars");
     for entry in std::fs::read_dir(shipped).expect("the shipped calendars") {
         let path = entry.expect("a directory entry").path();
         std::fs::copy(&path, calendars.join(path.file_name().expect("a file name"))).expect("a calendar copy");

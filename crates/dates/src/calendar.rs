@@ -2,7 +2,7 @@
 //!
 //! The rules (fixed date, n-th weekday of a month, Easter offset) and the weekend-observance
 //! modifier drive the computation - the code never hard-codes a country's holidays. Calendar
-//! DATA lives in `calendars/*.json` (loaded by the consumer, which owns the I/O and serde) -
+//! DATA lives in `catalogue/calendars/*.json` (loaded by the consumer, which owns the I/O and serde) -
 //! this module is the pure engine over already-parsed rules, unit-testable without files.
 //!
 //! All three rule types are built - `Fixed`, `NthWeekday` and `EasterOffset` (Meeus) - together
@@ -617,7 +617,7 @@ mod tests {
         }
     }
 
-    /// A minimal US-shaped calendar for engine tests (the real data lives in calendars/*.json).
+    /// A minimal US-shaped calendar for engine tests (the real data lives in catalogue/calendars/*.json).
     fn us(observed: Observed) -> Calendar {
         Calendar {
             id: "us-test".into(),

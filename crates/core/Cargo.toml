@@ -14,9 +14,7 @@ name = "chrono_core"
 
 # Rule 16: this crate must depend on NOTHING from the interface layers
 # (chrono-proto, chrono-mech, chrono-cli) or any UI/IO library.
-# The architecture guard test enforces an empty forbidden set here.
+# The architecture guard test enforces an empty forbidden set here. The date library it reads
+# moments with is beneath it and depends on nothing either.
 [dependencies]
-
-# The random properties only (see proptest in the workspace manifest).
-[dev-dependencies]
-proptest = { workspace = true }
+chronomock = { workspace = true }

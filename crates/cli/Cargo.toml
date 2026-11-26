@@ -18,6 +18,7 @@ name = "chrono"
 path = "src/main.rs"
 
 [dependencies]
+chronomock = { workspace = true }
 chrono-core = { workspace = true }
 chrono-mech = { workspace = true }
 chrono-proto = { workspace = true }

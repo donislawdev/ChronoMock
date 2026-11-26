@@ -8,7 +8,7 @@
 // exercise the REAL calendars/ and presets/ that ship, through the real engine - so a typo in a
 // holiday date, a wrong valid_from, or a broken observation rule fails the suite (RELEASE-004).
 pub(crate) fn read_data(rel: &str) -> String {
-    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..").join(rel);
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../dates/catalogue").join(rel);
     std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("cannot read {}: {e}", path.display()))
 }
 

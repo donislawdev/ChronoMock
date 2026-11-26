@@ -5,14 +5,14 @@
 //! sentence structural instead of a promise - the two callers cannot drift apart without meeting
 //! here first.
 
-use chrono_core::calc::{Base, NearestTarget, Sign, SnapTarget, Step, Unit};
+use chronomock::calc::{Base, NearestTarget, Sign, SnapTarget, Step, Unit};
 
 /// Parse a `--base` value: the keywords `today`/`now`, or an absolute civil date-time.
 pub(crate) fn parse_base(raw: &str) -> Result<Base, String> {
     match raw {
         "today" => Ok(Base::Today),
         "now" => Ok(Base::Now),
-        _ => Ok(Base::Absolute(chrono_core::calc::parse_civil_datetime(raw)?)),
+        _ => Ok(Base::Absolute(chronomock::calc::parse_civil_datetime(raw)?)),
     }
 }
 
@@ -159,9 +159,9 @@ pub(crate) fn parse_set_time(raw: &str) -> Result<Step, String> {
     if p.len() != 3 {
         return Err(format!("set-time must be HH:MM:SS, got '{raw}'"));
     }
-    // Digits only, for the reason `chrono_core::is_ascii_digits` gives: the parse alone took `+23` as
+    // Digits only, for the reason `chronomock::is_ascii_digits` gives: the parse alone took `+23` as
     // an hour (R4-N34).
-    if !p.iter().all(|f| chrono_core::is_ascii_digits(f)) {
+    if !p.iter().all(|f| chronomock::is_ascii_digits(f)) {
         return Err(format!("set-time must be HH:MM:SS in digits, got '{raw}'"));
     }
     let hour = p[0].parse().map_err(|_| format!("bad hour in set-time '{raw}'"))?;

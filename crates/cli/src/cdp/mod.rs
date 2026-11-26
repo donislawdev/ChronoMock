@@ -275,7 +275,7 @@ pub(crate) fn sanitise_target_text(text: &str) -> String {
             // which plenty of readers break a line on (the JS engine at the other end of this very
             // protocol among them), and the format characters, which reorder or hide the rest - a
             // right-to-left override in a process name reverses what follows it (R5-B1).
-            c if chrono_core::text::is_hidden_char(c) => {
+            c if chronomock::text::is_hidden_char(c) => {
                 out.push_str(&format!("\\u{{{:04x}}}", c as u32));
             }
             c => out.push(c),
@@ -1085,7 +1085,7 @@ mod tests {
 
     mod properties {
         use super::*;
-        use chrono_core::text::is_hidden_char;
+        use chronomock::text::is_hidden_char;
         use proptest::collection::vec;
         use proptest::prelude::*;
 

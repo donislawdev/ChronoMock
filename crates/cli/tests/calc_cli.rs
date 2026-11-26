@@ -48,10 +48,10 @@ fn a_refused_argument_is_one_keyed_line_when_json_is_asked() {
 
 /// The usage names the calendar ids of the folder `--calendar` reads, not three written by hand (R5-F3),
 /// and a missing calendar is refused with the folder and the ids on offer, ending in its key (R5-D5,
-/// items 1 and 2). Run from the repository root, where the shipped calendars are.
+/// items 1 and 2). Run from the date library's catalogue folder, where the shipped calendars are.
 #[test]
 fn the_calendar_ids_come_from_the_folder() {
-    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../dates/catalogue");
     let run = |args: &[&str]| Command::new(env!("CARGO_BIN_EXE_chrono")).current_dir(&root).arg("calc").args(args).output().expect("runs");
 
     let usage = String::from_utf8_lossy(&run(&["--help"]).stdout).trim().to_string();
@@ -256,7 +256,7 @@ fn a_market_preset_counts_in_its_markets_calendar_unless_another_is_named() {
 /// past 2021.
 #[test]
 fn a_calendar_answers_only_for_its_years_and_says_when_it_is_old() {
-    let shipped = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../../calendars/pl.json")).expect("the shipped pl");
+    let shipped = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../dates/catalogue/calendars/pl.json")).expect("the shipped pl");
     let old = old_polish_calendar(&shipped);
     let dir = catalogue("range", &[("calendars/pl.json", shipped.into_bytes()), ("calendars/old.json", old.into_bytes())]);
 
@@ -285,7 +285,7 @@ fn a_calendar_answers_only_for_its_years_and_says_when_it_is_old() {
 /// check never saw - the mark follows the days the step walked over, not only where it landed.
 #[test]
 fn a_walk_over_days_after_an_old_check_is_marked_even_when_it_ends_before_it() {
-    let shipped = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../../calendars/pl.json")).expect("the shipped pl");
+    let shipped = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../dates/catalogue/calendars/pl.json")).expect("the shipped pl");
     let dir = catalogue("reach", &[("calendars/old.json", old_polish_calendar(&shipped).into_bytes())]);
     let out = calc_in(&dir, &["--calendar", "old", "--base", "2020-01-10T00:00:00", "--shift", "-10bd", "--json"]);
     assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
@@ -529,7 +529,7 @@ mod properties {
     /// a finding, not a hung test binary. Both streams are drained on threads of their own, so a
     /// full pipe cannot pass for a hang.
     fn calc_within(args: &[String], limit: Duration) -> Ran {
-        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../dates/catalogue");
         let mut child = Command::new(env!("CARGO_BIN_EXE_chrono"))
             .current_dir(root)
             .arg("calc")

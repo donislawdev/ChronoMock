@@ -10,6 +10,12 @@ allow = [
     "Apache-2.0",
     "Unicode-3.0",
 ]
+# Our own date library, which also goes out on its own under MPL-2.0. An exception for that one crate,
+# not an entry in `allow`: the list above is what a third-party dependency may carry, and widening it
+# would let any MPL-2.0 crate in unnoticed. MPL-2.0 is GPL-compatible, so the program links it.
+exceptions = [
+    { crate = "chronomock", allow = ["MPL-2.0"] },
+]
 
 # Vulnerability gate (P3, pre-release audit): fail on a known RustSec advisory in any dependency, so a
 # security fix in a crate we ship is not missed. Run: cargo deny check advisories (fetches the RustSec DB,

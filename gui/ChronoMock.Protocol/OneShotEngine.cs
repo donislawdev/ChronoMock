@@ -17,6 +17,11 @@ public static class EnginePaths
     public static string Repo(string repoRoot)
         => Path.Combine(repoRoot, "target", "x86_64-pc-windows-msvc", "release", "chrono.exe");
 
+    /// <summary>A dev checkout's <c>calendars/</c> and <c>presets/</c>: they live with the date library, in
+    /// <c>crates/dates/catalogue</c>, so the package that goes to crates.io carries them too.</summary>
+    public static string RepoCatalogue(string repoRoot)
+        => Path.Combine(repoRoot, "crates", "dates", "catalogue");
+
     /// <summary>The shipped portable layout (Stage 5): the x64 core beside the window.</summary>
     public static string Portable(string baseDir) => Path.Combine(baseDir, "core", "x64", "chrono.exe");
 }

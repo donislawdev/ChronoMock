@@ -87,7 +87,7 @@ pub(crate) struct RunArgs {
 /// and a run of digits too large for the type is refused without the digits-only note, which would
 /// then be the wrong advice.
 fn digits_only<T: std::str::FromStr>(field: &str, refusal: String) -> Result<T, String> {
-    if !chrono_core::is_ascii_digits(field) {
+    if !chronomock::is_ascii_digits(field) {
         return Err(format!("{refusal} (digits only)"));
     }
     field.parse().map_err(|_| refusal)

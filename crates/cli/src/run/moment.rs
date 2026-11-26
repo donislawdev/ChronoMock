@@ -5,7 +5,7 @@
 //! sent. Resolving a preset here rather than in the core is deliberate: the core receives an
 //! absolute moment and a plain mode, and never learns that a preset existed.
 
-use chrono_core::calc::{Base, CivilDateTime, EvalContext, EvalError, MomentExpr, Step, Unit};
+use chronomock::calc::{Base, CivilDateTime, EvalContext, EvalError, MomentExpr, Step, Unit};
 use chrono_core::Moment;
 use chrono_proto::{MomentKind, MomentSpec, TimeSpec};
 
@@ -199,17 +199,17 @@ fn eval_preset_moment(
     now: CivilDateTime,
     now_bias: i32,
 ) -> Result<String, i32> {
-    let outcome = match chrono_core::calc::eval(moment, &EvalContext { now, zone_bias_min: now_bias, calendar: None }) {
+    let outcome = match chronomock::calc::eval(moment, &EvalContext { now, zone_bias_min: now_bias, calendar: None }) {
         Err(needs @ EvalError::NeedsCalendar { .. }) => match load_market_calendar(id, market) {
             Some(Ok(calendar)) => {
-                let counted = chrono_core::calc::eval(
+                let counted = chronomock::calc::eval(
                     moment,
                     &EvalContext { now, zone_bias_min: now_bias, calendar: Some(&calendar) },
                 );
                 // The calculator marks this `calendar_outdated`. A session has no marks to carry it, so
                 // the line goes where the caller reads the rest of the start (R4/20).
                 if let Ok(out) = &counted
-                    && out.calendar_reach.is_some_and(|day| chrono_core::calendar::outdated(&calendar, &now, &day))
+                    && out.calendar_reach.is_some_and(|day| chronomock::calendar::outdated(&calendar, &now, &day))
                 {
                     diag!(
                         "chrono: preset '{id}' counted business days in the {} calendar, whose holidays were checked against the law more than a year ago - a holiday added since may be missing (calendar_outdated)",
@@ -330,19 +330,19 @@ pub(crate) fn resolve_at(raw: &str, tz_bias_min: Option<i32>) -> Result<String, 
         // refused 2038-13-45 there - AFTER the driver had already let a dry run approve it with exit
         // 0 and a plan naming that moment. Docs/08 section 8 says a dry run's 0 means "this plan is
         // sound", so a moment the run would refuse is refused here, in the core's own words.
-        chrono_core::calc::parse_civil_datetime(raw)?;
+        chronomock::calc::parse_civil_datetime(raw)?;
         Ok(raw.to_string())
     }
 }
 
 /// The pure core of a relative `--at`, taking "now" as data so it is deterministic to
 /// test. The caller guarantees `raw` starts with a sign.
-pub(crate) fn resolve_relative_at(raw: &str, now: chrono_core::calc::CivilDateTime) -> Result<String, String> {
+pub(crate) fn resolve_relative_at(raw: &str, now: chronomock::calc::CivilDateTime) -> Result<String, String> {
     let step = parse_shift(raw)?;
     let expr = MomentExpr { base: Base::Now, steps: vec![step] };
     // `--at` builds a single shift step (no `zone` step) and reads back the civil result, so the
     // session-zone bias here only sets the unused result zone - 0 is fine.
-    let outcome = chrono_core::calc::eval(&expr, &EvalContext { now, zone_bias_min: 0, calendar: None })
+    let outcome = chronomock::calc::eval(&expr, &EvalContext { now, zone_bias_min: 0, calendar: None })
         .map_err(describe_at_error)?;
     Ok(outcome.result().to_iso())
 }
@@ -362,8 +362,8 @@ pub(crate) fn describe_at_error(e: EvalError) -> String {
         EvalError::BadSetTime { .. } => "relative --at has an invalid time".to_string(),
         EvalError::BaseYearOutOfRange | EvalError::YearOutOfRange { .. } => format!(
             "relative --at lands outside the year range this build computes on ({}..={})",
-            chrono_core::CIVIL_YEAR_MIN,
-            chrono_core::CIVIL_YEAR_MAX
+            chronomock::CIVIL_YEAR_MIN,
+            chronomock::CIVIL_YEAR_MAX
         ),
         // This path builds its base from the real clock, so it cannot produce an impossible date.
         // Named anyway, because the match stays total - see the note above.
@@ -372,7 +372,7 @@ pub(crate) fn describe_at_error(e: EvalError) -> String {
         // them cannot be reached either. Named for the same reason as the arm above.
         EvalError::TooManyBusinessDays { .. } => format!(
             "relative --at asks for more than {} business days",
-            chrono_core::calendar::MAX_BUSINESS_DAYS
+            chronomock::calendar::MAX_BUSINESS_DAYS
         ),
         // Only a calendar can refuse a walk for its first year, and this path has none. Named for the
         // same reason as the two arms above.
@@ -441,7 +441,7 @@ mod tests {
     fn at_relative_fixed_unit_is_deterministic_with_now() {
         // Fixed-length units resolve exactly as before - now + a plain offset. Deterministic
         // because now is passed as data, not read from the clock.
-        let now = chrono_core::calc::CivilDateTime { year: 2026, month: 8, day: 25, hour: 14, minute: 30, second: 45 };
+        let now = chronomock::calc::CivilDateTime { year: 2026, month: 8, day: 25, hour: 14, minute: 30, second: 45 };
         assert_eq!(resolve_relative_at("+1d", now).unwrap(), "2026-08-26T14:30:45");
         assert_eq!(resolve_relative_at("-2h", now).unwrap(), "2026-08-25T12:30:45");
         assert_eq!(resolve_relative_at("+1w", now).unwrap(), "2026-09-01T14:30:45");
@@ -451,17 +451,17 @@ mod tests {
     fn at_relative_now_accepts_calendar_units() {
         // The new capability: `--at` gains months/quarters/years through the shared model,
         // with the same clamp - the substitution side could not express these before.
-        let now = chrono_core::calc::CivilDateTime { year: 2026, month: 8, day: 25, hour: 0, minute: 0, second: 0 };
+        let now = chronomock::calc::CivilDateTime { year: 2026, month: 8, day: 25, hour: 0, minute: 0, second: 0 };
         assert_eq!(resolve_relative_at("+1mo", now).unwrap(), "2026-09-25T00:00:00");
         assert_eq!(resolve_relative_at("-18years", now).unwrap(), "2008-08-25T00:00:00");
         // End-of-month clamp reaches `--at` too: Jan 31 + 1 month = Feb 28 (2027, non-leap).
-        let jan31 = chrono_core::calc::CivilDateTime { year: 2027, month: 1, day: 31, hour: 12, minute: 0, second: 0 };
+        let jan31 = chronomock::calc::CivilDateTime { year: 2027, month: 1, day: 31, hour: 12, minute: 0, second: 0 };
         assert_eq!(resolve_relative_at("+1mo", jan31).unwrap(), "2027-02-28T12:00:00");
     }
 
     #[test]
     fn at_relative_business_days_need_a_calendar() {
-        let now = chrono_core::calc::CivilDateTime { year: 2026, month: 8, day: 25, hour: 0, minute: 0, second: 0 };
+        let now = chronomock::calc::CivilDateTime { year: 2026, month: 8, day: 25, hour: 0, minute: 0, second: 0 };
         let err = resolve_relative_at("+5bd", now).unwrap_err();
         assert!(err.contains("calendar"), "honest needs-a-calendar message, got: {err}");
     }
@@ -515,7 +515,7 @@ mod tests {
     /// session then read as UTC, 5 h 45 min away from the preset's moment.
     #[test]
     fn a_zone_step_in_a_preset_keeps_its_instant_in_the_session_zone() {
-        use chrono_core::calc::{CivilDateTime, SnapTarget};
+        use chronomock::calc::{CivilDateTime, SnapTarget};
         let base = CivilDateTime { year: 2030, month: 1, day: 15, hour: 0, minute: 0, second: 0 };
         let kathmandu = crate::zone::parse_zone_to_bias("+05:45").expect("a zone");
         let mut moment = MomentExpr {
@@ -523,7 +523,7 @@ mod tests {
             steps: vec![Step::Zone(kathmandu), Step::Snap(SnapTarget::StartOfMonth)],
         };
         back_in_session_zone(&mut moment, 0);
-        let outcome = chrono_core::calc::eval(&moment, &EvalContext { now: base, zone_bias_min: 0, calendar: None })
+        let outcome = chronomock::calc::eval(&moment, &EvalContext { now: base, zone_bias_min: 0, calendar: None })
             .expect("the moment evaluates");
         assert_eq!(outcome.result().to_iso(), "2029-12-31T18:15:00");
 

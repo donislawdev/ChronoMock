@@ -34,6 +34,11 @@ fn repository() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..")
 }
 
+/// The shipped calendars and presets, which live with the date library.
+fn catalogue() -> PathBuf {
+    repository().join("crates/dates/catalogue")
+}
+
 fn read_json(path: &Path) -> serde_json::Value {
     let text = std::fs::read_to_string(path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
     serde_json::from_str(&text).unwrap_or_else(|e| panic!("{}: {e}", path.display()))
@@ -173,7 +178,7 @@ fn listed(answer: &serde_json::Value) -> Vec<serde_json::Value> {
 
 #[test]
 fn the_scenarios_on_the_website_are_the_presets_the_program_reads() {
-    let answer = presets_in(&repository().join("presets"));
+    let answer = presets_in(&catalogue().join("presets"));
     assert_eq!(answer["refused"], serde_json::json!([]), "a shipped preset is refused");
     let presets = listed(&answer);
     // The comparison below proves nothing over an empty list.
@@ -211,7 +216,7 @@ fn the_example_preset_on_the_website_is_one_the_program_takes() {
 /// its example. This does the same and asks the program whether it takes the result.
 #[test]
 fn the_example_holiday_on_the_website_makes_a_calendar_the_program_takes() {
-    let mut calendar = read_json(&repository().join("calendars/pl.json"));
+    let mut calendar = read_json(&catalogue().join("calendars/pl.json"));
     let holiday = read_json(&repository().join("site/examples/calendars/holiday.json"));
     calendar["id"] = "pl-office".into();
     calendar["holidays"].as_array_mut().expect("a list of holidays").push(holiday);
@@ -467,12 +472,12 @@ fn the_event_reader_refuses_what_it_cannot_follow() {
     assert!(!always_skipped("skipped_count: u32,"));
 }
 
-/// The program, from the repository's root, so `--preset` and `--calendar` find the shipped folders.
+/// The program, from the catalogue folder, so `--preset` and `--calendar` find the shipped folders.
 fn json_of(args: &[&str]) -> serde_json::Value {
     let out = Command::new(env!("CARGO_BIN_EXE_chrono"))
         .args(args)
         .arg("--json")
-        .current_dir(repository())
+        .current_dir(catalogue())
         .output()
         .expect("the tool must run");
     assert!(
